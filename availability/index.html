@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>尼腓的家訂房平台</title>
+    <meta name="description" content="尼腓的家訂房平台，提供旅客用入住日期快速查詢目前可詢問房型。" />
+    <link rel="stylesheet" href="style.css?v=12" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="index.html" aria-label="尼腓的家訂房平台">
+        <span class="brand-mark">尼</span>
+        <span>
+          <strong>尼腓的家</strong>
+          <small>訂房查詢平台</small>
+        </span>
+      </a>
+      <a class="line-pill" href="https://line.me/R/ti/p/@846zghrc" target="_blank" rel="noreferrer">
+        LINE 詢問
+      </a>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Check Dates</p>
+        <h1>查詢尼腓的家空房日期</h1>
+        <p>
+          選擇入住日期即可查詢一晚房況。若需要連住多晚或有特殊需求，可以再透過 LINE 與我們確認。
+        </p>
+      </section>
+
+      <section class="query-panel" aria-labelledby="query-title">
+        <div class="section-heading">
+          <p class="eyebrow">Search</p>
+          <h2 id="query-title">查詢住宿日期</h2>
+        </div>
+
+        <form id="searchForm" class="search-form">
+          <label>
+            <span>入住日期</span>
+            <input id="checkIn" type="date" required />
+          </label>
+
+          <label>
+            <span>房型需求</span>
+            <select id="roomType">
+              <option value="">不限，顯示全部</option>
+              <option value="301">301 雙人房附衛浴</option>
+              <option value="302">302 四人房附衛浴</option>
+              <option value="401">401 雙人房有浴缸</option>
+              <option value="402">402 四人房有浴缸</option>
+              <option value="雙人房">雙人房</option>
+              <option value="四人房">四人房</option>
+              <option value="包棟">包棟四個房間</option>
+            </select>
+          </label>
+
+          <button class="primary-button" type="submit">查詢空房</button>
+        </form>
+      </section>
+
+      <section class="result-panel" aria-labelledby="result-title">
+        <div class="section-heading">
+          <p class="eyebrow">Results</p>
+          <h2 id="result-title">查詢結果</h2>
+          <p id="resultSummary">請先選擇入住日期。</p>
+        </div>
+
+        <div id="roomList" class="room-list"></div>
+
+        <div id="emptyState" class="empty-state" hidden>
+          <h3>目前沒有可詢問房型</h3>
+          <p>可以改查其他日期，或透過 LINE 告訴我們您的需求。</p>
+          <a class="primary-button" href="https://line.me/R/ti/p/@846zghrc" target="_blank" rel="noreferrer">
+            加入 LINE 詢問
+          </a>
+        </div>
+      </section>
+
+      <section class="notice">
+        <h2>訂房提醒</h2>
+        <p>
+          此頁面提供初步房況查詢，實際訂房仍以 LINE 人工確認與匯款完成為準。
+        </p>
+      </section>
+    </main>
+
+    <template id="roomCardTemplate">
+      <article class="room-card">
+        <div class="room-body">
+          <div class="room-header">
+            <div>
+              <h3></h3>
+              <p class="room-meta"></p>
+            </div>
+            <span class="status-badge">可詢問</span>
+          </div>
+          <p class="room-desc"></p>
+          <div class="tag-row"></div>
+          <div class="room-actions">
+            <button class="secondary-button copy-room" type="button">複製詢問文字</button>
+            <a class="primary-button line-room" target="_blank" rel="noreferrer">LINE 詢問</a>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <footer>
+      <p>尼腓的家訂房平台</p>
+      <p>管理日期請開啟 admin.html。</p>
+    </footer>
+
+    <script src="config.js?v=12"></script>
+    <script src="script.js?v=12"></script>
+  </body>
+</html>
