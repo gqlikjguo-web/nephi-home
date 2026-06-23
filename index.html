@@ -1,67 +1,99 @@
 <!doctype html>
 <html lang="zh-Hant">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>尼腓的家｜價格資訊</title>
-    <meta
-      name="description"
-      content="尼腓的家民宿房型、包棟與價格資訊。"
-    />
-    <link rel="stylesheet" href="./style.css" />
-  </head>
-  <body>
-    <header class="site-header">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>尼腓的家｜住宿回饋表</title>
+  <link rel="stylesheet" href="feedback.css">
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
       <p class="eyebrow">Nephi Home</p>
-      <h1>尼腓的家價格資訊</h1>
-      <p class="intro">房型、包棟與目前開放月份整理，實際價格與房況仍以官方回覆為準。</p>
-      <nav class="quick-nav" aria-label="價格分類">
-        <a href="#room-price">只訂房間價格</a>
-        <a href="#whole-house-price">包棟價格</a>
-        <a href="#rooms-info">房型介紹</a>
-        <a href="#whole-house-info">包棟介紹</a>
-      </nav>
-    </header>
+      <h1>住宿回饋表</h1>
+      <p class="intro">感謝您的入住，簡單勾選幾個項目，讓我們知道哪裡可以做得更好。</p>
+    </section>
 
-    <main>
-      <section class="price-section" id="room-price">
-        <div class="section-title">
-          <span>01</span>
-          <h2>只訂房間價格</h2>
+    <form id="feedbackForm" class="form-card">
+      <section class="field-group">
+        <div class="field-label">整體住宿滿意度</div>
+        <div class="rating" role="radiogroup" aria-label="整體住宿滿意度">
+          <input type="radio" id="rate5" name="rating" value="5" checked>
+          <label for="rate5">5</label>
+          <input type="radio" id="rate4" name="rating" value="4">
+          <label for="rate4">4</label>
+          <input type="radio" id="rate3" name="rating" value="3">
+          <label for="rate3">3</label>
+          <input type="radio" id="rate2" name="rating" value="2">
+          <label for="rate2">2</label>
+          <input type="radio" id="rate1" name="rating" value="1">
+          <label for="rate1">1</label>
         </div>
-        <img src="./images/room-price.jpg" alt="尼腓的家七月平日房型價格" />
+        <p class="hint">5 分代表非常滿意。</p>
       </section>
 
-      <section class="price-section" id="whole-house-price">
-        <div class="section-title">
-          <span>02</span>
-          <h2>包棟價格</h2>
+      <section class="field-group">
+        <div class="field-label">最滿意的地方</div>
+        <div class="chip-grid">
+          <label><input type="checkbox" name="good" value="房間乾淨">房間乾淨</label>
+          <label><input type="checkbox" name="good" value="床好睡">床好睡</label>
+          <label><input type="checkbox" name="good" value="浴室舒適">浴室舒適</label>
+          <label><input type="checkbox" name="good" value="自助入住清楚">自助入住清楚</label>
+          <label><input type="checkbox" name="good" value="設備方便">設備方便</label>
+          <label><input type="checkbox" name="good" value="適合包棟">適合包棟</label>
+          <label><input id="goodOtherCheck" type="checkbox" name="good" value="其他">其他</label>
         </div>
-        <img src="./images/whole-house-price.jpg" alt="尼腓的家包棟價格" />
+        <div id="goodOtherWrap" class="other-field" hidden>
+          <label class="field-label small-label" for="goodOther">其他滿意的地方</label>
+          <input id="goodOther" name="goodOther" type="text" placeholder="請簡單寫下覺得不錯的地方">
+        </div>
       </section>
 
-      <section class="price-section" id="rooms-info">
-        <div class="section-title">
-          <span>03</span>
-          <h2>房型介紹</h2>
+      <section class="field-group">
+        <div class="field-label">希望改善的地方</div>
+        <div class="chip-grid">
+          <label><input type="checkbox" name="improve" value="隔音">隔音</label>
+          <label><input type="checkbox" name="improve" value="設備操作">設備操作</label>
+          <label><input type="checkbox" name="improve" value="清潔細節">清潔細節</label>
+          <label><input type="checkbox" name="improve" value="入住說明">入住說明</label>
+          <label><input type="checkbox" name="improve" value="房間備品">房間備品</label>
+          <label><input id="improveOtherCheck" type="checkbox" name="improve" value="其他">其他</label>
         </div>
-        <img src="./images/rooms-info.jpeg" alt="尼腓的家房型與設備介紹" />
+        <div id="improveOtherWrap" class="other-field" hidden>
+          <label class="field-label small-label" for="improveOther">其他想改善的地方</label>
+          <input id="improveOther" name="improveOther" type="text" placeholder="請簡單寫下希望改善的地方">
+        </div>
       </section>
 
-      <section class="price-section" id="whole-house-info">
-        <div class="section-title">
-          <span>04</span>
-          <h2>包棟介紹</h2>
+      <section class="field-group">
+        <div class="field-label">之後是否願意再入住？</div>
+        <div class="choice-row">
+          <label><input type="radio" name="returnVisit" value="願意" checked>願意</label>
+          <label><input type="radio" name="returnVisit" value="可能會">可能會</label>
+          <label><input type="radio" name="returnVisit" value="暫時不會">暫時不會</label>
         </div>
-        <img src="./images/whole-house-info.jpeg" alt="尼腓的家包棟住宿介紹" />
       </section>
-    </main>
 
-    <footer>
-      <a class="line-button" href="https://line.me/R/ti/p/@846zghrc" target="_blank" rel="noopener">
-        LINE 詢問訂房
-      </a>
-      <p>價格如有異動，依官方公告與 LINE 回覆為主。</p>
-    </footer>
-  </body>
+      <section class="field-group">
+        <label class="field-label" for="comment">想給我們的建議（可不填）</label>
+        <textarea id="comment" name="comment" rows="4" placeholder="例如：哪裡很棒、哪裡可以更清楚或更方便"></textarea>
+      </section>
+
+      <p id="submitStatus" class="submit-status" role="status" aria-live="polite"></p>
+      <button id="submitButton" class="primary-button" type="submit">送出回饋</button>
+    </form>
+
+    <section id="thanksPanel" class="thanks-card" hidden>
+      <p class="eyebrow">Thank You</p>
+      <h2>感謝您的回饋</h2>
+      <p>我們已收到您的意見，會持續改善住宿品質。</p>
+      <div class="action-grid">
+        <a class="primary-button" href="https://www.google.com/search?q=%E5%B0%BC%E8%85%93%E7%9A%84%E5%AE%B6+Google+%E8%A9%95%E8%AB%96" target="_blank" rel="noopener">留下 Google 評論</a>
+        <a class="secondary-button" href="https://line.me/R/ti/p/@846zghrc" target="_blank" rel="noopener">回 LINE 官方帳號</a>
+      </div>
+    </section>
+  </main>
+
+  <script src="feedback.js"></script>
+</body>
 </html>
