@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>尼腓的家後台管理</title>
+    <meta name="description" content="尼腓的家房況後台，提供月曆開關房與批次匯入。" />
+    <link rel="stylesheet" href="../style.css?v=20260625d" />
+  </head>
+  <body>
+    <div id="adminApp">
+      <header class="topbar">
+        <a class="brand" href="../" aria-label="回到客人前台">
+          <span class="brand-mark">尼</span>
+          <span>
+            <strong>尼腓的家</strong>
+            <small>後台管理</small>
+          </span>
+        </a>
+        <a class="line-pill muted-pill" href="../">客人前台</a>
+      </header>
+
+      <main class="page-shell">
+        <section class="hero admin-hero">
+          <p class="eyebrow">Calendar Admin</p>
+          <h1>房況後台管理</h1>
+          <p>選擇房型與月份後，直接點日期就能切換可訂或已關閉。包棟與單間房的互相關閉規則，會由系統和 Google Sheet 一起處理。</p>
+        </section>
+
+        <section class="admin-panel" aria-labelledby="admin-title">
+          <div class="section-heading">
+            <p class="eyebrow">Room</p>
+            <h2 id="admin-title">選擇要修改的房型</h2>
+          </div>
+
+          <div class="admin-controls">
+            <label>
+              <span>房型</span>
+              <select id="roomSelect"></select>
+            </label>
+
+            <label>
+              <span>快速選擇月份</span>
+              <input id="monthPicker" type="month" />
+            </label>
+
+            <div class="month-switcher" aria-label="月份切換">
+              <button id="prevMonth" class="secondary-button" type="button">上一月</button>
+              <strong id="monthLabel"></strong>
+              <button id="nextMonth" class="secondary-button" type="button">下一月</button>
+            </div>
+          </div>
+
+          <div class="current-room" id="currentRoomLabel">目前正在修改：</div>
+
+          <div class="calendar-card">
+            <div class="calendar-legend">
+              <span><i class="dot available"></i>可訂</span>
+              <span><i class="dot booked"></i>已關閉</span>
+            </div>
+            <div class="calendar-weekdays" aria-hidden="true">
+              <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+            </div>
+            <div id="calendarGrid" class="calendar-grid"></div>
+          </div>
+
+          <div class="admin-actions">
+            <button id="todayMonth" class="secondary-button" type="button">回到本月</button>
+            <button id="reloadMonth" class="secondary-button" type="button">重新讀取</button>
+            <button id="clearRoom" class="secondary-button" type="button">清除此房型已訂日期</button>
+            <button id="closeMonth" class="secondary-button danger-button" type="button">關閉全部當月</button>
+          </div>
+
+          <section class="batch-panel" aria-labelledby="batch-title">
+            <div class="section-heading">
+              <p class="eyebrow">Batch</p>
+              <h2 id="batch-title">批次匯入已訂日期</h2>
+              <p>把整理好的已訂清單貼上，按一次即可更新 Google Sheet。</p>
+            </div>
+
+            <label class="check-row">
+              <input id="resetBeforeBatch" type="checkbox" checked />
+              <span>先把這個月份全部改為可訂，再套用下面已訂清單</span>
+            </label>
+
+            <label>
+              <span>已訂清單</span>
+              <textarea id="batchText" rows="8" placeholder="範例：
+6/20 301 302 401 402
+6/21 301 401 402
+6/27 包棟
+6/29 302"></textarea>
+            </label>
+
+            <button id="applyBatch" class="primary-button" type="button">套用批次更新</button>
+          </section>
+
+          <p id="saveStatus" class="save-status" role="status" aria-live="polite"></p>
+          <p class="admin-note">
+            後台網址請不要公開給客人。正式銷售給其他業者前，建議改成帳號密碼或資料庫版本。
+          </p>
+        </section>
+      </main>
+
+      <footer>
+        <p>尼腓的家後台管理系統</p>
+      </footer>
+    </div>
+
+    <script src="../config.js?v=20260625d"></script>
+    <script src="admin.js?v=20260625d"></script>
+  </body>
+</html>

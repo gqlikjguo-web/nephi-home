@@ -3,97 +3,80 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>尼腓的家｜住宿回饋表</title>
-  <link rel="stylesheet" href="feedback.css">
+  <title>尼腓的家訂房平台</title>
+  <link rel="stylesheet" href="style.css?v=20260625c">
 </head>
 <body>
-  <main class="page">
-    <section class="hero">
-      <p class="eyebrow">Nephi Home</p>
-      <h1>住宿回饋表</h1>
-      <p class="intro">感謝您的入住，簡單勾選幾個項目，讓我們知道哪裡可以做得更好。</p>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="回到房況查詢首頁">
+      <span class="brand-mark">尼</span>
+      <span>
+        <strong>尼腓的家</strong>
+        <small>訂房查詢平台</small>
+      </span>
+    </a>
+    <a class="line-pill" href="https://line.me/R/ti/p/@846zghrc" target="_blank" rel="noopener">LINE 詢問</a>
+  </header>
+
+  <main class="page-shell">
+    <section class="hero-panel">
+      <p class="eyebrow">CHECK DATES</p>
+      <h1>查詢住宿日期</h1>
+      <p>選擇入住日期，就可以查看目前開放的房型。實際訂房仍以 LINE 人工確認與匯款完成為準。</p>
     </section>
 
-    <form id="feedbackForm" class="form-card">
-      <section class="field-group">
-        <div class="field-label">整體住宿滿意度</div>
-        <div class="rating" role="radiogroup" aria-label="整體住宿滿意度">
-          <input type="radio" id="rate5" name="rating" value="5" checked>
-          <label for="rate5">5</label>
-          <input type="radio" id="rate4" name="rating" value="4">
-          <label for="rate4">4</label>
-          <input type="radio" id="rate3" name="rating" value="3">
-          <label for="rate3">3</label>
-          <input type="radio" id="rate2" name="rating" value="2">
-          <label for="rate2">2</label>
-          <input type="radio" id="rate1" name="rating" value="1">
-          <label for="rate1">1</label>
-        </div>
-        <p class="hint">5 分代表非常滿意。</p>
-      </section>
+    <section class="search-card" aria-labelledby="searchTitle">
+      <h2 id="searchTitle">查詢空房</h2>
+      <p id="oldSiteWarning" class="notice" hidden></p>
+      <form id="searchForm" class="search-form">
+        <label>
+          <span>入住日期</span>
+          <input id="checkIn" type="date" required>
+        </label>
+        <label>
+          <span>房型需求</span>
+          <select id="roomType">
+            <option value="all">不限，顯示全部</option>
+            <option value="double">雙人房</option>
+            <option value="quad">四人房</option>
+            <option value="room301">301雙人房附衛浴</option>
+            <option value="room302">302四人房附衛浴</option>
+            <option value="room401">401雙人房有浴缸</option>
+            <option value="room402">402四人房有浴缸</option>
+            <option value="wholeHouse">包棟四個房間</option>
+          </select>
+        </label>
+        <button class="primary-button" type="submit">查詢空房</button>
+      </form>
+    </section>
 
-      <section class="field-group">
-        <div class="field-label">最滿意的地方</div>
-        <div class="chip-grid">
-          <label><input type="checkbox" name="good" value="房間乾淨">房間乾淨</label>
-          <label><input type="checkbox" name="good" value="床好睡">床好睡</label>
-          <label><input type="checkbox" name="good" value="浴室舒適">浴室舒適</label>
-          <label><input type="checkbox" name="good" value="自助入住清楚">自助入住清楚</label>
-          <label><input type="checkbox" name="good" value="設備方便">設備方便</label>
-          <label><input type="checkbox" name="good" value="適合包棟">適合包棟</label>
-          <label><input id="goodOtherCheck" type="checkbox" name="good" value="其他">其他</label>
-        </div>
-        <div id="goodOtherWrap" class="other-field" hidden>
-          <label class="field-label small-label" for="goodOther">其他滿意的地方</label>
-          <input id="goodOther" name="goodOther" type="text" placeholder="請簡單寫下覺得不錯的地方">
-        </div>
-      </section>
-
-      <section class="field-group">
-        <div class="field-label">希望改善的地方</div>
-        <div class="chip-grid">
-          <label><input type="checkbox" name="improve" value="隔音">隔音</label>
-          <label><input type="checkbox" name="improve" value="設備操作">設備操作</label>
-          <label><input type="checkbox" name="improve" value="清潔細節">清潔細節</label>
-          <label><input type="checkbox" name="improve" value="入住說明">入住說明</label>
-          <label><input type="checkbox" name="improve" value="房間備品">房間備品</label>
-          <label><input id="improveOtherCheck" type="checkbox" name="improve" value="其他">其他</label>
-        </div>
-        <div id="improveOtherWrap" class="other-field" hidden>
-          <label class="field-label small-label" for="improveOther">其他想改善的地方</label>
-          <input id="improveOther" name="improveOther" type="text" placeholder="請簡單寫下希望改善的地方">
-        </div>
-      </section>
-
-      <section class="field-group">
-        <div class="field-label">之後是否願意再入住？</div>
-        <div class="choice-row">
-          <label><input type="radio" name="returnVisit" value="願意" checked>願意</label>
-          <label><input type="radio" name="returnVisit" value="可能會">可能會</label>
-          <label><input type="radio" name="returnVisit" value="暫時不會">暫時不會</label>
-        </div>
-      </section>
-
-      <section class="field-group">
-        <label class="field-label" for="comment">想給我們的建議（可不填）</label>
-        <textarea id="comment" name="comment" rows="4" placeholder="例如：哪裡很棒、哪裡可以更清楚或更方便"></textarea>
-      </section>
-
-      <p id="submitStatus" class="submit-status" role="status" aria-live="polite"></p>
-      <button id="submitButton" class="primary-button" type="submit">送出回饋</button>
-    </form>
-
-    <section id="thanksPanel" class="thanks-card" hidden>
-      <p class="eyebrow">Thank You</p>
-      <h2>感謝您的回饋</h2>
-      <p>我們已收到您的意見，會持續改善住宿品質。</p>
-      <div class="action-grid">
-        <a class="primary-button" href="https://maps.app.goo.gl/AYryvrMayA4gFzPJ9?g_st=ic" target="_blank" rel="noopener">留下 Google 評論</a>
-        <a class="secondary-button" href="https://line.me/R/ti/p/@846zghrc" target="_blank" rel="noopener">回 LINE 官方帳號</a>
-      </div>
+    <section class="results-section" aria-labelledby="resultTitle">
+      <p class="eyebrow">RESULTS</p>
+      <h2 id="resultTitle">查詢結果</h2>
+      <p id="resultSummary">請先選擇入住日期。</p>
+      <div id="emptyState" class="empty-state" hidden>目前沒有符合條件的可詢問房型。</div>
+      <div id="roomList" class="room-list"></div>
     </section>
   </main>
 
-  <script src="feedback.js"></script>
+  <template id="roomCardTemplate">
+    <article class="room-card">
+      <div class="room-card-header">
+        <div>
+          <h3 class="room-name"></h3>
+          <p class="room-description"></p>
+        </div>
+        <span class="status-badge">可詢問</span>
+      </div>
+      <div class="tag-list"></div>
+      <div class="room-actions">
+        <button class="secondary-button copy-button" type="button">複製詢問文字</button>
+        <a class="primary-button line-button" href="https://line.me/R/ti/p/@846zghrc" target="_blank" rel="noopener">LINE 詢問</a>
+      </div>
+    </article>
+  </template>
+
+  <script src="config.js?v=20260625c"></script>
+  <script src="script.js?v=20260625c"></script>
 </body>
 </html>
