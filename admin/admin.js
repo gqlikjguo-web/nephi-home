@@ -124,8 +124,20 @@ const updateCurrentRoomLabel = () => {
 };
 
 const isBooked = (roomId, dateKey) => {
-  const status = monthAvailability[roomId]?.[dateKey];
-  return status === STATUS_BOOKED || status === STATUS_CLOSED || status === "已關閉" || status === "關閉" || status === "closed" || status === "booked";
+  const status = String(monthAvailability[roomId]?.[dateKey] || "").trim();
+
+  return [
+    STATUS_BOOKED,
+    "booked",
+    "closed",
+    "已關閉",
+    "關閉",
+    "已訂",
+    "客滿",
+    "false",
+    "0"
+  ].includes(status);
+};
 };
 };
 
