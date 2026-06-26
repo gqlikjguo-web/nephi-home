@@ -124,7 +124,9 @@ const updateCurrentRoomLabel = () => {
 };
 
 const isBooked = (roomId, dateKey) => {
-  return monthAvailability[roomId]?.[dateKey] === STATUS_BOOKED;
+  const status = monthAvailability[roomId]?.[dateKey];
+  return status === STATUS_BOOKED || status === STATUS_CLOSED || status === "已關閉" || status === "關閉" || status === "closed" || status === "booked";
+};
 };
 
 const setStatus = (message, type = "") => {
