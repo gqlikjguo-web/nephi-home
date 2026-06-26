@@ -1,4 +1,4 @@
-﻿const rooms = [
+const rooms = [
   { id: "room301", name: "301雙人房附衛浴" },
   { id: "room302", name: "302四人房附衛浴" },
   { id: "room401", name: "401雙人房有浴缸" },
@@ -124,21 +124,7 @@ const updateCurrentRoomLabel = () => {
 };
 
 const isBooked = (roomId, dateKey) => {
-  const status = String(monthAvailability[roomId]?.[dateKey] || "").trim();
-
-  return [
-    STATUS_BOOKED,
-    "booked",
-    "closed",
-    "已關閉",
-    "關閉",
-    "已訂",
-    "客滿",
-    "false",
-    "0"
-  ].includes(status);
-};
-};
+  return monthAvailability[roomId]?.[dateKey] === STATUS_BOOKED;
 };
 
 const setStatus = (message, type = "") => {
