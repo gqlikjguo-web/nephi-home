@@ -76,6 +76,11 @@
     els.closeMonth.addEventListener("click", closeMonth);
     els.batchText.addEventListener("input", updateBatchSummary);
     els.applyBatch.addEventListener("click", applyBatch);
+    if (localStorage.getItem("nephi_admin_v2_logged_in") === "true") {
+  els.loginPanel.classList.add("hidden");
+  els.adminPanel.classList.remove("hidden");
+  loadMonth();
+}
   }
 
   function login() {
@@ -87,6 +92,7 @@
       els.loginMessage.textContent = "密碼不正確。";
       return;
     }
+    localStorage.setItem("nephi_admin_v2_logged_in", "true");
     els.loginPanel.classList.add("hidden");
     els.adminPanel.classList.remove("hidden");
     loadMonth();
