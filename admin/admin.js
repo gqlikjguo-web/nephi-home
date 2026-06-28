@@ -1,4 +1,4 @@
-const rooms = [
+﻿const rooms = [
   { id: "room301", name: "301雙人房附衛浴" },
   { id: "room302", name: "302四人房附衛浴" },
   { id: "room401", name: "401雙人房有浴缸" },
@@ -343,6 +343,76 @@ clearRoom.addEventListener("click", async () => {
   }
 });
 
+const batchRoomIds = ["room301", "room302", "room401", "room402", "wholeHouse"];
+
+const getDaysInMonth = (year, month) => new Date(year, month, 0).getDate();
+
+const toBatchDateKey = (year, fallbackMonth, monthOrDay, maybeDay) => {
+  const month = maybeDay ? Number(monthOrDay) : Number(fallbackMonth);
+  const day = Number(maybeDay || monthOrDay);
+  if (!month || !day) return "";
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+};
+
+const parseBatchRoomIds = (value) => {
+  const text = String(value || "");
+  const roomIds = [];
+  if (/301/.test(text)) roomIds.push("room301");
+  if (/302/.test(text)) roomIds.push("room302");
+  if (/401/.test(text)) roomIds.push("room401");
+  if (/402/.test(text)) roomIds.push("room402");
+  if (/包棟|整棟|whole|house/i.test(text)) roomIds.push("wholeHouse");
+  return [...new Set(roomIds)];
+};
+
+const parseBatchRows = (text, year, month) => {
+  const rows = [];
+  const invalidLines = [];
+
+  text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const normalized = line.replace(/[，,、]/g, " ");
+      const dateMatch = normalized.match(/^(\d{1,2})[/-](\d{1,2})\s+(.+)$/) || normalized.match(/^(\d{1,2})\s+(.+)$/);
+      if (!dateMatch) {
+        invalidLines.push(line);
+        return;
+      }
+
+      const hasMonth = dateMatch.length === 4;
+      const date = hasMonth
+        ? toBatchDateKey(year, month, dateMatch[1], dateMatch[2])
+        : toBatchDateKey(year, month, dateMatch[1]);
+      const roomText = hasMonth ? dateMatch[3] : dateMatch[2];
+      const rooms = parseBatchRoomIds(roomText);
+
+      if (!date || rooms.length === 0) {
+        invalidLines.push(line);
+        return;
+      }
+
+      rows.push({ date, rooms, status: STATUS_BOOKED });
+    });
+
+  return { rows, invalidLines };
+};
+
+const clearAllRoomsInMonth = async (year, month) => {
+  for (const roomId of batchRoomIds) {
+    const data = await jsonp({ action: "clearRoomMonth", roomId, year, month });
+    if (!data.ok) throw new Error(data.error || "clear month failed");
+  }
+};
+
+const refreshMonthAvailability = async (year, month) => {
+  const data = await jsonp({ action: "month", year, month });
+  if (!data.ok) throw new Error(data.error || "reload failed");
+  monthAvailability = data.availability || {};
+  renderCalendar();
+};
+
 applyBatch.addEventListener("click", async () => {
   if (isSaving) return;
 
@@ -355,10 +425,22 @@ applyBatch.addEventListener("click", async () => {
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth() + 1;
   const resetMonth = resetBeforeBatch.checked;
+  const { rows, invalidLines } = parseBatchRows(text, year, month);
+
+  if (invalidLines.length > 0) {
+    setStatus(`有 ${invalidLines.length} 行無法辨識，請檢查日期或房型：${invalidLines.slice(0, 3).join("、")}`, "error");
+    return;
+  }
+
+  if (rows.length === 0) {
+    setStatus("批次清單沒有解析到任何房型，請確認格式像：7/21 401 302。", "error");
+    return;
+  }
+
   const confirmed = window.confirm(
     resetMonth
-      ? `確定要先把 ${year} 年 ${month} 月全部改為可訂，再套用已訂清單嗎？`
-      : `確定要套用 ${year} 年 ${month} 月的已訂清單嗎？`
+      ? `確定要先把 ${year} 年 ${month} 月全部改為可訂，再套用 ${rows.length} 筆已訂房型狀態嗎？`
+      : `確定要套用 ${year} 年 ${month} 月 ${rows.length} 筆已訂房型狀態嗎？`
   );
   if (!confirmed) return;
 
@@ -366,15 +448,22 @@ applyBatch.addEventListener("click", async () => {
   setBusy(true);
 
   try {
+    if (resetMonth) {
+      setStatus("正在先把這個月份全部改為可訂...");
+      await clearAllRoomsInMonth(year, month);
+    }
+
+    setStatus(`正在套用 ${rows.length} 筆已訂房型狀態...`);
     const data = await jsonp({
       action: "batchUpdate",
-      year,
-      month,
-      text,
-      resetMonth: resetMonth ? "1" : "0"
+      payload: JSON.stringify({ rows })
     });
-    const updateCount = data.summary?.updateCount || 0;
-    updateFromResponse(data, `批次更新完成，共套用 ${updateCount} 筆房型狀態。`);
+
+    if (!data.ok) throw new Error(data.error || "batch update failed");
+
+    const updateCount = data.data?.updated || rows.length;
+    await refreshMonthAvailability(year, month);
+    setStatus(`批次更新完成，共套用 ${updateCount} 筆房型狀態。`, "success");
   } catch {
     setStatus("批次更新失敗，請確認 Apps Script 已重新部署。", "error");
   } finally {
