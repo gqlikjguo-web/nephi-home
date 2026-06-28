@@ -7,7 +7,7 @@ const rooms = [
 ];
 
 const STATUS_AVAILABLE = "可訂";
-const STATUS_BOOKED = "已訂";
+const STATUS_BOOKED = "已關閉";
 const OPEN_MONTH_COUNT = 6;
 
 const roomSelect = document.querySelector("#roomSelect");
@@ -28,16 +28,6 @@ const applyBatch = document.querySelector("#applyBatch");
 const adminApp = document.querySelector("#adminApp");
 
 const appsScriptUrl = typeof APPS_SCRIPT_URL === "string" ? APPS_SCRIPT_URL.trim() : "";
-const latestAdminUrl = "https://gqlikjguo-web.github.io/nephi-home/admin/";
-const isOldNetlifyHost = () => window.location.hostname.includes("netlify.app");
-const getSheetConnectionMessage = () =>
-  isOldNetlifyHost()
-    ? `你現在開到的是舊的 Netlify 後台，這個版本已經不再更新。請改用最新後台：${latestAdminUrl}`
-    : "後台目前連不到 Google Sheet。請確認 Apps Script /exec 網址仍有效，或重新部署 Apps Script 後再更新 config.js。";
-const getSheetUpdateFailMessage = (actionText) =>
-  isOldNetlifyHost()
-    ? `你現在開到的是舊的 Netlify 後台，不能更新房況。請改用最新後台：${latestAdminUrl}`
-    : `${actionText}失敗。請確認 Apps Script 已重新部署，且 config.js 使用最新 /exec 網址。`;
 const minMonth = new Date();
 minMonth.setDate(1);
 minMonth.setHours(0, 0, 0, 0);
@@ -95,7 +85,13 @@ const jsonp = (params) => {
     });
 
     const script = document.createElement("script");
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("Apps Script request timed out"));
+    }, 12000);
+
     const cleanup = () => {
+      window.clearTimeout(timeout);
       delete window[callback];
       script.remove();
     };
@@ -167,7 +163,7 @@ const renderRoomOptions = () => {
 
 const updateFromResponse = (data, successMessage) => {
   if (!data.ok) {
-      setStatus(data.error || getSheetUpdateFailMessage("更新"), "error");
+    setStatus(data.error || "更新失敗，請確認 Apps Script 是否已重新部署。", "error");
     return;
   }
 
@@ -191,7 +187,10 @@ const loadMonth = async () => {
     renderCalendar();
   } catch {
     monthAvailability = {};
-    setStatus(getSheetConnectionMessage(), "error");
+    setStatus(
+      "後台目前連不到 Google Sheet。請確認 config.js 是最新 Apps Script /exec 網址，且 Apps Script 已重新部署。",
+      "error"
+    );
     renderCalendar();
   } finally {
     setBusy(false);
@@ -217,7 +216,7 @@ const toggleDate = async (dateKey) => {
     const data = await jsonp({ action: "setDate", roomId, date: dateKey, status: nextStatus });
     updateFromResponse(data, `${dateKey} ${getRoomName(roomId)} 已改為「${nextStatusText}」。`);
   } catch {
-    setStatus(getSheetUpdateFailMessage("更新"), "error");
+    setStatus("更新失敗，請稍後再試，或確認 Apps Script 已重新部署。", "error");
   } finally {
     setBusy(false);
   }
@@ -316,7 +315,7 @@ closeMonth.addEventListener("click", async () => {
     const data = await jsonp({ action: "closeMonth", year, month });
     updateFromResponse(data, `${year} 年 ${month} 月全部房型已關閉。`);
   } catch {
-    setStatus(getSheetUpdateFailMessage("關閉月份"), "error");
+    setStatus("關閉月份失敗，請確認 Apps Script 已重新部署。", "error");
   } finally {
     setBusy(false);
   }
@@ -338,7 +337,7 @@ clearRoom.addEventListener("click", async () => {
     const data = await jsonp({ action: "clearRoomMonth", roomId, year, month });
     updateFromResponse(data, `${getRoomName(roomId)} 的 ${year} 年 ${month} 月已改為可訂。`);
   } catch {
-    setStatus(getSheetUpdateFailMessage("改為可訂"), "error");
+    setStatus("改為可訂失敗，請確認 Apps Script 已重新部署。", "error");
   } finally {
     setBusy(false);
   }
@@ -377,7 +376,7 @@ applyBatch.addEventListener("click", async () => {
     const updateCount = data.summary?.updateCount || 0;
     updateFromResponse(data, `批次更新完成，共套用 ${updateCount} 筆房型狀態。`);
   } catch {
-    setStatus(getSheetUpdateFailMessage("批次更新"), "error");
+    setStatus("批次更新失敗，請確認 Apps Script 已重新部署。", "error");
   } finally {
     setBusy(false);
   }
