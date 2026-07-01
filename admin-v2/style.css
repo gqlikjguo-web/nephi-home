@@ -231,13 +231,13 @@ textarea {
   flex: 0 0 auto;
 }
 
-.batch-summary, .status {
+.batch-summary, .status, .check-result {
   margin-top: 12px;
   color: var(--muted);
   font-weight: 800;
 }
 
-.status {
+.status, .check-result {
   min-height: 46px;
   padding: 14px 16px;
   border-radius: 8px;
@@ -246,6 +246,12 @@ textarea {
 
 .status.ok { color: var(--green-dark); }
 .status.error { color: var(--red); }
+.check-result {
+  white-space: pre-line;
+  line-height: 1.55;
+}
+.check-result.ok { color: var(--green-dark); }
+.check-result.error { color: var(--red); }
 
 .build {
   text-align: center;

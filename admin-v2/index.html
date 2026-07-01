@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>尼腓的家 後台 v2</title>
-  <link rel="stylesheet" href="./style.css?v=20260628-verified-1">
+  <link rel="stylesheet" href="./style.css?v=20260701-system-check-1">
 </head>
 <body>
   <header class="topbar">
@@ -67,6 +67,18 @@
       </section>
 
       <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Health</p>
+            <h2>系統檢查</h2>
+            <p>檢查 Apps Script、Google Sheet 欄位與目前月份讀取狀態。</p>
+          </div>
+          <button type="button" class="outline small" id="runSystemCheck">開始檢查</button>
+        </div>
+        <div class="check-result" id="systemCheckResult">尚未檢查</div>
+      </section>
+
+      <section class="panel">
         <p class="eyebrow">Batch</p>
         <h2>批次匯入已訂日期</h2>
         <label class="checkline">
@@ -89,7 +101,7 @@
     </section>
   </main>
 
-  <script src="./config.js?v=20260628-verified-1"></script>
-  <script src="./admin-v2.js?v=20260628-verified-1"></script>
+  <script src="./config.js?v=20260701-system-check-1"></script>
+  <script src="./admin-v2.js?v=20260701-system-check-1"></script>
 </body>
 </html>

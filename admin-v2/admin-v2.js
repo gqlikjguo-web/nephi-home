@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const BUILD = "20260628-verified-1";
+  const BUILD = "20260701-system-check-1";
   const config = window.NEPHI_ADMIN_V2_CONFIG || {};
   const rooms = [
     { id: "room301", label: "301雙人房附衛浴", tokens: ["301", "room301"] },
@@ -43,6 +43,8 @@
     batchText: $("#batchText"),
     batchSummary: $("#batchSummary"),
     applyBatch: $("#applyBatch"),
+    runSystemCheck: $("#runSystemCheck"),
+    systemCheckResult: $("#systemCheckResult"),
     statusBox: $("#statusBox"),
     buildInfo: $("#buildInfo")
   };
@@ -67,19 +69,20 @@
       if (!parsed || state.busy) return;
       state.year = parsed.year;
       state.month = parsed.month;
-      loadMonth();
+      loadMonthWithStatus();
     });
     els.prevMonth.addEventListener("click", () => moveMonth(-1));
     els.nextMonth.addEventListener("click", () => moveMonth(1));
-    els.reloadMonth.addEventListener("click", () => loadMonth());
+    els.reloadMonth.addEventListener("click", () => loadMonthWithStatus());
     els.clearRoomMonth.addEventListener("click", clearRoomMonth);
     els.closeMonth.addEventListener("click", closeMonth);
     els.batchText.addEventListener("input", updateBatchSummary);
     els.applyBatch.addEventListener("click", applyBatch);
+    els.runSystemCheck.addEventListener("click", runSystemCheck);
     if (localStorage.getItem("nephi_admin_v2_logged_in") === "true") {
   els.loginPanel.classList.add("hidden");
   els.adminPanel.classList.remove("hidden");
-  loadMonth();
+  loadMonthWithStatus();
 }
   }
 
@@ -95,7 +98,7 @@
     localStorage.setItem("nephi_admin_v2_logged_in", "true");
     els.loginPanel.classList.add("hidden");
     els.adminPanel.classList.remove("hidden");
-    loadMonth();
+    loadMonthWithStatus();
   }
 
   function renderRoomButtons() {
@@ -130,7 +133,7 @@
     state.year = date.getFullYear();
     state.month = date.getMonth() + 1;
     setMonthInput(state.year, state.month);
-    loadMonth();
+    loadMonthWithStatus();
   }
 
   function setMonthInput(year, month) {
@@ -152,6 +155,11 @@
     renderCalendar();
     if (!silent) setStatus(`讀取完成。build ${BUILD}`, "ok");
     return state.availability;
+  }
+
+  function loadMonthWithStatus(options) {
+    return loadMonth(options)
+      .catch((error) => setStatus(formatErrorMessage(error), "error"));
   }
 
   function normalizeAvailability(result) {
@@ -402,6 +410,57 @@
       const dateKey = `${state.year}-${String(state.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       assertStatus(dateKey, roomId, expectedStatus);
     }
+  }
+
+  async function runSystemCheck() {
+    await withBusy(async () => {
+      const lines = [];
+      els.systemCheckResult.className = "check-result";
+      els.systemCheckResult.textContent = "檢查中...";
+
+      const health = await api("health", {});
+      if (!health.ok) throw new Error(health.error || "Apps Script health 檢查失敗");
+      const data = health.data || {};
+      lines.push("✓ Apps Script 可連線");
+      lines.push(`✓ Google Sheet：${data.spreadsheetName || "已連線"}`);
+      lines.push(`✓ 房況分頁：${data.sheetName || "已讀取"}`);
+
+      if (!data.headersOk) {
+        throw new Error(`房況欄位不一致，請確認前 6 欄為：${(data.expectedHeaders || []).join(", ")}`);
+      }
+      lines.push("✓ 房況欄位正確：date, room301, room302, room401, room402, wholeHouse");
+
+      const month = await api("month", { year: state.year, month: state.month });
+      if (!month.ok) throw new Error(month.error || "目前月份讀取失敗");
+      const rows = month.rows || (month.data && month.data.rows) || [];
+      if (!rows.length) throw new Error(`${state.year}/${state.month} 沒有讀到任何房況列`);
+      lines.push(`✓ ${state.year}/${state.month} 房況可讀取：${rows.length} 天`);
+
+      els.systemCheckResult.textContent = lines.join("\n");
+      els.systemCheckResult.className = "check-result ok";
+      setStatus("系統檢查完成。", "ok");
+    }).catch((error) => {
+      els.systemCheckResult.textContent = formatErrorMessage(error);
+      els.systemCheckResult.className = "check-result error";
+      setStatus(formatErrorMessage(error), "error");
+    });
+  }
+
+  function formatErrorMessage(error) {
+    const message = String(error && error.message ? error.message : error || "");
+    if (/逾時|timeout/i.test(message)) {
+      return "連線逾時：Apps Script 或手機瀏覽器沒有在時間內回應，請重新整理後再試。";
+    }
+    if (/無法載入|Failed to fetch|NetworkError|基礎連接已關閉/i.test(message)) {
+      return "Apps Script 無法載入：請確認網路、Apps Script /exec 網址與部署狀態。";
+    }
+    if (/權限|permission|Authorization|授權/i.test(message)) {
+      return "Google Sheet 權限或 Apps Script 授權異常，請重新部署或確認執行身分。";
+    }
+    if (/欄位|headers|date|room301|wholeHouse/i.test(message)) {
+      return message;
+    }
+    return message || "發生未知錯誤，請重新整理後再試。";
   }
 
   function api(action, params) {
