@@ -62,6 +62,9 @@ const maxSearchDateKey = formatDateKey(maxSearchDate);
 
 checkInInput.min = todayKey;
 checkInInput.max = maxSearchDateKey;
+if (!checkInInput.value || toDate(checkInInput.value) < toDate(todayKey)) {
+  checkInInput.value = todayKey;
+}
 
 function isMobileDevice() {
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -167,6 +170,17 @@ function normalizeRoom(room) {
     description: room.description || fallback?.description || "",
     tags: room.tags || fallback?.tags || []
   };
+}
+
+function extractRoomsFromSearchResponse_(data) {
+  if (Array.isArray(data.rooms)) return data.rooms;
+  if (data.data && Array.isArray(data.data.rooms)) return data.data.rooms;
+  if (data.data && Array.isArray(data.data.availableRoomIds)) {
+    return data.data.availableRoomIds
+      .map((roomId) => fallbackRooms.find((room) => room.id === roomId))
+      .filter(Boolean);
+  }
+  return [];
 }
 
 function inferGuests(roomType) {
@@ -284,7 +298,8 @@ async function searchRooms() {
 
     if (!data.ok) throw new Error(data.error || "Search failed");
 
-    const matchedRooms = (data.rooms || []).filter((room) => roomMatchesSelection(normalizeRoom(room), roomType));
+    const matchedRooms = extractRoomsFromSearchResponse_(data)
+      .filter((room) => roomMatchesSelection(normalizeRoom(room), roomType));
     matchedRooms.forEach((room) => {
       roomList.append(renderRoom(room, query));
     });
