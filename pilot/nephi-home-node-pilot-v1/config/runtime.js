@@ -11,8 +11,9 @@ function positiveInteger(value, fallback) {
 
 function runtimeConfig(env = process.env) {
   return {
-    host: env.NEPHI_PILOT_HOST || "127.0.0.1",
+    host: env.NEPHI_PILOT_HOST || (env.PORT ? "0.0.0.0" : "127.0.0.1"),
     port: Number(env.NEPHI_PILOT_PORT || env.PORT || 4275),
+    databaseUrl: env.DATABASE_URL || "",
     dataFile: env.NEPHI_PILOT_DATA_FILE || path.join(PILOT_ROOT, ".runtime", "store.json"),
     seedFile: env.NEPHI_PILOT_SEED_FILE || path.join(PILOT_ROOT, "fixtures", "seed.json"),
     lineBridgeSecret: env.NEPHI_PILOT_LINE_BRIDGE_SECRET || "",

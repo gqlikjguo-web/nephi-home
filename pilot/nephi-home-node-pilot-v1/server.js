@@ -4,7 +4,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { createJsonProviders } = require("./lib/providers/json-providers");
+const { createProviders } = require("./lib/providers/provider-factory");
 const {
   createTestOnlyOpenAiStructuredClassifierFromEnv
 } = require("./lib/providers/test-only-openai-structured-classifier");
@@ -248,7 +248,7 @@ function createApp(options = {}) {
   const lineChannelSecret = options.lineChannelSecret || config.lineChannelSecret;
   const lineChannelAccessToken = options.lineChannelAccessToken || config.lineChannelAccessToken;
   const lineReplyFetch = options.lineReplyFetch || fetch;
-  const providers = options.providers || createJsonProviders({ dataFile, seedFile, now });
+  const providers = options.providers || createProviders({ databaseUrl: config.databaseUrl, dataFile, seedFile, now });
   const service = createMvpService(providers, { now });
   const structuredClassifier = Object.hasOwn(options, "structuredClassifier")
     ? options.structuredClassifier
@@ -433,11 +433,12 @@ function createApp(options = {}) {
         });
       });
     },
-    stop() {
-      return new Promise((resolve, reject) => {
+    async stop() {
+      await new Promise((resolve, reject) => {
         if (!server.listening) return resolve();
         server.close((error) => error ? reject(error) : resolve());
       });
+      if (typeof providers.close === "function") await providers.close();
     }
   };
 }
