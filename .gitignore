@@ -1,0 +1,35 @@
+# Dependencies and test artifacts
+node_modules/
+npm-debug.log*
+tests/.tmp-*/
+**/.tmp-*/
+
+# Local runtime state and logs
+**/.runtime/
+**/store.json
+**/store.json.event-claims/
+**/*.event-claims/
+**/pilot-tunnel.stdout.log
+**/pilot-tunnel.stderr.log
+**/pilot-server.pid.json
+**/pilot-tunnel.pid.json
+**/.local-tools/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+*secrets*.json
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~

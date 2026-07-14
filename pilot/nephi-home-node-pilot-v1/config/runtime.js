@@ -1,0 +1,31 @@
+"use strict";
+
+const path = require("node:path");
+const PILOT_ROOT = path.resolve(__dirname, "..");
+const DEFAULT_CLASSIFIER_TIMEOUT_MS = 15000;
+
+function positiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function runtimeConfig(env = process.env) {
+  return {
+    host: env.NEPHI_PILOT_HOST || "127.0.0.1",
+    port: Number(env.NEPHI_PILOT_PORT || env.PORT || 4275),
+    dataFile: env.NEPHI_PILOT_DATA_FILE || path.join(PILOT_ROOT, ".runtime", "store.json"),
+    seedFile: env.NEPHI_PILOT_SEED_FILE || path.join(PILOT_ROOT, "fixtures", "seed.json"),
+    lineBridgeSecret: env.NEPHI_PILOT_LINE_BRIDGE_SECRET || "",
+    lineChannelSecret: env.NEPHI_PILOT_LINE_CHANNEL_SECRET || "",
+    lineChannelAccessToken: env.NEPHI_PILOT_LINE_CHANNEL_ACCESS_TOKEN || "",
+    timeZone: env.NEPHI_PILOT_TIME_ZONE || "Asia/Taipei",
+    conversationDebounceMs: Number(env.NEPHI_PILOT_DEBOUNCE_MS || 2000),
+    conversationTtlMs: Number(env.NEPHI_PILOT_CONVERSATION_TTL_MS || 30 * 60 * 1000),
+    recentMessageLimit: Number(env.NEPHI_PILOT_RECENT_MESSAGE_LIMIT || 10),
+    recentMessageWindowMs: Number(env.NEPHI_PILOT_RECENT_MESSAGE_WINDOW_MS || 30 * 60 * 1000),
+    classifierTimeoutMs: positiveInteger(env.NEPHI_PILOT_CLASSIFIER_TIMEOUT_MS, DEFAULT_CLASSIFIER_TIMEOUT_MS),
+    classifierMinConfidence: Number(env.NEPHI_PILOT_CLASSIFIER_MIN_CONFIDENCE || 0.7)
+  };
+}
+
+module.exports = { PILOT_ROOT, runtimeConfig, DEFAULT_CLASSIFIER_TIMEOUT_MS };

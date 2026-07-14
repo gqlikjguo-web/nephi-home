@@ -1,0 +1,82 @@
+{
+  "propertyId": "friendly_homestay_003",
+  "propertyName": "請填寫民宿名稱",
+  "checkInTime": "15:00",
+  "checkOutTime": "11:00",
+  "rooms": [
+    {
+      "name": "雙人房",
+      "capacity": 2
+    },
+    {
+      "name": "四人房",
+      "capacity": 4
+    }
+  ],
+  "pricing": {
+    "weekday": "雙人房 2800 元起；四人房 4200 元起",
+    "holiday": "雙人房 3600 元起；四人房 5200 元起"
+  },
+  "parking": "請填寫停車位置、數量與是否需要預約",
+  "bbq": "請填寫是否可以烤肉、使用時段及預約方式",
+  "selfCheckIn": false,
+  "paymentMethod": "請填寫匯款、訂金及現場付款方式",
+  "cancellationPolicy": "請填寫取消與改期規則",
+  "humanHandoffSituations": [
+    "付款或訂金確認",
+    "取消或改期",
+    "提早入住或延後退房",
+    "客訴或特殊需求",
+    "門鎖或密碼問題"
+  ],
+  "faqs": [
+    {
+      "question": "幾點可以入住？",
+      "answer": "下午 3 點後可以入住。"
+    },
+    {
+      "question": "最晚幾點退房？",
+      "answer": "上午 11 點前退房。"
+    },
+    {
+      "question": "有停車位嗎？",
+      "answer": "請依上方停車說明填寫業者確認的回答。"
+    },
+    {
+      "question": "可以烤肉嗎？",
+      "answer": "請依上方烤肉說明填寫業者確認的回答。"
+    },
+    {
+      "question": "可以帶寵物嗎？",
+      "answer": "請填寫是否接受寵物及相關限制。"
+    },
+    {
+      "question": "有提供早餐嗎？",
+      "answer": "請填寫早餐供應方式與時間。"
+    },
+    {
+      "question": "有電梯嗎？",
+      "answer": "請填寫是否有電梯及樓層資訊。"
+    },
+    {
+      "question": "可以加人或加床嗎？",
+      "answer": "請填寫可加人數、費用及是否提供加床。"
+    },
+    {
+      "question": "附近有便利商店嗎？",
+      "answer": "請填寫最近便利商店的位置或步行時間。"
+    },
+    {
+      "question": "可以使用廚房嗎？",
+      "answer": "請填寫廚房設備及使用限制。"
+    },
+    {
+      "question": "有提供盥洗用品嗎？",
+      "answer": "請填寫實際提供的備品。"
+    },
+    {
+      "question": "如何辦理入住？",
+      "answer": "請填寫現場接待或自助入住方式；密碼不得寫在本檔案。"
+    }
+  ]
+}

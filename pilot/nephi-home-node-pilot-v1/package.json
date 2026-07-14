@@ -1,0 +1,10 @@
+{
+  "name": "nephi-home-node-pilot-v1",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "start": "node server.js",
+    "initialize:render": "node scripts/initialize-render-data.js",
+    "test": "node ../../tests/pilot-nephi-home-node-pilot-v1-contract-runner.js && node ../../tests/pilot-nephi-home-node-pilot-v1-behavior-runner.js && node ../../tests/pilot-nephi-home-node-pilot-v1-ai-first-runner.js && node ../../tests/pilot-nephi-home-node-pilot-v1-event-lifecycle-runner.js && node ../../tests/pilot-nephi-home-node-pilot-v1-openai-adapter-runner.js && node ../../tests/pilot-nephi-home-node-pilot-v1-friendly-onboarding-runner.js && node ../../tests/pilot-nephi-home-node-pilot-v1-nephi-property-runner.js && node ../../tests/pilot-nephi-home-node-pilot-v1-nephi-faq-runtime-runner.js && powershell.exe -NoProfile -ExecutionPolicy Bypass -File ../../tests/pilot-nephi-home-node-pilot-v1-test-line-chain-runner.ps1 && node ../../tests/pilot-nephi-home-node-pilot-v1-availability-import-runner.js && node ../../tests/pilot-nephi-home-node-pilot-v1-timeout-runner.js && node ../../tests/pilot-nephi-home-node-pilot-v1-precise-clarification-runner.js && node ../../tests/pilot-nephi-home-node-pilot-v1-trailing-flush-runner.js && node ../../tests/pilot-nephi-home-node-pilot-v1-render-deployment-runner.js"
+  }
+}

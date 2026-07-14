@@ -1,0 +1,117 @@
+{
+  "testOnly": true,
+  "seedDays": 240,
+  "homestays": [
+    {
+      "customerId": "demo_homestay_a",
+      "name": "山嵐示範民宿",
+      "lineUrl": "https://line.me/",
+      "safeFacts": {
+        "checkInTime": "15:00 後",
+        "checkOutTime": "11:00 前",
+        "parkingRule": "提供免費停車，位置需由業者確認",
+        "bbqRule": "可烤肉，需提前告知",
+        "petRule": "",
+        "equipment": [
+          "廚房",
+          "麻將桌"
+        ],
+        "priceRule": "房價依房型與日期計算，實際金額以業者確認的固定價格資料為準。",
+        "paymentRule": ""
+      },
+      "rooms": [
+        {
+          "id": "room301",
+          "name": "301 雙人房",
+          "capacity": 2,
+          "type": "double",
+          "description": "附獨立衛浴的雙人房。"
+        },
+        {
+          "id": "room302",
+          "name": "302 四人房",
+          "capacity": 4,
+          "type": "quad",
+          "description": "適合家庭入住的四人房。"
+        },
+        {
+          "id": "room401",
+          "name": "401 景觀雙人房",
+          "capacity": 2,
+          "type": "double",
+          "description": "附浴缸的景觀雙人房。"
+        },
+        {
+          "id": "room402",
+          "name": "402 景觀四人房",
+          "capacity": 4,
+          "type": "quad",
+          "description": "附浴缸的景觀四人房。"
+        },
+        {
+          "id": "wholeHouse",
+          "name": "整棟包棟",
+          "capacity": 12,
+          "type": "wholeHouse",
+          "description": "適合團體入住的整棟方案。"
+        }
+      ]
+    },
+    {
+      "customerId": "demo_homestay_b",
+      "name": "海風示範民宿",
+      "lineUrl": "https://line.me/",
+      "safeFacts": {
+        "checkInTime": "16:00 後",
+        "checkOutTime": "11:00 前",
+        "parkingRule": "",
+        "bbqRule": "不提供烤肉場地",
+        "petRule": "不接受寵物入住",
+        "equipment": [],
+        "priceRule": "房價依房型與日期計算，實際金額以業者確認的固定價格資料為準。",
+        "paymentRule": "付款方式由真人客服確認"
+      },
+      "rooms": [
+        {
+          "id": "room301",
+          "name": "庭園雙人房",
+          "capacity": 2,
+          "type": "double",
+          "description": "面向庭園的雙人房。"
+        },
+        {
+          "id": "room302",
+          "name": "家庭四人房",
+          "capacity": 4,
+          "type": "quad",
+          "description": "適合親子入住的四人房。"
+        },
+        {
+          "id": "room401",
+          "name": "海景雙人房",
+          "capacity": 2,
+          "type": "double",
+          "description": "高樓層海景雙人房。"
+        },
+        {
+          "id": "room402",
+          "name": "海景四人房",
+          "capacity": 4,
+          "type": "quad",
+          "description": "高樓層海景四人房。"
+        },
+        {
+          "id": "wholeHouse",
+          "name": "全館包棟",
+          "capacity": 14,
+          "type": "wholeHouse",
+          "description": "適合多人旅遊的包棟方案。"
+        }
+      ]
+    }
+  ],
+  "messageLogs": {
+    "demo_homestay_a": [],
+    "demo_homestay_b": []
+  }
+}
