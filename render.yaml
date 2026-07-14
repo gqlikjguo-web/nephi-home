@@ -3,7 +3,8 @@ databases:
     databaseName: nephi_home_node_pilot
     user: nephi_home_node_pilot
     region: singapore
-    plan: free
+    plan: basic-256mb
+    diskSizeGB: 1
     ipAllowList: []
 
 services:
@@ -11,7 +12,7 @@ services:
     name: nephi-home-node-pilot-test-only
     runtime: node
     region: singapore
-    plan: free
+    plan: starter
     rootDir: pilot/nephi-home-node-pilot-v1
     buildCommand: npm install --omit=dev
     startCommand: npm run migrate:postgres && npm run seed:postgres && npm start

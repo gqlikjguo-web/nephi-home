@@ -15,6 +15,8 @@ const secretNames = [
 assert.equal((yaml.match(/^\s*- type: web\s*$/gm) || []).length, 1);
 assert.equal((yaml.match(/^\s*- name: nephi-home-node-pilot-db\s*$/gm) || []).length, 1);
 assert.equal((yaml.match(/^\s*region: singapore\s*$/gm) || []).length, 2);
+assert.match(yaml, /databases:[\s\S]*?plan:\s*basic-256mb[\s\S]*?diskSizeGB:\s*1/);
+assert.match(yaml, /services:[\s\S]*?plan:\s*starter/);
 assert.match(yaml, /rootDir:\s*pilot\/nephi-home-node-pilot-v1/);
 assert.match(yaml, /buildCommand:\s*npm install --omit=dev/);
 assert.match(yaml, /startCommand:\s*npm run migrate:postgres && npm run seed:postgres && npm start/);
