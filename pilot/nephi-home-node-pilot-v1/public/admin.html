@@ -1,4 +1,22 @@
-<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{PUBLIC_BRAND_NAME}}｜業者後台</title><link rel="stylesheet" href="/assets/styles.css"></head><body data-public-base-url="{{PUBLIC_BASE_URL}}"><main class="shell"><header><div><p class="eyebrow">{{PUBLIC_BRAND_NAME}}</p><h1>房況管理</h1></div><button id="logout" class="secondary" hidden>登出</button></header>
-<section id="login" class="card login"><h2>業者後台登入</h2><p class="hint">登入 {{PUBLIC_BRAND_NAME}} 管理您的民宿資料。</p><form id="loginForm"><label>業者代碼<input name="propertyId" value="nephi_home" required></label><label>帳號<input name="username" required autocomplete="username"></label><label>密碼<input name="password" type="password" required autocomplete="current-password"></label><button>登入</button><p id="loginMessage" class="message"></p></form></section>
-<div id="workspace" hidden><section class="card"><div class="toolbar"><div><p class="eyebrow" id="propertyLabel"></p><h2>每月房況</h2></div><label>月份<input id="month" type="month"></label></div><p class="hint">點選即可切換可售狀態。開放或關閉組合方案會同步變更所有成員房間。</p><p id="status" class="message"></p><div class="table-wrap"><table><thead><tr id="roomHeaders"><th>日期</th></tr></thead><tbody id="days"></tbody></table></div></section>
-<section class="card bundles"><h2>組合方案管理</h2><form id="bundleForm"><input id="bundleId" type="hidden"><label>方案名稱<input id="bundleName" required placeholder="例如：兩房包棟"></label><label>最大入住人數<input id="bundleCapacity" type="number" min="1" required></label><label>基本價格<input id="bundlePrice" type="number" min="0" required></label><fieldset><legend>包含房間</legend><div id="memberRooms" class="checks"></div></fieldset><label class="inline"><input id="bundleEnabled" type="checkbox" checked>啟用方案</label><div class="actions"><button>儲存方案</button><button id="bundleCancel" type="button" class="secondary">取消編輯</button></div></form><div id="bundleList"></div></section></div><footer><small>© {{PUBLIC_BRAND_NAME}}</small></footer></main><script src="/assets/admin.js" defer></script></body></html>
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{PUBLIC_BRAND_NAME}} 業者後台</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body data-public-base-url="{{PUBLIC_BASE_URL}}">
+<main class="shell">
+  <header><div><p class="eyebrow">{{PUBLIC_BRAND_NAME}}</p><h1>業者後台</h1></div><button id="logout" class="secondary" hidden>登出</button></header>
+  <section id="login" class="card login"><h2>業者登入</h2><p class="hint">登入 {{PUBLIC_BRAND_NAME}} 管理房況與價格。</p><form id="loginForm"><label>業者代碼<input name="propertyId" required></label><label>帳號<input name="username" required autocomplete="username"></label><label>密碼<input name="password" type="password" required autocomplete="current-password"></label><button>登入</button><p id="loginMessage" class="message"></p></form></section>
+  <div id="workspace" hidden>
+    <section class="card"><div class="toolbar"><div><p class="eyebrow" id="propertyLabel"></p><h2>房況月曆</h2></div><label>月份<input id="month" type="month"></label></div><p class="hint">點選日期與房型即可調整當日可售數量。</p><p id="status" class="message"></p><div class="table-wrap"><table><thead><tr id="roomHeaders"><th>日期</th></tr></thead><tbody id="days"></tbody></table></div></section>
+    <section class="card"><h2>房型價格</h2><p class="hint">價格統一以元顯示；可另設特定日期價格。</p><div id="roomPricing"></div><form id="overrideForm"><h3>特定日期覆寫價格</h3><label>房型<select id="overrideRoom" required></select></label><label>日期<input id="overrideDate" type="date" required></label><label>價格（元）<input id="overridePrice" type="number" min="0" step="1" required></label><button>儲存日期價格</button></form><div id="overrideList"></div></section>
+    <section class="card bundles"><h2>組合方案管理</h2><form id="bundleForm"><input id="bundleId" type="hidden"><label>方案名稱<input id="bundleName" required></label><label>最多入住人數<input id="bundleCapacity" type="number" min="1" required></label><label>基本價格（元）<input id="bundlePrice" type="number" min="0" required></label><fieldset><legend>包含房型</legend><div id="memberRooms" class="checks"></div></fieldset><label class="inline"><input id="bundleEnabled" type="checkbox" checked>啟用方案</label><div class="actions"><button>儲存方案</button><button id="bundleCancel" type="button" class="secondary">取消修改</button></div></form><div id="bundleList"></div></section>
+  </div>
+  <footer><small>© {{PUBLIC_BRAND_NAME}}</small></footer>
+</main>
+<script src="/assets/admin.js" defer></script>
+</body>
+</html>

@@ -40,7 +40,7 @@ function cookieValue(request, name) {
 }
 
 function isAdminDataRoute(pathname) {
-  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
+  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
 }
 
 function sendData(response, data, status = 200) {
@@ -125,10 +125,6 @@ function secretsMatch(actual, expected) {
   const expectedBuffer = Buffer.from(String(expected || ""));
   return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
-function readAttachmentBody(request) {
-  return new Promise((resolve,reject)=>{const chunks=[];let length=0;request.on("data",chunk=>{length+=chunk.length;if(length>10*1024*1024){reject(new AppError(413,"ATTACHMENT_TOO_LARGE","附件過大"));request.destroy();return;}chunks.push(chunk);});request.on("end",()=>resolve(Buffer.concat(chunks)));request.on("error",reject);});
-}
-
 function nextDateKey(dateKey) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ""))) {
     throw new AppError(400, "INVALID_DATE", "checkIn must use YYYY-MM-DD");
@@ -213,12 +209,11 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "GET" && pathname.startsWith("/assets/")) return sendStatic(response, pathname.slice(1), publicBrand);
 
       if(pathname==="/api/public/onboarding/drafts"&&request.method==="POST"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");return sendData(response,onboarding.createDraft(),201);}
-      const draftMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)$/.exec(pathname),previewMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/preview$/.exec(pathname),submitMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/submit$/.exec(pathname),attachmentMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/attachments$/.exec(pathname);const draftToken=request.headers["x-onboarding-draft-token"];
+      const draftMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)$/.exec(pathname),previewMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/preview$/.exec(pathname),submitMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/submit$/.exec(pathname);const draftToken=request.headers["x-onboarding-draft-token"];
       if(draftMatch&&request.method==="GET")return sendData(response,await onboarding.getDraft(draftMatch[1],draftToken));
       if(draftMatch&&request.method==="PATCH")return sendData(response,await onboarding.saveDraft(draftMatch[1],draftToken,await readJsonBody(request)));
       if(previewMatch&&request.method==="GET")return sendData(response,await onboarding.preview(previewMatch[1],draftToken));
       if(submitMatch&&request.method==="POST")return sendData(response,await onboarding.submit(submitMatch[1],draftToken));
-      if(attachmentMatch&&request.method==="POST")return sendData(response,await onboarding.addAttachment(attachmentMatch[1],draftToken,{fileName:url.searchParams.get("filename"),contentType:String(request.headers["content-type"]||"").split(";")[0],buffer:await readAttachmentBody(request)}),201);
       if(pathname==="/api/admin/setup"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.redeemInvitation(body.token,body.password));}
 
       if(pathname.startsWith("/api/admin/onboarding/")){
@@ -317,6 +312,10 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "POST" && pathname === "/api/availability/batch") {
         return sendData(response, service.applyBatch(request.adminBody || await readJsonBody(request)));
       }
+      if(request.method==="GET"&&pathname==="/api/room-pricing"){const property=customerSettings.getProperty(url.searchParams.get("customerId"));return sendData(response,{currency:property.currency||"TWD",rooms:property.rooms.filter(x=>x.inventoryType!=="bundle"),overrides:customerSettings.listRoomPriceOverrides(property.propertyId)});}
+      const pricingMatch=/^\/api\/room-pricing\/([^/]+)$/.exec(pathname);
+      if(pricingMatch&&request.method==="PUT"){const b=request.adminBody||await readJsonBody(request),price={};for(const key of ["mondayThursdayPrice","fridayPrice","saturdayHolidayPrice","sundayPrice"]){price[key]=Number(b[key]);if(!Number.isInteger(price[key])||price[key]<0)throw new AppError(400,"INVALID_PRICE","價格必須是零或正整數");}return sendData(response,{property:customerSettings.updateRoomPricing(b.customerId,decodeURIComponent(pricingMatch[1]),price)});}
+      if(request.method==="POST"&&pathname==="/api/room-price-overrides"){const b=request.adminBody||await readJsonBody(request),price=Number(b.price);if(!/^\d{4}-\d{2}-\d{2}$/.test(b.date)||!Number.isInteger(price)||price<0)throw new AppError(400,"INVALID_PRICE_OVERRIDE","請輸入有效日期與價格");return sendData(response,{override:customerSettings.setRoomPriceOverride(b.customerId,b.roomId,b.date,price,customerSettings.getProperty(b.customerId).currency||"TWD")});}
       if (request.method === "GET" && pathname === "/api/bundles") return sendData(response, { bundles: customerSettings.listBundles(url.searchParams.get("customerId")) });
       if (request.method === "POST" && pathname === "/api/bundles") { const body=request.adminBody||await readJsonBody(request);return sendData(response,{bundle:customerSettings.createBundle(body.customerId,body)},201); }
       const bundleMatch=/^\/api\/bundles\/([^/]+)$/.exec(pathname);
