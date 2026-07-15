@@ -37,7 +37,7 @@ function cookieValue(request, name) {
 }
 
 function isAdminDataRoute(pathname) {
-  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/batch" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
+  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
 }
 
 function sendData(response, data, status = 200) {
@@ -124,6 +124,7 @@ function createRequestHandler(service, options = {}) {
   const resolveTestLineRequest = options.resolveTestLineRequest || ((input) => service.resolveTestLine(input));
   const lineWebhookHandler = options.lineWebhookHandler;
   const persistence = options.persistence;
+  const customerSettings = options.customerSettings;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
   return async function handleRequest(request, response) {
     const url = new URL(request.url, "http://127.0.0.1");
@@ -222,6 +223,11 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "POST" && pathname === "/api/availability/batch") {
         return sendData(response, service.applyBatch(request.adminBody || await readJsonBody(request)));
       }
+      if (request.method === "GET" && pathname === "/api/bundles") return sendData(response, { bundles: customerSettings.listBundles(url.searchParams.get("customerId")) });
+      if (request.method === "POST" && pathname === "/api/bundles") { const body=request.adminBody||await readJsonBody(request);return sendData(response,{bundle:customerSettings.createBundle(body.customerId,body)},201); }
+      const bundleMatch=/^\/api\/bundles\/([^/]+)$/.exec(pathname);
+      if(bundleMatch&&request.method==="PUT"){const body=request.adminBody||await readJsonBody(request);return sendData(response,{bundle:customerSettings.updateBundle(body.customerId,bundleMatch[1],body)});}
+      if(bundleMatch&&request.method==="DELETE"){const body=request.adminBody||await readJsonBody(request);return sendData(response,{deleted:customerSettings.deleteBundle(body.customerId,bundleMatch[1])});}
 
       if (request.method === "GET" && pathname === "/api/guests") {
         return sendData(response, { guests: service.listGuests(url.searchParams.get("customerId"), url.searchParams.get("q")) });
@@ -466,7 +472,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { testLineSecret, resolveTestLineRequest, lineWebhookHandler, persistence: providers.persistence, adminAuthRequired }));
+  const server = http.createServer(createRequestHandler(service, { testLineSecret, resolveTestLineRequest, lineWebhookHandler, persistence: providers.persistence, customerSettings: providers.customerSettings, adminAuthRequired }));
 
   return {
     providers,

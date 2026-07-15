@@ -33,7 +33,8 @@ async function main() {
     assert.equal(providers.kind, "postgres");
     const property = providers.customerSettings.getProperty("nephi_home");
     assert.equal(property.displayName, "preserved");
-    assert.equal(property.rooms.length, 4);
+    assert.equal(property.rooms.filter((room) => room.inventoryType !== "bundle").length, 4);
+    assert.equal(property.rooms.filter((room) => room.inventoryType === "bundle").length, 1);
     assert.ok(property.faqs.length >= 10);
 
     const rows = providers.availability.getRows("nephi_home", "2026-07-25", "2026-07-27");

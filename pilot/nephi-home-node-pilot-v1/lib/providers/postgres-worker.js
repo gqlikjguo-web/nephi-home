@@ -19,12 +19,29 @@ async function operation(name, args) {
       const settings = typeof row.settings === "string" ? JSON.parse(row.settings) : (row.settings || {});
       return { propertyId: row.property_id, displayName: row.display_name, rooms: row.rooms || [], commonAnswers: settings.commonAnswers || {}, pricing: settings.pricing || {}, faqs: row.faqs || [], humanHandoffSituations: settings.humanHandoffSituations || [], contactLink: settings.contactLink || "", onboarding: settings.onboarding || { isReady: true } };
     });
+    for (const item of mapped) {
+      const bundles = await operation("listBundles", [item.propertyId]);
+      item.rooms.push(...bundles.filter((bundle) => bundle.enabled).map((bundle) => ({ id:bundle.id,name:bundle.name,capacity:bundle.capacity,type:"包棟",description:"組合型可售方案",memberRoomIds:bundle.memberRoomIds,basePrice:bundle.basePrice,inventoryType:"bundle" })));
+    }
     return name === "getProperty" ? (mapped[0] || null) : mapped;
   }
+  if (name === "listBundles") {
+    const r=await client.query("SELECT b.bundle_id,b.name,b.capacity,b.base_price,b.enabled,COALESCE(json_agg(m.room_id ORDER BY m.position) FILTER (WHERE m.room_id IS NOT NULL),'[]') members FROM bundle_offers b LEFT JOIN bundle_offer_members m ON m.property_id=b.property_id AND m.bundle_id=b.bundle_id WHERE b.property_id=$1 GROUP BY b.bundle_id,b.name,b.capacity,b.base_price,b.enabled ORDER BY b.bundle_id",[args[0]]);
+    return r.rows.map(x=>({id:x.bundle_id,name:x.name,capacity:Number(x.capacity),basePrice:Number(x.base_price),enabled:Boolean(x.enabled),memberRoomIds:x.members||[]}));
+  }
+  if (name === "createBundle" || name === "updateBundle") {
+    const propertyId=args[0], input=name==="createBundle"?args[1]:args[2], bundleId=name==="createBundle"?`bundle_${crypto.randomUUID()}`:args[1];
+    if(name==="updateBundle"){const used=await client.query("SELECT 1 FROM bundle_availability_days WHERE property_id=$1 AND bundle_id=$2 LIMIT 1",[propertyId,bundleId]);if(used.rows.length)throw new Error("bundle already used");}
+    const members=[...new Set((input.memberRoomIds||[]).map(String))]; if(!input.name||!members.length||!Number.isInteger(Number(input.capacity))||Number(input.capacity)<1)throw new Error("invalid bundle");
+    const rooms=await client.query("SELECT room_id FROM room_types WHERE property_id=$1 AND room_id=ANY($2::text[])",[propertyId,members]);if(rooms.rows.length!==members.length)throw new Error("invalid bundle member");
+    await client.query("BEGIN");try{if(name==="createBundle")await client.query("INSERT INTO bundle_offers(property_id,bundle_id,name,capacity,base_price,enabled) VALUES($1,$2,$3,$4,$5,$6)",[propertyId,bundleId,input.name,Number(input.capacity),Number(input.basePrice||0),input.enabled!==false]);else await client.query("UPDATE bundle_offers SET name=$3,capacity=$4,base_price=$5,enabled=$6,updated_at=now() WHERE property_id=$1 AND bundle_id=$2",[propertyId,bundleId,input.name,Number(input.capacity),Number(input.basePrice||0),input.enabled!==false]);await client.query("DELETE FROM bundle_offer_members WHERE property_id=$1 AND bundle_id=$2",[propertyId,bundleId]);for(let i=0;i<members.length;i++)await client.query("INSERT INTO bundle_offer_members(property_id,bundle_id,room_id,position) VALUES($1,$2,$3,$4)",[propertyId,bundleId,members[i],i]);await client.query("COMMIT");}catch(e){await client.query("ROLLBACK");throw e;}return (await operation("listBundles",[propertyId])).find(x=>x.id===bundleId)||null;
+  }
+  if (name === "deleteBundle") { const used=await client.query("SELECT 1 FROM bundle_availability_days WHERE property_id=$1 AND bundle_id=$2 LIMIT 1",args);if(used.rows.length)throw new Error("bundle already used");const r=await client.query("DELETE FROM bundle_offers WHERE property_id=$1 AND bundle_id=$2 RETURNING bundle_id",args);return Boolean(r.rows.length); }
   if (name === "getRows") {
     const [propertyId, from, to] = args;
     const result = await client.query("SELECT stay_date::text date,room301,room302,room401,room402,whole_house FROM availability_days WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date", [propertyId, from || null, to || null]);
-    return result.rows.map((r) => ({ date: r.date.slice(0,10), room301:r.room301, room302:r.room302, room401:r.room401, room402:r.room402, wholeHouse:r.whole_house }));
+    const rows=result.rows.map((r) => ({ date: r.date.slice(0,10), room301:r.room301, room302:r.room302, room401:r.room401, room402:r.room402, wholeHouse:r.whole_house }));
+    const bundles=await operation("listBundles",[propertyId]);for(const row of rows){for(const bundle of bundles){const own=await client.query("SELECT status FROM bundle_availability_days WHERE property_id=$1 AND bundle_id=$2 AND stay_date=$3",[propertyId,bundle.id,row.date]);const ownStatus=own.rows[0]?own.rows[0].status:"available";row[bundle.id]=bundle.enabled&&ownStatus==="available"&&bundle.memberRoomIds.every(id=>row[id]==="available")?"available":"closed";}}return rows;
   }
   if (name === "updateProperty") {
     const [propertyId,input]=args; const current=await operation("getProperty",[propertyId]); if(!current)return null;
@@ -40,6 +57,7 @@ async function operation(name, args) {
   }
   if (name === "setDay") {
     const [propertyId,date,roomId,status] = args;
+    const bundle=(await operation("listBundles",[propertyId])).find(x=>x.id===roomId);if(bundle){await client.query("BEGIN");try{await client.query("INSERT INTO bundle_availability_days(property_id,bundle_id,stay_date,status) VALUES($1,$2,$3,$4) ON CONFLICT(property_id,bundle_id,stay_date) DO UPDATE SET status=excluded.status,updated_at=now()",[propertyId,roomId,date,status]);for(const member of bundle.memberRoomIds)await operation("setDay",[propertyId,date,member,status]);await client.query("COMMIT");}catch(e){await client.query("ROLLBACK");throw e;}return (await operation("getRows",[propertyId,date,new Date(Date.parse(date)+86400000).toISOString().slice(0,10)]))[0];}
     const column = {room301:"room301",room302:"room302",room401:"room401",room402:"room402",wholeHouse:"whole_house"}[roomId];
     if (!column) throw new Error("invalid roomId");
     await client.query("INSERT INTO availability_days(property_id,stay_date,room301,room302,room401,room402,whole_house) VALUES($1,$2,'available','available','available','available','available') ON CONFLICT DO NOTHING", [propertyId,date]);

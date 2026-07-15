@@ -12,7 +12,10 @@ async function seedPostgres(connection) {
   const client = await openPostgres(connection);
   try {
     const existing = await client.query("SELECT property_id FROM properties WHERE property_id=$1", [property.propertyId]);
-    if (existing.rows.length) return { seeded: false, propertyId: property.propertyId };
+    if (existing.rows.length) {
+      await ensureNephiBundle(client, property.propertyId);
+      return { seeded: false, propertyId: property.propertyId };
+    }
     await client.query("BEGIN");
     await client.query("INSERT INTO properties(property_id,display_name) VALUES($1,$2)", [property.propertyId, property.name]);
     for (let i = 0; i < property.rooms.length; i += 1) {
@@ -30,8 +33,15 @@ async function seedPostgres(connection) {
       const whole = values.slice(2).every((value) => value === "available") ? "available" : "closed";
       await client.query("INSERT INTO availability_days(property_id,stay_date,room301,room302,room401,room402,whole_house) VALUES($1,$2,$3,$4,$5,$6,$7)", [...values, whole]);
     }
+    await ensureNephiBundle(client, property.propertyId);
     await client.query("COMMIT");
     return { seeded: true, propertyId: property.propertyId, roomTypeCount: property.rooms.length, knowledgeItemCount: property.faqs.length, availabilityDayCount: availability.days.length };
   } catch (error) { await client.query("ROLLBACK"); throw error; } finally { await client.close(); }
+}
+async function ensureNephiBundle(client, propertyId) {
+  if(propertyId!=="nephi_home")return;
+  const id="bundle_four_room_whole_house";
+  await client.query("INSERT INTO bundle_offers(property_id,bundle_id,name,capacity,base_price,enabled) VALUES($1,$2,$3,$4,$5,true) ON CONFLICT DO NOTHING",[propertyId,id,"四房包棟",10,0]);
+  for(const [index,roomId] of ["room301","room302","room401","room402"].entries())await client.query("INSERT INTO bundle_offer_members(property_id,bundle_id,room_id,position) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",[propertyId,id,roomId,index]);
 }
 module.exports = { seedPostgres };
