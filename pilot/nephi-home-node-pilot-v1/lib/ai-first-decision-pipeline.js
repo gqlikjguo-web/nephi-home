@@ -2,7 +2,7 @@
 
 const DECISION_KEYS = new Set([
   "intent", "route", "confidence", "reason", "extractedFields",
-  "missingFields", "shouldIgnore", "needsHuman", "queryMode"
+  "missingFields", "shouldIgnore", "needsHuman", "queryMode", "stayDurationMode"
 ]);
 const FIELD_KEYS = new Set([
   "checkInDate", "checkOutDate", "nights", "guestCount", "roomType", "bookingType"
@@ -100,7 +100,7 @@ function validateDecisionDetailed(value, input) {
     if (!DECISION_KEYS.has(key)) addInvalid(invalidFields, key, "no additional property", fieldValue);
   }
   for (const key of DECISION_KEYS) {
-    if (!Object.hasOwn(value, key) && key !== "queryMode") addInvalid(invalidFields, key, "required", undefined, true);
+    if (!Object.hasOwn(value, key) && key !== "queryMode" && key !== "stayDurationMode") addInvalid(invalidFields, key, "required", undefined, true);
   }
   const availableIntents = new Set(input.availableIntents || []);
   const availableRoutes = new Set(input.availableRoutes || []);
@@ -142,6 +142,7 @@ function validateDecisionDetailed(value, input) {
     confidence: value.confidence,
     reason: value.reason,
     queryMode: ["bundle_only","room_only","any"].includes(value.queryMode) ? value.queryMode : undefined,
+    stayDurationMode: ["default_single","needs_nights","explicit"].includes(value.stayDurationMode) ? value.stayDurationMode : undefined,
     extractedFields,
     missingFields: [...new Set(value.missingFields)],
     shouldIgnore: value.shouldIgnore,
@@ -199,6 +200,13 @@ function completeStayDates(decision, input = {}) {
   for (const [key, value] of Object.entries(extractedFields)) {
     if (present(value)) effectiveFields[key] = value;
   }
+  const durationMode = decision.stayDurationMode || accumulatedFields.stayDurationMode || "default_single";
+  if (decision.intent === "availability" && validDateKey(effectiveFields.checkInDate)
+      && !present(effectiveFields.checkOutDate) && !present(effectiveFields.nights)
+      && durationMode !== "needs_nights") {
+    extractedFields.nights = 1;
+    effectiveFields.nights = 1;
+  }
   const stayBasisChanged = present(extractedFields.checkInDate) || present(extractedFields.nights);
   const shouldDeriveCheckOut = !present(extractedFields.checkOutDate)
     && (stayBasisChanged || !present(effectiveFields.checkOutDate));
@@ -214,7 +222,6 @@ function completeStayDates(decision, input = {}) {
     missingFields = [];
     if (!present(effectiveFields.checkInDate)) missingFields.push("checkInDate");
     if (!present(effectiveFields.checkOutDate) && !present(effectiveFields.nights)) missingFields.push("nights");
-    if (!present(effectiveFields.guestCount)) missingFields.push("guestCount");
   }
   return { ...decision, extractedFields, missingFields };
 }

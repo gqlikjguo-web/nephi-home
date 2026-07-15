@@ -10,7 +10,7 @@ const SECRET = "optional-room-type-test-secret";
 const CHANNEL = "optional-room-type-channel";
 function availability(fields, missingFields = []) { return { intent: "availability", route: missingFields.length ? "clarification_needed" : "auto_reply_allowed", confidence: 0.99, reason: "optional_room_type_test", extractedFields: fields, missingFields, shouldIgnore: false, needsHuman: false }; }
 class Classifier { async classify(input) {
-  if (input.currentMessage === "7/20 兩位有空房嗎") return availability({ checkInDate: "2026-07-20", guestCount: 2 }, ["nights", "roomType"]);
+  if (input.currentMessage === "7/20 兩位有空房嗎") return { ...availability({ checkInDate: "2026-07-20", guestCount: 2 }, ["nights", "roomType"]), stayDurationMode: "needs_nights" };
   if (input.currentMessage === "住一晚") return availability({ nights: 1 }, ["checkOutDate", "roomType"]);
   if (input.currentMessage === "雙人房") return availability({ roomType: "雙人房" });
   throw new Error(`unexpected test message: ${input.currentMessage}`);

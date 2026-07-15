@@ -212,7 +212,8 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     const checkIn = parseDateKey(query.checkIn, "checkIn");
     const checkOut = parseDateKey(query.checkOut, "checkOut");
     const dates = stayDates(checkIn, checkOut);
-    const guests = Math.max(1, Number(query.guests || 1));
+    const requestedGuests = Number(query.guests);
+    const guests = Number.isFinite(requestedGuests) && requestedGuests > 0 ? requestedGuests : null;
     const roomType = String(query.roomType || "all");
     const queryMode = ["bundle_only","room_only","any"].includes(query.queryMode) ? query.queryMode : "any";
     const rows = repository.getAvailabilityRows(homestay.customerId, checkIn, checkOut);
@@ -226,7 +227,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       if (queryMode === "bundle_only" && room.inventoryType !== "bundle") return false;
       if (queryMode === "room_only" && room.inventoryType === "bundle") return false;
       if (roomType !== "all" && !roomMatchesType(room, roomType)) return false;
-      return Number(room.capacity || 0) >= guests;
+      return guests === null || Number(room.capacity || 0) >= guests;
     });
 
     const rooms = availabilityReliable ? candidateRooms.filter((room) => dates.every((date) => {
@@ -627,10 +628,6 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       }
       if (!fields.checkOutDate) {
         const item = appendFixedBridgeMessage(homestay, guest || {}, { ...input, ...baseMessage }, "availability", "請問預計住幾晚呢？", "availability");
-        return bridgeResult(item, false, input);
-      }
-      if (!fields.guestCount) {
-        const item = appendFixedBridgeMessage(homestay, guest || {}, { ...input, ...baseMessage }, "availability", "請問預計幾位入住呢？", "availability");
         return bridgeResult(item, false, input);
       }
       const availability = searchAvailability({

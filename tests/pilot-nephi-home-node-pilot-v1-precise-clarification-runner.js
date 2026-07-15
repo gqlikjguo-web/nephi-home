@@ -46,6 +46,7 @@ class RealisticAvailabilityClassifier {
     if (combined.includes("7/19") && combined.includes("兩位") && combined.includes("301房")) {
       return decision("availability", {
         route: "clarification_needed",
+        stayDurationMode: "needs_nights",
         extractedFields: {
           checkInDate: "2026-07-19",
           guestCount: 2,

@@ -4,10 +4,10 @@ const { runtimeCalendarContext } = require("./runtime-calendar");
 
 const STATE_FIELDS = [
   "checkInDate", "checkOutDate", "nights", "guestCount", "roomType",
-  "bookingType", "queryMode", "roomFilter", "bundleFilter", "awaitingField", "lastIntent", "updatedAt"
+  "bookingType", "queryMode", "stayDurationMode", "roomFilter", "bundleFilter", "awaitingField", "lastIntent", "updatedAt"
 ];
 const ACCUMULATED_FIELDS = [
-  "checkInDate", "checkOutDate", "nights", "guestCount", "roomType", "bookingType", "queryMode", "roomFilter", "bundleFilter"
+  "checkInDate", "checkOutDate", "nights", "guestCount", "roomType", "bookingType", "queryMode", "stayDurationMode", "roomFilter", "bundleFilter"
 ];
 
 function emptyState(updatedAt) {
@@ -19,6 +19,7 @@ function emptyState(updatedAt) {
     roomType: null,
     bookingType: null,
     queryMode: "any",
+    stayDurationMode: "default_single",
     roomFilter: null,
     bundleFilter: null,
     awaitingField: null,
@@ -233,6 +234,7 @@ class ConversationCoordinator {
 
       const nextState = applyExtractedFields(state, decision.extractedFields);
       if (["bundle_only","room_only","any"].includes(decision.queryMode)) nextState.queryMode = decision.queryMode;
+      if (["default_single","needs_nights","explicit"].includes(decision.stayDurationMode)) nextState.stayDurationMode = decision.stayDurationMode;
       if (nextState.queryMode === "bundle_only") { nextState.bundleFilter = nextState.roomType || nextState.bundleFilter || "all"; nextState.roomFilter = null; }
       else if (nextState.queryMode === "room_only") { nextState.roomFilter = nextState.roomType || nextState.roomFilter || "all"; nextState.bundleFilter = null; }
       else { nextState.roomFilter = nextState.roomType || null; nextState.bundleFilter = null; }

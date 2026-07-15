@@ -13,7 +13,7 @@ function decisionSchema(input) {
     additionalProperties: false,
     required: [
       "intent", "route", "confidence", "reason", "extractedFields",
-      "missingFields", "shouldIgnore", "needsHuman", "queryMode"
+      "missingFields", "shouldIgnore", "needsHuman", "queryMode", "stayDurationMode"
     ],
     properties: {
       intent: { type: "string", enum: input.availableIntents },
@@ -21,6 +21,7 @@ function decisionSchema(input) {
       confidence: { type: "number", minimum: 0, maximum: 1 },
       reason: { type: "string", pattern: "^[a-z0-9][a-z0-9_.-]{0,119}$" },
       queryMode: { type: "string", enum: ["bundle_only", "room_only", "any"] },
+      stayDurationMode: { type: "string", enum: ["default_single", "needs_nights", "explicit"] },
       extractedFields: {
         type: "object",
         additionalProperties: false,
@@ -55,6 +56,7 @@ function classifierInstructions() {
     "Use the specific policy intents breakfast, drinking_water, laundry, elevator, baby_supplies, pet_rule, self_checkin, and equipment when the guest asks those low-risk FAQ topics.",
     "New message fields override the same accumulated field; preserve other accumulated fields.",
     "Set queryMode=bundle_only for an explicit bundle/whole-property request, room_only for an explicit individual-room request, and any when neither is specified.",
+    "Set stayDurationMode=default_single when only one arrival date is given with no multi-night signal; needs_nights when the guest clearly wants multiple/extended nights but did not give a duration; explicit when nights or checkout date is provided.",
     "Use a short lowercase snake_case reason code with no sensitive or verbatim model output.",
     "Acknowledgements, meaningless content, repetition, spam, and non-actionable supplements may be silent ignore.",
     "Payment, refund, cancellation, reschedule, platform orders, door access, complaints, special requests, unknown intent, and low certainty need human handling.",
