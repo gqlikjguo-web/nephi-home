@@ -204,7 +204,8 @@ function createRequestHandler(service, options = {}) {
         }
         return sendData(response, await resolveTestLineRequest(await readJsonBody(request)));
       }
-      if (request.method === "GET" && (pathname === "/" || pathname === "/guest")) return sendStatic(response, "guest.html", publicBrand);
+      if (request.method === "GET" && pathname === "/") return sendStatic(response, "home.html", publicBrand);
+      if (request.method === "GET" && pathname === "/guest") return sendStatic(response, "guest.html", publicBrand);
       if (request.method === "GET" && pathname === "/onboarding") return sendStatic(response, "onboarding.html", publicBrand);
       if (request.method === "GET" && pathname === "/admin/setup") return sendStatic(response, "admin-setup.html", publicBrand);
       if (request.method === "GET" && pathname === "/admin/onboarding") {const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");return sendStatic(response,"admin-onboarding.html",publicBrand);}
@@ -223,7 +224,7 @@ function createRequestHandler(service, options = {}) {
       if(pathname.startsWith("/api/admin/onboarding/")){
         const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");
         if(pathname==="/api/admin/onboarding/applications"&&request.method==="GET")return sendData(response,{items:onboarding.list().map(x=>({...x,completeness:require("./lib/onboarding-service").completeness(x)}))});
-        const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reject|approve))?$/.exec(pathname);if(review&&request.method==="GET"&&!review[2])return sendData(response,onboarding.get(review[1]));if(review&&request.method==="POST"){const body=await readJsonBody(request);if(review[2]==="approve")return sendData(response,onboarding.approve(review[1],body,session));return sendData(response,onboarding.review(review[1],review[2]==="reject"?"rejected":"changes_requested",body.reason,session));}
+        const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reject|approve))?$/.exec(pathname);if(review&&request.method==="GET"&&!review[2])return sendData(response,onboarding.get(review[1]));if(review&&request.method==="POST"){const body=await readJsonBody(request);if(review[2]==="approve"){const approved=onboarding.approve(review[1],body,session);return sendData(response,{...approved,adminSetupUrl:`${publicBrand.publicBaseUrl}/admin/setup?token=${encodeURIComponent(approved.adminSetupToken)}`});}return sendData(response,onboarding.review(review[1],review[2]==="reject"?"rejected":"changes_requested",body.reason,session));}
       }
 
       if (request.method === "GET" && pathname === "/api/public/availability") {

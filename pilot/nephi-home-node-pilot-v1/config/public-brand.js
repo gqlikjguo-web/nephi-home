@@ -1,6 +1,6 @@
 "use strict";
 
-const DEFAULT_PUBLIC_BASE_URL = "https://nephi-home-node-pilot-test-only.onrender.com";
+const DEFAULT_PUBLIC_BASE_URL = "https://app.junzanai.com";
 
 function normalizePublicBaseUrl(value) {
   const url = new URL(String(value || DEFAULT_PUBLIC_BASE_URL).trim());

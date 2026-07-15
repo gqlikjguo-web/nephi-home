@@ -28,6 +28,8 @@ services:
         value: Asia/Taipei
       - key: NEPHI_PILOT_CLASSIFIER_TIMEOUT_MS
         value: "15000"
+      - key: PUBLIC_BASE_URL
+        value: https://app.junzanai.com
       - key: OPENAI_TEST_API_KEY
         sync: false
       - key: OPENAI_TEST_MODEL

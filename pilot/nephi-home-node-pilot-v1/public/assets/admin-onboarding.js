@@ -61,7 +61,7 @@ function renderApplication(app) {
           body: JSON.stringify(body)
         });
         if (result.adminSetupToken) {
-          message.textContent = `核准完成。請將一次性帳號設定網址安全交給業者：${location.origin}/admin/setup?token=${result.adminSetupToken}`;
+          message.textContent = `核准完成。請將一次性帳號設定網址安全交給業者：${result.adminSetupUrl}`;
         }
         await load();
       } catch (error) {
