@@ -18,6 +18,7 @@ const {
 } = require("./lib/ai-first-decision-pipeline");
 const { runtimeConfig } = require("./config/runtime");
 const { verifyPassword, sessionTokenHash } = require("./lib/admin-auth");
+const { createOnboardingService } = require("./lib/onboarding-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -118,6 +119,9 @@ function secretsMatch(actual, expected) {
   const expectedBuffer = Buffer.from(String(expected || ""));
   return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
+function readAttachmentBody(request) {
+  return new Promise((resolve,reject)=>{const chunks=[];let length=0;request.on("data",chunk=>{length+=chunk.length;if(length>10*1024*1024){reject(new AppError(413,"ATTACHMENT_TOO_LARGE","附件過大"));request.destroy();return;}chunks.push(chunk);});request.on("end",()=>resolve(Buffer.concat(chunks)));request.on("error",reject);});
+}
 
 function nextDateKey(dateKey) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ""))) {
@@ -166,6 +170,7 @@ function createRequestHandler(service, options = {}) {
   const lineWebhookHandler = options.lineWebhookHandler;
   const persistence = options.persistence;
   const customerSettings = options.customerSettings;
+  const onboarding = options.onboarding;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
   return async function handleRequest(request, response) {
     const url = new URL(request.url, "http://127.0.0.1");
@@ -192,8 +197,26 @@ function createRequestHandler(service, options = {}) {
         return sendData(response, await resolveTestLineRequest(await readJsonBody(request)));
       }
       if (request.method === "GET" && (pathname === "/" || pathname === "/guest")) return sendStatic(response, "guest.html");
+      if (request.method === "GET" && pathname === "/onboarding") return sendStatic(response, "onboarding.html");
+      if (request.method === "GET" && pathname === "/admin/setup") return sendStatic(response, "admin-setup.html");
+      if (request.method === "GET" && pathname === "/admin/onboarding") {const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");return sendStatic(response,"admin-onboarding.html");}
       if (request.method === "GET" && pathname === "/admin") return sendStatic(response, "admin.html");
       if (request.method === "GET" && pathname.startsWith("/assets/")) return sendStatic(response, pathname.slice(1));
+
+      if(pathname==="/api/public/onboarding/drafts"&&request.method==="POST"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");return sendData(response,onboarding.createDraft(),201);}
+      const draftMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)$/.exec(pathname),previewMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/preview$/.exec(pathname),submitMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/submit$/.exec(pathname),attachmentMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/attachments$/.exec(pathname);const draftToken=request.headers["x-onboarding-draft-token"];
+      if(draftMatch&&request.method==="GET")return sendData(response,await onboarding.getDraft(draftMatch[1],draftToken));
+      if(draftMatch&&request.method==="PATCH")return sendData(response,await onboarding.saveDraft(draftMatch[1],draftToken,await readJsonBody(request)));
+      if(previewMatch&&request.method==="GET")return sendData(response,await onboarding.preview(previewMatch[1],draftToken));
+      if(submitMatch&&request.method==="POST")return sendData(response,await onboarding.submit(submitMatch[1],draftToken));
+      if(attachmentMatch&&request.method==="POST")return sendData(response,await onboarding.addAttachment(attachmentMatch[1],draftToken,{fileName:url.searchParams.get("filename"),contentType:String(request.headers["content-type"]||"").split(";")[0],buffer:await readAttachmentBody(request)}),201);
+      if(pathname==="/api/admin/setup"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.redeemInvitation(body.token,body.password));}
+
+      if(pathname.startsWith("/api/admin/onboarding/")){
+        const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");
+        if(pathname==="/api/admin/onboarding/applications"&&request.method==="GET")return sendData(response,{items:onboarding.list().map(x=>({...x,completeness:require("./lib/onboarding-service").completeness(x)}))});
+        const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reject|approve))?$/.exec(pathname);if(review&&request.method==="GET"&&!review[2])return sendData(response,onboarding.get(review[1]));if(review&&request.method==="POST"){const body=await readJsonBody(request);if(review[2]==="approve")return sendData(response,onboarding.approve(review[1],body,session));return sendData(response,onboarding.review(review[1],review[2]==="reject"?"rejected":"changes_requested",body.reason,session));}
+      }
 
       if (request.method === "GET" && pathname === "/api/public/availability") {
         const propertyId = String(url.searchParams.get("propertyId") || "").trim();
@@ -367,6 +390,7 @@ function createApp(options = {}) {
   const providers = options.providers || createProviders({ databaseUrl: config.databaseUrl, dataFile, seedFile, now });
   const adminAuthRequired = Object.hasOwn(options, "adminAuthRequired") ? Boolean(options.adminAuthRequired) : providers.kind === "postgres";
   const service = createMvpService(providers, { now });
+  const onboarding = createOnboardingService(providers.onboarding);
   const structuredClassifier = Object.hasOwn(options, "structuredClassifier")
     ? options.structuredClassifier
     : createTestOnlyOpenAiStructuredClassifierFromEnv({
@@ -535,7 +559,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { testLineSecret, resolveTestLineRequest, lineWebhookHandler, persistence: providers.persistence, customerSettings: providers.customerSettings, adminAuthRequired }));
+  const server = http.createServer(createRequestHandler(service, { testLineSecret, resolveTestLineRequest, lineWebhookHandler, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired }));
 
   return {
     providers,
