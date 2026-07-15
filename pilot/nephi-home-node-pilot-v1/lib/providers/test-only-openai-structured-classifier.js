@@ -13,13 +13,14 @@ function decisionSchema(input) {
     additionalProperties: false,
     required: [
       "intent", "route", "confidence", "reason", "extractedFields",
-      "missingFields", "shouldIgnore", "needsHuman"
+      "missingFields", "shouldIgnore", "needsHuman", "queryMode"
     ],
     properties: {
       intent: { type: "string", enum: input.availableIntents },
       route: { type: "string", enum: input.availableRoutes },
       confidence: { type: "number", minimum: 0, maximum: 1 },
       reason: { type: "string", pattern: "^[a-z0-9][a-z0-9_.-]{0,119}$" },
+      queryMode: { type: "string", enum: ["bundle_only", "room_only", "any"] },
       extractedFields: {
         type: "object",
         additionalProperties: false,
@@ -53,6 +54,7 @@ function classifierInstructions() {
     "Distinguish an early check-in or late checkout policy question from an actual request tied to today, tomorrow, an existing stay, or a stated date. Actual requests use early_checkin_late_checkout_request and require human handoff.",
     "Use the specific policy intents breakfast, drinking_water, laundry, elevator, baby_supplies, pet_rule, self_checkin, and equipment when the guest asks those low-risk FAQ topics.",
     "New message fields override the same accumulated field; preserve other accumulated fields.",
+    "Set queryMode=bundle_only for an explicit bundle/whole-property request, room_only for an explicit individual-room request, and any when neither is specified.",
     "Use a short lowercase snake_case reason code with no sensitive or verbatim model output.",
     "Acknowledgements, meaningless content, repetition, spam, and non-actionable supplements may be silent ignore.",
     "Payment, refund, cancellation, reschedule, platform orders, door access, complaints, special requests, unknown intent, and low certainty need human handling.",

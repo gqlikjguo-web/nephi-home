@@ -214,6 +214,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     const dates = stayDates(checkIn, checkOut);
     const guests = Math.max(1, Number(query.guests || 1));
     const roomType = String(query.roomType || "all");
+    const queryMode = ["bundle_only","room_only","any"].includes(query.queryMode) ? query.queryMode : "any";
     const rows = repository.getAvailabilityRows(homestay.customerId, checkIn, checkOut);
     const byDate = Object.fromEntries(rows.map((row) => [row.date, row]));
     const availabilityReliable = rows.length === dates.length && dates.every((date) => {
@@ -222,6 +223,8 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       return (homestay.rooms || []).every((room) => row[room.id] === "available" || row[room.id] === "closed");
     });
     const candidateRooms = (homestay.rooms || []).filter((room) => {
+      if (queryMode === "bundle_only" && room.inventoryType !== "bundle") return false;
+      if (queryMode === "room_only" && room.inventoryType === "bundle") return false;
       if (roomType !== "all" && !roomMatchesType(room, roomType)) return false;
       return Number(room.capacity || 0) >= guests;
     });
@@ -243,6 +246,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       nightCount: dates.length,
       guests,
       roomType,
+      queryMode,
       availabilityReliable,
       rooms,
       lineUrl: homestay.lineUrl || ""
@@ -634,7 +638,8 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
         checkIn: fields.checkInDate,
         checkOut: fields.checkOutDate,
         guests: fields.guestCount,
-        roomType: fields.roomType || "all"
+        roomType: fields.roomType || "all",
+        queryMode: fields.queryMode || "any"
       });
       if (!availability.availabilityReliable) {
         const item = persistMessageEvent(homestay.customerId, {

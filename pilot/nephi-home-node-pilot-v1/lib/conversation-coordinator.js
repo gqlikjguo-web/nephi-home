@@ -4,10 +4,10 @@ const { runtimeCalendarContext } = require("./runtime-calendar");
 
 const STATE_FIELDS = [
   "checkInDate", "checkOutDate", "nights", "guestCount", "roomType",
-  "bookingType", "awaitingField", "lastIntent", "updatedAt"
+  "bookingType", "queryMode", "roomFilter", "bundleFilter", "awaitingField", "lastIntent", "updatedAt"
 ];
 const ACCUMULATED_FIELDS = [
-  "checkInDate", "checkOutDate", "nights", "guestCount", "roomType", "bookingType"
+  "checkInDate", "checkOutDate", "nights", "guestCount", "roomType", "bookingType", "queryMode", "roomFilter", "bundleFilter"
 ];
 
 function emptyState(updatedAt) {
@@ -18,11 +18,15 @@ function emptyState(updatedAt) {
     guestCount: null,
     roomType: null,
     bookingType: null,
+    queryMode: "any",
+    roomFilter: null,
+    bundleFilter: null,
     awaitingField: null,
     lastIntent: null,
     updatedAt,
     lastMessageFingerprint: "",
     lastReplyAt: ""
+    ,lastQueryFingerprint: "", lastAvailabilityFingerprint: ""
   };
 }
 
@@ -110,6 +114,7 @@ class ConversationCoordinator {
     this.availableRoutes = options.availableRoutes || [];
     this.externalReplyToken = Boolean(options.externalReplyToken);
     this.onDiagnostic = typeof options.onDiagnostic === "function" ? options.onDiagnostic : null;
+    this.availabilityFingerprint = options.availabilityFingerprint || (() => "");
     this.pending = new Map();
     this.consumedReplyTokens = new Set();
     this.seenEventIds = new Map();
@@ -193,7 +198,7 @@ class ConversationCoordinator {
           route: item.route || "",
           createdAt: item.createdAt
         })),
-        conversationState: accumulatedFromState(state),
+        conversationState: state,
         accumulatedFields: accumulatedFromState(state),
         currentDate: calendarContext.currentDate,
         timeZone: calendarContext.timeZone,
@@ -227,10 +232,21 @@ class ConversationCoordinator {
       }
 
       const nextState = applyExtractedFields(state, decision.extractedFields);
+      if (["bundle_only","room_only","any"].includes(decision.queryMode)) nextState.queryMode = decision.queryMode;
+      if (nextState.queryMode === "bundle_only") { nextState.bundleFilter = nextState.roomType || nextState.bundleFilter || "all"; nextState.roomFilter = null; }
+      else if (nextState.queryMode === "room_only") { nextState.roomFilter = nextState.roomType || nextState.roomFilter || "all"; nextState.bundleFilter = null; }
+      else { nextState.roomFilter = nextState.roomType || null; nextState.bundleFilter = null; }
       nextState.awaitingField = decision.missingFields && decision.missingFields[0] || null;
       nextState.lastIntent = decision.intent;
       nextState.updatedAt = this.now().toISOString();
       nextState.lastMessageFingerprint = fingerprint;
+
+      const queryFingerprint = nextState.checkInDate && nextState.checkOutDate && nextState.guestCount
+        ? JSON.stringify([nextState.checkInDate,nextState.checkOutDate,nextState.guestCount,nextState.roomFilter,nextState.bundleFilter,nextState.queryMode]) : "";
+      const availabilityFingerprint = queryFingerprint ? String(this.availabilityFingerprint({ ...nextState, propertyId:last.customerId }) || "") : "";
+      if (queryFingerprint && availabilityFingerprint && queryFingerprint === state.lastQueryFingerprint && availabilityFingerprint === state.lastAvailabilityFingerprint && state.lastReplyAt) {
+        decision = { ...decision, route:"no_reply_silent_ignore", shouldIgnore:true, needsHuman:false, reason:"duplicate_availability_query" };
+      }
 
       const mergedInput = {
         ...last,
@@ -268,6 +284,7 @@ class ConversationCoordinator {
       });
       const resultAllowsReply = Boolean(result && result.shouldReply !== false && !result.noReply);
       if (resultAllowsReply) nextState.lastReplyAt = this.now().toISOString();
+      if (resultAllowsReply && decision.intent === "availability" && queryFingerprint && availabilityFingerprint) { nextState.lastQueryFingerprint=queryFingerprint; nextState.lastAvailabilityFingerprint=availabilityFingerprint; }
       stage = "persist_conversation_state";
       this.persistence.setConversationState(last.customerId, last.channelId, last.lineUserId, nextState);
 

@@ -333,6 +333,7 @@ function createApp(options = {}) {
       console.error(JSON.stringify({ scope: "conversation-coordinator", step: "flush_exception", ...details }));
     }),
     resolveMerged: (input) => service.resolveTestLine(input)
+    ,availabilityFingerprint: (fields) => { try { const result=service.searchAvailability({customerId:fields.propertyId||"",checkIn:fields.checkInDate,checkOut:fields.checkOutDate,guests:fields.guestCount,roomType:fields.roomType||"all",queryMode:fields.queryMode||"any"});return JSON.stringify([result.availabilityReliable,result.rooms.map(room=>room.id)]); } catch { return ""; } }
   };
   const conversationCoordinator = new ConversationCoordinator({
     ...coordinatorOptions,

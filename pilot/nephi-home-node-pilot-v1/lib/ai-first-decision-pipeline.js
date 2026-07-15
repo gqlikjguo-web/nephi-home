@@ -2,7 +2,7 @@
 
 const DECISION_KEYS = new Set([
   "intent", "route", "confidence", "reason", "extractedFields",
-  "missingFields", "shouldIgnore", "needsHuman"
+  "missingFields", "shouldIgnore", "needsHuman", "queryMode"
 ]);
 const FIELD_KEYS = new Set([
   "checkInDate", "checkOutDate", "nights", "guestCount", "roomType", "bookingType"
@@ -100,7 +100,7 @@ function validateDecisionDetailed(value, input) {
     if (!DECISION_KEYS.has(key)) addInvalid(invalidFields, key, "no additional property", fieldValue);
   }
   for (const key of DECISION_KEYS) {
-    if (!Object.hasOwn(value, key)) addInvalid(invalidFields, key, "required", undefined, true);
+    if (!Object.hasOwn(value, key) && key !== "queryMode") addInvalid(invalidFields, key, "required", undefined, true);
   }
   const availableIntents = new Set(input.availableIntents || []);
   const availableRoutes = new Set(input.availableRoutes || []);
@@ -141,6 +141,7 @@ function validateDecisionDetailed(value, input) {
     route: value.route,
     confidence: value.confidence,
     reason: value.reason,
+    queryMode: ["bundle_only","room_only","any"].includes(value.queryMode) ? value.queryMode : undefined,
     extractedFields,
     missingFields: [...new Set(value.missingFields)],
     shouldIgnore: value.shouldIgnore,
@@ -280,7 +281,12 @@ function createAiFirstDecisionPipeline({ classifier, timeoutMs = 15000, minConfi
         }
         return handoff("classifier_invalid_schema");
       }
-      const decision = completeStayDates(validation.decision, input);
+      let validated = validation.decision;
+      const pending = input.conversationState && input.conversationState.lastIntent === "availability" && input.conversationState.awaitingField;
+      if (pending && present(validated.extractedFields[input.conversationState.awaitingField]) && !validated.needsHuman) {
+        validated = { ...validated, intent:"availability", route:"clarification_needed", confidence:Math.max(validated.confidence,0.99), shouldIgnore:false, needsHuman:false, reason:"availability_clarification_completed" };
+      }
+      const decision = completeStayDates(validated, input);
       return applySafetyPolicy(decision, input, Number(minConfidence || 0.7));
     }
   };
