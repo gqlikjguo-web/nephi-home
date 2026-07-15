@@ -214,7 +214,6 @@ function completeStayDates(decision, input = {}) {
     if (!present(effectiveFields.checkInDate)) missingFields.push("checkInDate");
     if (!present(effectiveFields.checkOutDate) && !present(effectiveFields.nights)) missingFields.push("nights");
     if (!present(effectiveFields.guestCount)) missingFields.push("guestCount");
-    if (!present(effectiveFields.roomType)) missingFields.push("roomType");
   }
   return { ...decision, extractedFields, missingFields };
 }

@@ -2,6 +2,7 @@
 
 const { ROOM_COLUMNS } = require("./domain");
 const { createServiceDataAccess } = require("./providers/service-data-access");
+const { roomMatchesType } = require("./conversation-coordinator");
 
 const INDIVIDUAL_ROOMS = ROOM_COLUMNS.slice(0, 4);
 const ALLOWED_STATUSES = new Set(["available", "closed"]);
@@ -221,7 +222,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       return (homestay.rooms || []).every((room) => row[room.id] === "available" || row[room.id] === "closed");
     });
     const candidateRooms = (homestay.rooms || []).filter((room) => {
-      if (roomType !== "all" && room.id !== roomType && room.type !== roomType) return false;
+      if (roomType !== "all" && !roomMatchesType(room, roomType)) return false;
       return Number(room.capacity || 0) >= guests;
     });
 
@@ -628,17 +629,12 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
         const item = appendFixedBridgeMessage(homestay, guest || {}, { ...input, ...baseMessage }, "availability", "請問預計幾位入住呢？", "availability");
         return bridgeResult(item, false, input);
       }
-      const room = (homestay.rooms || []).find((item) => item.id === fields.roomType);
-      if (!room) {
-        const item = appendFixedBridgeMessage(homestay, guest || {}, { ...input, ...baseMessage }, "availability", "請問想查詢哪一種房型呢？", "availability");
-        return bridgeResult(item, false, input);
-      }
       const availability = searchAvailability({
         customerId: homestay.customerId,
         checkIn: fields.checkInDate,
         checkOut: fields.checkOutDate,
         guests: fields.guestCount,
-        roomType: room.id
+        roomType: fields.roomType || "all"
       });
       if (!availability.availabilityReliable) {
         const item = persistMessageEvent(homestay.customerId, {

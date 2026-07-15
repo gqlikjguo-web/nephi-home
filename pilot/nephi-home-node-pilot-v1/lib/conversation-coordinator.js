@@ -53,7 +53,19 @@ function applyExtractedFields(state, extractedFields) {
 }
 
 function normalizedRoomKey(value) {
-  return String(value || "").normalize("NFKC").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return String(value || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function roomMatchesType(room, value) {
+  const compact = normalizedRoomKey(value);
+  if (!compact || !room) return false;
+  const id = normalizedRoomKey(room.id);
+  const idWithoutPrefix = id.replace(/^room/, "");
+  const name = normalizedRoomKey(room.name);
+  const descriptiveName = idWithoutPrefix && name.startsWith(idWithoutPrefix)
+    ? name.slice(idWithoutPrefix.length)
+    : name;
+  return [id, idWithoutPrefix, name, descriptiveName, normalizedRoomKey(room.type)].filter(Boolean).includes(compact);
 }
 
 function normalizeRoomType(property, value) {
@@ -65,8 +77,11 @@ function normalizeRoomType(property, value) {
     if (exactAliases.includes(input)) return room.id;
     const compactAliases = exactAliases.map(normalizedRoomKey).filter(Boolean);
     const idWithoutPrefix = normalizedRoomKey(room.id).replace(/^room/, "");
-    if (compact && (compactAliases.includes(compact) || (idWithoutPrefix && compact === idWithoutPrefix))) return room.id;
+    if (compact && (compactAliases.includes(compact) || (idWithoutPrefix && compact.startsWith(idWithoutPrefix)))) return room.id;
   }
+  const matchingRooms = property.rooms.filter((room) => roomMatchesType(room, compact));
+  if (matchingRooms.length === 1) return matchingRooms[0].id;
+  if (matchingRooms.length > 1) return compact;
   return value;
 }
 
@@ -302,5 +317,6 @@ module.exports = {
   normalizeMessage,
   accumulatedFromState,
   applyExtractedFields,
-  normalizeRoomType
+  normalizeRoomType,
+  roomMatchesType
 };
