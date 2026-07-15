@@ -159,6 +159,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       customerId: homestay.customerId,
       homestayName: homestay.name,
       lineUrl: homestay.lineUrl || "",
+      publicEnabled: homestay.publicEnabled !== false,
       rooms: homestay.rooms || [],
       safeFacts: homestay.safeFacts || {}
     };

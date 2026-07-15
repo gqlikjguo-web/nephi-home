@@ -7,7 +7,8 @@ function toLegacyProperty(property) {
     name: property.displayName,
     rooms: property.rooms || [],
     safeFacts: property.commonAnswers || {},
-    lineUrl: property.contactLink || ""
+    lineUrl: property.contactLink || "",
+    publicEnabled: !property.onboarding || property.onboarding.isReady !== false
   };
 }
 

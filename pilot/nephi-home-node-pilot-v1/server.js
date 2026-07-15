@@ -119,6 +119,47 @@ function secretsMatch(actual, expected) {
   return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
+function nextDateKey(dateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ""))) {
+    throw new AppError(400, "INVALID_DATE", "checkIn must use YYYY-MM-DD");
+  }
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== dateKey) {
+    throw new AppError(400, "INVALID_DATE", "checkIn is invalid");
+  }
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function publicAvailabilityResult(result) {
+  let lineUrl = "";
+  try {
+    const parsed = new URL(String(result.lineUrl || ""));
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") lineUrl = parsed.toString();
+  } catch {}
+  const item = (room) => ({
+    id: room.id,
+    name: room.name,
+    capacity: Number(room.capacity || 0),
+    basePrice: Number(room.basePrice || 0) || null
+  });
+  const rooms = result.rooms.filter((room) => room.inventoryType !== "bundle").map(item);
+  const bundles = result.rooms.filter((room) => room.inventoryType === "bundle").map(item);
+  return {
+    propertyId: result.customerId,
+    propertyName: result.homestayName,
+    checkInDate: result.checkIn,
+    checkOutDate: result.checkOut,
+    guestCount: result.guests,
+    queryMode: result.queryMode,
+    roomFilter: result.roomType,
+    rooms,
+    bundles,
+    empty: rooms.length === 0 && bundles.length === 0,
+    lineUrl
+  };
+}
+
 function createRequestHandler(service, options = {}) {
   const testLineSecret = String(options.testLineSecret || "");
   const resolveTestLineRequest = options.resolveTestLineRequest || ((input) => service.resolveTestLine(input));
@@ -150,9 +191,30 @@ function createRequestHandler(service, options = {}) {
         }
         return sendData(response, await resolveTestLineRequest(await readJsonBody(request)));
       }
-      if (request.method === "GET" && pathname === "/") return sendStatic(response, "guest.html");
+      if (request.method === "GET" && (pathname === "/" || pathname === "/guest")) return sendStatic(response, "guest.html");
       if (request.method === "GET" && pathname === "/admin") return sendStatic(response, "admin.html");
       if (request.method === "GET" && pathname.startsWith("/assets/")) return sendStatic(response, pathname.slice(1));
+
+      if (request.method === "GET" && pathname === "/api/public/availability") {
+        const propertyId = String(url.searchParams.get("propertyId") || "").trim();
+        const checkIn = String(url.searchParams.get("checkIn") || "").trim();
+        const checkOut = String(url.searchParams.get("checkOut") || "").trim() || nextDateKey(checkIn);
+        const queryMode = String(url.searchParams.get("queryMode") || "any").trim();
+        if (!["any", "room_only", "bundle_only"].includes(queryMode)) {
+          throw new AppError(400, "INVALID_QUERY_MODE", "Invalid query mode");
+        }
+        const property = service.getBootstrap(propertyId);
+        if (property.publicEnabled === false) throw new AppError(404, "PROPERTY_NOT_AVAILABLE", "Property is not available");
+        const result = service.searchAvailability({
+          customerId: propertyId,
+          checkIn,
+          checkOut,
+          guests: url.searchParams.get("guests"),
+          roomType: String(url.searchParams.get("roomType") || "all").trim() || "all",
+          queryMode
+        });
+        return sendData(response, publicAvailabilityResult(result));
+      }
 
       if (request.method === "POST" && pathname === "/api/admin/login") {
         if (!adminAuthRequired) throw new AppError(503, "ADMIN_AUTH_NOT_CONFIGURED", "Admin login requires PostgreSQL");

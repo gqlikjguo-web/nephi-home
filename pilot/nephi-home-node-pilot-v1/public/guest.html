@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>客人查房</title>
+  <link rel="stylesheet" href="/assets/guest.css">
+</head>
+<body>
+  <main class="guest-shell">
+    <header><p class="eyebrow">即時房況</p><h1 id="propertyName">客人查房</h1></header>
+    <section class="card">
+      <form id="searchForm">
+        <label>入住日期<input id="checkIn" name="checkIn" type="date" required></label>
+        <p>退房日期：<strong id="checkOut">—</strong></p>
+        <label>入住人數（可不填）<input name="guests" type="number" min="1" max="50" inputmode="numeric"></label>
+        <label>查詢模式<select name="queryMode"><option value="any">全部可售方案</option><option value="room_only">僅散房</option><option value="bundle_only">僅包棟</option></select></label>
+        <label>指定房型或方案（可不填）<input name="roomType" maxlength="80" placeholder="例如：301、雙人房、四房包棟"></label>
+        <button type="submit">查詢</button>
+      </form>
+      <p id="message" class="message" role="status"></p>
+    </section>
+    <section id="results" class="card" hidden>
+      <h2>查詢結果</h2>
+      <p id="stayDates"></p>
+      <div id="roomResults"></div>
+      <div id="bundleResults"></div>
+      <a id="lineLink" class="line-button" target="_blank" rel="noopener noreferrer" hidden>加入 LINE 詢問</a>
+    </section>
+  </main>
+  <script src="/assets/guest.js" defer></script>
+</body>
+</html>
