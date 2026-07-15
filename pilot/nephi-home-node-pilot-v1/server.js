@@ -19,6 +19,8 @@ const {
 const { runtimeConfig } = require("./config/runtime");
 const { verifyPassword, sessionTokenHash } = require("./lib/admin-auth");
 const { createOnboardingService } = require("./lib/onboarding-service");
+const { createPublicBrand } = require("./config/public-brand");
+const { renderPublicHtml } = require("./lib/public-brand-html");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -104,13 +106,17 @@ function contentType(filePath) {
   }[extension] || "application/octet-stream";
 }
 
-function sendStatic(response, relativePath) {
+function sendStatic(response, relativePath, publicBrand) {
   const filePath = path.resolve(PUBLIC_ROOT, relativePath);
   if (!filePath.startsWith(PUBLIC_ROOT) || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
     sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
     return;
   }
   response.writeHead(200, { "content-type": contentType(filePath), "cache-control": "no-store" });
+  if (path.extname(filePath).toLowerCase() === ".html") {
+    response.end(renderPublicHtml(fs.readFileSync(filePath, "utf8"), publicBrand));
+    return;
+  }
   fs.createReadStream(filePath).pipe(response);
 }
 
@@ -172,6 +178,7 @@ function createRequestHandler(service, options = {}) {
   const customerSettings = options.customerSettings;
   const onboarding = options.onboarding;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
+  const publicBrand = options.publicBrand || createPublicBrand();
   return async function handleRequest(request, response) {
     const url = new URL(request.url, "http://127.0.0.1");
     const pathname = url.pathname;
@@ -180,6 +187,7 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "GET" && pathname === "/api/health") {
         return sendData(response, { status: "ready", testOnly: true });
       }
+      if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
       if (request.method === "POST" && pathname === "/api/test-line/webhook") {
         if (!lineWebhookHandler) throw new AppError(503, "TEST_LINE_WEBHOOK_NOT_CONFIGURED", "Test-only LINE webhook is not configured");
         const result = await lineWebhookHandler({
@@ -196,12 +204,12 @@ function createRequestHandler(service, options = {}) {
         }
         return sendData(response, await resolveTestLineRequest(await readJsonBody(request)));
       }
-      if (request.method === "GET" && (pathname === "/" || pathname === "/guest")) return sendStatic(response, "guest.html");
-      if (request.method === "GET" && pathname === "/onboarding") return sendStatic(response, "onboarding.html");
-      if (request.method === "GET" && pathname === "/admin/setup") return sendStatic(response, "admin-setup.html");
-      if (request.method === "GET" && pathname === "/admin/onboarding") {const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");return sendStatic(response,"admin-onboarding.html");}
-      if (request.method === "GET" && pathname === "/admin") return sendStatic(response, "admin.html");
-      if (request.method === "GET" && pathname.startsWith("/assets/")) return sendStatic(response, pathname.slice(1));
+      if (request.method === "GET" && (pathname === "/" || pathname === "/guest")) return sendStatic(response, "guest.html", publicBrand);
+      if (request.method === "GET" && pathname === "/onboarding") return sendStatic(response, "onboarding.html", publicBrand);
+      if (request.method === "GET" && pathname === "/admin/setup") return sendStatic(response, "admin-setup.html", publicBrand);
+      if (request.method === "GET" && pathname === "/admin/onboarding") {const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");return sendStatic(response,"admin-onboarding.html",publicBrand);}
+      if (request.method === "GET" && pathname === "/admin") return sendStatic(response, "admin.html", publicBrand);
+      if (request.method === "GET" && pathname.startsWith("/assets/")) return sendStatic(response, pathname.slice(1), publicBrand);
 
       if(pathname==="/api/public/onboarding/drafts"&&request.method==="POST"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");return sendData(response,onboarding.createDraft(),201);}
       const draftMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)$/.exec(pathname),previewMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/preview$/.exec(pathname),submitMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/submit$/.exec(pathname),attachmentMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/attachments$/.exec(pathname);const draftToken=request.headers["x-onboarding-draft-token"];
@@ -379,6 +387,7 @@ function createRequestHandler(service, options = {}) {
 
 function createApp(options = {}) {
   const config = runtimeConfig();
+  const publicBrand = options.publicBrand || createPublicBrand(options.publicBrandEnv || process.env);
   const dataFile = options.dataFile || config.dataFile;
   const seedFile = options.seedFile || config.seedFile;
   const now = options.now || (() => new Date());
@@ -559,7 +568,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { testLineSecret, resolveTestLineRequest, lineWebhookHandler, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired }));
+  const server = http.createServer(createRequestHandler(service, { testLineSecret, resolveTestLineRequest, lineWebhookHandler, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
 
   return {
     providers,
