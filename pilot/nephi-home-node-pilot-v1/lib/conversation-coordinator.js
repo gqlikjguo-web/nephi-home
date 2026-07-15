@@ -82,7 +82,7 @@ function normalizeRoomType(property, value) {
   const matchingRooms = property.rooms.filter((room) => roomMatchesType(room, compact));
   if (matchingRooms.length === 1) return matchingRooms[0].id;
   if (matchingRooms.length > 1) return compact;
-  return value;
+  return null;
 }
 
 function safeDiagnosticText(value, limit) {
