@@ -17,16 +17,27 @@ const {
   DEFAULT_ROUTES
 } = require("./lib/ai-first-decision-pipeline");
 const { runtimeConfig } = require("./config/runtime");
+const { verifyPassword, sessionTokenHash } = require("./lib/admin-auth");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 
-function sendJson(response, status, payload) {
+function sendJson(response, status, payload, headers = {}) {
   response.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store"
+    "cache-control": "no-store",
+    ...headers
   });
   response.end(JSON.stringify(payload));
+}
+
+function cookieValue(request, name) {
+  const item = String(request.headers.cookie || "").split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
+  return item ? decodeURIComponent(item.slice(name.length + 1)) : "";
+}
+
+function isAdminDataRoute(pathname) {
+  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/batch" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
 }
 
 function sendData(response, data, status = 200) {
@@ -112,6 +123,8 @@ function createRequestHandler(service, options = {}) {
   const testLineSecret = String(options.testLineSecret || "");
   const resolveTestLineRequest = options.resolveTestLineRequest || ((input) => service.resolveTestLine(input));
   const lineWebhookHandler = options.lineWebhookHandler;
+  const persistence = options.persistence;
+  const adminAuthRequired = Boolean(options.adminAuthRequired);
   return async function handleRequest(request, response) {
     const url = new URL(request.url, "http://127.0.0.1");
     const pathname = url.pathname;
@@ -140,14 +153,49 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "GET" && pathname === "/admin") return sendStatic(response, "admin.html");
       if (request.method === "GET" && pathname.startsWith("/assets/")) return sendStatic(response, pathname.slice(1));
 
+      if (request.method === "POST" && pathname === "/api/admin/login") {
+        if (!adminAuthRequired) throw new AppError(503, "ADMIN_AUTH_NOT_CONFIGURED", "Admin login requires PostgreSQL");
+        const body = await readJsonBody(request);
+        const propertyId = String(body.propertyId || "").trim();
+        const username = String(body.username || "").trim();
+        const user = await persistence.getAdminUser(propertyId, username);
+        if (!user || !await verifyPassword(body.password, user.passwordHash)) throw new AppError(401, "INVALID_LOGIN", "帳號或密碼錯誤");
+        const token = crypto.randomBytes(32).toString("base64url");
+        const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+        await persistence.createAdminSession(sessionTokenHash(token), propertyId, username, expiresAt);
+        return sendJson(response, 200, { ok: true, data: { propertyId, username } }, { "set-cookie": `nephi_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=43200; HttpOnly; Secure; SameSite=Strict` });
+      }
+      if (request.method === "POST" && pathname === "/api/admin/logout") {
+        const token = cookieValue(request, "nephi_admin_session");
+        if (token && adminAuthRequired) await persistence.deleteAdminSession(sessionTokenHash(token));
+        return sendJson(response, 200, { ok: true, data: { loggedOut: true } }, { "set-cookie": "nephi_admin_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict" });
+      }
+      if (request.method === "GET" && pathname === "/api/admin/session") {
+        const token = cookieValue(request, "nephi_admin_session");
+        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        if (!session) throw new AppError(401, "LOGIN_REQUIRED", "請先登入");
+        return sendData(response, session);
+      }
+
+      let adminSession = null;
+      if (adminAuthRequired && isAdminDataRoute(pathname)) {
+        const token = cookieValue(request, "nephi_admin_session");
+        adminSession = token ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        if (!adminSession) throw new AppError(401, "LOGIN_REQUIRED", "請先登入");
+        if (request.method !== "GET") request.adminBody = await readJsonBody(request);
+        const requestedPropertyId = String(request.method === "GET" ? url.searchParams.get("customerId") || "" : request.adminBody.customerId || "").trim();
+        if (requestedPropertyId && requestedPropertyId !== adminSession.propertyId) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權存取其他業者資料");
+      }
+
       if (request.method === "GET" && pathname === "/api/homestays") {
-        return sendData(response, { homestays: service.listHomestays() });
+        const homestays = service.listHomestays();
+        return sendData(response, { homestays: adminSession ? homestays.filter((item) => item.customerId === adminSession.propertyId) : homestays });
       }
       if (request.method === "GET" && pathname === "/api/bootstrap") {
         return sendData(response, service.getBootstrap(url.searchParams.get("customerId")));
       }
       if (request.method === "PUT" && pathname === "/api/settings") {
-        return sendData(response, { settings: service.updateSettings(await readJsonBody(request)) });
+        return sendData(response, { settings: service.updateSettings(request.adminBody || await readJsonBody(request)) });
       }
       if (request.method === "GET" && pathname === "/api/availability/search") {
         return sendData(response, service.searchAvailability({
@@ -166,25 +214,25 @@ function createRequestHandler(service, options = {}) {
         ));
       }
       if (request.method === "POST" && pathname === "/api/availability/day") {
-        return sendData(response, { row: service.setDay(await readJsonBody(request)) });
+        return sendData(response, { row: service.setDay(request.adminBody || await readJsonBody(request)) });
       }
       if (request.method === "POST" && pathname === "/api/availability/month") {
-        return sendData(response, service.setMonth(await readJsonBody(request)));
+        return sendData(response, service.setMonth(request.adminBody || await readJsonBody(request)));
       }
       if (request.method === "POST" && pathname === "/api/availability/batch") {
-        return sendData(response, service.applyBatch(await readJsonBody(request)));
+        return sendData(response, service.applyBatch(request.adminBody || await readJsonBody(request)));
       }
 
       if (request.method === "GET" && pathname === "/api/guests") {
         return sendData(response, { guests: service.listGuests(url.searchParams.get("customerId"), url.searchParams.get("q")) });
       }
       if (request.method === "POST" && pathname === "/api/guests") {
-        return sendData(response, { guest: service.createGuest(await readJsonBody(request)) }, 201);
+        return sendData(response, { guest: service.createGuest(request.adminBody || await readJsonBody(request)) }, 201);
       }
 
       const guestMatch = /^\/api\/guests\/([^/]+)$/.exec(pathname);
       if (guestMatch && request.method === "PUT") {
-        const body = await readJsonBody(request);
+        const body = request.adminBody || await readJsonBody(request);
         return sendData(response, { guest: service.updateGuest(body.customerId, guestMatch[1], body) });
       }
 
@@ -193,12 +241,12 @@ function createRequestHandler(service, options = {}) {
         return sendData(response, { notes: service.listNotes(url.searchParams.get("customerId"), notesMatch[1]) });
       }
       if (notesMatch && request.method === "POST") {
-        const body = await readJsonBody(request);
+        const body = request.adminBody || await readJsonBody(request);
         return sendData(response, { note: service.addNote(body.customerId, notesMatch[1], body.text) }, 201);
       }
       const noteEditMatch = /^\/api\/guests\/([^/]+)\/notes\/([^/]+)$/.exec(pathname);
       if (noteEditMatch && request.method === "PUT") {
-        const body = await readJsonBody(request);
+        const body = request.adminBody || await readJsonBody(request);
         return sendData(response, {
           note: service.updateNote(body.customerId, noteEditMatch[1], noteEditMatch[2], body.text)
         });
@@ -212,7 +260,7 @@ function createRequestHandler(service, options = {}) {
       }
 
       if (request.method === "POST" && pathname === "/api/messages") {
-        return sendData(response, { item: service.writeMessage(await readJsonBody(request)) }, 201);
+        return sendData(response, { item: service.writeMessage(request.adminBody || await readJsonBody(request)) }, 201);
       }
 
       if (request.method === "GET" && pathname === "/api/dashboard") {
@@ -225,7 +273,7 @@ function createRequestHandler(service, options = {}) {
       }
       const reviewMatch = /^\/api\/reviews\/([^/]+)\/resolve$/.exec(pathname);
       if (reviewMatch && request.method === "POST") {
-        const body = await readJsonBody(request);
+        const body = request.adminBody || await readJsonBody(request);
         return sendData(response, {
           item: service.resolveReview(body.customerId, reviewMatch[1], body.ownerAction, body.reviewNote)
         });
@@ -249,6 +297,7 @@ function createApp(options = {}) {
   const lineChannelAccessToken = options.lineChannelAccessToken || config.lineChannelAccessToken;
   const lineReplyFetch = options.lineReplyFetch || fetch;
   const providers = options.providers || createProviders({ databaseUrl: config.databaseUrl, dataFile, seedFile, now });
+  const adminAuthRequired = Object.hasOwn(options, "adminAuthRequired") ? Boolean(options.adminAuthRequired) : providers.kind === "postgres";
   const service = createMvpService(providers, { now });
   const structuredClassifier = Object.hasOwn(options, "structuredClassifier")
     ? options.structuredClassifier
@@ -417,7 +466,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { testLineSecret, resolveTestLineRequest, lineWebhookHandler }));
+  const server = http.createServer(createRequestHandler(service, { testLineSecret, resolveTestLineRequest, lineWebhookHandler, persistence: providers.persistence, adminAuthRequired }));
 
   return {
     providers,

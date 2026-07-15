@@ -47,6 +47,19 @@ async function operation(name, args) {
     else { await client.query(`UPDATE availability_days SET ${column}=$3 WHERE property_id=$1 AND stay_date=$2`, [propertyId,date,status]); await client.query("UPDATE availability_days SET whole_house=CASE WHEN room301='available' AND room302='available' AND room401='available' AND room402='available' THEN 'available' ELSE 'closed' END WHERE property_id=$1 AND stay_date=$2",[propertyId,date]); }
     return (await operation("getRows", [propertyId,date,new Date(Date.parse(date)+86400000).toISOString().slice(0,10)]))[0];
   }
+  if (name === "getAdminUser") {
+    const r=await client.query("SELECT property_id,username,password_hash FROM admin_users WHERE property_id=$1 AND username=$2",args);
+    return r.rows[0]?{propertyId:r.rows[0].property_id,username:r.rows[0].username,passwordHash:r.rows[0].password_hash}:null;
+  }
+  if (name === "createAdminSession") {
+    await client.query("DELETE FROM admin_sessions WHERE expires_at <= now()");
+    await client.query("INSERT INTO admin_sessions(token_hash,property_id,username,expires_at) VALUES($1,$2,$3,$4)",args); return true;
+  }
+  if (name === "getAdminSession") {
+    const r=await client.query("SELECT property_id,username,expires_at FROM admin_sessions WHERE token_hash=$1 AND expires_at > now()",args);
+    return r.rows[0]?{propertyId:r.rows[0].property_id,username:r.rows[0].username,expiresAt:new Date(r.rows[0].expires_at).toISOString()}:null;
+  }
+  if (name === "deleteAdminSession") { await client.query("DELETE FROM admin_sessions WHERE token_hash=$1",args); return true; }
   if (name === "getConversationState") {
     const r=await client.query("SELECT state FROM conversation_states WHERE property_id=$1 AND channel_id=$2 AND line_user_id=$3",args); return r.rows[0] ? (typeof r.rows[0].state === "string" ? JSON.parse(r.rows[0].state) : r.rows[0].state) : null;
   }
