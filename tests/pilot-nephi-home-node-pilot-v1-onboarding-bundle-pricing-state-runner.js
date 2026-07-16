@@ -115,6 +115,8 @@ async function request(url, options = {}) {
     result = await request(`${base}/assets/onboarding.css`);
     assert.match(result.text, /\.topic-title/);
     assert.match(result.text, /\.save-feedback/);
+    assert.match(result.text, /input:not\(\[type=checkbox\]\),select,textarea,button\{width:100%;min-width:0\}/);
+    assert.match(result.text, /@media\(max-width:390px\)[\s\S]*\.actions\{grid-template-columns:1fr 1fr/);
     result = await request(`${base}/admin`);
     assert.match(result.text, /bundleMondayThursdayPrice/);
     assert.match(result.text, /bundleSaturdayHolidayPrice/);
@@ -123,5 +125,5 @@ async function request(url, options = {}) {
     if (providers.close) await providers.close();
     fs.rmSync(temp, { recursive: true, force: true });
   }
-  console.log("28/28 PASS");
+  console.log("30/30 PASS");
 })().catch((error) => { console.error(error.stack || error); process.exit(1); });
