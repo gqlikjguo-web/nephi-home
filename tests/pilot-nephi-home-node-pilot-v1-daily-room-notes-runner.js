@@ -126,6 +126,7 @@ function runFrontendChecks() {
   const adminHtml = fs.readFileSync(path.join(ROOT, "public/admin.html"), "utf8");
   const adminJs = fs.readFileSync(path.join(ROOT, "public/assets/admin.js"), "utf8");
   const adminCss = fs.readFileSync(path.join(ROOT, "public/assets/styles.css"), "utf8");
+  const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
 
   assert.match(adminHtml, /data-view="daily"/);
   assert.match(adminHtml, /data-view="calendar"/);
@@ -138,6 +139,7 @@ function runFrontendChecks() {
 
   assert.match(adminJs, /availabilityState/);
   assert.match(adminJs, /renderDailyView/);
+  assert.match(adminJs, /prioritizeDailyDates/);
   assert.match(adminJs, /renderCalendarView/);
   assert.match(adminJs, /queueMutation/);
   assert.match(adminJs, /requestGeneration/);
@@ -154,6 +156,7 @@ function runFrontendChecks() {
   assert.match(adminCss, /min-height:\s*44px/);
   assert.match(adminCss, /min-width:\s*0/);
   assert.match(adminCss, /@media\(max-width:640px\)/);
+  assert.match(packageJson.scripts.test, /daily-room-notes-runner/);
 }
 
 async function runProviderChecks(connection) {

@@ -57,10 +57,14 @@ function createRoomRow(date, room) {
   renderSaveState(statusArea, mutationKey("status", date, room.id)); row.append(name, actions, statusArea); return row;
 }
 
+function prioritizeDailyDates(dates) { const todayIndex = dates.indexOf(currentDateKey()); return todayIndex < 0 ? { upcoming: dates, earlier: [] } : { upcoming: dates.slice(todayIndex), earlier: dates.slice(0, todayIndex) }; }
+function createDayCard(date) { const day = availabilityState.days.get(date), card = element("section", `availability-day-card${date === currentDateKey() ? " is-today" : ""}`), heading = element("div", "availability-day-heading"), title = element("h3", "", dateLabel(date)); const available = availabilityState.rooms.filter(room => day[room.id] === "available").length, summary = element("span", "day-summary", `${available} 可售／${availabilityState.rooms.length - available} 不可售`); heading.append(title, summary); if (!day._hasAvailability) heading.append(element("span", "missing-data", "尚無房況資料，依不可售顯示")); card.append(heading, ...availabilityState.rooms.map(room => createRoomRow(date, room))); return card; }
 function renderDailyView() {
   const container = $("dailyAvailability");
   if (!availabilityState.rooms.length) { container.replaceChildren(element("div", "availability-empty", "目前沒有可管理的房型。")); return; }
-  container.replaceChildren(...[...availabilityState.days.keys()].map(date => { const day = availabilityState.days.get(date), card = element("section", `availability-day-card${date === currentDateKey() ? " is-today" : ""}`), heading = element("div", "availability-day-heading"), title = element("h3", "", dateLabel(date)); const available = availabilityState.rooms.filter(room => day[room.id] === "available").length, summary = element("span", "day-summary", `${available} 可售／${availabilityState.rooms.length - available} 不可售`); heading.append(title, summary); if (!day._hasAvailability) heading.append(element("span", "missing-data", "尚無房況資料，依不可售顯示")); card.append(heading, ...availabilityState.rooms.map(room => createRoomRow(date, room))); return card; }));
+  const groups = prioritizeDailyDates([...availabilityState.days.keys()]), nodes = groups.upcoming.map(createDayCard);
+  if (groups.earlier.length) nodes.push(element("div", "daily-date-separator", "本月較早日期"), ...groups.earlier.map(createDayCard));
+  container.replaceChildren(...nodes);
 }
 
 function renderDayDetails(date) {
