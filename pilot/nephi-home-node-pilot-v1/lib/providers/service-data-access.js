@@ -26,6 +26,8 @@ function createServiceDataAccess(providers) {
     })),
     getAvailabilityRows: (...args) => availability.getRows(...args),
     setAvailabilityDay: (...args) => availability.setDay(...args),
+    getAvailabilityDayNotes: (...args) => availability.getDayNotes(...args),
+    setAvailabilityDayNote: (...args) => availability.setDayNote(...args),
     listGuests: (...args) => persistence.listGuests(...args),
     createGuest: (...args) => persistence.createGuest(...args),
     updateGuest: (...args) => persistence.updateGuest(...args),

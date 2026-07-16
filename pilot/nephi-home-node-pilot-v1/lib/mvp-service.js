@@ -264,12 +264,19 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     }
     const from = `${year}-${String(month).padStart(2, "0")}-01`;
     const to = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+    const notesByDate = {};
+    for (const item of repository.getAvailabilityDayNotes(homestay.customerId, from, to)) {
+      notesByDate[item.date] = notesByDate[item.date] || {};
+      notesByDate[item.date][item.roomTypeId] = item;
+    }
     return {
+      propertyId: homestay.customerId,
       customerId: homestay.customerId,
       year,
       month,
       rooms: homestay.rooms,
-      rows: repository.getAvailabilityRows(homestay.customerId, from, to)
+      rows: repository.getAvailabilityRows(homestay.customerId, from, to),
+      notesByDate
     };
   }
 
@@ -285,6 +292,21 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       throw new AppError(400, "INVALID_STATUS", "status must be available or closed");
     }
     return repository.setAvailabilityDay(homestay.customerId, date, roomId, status);
+  }
+
+  function setDayNote(input) {
+    const homestay = requireCustomerId(input.propertyId);
+    let date;
+    try { date = parseDateKey(input.date, "date"); }
+    catch { throw new AppError(400, "INVALID_DATE", "請輸入有效日期"); }
+    const roomTypeId = String(input.roomTypeId || "");
+    if (!(homestay.rooms || []).some((room) => room.id === roomTypeId && room.inventoryType !== "bundle")) {
+      throw new AppError(400, "UNKNOWN_ROOM", "找不到可管理的房型");
+    }
+    if (typeof input.note !== "string") throw new AppError(400, "INVALID_NOTE", "備註格式錯誤");
+    const note = input.note.trim();
+    if (note.length > 1000) throw new AppError(400, "NOTE_TOO_LONG", "內部備註不可超過 1000 字");
+    return repository.setAvailabilityDayNote(homestay.customerId, roomTypeId, date, note);
   }
 
   function setMonth(input) {
@@ -790,6 +812,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     searchAvailability,
     getMonth,
     setDay,
+    setDayNote,
     setMonth,
     applyBatch,
     listGuests,

@@ -41,7 +41,7 @@ function cookieValue(request, name) {
 }
 
 function isAdminDataRoute(pathname) {
-  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
+  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
 }
 
 function sendData(response, data, status = 200) {
@@ -290,7 +290,7 @@ function createRequestHandler(service, options = {}) {
         if (!adminSession) throw new AppError(401, "LOGIN_REQUIRED", "請先登入");
         if (!adminSession.propertyId) throw new AppError(409, "PROPERTY_SELECTION_REQUIRED", "請先選擇要管理的旅宿");
         if (request.method !== "GET") request.adminBody = await readJsonBody(request);
-        const requestedPropertyId = String(request.method === "GET" ? url.searchParams.get("customerId") || "" : request.adminBody.customerId || "").trim();
+        const requestedPropertyId = String(request.method === "GET" ? url.searchParams.get("propertyId") || url.searchParams.get("customerId") || "" : request.adminBody.propertyId || request.adminBody.customerId || "").trim();
         if (requestedPropertyId && requestedPropertyId !== adminSession.propertyId) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權存取其他業者資料");
       }
 
@@ -315,13 +315,18 @@ function createRequestHandler(service, options = {}) {
       }
       if (request.method === "GET" && pathname === "/api/availability/month") {
         return sendData(response, service.getMonth(
-          url.searchParams.get("customerId"),
+          url.searchParams.get("propertyId") || url.searchParams.get("customerId"),
           url.searchParams.get("year"),
           url.searchParams.get("month")
         ));
       }
       if (request.method === "POST" && pathname === "/api/availability/day") {
-        return sendData(response, { row: service.setDay(request.adminBody || await readJsonBody(request)) });
+        const body=request.adminBody||await readJsonBody(request);
+        return sendData(response, { row: service.setDay({ ...body, customerId:body.propertyId||body.customerId, roomId:body.roomTypeId||body.roomId }) });
+      }
+      if (request.method === "PUT" && pathname === "/api/availability/day-note") {
+        const body=request.adminBody||await readJsonBody(request);
+        return sendData(response, { note: service.setDayNote({ ...body, propertyId:body.propertyId||body.customerId, roomTypeId:body.roomTypeId||body.roomId }) });
       }
       if (request.method === "POST" && pathname === "/api/availability/month") {
         return sendData(response, service.setMonth(request.adminBody || await readJsonBody(request)));
