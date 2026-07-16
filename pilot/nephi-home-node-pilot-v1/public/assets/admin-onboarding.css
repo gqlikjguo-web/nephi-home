@@ -1,0 +1,27 @@
+.admin-review main{width:min(100% - 24px,64rem)}
+.admin-review #message{position:sticky;bottom:0;z-index:5;padding:12px;background:#fff;border:1px solid #d9dfdb;border-radius:9px;overflow-wrap:anywhere}
+.admin-review .item{border:1px solid #d9dfdb;border-radius:14px;padding:18px;margin:16px 0;background:#f9faf9;overflow-wrap:anywhere}
+.admin-review .review-section .review-section{margin:10px 0;background:#f8faf8}
+.admin-review .decision-panel{border-width:2px}
+.admin-review .return-panel{border-color:#b47227}
+.admin-review .approval-panel{border-color:#315d3b}
+.admin-review .reject-panel{border-color:#9a453e}
+.admin-review .decision-panel button{margin-top:8px}
+.admin-review .status-line{font-weight:750}
+.admin-review .completion-card{background:#fff;border:2px solid #315d3b;border-radius:14px;padding:22px;overflow-wrap:anywhere}
+.admin-review .completion-kicker{color:#315d3b;font-weight:800}
+.admin-review .completion-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px}
+.admin-review button:disabled{opacity:.55;cursor:wait}
+.admin-review dl{display:grid;grid-template-columns:minmax(8rem,14rem) 1fr;gap:8px 14px}
+.admin-review dt{font-weight:750}
+.admin-review dd{margin:0;overflow-wrap:anywhere}
+@media(max-width:390px){
+  .admin-review main{width:100%;padding:10px}
+  .admin-review header,.admin-review>main>section,.admin-review .item,.admin-review .completion-card{padding:14px}
+  .admin-review .completion-actions{grid-template-columns:1fr}
+  .admin-review dl{grid-template-columns:1fr;gap:3px}
+  .admin-review dd{margin-bottom:8px}
+  .admin-review #message{bottom:6px}
+  .admin-review .decision-panel{padding:14px}
+  .admin-review input,.admin-review select,.admin-review textarea,.admin-review button{min-height:48px}
+}

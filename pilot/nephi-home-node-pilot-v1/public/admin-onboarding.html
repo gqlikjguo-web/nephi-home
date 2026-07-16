@@ -1,1 +1,26 @@
-<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{PUBLIC_BRAND_NAME}}｜業者導入審核</title><link rel="stylesheet" href="/assets/onboarding.css"></head><body data-public-base-url="{{PUBLIC_BASE_URL}}"><main><header><p>{{PUBLIC_BRAND_NAME}}</p><h1>業者導入審核</h1><p>此頁沿用已登入的業者後台 session，且需要平台管理者授權。</p></header><section><button id="refresh">重新整理</button><div id="applications"></div><p id="message"></p></section><footer><small>© {{PUBLIC_BRAND_NAME}}</small></footer></main><script src="/assets/admin-onboarding.js" defer></script></body></html>
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{PUBLIC_BRAND_NAME}}｜業者導入審核</title>
+  <link rel="stylesheet" href="/assets/onboarding.css">
+  <link rel="stylesheet" href="/assets/admin-onboarding.css">
+</head>
+<body class="admin-review" data-public-base-url="{{PUBLIC_BASE_URL}}">
+  <main>
+    <header>
+      <p>{{PUBLIC_BRAND_NAME}}</p>
+      <h1>業者導入審核</h1>
+      <p>此頁沿用已登入的業者後台 session，且需要平台管理者授權。</p>
+    </header>
+    <section>
+      <button id="refresh" type="button">重新整理</button>
+      <div id="applications"></div>
+      <p id="message" tabindex="-1" aria-live="polite"></p>
+    </section>
+    <footer><small>© {{PUBLIC_BRAND_NAME}}</small></footer>
+  </main>
+  <script src="/assets/admin-onboarding.js" defer></script>
+</body>
+</html>

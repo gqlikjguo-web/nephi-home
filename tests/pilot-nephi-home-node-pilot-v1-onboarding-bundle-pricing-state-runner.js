@@ -76,7 +76,7 @@ async function request(url, options = {}) {
     result = await request(`${base}/api/public/onboarding/drafts/${applicationId}/submit`, { method: "POST", headers: { "x-onboarding-draft-token": draftToken } });
     assert.equal(result.body.data.status, "resubmitted");
 
-    result = await request(`${base}/api/admin/onboarding/applications/${applicationId}/approve`, { method: "POST", headers: { cookie: platformCookie, "content-type": "application/json" }, body: JSON.stringify({ propertyId: "bundle_pricing_test", adminUsername: "owner" }) });
+    result = await request(`${base}/api/admin/onboarding/applications/${applicationId}/approve`, { method: "POST", headers: { cookie: platformCookie, "content-type": "application/json" }, body: JSON.stringify({ mode: "new", propertyId: "bundle_pricing_test" }) });
     assert.equal(result.response.status, 200);
     const setupToken = result.body.data.adminSetupToken;
     const approvedBundle = providers.customerSettings.listBundles("bundle_pricing_test")[0];
@@ -88,7 +88,7 @@ async function request(url, options = {}) {
     assert.equal(approvedBundle.sundayPrice, 9600);
 
     await request(`${base}/api/admin/setup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: setupToken, password: "owner-password-123" }) });
-    result = await request(`${base}/api/admin/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "bundle_pricing_test", username: "owner", password: "owner-password-123" }) });
+    result = await request(`${base}/api/admin/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: payload.email, password: "owner-password-123" }) });
     const ownerCookie = result.response.headers.get("set-cookie").split(";")[0];
     result = await request(`${base}/api/bundles/${encodeURIComponent(approvedBundle.id)}`, { method: "PUT", headers: { cookie: ownerCookie, "content-type": "application/json" }, body: JSON.stringify({ customerId: "bundle_pricing_test", name: approvedBundle.name, capacity: 15, memberRoomIds: approvedBundle.memberRoomIds, enabled: true, mondayThursdayPrice: 9100, fridayPrice: 10100, saturdayHolidayPrice: 12100, sundayPrice: 9700 }) });
     assert.equal(result.response.status, 200);

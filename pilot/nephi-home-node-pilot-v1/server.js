@@ -48,12 +48,18 @@ function sendData(response, data, status = 200) {
   sendJson(response, status, { ok: true, data });
 }
 
+function adminSessionData(session) {
+  const safe = { ...session, properties: (session.properties || []).map(({ username, ...property }) => property) };
+  if (String(safe.username || "").startsWith("onboarding_")) delete safe.username;
+  return safe;
+}
+
 function sendError(response, error) {
   const status = error instanceof AppError ? error.status : 500;
   const code = error instanceof AppError ? error.code : "INTERNAL_ERROR";
   sendJson(response, status, {
     ok: false,
-    error: { code, message: status === 500 ? "Test-only server error" : error.message }
+    error: { code, message: status === 500 ? "伺服器暫時無法完成操作，請稍後再試" : error.message }
   });
 }
 
@@ -217,12 +223,26 @@ function createRequestHandler(service, options = {}) {
       if(draftMatch&&request.method==="PATCH")return sendData(response,await onboarding.saveDraft(draftMatch[1],draftToken,await readJsonBody(request)));
       if(previewMatch&&request.method==="GET")return sendData(response,await onboarding.preview(previewMatch[1],draftToken));
       if(submitMatch&&request.method==="POST")return sendData(response,await onboarding.submit(submitMatch[1],draftToken));
+      if(pathname==="/api/admin/setup-invitation"&&request.method==="GET")return sendData(response,onboarding.getInvitation(url.searchParams.get("token")));
       if(pathname==="/api/admin/setup"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.redeemInvitation(body.token,body.password));}
 
       if(pathname.startsWith("/api/admin/onboarding/")){
         const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");
         if(pathname==="/api/admin/onboarding/applications"&&request.method==="GET")return sendData(response,{items:onboarding.list().map(x=>({...x,completeness:require("./lib/onboarding-service").completeness(x)}))});
-        const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reject|approve|resume-link))?$/.exec(pathname);if(review&&request.method==="GET"&&!review[2])return sendData(response,onboarding.get(review[1]));if(review&&request.method==="POST"){if(review[2]==="resume-link"){const issued=onboarding.issueResumeLink(review[1]);return sendData(response,{resumeUrl:`${publicBrand.publicBaseUrl}/onboarding?resume=${encodeURIComponent(issued.resumeToken)}`,expiresAt:issued.expiresAt});}const body=await readJsonBody(request);if(review[2]==="approve"){const approved=onboarding.approve(review[1],body,session);return sendData(response,{...approved,adminSetupUrl:`${publicBrand.publicBaseUrl}/admin/setup?token=${encodeURIComponent(approved.adminSetupToken)}`});}return sendData(response,await onboarding.review(review[1],review[2]==="reject"?"rejected":"changes_requested",body.reason,session));}
+        if(pathname==="/api/admin/onboarding/properties"&&request.method==="GET")return sendData(response,{items:onboarding.listProperties()});
+        const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reject|approve|resume-link))?$/.exec(pathname);
+        if(review&&request.method==="GET"&&!review[2])return sendData(response,onboarding.get(review[1]));
+        if(review&&request.method==="POST"){
+          if(review[2]==="resume-link"){const issued=onboarding.issueResumeLink(review[1]);return sendData(response,{resumeUrl:`${publicBrand.publicBaseUrl}/onboarding?resume=${encodeURIComponent(issued.resumeToken)}`,expiresAt:issued.expiresAt});}
+          const body=await readJsonBody(request);
+          if(review[2]==="approve"){const approved=onboarding.approve(review[1],body,session);return sendData(response,{...approved,adminSetupUrl:`${publicBrand.publicBaseUrl}/admin/setup?token=${encodeURIComponent(approved.adminSetupToken)}`});}
+          const reviewed=await onboarding.review(review[1],review[2]==="reject"?"rejected":"changes_requested",body.reason,session);
+          if(review[2]==="request-changes"){
+            const{resumeToken,...safeReview}=reviewed;
+            return sendData(response,{...reviewed.application,...safeReview,resumeUrl:`${publicBrand.publicBaseUrl}/onboarding?resume=${encodeURIComponent(resumeToken)}`});
+          }
+          return sendData(response,reviewed);
+        }
       }
 
       if (request.method === "GET" && pathname === "/api/public/availability") {
@@ -261,7 +281,7 @@ function createRequestHandler(service, options = {}) {
         }
         const propertyId = String(body.propertyId || "").trim(), username = String(body.username || "").trim();
         const user = await persistence.getAdminUser(propertyId, username);
-        if (!user || !await verifyPassword(body.password, user.passwordHash)) throw new AppError(401, "INVALID_LOGIN", "帳號或密碼錯誤");
+        if (!user || String(user.passwordHash).startsWith("disabled$") || !await verifyPassword(body.password, user.passwordHash)) throw new AppError(401, "INVALID_LOGIN", "帳號或密碼錯誤");
         await persistence.createAdminSession(sessionTokenHash(token), propertyId, username, expiresAt);
         return sendJson(response, 200, { ok: true, data: { propertyId, username, requiresPropertySelection: false } }, cookie);
       }
@@ -269,7 +289,7 @@ function createRequestHandler(service, options = {}) {
         const token = cookieValue(request, "nephi_admin_session"), body = await readJsonBody(request);
         const session = token && adminAuthRequired ? await persistence.selectAdminProperty(sessionTokenHash(token), String(body.propertyId || "").trim()) : null;
         if (!session) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權管理此旅宿");
-        return sendData(response, session);
+        return sendData(response, adminSessionData(session));
       }
       if (request.method === "POST" && pathname === "/api/admin/logout") {
         const token = cookieValue(request, "nephi_admin_session");
@@ -280,7 +300,7 @@ function createRequestHandler(service, options = {}) {
         const token = cookieValue(request, "nephi_admin_session");
         const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
         if (!session) throw new AppError(401, "LOGIN_REQUIRED", "請先登入");
-        return sendData(response, session);
+        return sendData(response, adminSessionData(session));
       }
 
       let adminSession = null;
