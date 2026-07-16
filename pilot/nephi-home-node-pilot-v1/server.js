@@ -19,6 +19,7 @@ const {
 const { runtimeConfig } = require("./config/runtime");
 const { verifyPassword, sessionTokenHash } = require("./lib/admin-auth");
 const { createOnboardingService } = require("./lib/onboarding-service");
+const { createOnboardingEmailNotifier } = require("./lib/onboarding-email");
 const { createPublicBrand } = require("./config/public-brand");
 const { renderPublicHtml } = require("./lib/public-brand-html");
 
@@ -209,6 +210,7 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "GET" && pathname.startsWith("/assets/")) return sendStatic(response, pathname.slice(1), publicBrand);
 
       if(pathname==="/api/public/onboarding/drafts"&&request.method==="POST"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");return sendData(response,onboarding.createDraft(),201);}
+      if(pathname==="/api/public/onboarding/resume"&&request.method==="GET"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");return sendData(response,onboarding.resolveResume(url.searchParams.get("token")));}
       const draftMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)$/.exec(pathname),previewMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/preview$/.exec(pathname),submitMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/submit$/.exec(pathname);const draftToken=request.headers["x-onboarding-draft-token"];
       if(draftMatch&&request.method==="GET")return sendData(response,await onboarding.getDraft(draftMatch[1],draftToken));
       if(draftMatch&&request.method==="PATCH")return sendData(response,await onboarding.saveDraft(draftMatch[1],draftToken,await readJsonBody(request)));
@@ -219,7 +221,7 @@ function createRequestHandler(service, options = {}) {
       if(pathname.startsWith("/api/admin/onboarding/")){
         const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");
         if(pathname==="/api/admin/onboarding/applications"&&request.method==="GET")return sendData(response,{items:onboarding.list().map(x=>({...x,completeness:require("./lib/onboarding-service").completeness(x)}))});
-        const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reject|approve))?$/.exec(pathname);if(review&&request.method==="GET"&&!review[2])return sendData(response,onboarding.get(review[1]));if(review&&request.method==="POST"){const body=await readJsonBody(request);if(review[2]==="approve"){const approved=onboarding.approve(review[1],body,session);return sendData(response,{...approved,adminSetupUrl:`${publicBrand.publicBaseUrl}/admin/setup?token=${encodeURIComponent(approved.adminSetupToken)}`});}return sendData(response,onboarding.review(review[1],review[2]==="reject"?"rejected":"changes_requested",body.reason,session));}
+        const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reject|approve))?$/.exec(pathname);if(review&&request.method==="GET"&&!review[2])return sendData(response,onboarding.get(review[1]));if(review&&request.method==="POST"){const body=await readJsonBody(request);if(review[2]==="approve"){const approved=onboarding.approve(review[1],body,session);return sendData(response,{...approved,adminSetupUrl:`${publicBrand.publicBaseUrl}/admin/setup?token=${encodeURIComponent(approved.adminSetupToken)}`});}return sendData(response,await onboarding.review(review[1],review[2]==="reject"?"rejected":"changes_requested",body.reason,session));}
       }
 
       if (request.method === "GET" && pathname === "/api/public/availability") {
@@ -399,7 +401,8 @@ function createApp(options = {}) {
   const providers = options.providers || createProviders({ databaseUrl: config.databaseUrl, dataFile, seedFile, now });
   const adminAuthRequired = Object.hasOwn(options, "adminAuthRequired") ? Boolean(options.adminAuthRequired) : providers.kind === "postgres";
   const service = createMvpService(providers, { now });
-  const onboarding = createOnboardingService(providers.onboarding);
+  const onboardingEmailNotifier=createOnboardingEmailNotifier({env:options.onboardingEmailEnv||process.env,fetchImpl:options.onboardingEmailFetch||globalThis.fetch,publicBaseUrl:publicBrand.publicBaseUrl});
+  const onboarding = createOnboardingService(providers.onboarding,{emailNotifier:onboardingEmailNotifier});
   const structuredClassifier = Object.hasOwn(options, "structuredClassifier")
     ? options.structuredClassifier
     : createTestOnlyOpenAiStructuredClassifierFromEnv({

@@ -30,6 +30,10 @@ services:
         value: "15000"
       - key: PUBLIC_BASE_URL
         value: https://app.junzanai.com
+      - key: ONBOARDING_EMAIL_FROM
+        value: JunZan AI <noreply@junzanai.com>
+      - key: RESEND_API_KEY
+        sync: false
       - key: OPENAI_TEST_API_KEY
         sync: false
       - key: OPENAI_TEST_MODEL
