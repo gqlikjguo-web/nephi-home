@@ -122,6 +122,40 @@ async function runApiChecks(connection) {
   }
 }
 
+function runFrontendChecks() {
+  const adminHtml = fs.readFileSync(path.join(ROOT, "public/admin.html"), "utf8");
+  const adminJs = fs.readFileSync(path.join(ROOT, "public/assets/admin.js"), "utf8");
+  const adminCss = fs.readFileSync(path.join(ROOT, "public/assets/styles.css"), "utf8");
+
+  assert.match(adminHtml, /data-view="daily"/);
+  assert.match(adminHtml, /data-view="calendar"/);
+  assert.match(adminHtml, /id="dailyAvailability"/);
+  assert.match(adminHtml, /id="availabilityCalendar"/);
+  assert.match(adminHtml, /id="dayDetails"/);
+  assert.match(adminHtml, /id="noteEditor"/);
+  assert.match(adminHtml, /id="noteSave"/);
+  assert.match(adminHtml, /id="noteClear"/);
+
+  assert.match(adminJs, /availabilityState/);
+  assert.match(adminJs, /renderDailyView/);
+  assert.match(adminJs, /renderCalendarView/);
+  assert.match(adminJs, /queueMutation/);
+  assert.match(adminJs, /requestGeneration/);
+  assert.match(adminJs, /notesByDate/);
+  assert.match(adminJs, /propertyId:\s*session\.propertyId/);
+  assert.match(adminJs, /roomTypeId/);
+  assert.match(adminJs, /\/api\/availability\/day-note/);
+  assert.match(adminJs, /localStorage/);
+  assert.doesNotMatch(adminJs, /\/api\/public\/availability/);
+
+  assert.match(adminCss, /\.availability-view-tabs/);
+  assert.match(adminCss, /\.availability-daily/);
+  assert.match(adminCss, /\.availability-calendar/);
+  assert.match(adminCss, /min-height:\s*44px/);
+  assert.match(adminCss, /min-width:\s*0/);
+  assert.match(adminCss, /@media\(max-width:640px\)/);
+}
+
 async function runProviderChecks(connection) {
   const providers = createPostgresProviders(connection);
   try {
@@ -151,13 +185,18 @@ async function runProviderChecks(connection) {
 }
 
 async function main() {
+  const mode = process.argv[2] || "--all";
+  if (mode === "--frontend-only") {
+    runFrontendChecks();
+    console.log("每日房況與月曆前端契約：25/25 PASS");
+    return;
+  }
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-daily-room-notes-"));
   const connection = { kind: "pglite", dataDir: path.join(temp, "database") };
   try {
     await migratePostgres(connection);
     await migratePostgres(connection);
     await seedTestProperties(connection);
-    const mode = process.argv[2] || "--all";
     if (mode === "--provider-only" || mode === "--all") {
       await runProviderChecks(connection);
       console.log("每日房型備註 provider：8/8 PASS");
@@ -165,6 +204,10 @@ async function main() {
     if (mode === "--api-only" || mode === "--all") {
       await runApiChecks(connection);
       console.log("每日房型備註 API：23/23 PASS");
+    }
+    if (mode === "--all") {
+      runFrontendChecks();
+      console.log("每日房況與月曆前端契約：25/25 PASS");
     }
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
