@@ -9,6 +9,9 @@ h1, h2, p { margin-top: 0; }
 form { display: grid; gap: 14px; }
 label { display: grid; gap: 6px; font-weight: 650; }
 input, select, button, .line-button { width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid #aeb6b0; border-radius: 8px; font: inherit; }
+input, select, button { min-width: 0; }
+input[type="date"] { text-align: center; padding-left: 12px; padding-right: 12px; }
+input[type="date"]::-webkit-date-and-time-value { min-width: 100%; text-align: center; }
 button, .line-button { border: 0; background: #315d3b; color: #fff; font-weight: 700; text-align: center; text-decoration: none; cursor: pointer; }
 .message { margin: 14px 0 0; color: #8a2d22; }
 .result-list { margin: 8px 0 18px; padding: 0; list-style: none; }
@@ -16,4 +19,6 @@ button, .line-button { border: 0; background: #315d3b; color: #fff; font-weight:
 .result-list strong { display: block; }
 .line-button { display: block; background: #06c755; }
 .line-button[hidden] { display: none; }
-@media (max-width: 390px) { .guest-shell { width: 100%; padding: 16px 12px 36px; } .card { padding: 15px; } }
+.line-unavailable { color: #607268; text-align: center; }
+.stay-dates { white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 390px) { .guest-shell { width: 100%; max-width: 390px; padding: 16px 12px 36px; overflow-x: hidden; } .card { padding: 15px; } .stay-dates { font-size: .94rem; } }

@@ -46,4 +46,3 @@ CREATE TABLE IF NOT EXISTS inventory_availability_days (
 );
 CREATE INDEX IF NOT EXISTS onboarding_status_idx ON onboarding_applications(status,updated_at);
 CREATE INDEX IF NOT EXISTS inventory_availability_range_idx ON inventory_availability_days(property_id,stay_date);
-INSERT INTO platform_admin_grants(property_id,username) SELECT property_id,username FROM admin_users WHERE property_id='nephi_home' ON CONFLICT DO NOTHING;

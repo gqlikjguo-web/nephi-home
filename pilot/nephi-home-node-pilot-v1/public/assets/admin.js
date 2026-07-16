@@ -10,7 +10,11 @@ async function api(path, options = {}) {
   return body.data;
 }
 function cell(tag, text) { const node = document.createElement(tag); node.textContent = text; return node; }
-function showLogin(message = "") { session = null; $("login").hidden = false; $("workspace").hidden = true; $("logout").hidden = true; $("loginMessage").textContent = message; }
+function showLogin(message = "") { session = null; $("login").hidden = false; $("propertyChooser").hidden = true; $("workspace").hidden = true; $("logout").hidden = true; $("loginMessage").textContent = message; }
+function showPropertyChooser(value) {
+  session = value; $("login").hidden = true; $("workspace").hidden = true; $("logout").hidden = false; $("propertyChooser").hidden = false; $("propertyChoiceMessage").textContent = "";
+  $("propertyChoices").replaceChildren(...value.properties.map(property => { const button = document.createElement("button"); button.type = "button"; button.textContent = property.propertyName || property.propertyId; button.onclick = async () => { button.disabled = true; try { await enter(await api("/api/admin/select-property", { method: "POST", body: JSON.stringify({ propertyId: property.propertyId }) })); } catch (error) { $("propertyChoiceMessage").textContent = error.message; button.disabled = false; } }; return button; }));
+}
 function currentMonth() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
 
 async function loadMonth() {
@@ -69,7 +73,7 @@ async function loadPricing() {
 
 $("bundleForm").onsubmit = async event => { event.preventDefault(); const id = $("bundleId").value, payload = { customerId: session.propertyId, name: $("bundleName").value, capacity: Number($("bundleCapacity").value), mondayThursdayPrice: Number($("bundleMondayThursdayPrice").value), fridayPrice: Number($("bundleFridayPrice").value), saturdayHolidayPrice: Number($("bundleSaturdayHolidayPrice").value), sundayPrice: Number($("bundleSundayPrice").value), enabled: $("bundleEnabled").checked, memberRoomIds: [...document.querySelectorAll('[name="memberRoom"]:checked')].map(input => input.value) }; try { await api(id ? `/api/bundles/${encodeURIComponent(id)}` : "/api/bundles", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }); clearBundle(); await Promise.all([loadBundles(), loadMonth()]); } catch (error) { alert(error.message); } };
 $("overrideForm").onsubmit = async event => { event.preventDefault(); try { await api("/api/room-price-overrides", { method: "POST", body: JSON.stringify({ customerId: session.propertyId, roomId: $("overrideRoom").value, date: $("overrideDate").value, price: Number($("overridePrice").value) }) }); await loadPricing(); event.currentTarget.reset(); } catch (error) { alert(error.message); } };
-async function enter(value) { session = value; $("login").hidden = true; $("workspace").hidden = false; $("logout").hidden = false; $("propertyLabel").textContent = `業者：${value.propertyId}`; $("month").value = $("month").value || currentMonth(); await Promise.all([loadMonth(), loadBundles(), loadPricing()]); }
+async function enter(value) { if (value.requiresPropertySelection || !value.propertyId) return showPropertyChooser(value); session = value; $("login").hidden = true; $("propertyChooser").hidden = true; $("workspace").hidden = false; $("logout").hidden = false; $("propertyLabel").textContent = `業者：${value.propertyId}`; $("month").value = $("month").value || currentMonth(); await Promise.all([loadMonth(), loadBundles(), loadPricing()]); }
 $("loginForm").onsubmit = async event => { event.preventDefault(); try { await enter(await api("/api/admin/login", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) })); } catch (error) { showLogin(error.message); } };
 $("month").onchange = loadMonth; $("bundleCancel").onclick = clearBundle; $("logout").onclick = async () => { await api("/api/admin/logout", { method: "POST", body: "{}" }); showLogin(); };
 api("/api/admin/session").then(enter).catch(() => showLogin());

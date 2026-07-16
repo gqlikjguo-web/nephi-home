@@ -142,7 +142,8 @@ function publicAvailabilityResult(result) {
   let lineUrl = "";
   try {
     const parsed = new URL(String(result.lineUrl || ""));
-    if (parsed.protocol === "https:" || parsed.protocol === "http:") lineUrl = parsed.toString();
+    const allowedLineHosts = new Set(["lin.ee", "line.me"]);
+    if (parsed.protocol === "https:" && allowedLineHosts.has(parsed.hostname.toLowerCase())) lineUrl = parsed.toString();
   } catch {}
   const item = (room) => ({
     id: room.id,
@@ -248,14 +249,27 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "POST" && pathname === "/api/admin/login") {
         if (!adminAuthRequired) throw new AppError(503, "ADMIN_AUTH_NOT_CONFIGURED", "Admin login requires PostgreSQL");
         const body = await readJsonBody(request);
-        const propertyId = String(body.propertyId || "").trim();
-        const username = String(body.username || "").trim();
-        const user = await persistence.getAdminUser(propertyId, username);
-        if (!user || !await verifyPassword(body.password, user.passwordHash)) throw new AppError(401, "INVALID_LOGIN", "帳號或密碼錯誤");
         const token = crypto.randomBytes(32).toString("base64url");
         const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+        const cookie = { "set-cookie": `nephi_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=43200; HttpOnly; Secure; SameSite=Strict` };
+        if (Object.hasOwn(body, "email")) {
+          const identity = await persistence.getAdminIdentityByEmail(String(body.email || "").trim());
+          if (!identity || !await verifyPassword(body.password, identity.passwordHash) || !identity.properties.length) throw new AppError(401, "INVALID_LOGIN", "Email 或密碼錯誤");
+          const selected = identity.properties.length === 1 ? identity.properties[0] : null;
+          await persistence.createAdminSession(sessionTokenHash(token), identity.userId, selected && selected.propertyId || null, selected && selected.username || null, expiresAt);
+          return sendJson(response, 200, { ok: true, data: { email: identity.email, propertyId: selected && selected.propertyId || "", properties: identity.properties.map(item => ({ propertyId: item.propertyId, propertyName: item.propertyName })), requiresPropertySelection: !selected, platformAdmin: identity.platformAdmin } }, cookie);
+        }
+        const propertyId = String(body.propertyId || "").trim(), username = String(body.username || "").trim();
+        const user = await persistence.getAdminUser(propertyId, username);
+        if (!user || !await verifyPassword(body.password, user.passwordHash)) throw new AppError(401, "INVALID_LOGIN", "帳號或密碼錯誤");
         await persistence.createAdminSession(sessionTokenHash(token), propertyId, username, expiresAt);
-        return sendJson(response, 200, { ok: true, data: { propertyId, username } }, { "set-cookie": `nephi_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=43200; HttpOnly; Secure; SameSite=Strict` });
+        return sendJson(response, 200, { ok: true, data: { propertyId, username, requiresPropertySelection: false } }, cookie);
+      }
+      if (request.method === "POST" && pathname === "/api/admin/select-property") {
+        const token = cookieValue(request, "nephi_admin_session"), body = await readJsonBody(request);
+        const session = token && adminAuthRequired ? await persistence.selectAdminProperty(sessionTokenHash(token), String(body.propertyId || "").trim()) : null;
+        if (!session) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權管理此旅宿");
+        return sendData(response, session);
       }
       if (request.method === "POST" && pathname === "/api/admin/logout") {
         const token = cookieValue(request, "nephi_admin_session");
@@ -274,6 +288,7 @@ function createRequestHandler(service, options = {}) {
         const token = cookieValue(request, "nephi_admin_session");
         adminSession = token ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
         if (!adminSession) throw new AppError(401, "LOGIN_REQUIRED", "請先登入");
+        if (!adminSession.propertyId) throw new AppError(409, "PROPERTY_SELECTION_REQUIRED", "請先選擇要管理的旅宿");
         if (request.method !== "GET") request.adminBody = await readJsonBody(request);
         const requestedPropertyId = String(request.method === "GET" ? url.searchParams.get("customerId") || "" : request.adminBody.customerId || "").trim();
         if (requestedPropertyId && requestedPropertyId !== adminSession.propertyId) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權存取其他業者資料");

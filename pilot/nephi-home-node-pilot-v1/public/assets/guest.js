@@ -43,10 +43,13 @@ function render(data) {
   bundleResults.replaceChildren(...(data.bundles.length ? [resultList("可詢問包棟方案", data.bundles)] : []));
   message.textContent = data.empty ? "此日期目前沒有符合條件的可售房型或包棟方案。" : "";
   const lineLink = document.querySelector("#lineLink");
+  const lineUnavailable = document.querySelector("#lineUnavailable");
   lineLink.hidden = !data.lineUrl;
+  lineUnavailable.hidden = Boolean(data.lineUrl);
   if (data.lineUrl) lineLink.href = data.lineUrl;
   else lineLink.removeAttribute("href");
   results.hidden = false;
+  results.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 checkIn.addEventListener("change", () => { checkOut.textContent = nextDate(checkIn.value); });
