@@ -60,6 +60,7 @@ class JsonFileRepository {
     if (fs.existsSync(this.dataFile)) {
       const state = this.read();
       state.conversationStates = state.conversationStates || {};
+      state.dailyRoomNotes = state.dailyRoomNotes || {};
       const existingById = Object.fromEntries((state.homestays || []).map((item) => [item.customerId, item]));
       const seedIds = new Set((seed.homestays || []).map((item) => item.customerId));
       state.homestays = (seed.homestays || []).map((item) => {
@@ -81,11 +82,13 @@ class JsonFileRepository {
     const availability = {};
     const guests = {};
     const notes = {};
+    const dailyRoomNotes = {};
 
     for (const homestay of seed.homestays || []) {
       availability[homestay.customerId] = {};
       guests[homestay.customerId] = [];
       notes[homestay.customerId] = [];
+      dailyRoomNotes[homestay.customerId] = {};
       for (let offset = 0; offset < Number(seed.seedDays || 180); offset += 1) {
         const date = dateKey(addUtcDays(start, offset));
         availability[homestay.customerId][date] = {
@@ -106,6 +109,7 @@ class JsonFileRepository {
       availability,
       guests,
       notes,
+      dailyRoomNotes,
       messageLogs: seed.messageLogs || {},
       conversationStates: {}
     };
@@ -186,10 +190,12 @@ class JsonFileRepository {
       state.guests = state.guests || {};
       state.notes = state.notes || {};
       state.messageLogs = state.messageLogs || {};
+      state.dailyRoomNotes = state.dailyRoomNotes || {};
       state.availability[input.customerId] = state.availability[input.customerId] || {};
       state.guests[input.customerId] = state.guests[input.customerId] || [];
       state.notes[input.customerId] = state.notes[input.customerId] || [];
       state.messageLogs[input.customerId] = state.messageLogs[input.customerId] || [];
+      state.dailyRoomNotes[input.customerId] = state.dailyRoomNotes[input.customerId] || {};
 
       if (created) {
         const start = new Date(this.now());
@@ -235,6 +241,42 @@ class JsonFileRepository {
       }
       rows[date] = row;
       return { ...row };
+    });
+  }
+
+  getAvailabilityDayNotes(customerId, from, to) {
+    const dates = (this.read().dailyRoomNotes || {})[customerId] || {};
+    return Object.keys(dates)
+      .filter((date) => (!from || date >= from) && (!to || date < to))
+      .sort()
+      .flatMap((date) => Object.values(dates[date]).map((item) => ({ ...item })));
+  }
+
+  setAvailabilityDayNote(customerId, roomTypeId, date, value) {
+    return this.mutate((state) => {
+      const homestay = (state.homestays || []).find((item) => item.customerId === customerId);
+      if (!homestay || !(homestay.rooms || []).some((room) => room.id === roomTypeId)) throw new Error("room not found");
+      state.dailyRoomNotes = state.dailyRoomNotes || {};
+      state.dailyRoomNotes[customerId] = state.dailyRoomNotes[customerId] || {};
+      state.dailyRoomNotes[customerId][date] = state.dailyRoomNotes[customerId][date] || {};
+      const note = String(value || "").trim();
+      if (!note) {
+        delete state.dailyRoomNotes[customerId][date][roomTypeId];
+        if (!Object.keys(state.dailyRoomNotes[customerId][date]).length) delete state.dailyRoomNotes[customerId][date];
+        return null;
+      }
+      const existing = state.dailyRoomNotes[customerId][date][roomTypeId];
+      const timestamp = this.now().toISOString();
+      const item = {
+        propertyId: customerId,
+        roomTypeId,
+        date,
+        note,
+        createdAt: existing ? existing.createdAt : timestamp,
+        updatedAt: timestamp
+      };
+      state.dailyRoomNotes[customerId][date][roomTypeId] = item;
+      return { ...item };
     });
   }
 

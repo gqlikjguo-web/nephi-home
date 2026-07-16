@@ -56,6 +56,17 @@ async function operation(name, args) {
     const rows=result.rows.map((r) => ({ date: r.date.slice(0,10), room301:r.room301, room302:r.room302, room401:r.room401, room402:r.room402, wholeHouse:r.whole_house }));
     const bundles=await operation("listBundles",[propertyId]);for(const row of rows){for(const bundle of bundles){const own=await client.query("SELECT status FROM bundle_availability_days WHERE property_id=$1 AND bundle_id=$2 AND stay_date=$3",[propertyId,bundle.id,row.date]);const ownStatus=own.rows[0]?own.rows[0].status:"available";row[bundle.id]=bundle.enabled&&ownStatus==="available"&&bundle.memberRoomIds.every(id=>row[id]==="available")?"available":"closed";}}return rows;
   }
+  if (name === "getDayNotes") {
+    const [propertyId,from,to]=args;
+    const result=await client.query("SELECT property_id,room_id,stay_date::text date,note,created_at,updated_at FROM daily_room_notes WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date,room_id",[propertyId,from||null,to||null]);
+    return result.rows.map((row)=>({propertyId:row.property_id,roomTypeId:row.room_id,date:row.date.slice(0,10),note:row.note,createdAt:iso(row.created_at),updatedAt:iso(row.updated_at)}));
+  }
+  if (name === "setDayNote") {
+    const [propertyId,roomTypeId,date,value]=args,note=String(value||"").trim();
+    if(!note){await client.query("DELETE FROM daily_room_notes WHERE property_id=$1 AND room_id=$2 AND stay_date=$3",[propertyId,roomTypeId,date]);return null;}
+    const result=await client.query("INSERT INTO daily_room_notes(property_id,room_id,stay_date,note) VALUES($1,$2,$3,$4) ON CONFLICT(property_id,room_id,stay_date) DO UPDATE SET note=excluded.note,updated_at=now() RETURNING property_id,room_id,stay_date::text date,note,created_at,updated_at",[propertyId,roomTypeId,date,note]);
+    const row=result.rows[0];return{propertyId:row.property_id,roomTypeId:row.room_id,date:row.date.slice(0,10),note:row.note,createdAt:iso(row.created_at),updatedAt:iso(row.updated_at)};
+  }
   if (name === "updateProperty") {
     const [propertyId,input]=args; const current=await operation("getProperty",[propertyId]); if(!current)return null;
     await client.query("BEGIN");

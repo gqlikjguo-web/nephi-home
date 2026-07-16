@@ -39,6 +39,8 @@ class JsonAvailabilityProvider extends AvailabilityProvider {
   constructor(repository) { super(); this.repository = repository; }
   getRows(propertyId, from, to) { return this.repository.getAvailabilityRows(propertyId, from, to); }
   setDay(propertyId, date, roomId, status) { return this.repository.setAvailabilityDay(propertyId, date, roomId, status); }
+  getDayNotes(propertyId, from, to) { return this.repository.getAvailabilityDayNotes(propertyId, from, to); }
+  setDayNote(propertyId, roomTypeId, date, note) { return this.repository.setAvailabilityDayNote(propertyId, roomTypeId, date, note); }
 }
 
 class JsonPersistenceProvider extends PersistenceProvider {

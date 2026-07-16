@@ -13,6 +13,8 @@ class CustomerSettingsProvider {
 class AvailabilityProvider {
   getRows() { return notImplemented("AvailabilityProvider", "getRows"); }
   setDay() { return notImplemented("AvailabilityProvider", "setDay"); }
+  getDayNotes() { return notImplemented("AvailabilityProvider", "getDayNotes"); }
+  setDayNote() { return notImplemented("AvailabilityProvider", "setDayNote"); }
 }
 
 class StructuredClassifierProvider {
