@@ -45,6 +45,23 @@ assert.equal(JSON.stringify(catalog).includes("內部"), false);
 assert.equal(resolveEntity(catalog, { category: "room", rawText: "兩人房", canonicalCandidate: "r1" }).status, "resolved");
 assert.equal(resolveEntity(catalog, { category: "amenity", rawText: "卡拉 OK", canonicalCandidate: "ktv" }).entity.status, "confirmed_no");
 assert.equal(resolveEntity(catalog, { category: "amenity", rawText: "麻將", canonicalCandidate: "mahjong" }).status, "not_found");
+const groupedProperty = { ...property, rooms: [
+  { id: "g1", name: "Garden 1", type: "Double", capacity: 2, enabled: true },
+  { id: "g2", name: "Garden 2", type: "Double", capacity: 2, enabled: true }
+] };
+const groupedResolution = resolveEntity(buildPropertyCatalog(groupedProperty), { category: "room", rawText: "Double", canonicalCandidate: null });
+assert.equal(groupedResolution.status, "matched_set");
+assert.deepEqual(groupedResolution.entities.map((item) => item.canonicalId), ["g1", "g2"]);
+
+const unknownRoomResult = executeTasks({
+  property: groupedProperty,
+  catalog: buildPropertyCatalog(groupedProperty),
+  tasks: [{ taskId: "unknown-room", type: "availability", entity: { category: "room", rawText: "Unconfigured room class", canonicalCandidate: null } }],
+  request: { stay: { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: null }, inventory: { mode: "room_only", entityId: null, features: [] } },
+  availability: { getRows: () => [{ date: "2026-08-06", g1: "closed", g2: "closed" }] }
+})[0];
+assert.equal(unknownRoomResult.status, "needs_human");
+assert.notEqual(unknownRoomResult.facts.availability, "full");
 
 const eventTime = Date.parse("2026-07-17T10:00:00+08:00");
 assert.deepEqual(resolveTemporalExpression({ rawText: "明天", kind: "relative", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei", nightsCandidate: 1 }).checkIn, "2026-07-18");

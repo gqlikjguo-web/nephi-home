@@ -10,7 +10,9 @@ function resolveEntity(catalog, candidate = {}) {
   const raw = key(candidate.rawText);
   if (!raw) return { status: "not_found", candidates: [] };
   const matches = entities.filter((item) => [item.publicName, item.type, ...(item.aliases || []), ...(item.features || [])].map(key).some((alias) => alias && alias === raw));
-  return matches.length === 1 ? { status: "resolved", entity: matches[0] } : matches.length > 1 ? { status: "ambiguous", candidates: matches.map((item) => ({ canonicalId: item.canonicalId, publicName: item.publicName })) } : { status: "not_found", candidates: [] };
+  if (matches.length === 1) return { status: "resolved", entity: matches[0] };
+  if (matches.length > 1 && ["room", "room_feature"].includes(expected)) return { status: "matched_set", entities: matches };
+  return matches.length > 1 ? { status: "ambiguous", candidates: matches.map((item) => ({ canonicalId: item.canonicalId, publicName: item.publicName })) } : { status: "not_found", candidates: [] };
 }
 
 module.exports = { resolveEntity };

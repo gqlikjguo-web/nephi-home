@@ -17,6 +17,9 @@ function validateClaims(reply, plan, claimedTaskIds) {
   const claimCoverage = assertTaskCoverage(expected, { answeredTaskIds: Array.isArray(claimed) ? claimed : [], clarificationTaskIds: [], humanTaskIds: [], failedTaskIds: [] });
   if (!Array.isArray(claimed) || claimCoverage.unexpectedTaskIds.length) errors.push("unknown_fact_reference");
   if (claimCoverage.missingTaskIds.length) errors.push("incomplete_task_coverage");
+  const executionTypes = new Set(["availability", "available_dates", "room_options", "bundle_availability", "capacity", "price", "total_price"]);
+  const incompleteExecution = (plan.sections || []).some((section) => executionTypes.has(section.type) && section.status === "needs_clarification" && !(section.missingInputs || []).length);
+  if (incompleteExecution) errors.push("incomplete_task_execution");
   return { ok: errors.length === 0, errors: [...new Set(errors)], coveredTaskIds: claimCoverage.coveredTaskIds, missingTaskIds: claimCoverage.missingTaskIds, unexpectedTaskIds: claimCoverage.unexpectedTaskIds };
 }
 

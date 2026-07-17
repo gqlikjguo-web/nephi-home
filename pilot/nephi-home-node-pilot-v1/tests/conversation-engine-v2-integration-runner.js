@@ -49,5 +49,29 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   assert.deepEqual(guarded.claimValidation.coveredTaskIds.sort(), ["a", "b", "c"]);
   assert.deepEqual(diagnostics.map((item) => item.stage), ["planner", "validation", "state", "entity_resolution", "executor", "response_plan", "composer", "claim_validator", "line_ready"]);
   assert.equal(new Set(diagnostics.map((item) => item.traceId)).size, 1);
+  const multiRoomProperty = { ...property, rooms: [
+    { id: "r1", name: "A 雙人房", type: "雙人房", capacity: 2, enabled: true },
+    { id: "r2", name: "B 雙人房", type: "雙人房", capacity: 2, enabled: true },
+    { id: "r3", name: "C 四人房", type: "四人房", capacity: 4, enabled: true }
+  ], commonAnswers: { parkingRule: "有停車位", bbqRule: "可依規則烤肉" }, semanticCatalog: { aliases: { parking: ["車位"], bbq: ["烤肉"] }, amenities: [] } };
+  const multiTaskPlanner = { classify: async () => ({
+    schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
+    stay: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: 1, guestCountCandidate: null },
+    tasks: [
+      { taskId: "availability", type: "availability", sourceText: "8/6 有雙人房嗎？", requestedOutputs: ["room_options", "availability"], dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: null, confidence: 0.95 }, confidence: 0.95 },
+      { taskId: "parking", type: "amenity", sourceText: "有車位嗎？", requestedOutputs: ["availability", "policy"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, confidence: 0.99 },
+      { taskId: "bbq", type: "policy", sourceText: "可以烤肉嗎？", requestedOutputs: ["policy"], dependsOnStayContext: false, entity: { category: "policy", rawText: "烤肉", canonicalCandidate: "bbq", confidence: 0.99 }, confidence: 0.99 }
+    ], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "multi_task"
+  }) };
+  const multiTaskEngine = new ConversationEngineV2({ planner: multiTaskPlanner, persistence, getProperty: () => multiRoomProperty,
+    availability: { getRows: () => [{ date: "2026-08-06", r1: "available", r2: "available", r3: "available" }] }, listPriceOverrides: () => [], now: () => new Date("2026-07-17T02:00:00.000Z") });
+  const multiTask = await multiTaskEngine.process({ customerId: "p1", channelId: "c1", lineUserId: "multi", eventId: "multi-1", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？" });
+  const availabilityResult = multiTask.taskResults.find((item) => item.taskId === "availability");
+  assert.equal(availabilityResult.status, "answered");
+  assert.deepEqual(availabilityResult.facts.availableInventory.map((item) => item.canonicalId), ["r1", "r2"]);
+  assert.ok(multiTask.replyText.includes("A 雙人房"));
+  assert.ok(multiTask.replyText.includes("B 雙人房"));
+  assert.ok(!multiTask.replyText.includes("哪一個"));
+  assert.deepEqual(multiTask.claimValidation.missingTaskIds, []);
   console.log("conversation engine v2 integration: PASS");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

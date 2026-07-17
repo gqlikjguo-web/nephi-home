@@ -17,7 +17,7 @@ function taskPriority(type) { return TASK_PRIORITY[type] || TASK_PRIORITY.unknow
 function responseMode(status) { return status === "answered" ? "answer" : status === "needs_clarification" ? "clarification" : "handoff"; }
 
 function buildResponsePlan({ propertyId, taskResults, inputTaskIds, reviewActions = [] }) {
-  const sections = (taskResults || []).map((result, inputOrder) => ({ taskId: result.taskId, type: result.type, status: result.status, responseMode: responseMode(result.status), priority: taskPriority(result.type), inputOrder, facts: result.facts || {}, question: result.question || "", needsReview: Boolean(result.review) }))
+  const sections = (taskResults || []).map((result, inputOrder) => ({ taskId: result.taskId, type: result.type, status: result.status, responseMode: responseMode(result.status), priority: taskPriority(result.type), inputOrder, facts: result.facts || {}, question: result.question || "", missingInputs: result.missingInputs || [], needsReview: Boolean(result.review) }))
     .sort((a, b) => a.priority - b.priority || a.inputOrder - b.inputOrder);
   const expected = inputTaskIds || sections.map((section) => section.taskId);
   const coverage = coverageByStatus(sections);
