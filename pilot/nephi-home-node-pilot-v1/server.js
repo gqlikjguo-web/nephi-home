@@ -480,7 +480,7 @@ function createApp(options = {}) {
   const useConversationEngineV2 = Object.hasOwn(options, "testOnlyConversationEngineV2") ? Boolean(options.testOnlyConversationEngineV2) : config.testOnlyConversationEngineV2;
   const conversationPlannerV2 = Object.hasOwn(options, "conversationPlannerV2") ? options.conversationPlannerV2 : createTestOnlyOpenAiConversationPlannerFromEnv({ env: options.openAiTestEnv || process.env, fetchImpl: options.openAiTestFetch || globalThis.fetch, timeoutMs: options.classifierTimeoutMs || config.classifierTimeoutMs });
   const controlledComposerV2 = Object.hasOwn(options, "controlledComposerV2") ? options.controlledComposerV2 : createTestOnlyOpenAiControlledComposerFromEnv({ env: options.openAiTestEnv || process.env, fetchImpl: options.openAiTestFetch || globalThis.fetch, timeoutMs: options.classifierTimeoutMs || config.classifierTimeoutMs });
-  const conversationEngineV2 = useConversationEngineV2 ? new ConversationEngineV2({ planner: conversationPlannerV2, composer: controlledComposerV2, persistence: providers.persistence, getProperty: (propertyId) => providers.customerSettings.getProperty(propertyId), availability: providers.availability, listPriceOverrides: (propertyId) => providers.customerSettings.listRoomPriceOverrides(propertyId), now }) : null;
+  const conversationEngineV2 = useConversationEngineV2 ? new ConversationEngineV2({ planner: conversationPlannerV2, composer: controlledComposerV2, persistence: providers.persistence, getProperty: (propertyId) => providers.customerSettings.getProperty(propertyId), availability: providers.availability, listPriceOverrides: (propertyId) => providers.customerSettings.listRoomPriceOverrides(propertyId), now, onDiagnostic: config.testOnlyConversationTraceV2 ? (details) => console.log(JSON.stringify({ scope: "conversation-engine-v2", ...details })) : null }) : null;
   const coordinatorOptions = {
     persistence: providers.persistence,
     now,
@@ -603,6 +603,7 @@ function createApp(options = {}) {
           return;
         }
         logTestLineDiagnostic("reply_api_result", { status: reply.status, ok: reply.ok });
+        if (config.testOnlyConversationTraceV2 && result.traceId) console.log(JSON.stringify({ scope: "conversation-engine-v2", traceId: result.traceId, stage: "line_reply", delivered: Boolean(reply.ok), coveredTaskIds: result.claimValidation && result.claimValidation.coveredTaskIds || [], missingTaskIds: result.claimValidation && result.claimValidation.missingTaskIds || [] }));
         if (!reply.ok) {
           await updateEventStatus(id, channelId, eventId, {
             processingStatus: "reply_failed",

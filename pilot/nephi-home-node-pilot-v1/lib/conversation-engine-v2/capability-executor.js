@@ -20,6 +20,7 @@ function executeTasks({ property, catalog, tasks, request, availability, priceOv
   const byDate = Object.fromEntries(rows.map((row) => [row.date, row]));
   const reliable = dates.length > 0 && dates.every((date) => byDate[date]);
   return tasks.map((task) => {
+    try {
     const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : null;
     if (resolved && resolved.status === "ambiguous") return { taskId: task.taskId, type: task.type, status: "needs_clarification", question: "想確認您指的是哪一個？", candidates: resolved.candidates, facts: {} };
     if (["amenity", "policy", "property_fact"].includes(task.type)) {
@@ -55,6 +56,9 @@ function executeTasks({ property, catalog, tasks, request, availability, priceOv
       return { taskId: task.taskId, type: task.type, status: missing ? "property_data_missing" : "answered", facts: { availability: "available", checkIn: request.stay.checkIn, checkOut: request.stay.checkOut, prices, source: "pricing_provider", propertyId: property.propertyId }, review: missing };
     }
     return { taskId: task.taskId, type: task.type, status: ["booking_request", "human_help", "high_risk", "unknown"].includes(task.type) ? "needs_human" : "failed", reason: task.type, facts: {}, review: true };
+    } catch {
+      return { taskId: task.taskId, type: task.type, status: "failed", reason: "capability_exception", facts: { subject: task.sourceText || "這個問題" }, review: true };
+    }
   });
 }
 

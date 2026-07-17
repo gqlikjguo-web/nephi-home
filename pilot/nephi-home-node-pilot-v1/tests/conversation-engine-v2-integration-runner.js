@@ -38,5 +38,16 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   assert.equal(logs.filter((x) => x.needsReview).length, 1);
   assert.equal(states.get("p1:c1:u1").schemaVersion, 2);
   assert.equal(result.claimValidation.ok, true);
+
+  const incompleteComposer = { compose: async () => ({ replyText: "8/6 有湖景雙人房。", factTaskIds: ["a"] }) };
+  const diagnostics = [];
+  const guardedEngine = new ConversationEngineV2({ planner, composer: incompleteComposer, persistence, getProperty: () => property, availability: { getRows: () => [{ date: "2026-08-06", r1: "available" }] }, listPriceOverrides: () => [], onDiagnostic: (item) => diagnostics.push(item) });
+  const guarded = await guardedEngine.process({ customerId: "p1", channelId: "c1", lineUserId: "u2", eventId: "e2", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6雙人房有空嗎 有車位嗎 有麻將嗎" });
+  assert.ok(guarded.replyText.includes("湖景雙人房"));
+  assert.ok(guarded.replyText.includes("停車位"));
+  assert.ok(guarded.replyText.includes("麻將"));
+  assert.deepEqual(guarded.claimValidation.coveredTaskIds.sort(), ["a", "b", "c"]);
+  assert.deepEqual(diagnostics.map((item) => item.stage), ["planner", "validation", "state", "entity_resolution", "executor", "response_plan", "composer", "claim_validator", "line_ready"]);
+  assert.equal(new Set(diagnostics.map((item) => item.traceId)).size, 1);
   console.log("conversation engine v2 integration: PASS");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
