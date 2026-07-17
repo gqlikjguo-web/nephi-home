@@ -8,7 +8,7 @@ const { resolveTemporalExpression } = require("./temporal-resolver");
 const { migrateStateV2, reduceConversationState } = require("./state-reducer");
 const { executeTasks } = require("./capability-executor");
 const { buildResponsePlan } = require("./response-planner");
-const { composeControlledReply } = require("./controlled-composer");
+const { composeControlledReply, mergeComposedSections } = require("./controlled-composer");
 const { validateClaims } = require("./claim-validator");
 const { coverageByStatus, assertTaskCoverage } = require("./task-coverage");
 const { resolveEntity } = require("./entity-resolver");
@@ -73,7 +73,10 @@ class ConversationEngineV2 {
     this.trace(traceId, "response_plan", { sectionCount: responsePlan.sections.length, sections: responsePlan.sections.map((section) => ({ taskId: section.taskId, status: section.status, factKeys: Object.keys(section.facts || {}) })), reviewCount: responsePlan.reviewActions.length, coverage: responsePlan.coverageValidation });
     let replyText = composeControlledReply(responsePlan), claimedTaskIds = null;
     if (this.composer && typeof this.composer.compose === "function") {
-      try { const composed = await this.composer.compose(responsePlan); replyText = String(composed.replyText || ""); claimedTaskIds = composed.factTaskIds; } catch { /* deterministic composer remains the safe fallback */ }
+      try {
+        const composed = mergeComposedSections(responsePlan, await this.composer.compose(responsePlan));
+        if (composed.ok) { replyText = composed.replyText; claimedTaskIds = composed.factTaskIds; }
+      } catch { /* deterministic composer remains the safe fallback */ }
     }
     let claimValidation = validateClaims(replyText, responsePlan, claimedTaskIds);
     this.trace(traceId, "composer", { outputLength: replyText.length, coveredTaskIds: claimedTaskIds || inputTaskIds, missingTaskIds: claimValidation.missingTaskIds });

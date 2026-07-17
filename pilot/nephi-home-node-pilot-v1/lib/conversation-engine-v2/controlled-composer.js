@@ -19,4 +19,28 @@ function composeSection(section) {
 }
 function composeControlledReply(plan) { const reply = plan.sections.map(composeSection).filter(Boolean).join("\n"); return (reply || "這個問題需要請業者確認，我會為您轉交。").slice(0, plan.maxLength || 1200); }
 
-module.exports = { composeControlledReply };
+function mergeComposedSections(plan, composed) {
+  const expected = (plan.sections || []).map((section) => section.taskId);
+  const items = composed && Array.isArray(composed.sections) ? composed.sections : [];
+  const occurrences = new Map();
+  const errors = [];
+  for (const item of items) {
+    if (!item || !expected.includes(item.taskId)) { errors.push("unexpected_task"); continue; }
+    if (occurrences.has(item.taskId)) { errors.push("duplicate_task"); continue; }
+    occurrences.set(item.taskId, item);
+  }
+  const missingTaskIds = expected.filter((taskId) => !occurrences.has(taskId));
+  if (missingTaskIds.length) errors.push("incomplete_task_coverage");
+  const ordered = [];
+  for (const section of plan.sections || []) {
+    const item = occurrences.get(section.taskId);
+    if (!item) continue;
+    if (item.responseMode !== section.responseMode) errors.push("response_mode_mismatch");
+    const text = String(item.text || "").trim();
+    if (!text) errors.push("empty_task_reply");
+    ordered.push({ taskId: section.taskId, text });
+  }
+  return { ok: errors.length === 0, errors: [...new Set(errors)], replyText: ordered.map((item) => item.text).join("\n").slice(0, plan.maxLength || 1200), factTaskIds: ordered.map((item) => item.taskId), missingTaskIds };
+}
+
+module.exports = { composeControlledReply, mergeComposedSections };
