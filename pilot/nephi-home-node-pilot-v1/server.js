@@ -235,7 +235,7 @@ function createRequestHandler(service, options = {}) {
         if(review&&request.method==="POST"){
           if(review[2]==="resume-link"){const issued=onboarding.issueResumeLink(review[1]);return sendData(response,{resumeUrl:`${publicBrand.publicBaseUrl}/onboarding?resume=${encodeURIComponent(issued.resumeToken)}`,expiresAt:issued.expiresAt});}
           const body=await readJsonBody(request);
-          if(review[2]==="approve"){const approved=onboarding.approve(review[1],body,session);return sendData(response,{...approved,adminSetupUrl:`${publicBrand.publicBaseUrl}/admin/setup?token=${encodeURIComponent(approved.adminSetupToken)}`});}
+          if(review[2]==="approve"){const approved=onboarding.approve(review[1],body,session);if(approved.approvalMode==="existing")return sendData(response,approved);return sendData(response,{...approved,adminSetupUrl:`${publicBrand.publicBaseUrl}/admin/setup?token=${encodeURIComponent(approved.adminSetupToken)}`});}
           const reviewed=await onboarding.review(review[1],review[2]==="reject"?"rejected":"changes_requested",body.reason,session);
           if(review[2]==="request-changes"){
             const{resumeToken,...safeReview}=reviewed;
