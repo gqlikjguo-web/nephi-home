@@ -18,6 +18,17 @@
 .admin-review .apply-warning,.admin-review .protected-warning{margin:0;padding:10px 12px;border-radius:9px;overflow-wrap:anywhere}
 .admin-review .apply-warning{background:#fff4d6;color:#5f4611}
 .admin-review .protected-warning,.admin-review .protected-summary{background:#eaf5ed;color:#284f32}
+.admin-review .change-summary h4{margin:0 0 8px}
+.admin-review .change-summary ul{margin:0;padding-left:1.35rem}
+.admin-review .change-summary li{margin:6px 0}
+.admin-review .target-property-summary{padding:12px;border:2px solid #315d3b;border-radius:10px;background:#fff;font-weight:800}
+.admin-review .existing-approval-preview-host:not(:empty){margin-top:16px}
+.admin-review .existing-approval-preview{display:grid;gap:12px;padding:16px;border:3px solid #8b5d17;border-radius:12px;background:#fffaf0}
+.admin-review .existing-approval-preview .review-section{margin:0}
+.admin-review .confirmation-kicker{margin:0;color:#8b3a2f;font-weight:850}
+.admin-review .mapping-preview{padding:12px;border:1px solid #d7c49f;border-radius:9px;background:#fff}
+.admin-review .mapping-preview h4{margin-top:0}
+.admin-review .mapping-preview li{margin:6px 0;overflow-wrap:anywhere}
 .admin-review .approval-completion .completion-actions{grid-template-columns:minmax(0,16rem)}
 .admin-review dl{display:grid;grid-template-columns:minmax(8rem,14rem) 1fr;gap:8px 14px}
 .admin-review dt{font-weight:750}
