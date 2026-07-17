@@ -6,6 +6,7 @@
 .admin-review .return-panel{border-color:#b47227}
 .admin-review .approval-panel{border-color:#315d3b}
 .admin-review .reject-panel{border-color:#9a453e}
+.admin-review .reopen-panel{margin-top:14px;padding-top:14px;border-top:1px solid #d5b478}
 .admin-review .decision-panel button{margin-top:8px}
 .admin-review .status-line{font-weight:750}
 .admin-review .completion-card{background:#fff;border:2px solid #315d3b;border-radius:14px;padding:22px;overflow-wrap:anywhere}

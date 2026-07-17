@@ -15,10 +15,21 @@ function cleanInput(input={}){
 }
 const LABELS={propertyName:"民宿正式名稱",contactName:"聯絡人姓名",phone:"聯絡電話",email:"Email",address:"地址",checkInTime:"入住時間",checkOutTime:"退房時間",rooms:"至少一個房型"};
 function completeness(app){const required=["propertyName","contactName","phone","email","address","checkInTime","checkOutTime"],missing=required.filter(k=>!app[k]);if(!app.rooms||!app.rooms.length)missing.push("rooms");return{percent:Math.round((required.length+1-missing.length)/(required.length+1)*100),missing,missingLabels:missing.map(x=>LABELS[x]||x),contradictions:[]};}
-function createOnboardingService(provider,{emailNotifier}={}){if(!provider)return null;async function authorized(id,token){if(!token||!provider.verifyOnboardingToken(id,sessionTokenHash(token)))throw new AppError(401,"INVALID_DRAFT_TOKEN","草稿驗證失敗");}return{
+function createOnboardingService(provider,{emailNotifier}={}){
+ if(!provider)return null;
+ async function authorized(id,token){if(!token||!provider.verifyOnboardingToken(id,sessionTokenHash(token)))throw new AppError(401,"INVALID_DRAFT_TOKEN","草稿驗證失敗");}
+ async function finishChangeRequest(id,result,resumeToken,expiresAt){
+  if(result.notification.shouldNotify){
+   let claim;try{claim=provider.claimOnboardingEmailDelivery(result.notification.noteId);}catch{claim=null;}
+   if(claim&&claim.claimed){try{const sent=await emailNotifier.sendChangeRequest({recipient:claim.recipient,propertyName:result.application.propertyName,reason:result.application.latestChangeRequest.reason,resumeToken});try{provider.completeOnboardingEmailDelivery(result.notification.noteId,"sent",sent.providerMessageId,"");}catch{}}catch(error){try{provider.completeOnboardingEmailDelivery(result.notification.noteId,"failed","",String(error&&error.message||"email_send_failed").slice(0,120));}catch{}}}
+  }
+  let application=result.application;try{application=provider.getOnboardingForReview(id)||application;}catch{}
+  return{application,resumeToken,expiresAt,emailStatus:application.emailDelivery&&application.emailDelivery.status||"not_configured"};
+ }
+ return{
  createDraft(){const applicationId=crypto.randomUUID(),draftToken=crypto.randomBytes(32).toString("base64url");provider.createOnboarding(applicationId,sessionTokenHash(draftToken));return{applicationId,draftToken,status:"draft"};},
  async getDraft(id,token){await authorized(id,token);const item=provider.getOnboarding(id);if(!item)throw new AppError(404,"APPLICATION_NOT_FOUND","找不到申請案件");return item;},async saveDraft(id,token,input){await authorized(id,token);return provider.saveOnboarding(id,cleanInput(input));},async preview(id,token){const item=await this.getDraft(id,token);return{...item,completeness:completeness(item)};},
- async submit(id,token){const item=await this.preview(id,token);if(["submitted","resubmitted","approved"].includes(item.status))return item;if(item.completeness.missing.length)throw new AppError(400,"APPLICATION_INCOMPLETE",`尚缺少：${item.completeness.missingLabels.join("、")}`);return provider.submitOnboarding(id);},
+ async submit(id,token){const item=await this.preview(id,token);if(["submitted","resubmitted","approved"].includes(item.status))return item;if(item.status==="rejected")throw new AppError(409,"APPLICATION_REJECTED","已拒絕案件必須先由平台管理者重新開放補件");if(item.completeness.missing.length)throw new AppError(400,"APPLICATION_INCOMPLETE",`尚缺少：${item.completeness.missingLabels.join("、")}`);return provider.submitOnboarding(id);},
  resolveResume(token){const raw=text(token,500),resolved=raw&&provider.resolveOnboardingResumeToken(sessionTokenHash(raw));if(!resolved)throw new AppError(400,"INVALID_RESUME_TOKEN","續填連結無效或已過期");return{applicationId:resolved.applicationId,draftToken:raw};},
  issueResumeLink(id){const item=provider.getOnboardingForReview(id);if(!item)throw new AppError(404,"APPLICATION_NOT_FOUND","找不到申請案件");if(item.status!=="changes_requested")throw new AppError(409,"APPLICATION_NOT_AWAITING_CHANGES","案件目前不是待補件狀態");const resumeToken=crypto.randomBytes(32).toString("base64url"),expiresAt=new Date(Date.now()+30*86400000).toISOString();try{provider.rotateOnboardingResumeToken(id,sessionTokenHash(resumeToken),expiresAt);}catch(error){if(/not awaiting changes/.test(String(error&&error.message)))throw new AppError(409,"APPLICATION_NOT_AWAITING_CHANGES","案件目前不是待補件狀態");throw error;}return{resumeToken,expiresAt};},
  listProperties(){return provider.listOnboardingProperties("nephi_home");},
@@ -32,13 +43,15 @@ function createOnboardingService(provider,{emailNotifier}={}){if(!provider)retur
   let result;
   try{result=provider.reviewOnboarding(id,status,reason,s.propertyId,s.username,resumeToken?sessionTokenHash(resumeToken):null,expiresAt,Boolean(emailNotifier&&emailNotifier.configured));}
   catch(error){if(/application not found/i.test(String(error&&error.message)))throw new AppError(404,"APPLICATION_NOT_FOUND","找不到申請案件");if(/already reviewed|cannot be reviewed/i.test(String(error&&error.message)))throw new AppError(409,"APPLICATION_ALREADY_REVIEWED","案件已完成退回或核准，不能重複操作");throw error;}
-  if(status!=="changes_requested")return result.application;
-  if(result.notification.shouldNotify){
-   let claim;try{claim=provider.claimOnboardingEmailDelivery(result.notification.noteId);}catch{claim=null;}
-   if(claim&&claim.claimed){try{const sent=await emailNotifier.sendChangeRequest({recipient:claim.recipient,propertyName:result.application.propertyName,reason:result.application.latestChangeRequest.reason,resumeToken});try{provider.completeOnboardingEmailDelivery(result.notification.noteId,"sent",sent.providerMessageId,"");}catch{}}catch(error){try{provider.completeOnboardingEmailDelivery(result.notification.noteId,"failed","",String(error&&error.message||"email_send_failed").slice(0,120));}catch{}}}
-  }
-  let application=result.application;try{application=provider.getOnboardingForReview(id)||application;}catch{}
-  return{application,resumeToken,expiresAt,emailStatus:application.emailDelivery&&application.emailDelivery.status||"not_configured"};
+   if(status!=="changes_requested")return result.application;
+   return finishChangeRequest(id,result,resumeToken,expiresAt);
+  },
+ async reopenRejected(id,note,s){
+  const reason=text(note,1000);if(!reason)throw new AppError(400,"MISSING_REOPEN_REASON","請填寫重新開放補件原因");
+  const resumeToken=crypto.randomBytes(32).toString("base64url"),expiresAt=new Date(Date.now()+30*86400000).toISOString();let result;
+  try{result=provider.reopenOnboarding(id,reason,s.propertyId,s.username,sessionTokenHash(resumeToken),expiresAt,Boolean(emailNotifier&&emailNotifier.configured));}
+  catch(error){const message=String(error&&error.message||"");if(/application not found/i.test(message))throw new AppError(404,"APPLICATION_NOT_FOUND","找不到申請案件");if(/not rejected/i.test(message))throw new AppError(409,"APPLICATION_NOT_REJECTED","只有未通過案件可以重新開放補件");throw error;}
+  return finishChangeRequest(id,result,resumeToken,expiresAt);
  },
  approve(id,input,s){
   const application=provider.getOnboardingForReview(id);if(!application)throw new AppError(404,"APPLICATION_NOT_FOUND","找不到申請案件");

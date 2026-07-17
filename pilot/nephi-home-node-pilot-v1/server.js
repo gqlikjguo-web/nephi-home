@@ -230,12 +230,16 @@ function createRequestHandler(service, options = {}) {
         const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");
         if(pathname==="/api/admin/onboarding/applications"&&request.method==="GET")return sendData(response,{items:onboarding.list().map(x=>({...x,completeness:require("./lib/onboarding-service").completeness(x)}))});
         if(pathname==="/api/admin/onboarding/properties"&&request.method==="GET")return sendData(response,{items:onboarding.listProperties()});
-        const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reject|approve|resume-link))?$/.exec(pathname);
+        const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reopen-for-changes|reject|approve|resume-link))?$/.exec(pathname);
         if(review&&request.method==="GET"&&!review[2])return sendData(response,onboarding.get(review[1]));
         if(review&&request.method==="POST"){
           if(review[2]==="resume-link"){const issued=onboarding.issueResumeLink(review[1]);return sendData(response,{resumeUrl:`${publicBrand.publicBaseUrl}/onboarding?resume=${encodeURIComponent(issued.resumeToken)}`,expiresAt:issued.expiresAt});}
           const body=await readJsonBody(request);
           if(review[2]==="approve"){const approved=onboarding.approve(review[1],body,session);if(approved.approvalMode==="existing")return sendData(response,approved);return sendData(response,{...approved,adminSetupUrl:`${publicBrand.publicBaseUrl}/admin/setup?token=${encodeURIComponent(approved.adminSetupToken)}`});}
+          if(review[2]==="reopen-for-changes"){
+            const reopened=await onboarding.reopenRejected(review[1],body.reason,session),{resumeToken,...safeReopen}=reopened;
+            return sendData(response,{...reopened.application,...safeReopen,resumeUrl:`${publicBrand.publicBaseUrl}/onboarding?resume=${encodeURIComponent(resumeToken)}`});
+          }
           const reviewed=await onboarding.review(review[1],review[2]==="reject"?"rejected":"changes_requested",body.reason,session);
           if(review[2]==="request-changes"){
             const{resumeToken,...safeReview}=reviewed;
