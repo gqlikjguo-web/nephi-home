@@ -16,6 +16,10 @@ const { createMvpService, AppError } = require("./lib/mvp-service");
 const { ConversationCoordinator } = require("./lib/conversation-coordinator");
 const { verifyLineSignature, replyToTestLine } = require("./lib/test-line-webhook");
 const {
+  validateLineChannelConfiguration,
+  validateLineWebhookDestination
+} = require("./lib/line-channel-identity-guard");
+const {
   createAiFirstDecisionPipeline,
   DEFAULT_INTENTS,
   DEFAULT_ROUTES
@@ -29,6 +33,7 @@ const { renderPublicHtml } = require("./lib/public-brand-html");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
+const TEST_LINE_WEBHOOK_ROUTE = "/api/test-line/webhook";
 
 function sendJson(response, status, payload, headers = {}) {
   response.writeHead(status, {
@@ -196,7 +201,7 @@ function createRequestHandler(service, options = {}) {
         return sendData(response, { status: "ready", testOnly: true });
       }
       if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
-      if (request.method === "POST" && pathname === "/api/test-line/webhook") {
+      if (request.method === "POST" && pathname === TEST_LINE_WEBHOOK_ROUTE) {
         if (!lineWebhookHandler) throw new AppError(503, "TEST_LINE_WEBHOOK_NOT_CONFIGURED", "Test-only LINE webhook is not configured");
         const result = await lineWebhookHandler({
           rawBody: await readRawBody(request),
@@ -459,6 +464,17 @@ function createApp(options = {}) {
   const testLineSecret = options.testLineSecret || config.lineBridgeSecret;
   const lineChannelSecret = options.lineChannelSecret || config.lineChannelSecret;
   const lineChannelAccessToken = options.lineChannelAccessToken || config.lineChannelAccessToken;
+  const runtimeLineCredentialsConfigured = Boolean(config.lineChannelSecret || config.lineChannelAccessToken);
+  const lineChannelIdentityGuardRequired = Object.hasOwn(options, "lineChannelIdentityGuardRequired")
+    ? Boolean(options.lineChannelIdentityGuardRequired)
+    : runtimeLineCredentialsConfigured;
+  const configuredLineChannelIdentity = options.lineChannelIdentity || {
+    environment: config.lineChannelEnvironment,
+    channelId: config.lineChannelId,
+    webhookRoute: config.lineWebhookRoute,
+    channelSecretSha256: config.lineChannelSecretSha256
+  };
+  let validatedLineChannelIdentity = null;
   const lineReplyFetch = options.lineReplyFetch || fetch;
   const providers = options.providers || createProviders({ databaseUrl: config.databaseUrl, dataFile, seedFile, now });
   const adminAuthRequired = Object.hasOwn(options, "adminAuthRequired") ? Boolean(options.adminAuthRequired) : providers.kind === "postgres";
@@ -562,6 +578,7 @@ function createApp(options = {}) {
     if (!providers.customerSettings.getProperty(id)) throw new AppError(404, "UNKNOWN_CUSTOMER_ID", "Unknown Pilot customerId");
     const channelId = String(payload.destination || "").trim();
     if (!channelId) throw new AppError(400, "MISSING_CHANNEL_ID", "LINE destination channel identifier is required");
+    if (lineChannelIdentityGuardRequired) validateLineWebhookDestination(validatedLineChannelIdentity, channelId);
     const textEvents = (payload.events || []).filter((event) => event && event.type === "message" && event.message && event.message.type === "text");
     logTestLineDiagnostic("payload_parsed", { customerId: id, eventCount: (payload.events || []).length, textEventCount: textEvents.length });
     for (const event of textEvents) {
@@ -641,6 +658,14 @@ function createApp(options = {}) {
     conversationCoordinator,
     lineWebhookCoordinator,
     start(port = config.port, host = config.host) {
+      if (lineChannelIdentityGuardRequired) {
+        validatedLineChannelIdentity = validateLineChannelConfiguration({
+          ...configuredLineChannelIdentity,
+          channelSecret: lineChannelSecret,
+          channelAccessToken: lineChannelAccessToken,
+          actualWebhookRoute: TEST_LINE_WEBHOOK_ROUTE
+        });
+      }
       return new Promise((resolve, reject) => {
         server.once("error", reject);
         server.listen(port, host, () => {
