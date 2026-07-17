@@ -42,7 +42,9 @@ class ConversationEngineV2 {
     const temporal = resolveTemporalExpression(plannerOutput.stay.dateExpression, {
       eventTimestamp: input.eventTimestamp, timezone: catalog.timezone,
       checkInCandidate: plannerOutput.stay.checkInCandidate, checkOutCandidate: plannerOutput.stay.checkOutCandidate,
-      nightsCandidate: plannerOutput.stay.nightsCandidate, previousCheckIn: previous.conditions.stay.checkIn, previousCheckOut: previous.conditions.stay.checkOut
+      nightsCandidate: plannerOutput.stay.nightsCandidate,
+      defaultNights: plannerOutput.tasks.some((task) => ["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type)) ? 1 : null,
+      previousCheckIn: previous.conditions.stay.checkIn, previousCheckOut: previous.conditions.stay.checkOut
     });
     const operations = [...plannerOutput.stateOperations];
     if (temporal.resolutionStatus === "resolved") {

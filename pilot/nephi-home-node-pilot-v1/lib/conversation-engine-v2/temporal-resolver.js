@@ -15,7 +15,13 @@ function resolveTemporalExpression(expression = {}, context = {}) {
   const raw = String(expression.rawText || "").normalize("NFKC").replace(/\s+/g, "");
   let checkIn = context.checkInCandidate || null;
   let searchRange = null;
-  if (expression.kind === "relative") {
+  const absolute = raw.match(/^(?:(\d{4})[年\/-])?(\d{1,2})[月\/-](\d{1,2})日?$/u);
+  if (!valid(checkIn) && absolute) {
+    let year = Number(absolute[1] || base.slice(0, 4));
+    const candidate = `${year}-${String(absolute[2]).padStart(2, "0")}-${String(absolute[3]).padStart(2, "0")}`;
+    if (!absolute[1] && valid(candidate) && candidate < base) year += 1;
+    checkIn = `${year}-${String(absolute[2]).padStart(2, "0")}-${String(absolute[3]).padStart(2, "0")}`;
+  } else if (expression.kind === "relative") {
     const offset = raw.includes("大後天") ? 3 : raw.includes("後天") ? 2 : raw.includes("明") ? 1 : 0;
     checkIn = addDays(base, offset);
   } else if (expression.kind === "weekday") {
@@ -56,7 +62,7 @@ function resolveTemporalExpression(expression = {}, context = {}) {
   }
   if (checkIn && !valid(checkIn)) return { timezone, resolutionStatus: "invalid", ambiguity: "invalid_date", originalExpression: raw };
   if (checkIn && checkIn < base) return { timezone, resolutionStatus: "invalid", ambiguity: "past_date", originalExpression: raw };
-  const nights = Number.isInteger(context.nightsCandidate) ? context.nightsCandidate : null;
+  const nights = Number.isInteger(context.nightsCandidate) ? context.nightsCandidate : Number.isInteger(context.defaultNights) ? context.defaultNights : null;
   const checkOut = valid(context.checkOutCandidate) ? context.checkOutCandidate : checkIn && nights ? addDays(checkIn, nights) : null;
   if (checkIn && checkOut && checkOut <= checkIn) return { timezone, resolutionStatus: "invalid", ambiguity: "checkout_not_after_checkin", originalExpression: raw };
   return { checkIn, checkOut, nights, searchRange, timezone, resolutionStatus: checkIn || searchRange ? "resolved" : "ambiguous", ambiguity: checkIn || searchRange ? null : "date_missing", originalExpression: raw };

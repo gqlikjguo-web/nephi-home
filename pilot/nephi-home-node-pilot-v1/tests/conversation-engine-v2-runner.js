@@ -65,6 +65,10 @@ assert.notEqual(unknownRoomResult.facts.availability, "full");
 
 const eventTime = Date.parse("2026-07-17T10:00:00+08:00");
 assert.deepEqual(resolveTemporalExpression({ rawText: "明天", kind: "relative", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei", nightsCandidate: 1 }).checkIn, "2026-07-18");
+const mislabeledSingleDate = resolveTemporalExpression({ rawText: "8/6", kind: "range", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei", defaultNights: 1 });
+assert.equal(mislabeledSingleDate.checkIn, "2026-08-06");
+assert.equal(mislabeledSingleDate.checkOut, "2026-08-07");
+assert.equal(mislabeledSingleDate.resolutionStatus, "resolved");
 assert.deepEqual(resolveTemporalExpression({ rawText: "下週三", kind: "weekday", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei", nightsCandidate: 1 }).checkIn, "2026-07-22");
 assert.equal(resolveTemporalExpression({ rawText: "2/30", kind: "absolute", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei" }).resolutionStatus, "invalid");
 
