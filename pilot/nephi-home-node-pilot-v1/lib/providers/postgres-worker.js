@@ -45,8 +45,19 @@ async function operation(name, args) {
     const rooms=await client.query("SELECT room_id FROM room_types WHERE property_id=$1 AND room_id=ANY($2::text[])",[propertyId,members]);if(rooms.rows.length!==members.length)throw new Error("invalid bundle member");
     await client.query("BEGIN");try{if(name==="createBundle")await client.query("INSERT INTO bundle_offers(property_id,bundle_id,name,capacity,base_price,monday_thursday_price,friday_price,saturday_holiday_price,sunday_price,enabled) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",[propertyId,bundleId,input.name,Number(input.capacity),prices.mondayThursdayPrice,prices.mondayThursdayPrice,prices.fridayPrice,prices.saturdayHolidayPrice,prices.sundayPrice,input.enabled!==false]);else await client.query("UPDATE bundle_offers SET name=$3,capacity=$4,base_price=$5,monday_thursday_price=$6,friday_price=$7,saturday_holiday_price=$8,sunday_price=$9,enabled=$10,updated_at=now() WHERE property_id=$1 AND bundle_id=$2",[propertyId,bundleId,input.name,Number(input.capacity),prices.mondayThursdayPrice,prices.mondayThursdayPrice,prices.fridayPrice,prices.saturdayHolidayPrice,prices.sundayPrice,input.enabled!==false]);await client.query("DELETE FROM bundle_offer_members WHERE property_id=$1 AND bundle_id=$2",[propertyId,bundleId]);for(let i=0;i<members.length;i++)await client.query("INSERT INTO bundle_offer_members(property_id,bundle_id,room_id,position) VALUES($1,$2,$3,$4)",[propertyId,bundleId,members[i],i]);await client.query("COMMIT");}catch(e){await client.query("ROLLBACK");throw e;}return (await operation("listBundles",[propertyId])).find(x=>x.id===bundleId)||null;
   }
-  if (name === "deleteBundle") { const used=await client.query("SELECT 1 FROM bundle_availability_days WHERE property_id=$1 AND bundle_id=$2 LIMIT 1",args);if(used.rows.length)throw new Error("bundle already used");const r=await client.query("DELETE FROM bundle_offers WHERE property_id=$1 AND bundle_id=$2 RETURNING bundle_id",args);return Boolean(r.rows.length); }
+  if (name === "deleteBundle") { const used=await client.query("SELECT 1 FROM bundle_availability_days WHERE property_id=$1 AND bundle_id=$2 UNION ALL SELECT 1 FROM daily_room_notes WHERE property_id=$1 AND inventory_type='bundle' AND inventory_id=$2 LIMIT 1",args);if(used.rows.length)throw new Error("bundle already used");const r=await client.query("DELETE FROM bundle_offers WHERE property_id=$1 AND bundle_id=$2 RETURNING bundle_id",args);return Boolean(r.rows.length); }
   if(name==="updateRoomPricing"){const [propertyId,roomId,input]=args;const r=await client.query("UPDATE room_types SET monday_thursday_price=$3,friday_price=$4,saturday_holiday_price=$5,sunday_price=$6 WHERE property_id=$1 AND room_id=$2 RETURNING room_id",[propertyId,roomId,input.mondayThursdayPrice,input.fridayPrice,input.saturdayHolidayPrice,input.sundayPrice]);if(!r.rows.length)throw new Error("room not found");return operation("getProperty",[propertyId]);}
+  if(name==="updateRoomPricingBatch"){
+    const [propertyId,items]=args,ids=items.map((item)=>item.roomTypeId);
+    await client.query("BEGIN");
+    try{
+      const locked=await client.query("SELECT room_id FROM room_types WHERE property_id=$1 AND room_id=ANY($2::text[]) FOR UPDATE",[propertyId,ids]);
+      if(locked.rows.length!==ids.length)throw new Error("room not found");
+      for(const item of items)await client.query("UPDATE room_types SET monday_thursday_price=$3,friday_price=$4,saturday_holiday_price=$5,sunday_price=$6 WHERE property_id=$1 AND room_id=$2",[propertyId,item.roomTypeId,item.mondayThursdayPrice,item.fridayPrice,item.saturdayHolidayPrice,item.sundayPrice]);
+      await client.query("COMMIT");
+    }catch(error){await client.query("ROLLBACK");throw error;}
+    return operation("getProperty",[propertyId]);
+  }
   if(name==="setRoomPriceOverride"){const [propertyId,roomId,date,price,currency]=args;await client.query("INSERT INTO room_price_overrides(property_id,room_id,stay_date,price,currency) VALUES($1,$2,$3,$4,$5) ON CONFLICT(property_id,room_id,stay_date) DO UPDATE SET price=excluded.price,currency=excluded.currency,updated_at=now()",[propertyId,roomId,date,price,currency]);return{propertyId,roomId,date,price,currency};}
   if(name==="listRoomPriceOverrides"){const r=await client.query("SELECT room_id,stay_date::text date,price,currency FROM room_price_overrides WHERE property_id=$1 ORDER BY stay_date,room_id",[args[0]]);return r.rows.map(x=>({roomId:x.room_id,date:x.date.slice(0,10),price:Number(x.price),currency:x.currency}));}
   if (name === "getRows") {
@@ -59,14 +70,18 @@ async function operation(name, args) {
   }
   if (name === "getDayNotes") {
     const [propertyId,from,to]=args;
-    const result=await client.query("SELECT property_id,room_id,stay_date::text date,note,created_at,updated_at FROM daily_room_notes WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date,room_id",[propertyId,from||null,to||null]);
-    return result.rows.map((row)=>({propertyId:row.property_id,roomTypeId:row.room_id,date:row.date.slice(0,10),note:row.note,createdAt:iso(row.created_at),updatedAt:iso(row.updated_at)}));
+    const result=await client.query("SELECT property_id,inventory_type,inventory_id,stay_date::text date,note,created_at,updated_at FROM daily_room_notes WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date,inventory_type,inventory_id",[propertyId,from||null,to||null]);
+    return result.rows.map((row)=>({propertyId:row.property_id,inventoryType:row.inventory_type,inventoryId:row.inventory_id,date:row.date.slice(0,10),note:row.note,createdAt:iso(row.created_at),updatedAt:iso(row.updated_at)}));
   }
   if (name === "setDayNote") {
-    const [propertyId,roomTypeId,date,value]=args,note=String(value||"").trim();
-    if(!note){await client.query("DELETE FROM daily_room_notes WHERE property_id=$1 AND room_id=$2 AND stay_date=$3",[propertyId,roomTypeId,date]);return null;}
-    const result=await client.query("INSERT INTO daily_room_notes(property_id,room_id,stay_date,note) VALUES($1,$2,$3,$4) ON CONFLICT(property_id,room_id,stay_date) DO UPDATE SET note=excluded.note,updated_at=now() RETURNING property_id,room_id,stay_date::text date,note,created_at,updated_at",[propertyId,roomTypeId,date,note]);
-    const row=result.rows[0];return{propertyId:row.property_id,roomTypeId:row.room_id,date:row.date.slice(0,10),note:row.note,createdAt:iso(row.created_at),updatedAt:iso(row.updated_at)};
+    const [propertyId,inventoryType,inventoryId,date,value]=args,note=String(value||"").trim();
+    if(!["room","bundle"].includes(inventoryType))throw new Error("invalid inventory type");
+    const table=inventoryType==="bundle"?"bundle_offers":"room_types",column=inventoryType==="bundle"?"bundle_id":"room_id";
+    const exists=await client.query(`SELECT 1 FROM ${table} WHERE property_id=$1 AND ${column}=$2`,[propertyId,inventoryId]);
+    if(!exists.rows.length)throw new Error("inventory not found");
+    if(!note){await client.query("DELETE FROM daily_room_notes WHERE property_id=$1 AND inventory_type=$2 AND inventory_id=$3 AND stay_date=$4",[propertyId,inventoryType,inventoryId,date]);return null;}
+    const result=await client.query("INSERT INTO daily_room_notes(property_id,inventory_type,inventory_id,stay_date,note) VALUES($1,$2,$3,$4,$5) ON CONFLICT(property_id,inventory_type,inventory_id,stay_date) DO UPDATE SET note=excluded.note,updated_at=now() RETURNING property_id,inventory_type,inventory_id,stay_date::text date,note,created_at,updated_at",[propertyId,inventoryType,inventoryId,date,note]);
+    const row=result.rows[0];return{propertyId:row.property_id,inventoryType:row.inventory_type,inventoryId:row.inventory_id,date:row.date.slice(0,10),note:row.note,createdAt:iso(row.created_at),updatedAt:iso(row.updated_at)};
   }
   if (name === "updateProperty") {
     const [propertyId,input]=args; const current=await operation("getProperty",[propertyId]); if(!current)return null;

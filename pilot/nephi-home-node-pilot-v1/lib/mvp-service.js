@@ -264,10 +264,10 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     }
     const from = `${year}-${String(month).padStart(2, "0")}-01`;
     const to = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, "0")}-01`;
-    const notesByDate = {};
-    for (const item of repository.getAvailabilityDayNotes(homestay.customerId, from, to)) {
-      notesByDate[item.date] = notesByDate[item.date] || {};
-      notesByDate[item.date][item.roomTypeId] = item;
+      const notesByDate = {};
+      for (const item of repository.getAvailabilityDayNotes(homestay.customerId, from, to)) {
+        notesByDate[item.date] = notesByDate[item.date] || {};
+        notesByDate[item.date][`${item.inventoryType}:${item.inventoryId}`] = item;
     }
     return {
       propertyId: homestay.customerId,
@@ -299,14 +299,16 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     let date;
     try { date = parseDateKey(input.date, "date"); }
     catch { throw new AppError(400, "INVALID_DATE", "請輸入有效日期"); }
-    const roomTypeId = String(input.roomTypeId || "");
-    if (!(homestay.rooms || []).some((room) => room.id === roomTypeId && room.inventoryType !== "bundle")) {
-      throw new AppError(400, "UNKNOWN_ROOM", "找不到可管理的房型");
+    const inventoryType = String(input.inventoryType || "room");
+    const inventoryId = String(input.inventoryId || input.roomTypeId || "");
+    if (!["room", "bundle"].includes(inventoryType)) throw new AppError(400, "INVALID_INVENTORY_TYPE", "可售單位類型錯誤");
+    if (!(homestay.rooms || []).some((room) => room.id === inventoryId && (room.inventoryType === "bundle" ? "bundle" : "room") === inventoryType)) {
+      throw new AppError(400, "UNKNOWN_INVENTORY", "找不到可管理的房型或方案");
     }
     if (typeof input.note !== "string") throw new AppError(400, "INVALID_NOTE", "備註格式錯誤");
     const note = input.note.trim();
     if (note.length > 1000) throw new AppError(400, "NOTE_TOO_LONG", "內部備註不可超過 1000 字");
-    return repository.setAvailabilityDayNote(homestay.customerId, roomTypeId, date, note);
+    return repository.setAvailabilityDayNote(homestay.customerId, inventoryType, inventoryId, date, note);
   }
 
   function setMonth(input) {

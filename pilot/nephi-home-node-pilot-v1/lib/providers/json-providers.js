@@ -33,6 +33,14 @@ class JsonCustomerSettingsProvider extends CustomerSettingsProvider {
     });
     return toProperty(updated);
   }
+  updateRoomPricingBatch(propertyId, items) {
+    const homestay = this.repository.getHomestay(propertyId);
+    if (!homestay) throw new Error("room not found");
+    const changes = new Map(items.map((item) => [item.roomTypeId, item]));
+    if (changes.size !== items.length || [...changes.keys()].some((id) => !(homestay.rooms || []).some((room) => room.id === id && room.inventoryType !== "bundle"))) throw new Error("room not found");
+    const updated = this.repository.updateHomestay(propertyId, { name: homestay.name, rooms: homestay.rooms.map((room) => changes.has(room.id) ? { ...room, ...changes.get(room.id) } : room), safeFacts: homestay.safeFacts || {} });
+    return toProperty(updated);
+  }
 }
 
 class JsonAvailabilityProvider extends AvailabilityProvider {
@@ -40,7 +48,7 @@ class JsonAvailabilityProvider extends AvailabilityProvider {
   getRows(propertyId, from, to) { return this.repository.getAvailabilityRows(propertyId, from, to); }
   setDay(propertyId, date, roomId, status) { return this.repository.setAvailabilityDay(propertyId, date, roomId, status); }
   getDayNotes(propertyId, from, to) { return this.repository.getAvailabilityDayNotes(propertyId, from, to); }
-  setDayNote(propertyId, roomTypeId, date, note) { return this.repository.setAvailabilityDayNote(propertyId, roomTypeId, date, note); }
+  setDayNote(propertyId, inventoryType, inventoryId, date, note) { return this.repository.setAvailabilityDayNote(propertyId, inventoryType, inventoryId, date, note); }
 }
 
 class JsonPersistenceProvider extends PersistenceProvider {

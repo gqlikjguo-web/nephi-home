@@ -47,6 +47,25 @@ function mergeSeedMessageLogs(state, seed) {
   });
 }
 
+function migrateDailyRoomNotes(state) {
+  state.dailyRoomNotes = state.dailyRoomNotes || {};
+  for (const dates of Object.values(state.dailyRoomNotes)) {
+    for (const [date, notes] of Object.entries(dates || {})) {
+      const migrated = {};
+      for (const [storedKey, storedItem] of Object.entries(notes || {})) {
+        if (!storedItem || typeof storedItem !== "object") continue;
+        const inventoryType = storedItem.inventoryType === "bundle" ? "bundle" : "room";
+        const inventoryId = String(storedItem.inventoryId || storedItem.roomTypeId || (storedKey.includes(":") ? storedKey.slice(storedKey.indexOf(":") + 1) : storedKey));
+        const key = `${inventoryType}:${inventoryId}`;
+        const item = { ...storedItem, inventoryType, inventoryId, date: storedItem.date || date };
+        delete item.roomTypeId;
+        if (!migrated[key] || storedItem.inventoryType) migrated[key] = item;
+      }
+      dates[date] = migrated;
+    }
+  }
+}
+
 class JsonFileRepository {
   constructor({ dataFile, seedFile, now = () => new Date() }) {
     this.dataFile = path.resolve(dataFile);
@@ -60,7 +79,7 @@ class JsonFileRepository {
     if (fs.existsSync(this.dataFile)) {
       const state = this.read();
       state.conversationStates = state.conversationStates || {};
-      state.dailyRoomNotes = state.dailyRoomNotes || {};
+      migrateDailyRoomNotes(state);
       const existingById = Object.fromEntries((state.homestays || []).map((item) => [item.customerId, item]));
       const seedIds = new Set((seed.homestays || []).map((item) => item.customerId));
       state.homestays = (seed.homestays || []).map((item) => {
@@ -252,30 +271,32 @@ class JsonFileRepository {
       .flatMap((date) => Object.values(dates[date]).map((item) => ({ ...item })));
   }
 
-  setAvailabilityDayNote(customerId, roomTypeId, date, value) {
+  setAvailabilityDayNote(customerId, inventoryType, inventoryId, date, value) {
     return this.mutate((state) => {
       const homestay = (state.homestays || []).find((item) => item.customerId === customerId);
-      if (!homestay || !(homestay.rooms || []).some((room) => room.id === roomTypeId)) throw new Error("room not found");
+      if (!homestay || !["room", "bundle"].includes(inventoryType) || !(homestay.rooms || []).some((room) => room.id === inventoryId && (room.inventoryType === "bundle" ? "bundle" : "room") === inventoryType)) throw new Error("inventory not found");
       state.dailyRoomNotes = state.dailyRoomNotes || {};
       state.dailyRoomNotes[customerId] = state.dailyRoomNotes[customerId] || {};
       state.dailyRoomNotes[customerId][date] = state.dailyRoomNotes[customerId][date] || {};
+      const inventoryKey = `${inventoryType}:${inventoryId}`;
       const note = String(value || "").trim();
       if (!note) {
-        delete state.dailyRoomNotes[customerId][date][roomTypeId];
+        delete state.dailyRoomNotes[customerId][date][inventoryKey];
         if (!Object.keys(state.dailyRoomNotes[customerId][date]).length) delete state.dailyRoomNotes[customerId][date];
         return null;
       }
-      const existing = state.dailyRoomNotes[customerId][date][roomTypeId];
+      const existing = state.dailyRoomNotes[customerId][date][inventoryKey];
       const timestamp = this.now().toISOString();
       const item = {
         propertyId: customerId,
-        roomTypeId,
+        inventoryType,
+        inventoryId,
         date,
         note,
         createdAt: existing ? existing.createdAt : timestamp,
         updatedAt: timestamp
       };
-      state.dailyRoomNotes[customerId][date][roomTypeId] = item;
+      state.dailyRoomNotes[customerId][date][inventoryKey] = item;
       return { ...item };
     });
   }

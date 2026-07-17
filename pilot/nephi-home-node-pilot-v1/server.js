@@ -346,7 +346,7 @@ function createRequestHandler(service, options = {}) {
       }
       if (request.method === "PUT" && pathname === "/api/availability/day-note") {
         const body=request.adminBody||await readJsonBody(request);
-        return sendData(response, { note: service.setDayNote({ ...body, propertyId:body.propertyId||body.customerId, roomTypeId:body.roomTypeId||body.roomId }) });
+        return sendData(response, { note: service.setDayNote({ ...body, propertyId:body.propertyId||body.customerId, inventoryType:body.inventoryType||"room", inventoryId:body.inventoryId||body.roomTypeId||body.roomId }) });
       }
       if (request.method === "POST" && pathname === "/api/availability/month") {
         return sendData(response, service.setMonth(request.adminBody || await readJsonBody(request)));
@@ -355,6 +355,20 @@ function createRequestHandler(service, options = {}) {
         return sendData(response, service.applyBatch(request.adminBody || await readJsonBody(request)));
       }
       if(request.method==="GET"&&pathname==="/api/room-pricing"){const property=customerSettings.getProperty(url.searchParams.get("customerId"));return sendData(response,{currency:property.currency||"TWD",rooms:property.rooms.filter(x=>x.inventoryType!=="bundle"),overrides:customerSettings.listRoomPriceOverrides(property.propertyId)});}
+      if(request.method==="PUT"&&pathname==="/api/room-pricing"){
+        const body=request.adminBody||await readJsonBody(request),propertyId=String(body.propertyId||body.customerId||"").trim();
+        if(!Array.isArray(body.rooms)||!body.rooms.length)throw new AppError(400,"INVALID_PRICING_MATRIX","請提供至少一個房型價格");
+        const property=customerSettings.getProperty(propertyId);if(!property)throw new AppError(400,"UNKNOWN_PROPERTY","找不到旅宿");const validIds=new Set((property.rooms||[]).filter((room)=>room.inventoryType!=="bundle").map((room)=>room.id)),seen=new Set(),items=[];
+        for(const row of body.rooms){
+          const roomTypeId=String(row&&row.roomTypeId||"").trim();
+          if(!roomTypeId||seen.has(roomTypeId)||!validIds.has(roomTypeId))throw new AppError(400,"UNKNOWN_ROOM","房型不存在或重複");
+          seen.add(roomTypeId);const item={roomTypeId};
+          for(const key of ["mondayThursdayPrice","fridayPrice","saturdayHolidayPrice","sundayPrice"]){item[key]=Number(row[key]);if(!Number.isInteger(item[key])||item[key]<0)throw new AppError(400,"INVALID_PRICE","價格必須是零或正整數");}
+          items.push(item);
+        }
+        const updated=customerSettings.updateRoomPricingBatch(propertyId,items);
+        return sendData(response,{currency:updated.currency||"TWD",rooms:updated.rooms.filter((room)=>room.inventoryType!=="bundle"),overrides:customerSettings.listRoomPriceOverrides(propertyId)});
+      }
       const pricingMatch=/^\/api\/room-pricing\/([^/]+)$/.exec(pathname);
       if(pricingMatch&&request.method==="PUT"){const b=request.adminBody||await readJsonBody(request),price={};for(const key of ["mondayThursdayPrice","fridayPrice","saturdayHolidayPrice","sundayPrice"]){price[key]=Number(b[key]);if(!Number.isInteger(price[key])||price[key]<0)throw new AppError(400,"INVALID_PRICE","價格必須是零或正整數");}return sendData(response,{property:customerSettings.updateRoomPricing(b.customerId,decodeURIComponent(pricingMatch[1]),price)});}
       if(request.method==="POST"&&pathname==="/api/room-price-overrides"){const b=request.adminBody||await readJsonBody(request),price=Number(b.price);if(!/^\d{4}-\d{2}-\d{2}$/.test(b.date)||!Number.isInteger(price)||price<0)throw new AppError(400,"INVALID_PRICE_OVERRIDE","請輸入有效日期與價格");return sendData(response,{override:customerSettings.setRoomPriceOverride(b.customerId,b.roomId,b.date,price,customerSettings.getProperty(b.customerId).currency||"TWD")});}

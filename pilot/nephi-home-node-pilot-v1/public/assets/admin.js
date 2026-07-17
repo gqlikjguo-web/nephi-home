@@ -8,6 +8,7 @@ const mutationQueues = new Map();
 const mutationVersions = new Map();
 const saveStates = new Map();
 let noteEditorState = null;
+const pricingState = { rooms: [], overrides: [], original: new Map(), dirty: false, saving: false };
 
 async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers: { "content-type": "application/json", ...(options.headers || {}) } });
@@ -31,9 +32,11 @@ function mutationKey(kind, date, roomTypeId) { return `${kind}:${date}:${roomTyp
 function queueMutation(key, operation) { const previous = mutationQueues.get(key) || Promise.resolve(), next = previous.catch(() => {}).then(operation); mutationQueues.set(key, next); return next.finally(() => { if (mutationQueues.get(key) === next) mutationQueues.delete(key); }); }
 function nextMutationVersion(key) { const version = (mutationVersions.get(key) || 0) + 1; mutationVersions.set(key, version); return version; }
 function isLatestMutation(key, version) { return mutationVersions.get(key) === version; }
-function noteFor(date, roomTypeId) { return availabilityState.notesByDate[date]?.[roomTypeId] || null; }
-function setNoteFor(date, roomTypeId, note) { availabilityState.notesByDate[date] = availabilityState.notesByDate[date] || {}; if (note) availabilityState.notesByDate[date][roomTypeId] = note; else { delete availabilityState.notesByDate[date][roomTypeId]; if (!Object.keys(availabilityState.notesByDate[date]).length) delete availabilityState.notesByDate[date]; } }
-function roomById(roomTypeId) { return availabilityState.rooms.find(room => room.id === roomTypeId); }
+function inventoryTypeFor(room) { return room?.inventoryType === "bundle" ? "bundle" : "room"; }
+function inventoryKey(inventoryType, inventoryId) { return `${inventoryType}:${inventoryId}`; }
+function noteFor(date, room) { return availabilityState.notesByDate[date]?.[inventoryKey(inventoryTypeFor(room), room.id)] || null; }
+function setNoteFor(date, inventoryType, inventoryId, note) { const key = inventoryKey(inventoryType, inventoryId); availabilityState.notesByDate[date] = availabilityState.notesByDate[date] || {}; if (note) availabilityState.notesByDate[date][key] = note; else { delete availabilityState.notesByDate[date][key]; if (!Object.keys(availabilityState.notesByDate[date]).length) delete availabilityState.notesByDate[date]; } }
+function roomById(inventoryId) { return availabilityState.rooms.find(room => room.id === inventoryId); }
 function hasUnsavedNote() { return Boolean(noteEditorState && $("noteText").value !== noteEditorState.original); }
 
 function renderSaveState(container, key) {
@@ -53,18 +56,17 @@ function createStatusControl(date, room) {
 function createRoomRow(date, room) {
   const row = element("article", "availability-room-row"), name = element("div", "room-label", room.name), actions = element("div", "room-actions"), statusArea = element("div", "room-save-area");
   actions.append(createStatusControl(date, room));
-  if (room.inventoryType !== "bundle") { const note = noteFor(date, room.id), button = element("button", `note-button${note ? " has-note" : ""}`, note ? "編輯備註" : "新增備註"); button.type = "button"; button.setAttribute("aria-label", `${dateLabel(date)} ${room.name}${note ? "有內部備註，編輯備註" : "新增內部備註"}`); button.onclick = () => openNoteEditor(date, room.id); actions.append(button); }
+  const note = noteFor(date, room), button = element("button", `note-button${note ? " has-note" : ""}`, note ? "編輯備註" : "＋備註"); button.type = "button"; button.setAttribute("aria-label", `${dateLabel(date)} ${room.name}${note ? "有內部備註，編輯備註" : "新增內部備註"}`); button.onclick = () => openNoteEditor(date, room.id); actions.append(button);
   renderSaveState(statusArea, mutationKey("status", date, room.id)); row.append(name, actions, statusArea); return row;
 }
 
-function prioritizeDailyDates(dates) { const todayIndex = dates.indexOf(currentDateKey()); return todayIndex < 0 ? { upcoming: dates, earlier: [] } : { upcoming: dates.slice(todayIndex), earlier: dates.slice(0, todayIndex) }; }
-function createDayCard(date) { const day = availabilityState.days.get(date), card = element("section", `availability-day-card${date === currentDateKey() ? " is-today" : ""}`), heading = element("div", "availability-day-heading"), title = element("h3", "", dateLabel(date)); const available = availabilityState.rooms.filter(room => day[room.id] === "available").length, summary = element("span", "day-summary", `${available} 可售／${availabilityState.rooms.length - available} 不可售`); heading.append(title, summary); if (!day._hasAvailability) heading.append(element("span", "missing-data", "尚無房況資料，依不可售顯示")); card.append(heading, ...availabilityState.rooms.map(room => createRoomRow(date, room))); return card; }
+function futureDailyDates(dates) { return dates.filter(date => date >= currentDateKey()); }
+function createDayCard(date) { const day = availabilityState.days.get(date), card = element("section", `availability-day-card${date === currentDateKey() ? " is-today" : ""}`), heading = element("div", "availability-day-heading"), title = element("h3", "", dateLabel(date)), inventoryGrid = element("div", "availability-inventory-grid"); const available = availabilityState.rooms.filter(room => day[room.id] === "available").length, summary = element("span", "day-summary", `${available} 可售／${availabilityState.rooms.length - available} 不可售`); heading.append(title, summary); if (!day._hasAvailability) heading.append(element("span", "missing-data", "尚無房況資料，依不可售顯示")); inventoryGrid.append(...availabilityState.rooms.map(room => createRoomRow(date, room))); card.append(heading, inventoryGrid); return card; }
 function renderDailyView() {
   const container = $("dailyAvailability");
   if (!availabilityState.rooms.length) { container.replaceChildren(element("div", "availability-empty", "目前沒有可管理的房型。")); return; }
-  const groups = prioritizeDailyDates([...availabilityState.days.keys()]), nodes = groups.upcoming.map(createDayCard);
-  if (groups.earlier.length) nodes.push(element("div", "daily-date-separator", "本月較早日期"), ...groups.earlier.map(createDayCard));
-  container.replaceChildren(...nodes);
+  const dates = futureDailyDates([...availabilityState.days.keys()]);
+  container.replaceChildren(...(dates.length ? dates.map(createDayCard) : [element("div", "availability-empty", "每日房況只顯示今天與未來日期；過去日期請切換到月曆查看。") ]));
 }
 
 function renderDayDetails(date) {
@@ -105,13 +107,13 @@ async function saveDay(date, room, status) {
 }
 
 function openNoteEditor(date, roomTypeId) {
-  if (hasUnsavedNote() && !confirm("目前備註尚未儲存，確定要放棄變更嗎？")) return; const room = roomById(roomTypeId), item = noteFor(date, roomTypeId); noteEditorState = { date, roomTypeId, original: item?.note || "" }; $("noteEditorTitle").textContent = `${dateLabel(date)}｜${room?.name || "房型"}`; $("noteText").value = noteEditorState.original; $("noteStatus").textContent = item ? "已載入目前備註" : "尚無備註"; $("noteEditor").hidden = false; updateNoteCount(); $("noteText").focus(); $("noteEditor").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (hasUnsavedNote() && !confirm("目前備註尚未儲存，確定要放棄變更嗎？")) return; const room = roomById(roomTypeId), inventoryType = inventoryTypeFor(room), item = noteFor(date, room); noteEditorState = { date, inventoryType, inventoryId: roomTypeId, original: item?.note || "" }; $("noteEditorTitle").textContent = `${dateLabel(date)}｜${room?.name || "房型或方案"}`; $("noteText").value = noteEditorState.original; $("noteStatus").textContent = item ? "已載入目前備註" : "尚無備註"; $("noteEditor").hidden = false; updateNoteCount(); $("noteText").focus(); $("noteEditor").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 function updateNoteCount() { $("noteCount").textContent = `${$("noteText").value.length} / 1000`; }
 function closeNoteEditor() { if (hasUnsavedNote() && !confirm("備註尚未儲存，確定關閉嗎？")) return; noteEditorState = null; $("noteEditor").hidden = true; $("noteStatus").textContent = ""; }
 async function saveNote(value = $("noteText").value) {
-  if (!noteEditorState) return; const { date, roomTypeId } = noteEditorState, key = mutationKey("note", date, roomTypeId), version = nextMutationVersion(key), draft = String(value); $("noteSave").disabled = true; $("noteClear").disabled = true; $("noteStatus").textContent = "儲存中…";
-  return queueMutation(key, async () => { try { const data = await api("/api/availability/day-note", { method: "PUT", body: JSON.stringify({ propertyId: session.propertyId, date, roomTypeId, note: draft }) }); setNoteFor(date, roomTypeId, data.note); if (isLatestMutation(key, version)) { noteEditorState.original = data.note?.note || ""; $("noteText").value = noteEditorState.original; updateNoteCount(); $("noteStatus").textContent = data.note ? "已儲存內部備註" : "備註已清除"; } renderAvailability(); }
+  if (!noteEditorState) return; const { date, inventoryType, inventoryId } = noteEditorState, key = mutationKey("note", date, inventoryKey(inventoryType, inventoryId)), version = nextMutationVersion(key), draft = String(value); $("noteSave").disabled = true; $("noteClear").disabled = true; $("noteStatus").textContent = "儲存中…";
+  return queueMutation(key, async () => { try { const data = await api("/api/availability/day-note", { method: "PUT", body: JSON.stringify({ propertyId: session.propertyId, date, inventoryType, inventoryId, note: draft }) }); setNoteFor(date, inventoryType, inventoryId, data.note); if (isLatestMutation(key, version)) { noteEditorState.original = data.note?.note || ""; $("noteText").value = noteEditorState.original; updateNoteCount(); $("noteStatus").textContent = data.note ? "已儲存內部備註" : "備註已清除"; } renderAvailability(); }
     catch (error) { if (isLatestMutation(key, version)) $("noteStatus").textContent = `儲存失敗：${error.message}。輸入內容仍保留，請重試。`; }
     finally { if (isLatestMutation(key, version)) { $("noteSave").disabled = false; $("noteClear").disabled = false; } } });
 }
@@ -133,21 +135,36 @@ function editBundle(bundle) { $("bundleId").value = bundle.id; $("bundleName").v
 function clearBundle() { $("bundleForm").reset(); $("bundleId").value = ""; $("bundleEnabled").checked = true; }
 async function deleteBundle(bundle) { if (!confirm(`確定刪除「${bundle.name}」？已使用的方案不可刪除。`)) return; try { await api(`/api/bundles/${encodeURIComponent(bundle.id)}`, { method: "DELETE", body: JSON.stringify({ customerId: session.propertyId }) }); await Promise.all([loadBundles(), loadMonth()]); } catch (error) { alert(error.message); } }
 
+const priceKeys = ["mondayThursdayPrice", "fridayPrice", "saturdayHolidayPrice", "sundayPrice"];
+function currentPricingRows() { return [...$("roomPricing").querySelectorAll("tr[data-room-id]")].map(row => { const item = { roomTypeId: row.dataset.roomId }; for (const key of priceKeys) item[key] = Number(row.querySelector(`[data-price-key="${key}"]`).value); return item; }); }
+function updatePricingDirty() {
+  pricingState.dirty = currentPricingRows().some(row => priceKeys.some(key => row[key] !== pricingState.original.get(row.roomTypeId)?.[key]));
+  $("pricingSave").disabled = pricingState.saving || !pricingState.dirty;
+  if (!pricingState.saving) $("pricingStatus").textContent = pricingState.dirty ? "有未儲存變更" : "";
+}
+function setPricingInputsDisabled(disabled) { $("roomPricing").querySelectorAll("input[data-price-key]").forEach(input => { input.disabled = disabled; }); }
+function renderPricingMatrix(data) {
+  pricingState.rooms = data.rooms; pricingState.overrides = data.overrides; pricingState.original = new Map(data.rooms.map(room => [room.id, Object.fromEntries(priceKeys.map(key => [key, Number(room[key] ?? 0)]))])); pricingState.dirty = false;
+  const wrap = element("div", "pricing-matrix-scroll"), table = element("table", "pricing-matrix"), head = document.createElement("thead"), headRow = document.createElement("tr"), body = document.createElement("tbody");
+  for (const label of ["房型", "週一至週四", "週五", "週六及連續假期", "週日"]) headRow.append(cell("th", label)); head.append(headRow);
+  for (const room of data.rooms) { const row = document.createElement("tr"); row.dataset.roomId = room.id; row.append(cell("th", room.name)); for (const key of priceKeys) { const td = document.createElement("td"), input = document.createElement("input"); input.type = "number"; input.min = "0"; input.step = "1"; input.required = true; input.value = room[key] ?? 0; input.dataset.priceKey = key; input.setAttribute("aria-label", `${room.name} ${key}`); input.oninput = updatePricingDirty; td.append(input); row.append(td); } body.append(row); }
+  table.append(head, body); wrap.append(table); $("roomPricing").replaceChildren(wrap); $("pricingSave").disabled = true; $("pricingStatus").textContent = "";
+}
+async function savePricingMatrix() {
+  const form = $("pricingMatrixForm"); if (!form.reportValidity()) return; const rows = currentPricingRows(); pricingState.saving = true; setPricingInputsDisabled(true); $("pricingSave").disabled = true; $("pricingStatus").textContent = "儲存中…";
+  try { const data = await api("/api/room-pricing", { method: "PUT", body: JSON.stringify({ propertyId: session.propertyId, rooms: rows }) }); renderPricingMatrix(data); $("pricingStatus").textContent = "房型價格已全部儲存"; }
+  catch (error) { pricingState.dirty = true; $("pricingStatus").textContent = `儲存失敗：${error.message}。輸入內容仍保留，請重試。`; }
+  finally { pricingState.saving = false; setPricingInputsDisabled(false); $("pricingSave").disabled = !pricingState.dirty; }
+}
 async function loadPricing() {
   const data = await api(`/api/room-pricing?customerId=${encodeURIComponent(session.propertyId)}`);
-  $("roomPricing").replaceChildren(...data.rooms.map(room => {
-    const form = document.createElement("form"); form.className = "pricing-row";
-    form.innerHTML = `<h3></h3><label>週一至週四（元）<input name="mondayThursdayPrice" type="number" min="0" step="1" required></label><label>週五（元）<input name="fridayPrice" type="number" min="0" step="1" required></label><label>週六及連續假期（元）<input name="saturdayHolidayPrice" type="number" min="0" step="1" required></label><label>週日（元）<input name="sundayPrice" type="number" min="0" step="1" required></label><button>儲存房型價格</button>`;
-    form.querySelector("h3").textContent = room.name;
-    for (const key of ["mondayThursdayPrice", "fridayPrice", "saturdayHolidayPrice", "sundayPrice"]) form.elements[key].value = room[key] ?? 0;
-    form.onsubmit = async event => { event.preventDefault(); const payload = { customerId: session.propertyId }; for (const key of ["mondayThursdayPrice", "fridayPrice", "saturdayHolidayPrice", "sundayPrice"]) payload[key] = Number(form.elements[key].value); try { await api(`/api/room-pricing/${encodeURIComponent(room.id)}`, { method: "PUT", body: JSON.stringify(payload) }); await loadPricing(); } catch (error) { alert(error.message); } };
-    return form;
-  }));
+  renderPricingMatrix(data);
   $("overrideRoom").replaceChildren(...data.rooms.map(room => { const option = document.createElement("option"); option.value = room.id; option.textContent = room.name; return option; }));
   $("overrideList").replaceChildren(...data.overrides.map(item => cell("p", `${item.date}｜${data.rooms.find(room => room.id === item.roomId)?.name || "房型"}｜${item.price} 元`)));
 }
 
 $("bundleForm").onsubmit = async event => { event.preventDefault(); const id = $("bundleId").value, payload = { customerId: session.propertyId, name: $("bundleName").value, capacity: Number($("bundleCapacity").value), mondayThursdayPrice: Number($("bundleMondayThursdayPrice").value), fridayPrice: Number($("bundleFridayPrice").value), saturdayHolidayPrice: Number($("bundleSaturdayHolidayPrice").value), sundayPrice: Number($("bundleSundayPrice").value), enabled: $("bundleEnabled").checked, memberRoomIds: [...document.querySelectorAll('[name="memberRoom"]:checked')].map(input => input.value) }; try { await api(id ? `/api/bundles/${encodeURIComponent(id)}` : "/api/bundles", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }); clearBundle(); await Promise.all([loadBundles(), loadMonth()]); } catch (error) { alert(error.message); } };
+$("pricingMatrixForm").onsubmit = event => { event.preventDefault(); savePricingMatrix(); };
 $("overrideForm").onsubmit = async event => { event.preventDefault(); try { await api("/api/room-price-overrides", { method: "POST", body: JSON.stringify({ customerId: session.propertyId, roomId: $("overrideRoom").value, date: $("overrideDate").value, price: Number($("overridePrice").value) }) }); await loadPricing(); event.currentTarget.reset(); } catch (error) { alert(error.message); } };
 async function enter(value) { if (value.requiresPropertySelection || !value.propertyId) return showPropertyChooser(value); session = value; $("login").hidden = true; $("propertyChooser").hidden = true; $("workspace").hidden = false; $("logout").hidden = false; $("propertyLabel").textContent = `業者：${value.propertyId}`; $("month").value = $("month").value || currentMonth(); let savedView = "daily"; try { savedView = localStorage.getItem("junzanAvailabilityView") || "daily"; } catch {} availabilityState.view = matchMedia("(max-width: 640px)").matches ? "daily" : ["daily", "calendar"].includes(savedView) ? savedView : "daily"; await Promise.all([loadMonth(), loadBundles(), loadPricing()]); }
 $("loginForm").onsubmit = async event => { event.preventDefault(); try { await enter(await api("/api/admin/login", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) })); } catch (error) { showLogin(error.message); } };
@@ -155,5 +172,5 @@ document.querySelectorAll("[data-view]").forEach(button => { button.onclick = ()
 $("noteText").oninput = updateNoteCount; $("noteSave").onclick = () => saveNote(); $("noteClear").onclick = () => saveNote(""); $("noteClose").onclick = closeNoteEditor;
 $("month").onchange = () => { if (hasUnsavedNote() && !confirm("備註尚未儲存，確定切換月份嗎？")) { $("month").value = availabilityState.loadedMonth; return; } noteEditorState = null; $("noteEditor").hidden = true; loadMonth(); };
 $("bundleCancel").onclick = clearBundle; $("logout").onclick = async () => { await api("/api/admin/logout", { method: "POST", body: "{}" }); showLogin(); };
-window.addEventListener("beforeunload", event => { if (!hasUnsavedNote() && !mutationQueues.size) return; event.preventDefault(); event.returnValue = ""; });
+window.addEventListener("beforeunload", event => { if (!hasUnsavedNote() && !pricingState.dirty && !mutationQueues.size) return; event.preventDefault(); event.returnValue = ""; });
 api("/api/admin/session").then(enter).catch(() => showLogin());
