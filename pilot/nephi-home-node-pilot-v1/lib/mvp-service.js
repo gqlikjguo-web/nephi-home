@@ -29,6 +29,15 @@ const INTENT_SAFE_FACTS = {
   self_checkin: "selfCheckInRule",
   price: "priceRule"
 };
+const PUBLIC_ROOM_NAME_LIMIT = 100;
+const PUBLIC_ROOM_DESCRIPTION_LIMIT = 30;
+const NON_PUBLIC_DESCRIPTION_PATTERN = /(?:內部|管理|後台|員工|房務|清潔|備註|勿對外|密碼|交班)/i;
+const PRICE_FIELDS = [
+  ["mondayThursdayPrice", "週一至週四"],
+  ["fridayPrice", "週五"],
+  ["saturdayHolidayPrice", "週六及連續假期"],
+  ["sundayPrice", "週日"]
+];
 const FIXED_HUMAN_REPLY = "請稍候，將由真人客服協助確認。";
 const FIXED_AVAILABILITY_UNCONFIRMED_REPLY = "目前無法確認房況，請稍候由真人客服協助確認。";
 const REVIEW_REASON_LABELS = {
@@ -48,6 +57,108 @@ class AppError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+function normalizedPublicText(value) {
+  return String(value || "").normalize("NFKC").replace(/\s+/g, " ").trim();
+}
+
+function normalizedMatchText(value) {
+  return normalizedPublicText(value).toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function publicRoomName(room) {
+  const name = normalizedPublicText(room && (room.publicDisplayName || room.displayName || room.publicName || room.name)).slice(0, 60);
+  const type = normalizedPublicText(room && room.type).slice(0, 24);
+  const nameKey = normalizedMatchText(name);
+  const typeKey = normalizedMatchText(type);
+  const parts = [name];
+  if (type && typeKey && !nameKey.includes(typeKey) && !typeKey.includes(nameKey)) parts.push(type);
+  const base = parts.filter(Boolean).join(" ");
+  const rawDescription = normalizedPublicText(room && (room.publicShortFeature || room.shortFeature || room.description));
+  const description = rawDescription.replace(/[。！？!?,，；;]+$/u, "");
+  const descriptionKey = normalizedMatchText(description);
+  const canShowDescription = room && room.inventoryType !== "bundle"
+    && description.length > 0 && description.length <= PUBLIC_ROOM_DESCRIPTION_LIMIT
+    && !NON_PUBLIC_DESCRIPTION_PATTERN.test(description)
+    && !/[\r\n]/.test(rawDescription)
+    && !normalizedMatchText(base).includes(descriptionKey);
+  return `${base}${canShowDescription ? `（${description}）` : ""}`.slice(0, PUBLIC_ROOM_NAME_LIMIT) || "可詢問房型";
+}
+
+function isEquipmentOverview(message) {
+  const text = normalizedPublicText(message);
+  return /(?:哪些|什麼|甚麼).{0,6}(?:設備|設施)|(?:設備|設施).{0,6}(?:有哪些|有什麼|有甚麼|是什麼)/u.test(text);
+}
+
+function requestedEquipmentSubject(message) {
+  return normalizedPublicText(message)
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]+/gu, "")
+    .replace(/^(?:請問|想問|想知道|你們|民宿|房間|房內|這裡|住宿)*/u, "")
+    .replace(/^(?:有沒有|是否有|有提供|提供|備有|有|可以使用|可使用|能使用|能用|可以借|可借)/u, "")
+    .replace(/(?:可以使用|可使用|能使用|能用|可以借|可借|有提供|提供)?(?:嗎|呢|嘛|麼|么)$/u, "")
+    .replace(/(?:設備|設施)$/u, "");
+}
+
+function equipmentHasConfirmedEvidence(homestay, message) {
+  const fact = homestay && homestay.safeFacts && homestay.safeFacts.equipment;
+  const factText = Array.isArray(fact) ? fact.join("、") : normalizedPublicText(fact);
+  if (!factText) return false;
+  if (isEquipmentOverview(message)) return true;
+  const subject = requestedEquipmentSubject(message);
+  if (normalizedMatchText(subject).length < 2) return false;
+  const faqText = (homestay.faqs || [])
+    .filter((item) => item && item.knowledgeKey === "equipment")
+    .map((item) => `${item.question || ""} ${item.answer || ""}`)
+    .join(" ");
+  return normalizedMatchText(`${factText} ${faqText}`).includes(normalizedMatchText(subject));
+}
+
+function selectedInventory(rooms, fields = {}) {
+  const queryMode = ["bundle_only", "room_only", "any"].includes(fields.queryMode) ? fields.queryMode : "any";
+  const roomType = String(fields.roomType || "all");
+  return (rooms || []).filter((room) => {
+    if (queryMode === "bundle_only" && room.inventoryType !== "bundle") return false;
+    if (queryMode === "room_only" && room.inventoryType === "bundle") return false;
+    return roomType === "all" || roomMatchesType(room, roomType);
+  });
+}
+
+function structuredPriceReply(rooms) {
+  if (!rooms.length) return "";
+  const lines = rooms.map((room) => {
+    const values = PRICE_FIELDS.map(([key, label]) => [label, Number(room[key])]);
+    if (values.some(([, value]) => !Number.isInteger(value) || value <= 0)) return "";
+    return `${publicRoomName(room)}：${values.map(([label, value]) => `${label} ${value} 元`).join("、")}`;
+  }).filter(Boolean);
+  return lines.length === rooms.length ? `一般價格表：\n${lines.join("\n")}\n特定日期價格或連續假期仍以業者確認為準。` : "";
+}
+
+function regexEscape(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function legacyConfirmedPriceReply(homestay, rooms) {
+  if (!rooms.length) return "";
+  const raw = normalizedPublicText(homestay && homestay.safeFacts && homestay.safeFacts.priceRule);
+  if (!raw) return "";
+  const allRooms = homestay.rooms || [];
+  const lines = rooms.map((room) => {
+    const aliases = normalizedPublicText(room.name).split(/\s+/u)
+      .map((item) => item.replace(/[^\p{L}\p{N}]/gu, ""))
+      .filter((item) => item.length >= 2)
+      .filter((item) => allRooms.filter((candidate) => normalizedMatchText(candidate.name).includes(normalizedMatchText(item))).length === 1)
+      .sort((a, b) => b.length - a.length);
+    let price = null;
+    for (const alias of aliases) {
+      const match = raw.match(new RegExp(`${regexEscape(alias)}[^0-9]{0,20}([0-9]{3,8})`, "iu"));
+      if (match) { price = Number(match[1]); break; }
+    }
+    if (!Number.isInteger(price) || price <= 0) return "";
+    return `${publicRoomName(room)}：週一至週四 ${price} 元、週五 未確認、週六及連續假期 未確認、週日 未確認`;
+  }).filter(Boolean);
+  return lines.length === rooms.length ? `一般價格表：\n${lines.join("\n")}\n未確認的價格類別與特定日期價格請由業者確認。` : "";
 }
 
 function parseDateKey(value, field) {
@@ -685,14 +796,14 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
         return bridgeResult(item, false, input);
       }
       const replyText = availability.rooms.length
-        ? `${fields.checkInDate} 至 ${fields.checkOutDate} 可詢問房型：${availability.rooms.map((item) => item.name).join("、")}。實際訂房請由業者確認。`
+        ? `${fields.checkInDate} 至 ${fields.checkOutDate} 可詢問房型：${availability.rooms.map(publicRoomName).join("、")}。實際訂房請由業者確認。`
         : `${fields.checkInDate} 至 ${fields.checkOutDate} 目前沒有符合條件的可訂房型，請由真人協助確認。`;
       const item = appendFixedBridgeMessage(homestay, guest || {}, { ...input, ...baseMessage }, "availability", replyText, "availability");
       return bridgeResult(item, false, input);
     }
 
     if (routeIntent === "room_type_capacity") {
-      const replyText = `目前可詢問房型：${(homestay.rooms || []).map((item) => `${item.name}（最多 ${item.capacity} 人）`).join("、")}。`;
+      const replyText = `目前可詢問房型：${(homestay.rooms || []).map((item) => `${publicRoomName(item)}（最多 ${item.capacity} 人）`).join("、")}。`;
       return bridgeResult(appendFixedBridgeMessage(homestay, guest || {}, { ...input, ...baseMessage }, "room_type_capacity", replyText, "rooms"), false, input);
     }
 
@@ -705,6 +816,41 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
         `您好，這裡是${homestay.name}，請問想詢問房況或住宿資訊呢？`,
         "homestayName"
       ), false, input);
+    }
+
+    if (routeIntent === "equipment" && !equipmentHasConfirmedEvidence(homestay, messageText)) {
+      const item = writeMessage({
+        ...baseMessage,
+        detectedIntent: "equipment",
+        replyType: "human_handoff",
+        route: "human_handoff_required",
+        confidence,
+        decisionReason: "equipment_fact_not_confirmed",
+        humanHandoff: true,
+        needsReview: true,
+        reviewNote: "設備問題未在業者已確認資料中找到明確答案，請真人確認。"
+      });
+      return bridgeResult(item, false, input);
+    }
+
+    if (routeIntent === "price") {
+      const rooms = selectedInventory(homestay.rooms, route.extractedFields || {});
+      const replyText = structuredPriceReply(rooms) || legacyConfirmedPriceReply(homestay, rooms);
+      if (replyText) {
+        return bridgeResult(appendFixedBridgeMessage(homestay, guest || {}, { ...input, ...baseMessage }, "price", replyText, "structuredPricing"), false, input);
+      }
+      const item = writeMessage({
+        ...baseMessage,
+        detectedIntent: "price",
+        replyType: "human_handoff",
+        route: "human_handoff_required",
+        confidence,
+        decisionReason: "structured_price_not_confirmed",
+        humanHandoff: true,
+        needsReview: true,
+        reviewNote: "四類結構化價格不完整，請真人確認。"
+      });
+      return bridgeResult(item, false, input);
     }
 
     const safeFactKey = INTENT_SAFE_FACTS[routeIntent];

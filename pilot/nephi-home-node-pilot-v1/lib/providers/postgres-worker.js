@@ -30,7 +30,7 @@ async function operation(name, args) {
     });
     for (const item of mapped) {
       const bundles = await operation("listBundles", [item.propertyId]);
-      item.rooms.push(...bundles.filter((bundle) => bundle.enabled).map((bundle) => ({ id:bundle.id,name:bundle.name,capacity:bundle.capacity,type:"包棟",description:"組合型可售方案",memberRoomIds:bundle.memberRoomIds,basePrice:bundle.basePrice,inventoryType:"bundle" })));
+      item.rooms.push(...bundles.filter((bundle) => bundle.enabled).map((bundle) => ({ id:bundle.id,name:bundle.name,capacity:bundle.capacity,type:"包棟",description:"組合型可售方案",memberRoomIds:bundle.memberRoomIds,basePrice:bundle.basePrice,mondayThursdayPrice:bundle.mondayThursdayPrice,fridayPrice:bundle.fridayPrice,saturdayHolidayPrice:bundle.saturdayHolidayPrice,sundayPrice:bundle.sundayPrice,inventoryType:"bundle" })));
     }
     return name === "getProperty" ? (mapped[0] || null) : mapped;
   }
