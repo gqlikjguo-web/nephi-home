@@ -8,6 +8,10 @@ const { createProviders } = require("./lib/providers/provider-factory");
 const {
   createTestOnlyOpenAiStructuredClassifierFromEnv
 } = require("./lib/providers/test-only-openai-structured-classifier");
+const { createTestOnlyOpenAiConversationPlannerFromEnv } = require("./lib/providers/test-only-openai-conversation-planner");
+const { createTestOnlyOpenAiControlledComposerFromEnv } = require("./lib/providers/test-only-openai-controlled-composer");
+const { ConversationEngineV2 } = require("./lib/conversation-engine-v2/engine");
+const { ConversationEngineV2Coordinator } = require("./lib/conversation-engine-v2/coordinator");
 const { createMvpService, AppError } = require("./lib/mvp-service");
 const { ConversationCoordinator } = require("./lib/conversation-coordinator");
 const { verifyLineSignature, replyToTestLine } = require("./lib/test-line-webhook");
@@ -473,6 +477,10 @@ function createApp(options = {}) {
     timeoutMs: options.classifierTimeoutMs || config.classifierTimeoutMs,
     minConfidence: options.classifierMinConfidence || config.classifierMinConfidence
   });
+  const useConversationEngineV2 = Object.hasOwn(options, "testOnlyConversationEngineV2") ? Boolean(options.testOnlyConversationEngineV2) : config.testOnlyConversationEngineV2;
+  const conversationPlannerV2 = Object.hasOwn(options, "conversationPlannerV2") ? options.conversationPlannerV2 : createTestOnlyOpenAiConversationPlannerFromEnv({ env: options.openAiTestEnv || process.env, fetchImpl: options.openAiTestFetch || globalThis.fetch, timeoutMs: options.classifierTimeoutMs || config.classifierTimeoutMs });
+  const controlledComposerV2 = Object.hasOwn(options, "controlledComposerV2") ? options.controlledComposerV2 : createTestOnlyOpenAiControlledComposerFromEnv({ env: options.openAiTestEnv || process.env, fetchImpl: options.openAiTestFetch || globalThis.fetch, timeoutMs: options.classifierTimeoutMs || config.classifierTimeoutMs });
+  const conversationEngineV2 = useConversationEngineV2 ? new ConversationEngineV2({ planner: conversationPlannerV2, composer: controlledComposerV2, persistence: providers.persistence, getProperty: (propertyId) => providers.customerSettings.getProperty(propertyId), availability: providers.availability, listPriceOverrides: (propertyId) => providers.customerSettings.listRoomPriceOverrides(propertyId), now }) : null;
   const coordinatorOptions = {
     persistence: providers.persistence,
     now,
@@ -491,10 +499,7 @@ function createApp(options = {}) {
     resolveMerged: (input) => service.resolveTestLine(input)
     ,availabilityFingerprint: (fields) => { try { const result=service.searchAvailability({customerId:fields.propertyId||"",checkIn:fields.checkInDate,checkOut:fields.checkOutDate,guests:fields.guestCount,roomType:fields.roomType||"all",queryMode:fields.queryMode||"any"});return JSON.stringify([result.availabilityReliable,result.rooms.map(room=>room.id)]); } catch { return ""; } }
   };
-  const conversationCoordinator = new ConversationCoordinator({
-    ...coordinatorOptions,
-    externalReplyToken: true,
-  });
+  const conversationCoordinator = useConversationEngineV2 ? new ConversationEngineV2Coordinator({ engine: conversationEngineV2, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, externalReplyToken: true }) : new ConversationCoordinator({ ...coordinatorOptions, externalReplyToken: true });
   const claimEvent = async (input) => providers.persistence.claimMessageEvent(
     input.customerId,
     input.channelId,
@@ -536,9 +541,7 @@ function createApp(options = {}) {
       throw error;
     });
   };
-  const lineWebhookCoordinator = new ConversationCoordinator({
-    ...coordinatorOptions
-  });
+  const lineWebhookCoordinator = useConversationEngineV2 ? new ConversationEngineV2Coordinator({ engine: conversationEngineV2, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs }) : new ConversationCoordinator({ ...coordinatorOptions });
   const lineWebhookHandler = async ({ rawBody, signature, customerId }) => {
     logTestLineDiagnostic("received", { hasBody: rawBody.length > 0, hasSignature: Boolean(signature) });
     if (!lineChannelSecret || !lineChannelAccessToken) {

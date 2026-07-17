@@ -1,0 +1,88 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const { validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
+const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
+const { resolveTemporalExpression } = require("../lib/conversation-engine-v2/temporal-resolver");
+const { reduceConversationState, emptyStateV2 } = require("../lib/conversation-engine-v2/state-reducer");
+const { resolveEntity } = require("../lib/conversation-engine-v2/entity-resolver");
+const { executeTasks } = require("../lib/conversation-engine-v2/capability-executor");
+const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
+const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
+const { validateClaims } = require("../lib/conversation-engine-v2/claim-validator");
+
+function plan(overrides = {}) {
+  return {
+    schemaVersion: 2,
+    discourse: { relation: "new_request", confidence: 0.95 },
+    stateOperations: [],
+    stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
+    tasks: [{ taskId: "t1", type: "availability", sourceText: "有房嗎", requestedOutputs: ["availability"], dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: null, confidence: 0.9 }, confidence: 0.95 }],
+    ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "availability_request",
+    ...overrides
+  };
+}
+
+const property = {
+  propertyId: "property_alpha", displayName: "山屋", timezone: "Asia/Taipei", currency: "TWD",
+  rooms: [
+    { id: "r1", name: "森林雙人房", type: "雙人房", description: "有浴缸", capacity: 2, enabled: true, mondayThursdayPrice: 2000, fridayPrice: 2300, saturdayHolidayPrice: 2800, sundayPrice: 2100 },
+    { id: "r2", name: "家庭四人房", type: "四人房", description: "陽台", capacity: 4, enabled: true, mondayThursdayPrice: 3200, fridayPrice: 3500, saturdayHolidayPrice: 4200, sundayPrice: 3300 },
+    { id: "b1", name: "十二人包棟", type: "包棟", inventoryType: "bundle", memberRoomIds: ["r1", "r2"], capacity: 12, enabled: true, mondayThursdayPrice: 9000, fridayPrice: 10000, saturdayHolidayPrice: 12000, sundayPrice: 9500 }
+  ],
+  commonAnswers: { equipment: ["投影機"], parkingRule: "有兩個停車位", bbqRule: "可在指定區域烤肉" },
+  faqs: [{ knowledgeKey: "equipment", question: "有投影機嗎", answer: "有投影機" }],
+  semanticCatalog: { aliases: { r1: ["兩人房"], parking: ["車位", "亭車"] }, amenities: [{ id: "projector", name: "投影機", aliases: ["projector"], status: "confirmed_yes" }, { id: "ktv", name: "唱歌設備", aliases: ["KTV", "卡拉OK", "歡唱"], status: "confirmed_no" }] }
+};
+
+assert.equal(validatePlannerOutput(plan()).ok, true);
+assert.equal(validatePlannerOutput(plan({ tasks: [] })).ok, false);
+assert.equal(validatePlannerOutput({ ...plan(), schemaVersion: 1 }).ok, false);
+
+const catalog = buildPropertyCatalog(property);
+assert.equal(catalog.propertyId, "property_alpha");
+assert.equal(JSON.stringify(catalog).includes("內部"), false);
+assert.equal(resolveEntity(catalog, { category: "room", rawText: "兩人房", canonicalCandidate: "r1" }).status, "resolved");
+assert.equal(resolveEntity(catalog, { category: "amenity", rawText: "卡拉 OK", canonicalCandidate: "ktv" }).entity.status, "confirmed_no");
+assert.equal(resolveEntity(catalog, { category: "amenity", rawText: "麻將", canonicalCandidate: "mahjong" }).status, "not_found");
+
+const eventTime = Date.parse("2026-07-17T10:00:00+08:00");
+assert.deepEqual(resolveTemporalExpression({ rawText: "明天", kind: "relative", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei", nightsCandidate: 1 }).checkIn, "2026-07-18");
+assert.deepEqual(resolveTemporalExpression({ rawText: "下週三", kind: "weekday", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei", nightsCandidate: 1 }).checkIn, "2026-07-22");
+assert.equal(resolveTemporalExpression({ rawText: "2/30", kind: "absolute", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei" }).resolutionStatus, "invalid");
+
+let state = emptyStateV2({ propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", now: "2026-07-17T02:00:00.000Z" });
+state = reduceConversationState(state, plan({ stateOperations: [
+  { field: "stay.checkIn", operation: "set", value: "2026-08-06", sourceText: "8/6" },
+  { field: "stay.guests", operation: "set", value: 2, sourceText: "兩個人" }
+] }), { propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", eventId: "e1", now: "2026-07-17T02:00:00.000Z" });
+assert.equal(state.conditions.stay.guests, 2);
+state = reduceConversationState(state, plan({ discourse: { relation: "modify", confidence: 1 }, stateOperations: [{ field: "stay.guests", operation: "replace", value: 4, sourceText: "改四個人" }] }), { propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", eventId: "e2", now: "2026-07-17T02:01:00.000Z" });
+assert.equal(state.conditions.stay.guests, 4);
+state = reduceConversationState(state, plan({ stateOperations: [{ field: "inventory.features", operation: "clear", value: null, sourceText: "不用浴缸" }] }), { propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", eventId: "e3", now: "2026-07-17T02:02:00.000Z" });
+assert.deepEqual(state.conditions.inventory.features, []);
+
+const availability = { getRows: () => [
+  { date: "2026-08-06", r1: "available", r2: "available", b1: "available" },
+  { date: "2026-08-07", r1: "available", r2: "closed", b1: "closed" }
+] };
+const taskResults = executeTasks({
+  property, catalog, tasks: [
+    plan().tasks[0],
+    { taskId: "t2", type: "amenity", sourceText: "有KTV嗎", requestedOutputs: ["amenity"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "KTV", canonicalCandidate: "ktv", confidence: 0.95 }, confidence: 0.95 }
+  ],
+  request: { stay: { checkIn: "2026-08-06", checkOut: "2026-08-08", nights: 2, guests: 2 }, inventory: { mode: "room_only", entityId: "r1", features: [] } },
+  availability, priceOverrides: [{ roomId: "r1", date: "2026-08-06", price: 2500, currency: "TWD" }]
+});
+assert.equal(taskResults[0].status, "answered");
+assert.equal(taskResults[0].facts.availableInventory[0].canonicalId, "r1");
+assert.equal(taskResults[1].facts.status, "confirmed_no");
+
+const responsePlan = buildResponsePlan({ propertyId: "property_alpha", taskResults, reviewActions: [] });
+const reply = composeControlledReply(responsePlan);
+assert.ok(reply.includes("森林雙人房"));
+assert.ok(reply.includes("唱歌設備"));
+assert.equal(validateClaims(reply, responsePlan).ok, true);
+assert.equal(validateClaims("已經幫你保留房間", responsePlan).ok, false);
+
+console.log("conversation engine v2 capability matrix: PASS");

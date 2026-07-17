@@ -26,6 +26,7 @@ function runtimeConfig(env = process.env) {
     recentMessageWindowMs: Number(env.NEPHI_PILOT_RECENT_MESSAGE_WINDOW_MS || 30 * 60 * 1000),
     classifierTimeoutMs: positiveInteger(env.NEPHI_PILOT_CLASSIFIER_TIMEOUT_MS, DEFAULT_CLASSIFIER_TIMEOUT_MS),
     classifierMinConfidence: Number(env.NEPHI_PILOT_CLASSIFIER_MIN_CONFIDENCE || 0.7)
+    ,testOnlyConversationEngineV2: /^(?:1|true|yes)$/i.test(String(env.TEST_ONLY_CONVERSATION_ENGINE_V2 || ""))
   };
 }
 
