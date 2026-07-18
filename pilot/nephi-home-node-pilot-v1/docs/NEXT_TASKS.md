@@ -1,16 +1,23 @@
 # JunZan AI 下一步任務
 
-Repository 是專案真實來源，不得依賴 ChatGPT 記憶或 Codex session。
+目前狀態與完成定義見 [專案記憶入口](PROJECT_MEMORY.md)，不可退步行為見 [產品基準](PRODUCT_BASELINE.md)。本文件只保存尚未完成且有明確順序的工作。
 
-任務必須依序執行：
+## 目前順序
 
-1. 根據正式 LINE Webhook 安全稽核結果，完成正式／test-only 權限與環境硬隔離。
-2. 確認 `junzan-ai` 實際部署 commit 為 `6822516`。
-3. 在乾淨環境完整執行 `npm test`，必須取得明確 exit 0。
-4. 完成 test-only LINE 真實驗收：
-   - `8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？`
-   - `8/6 有雙人房嗎？`
-5. 驗收通過後，建立 `docs/JUNZAN_AI_CONSTITUTION.md`。
-6. Constitution 完成後，才建立 ADR 與 Architecture 文件。
+1. 真實 test-only LINE 連續三次詢問 `7/18 的301可以預訂嗎？`，確認日期、房型與回答一致。
+2. 由使用者在後台切換 7/18 的 301：
+   - 可售後，下一次 LINE 查詢立即回答有房。
+   - 不可售後，下一次 LINE 查詢立即回答無房。
+3. 真實 test-only LINE 驗收 `8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？`，確認三個 task 都回答且住宿需求優先。
+4. 驗收 Conversation State 修改鏈：
+   - `兩個人住兩晚，要有浴缸`
+   - `改四個人`
+   - `不用浴缸了，那多少錢？`
+5. test-only 全部通過後建立正式切換前回退點。
+6. 只有取得使用者逐次明確授權後，才執行正式 LINE webhook 切換與真實正式驗收。
 
-Constitution 是已排定的必要任務，不得跳過。
+## 不得提前執行
+
+- test-only 驗收未完成前，不得宣稱第一版完成。
+- 未建立回退點前，不得切正式 LINE。
+- 未經使用者明確授權，不得修改正式 LINE、Render、環境變數、資料庫、Secret 或 Token。

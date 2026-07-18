@@ -1,6 +1,15 @@
 # JunZan AI 重要產品演進
 
 本文件記錄會改變產品核心能力、安全邊界或長期架構的重要演進，不是逐筆 Git Changelog。細部實作仍以 Git history 為準。
+目前狀態與閱讀順序見 [專案記憶入口](PROJECT_MEMORY.md)。
+
+## 2026-07-18 — Repository 永久記憶系統
+
+- 建立單一專案記憶入口、不可退步產品基準與 Agent 必讀規則，讓決策、教訓、驗收與重要演進可由 Git 永久追溯。
+
+## 2026-07-18 — V2 短日期 deterministic trust boundary
+
+- 省略年份日期改由 rawText、property timezone 與 event timestamp 決定，Planner candidate 不再能以合法 ISO 格式覆蓋 canonical date；commit：`0c74364`。
 
 ## 2026-07-18 — LINE 正式／test-only 安全硬隔離
 

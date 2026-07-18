@@ -1,5 +1,7 @@
 # JunZan AI 經驗教訓
 
+目前專案狀態見 [專案記憶入口](PROJECT_MEMORY.md)；已形成不可退步行為的教訓應同步納入 [產品基準](PRODUCT_BASELINE.md)。
+
 ## 正式 LINE Webhook 事件
 
 - 尼腓的家正式 LINE Channel 曾被指向 test-only endpoint。
@@ -9,3 +11,21 @@
 - 已確認 repository、部署流程與專案腳本沒有自動修改 LINE Webhook 的能力。
 - 真正的流程問題是正式與 test-only 缺少權限、帳號及環境的硬隔離。
 - 未來不得只靠人工辨識 LINE Channel 頁面，必須建立技術與權限防線。
+
+## Planner candidate 與 canonical contract
+
+- Planner 輸出欄位名稱與 normalization contract 不一致時，即使測試使用理想化 fake schema 全部通過，真實 LINE 仍可能遺失日期或條件。
+- 回歸測試必須包含真實 Planner operation schema，覆蓋 Planner → normalization → state → executor 的完整鏈路。
+- 未允許的 operation path 不得靜默忽略；必須拒絕或留下可觀測的 validation 結果。
+
+## Temporal trust boundary
+
+- 合法 ISO 格式不等於正確日期。Planner 曾把 `7/18` 產生為 `2056-07-18`，使 executor 查不到房況並錯誤轉真人。
+- 年份省略時，canonical 日期必須由 property timezone、event timestamp 與 raw date expression deterministic 解析。
+- AI candidate 只能協助理解；若與 rawText 或 deterministic 結果不一致，不得覆蓋 canonical date。
+
+## 安全硬隔離與 property routing
+
+- LINE payload `destination` 是 Bot User ID，不是數字 Channel ID；不同身分類型不得混用同一欄位比對。
+- Channel identity 必須同時綁定 environment、route、Secret fingerprint、數字 Channel ID 與 destination ID，錯配時 fail fast。
+- `propertyId` 只負責 tenant routing，不能證明 LINE Channel 身分；routing 與 channel authentication 必須分開驗證。
