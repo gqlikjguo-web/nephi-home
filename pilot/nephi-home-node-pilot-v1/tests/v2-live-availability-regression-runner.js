@@ -48,7 +48,7 @@ assert.equal(normalizedRecent.tasks[0].entity.rawText, "");
 assert.deepEqual(normalizedRecent.searchRange, { from: "2026-07-18", to: "2026-08-18" });
 
 const catalog = buildPropertyCatalog(property);
-const matched = resolveEntity(catalog, { category: "room", rawText: "雙人房", canonicalCandidate: null });
+const matched = resolveEntity(catalog, { category: "room", rawText: "雙人房", canonicalCandidate: "room_301" });
 assert.equal(matched.status, "matched_set");
 assert.deepEqual(
   availabilityRequest(property.propertyId, { stay: { checkIn: "2026-08-06", checkOut: "2026-08-07", guests: 2 }, inventory: { mode: "room_only" } }, matched),
@@ -62,6 +62,18 @@ assert.deepEqual(
 assert.deepEqual(
   service.searchAvailability({ customerId: property.propertyId, checkIn: "2026-08-06", checkOut: "2026-08-07", guests: 2, roomType: "all", roomTypeSet: ["room_301", "room_401"], queryMode: "room_only" }).rooms.map((room) => room.id),
   ["room_301", "room_401"]
+);
+
+const matchedFour = resolveEntity(catalog, { category: "room", rawText: "四人房", canonicalCandidate: "room_302" });
+assert.equal(matchedFour.status, "matched_set");
+assert.deepEqual(matchedFour.entities.map((room) => room.canonicalId), ["room_302", "room_402"]);
+assert.deepEqual(
+  availabilityRequest(property.propertyId, { stay: { checkIn: "2026-08-06", checkOut: "2026-08-07", guests: 4 }, inventory: { mode: "room_only" } }, matchedFour),
+  { customerId: property.propertyId, checkIn: "2026-08-06", checkOut: "2026-08-07", guests: 4, roomType: "all", roomTypeSet: ["room_302", "room_402"], queryMode: "room_only" }
+);
+assert.deepEqual(
+  service.searchAvailability({ customerId: property.propertyId, checkIn: "2026-08-06", checkOut: "2026-08-07", guests: 4, roomType: "all", roomTypeSet: ["room_302", "room_402"], queryMode: "room_only" }).rooms.map((room) => room.id),
+  ["room_402"]
 );
 
 const reply = composeControlledReply(buildResponsePlan({ propertyId: property.propertyId, taskResults: [{ taskId: "double", type: "availability", status: "answered", facts: { checkIn: "2026-08-06", availableInventory: [{ publicName: "301" }, { publicName: "401" }] } }] }));
