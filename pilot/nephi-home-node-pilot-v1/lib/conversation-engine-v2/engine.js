@@ -13,6 +13,34 @@ const { validateClaims } = require("./claim-validator");
 const { coverageByStatus, assertTaskCoverage } = require("./task-coverage");
 const { resolveEntity } = require("./entity-resolver");
 
+function normalizedPlannerStay(plannerOutput) {
+  const stay = {
+    ...plannerOutput.stay,
+    dateExpression: { ...plannerOutput.stay.dateExpression }
+  };
+  const scalarCandidates = {
+    "stay.checkIn": "checkInCandidate",
+    "stay.checkOut": "checkOutCandidate",
+    "stay.nights": "nightsCandidate",
+    "stay.guests": "guestCountCandidate"
+  };
+  const expressionFields = {
+    "stay.dateExpression.rawText": "rawText",
+    "stay.dateExpression.kind": "kind",
+    "stay.dateExpression.anchor": "anchor"
+  };
+
+  for (const item of plannerOutput.stateOperations || []) {
+    if (!item || !["set", "replace"].includes(item.operation)) continue;
+    const scalarCandidate = scalarCandidates[item.field];
+    if (scalarCandidate) stay[scalarCandidate] = item.value;
+    const expressionField = expressionFields[item.field];
+    if (expressionField) stay.dateExpression[expressionField] = item.value;
+  }
+
+  return stay;
+}
+
 const SAFE_FALLBACK = "這次有部分內容無法安全確認，我會請業者協助；您剛才的問題已經記錄。";
 
 class ConversationEngineV2 {
@@ -39,10 +67,11 @@ class ConversationEngineV2 {
       const item = this.persistReview(input, "planner_invalid", "整體訊息無法安全理解，請協助確認。", "");
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };
     }
-    const temporal = resolveTemporalExpression(plannerOutput.stay.dateExpression, {
+    const plannerStay = normalizedPlannerStay(plannerOutput);
+    const temporal = resolveTemporalExpression(plannerStay.dateExpression, {
       eventTimestamp: input.eventTimestamp, timezone: catalog.timezone,
-      checkInCandidate: plannerOutput.stay.checkInCandidate, checkOutCandidate: plannerOutput.stay.checkOutCandidate,
-      nightsCandidate: plannerOutput.stay.nightsCandidate,
+      checkInCandidate: plannerStay.checkInCandidate, checkOutCandidate: plannerStay.checkOutCandidate,
+      nightsCandidate: plannerStay.nightsCandidate,
       defaultNights: plannerOutput.tasks.some((task) => ["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type)) ? 1 : null,
       previousCheckIn: previous.conditions.stay.checkIn, previousCheckOut: previous.conditions.stay.checkOut
     });

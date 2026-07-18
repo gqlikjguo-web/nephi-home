@@ -73,5 +73,72 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   assert.ok(multiTask.replyText.includes("B 雙人房"));
   assert.ok(!multiTask.replyText.includes("哪一個"));
   assert.deepEqual(multiTask.claimValidation.missingTaskIds, []);
+
+  function temporalPlanner({ message, operations = [], tasks, nightsCandidate = null, guestCountCandidate = null }) {
+    return { classify: async () => ({
+      schemaVersion: 2,
+      discourse: { relation: "new_request", confidence: 0.99 },
+      stateOperations: operations,
+      stay: {
+        dateExpression: { rawText: "", kind: "none", anchor: "none" },
+        checkInCandidate: null,
+        checkOutCandidate: null,
+        nightsCandidate,
+        guestCountCandidate
+      },
+      tasks: tasks || [{
+        taskId: "availability",
+        type: "availability",
+        sourceText: message,
+        requestedOutputs: ["availability"],
+        dependsOnStayContext: true,
+        entity: { category: "room", rawText: "雙人房", canonicalCandidate: "r1", confidence: 0.98 },
+        confidence: 0.98
+      }],
+      ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "temporal_flow"
+    }) };
+  }
+  const dateOperations = (rawText, kind = "absolute") => [
+    { field: "stay.dateExpression.rawText", operation: "set", value: rawText, sourceText: rawText },
+    { field: "stay.dateExpression.kind", operation: "set", value: kind, sourceText: rawText },
+    { field: "stay.dateExpression.anchor", operation: "set", value: "message_time", sourceText: rawText }
+  ];
+  const temporalProperty = { ...property, commonAnswers: { parkingRule: "有停車位。", bbqRule: "可依規則烤肉。" }, semanticCatalog: { aliases: { r1: ["雙人房"], parking: ["車位"], bbq: ["烤肉"] }, amenities: [] } };
+  const temporalAvailability = { getRows: (_propertyId, from) => [{ date: from, r1: "available" }] };
+  async function runTemporal(message, plannerOutput, userId, eventTimestamp = Date.parse("2026-07-17T10:00:00+08:00")) {
+    const temporalEngine = new ConversationEngineV2({ planner: plannerOutput, persistence, getProperty: () => temporalProperty, availability: temporalAvailability, listPriceOverrides: () => [], now: () => new Date(eventTimestamp) });
+    return temporalEngine.process({ customerId: "p1", channelId: "c1", lineUserId: userId, eventId: `event-${userId}`, eventTimestamp, messageText: message });
+  }
+
+  const singleDate = await runTemporal("8/6 有雙人房嗎？", temporalPlanner({ message: "8/6 有雙人房嗎？", operations: dateOperations("8/6") }), "date-single");
+  assert.equal(singleDate.state.conditions.stay.checkIn, "2026-08-06");
+  assert.equal(singleDate.state.conditions.stay.checkOut, "2026-08-07");
+  assert.equal(singleDate.state.conditions.stay.nights, 1);
+  assert.equal(singleDate.taskResults[0].status, "answered");
+
+  const multiDateTasks = [
+    { taskId: "availability", type: "availability", sourceText: "8/6 有雙人房嗎？", requestedOutputs: ["availability"], dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: "r1", confidence: 0.98 }, confidence: 0.98 },
+    { taskId: "parking", type: "amenity", sourceText: "有車位嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.98 }, confidence: 0.98 },
+    { taskId: "bbq", type: "policy", sourceText: "可以烤肉嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "policy", rawText: "烤肉", canonicalCandidate: "bbq", confidence: 0.98 }, confidence: 0.98 }
+  ];
+  const multiDate = await runTemporal("8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？", temporalPlanner({ message: "8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？", operations: dateOperations("8/6"), tasks: multiDateTasks }), "date-multi");
+  assert.deepEqual(multiDate.taskResults.map((item) => item.status), ["answered", "answered", "answered"]);
+  assert.deepEqual(multiDate.claimValidation.missingTaskIds, []);
+
+  const oneNight = await runTemporal("8月6號兩個人住一晚還有嗎？", temporalPlanner({ message: "8月6號兩個人住一晚還有嗎？", operations: [...dateOperations("8月6號"), { field: "stay.guests", operation: "set", value: 2, sourceText: "兩個人" }, { field: "stay.nights", operation: "set", value: 1, sourceText: "一晚" }] }), "date-guests");
+  assert.deepEqual(oneNight.state.conditions.stay, { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: 2, searchRange: null });
+
+  const twoNights = await runTemporal("8/6 住兩晚", temporalPlanner({ message: "8/6 住兩晚", operations: [...dateOperations("8/6"), { field: "stay.nights", operation: "set", value: 2, sourceText: "兩晚" }] }), "date-two-nights");
+  assert.equal(twoNights.state.conditions.stay.checkOut, "2026-08-08");
+  assert.equal(twoNights.state.conditions.stay.nights, 2);
+
+  const missingDate = await runTemporal("有雙人房嗎？", temporalPlanner({ message: "有雙人房嗎？" }), "date-missing");
+  assert.equal(missingDate.taskResults[0].status, "needs_clarification");
+  assert.ok(missingDate.taskResults[0].missingInputs.includes("stay.checkIn"));
+
+  const crossYearTimestamp = Date.parse("2026-12-20T10:00:00+08:00");
+  const crossYear = await runTemporal("1/5 有雙人房嗎？", temporalPlanner({ message: "1/5 有雙人房嗎？", operations: dateOperations("1/5") }), "date-cross-year", crossYearTimestamp);
+  assert.equal(crossYear.state.conditions.stay.checkIn, "2027-01-05");
+  assert.equal(crossYear.state.conditions.stay.checkOut, "2027-01-06");
   console.log("conversation engine v2 integration: PASS");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
