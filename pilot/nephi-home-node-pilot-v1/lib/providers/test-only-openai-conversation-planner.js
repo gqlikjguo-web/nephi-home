@@ -9,6 +9,7 @@ function instructions() {
     "Return only the strict schema. Split every independent guest question into a task and preserve each sourceText.",
     "Understand typos, colloquial Traditional Chinese, missing punctuation, mixed Chinese/English, and context semantically; do not use a literal keyword strategy.",
     "Use stateOperations set, replace, clear, or keep. Distinguish new_request, continue, modify, answer_clarification, new_topic, and acknowledgement.",
+    "State operation paths are restricted to stay.dateExpression.rawText/kind/anchor, stay.checkInCandidate, stay.checkOutCandidate, stay.nightsCandidate, stay.guestCountCandidate, inventory.mode/entityId/features, and * for an explicit clear. Never emit canonical state paths such as stay.checkIn or arbitrary paths.",
     "For dates, identify expression kind and anchor. Candidates are only candidates; deterministic code validates dates.",
     "Use only canonicalCandidate IDs present in the supplied property catalog. If uncertain, leave it null and record ambiguity.",
     "Never decide availability, prices, capacity validity, amenity truth, policy truth, or customer-visible wording.",

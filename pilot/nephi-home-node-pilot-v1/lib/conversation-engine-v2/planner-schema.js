@@ -6,6 +6,19 @@ const TASK_TYPES = new Set(["availability", "available_dates", "room_options", "
 const ENTITY_CATEGORIES = new Set(["room", "bundle", "room_feature", "amenity", "activity", "policy", "payment", "cancellation", "transport", "check_in", "check_out", "other"]);
 const DATE_KINDS = new Set(["absolute", "relative", "weekday", "weekend", "range", "contextual", "none"]);
 const ANCHORS = new Set(["message_time", "previous_check_in", "previous_check_out", "none"]);
+const PLANNER_OPERATION_PATHS = new Set([
+  "*",
+  "stay.dateExpression.rawText",
+  "stay.dateExpression.kind",
+  "stay.dateExpression.anchor",
+  "stay.checkInCandidate",
+  "stay.checkOutCandidate",
+  "stay.nightsCandidate",
+  "stay.guestCountCandidate",
+  "inventory.mode",
+  "inventory.entityId",
+  "inventory.features"
+]);
 
 function confidence(value) { return typeof value === "number" && value >= 0 && value <= 1; }
 function text(value, limit = 500) { return typeof value === "string" && value.length <= limit; }
@@ -17,7 +30,7 @@ function validatePlannerOutput(value) {
   if (!value.discourse || !RELATIONS.has(value.discourse.relation) || !confidence(value.discourse.confidence)) errors.push("discourse");
   if (!Array.isArray(value.stateOperations)) errors.push("stateOperations");
   else value.stateOperations.forEach((item, index) => {
-    if (!item || !text(item.field, 100) || !OPERATIONS.has(item.operation) || !text(item.sourceText || "", 500)) errors.push(`stateOperations.${index}`);
+    if (!item || !PLANNER_OPERATION_PATHS.has(item.field) || !OPERATIONS.has(item.operation) || !text(item.sourceText || "", 500)) errors.push(`stateOperations.${index}`);
   });
   const expression = value.stay && value.stay.dateExpression;
   if (!expression || !text(expression.rawText || "", 200) || !DATE_KINDS.has(expression.kind) || !ANCHORS.has(expression.anchor)) errors.push("stay.dateExpression");
@@ -43,7 +56,7 @@ function plannerJsonSchema() {
     properties: {
       schemaVersion: { type: "integer", const: 2 },
       discourse: { type: "object", additionalProperties: false, required: ["relation", "confidence"], properties: { relation: stringEnum(RELATIONS), confidence: { type: "number", minimum: 0, maximum: 1 } } },
-      stateOperations: { type: "array", maxItems: 20, items: { type: "object", additionalProperties: false, required: ["field", "operation", "value", "sourceText"], properties: { field: { type: "string", maxLength: 100 }, operation: stringEnum(OPERATIONS), value: { type: ["string", "integer", "boolean", "array", "null"], items: { type: "string" } }, sourceText: { type: "string", maxLength: 500 } } } },
+      stateOperations: { type: "array", maxItems: 20, items: { type: "object", additionalProperties: false, required: ["field", "operation", "value", "sourceText"], properties: { field: stringEnum(PLANNER_OPERATION_PATHS), operation: stringEnum(OPERATIONS), value: { type: ["string", "integer", "boolean", "array", "null"], items: { type: "string" } }, sourceText: { type: "string", maxLength: 500 } } } },
       stay: { type: "object", additionalProperties: false, required: ["dateExpression", "checkInCandidate", "checkOutCandidate", "nightsCandidate", "guestCountCandidate"], properties: { dateExpression: { type: "object", additionalProperties: false, required: ["rawText", "kind", "anchor"], properties: { rawText: { type: "string", maxLength: 200 }, kind: stringEnum(DATE_KINDS), anchor: stringEnum(ANCHORS) } }, checkInCandidate: { type: ["string", "null"] }, checkOutCandidate: { type: ["string", "null"] }, nightsCandidate: { type: ["integer", "null"], minimum: 1, maximum: 60 }, guestCountCandidate: { type: ["integer", "null"], minimum: 1, maximum: 100 } } },
       tasks: { type: "array", minItems: 1, maxItems: 12, items: { type: "object", additionalProperties: false, required: ["taskId", "type", "sourceText", "requestedOutputs", "dependsOnStayContext", "entity", "confidence"], properties: { taskId: { type: "string", maxLength: 80 }, type: stringEnum(TASK_TYPES), sourceText: { type: "string", minLength: 1, maxLength: 500 }, requestedOutputs: { type: "array", items: { type: "string", maxLength: 80 } }, dependsOnStayContext: { type: "boolean" }, entity: { type: "object", additionalProperties: false, required: ["category", "rawText", "canonicalCandidate", "confidence"], properties: { category: stringEnum(ENTITY_CATEGORIES), rawText: { type: "string", maxLength: 200 }, canonicalCandidate: { type: ["string", "null"], maxLength: 120 }, confidence: { type: "number", minimum: 0, maximum: 1 } } }, confidence: { type: "number", minimum: 0, maximum: 1 } } } },
       ambiguities: { type: "array", items: { type: "string", maxLength: 300 } }, missingInformation: { type: "array", items: { type: "string", maxLength: 120 } }, needsHuman: { type: "boolean" }, shouldIgnore: { type: "boolean" }, reason: { type: "string", maxLength: 120 }

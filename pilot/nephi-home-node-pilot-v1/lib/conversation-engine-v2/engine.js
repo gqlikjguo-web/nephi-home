@@ -19,10 +19,10 @@ function normalizedPlannerStay(plannerOutput) {
     dateExpression: { ...plannerOutput.stay.dateExpression }
   };
   const scalarCandidates = {
-    "stay.checkIn": "checkInCandidate",
-    "stay.checkOut": "checkOutCandidate",
-    "stay.nights": "nightsCandidate",
-    "stay.guests": "guestCountCandidate"
+    "stay.checkInCandidate": "checkInCandidate",
+    "stay.checkOutCandidate": "checkOutCandidate",
+    "stay.nightsCandidate": "nightsCandidate",
+    "stay.guestCountCandidate": "guestCountCandidate"
   };
   const expressionFields = {
     "stay.dateExpression.rawText": "rawText",
@@ -33,9 +33,9 @@ function normalizedPlannerStay(plannerOutput) {
   for (const item of plannerOutput.stateOperations || []) {
     if (!item || !["set", "replace"].includes(item.operation)) continue;
     const scalarCandidate = scalarCandidates[item.field];
-    if (scalarCandidate) stay[scalarCandidate] = item.value;
+    if (scalarCandidate && ["set", "replace"].includes(item.operation)) stay[scalarCandidate] = item.value;
     const expressionField = expressionFields[item.field];
-    if (expressionField) stay.dateExpression[expressionField] = item.value;
+    if (expressionField && ["set", "replace"].includes(item.operation)) stay.dateExpression[expressionField] = item.value;
   }
 
   return stay;
@@ -75,7 +75,21 @@ class ConversationEngineV2 {
       defaultNights: plannerOutput.tasks.some((task) => ["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type)) ? 1 : null,
       previousCheckIn: previous.conditions.stay.checkIn, previousCheckOut: previous.conditions.stay.checkOut
     });
-    const operations = [...plannerOutput.stateOperations];
+    this.trace(traceId, "temporal", {
+      operationPaths: plannerOutput.stateOperations.map((item) => item.field),
+      dateExpressionPresent: Boolean(plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none"),
+      resolutionStatus: temporal.resolutionStatus,
+      produced: { checkIn: Boolean(temporal.checkIn), checkOut: Boolean(temporal.checkOut), nights: Boolean(temporal.nights) }
+    });
+    const operations = plannerOutput.stateOperations.flatMap((item) => {
+      if (item.field === "*" || item.field.startsWith("inventory.")) return [item];
+      if (item.field === "stay.guestCountCandidate") return [{ ...item, field: "stay.guests" }];
+      if (item.operation === "clear" || item.operation === "keep") {
+        const canonicalPath = { "stay.checkInCandidate": "stay.checkIn", "stay.checkOutCandidate": "stay.checkOut", "stay.nightsCandidate": "stay.nights" }[item.field];
+        return canonicalPath ? [{ ...item, field: canonicalPath }] : [];
+      }
+      return [];
+    });
     if (temporal.resolutionStatus === "resolved") {
       if (temporal.checkIn) operations.push({ field: "stay.checkIn", operation: previous.conditions.stay.checkIn ? "replace" : "set", value: temporal.checkIn, sourceText: temporal.originalExpression });
       if (temporal.checkOut) operations.push({ field: "stay.checkOut", operation: previous.conditions.stay.checkOut ? "replace" : "set", value: temporal.checkOut, sourceText: temporal.originalExpression });

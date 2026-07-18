@@ -38,6 +38,7 @@ const property = {
 assert.equal(validatePlannerOutput(plan()).ok, true);
 assert.equal(validatePlannerOutput(plan({ tasks: [] })).ok, false);
 assert.equal(validatePlannerOutput({ ...plan(), schemaVersion: 1 }).ok, false);
+assert.equal(validatePlannerOutput(plan({ stateOperations: [{ field: "stay.unapprovedCandidate", operation: "set", value: "x", sourceText: "x" }] })).ok, false);
 
 const catalog = buildPropertyCatalog(property);
 assert.equal(catalog.propertyId, "property_alpha");

@@ -12,9 +12,9 @@ const property = { propertyId: "p1", displayName: "測試旅宿", timezone: "Asi
 const planner = { classify: async () => ({
   schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 },
   stateOperations: [
-    { field: "stay.checkIn", operation: "set", value: "2026-08-06", sourceText: "8/6" },
-    { field: "stay.nights", operation: "set", value: 1, sourceText: "一晚" },
-    { field: "stay.guests", operation: "set", value: 2, sourceText: "兩位" },
+    { field: "stay.checkInCandidate", operation: "set", value: "2026-08-06", sourceText: "8/6" },
+    { field: "stay.nightsCandidate", operation: "set", value: 1, sourceText: "一晚" },
+    { field: "stay.guestCountCandidate", operation: "set", value: 2, sourceText: "兩位" },
     { field: "inventory.entityId", operation: "set", value: "r1", sourceText: "雙人房" },
     { field: "inventory.mode", operation: "set", value: "room_only", sourceText: "雙人房" }
   ],
@@ -47,7 +47,7 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   assert.ok(guarded.replyText.includes("停車位"));
   assert.ok(guarded.replyText.includes("麻將"));
   assert.deepEqual(guarded.claimValidation.coveredTaskIds.sort(), ["a", "b", "c"]);
-  assert.deepEqual(diagnostics.map((item) => item.stage), ["planner", "validation", "state", "entity_resolution", "executor", "response_plan", "composer", "claim_validator", "line_ready"]);
+  assert.deepEqual(diagnostics.map((item) => item.stage), ["planner", "validation", "temporal", "state", "entity_resolution", "executor", "response_plan", "composer", "claim_validator", "line_ready"]);
   assert.equal(new Set(diagnostics.map((item) => item.traceId)).size, 1);
   const multiRoomProperty = { ...property, rooms: [
     { id: "r1", name: "A 雙人房", type: "雙人房", capacity: 2, enabled: true },
@@ -98,10 +98,13 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
       ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "temporal_flow"
     }) };
   }
-  const dateOperations = (rawText, kind = "absolute") => [
+  const dateOperations = (rawText, kind = "absolute", { checkInCandidate = null, nightsCandidate = null, guestCountCandidate = null } = {}) => [
     { field: "stay.dateExpression.rawText", operation: "set", value: rawText, sourceText: rawText },
     { field: "stay.dateExpression.kind", operation: "set", value: kind, sourceText: rawText },
-    { field: "stay.dateExpression.anchor", operation: "set", value: "message_time", sourceText: rawText }
+    { field: "stay.dateExpression.anchor", operation: "set", value: "message_time", sourceText: rawText },
+    ...(checkInCandidate ? [{ field: "stay.checkInCandidate", operation: "set", value: checkInCandidate, sourceText: rawText }] : []),
+    ...(nightsCandidate ? [{ field: "stay.nightsCandidate", operation: "set", value: nightsCandidate, sourceText: rawText }] : []),
+    ...(guestCountCandidate ? [{ field: "stay.guestCountCandidate", operation: "set", value: guestCountCandidate, sourceText: rawText }] : [])
   ];
   const temporalProperty = { ...property, commonAnswers: { parkingRule: "有停車位。", bbqRule: "可依規則烤肉。" }, semanticCatalog: { aliases: { r1: ["雙人房"], parking: ["車位"], bbq: ["烤肉"] }, amenities: [] } };
   const temporalAvailability = { getRows: (_propertyId, from) => [{ date: from, r1: "available" }] };
@@ -110,7 +113,7 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
     return temporalEngine.process({ customerId: "p1", channelId: "c1", lineUserId: userId, eventId: `event-${userId}`, eventTimestamp, messageText: message });
   }
 
-  const singleDate = await runTemporal("8/6 有雙人房嗎？", temporalPlanner({ message: "8/6 有雙人房嗎？", operations: dateOperations("8/6") }), "date-single");
+  const singleDate = await runTemporal("8/6 有雙人房嗎？", temporalPlanner({ message: "8/6 有雙人房嗎？", operations: dateOperations("8/6", "absolute", { checkInCandidate: "2026-08-06" }) }), "date-single");
   assert.equal(singleDate.state.conditions.stay.checkIn, "2026-08-06");
   assert.equal(singleDate.state.conditions.stay.checkOut, "2026-08-07");
   assert.equal(singleDate.state.conditions.stay.nights, 1);
@@ -125,10 +128,10 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   assert.deepEqual(multiDate.taskResults.map((item) => item.status), ["answered", "answered", "answered"]);
   assert.deepEqual(multiDate.claimValidation.missingTaskIds, []);
 
-  const oneNight = await runTemporal("8月6號兩個人住一晚還有嗎？", temporalPlanner({ message: "8月6號兩個人住一晚還有嗎？", operations: [...dateOperations("8月6號"), { field: "stay.guests", operation: "set", value: 2, sourceText: "兩個人" }, { field: "stay.nights", operation: "set", value: 1, sourceText: "一晚" }] }), "date-guests");
+  const oneNight = await runTemporal("8月6號兩個人住一晚還有嗎？", temporalPlanner({ message: "8月6號兩個人住一晚還有嗎？", operations: dateOperations("8月6號", "absolute", { checkInCandidate: "2026-08-06", nightsCandidate: 1, guestCountCandidate: 2 }) }), "date-guests");
   assert.deepEqual(oneNight.state.conditions.stay, { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: 2, searchRange: null });
 
-  const twoNights = await runTemporal("8/6 住兩晚", temporalPlanner({ message: "8/6 住兩晚", operations: [...dateOperations("8/6"), { field: "stay.nights", operation: "set", value: 2, sourceText: "兩晚" }] }), "date-two-nights");
+  const twoNights = await runTemporal("8/6 住兩晚", temporalPlanner({ message: "8/6 住兩晚", operations: dateOperations("8/6", "absolute", { checkInCandidate: "2026-08-06", nightsCandidate: 2 }) }), "date-two-nights");
   assert.equal(twoNights.state.conditions.stay.checkOut, "2026-08-08");
   assert.equal(twoNights.state.conditions.stay.nights, 2);
 
