@@ -327,6 +327,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     const requestedGuests = Number(query.guests);
     const guests = Number.isFinite(requestedGuests) && requestedGuests > 0 ? requestedGuests : null;
     const roomType = String(query.roomType || "all");
+    const roomTypeSet = Array.isArray(query.roomTypeSet) ? [...new Set(query.roomTypeSet.map((item) => String(item || "").trim()).filter(Boolean))] : [];
     const queryMode = ["bundle_only","room_only","any"].includes(query.queryMode) ? query.queryMode : "any";
     const rows = repository.getAvailabilityRows(homestay.customerId, checkIn, checkOut);
     const byDate = Object.fromEntries(rows.map((row) => [row.date, row]));
@@ -338,7 +339,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     const candidateRooms = (homestay.rooms || []).filter((room) => {
       if (queryMode === "bundle_only" && room.inventoryType !== "bundle") return false;
       if (queryMode === "room_only" && room.inventoryType === "bundle") return false;
-      if (roomType !== "all" && !roomMatchesType(room, roomType)) return false;
+      if (roomTypeSet.length ? !roomTypeSet.includes(room.id) : roomType !== "all" && !roomMatchesType(room, roomType)) return false;
       return guests === null || Number(room.capacity || 0) >= guests;
     });
 
@@ -359,6 +360,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       nightCount: dates.length,
       guests,
       roomType,
+      roomTypeSet,
       queryMode,
       availabilityReliable,
       rooms,
@@ -398,7 +400,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     for (let checkIn = from; checkIn < to; checkIn = addDays(checkIn, 1)) {
       const checkOut = addDays(checkIn, nights);
       if (checkOut > to) break;
-      const result = searchAvailability({ customerId: query.customerId, checkIn, checkOut, guests: query.guests, roomType: query.roomType || "all", queryMode: query.queryMode || "any" });
+      const result = searchAvailability({ customerId: query.customerId, checkIn, checkOut, guests: query.guests, roomType: query.roomType || "all", roomTypeSet: query.roomTypeSet, queryMode: query.queryMode || "any" });
       if (!result.availabilityReliable) return { status: "unreliable", dates: [], source: "property_resolver" };
       dates.push({ checkIn, checkOut, available: result.rooms.length > 0, roomTypes: result.rooms.map((room) => ({ roomTypeId: room.id, roomTypeName: publicRoomName(room) })) });
     }

@@ -13,6 +13,29 @@ const { validateClaims } = require("./claim-validator");
 const { coverageByStatus, assertTaskCoverage } = require("./task-coverage");
 const { resolveEntity } = require("./entity-resolver");
 
+const DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS = 31;
+function dateKeyAt(timestamp, timezone) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(timestamp)).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+function addUtcDays(dateKey, days) { const value = new Date(`${dateKey}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); }
+function isRecentAvailabilityQuestion(value) {
+  const text = String(value || "").normalize("NFKC").replace(/\s+/gu, "");
+  return /(?:最近|近期|下一(?:個|天)|最早).{0,12}(?:有房|空房|可住|可訂)|(?:有房|空房|可住|可訂).{0,12}(?:最近|近期|下一|最早)/u.test(text);
+}
+function normalizePlannerOutput(plannerOutput, { messageText, eventTimestamp, timezone, previousConditions } = {}) {
+  const output = { ...plannerOutput, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, entity: task.entity ? { ...task.entity } : task.entity })) };
+  if (!isRecentAvailabilityQuestion(messageText)) return output;
+  const dateFrom = previousConditions && previousConditions.stay && previousConditions.stay.searchRange && previousConditions.stay.searchRange.from || dateKeyAt(eventTimestamp, timezone || "Asia/Taipei");
+  output.tasks = output.tasks.map((task) => {
+    if (!['availability', 'room_options'].includes(task.type)) return task;
+    const genericEntity = /^(?:空房|有房|房間|房)$/u.test(String(task.entity && task.entity.rawText || "").trim());
+    return { ...task, type: "available_dates", entity: genericEntity ? { ...task.entity, rawText: "", canonicalCandidate: null } : task.entity };
+  });
+  output.searchRange = { from: dateFrom, to: addUtcDays(dateFrom, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS) };
+  return output;
+}
+
 function normalizedPlannerStay(plannerOutput) {
   const stay = {
     ...plannerOutput.stay,
@@ -67,6 +90,7 @@ class ConversationEngineV2 {
       const item = this.persistReview(input, "planner_invalid", "整體訊息無法安全理解，請協助確認。", "");
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };
     }
+    plannerOutput = normalizePlannerOutput(plannerOutput, { messageText: input.messageText, eventTimestamp: input.eventTimestamp, timezone: catalog.timezone, previousConditions: previous.conditions });
     const plannerStay = normalizedPlannerStay(plannerOutput);
     const temporal = resolveTemporalExpression(plannerStay.dateExpression, {
       eventTimestamp: input.eventTimestamp, timezone: catalog.timezone,
@@ -96,6 +120,7 @@ class ConversationEngineV2 {
       if (temporal.nights) operations.push({ field: "stay.nights", operation: previous.conditions.stay.nights ? "replace" : "set", value: temporal.nights, sourceText: temporal.originalExpression });
       if (temporal.searchRange) operations.push({ field: "stay.searchRange", operation: previous.conditions.stay.searchRange ? "replace" : "set", value: temporal.searchRange, sourceText: temporal.originalExpression });
     }
+    if (plannerOutput.searchRange) operations.push({ field: "stay.searchRange", operation: previous.conditions.stay.searchRange ? "replace" : "set", value: plannerOutput.searchRange, sourceText: input.messageText });
     const state = reduceConversationState(previous, { ...plannerOutput, stateOperations: operations }, scope);
     this.trace(traceId, "state", { discourse: plannerOutput.discourse, operations: operations.map((item) => ({ field: item.field, operation: item.operation })), conditions: state.conditions });
     this.persistence.setConversationState(input.customerId, input.channelId, input.lineUserId, state);
@@ -153,4 +178,4 @@ class ConversationEngineV2 {
   }
 }
 
-module.exports = { ConversationEngineV2, SAFE_FALLBACK };
+module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, isRecentAvailabilityQuestion, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS };
