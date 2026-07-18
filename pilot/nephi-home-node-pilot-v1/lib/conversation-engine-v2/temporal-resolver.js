@@ -6,6 +6,21 @@ function partsAt(timestamp, timezone) {
 }
 function valid(key) { if (!/^\d{4}-\d{2}-\d{2}$/.test(key || "")) return false; const date = new Date(`${key}T00:00:00Z`); return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === key; }
 function addDays(key, days) { const date = new Date(`${key}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
+function absoluteDateFromRaw(raw, base) {
+  const explicitYear = raw.match(/^(\d{4})\s*(?:年|[-/])\s*(\d{1,2})\s*(?:月|[-/])\s*(\d{1,2})\s*(?:日|號)?$/u);
+  const yearless = explicitYear ? null : raw.match(/^(\d{1,2})\s*(?:月|[-/])\s*(\d{1,2})\s*(?:日|號)?$/u);
+  const match = explicitYear || yearless;
+  if (!match) return null;
+  let year = explicitYear ? Number(match[1]) : Number(base.slice(0, 4));
+  const month = Number(match[explicitYear ? 2 : 1]);
+  const day = Number(match[explicitYear ? 3 : 2]);
+  let candidate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  if (!explicitYear && valid(candidate) && candidate < base) {
+    year += 1;
+    candidate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+  return candidate;
+}
 function weekdayNumber(text) { const digits = { "日": 0, "天": 0, "一": 1, "1": 1, "二": 2, "2": 2, "三": 3, "3": 3, "四": 4, "4": 4, "五": 5, "5": 5, "六": 6, "6": 6 }; const match = String(text).match(/(?:週|星期|禮拜)\s*([日天一二三四五六1-6])/u); return match ? digits[match[1]] : null; }
 
 function resolveTemporalExpression(expression = {}, context = {}) {
@@ -13,7 +28,8 @@ function resolveTemporalExpression(expression = {}, context = {}) {
   const timestamp = Number(context.eventTimestamp) || Date.parse(context.eventTimestamp || "") || Date.now();
   const base = partsAt(timestamp, timezone).key;
   const raw = String(expression.rawText || "").normalize("NFKC").replace(/\s+/g, "");
-  let checkIn = context.checkInCandidate || null;
+  const deterministicAbsolute = absoluteDateFromRaw(raw, base);
+  let checkIn = deterministicAbsolute || context.checkInCandidate || null;
   let searchRange = null;
   const absolute = raw.match(/^(?:(\d{4})[年\/-])?(\d{1,2})[月\/-](\d{1,2})日?$/u);
   if (!valid(checkIn) && absolute) {
@@ -45,7 +61,8 @@ function resolveTemporalExpression(expression = {}, context = {}) {
     const from = addDays(base, delta), to = addDays(from, 2);
     searchRange = { from, to };
   } else if (expression.kind === "absolute") {
-    if (valid(context.checkInCandidate)) checkIn = context.checkInCandidate;
+    if (deterministicAbsolute) checkIn = deterministicAbsolute;
+    else if (valid(context.checkInCandidate)) checkIn = context.checkInCandidate;
     else {
       const match = raw.match(/(?:(\d{4})[年/-])?(\d{1,2})[月/-](\d{1,2})日?/u);
       if (match) {

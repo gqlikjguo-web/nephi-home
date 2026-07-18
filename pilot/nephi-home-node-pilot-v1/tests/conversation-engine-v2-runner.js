@@ -70,6 +70,34 @@ const mislabeledSingleDate = resolveTemporalExpression({ rawText: "8/6", kind: "
 assert.equal(mislabeledSingleDate.checkIn, "2026-08-06");
 assert.equal(mislabeledSingleDate.checkOut, "2026-08-07");
 assert.equal(mislabeledSingleDate.resolutionStatus, "resolved");
+const wrongYearCandidate = resolveTemporalExpression(
+  { rawText: "7/18", kind: "absolute", anchor: "message_time" },
+  { eventTimestamp: eventTime, timezone: "Asia/Taipei", checkInCandidate: "2056-07-18", defaultNights: 1 }
+);
+assert.equal(wrongYearCandidate.checkIn, "2026-07-18");
+assert.equal(wrongYearCandidate.checkOut, "2026-07-19");
+const wrongDayCandidate = resolveTemporalExpression(
+  { rawText: "7/18", kind: "absolute", anchor: "message_time" },
+  { eventTimestamp: eventTime, timezone: "Asia/Taipei", checkInCandidate: "2056-07-19", defaultNights: 1 }
+);
+assert.equal(wrongDayCandidate.checkIn, "2026-07-18");
+assert.equal(resolveTemporalExpression(
+  { rawText: "8/6", kind: "absolute", anchor: "message_time" },
+  { eventTimestamp: eventTime, timezone: "Asia/Taipei", checkInCandidate: "2026-08-06", defaultNights: 1 }
+).checkIn, "2026-08-06");
+assert.equal(resolveTemporalExpression(
+  { rawText: "12月3日", kind: "absolute", anchor: "message_time" },
+  { eventTimestamp: eventTime, timezone: "Asia/Taipei", checkInCandidate: "2056-12-03", defaultNights: 1 }
+).checkIn, "2026-12-03");
+assert.equal(resolveTemporalExpression(
+  { rawText: "2056/7/18", kind: "absolute", anchor: "message_time" },
+  { eventTimestamp: eventTime, timezone: "Asia/Taipei", checkInCandidate: "2056-07-18", defaultNights: 1 }
+).checkIn, "2056-07-18");
+const yearEnd = Date.parse("2026-12-20T10:00:00+08:00");
+assert.equal(resolveTemporalExpression(
+  { rawText: "1/5", kind: "absolute", anchor: "message_time" },
+  { eventTimestamp: yearEnd, timezone: "Asia/Taipei", checkInCandidate: "2026-01-05", defaultNights: 1 }
+).checkIn, "2027-01-05");
 assert.deepEqual(resolveTemporalExpression({ rawText: "下週三", kind: "weekday", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei", nightsCandidate: 1 }).checkIn, "2026-07-22");
 assert.equal(resolveTemporalExpression({ rawText: "2/30", kind: "absolute", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei" }).resolutionStatus, "invalid");
 

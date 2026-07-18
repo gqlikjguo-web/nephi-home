@@ -143,5 +143,47 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   const crossYear = await runTemporal("1/5 有雙人房嗎？", temporalPlanner({ message: "1/5 有雙人房嗎？", operations: dateOperations("1/5") }), "date-cross-year", crossYearTimestamp);
   assert.equal(crossYear.state.conditions.stay.checkIn, "2027-01-05");
   assert.equal(crossYear.state.conditions.stay.checkOut, "2027-01-06");
+
+  const repeatedAvailabilityCalls = [];
+  const repeatEventTime = Date.parse("2026-07-17T10:00:00+08:00");
+  const wrongCandidatePlanner = temporalPlanner({
+    message: "7/18 的301可以預訂嗎？",
+    operations: dateOperations("7/18", "absolute", { checkInCandidate: "2056-07-18" }),
+    tasks: [{
+      taskId: "availability-301",
+      type: "availability",
+      sourceText: "7/18 的301可以預訂嗎？",
+      requestedOutputs: ["availability"],
+      dependsOnStayContext: true,
+      entity: { category: "room", rawText: "301", canonicalCandidate: "r1", confidence: 0.99 },
+      confidence: 0.99
+    }]
+  });
+  const repeatedEngine = new ConversationEngineV2({
+    planner: wrongCandidatePlanner,
+    persistence,
+    getProperty: () => temporalProperty,
+    availability: { getRows: (propertyId, from, to) => {
+      repeatedAvailabilityCalls.push({ propertyId, from, to });
+      return [{ date: "2026-07-18", r1: "available" }];
+    } },
+    listPriceOverrides: () => [],
+    now: () => new Date(repeatEventTime)
+  });
+  for (let index = 0; index < 3; index += 1) {
+    const repeated = await repeatedEngine.process({
+      customerId: "p1",
+      channelId: "c1",
+      lineUserId: "date-repeat",
+      eventId: `date-repeat-${index}`,
+      eventTimestamp: repeatEventTime,
+      messageText: "7/18 的301可以預訂嗎？"
+    });
+    assert.equal(repeated.state.conditions.stay.checkIn, "2026-07-18");
+    assert.equal(repeated.state.conditions.stay.checkOut, "2026-07-19");
+    assert.equal(repeated.taskResults[0].status, "answered");
+    assert.equal(repeated.taskResults[0].facts.availableInventory[0].canonicalId, "r1");
+  }
+  assert.deepEqual(repeatedAvailabilityCalls, Array.from({ length: 3 }, () => ({ propertyId: "p1", from: "2026-07-18", to: "2026-07-19" })));
   console.log("conversation engine v2 integration: PASS");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
