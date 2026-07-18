@@ -30,12 +30,13 @@ const property = {
     { id: "r2", name: "家庭四人房", type: "四人房", description: "陽台", capacity: 4, enabled: true, mondayThursdayPrice: 3200, fridayPrice: 3500, saturdayHolidayPrice: 4200, sundayPrice: 3300 },
     { id: "b1", name: "十二人包棟", type: "包棟", inventoryType: "bundle", memberRoomIds: ["r1", "r2"], capacity: 12, enabled: true, mondayThursdayPrice: 9000, fridayPrice: 10000, saturdayHolidayPrice: 12000, sundayPrice: 9500 }
   ],
-  commonAnswers: { equipment: ["投影機"], parkingRule: "有兩個停車位", bbqRule: "可在指定區域烤肉" },
+  commonAnswers: { equipment: ["投影機"], parkingRule: "有兩個停車位", bbqRule: "可在指定區域烤肉", elevatorRule: "館內有電梯", cancellationRule: "取消依確認條款", quietHoursRule: "晚上十點後請降低音量" },
   faqs: [{ knowledgeKey: "equipment", question: "有投影機嗎", answer: "有投影機" }],
   semanticCatalog: { aliases: { r1: ["兩人房"], parking: ["車位", "亭車"] }, amenities: [{ id: "projector", name: "投影機", aliases: ["projector"], status: "confirmed_yes" }, { id: "ktv", name: "唱歌設備", aliases: ["KTV", "卡拉OK", "歡唱"], status: "confirmed_no" }] }
 };
 
 assert.equal(validatePlannerOutput(plan()).ok, true);
+assert.equal(validatePlannerOutput(plan({ tasks: [{ taskId: "nearest", type: "available_dates", sourceText: "最近哪天有空房", requestedOutputs: ["availability"], dependsOnStayContext: true, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 0.95 }, confidence: 0.95 }] })).ok, true);
 assert.equal(validatePlannerOutput(plan({ tasks: [] })).ok, false);
 assert.equal(validatePlannerOutput({ ...plan(), schemaVersion: 1 }).ok, false);
 assert.equal(validatePlannerOutput(plan({ stateOperations: [{ field: "stay.unapprovedCandidate", operation: "set", value: "x", sourceText: "x" }] })).ok, false);
@@ -43,9 +44,19 @@ assert.equal(validatePlannerOutput(plan({ stateOperations: [{ field: "stay.unapp
 const catalog = buildPropertyCatalog(property);
 assert.equal(catalog.propertyId, "property_alpha");
 assert.equal(JSON.stringify(catalog).includes("內部"), false);
+assert.equal(resolveEntity(catalog, { category: "other", rawText: "", canonicalCandidate: "elevator" }).entity.answer, "館內有電梯");
+assert.equal(resolveEntity(catalog, { category: "other", rawText: "", canonicalCandidate: "quietHoursRule" }).entity.answer, "晚上十點後請降低音量");
 assert.equal(resolveEntity(catalog, { category: "room", rawText: "兩人房", canonicalCandidate: "r1" }).status, "resolved");
 assert.equal(resolveEntity(catalog, { category: "amenity", rawText: "卡拉 OK", canonicalCandidate: "ktv" }).entity.status, "confirmed_no");
 assert.equal(resolveEntity(catalog, { category: "amenity", rawText: "麻將", canonicalCandidate: "mahjong" }).status, "not_found");
+assert.deepEqual(
+  buildResponsePlan({ propertyId: property.propertyId, taskResults: [
+    { taskId: "parking-first", type: "amenity", status: "answered", facts: { subject: "停車", status: "confirmed_yes", answer: "有停車位" } },
+    { taskId: "availability-second", type: "availability", status: "answered", facts: { checkIn: "2026-08-06", availableInventory: [{ publicName: "森林雙人房" }] } }
+  ] }).sections.map((section) => section.taskId),
+  ["parking-first", "availability-second"],
+  "response sections must remain in the guest question order"
+);
 const groupedProperty = { ...property, rooms: [
   { id: "g1", name: "Garden 1", type: "Double", capacity: 2, enabled: true },
   { id: "g2", name: "Garden 2", type: "Double", capacity: 2, enabled: true }
@@ -63,6 +74,16 @@ const unknownRoomResult = executeTasks({
 })[0];
 assert.equal(unknownRoomResult.status, "needs_human");
 assert.notEqual(unknownRoomResult.facts.availability, "full");
+
+const priceResult = executeTasks({
+  property,
+  catalog,
+  tasks: [{ taskId: "price", type: "price", entity: { category: "room", rawText: "森林雙人房", canonicalCandidate: "r1" } }],
+  request: { stay: { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: 2 }, inventory: { mode: "room_only", entityId: null, features: [] } },
+  availabilityResolver: () => ({ customerId: "property_alpha", checkIn: "2026-08-06", checkOut: "2026-08-07", availabilityReliable: true, rooms: [property.rooms[0]] })
+})[0];
+assert.equal(priceResult.status, "answered");
+assert.deepEqual(priceResult.facts.prices.map((item) => [item.inventory.canonicalId, item.total]), [["r1", 2000]]);
 
 const eventTime = Date.parse("2026-07-17T10:00:00+08:00");
 assert.deepEqual(resolveTemporalExpression({ rawText: "明天", kind: "relative", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei", nightsCandidate: 1 }).checkIn, "2026-07-18");

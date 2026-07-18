@@ -30,6 +30,11 @@
 - 統一房型群組房況解析與省略年份的未來日期解析。
 - 參考 commits：`f28f6e4`、`8ec5e3e`、`0e7ab8b`、`97aa504`、`6822516`
 
+## 2026-07-19 — V2 通用房況與 property-backed knowledge boundary
+
+- `available_dates` 現在可使用空 entity 的正式 Planner schema，並由 task contract 而非字詞補丁啟動日期範圍 resolver。
+- 未指定房型、房型 matched set、property settings catalog、價格 task 與多問題回覆順序均有 V2 回歸覆蓋。
+
 ## 維護門檻
 
 只有下列變化應加入本文件：

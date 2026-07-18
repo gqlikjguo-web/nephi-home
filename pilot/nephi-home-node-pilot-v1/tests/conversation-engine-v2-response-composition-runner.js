@@ -21,8 +21,8 @@ const plan = buildResponsePlan({
 
 assert.deepEqual(
   plan.sections.map((section) => section.taskId),
-  ["stay", "capacity", "price", "equipment", "policy"],
-  "住宿主需求、住宿條件、價格、設備、政策必須依優先級排序"
+  ["equipment", "policy", "price", "capacity", "stay"],
+  "回答必須維持客人提問順序"
 );
 assert.ok(plan.sections.every((section) => section.responseMode === "answer"));
 
@@ -36,15 +36,15 @@ const composed = mergeComposedSections(plan, {
   ]
 });
 assert.equal(composed.ok, true);
-assert.deepEqual(composed.factTaskIds, ["stay", "capacity", "price", "equipment", "policy"]);
-assert.equal(composed.replyText, "住宿資訊。\n容量資訊。\n價格資訊。\n設備資訊。\n規則資訊。");
+assert.deepEqual(composed.factTaskIds, ["equipment", "policy", "price", "capacity", "stay"]);
+assert.equal(composed.replyText, "設備資訊。\n規則資訊。\n價格資訊。\n容量資訊。\n住宿資訊。");
 assert.equal(composed.replyText.includes("請問您指的是哪一項"), false);
 
 const missing = mergeComposedSections(plan, {
   sections: [{ taskId: "stay", responseMode: "answer", text: "住宿資訊。" }]
 });
 assert.equal(missing.ok, false);
-assert.deepEqual(missing.missingTaskIds, ["capacity", "price", "equipment", "policy"]);
+assert.deepEqual(missing.missingTaskIds, ["equipment", "policy", "price", "capacity"]);
 
 const unnecessaryClarification = mergeComposedSections(plan, {
   sections: plan.sections.map((section) => ({

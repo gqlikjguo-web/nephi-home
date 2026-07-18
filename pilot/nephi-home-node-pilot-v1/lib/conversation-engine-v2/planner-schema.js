@@ -39,7 +39,7 @@ function validatePlannerOutput(value) {
     const entity = task && task.entity;
     if (!task || !text(task.taskId, 80) || !TASK_TYPES.has(task.type) || !text(task.sourceText, 500) || !task.sourceText.trim()
       || !Array.isArray(task.requestedOutputs) || typeof task.dependsOnStayContext !== "boolean" || !confidence(task.confidence)
-      || !entity || !ENTITY_CATEGORIES.has(entity.category) || !text(entity.rawText || "", 200) || (!entity.rawText && !["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type))
+      || !entity || !ENTITY_CATEGORIES.has(entity.category) || !text(entity.rawText || "", 200) || (!entity.rawText && !["availability", "available_dates", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type))
       || !(entity.canonicalCandidate === null || text(entity.canonicalCandidate, 120)) || !confidence(entity.confidence)) errors.push(`tasks.${index}`);
   });
   if (!Array.isArray(value.ambiguities)) errors.push("ambiguities");

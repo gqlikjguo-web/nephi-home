@@ -65,3 +65,11 @@
 **理由：** JSON schema 合法且文字非空，不代表內容有意義或可信。模型曾在正常回覆後產生符號殘片及無來源的技術身分文字，現有 coverage 檢查無法阻止這類污染。
 
 **長期後果：** AI 不得覆蓋安全邊界、引入 Response Plan 以外的事實或替真人轉接自由造句；trace 只能記錄安全的驗證結果與原因碼，不記錄客人內容或敏感資料。
+
+## D-009：通用房況不以詞彙判斷，最近可住由 Planner task 表達
+
+**決策：** Planner 對未指定房型的房況需求輸出空 entity；對最近可住需求輸出 `available_dates` task。Executor 只根據 task type、entity category 與 property metadata 執行，不以「空房」等字詞清單判斷語意。
+
+**理由：** 詞彙清單會把 Shared Core 退化成關鍵字補丁，且無法承接不同說法。`available_dates` 是明確能力，應由 Planner 表達後經 schema、state 與 property-scoped resolver 完整執行。
+
+**長期後果：** 空 entity 對 `availability` 與 `available_dates` 是合法 schema；模糊房型不會變成單一房號，類別房型仍由 property metadata 解析為完整 matched set。

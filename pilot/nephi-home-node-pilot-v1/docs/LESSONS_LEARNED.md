@@ -36,3 +36,7 @@
 - handoff、review、Unknown 與資料不可靠結果是安全決策，不是文案創作空間；模型不得改寫或覆蓋 deterministic 結果。
 - Composer 採用模型輸出前，必須逐 section 驗證回覆模式、最低有效語意、`allowedFacts` grounding 與 Claim Validator；任一步驟失敗都使用 deterministic fallback。
 - 可觀測性應記錄 composer 來源、驗證結果、拒絕原因與是否 fallback，不得把完整客人訊息、模型內容、Secret 或 Token 寫入 trace。
+## 2026-07-19 — Task schema must represent generic availability explicitly
+
+- A schema that forbids an empty entity for `available_dates` forces the Planner to invent a generic inventory entity, which later becomes `inventory_entity_unknown` despite a valid date range.
+- Preserve generic availability as an empty entity and resolve room class only from current property metadata. Do not repair this with a phrase list in the executor.

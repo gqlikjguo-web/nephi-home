@@ -21,26 +21,23 @@ function dateKeyAt(timestamp, timezone) {
 }
 function addUtcDays(dateKey, days) { const value = new Date(`${dateKey}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); }
 function traceState(state) { const copy = JSON.parse(JSON.stringify(state || {})); if (copy.scope) delete copy.scope.lineUserId; return copy; }
-function isRecentAvailabilityQuestion(value) {
-  const text = String(value || "").normalize("NFKC").replace(/\s+/gu, "");
-  return /(?:最近|近期|下一(?:個|天)|最早).{0,12}(?:有房|空房|可住|可訂)|(?:有房|空房|可住|可訂).{0,12}(?:最近|近期|下一|最早)/u.test(text);
-}
 function normalizePlannerOutput(plannerOutput, { messageText, eventTimestamp, timezone, previousConditions } = {}) {
   const output = { ...plannerOutput, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, entity: task.entity ? { ...task.entity } : task.entity })) };
-  const recent = isRecentAvailabilityQuestion(messageText);
+  const availableDatesRequested = output.tasks.some((task) => task.type === "available_dates");
   const genericAvailability = output.tasks.some((task) => isGenericAvailabilityEntity(task));
-  if (recent) {
-    // A request for the nearest available date starts a new search.  It must
-    // never inherit a prior stay's date range.
+  const genericAvailableDates = output.tasks.some((task) => task.type === "available_dates" && isGenericAvailabilityEntity(task));
+  const freshAvailabilityRequest = availableDatesRequested || (genericAvailability && ["new_request", "new_topic"].includes(output.discourse && output.discourse.relation));
+  if (availableDatesRequested) {
+    // An available_dates task is a search for the next matching stay, so it
+    // starts at the immutable message date rather than an earlier stay range.
     const dateFrom = dateKeyAt(eventTimestamp, timezone || "Asia/Taipei");
     output.tasks = output.tasks.map((task) => {
-      if (!['availability', 'room_options'].includes(task.type)) return task;
-      const genericEntity = isGenericAvailabilityEntity(task);
-      return { ...task, type: "available_dates", entity: genericEntity ? { ...task.entity, rawText: "", canonicalCandidate: null } : task.entity };
+      if (task.type !== "available_dates" || !isGenericAvailabilityEntity(task)) return task;
+      return { ...task, entity: { ...task.entity, rawText: "", canonicalCandidate: null } };
     });
     output.searchRange = { from: dateFrom, to: addUtcDays(dateFrom, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS) };
   }
-  if (recent || genericAvailability) {
+  if (freshAvailabilityRequest && (genericAvailableDates || genericAvailability)) {
     output.stateOperations = [...(output.stateOperations || []).filter((item) => !["inventory.mode", "inventory.entityId"].includes(item.field)),
       { field: "inventory.mode", operation: "replace", value: "any", sourceText: String(messageText || "") },
       { field: "inventory.entityId", operation: "clear", value: null, sourceText: String(messageText || "") }];
@@ -195,4 +192,4 @@ class ConversationEngineV2 {
   }
 }
 
-module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, isRecentAvailabilityQuestion, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS };
+module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS };

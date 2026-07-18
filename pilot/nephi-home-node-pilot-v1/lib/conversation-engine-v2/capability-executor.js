@@ -15,11 +15,10 @@ function selected(property, request, entities) {
     .filter((room) => !request.stay.guests || Number(room.capacity) >= Number(request.stay.guests));
 }
 function priceKey(date) { const day = new Date(`${date}T00:00:00Z`).getUTCDay(); return day === 5 ? "fridayPrice" : day === 6 ? "saturdayHolidayPrice" : day === 0 ? "sundayPrice" : "mondayThursdayPrice"; }
-function normalizedAvailabilityTerm(value) { return String(value || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""); }
 function isGenericAvailabilityEntity(task) {
   if (!task || !["availability", "bundle_availability", "room_options", "capacity", "price", "total_price", "available_dates"].includes(task.type)) return false;
-  const term = normalizedAvailabilityTerm(task.entity && task.entity.rawText);
-  return new Set(["房", "房間", "空房", "有房", "還有房", "可以訂", "可訂", "可預訂", "訂房", "住宿"]).has(term);
+  const entity = task.entity || {};
+  return entity.category === "other" && entity.canonicalCandidate === null;
 }
 
 function executeTasks({ property, catalog, tasks, request, availabilityResolver, availableDatesResolver, priceOverrides = [] }) {
@@ -51,6 +50,9 @@ function executeTasks({ property, catalog, tasks, request, availabilityResolver,
       if (["availability", "bundle_availability", "room_options", "capacity"].includes(task.type)) return { taskId: task.taskId, type: task.type, status: "answered", facts: adapted.facts };
       const availableInventory = adapted.facts.availableInventory;
       if (!availableInventory.length) return { taskId: task.taskId, type: task.type, status: "answered", facts: { availability: "full", checkIn: request.stay.checkIn, checkOut: request.stay.checkOut, prices: [], source: "availability_provider", propertyId: property.propertyId } };
+      const availableIds = new Set((availableInventory || []).map((item) => item.canonicalId));
+      const candidates = (property.rooms || []).filter((room) => availableIds.has(room.id));
+      const dates = stayDates(request.stay.checkIn, request.stay.checkOut);
       const prices = [];
       for (const room of candidates) {
         const daily = dates.map((date) => { const override = priceOverrides.find((item) => item.roomId === room.id && item.date === date); const price = override ? Number(override.price) : Number(room[priceKey(date)]); return { date, price: Number.isInteger(price) && price > 0 ? price : null, source: override ? "price_override" : "room_pricing" }; });

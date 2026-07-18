@@ -25,8 +25,7 @@ function collectAllowedFacts(value, key = "") {
 }
 
 function buildResponsePlan({ propertyId, taskResults, inputTaskIds, reviewActions = [] }) {
-  const sections = (taskResults || []).map((result, inputOrder) => ({ taskId: result.taskId, type: result.type, status: result.status, responseMode: responseMode(result.status), priority: taskPriority(result.type), inputOrder, facts: result.facts || {}, question: result.question || "", missingInputs: result.missingInputs || [], needsReview: Boolean(result.review) }))
-    .sort((a, b) => a.priority - b.priority || a.inputOrder - b.inputOrder);
+  const sections = (taskResults || []).map((result, inputOrder) => ({ taskId: result.taskId, type: result.type, status: result.status, responseMode: responseMode(result.status), priority: taskPriority(result.type), inputOrder, facts: result.facts || {}, question: result.question || "", missingInputs: result.missingInputs || [], needsReview: Boolean(result.review) }));
   const expected = inputTaskIds || sections.map((section) => section.taskId);
   const coverage = coverageByStatus(sections);
   const coverageValidation = assertTaskCoverage(expected, coverage);
@@ -36,7 +35,7 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, reviewAction
     if (!Number.isFinite(section.priority)) section.priority = taskPriority(section.type);
     section.allowedFacts = [...new Set(collectAllowedFacts(section.facts))];
   }
-  sections.sort((a, b) => a.priority - b.priority || (a.inputOrder || 0) - (b.inputOrder || 0));
+  sections.sort((a, b) => (a.inputOrder ?? Number.MAX_SAFE_INTEGER) - (b.inputOrder ?? Number.MAX_SAFE_INTEGER));
   const finalCoverage = coverageByStatus(sections);
   return { schemaVersion: 1, propertyId, sections, coverage: finalCoverage, coverageValidation: assertTaskCoverage(expected, finalCoverage), reviewActions, allowedFacts: [...new Set(sections.flatMap((section) => section.allowedFacts || []))], forbiddenClaims: ["已替你保留", "已完成訂房", "一定有房", "免費加人", "可以折扣", "一定退款", "業者已同意", "真人已看過", "已通知業者"], maxLength: 1200 };
 }

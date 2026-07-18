@@ -35,7 +35,7 @@ const service = createMvpService(providers);
 
 const plannerOutput = {
   stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" } },
-  tasks: [{ taskId: "recent", type: "availability", sourceText: "最近哪一天有空房", entity: { category: "room", rawText: "空房", canonicalCandidate: null } }]
+  tasks: [{ taskId: "recent", type: "available_dates", sourceText: "最近哪一天有空房", entity: { category: "other", rawText: "空房", canonicalCandidate: null } }]
 };
 const normalizedRecent = normalizePlannerOutput(plannerOutput, {
   messageText: "最近哪一天有空房",
@@ -54,6 +54,20 @@ const normalizedRecentAfterPriorStay = normalizePlannerOutput(plannerOutput, {
 });
 assert.deepEqual(normalizedRecentAfterPriorStay.searchRange, { from: "2026-07-18", to: "2026-08-18" });
 assert.deepEqual(normalizedRecentAfterPriorStay.stateOperations.map((item) => [item.field, item.operation, item.value]), [["inventory.mode", "replace", "any"], ["inventory.entityId", "clear", null]]);
+
+const structurallyPlannedAvailableDates = normalizePlannerOutput({
+  stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" } },
+  tasks: [{ taskId: "next-availability", type: "available_dates", sourceText: "請找下一個能入住的日子", entity: { category: "other", rawText: "可住情況", canonicalCandidate: null } }],
+  stateOperations: []
+}, {
+  messageText: "請找下一個能入住的日子",
+  eventTimestamp: Date.parse("2026-07-18T10:00:00+08:00"),
+  timezone: property.timezone,
+  previousConditions: { stay: { checkIn: "2026-08-06", searchRange: { from: "2026-08-06", to: "2026-09-06" } } }
+});
+assert.equal(structurallyPlannedAvailableDates.tasks[0].entity.rawText, "");
+assert.deepEqual(structurallyPlannedAvailableDates.searchRange, { from: "2026-07-18", to: "2026-08-18" });
+assert.deepEqual(structurallyPlannedAvailableDates.stateOperations.map((item) => [item.field, item.operation, item.value]), [["inventory.mode", "replace", "any"], ["inventory.entityId", "clear", null]]);
 
 const catalog = buildPropertyCatalog(property);
 const genericAvailability = executeTasks({
