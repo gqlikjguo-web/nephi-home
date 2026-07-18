@@ -6,7 +6,7 @@ const { validatePlannerOutput } = require("./planner-schema");
 const { buildPropertyCatalog } = require("./property-catalog");
 const { resolveTemporalExpression } = require("./temporal-resolver");
 const { migrateStateV2, reduceConversationState } = require("./state-reducer");
-const { executeTasks } = require("./capability-executor");
+const { executeTasks, isGenericAvailabilityEntity } = require("./capability-executor");
 const { buildResponsePlan } = require("./response-planner");
 const { composeControlledReply, mergeComposedSections } = require("./controlled-composer");
 const { validateClaims } = require("./claim-validator");
@@ -27,14 +27,24 @@ function isRecentAvailabilityQuestion(value) {
 }
 function normalizePlannerOutput(plannerOutput, { messageText, eventTimestamp, timezone, previousConditions } = {}) {
   const output = { ...plannerOutput, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, entity: task.entity ? { ...task.entity } : task.entity })) };
-  if (!isRecentAvailabilityQuestion(messageText)) return output;
-  const dateFrom = previousConditions && previousConditions.stay && previousConditions.stay.searchRange && previousConditions.stay.searchRange.from || dateKeyAt(eventTimestamp, timezone || "Asia/Taipei");
-  output.tasks = output.tasks.map((task) => {
-    if (!['availability', 'room_options'].includes(task.type)) return task;
-    const genericEntity = /^(?:空房|有房|房間|房)$/u.test(String(task.entity && task.entity.rawText || "").trim());
-    return { ...task, type: "available_dates", entity: genericEntity ? { ...task.entity, rawText: "", canonicalCandidate: null } : task.entity };
-  });
-  output.searchRange = { from: dateFrom, to: addUtcDays(dateFrom, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS) };
+  const recent = isRecentAvailabilityQuestion(messageText);
+  const genericAvailability = output.tasks.some((task) => isGenericAvailabilityEntity(task));
+  if (recent) {
+    // A request for the nearest available date starts a new search.  It must
+    // never inherit a prior stay's date range.
+    const dateFrom = dateKeyAt(eventTimestamp, timezone || "Asia/Taipei");
+    output.tasks = output.tasks.map((task) => {
+      if (!['availability', 'room_options'].includes(task.type)) return task;
+      const genericEntity = isGenericAvailabilityEntity(task);
+      return { ...task, type: "available_dates", entity: genericEntity ? { ...task.entity, rawText: "", canonicalCandidate: null } : task.entity };
+    });
+    output.searchRange = { from: dateFrom, to: addUtcDays(dateFrom, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS) };
+  }
+  if (recent || genericAvailability) {
+    output.stateOperations = [...(output.stateOperations || []).filter((item) => !["inventory.mode", "inventory.entityId"].includes(item.field)),
+      { field: "inventory.mode", operation: "replace", value: "any", sourceText: String(messageText || "") },
+      { field: "inventory.entityId", operation: "clear", value: null, sourceText: String(messageText || "") }];
+  }
   return output;
 }
 

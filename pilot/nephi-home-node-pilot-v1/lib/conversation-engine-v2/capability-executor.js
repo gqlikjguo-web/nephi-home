@@ -15,12 +15,18 @@ function selected(property, request, entities) {
     .filter((room) => !request.stay.guests || Number(room.capacity) >= Number(request.stay.guests));
 }
 function priceKey(date) { const day = new Date(`${date}T00:00:00Z`).getUTCDay(); return day === 5 ? "fridayPrice" : day === 6 ? "saturdayHolidayPrice" : day === 0 ? "sundayPrice" : "mondayThursdayPrice"; }
+function normalizedAvailabilityTerm(value) { return String(value || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""); }
+function isGenericAvailabilityEntity(task) {
+  if (!task || !["availability", "bundle_availability", "room_options", "capacity", "price", "total_price", "available_dates"].includes(task.type)) return false;
+  const term = normalizedAvailabilityTerm(task.entity && task.entity.rawText);
+  return new Set(["房", "房間", "空房", "有房", "還有房", "可以訂", "可訂", "可預訂", "訂房", "住宿"]).has(term);
+}
 
 function executeTasks({ property, catalog, tasks, request, availabilityResolver, availableDatesResolver, priceOverrides = [] }) {
   return tasks.map((task) => {
     try {
-    const genericAvailableDatesEntity = task.type === "available_dates" && task.entity && task.entity.category === "other" && String(task.entity.rawText || "").trim() === "空房";
-    const resolved = task.entity && task.entity.rawText && !genericAvailableDatesEntity ? resolveEntity(catalog, task.entity) : null;
+    const genericAvailabilityEntity = isGenericAvailabilityEntity(task);
+    const resolved = task.entity && task.entity.rawText && !genericAvailabilityEntity ? resolveEntity(catalog, task.entity) : null;
     if (resolved && resolved.status === "ambiguous") return { taskId: task.taskId, type: task.type, status: "needs_clarification", question: "想確認您指的是哪一個？", candidates: resolved.candidates, facts: {}, missingInputs: ["entity.canonicalId"] };
     if (["amenity", "policy", "property_fact"].includes(task.type)) {
       if (!resolved || resolved.status !== "resolved") return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "property_fact_unknown", facts: { subject: task.entity && task.entity.rawText || "這項資訊" }, review: true };
@@ -60,4 +66,4 @@ function executeTasks({ property, catalog, tasks, request, availabilityResolver,
   });
 }
 
-module.exports = { executeTasks, priceKey };
+module.exports = { executeTasks, priceKey, isGenericAvailabilityEntity };

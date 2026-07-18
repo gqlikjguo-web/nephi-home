@@ -46,8 +46,30 @@ const normalizedRecent = normalizePlannerOutput(plannerOutput, {
 assert.equal(normalizedRecent.tasks[0].type, "available_dates");
 assert.equal(normalizedRecent.tasks[0].entity.rawText, "");
 assert.deepEqual(normalizedRecent.searchRange, { from: "2026-07-18", to: "2026-08-18" });
+const normalizedRecentAfterPriorStay = normalizePlannerOutput(plannerOutput, {
+  messageText: "最近哪一天有空房",
+  eventTimestamp: Date.parse("2026-07-18T10:00:00+08:00"),
+  timezone: property.timezone,
+  previousConditions: { stay: { checkIn: "2026-08-06", searchRange: { from: "2026-08-06", to: "2026-09-06" } } }
+});
+assert.deepEqual(normalizedRecentAfterPriorStay.searchRange, { from: "2026-07-18", to: "2026-08-18" });
+assert.deepEqual(normalizedRecentAfterPriorStay.stateOperations.map((item) => [item.field, item.operation, item.value]), [["inventory.mode", "replace", "any"], ["inventory.entityId", "clear", null]]);
 
 const catalog = buildPropertyCatalog(property);
+const genericAvailability = executeTasks({
+  property,
+  catalog,
+  request: { stay: { checkIn: "2026-08-06", checkOut: "2026-08-07", guests: null }, inventory: { mode: "any" } },
+  availabilityResolver: (query) => service.searchAvailability(query),
+  availableDatesResolver: (query) => service.searchAvailableDates(query),
+  tasks: [{ taskId: "generic", type: "availability", entity: { category: "other", rawText: "有房", canonicalCandidate: null } }]
+})[0];
+assert.equal(genericAvailability.status, "answered");
+assert.deepEqual(genericAvailability.facts.availableInventory.map((room) => room.canonicalId), ["room_301", "room_401", "room_402"]);
+for (const genericText of ["房", "房間", "空房", "有房", "還有房", "可以訂", "可訂", "可預訂"]) {
+  const result = executeTasks({ property, catalog, request: { stay: { checkIn: "2026-08-06", checkOut: "2026-08-07", guests: null }, inventory: { mode: "any" } }, availabilityResolver: (query) => service.searchAvailability(query), availableDatesResolver: (query) => service.searchAvailableDates(query), tasks: [{ taskId: genericText, type: "availability", entity: { category: "other", rawText: genericText, canonicalCandidate: null } }] })[0];
+  assert.equal(result.status, "answered", `${genericText} must remain generic availability`);
+}
 const matched = resolveEntity(catalog, { category: "room", rawText: "雙人房", canonicalCandidate: "room_301" });
 assert.equal(matched.status, "matched_set");
 assert.deepEqual(
