@@ -19,7 +19,8 @@ function priceKey(date) { const day = new Date(`${date}T00:00:00Z`).getUTCDay();
 function executeTasks({ property, catalog, tasks, request, availabilityResolver, availableDatesResolver, priceOverrides = [] }) {
   return tasks.map((task) => {
     try {
-    const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : null;
+    const genericAvailableDatesEntity = task.type === "available_dates" && task.entity && task.entity.category === "other" && String(task.entity.rawText || "").trim() === "空房";
+    const resolved = task.entity && task.entity.rawText && !genericAvailableDatesEntity ? resolveEntity(catalog, task.entity) : null;
     if (resolved && resolved.status === "ambiguous") return { taskId: task.taskId, type: task.type, status: "needs_clarification", question: "想確認您指的是哪一個？", candidates: resolved.candidates, facts: {}, missingInputs: ["entity.canonicalId"] };
     if (["amenity", "policy", "property_fact"].includes(task.type)) {
       if (!resolved || resolved.status !== "resolved") return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "property_fact_unknown", facts: { subject: task.entity && task.entity.rawText || "這項資訊" }, review: true };
