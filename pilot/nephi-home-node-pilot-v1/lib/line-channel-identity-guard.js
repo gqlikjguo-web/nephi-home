@@ -4,10 +4,11 @@ const crypto = require("node:crypto");
 
 const TEST_ROUTE_PREFIX = "/api/test-line/";
 
-function fatal(code, message) {
+function fatal(code, message, status = 400) {
   const error = new Error(message);
   error.code = code;
   error.fatal = true;
+  error.status = status;
   return error;
 }
 
@@ -18,15 +19,19 @@ function isTestRoute(route) {
 function validateLineChannelConfiguration(input = {}) {
   const environment = String(input.environment || "").trim().toLowerCase();
   const channelId = String(input.channelId || "").trim();
+  const destinationId = String(input.destinationId || "").trim();
   const webhookRoute = String(input.webhookRoute || "").trim();
   const actualWebhookRoute = String(input.actualWebhookRoute || "").trim();
   const channelSecret = String(input.channelSecret || "");
   const channelSecretSha256 = String(input.channelSecretSha256 || "").trim().toLowerCase();
   const channelAccessToken = String(input.channelAccessToken || "");
 
-  if (!["production", "test-only"].includes(environment) || !channelId || !webhookRoute ||
+  if (!["production", "test-only"].includes(environment) || !channelId || !destinationId || !webhookRoute ||
       !actualWebhookRoute || !channelSecret || !channelAccessToken || !/^[a-f0-9]{64}$/.test(channelSecretSha256)) {
     throw fatal("LINE_CHANNEL_IDENTITY_INCOMPLETE", "LINE channel identity configuration is incomplete");
+  }
+  if (!/^U[0-9a-f]{32}$/i.test(destinationId)) {
+    throw fatal("LINE_DESTINATION_ID_INVALID", "LINE webhook destination identity must be a Bot User ID");
   }
   if (webhookRoute !== actualWebhookRoute) {
     throw fatal("LINE_WEBHOOK_ROUTE_MISMATCH", "Configured LINE webhook route does not match the server route");
@@ -41,12 +46,12 @@ function validateLineChannelConfiguration(input = {}) {
     throw fatal("LINE_CHANNEL_SECRET_IDENTITY_MISMATCH", "LINE channel secret does not match its configured identity");
   }
 
-  return { environment, channelId, webhookRoute };
+  return { environment, channelId, destinationId, webhookRoute };
 }
 
 function validateLineWebhookDestination(identity, destination) {
-  const actualChannelId = String(destination || "").trim();
-  if (!identity || !actualChannelId || actualChannelId !== identity.channelId) {
+  const actualDestinationId = String(destination || "").trim();
+  if (!identity || !actualDestinationId || actualDestinationId !== identity.destinationId) {
     throw fatal("LINE_CHANNEL_IDENTITY_MISMATCH", "LINE webhook destination does not match the configured channel identity");
   }
 }

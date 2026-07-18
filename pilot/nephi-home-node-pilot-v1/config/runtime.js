@@ -21,6 +21,7 @@ function runtimeConfig(env = process.env) {
     lineChannelAccessToken: env.NEPHI_PILOT_LINE_CHANNEL_ACCESS_TOKEN || "",
     lineChannelEnvironment: env.NEPHI_PILOT_LINE_ENVIRONMENT || "",
     lineChannelId: env.NEPHI_PILOT_LINE_CHANNEL_ID || "",
+    lineDestinationId: env.NEPHI_PILOT_LINE_DESTINATION_ID || "",
     lineWebhookRoute: env.NEPHI_PILOT_LINE_WEBHOOK_ROUTE || "",
     lineChannelSecretSha256: env.NEPHI_PILOT_LINE_CHANNEL_SECRET_SHA256 || "",
     timeZone: env.NEPHI_PILOT_TIME_ZONE || "Asia/Taipei",

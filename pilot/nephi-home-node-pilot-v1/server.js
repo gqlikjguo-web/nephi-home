@@ -64,8 +64,9 @@ function adminSessionData(session) {
 }
 
 function sendError(response, error) {
-  const status = error instanceof AppError ? error.status : 500;
-  const code = error instanceof AppError ? error.code : "INTERNAL_ERROR";
+  const isGuardError = Boolean(error && error.fatal && Number.isInteger(error.status) && error.code);
+  const status = error instanceof AppError || isGuardError ? error.status : 500;
+  const code = error instanceof AppError || isGuardError ? error.code : "INTERNAL_ERROR";
   sendJson(response, status, {
     ok: false,
     error: { code, message: status === 500 ? "伺服器暫時無法完成操作，請稍後再試" : error.message }
@@ -471,6 +472,7 @@ function createApp(options = {}) {
   const configuredLineChannelIdentity = options.lineChannelIdentity || {
     environment: config.lineChannelEnvironment,
     channelId: config.lineChannelId,
+    destinationId: config.lineDestinationId,
     webhookRoute: config.lineWebhookRoute,
     channelSecretSha256: config.lineChannelSecretSha256
   };
