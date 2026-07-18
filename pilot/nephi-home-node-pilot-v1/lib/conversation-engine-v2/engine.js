@@ -12,6 +12,7 @@ const { composeControlledReply, mergeComposedSections } = require("./controlled-
 const { validateClaims } = require("./claim-validator");
 const { coverageByStatus, assertTaskCoverage } = require("./task-coverage");
 const { resolveEntity } = require("./entity-resolver");
+const { availabilityTraceSummary } = require("./resolver-adapter");
 
 const DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS = 31;
 function dateKeyAt(timestamp, timezone) {
@@ -19,6 +20,7 @@ function dateKeyAt(timestamp, timezone) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 function addUtcDays(dateKey, days) { const value = new Date(`${dateKey}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); }
+function traceState(state) { const copy = JSON.parse(JSON.stringify(state || {})); if (copy.scope) delete copy.scope.lineUserId; return copy; }
 function isRecentAvailabilityQuestion(value) {
   const text = String(value || "").normalize("NFKC").replace(/\s+/gu, "");
   return /(?:最近|近期|下一(?:個|天)|最早).{0,12}(?:有房|空房|可住|可訂)|(?:有房|空房|可住|可訂).{0,12}(?:最近|近期|下一|最早)/u.test(text);
@@ -67,11 +69,11 @@ function normalizedPlannerStay(plannerOutput) {
 const SAFE_FALLBACK = "這次有部分內容無法安全確認，我會請業者協助；您剛才的問題已經記錄。";
 
 class ConversationEngineV2 {
-  constructor({ planner, composer, persistence, getProperty, availabilityResolver, availableDatesResolver, listPriceOverrides, now = () => new Date(), onDiagnostic }) {
-    this.planner = planner; this.composer = composer; this.persistence = persistence; this.getProperty = getProperty; this.availabilityResolver = availabilityResolver; this.availableDatesResolver = availableDatesResolver; this.listPriceOverrides = listPriceOverrides || (() => []); this.now = now; this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null;
+  constructor({ planner, composer, persistence, getProperty, availabilityResolver, availableDatesResolver, listPriceOverrides, now = () => new Date(), onDiagnostic, diagnosticDetail = false }) {
+    this.planner = planner; this.composer = composer; this.persistence = persistence; this.getProperty = getProperty; this.availabilityResolver = availabilityResolver; this.availableDatesResolver = availableDatesResolver; this.listPriceOverrides = listPriceOverrides || (() => []); this.now = now; this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null; this.diagnosticDetail = Boolean(diagnosticDetail); this.traceContexts = new Map();
   }
 
-  trace(traceId, stage, details) { if (this.onDiagnostic) this.onDiagnostic({ traceId, stage, ...details }); }
+  trace(traceId, stage, details) { if (this.onDiagnostic) this.onDiagnostic({ ...(this.diagnosticDetail ? this.traceContexts.get(traceId) : {}), traceId, stage, ...details }); }
 
   async process(input) {
     const traceId = crypto.randomUUID();
@@ -80,10 +82,12 @@ class ConversationEngineV2 {
     const catalog = buildPropertyCatalog(property);
     const scope = { propertyId: input.customerId, channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, now: this.now().toISOString() };
     const previous = migrateStateV2(this.persistence.getConversationState(input.customerId, input.channelId, input.lineUserId), scope);
+    if (this.diagnosticDetail) this.traceContexts.set(traceId, { timestamp: new Date().toISOString(), correlationId: traceId, eventId: input.eventId, propertyId: input.customerId, userKeyHash: crypto.createHash("sha256").update(String(input.lineUserId || "")).digest("hex").slice(0, 16), messageText: input.messageText });
+    if (this.diagnosticDetail) this.trace(traceId, "state_before", { state: traceState(previous) });
     let plannerOutput;
     try { plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], eventTimestamp: input.eventTimestamp, catalog, conversationState: previous }); }
     catch { plannerOutput = null; }
-    this.trace(traceId, "planner", { taskCount: plannerOutput && Array.isArray(plannerOutput.tasks) ? plannerOutput.tasks.length : 0, tasks: plannerOutput && Array.isArray(plannerOutput.tasks) ? plannerOutput.tasks.map((task) => ({ taskId: task.taskId, type: task.type, sourceText: String(task.sourceText || "").slice(0, 120), canonicalCandidate: task.entity && task.entity.canonicalCandidate || null, confidence: task.confidence })) : [] });
+    this.trace(traceId, "planner", { taskCount: plannerOutput && Array.isArray(plannerOutput.tasks) ? plannerOutput.tasks.length : 0, tasks: plannerOutput && Array.isArray(plannerOutput.tasks) ? (this.diagnosticDetail ? plannerOutput.tasks : plannerOutput.tasks.map((task) => ({ taskId: task.taskId, type: task.type, sourceText: String(task.sourceText || "").slice(0, 120), canonicalCandidate: task.entity && task.entity.canonicalCandidate || null, confidence: task.confidence }))) : [] });
     const validation = validatePlannerOutput(plannerOutput);
     this.trace(traceId, "validation", { acceptedTaskIds: validation.ok ? plannerOutput.tasks.map((task) => task.taskId) : [], rejected: validation.ok ? [] : validation.errors });
     if (!validation.ok) {
@@ -122,17 +126,20 @@ class ConversationEngineV2 {
     }
     if (plannerOutput.searchRange) operations.push({ field: "stay.searchRange", operation: previous.conditions.stay.searchRange ? "replace" : "set", value: plannerOutput.searchRange, sourceText: input.messageText });
     const state = reduceConversationState(previous, { ...plannerOutput, stateOperations: operations }, scope);
-    this.trace(traceId, "state", { discourse: plannerOutput.discourse, operations: operations.map((item) => ({ field: item.field, operation: item.operation })), conditions: state.conditions });
+    this.trace(traceId, "state", { discourse: plannerOutput.discourse, operations: operations.map((item) => ({ field: item.field, operation: item.operation })), conditions: state.conditions, ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {}) });
     this.persistence.setConversationState(input.customerId, input.channelId, input.lineUserId, state);
-    this.trace(traceId, "entity_resolution", { tasks: plannerOutput.tasks.map((task) => { const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : { status: "not_requested" }; return { taskId: task.taskId, status: resolved.status, canonicalId: resolved.entity && resolved.entity.canonicalId || null, candidateCount: resolved.candidates && resolved.candidates.length || 0 }; }) });
-    let taskResults = executeTasks({ property, catalog, tasks: plannerOutput.tasks, request: state.conditions, availabilityResolver: this.availabilityResolver, availableDatesResolver: this.availableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) });
+    this.trace(traceId, "entity_resolution", { tasks: plannerOutput.tasks.map((task) => { const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : { status: "not_requested" }; return this.diagnosticDetail ? { taskId: task.taskId, resolved } : { taskId: task.taskId, status: resolved.status, canonicalId: resolved.entity && resolved.entity.canonicalId || null, candidateCount: resolved.candidates && resolved.candidates.length || 0 }; }) });
+    const resolverCalls = [];
+    const tracedAvailabilityResolver = (request) => { const result = this.availabilityResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
+    const tracedAvailableDatesResolver = (request) => { const result = this.availableDatesResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
+    let taskResults = executeTasks({ property, catalog, tasks: plannerOutput.tasks, request: state.conditions, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) });
     const inputTaskIds = plannerOutput.tasks.map((task) => task.taskId);
     let executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     if (!executorCoverage.ok) {
       taskResults = [...taskResults, ...executorCoverage.missingTaskIds.map((taskId) => ({ taskId, type: "unknown", status: "failed", reason: "executor_missing_task", facts: { subject: "這個問題" }, review: true }))];
       executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     }
-    this.trace(traceId, "executor", { results: taskResults.map((item) => ({ taskId: item.taskId, status: item.status, reason: item.reason || "" })), coverage: executorCoverage });
+    this.trace(traceId, "executor", { results: this.diagnosticDetail ? taskResults : taskResults.map((item) => ({ taskId: item.taskId, status: item.status, reason: item.reason || "" })), resolverCalls: this.diagnosticDetail ? resolverCalls : undefined, coverage: executorCoverage });
     const reviewIds = [];
     for (const result of taskResults.filter((item) => item.review)) {
       const sourceTask = plannerOutput.tasks.find((task) => task.taskId === result.taskId);
@@ -140,7 +147,7 @@ class ConversationEngineV2 {
       if (item.reviewId) reviewIds.push(item.reviewId);
     }
     const responsePlan = buildResponsePlan({ propertyId: input.customerId, taskResults, inputTaskIds, reviewActions: reviewIds.map((reviewId) => ({ reviewId, created: true })) });
-    this.trace(traceId, "response_plan", { sectionCount: responsePlan.sections.length, sections: responsePlan.sections.map((section) => ({ taskId: section.taskId, status: section.status, factKeys: Object.keys(section.facts || {}) })), reviewCount: responsePlan.reviewActions.length, coverage: responsePlan.coverageValidation });
+    this.trace(traceId, "response_plan", { sectionCount: responsePlan.sections.length, sections: this.diagnosticDetail ? responsePlan.sections : responsePlan.sections.map((section) => ({ taskId: section.taskId, status: section.status, factKeys: Object.keys(section.facts || {}) })), reviewCount: responsePlan.reviewActions.length, coverage: responsePlan.coverageValidation });
     const deterministicReply = composeControlledReply(responsePlan);
     let replyText = deterministicReply, claimedTaskIds = null, composedSections = null;
     let composerSource = "deterministic", fallbackOccurred = false, rejectionReasonCodes = [];
@@ -157,7 +164,7 @@ class ConversationEngineV2 {
       fallbackOccurred = composerSource !== "openai";
     }
     let claimValidation = validateClaims(replyText, responsePlan, claimedTaskIds, composedSections);
-    this.trace(traceId, "composer", { outputLength: replyText.length, coveredTaskIds: claimedTaskIds || inputTaskIds, missingTaskIds: claimValidation.missingTaskIds, composerSource, validationResult: rejectionReasonCodes.length ? "rejected" : "accepted", rejectionReasonCodes, fallbackOccurred, sections: responsePlan.sections.map((section) => ({ taskId: section.taskId, responseMode: section.responseMode, type: section.type })) });
+    this.trace(traceId, "composer", { outputLength: replyText.length, coveredTaskIds: claimedTaskIds || inputTaskIds, missingTaskIds: claimValidation.missingTaskIds, composerSource, validationResult: rejectionReasonCodes.length ? "rejected" : "accepted", rejectionReasonCodes, fallbackOccurred, ...(this.diagnosticDetail ? { composerInput: responsePlan, finalOutput: replyText } : {}), sections: responsePlan.sections.map((section) => ({ taskId: section.taskId, responseMode: section.responseMode, type: section.type })) });
     if (!claimValidation.ok) {
       const reason = claimValidation.errors.includes("incomplete_task_coverage") ? "composer_incomplete_coverage" : "claim_validation_failed";
       const item = this.persistReview(input, reason, "回覆未完整涵蓋所有問題，已改用安全完整回覆。", "");
@@ -170,7 +177,7 @@ class ConversationEngineV2 {
     if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
     else this.persistence.appendMessageLog(input.customerId, messageRecord);
     this.trace(traceId, "line_ready", { coveredTaskIds: claimValidation.coveredTaskIds, missingTaskIds: claimValidation.missingTaskIds, replyLength: replyText.length });
-    return { shouldReply: true, noReply: false, replyText, taskResults, reviewCount: reviewIds.length, reviewIds, claimValidation, state, traceId };
+    this.traceContexts.delete(traceId); return { shouldReply: true, noReply: false, replyText, taskResults, reviewCount: reviewIds.length, reviewIds, claimValidation, state, traceId };
   }
 
   persistReview(input, reason, note, taskId) {

@@ -51,6 +51,16 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   assert.deepEqual(diagnostics.map((item) => item.stage), ["planner", "validation", "temporal", "state", "entity_resolution", "executor", "response_plan", "composer", "claim_validator", "line_ready"]);
   assert.equal(new Set(diagnostics.map((item) => item.traceId)).size, 1);
 
+  const detailedDiagnostics = [];
+  const detailedEngine = new ConversationEngineV2({ planner, persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [], diagnosticDetail: true, onDiagnostic: (item) => detailedDiagnostics.push(item) });
+  await detailedEngine.process({ customerId: "p1", channelId: "c1", lineUserId: "trace-user", eventId: "trace-event", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？" });
+  assert.ok(detailedDiagnostics.some((item) => item.stage === "state_before" && item.userKeyHash && item.userKeyHash !== "trace-user"));
+  assert.ok(detailedDiagnostics.some((item) => item.stage === "planner" && Array.isArray(item.tasks) && item.tasks[0].entity));
+  assert.ok(detailedDiagnostics.some((item) => item.stage === "executor" && Array.isArray(item.results) && Array.isArray(item.resolverCalls)));
+  const composerDiagnostic = detailedDiagnostics.find((item) => item.stage === "composer");
+  assert.ok(composerDiagnostic.composerInput && typeof composerDiagnostic.finalOutput === "string");
+  assert.equal(JSON.stringify(detailedDiagnostics).includes("trace-user"), false);
+
   const unknownPlanner = { classify: async () => ({
     schemaVersion: 2, discourse: { relation: "new_topic", confidence: 0.99 }, stateOperations: [{ field: "*", operation: "clear", value: null, sourceText: "你不開心是嗎？" }],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },

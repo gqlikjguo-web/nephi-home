@@ -25,6 +25,13 @@ function availabilityFacts(result, propertyId) {
   };
 }
 
+function availabilityTraceSummary(request, result) {
+  return {
+    request: { customerId: request.customerId, checkIn: request.checkIn || null, checkOut: request.checkOut || null, dateFrom: request.dateFrom || null, dateTo: request.dateTo || null, nights: request.nights || null, guests: request.guests || null, roomType: request.roomType || "all", roomTypeSet: request.roomTypeSet || [], queryMode: request.queryMode || "any" },
+    response: result && result.status ? { status: result.status, source: result.source || "", dates: (result.dates || []).map((item) => ({ checkIn: item.checkIn, checkOut: item.checkOut, available: Boolean(item.available), roomTypes: (item.roomTypes || []).map((room) => ({ roomTypeId: room.roomTypeId, roomTypeName: room.roomTypeName })) })) } : { customerId: result && result.customerId || "", availabilityReliable: Boolean(result && result.availabilityReliable), rooms: (result && result.rooms || []).map((room) => ({ id: room.id, name: room.publicDisplayName || room.displayName || room.publicName || room.name || "" })) }
+  };
+}
+
 function resolveAvailability({ availabilityResolver, propertyId, request, resolved }) {
   if (typeof availabilityResolver !== "function") throw new Error("availability_resolver_required");
   const contractRequest = availabilityRequest(propertyId, request, resolved);
@@ -42,4 +49,4 @@ function resolveAvailableDates({ availableDatesResolver, propertyId, request, re
   return result;
 }
 
-module.exports = { availabilityRequest, availabilityFacts, resolveAvailability, resolveAvailableDates };
+module.exports = { availabilityRequest, availabilityFacts, availabilityTraceSummary, resolveAvailability, resolveAvailableDates };
