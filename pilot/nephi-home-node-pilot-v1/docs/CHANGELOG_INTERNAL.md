@@ -3,6 +3,10 @@
 本文件記錄會改變產品核心能力、安全邊界或長期架構的重要演進，不是逐筆 Git Changelog。細部實作仍以 Git history 為準。
 目前狀態與閱讀順序見 [專案記憶入口](PROJECT_MEMORY.md)。
 
+## 2026-07-18 — Controlled Composer 與 handoff 信任邊界
+
+- 將 handoff／review／Unknown 固定於 deterministic 安全文案，並以 `allowedFacts`、有效語意及 Claim Validator 阻止符號殘片與無來源主張進入 LINE 回覆。
+
 ## 2026-07-18 — Repository 永久記憶系統
 
 - 建立單一專案記憶入口、不可退步產品基準與 Agent 必讀規則，讓決策、教訓、驗收與重要演進可由 Git 永久追溯。

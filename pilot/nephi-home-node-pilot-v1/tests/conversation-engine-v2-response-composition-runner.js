@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
-const { mergeComposedSections } = require("../lib/conversation-engine-v2/controlled-composer");
+const { composeControlledReply, mergeComposedSections } = require("../lib/conversation-engine-v2/controlled-composer");
 
 const taskResults = [
   { taskId: "equipment", type: "amenity", status: "answered", facts: { subject: "設備", answer: "設備資訊" } },
@@ -55,5 +55,51 @@ const unnecessaryClarification = mergeComposedSections(plan, {
 });
 assert.equal(unnecessaryClarification.ok, false);
 assert.ok(unnecessaryClarification.errors.includes("response_mode_mismatch"));
+
+const handoffPlan = buildResponsePlan({
+  propertyId: "property_alpha",
+  taskResults: [{ taskId: "handoff", type: "unknown", status: "needs_human", facts: {}, review: true }],
+  inputTaskIds: ["handoff"],
+  reviewActions: [{ reviewId: "review-1", created: true }]
+});
+const deterministicHandoff = composeControlledReply(handoffPlan);
+assert.equal(deterministicHandoff, "這部分需要請業者確認。");
+for (const unsafeText of [":-(", ".", ".\"", ".NET開發者需要人工協助。"]) {
+  const rejected = mergeComposedSections(handoffPlan, {
+    sections: [{ taskId: "handoff", responseMode: "handoff", text: unsafeText }]
+  });
+  assert.equal(rejected.ok, false, `${unsafeText} 不得通過 handoff composition validation`);
+  assert.ok(rejected.errors.includes("handoff_deterministic_boundary"));
+}
+
+const groundedPlan = buildResponsePlan({
+  propertyId: "property_alpha",
+  taskResults: [{ taskId: "parking", type: "amenity", status: "answered", facts: { subject: "停車", answer: "民宿旁空地可停車。", source: "property_catalog", propertyId: "property_alpha" } }],
+  inputTaskIds: ["parking"]
+});
+assert.ok(groundedPlan.allowedFacts.includes("民宿旁空地可停車。"));
+const grounded = mergeComposedSections(groundedPlan, {
+  sections: [{ taskId: "parking", responseMode: "answer", text: "民宿旁空地可停車。" }]
+});
+assert.equal(grounded.ok, true, "grounded 非 handoff composition 仍須可採用");
+
+const invented = mergeComposedSections(groundedPlan, {
+  sections: [{ taskId: "parking", responseMode: "answer", text: "民宿旁空地可停車，並由 .NET 開發者即時管理。" }]
+});
+assert.equal(invented.ok, false);
+assert.ok(invented.errors.includes("ungrounded_section_text"));
+
+for (const taskResult of [
+  { taskId: "unknown-inventory", type: "availability", status: "needs_human", reason: "inventory_entity_unknown", facts: { subject: "雙人房" }, review: true },
+  { taskId: "unreliable-availability", type: "availability", status: "needs_human", reason: "availability_unreliable", facts: {}, review: true }
+]) {
+  const safetyPlan = buildResponsePlan({ propertyId: "property_alpha", taskResults: [taskResult], inputTaskIds: [taskResult.taskId] });
+  const safeReply = composeControlledReply(safetyPlan);
+  assert.ok(safeReply.includes("需要請業者確認"));
+  assert.equal(safeReply.includes("沒有空房"), false);
+  const unsafeHandoff = mergeComposedSections(safetyPlan, { sections: [{ taskId: taskResult.taskId, responseMode: "handoff", text: "外部工程師已確認沒有房間。" }] });
+  assert.equal(unsafeHandoff.ok, false);
+  assert.ok(unsafeHandoff.errors.includes("handoff_deterministic_boundary"));
+}
 
 console.log("conversation engine v2 response composition: PASS");

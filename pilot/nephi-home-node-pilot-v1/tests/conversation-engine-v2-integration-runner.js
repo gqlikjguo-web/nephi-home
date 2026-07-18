@@ -49,6 +49,37 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   assert.deepEqual(guarded.claimValidation.coveredTaskIds.sort(), ["a", "b", "c"]);
   assert.deepEqual(diagnostics.map((item) => item.stage), ["planner", "validation", "temporal", "state", "entity_resolution", "executor", "response_plan", "composer", "claim_validator", "line_ready"]);
   assert.equal(new Set(diagnostics.map((item) => item.traceId)).size, 1);
+
+  const unknownPlanner = { classify: async () => ({
+    schemaVersion: 2, discourse: { relation: "new_topic", confidence: 0.99 }, stateOperations: [{ field: "*", operation: "clear", value: null, sourceText: "你不開心是嗎？" }],
+    stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
+    tasks: [{ taskId: "unknown", type: "unknown", sourceText: "你不開心是嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "other", rawText: "你不開心", canonicalCandidate: null, confidence: 0.9 }, confidence: 0.9 }],
+    ambiguities: [], missingInformation: [], needsHuman: true, shouldIgnore: false, reason: "unknown"
+  }) };
+  for (const [index, unsafeText] of [":-(", ".", ".\"", ".NET開發者需要人工協助。"].entries()) {
+    const unsafeDiagnostics = [];
+    const unsafeComposer = { compose: async () => ({ sections: [{ taskId: "unknown", responseMode: "handoff", text: unsafeText }] }) };
+    const unsafeEngine = new ConversationEngineV2({ planner: unknownPlanner, composer: unsafeComposer, persistence, getProperty: () => property, availability: { getRows: () => [] }, listPriceOverrides: () => [], onDiagnostic: (item) => unsafeDiagnostics.push(item) });
+    const unsafe = await unsafeEngine.process({ customerId: "p1", channelId: "c1", lineUserId: `unsafe-${index}`, eventId: `unsafe-${index}`, eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "你不開心是嗎？" });
+    assert.equal(unsafe.replyText, "這部分需要請業者確認。");
+    assert.equal(unsafe.replyText.includes(unsafeText), false);
+    const composerTrace = unsafeDiagnostics.find((item) => item.stage === "composer");
+    assert.equal(composerTrace.composerSource, "deterministic");
+    assert.equal(composerTrace.fallbackOccurred, true);
+    assert.ok(composerTrace.rejectionReasonCodes.includes("handoff_deterministic_boundary"));
+  }
+  const groundedPlanner = { classify: async () => ({
+    schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
+    stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
+    tasks: [{ taskId: "parking", type: "amenity", sourceText: "有車位嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, confidence: 0.99 }],
+    ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "known_fact"
+  }) };
+  const groundedDiagnostics = [];
+  const groundedEngine = new ConversationEngineV2({ planner: groundedPlanner, composer: { compose: async () => ({ sections: [{ taskId: "parking", responseMode: "answer", text: "有一個停車位" }] }) }, persistence, getProperty: () => property, availability: { getRows: () => [] }, listPriceOverrides: () => [], onDiagnostic: (item) => groundedDiagnostics.push(item) });
+  const groundedReply = await groundedEngine.process({ customerId: "p1", channelId: "c1", lineUserId: "grounded", eventId: "grounded", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "有車位嗎？" });
+  assert.equal(groundedReply.replyText, "有一個停車位");
+  assert.equal(groundedDiagnostics.find((item) => item.stage === "composer").composerSource, "openai");
+  assert.equal(groundedDiagnostics.find((item) => item.stage === "composer").fallbackOccurred, false);
   const multiRoomProperty = { ...property, rooms: [
     { id: "r1", name: "A 雙人房", type: "雙人房", capacity: 2, enabled: true },
     { id: "r2", name: "B 雙人房", type: "雙人房", capacity: 2, enabled: true },

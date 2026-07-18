@@ -116,15 +116,23 @@ class ConversationEngineV2 {
     }
     const responsePlan = buildResponsePlan({ propertyId: input.customerId, taskResults, inputTaskIds, reviewActions: reviewIds.map((reviewId) => ({ reviewId, created: true })) });
     this.trace(traceId, "response_plan", { sectionCount: responsePlan.sections.length, sections: responsePlan.sections.map((section) => ({ taskId: section.taskId, status: section.status, factKeys: Object.keys(section.facts || {}) })), reviewCount: responsePlan.reviewActions.length, coverage: responsePlan.coverageValidation });
-    let replyText = composeControlledReply(responsePlan), claimedTaskIds = null;
+    const deterministicReply = composeControlledReply(responsePlan);
+    let replyText = deterministicReply, claimedTaskIds = null, composedSections = null;
+    let composerSource = "deterministic", fallbackOccurred = false, rejectionReasonCodes = [];
     if (this.composer && typeof this.composer.compose === "function") {
       try {
         const composed = mergeComposedSections(responsePlan, await this.composer.compose(responsePlan));
-        if (composed.ok) { replyText = composed.replyText; claimedTaskIds = composed.factTaskIds; }
-      } catch { /* deterministic composer remains the safe fallback */ }
+        if (composed.ok) {
+          const adoptionValidation = validateClaims(composed.replyText, responsePlan, composed.factTaskIds, composed.sections);
+          if (adoptionValidation.ok) {
+            replyText = composed.replyText; claimedTaskIds = composed.factTaskIds; composedSections = composed.sections; composerSource = "openai";
+          } else rejectionReasonCodes = adoptionValidation.errors;
+        } else rejectionReasonCodes = composed.errors;
+      } catch { rejectionReasonCodes = ["composer_exception"]; }
+      fallbackOccurred = composerSource !== "openai";
     }
-    let claimValidation = validateClaims(replyText, responsePlan, claimedTaskIds);
-    this.trace(traceId, "composer", { outputLength: replyText.length, coveredTaskIds: claimedTaskIds || inputTaskIds, missingTaskIds: claimValidation.missingTaskIds });
+    let claimValidation = validateClaims(replyText, responsePlan, claimedTaskIds, composedSections);
+    this.trace(traceId, "composer", { outputLength: replyText.length, coveredTaskIds: claimedTaskIds || inputTaskIds, missingTaskIds: claimValidation.missingTaskIds, composerSource, validationResult: rejectionReasonCodes.length ? "rejected" : "accepted", rejectionReasonCodes, fallbackOccurred, sections: responsePlan.sections.map((section) => ({ taskId: section.taskId, responseMode: section.responseMode, type: section.type })) });
     if (!claimValidation.ok) {
       const reason = claimValidation.errors.includes("incomplete_task_coverage") ? "composer_incomplete_coverage" : "claim_validation_failed";
       const item = this.persistReview(input, reason, "回覆未完整涵蓋所有問題，已改用安全完整回覆。", "");

@@ -40,4 +40,25 @@ const genuinelyMissingDatePlan = {
 };
 assert.equal(validateClaims("想查哪一天？", genuinelyMissingDatePlan, ["A2"]).ok, true);
 
+const punctuationOnly = validateClaims(".\"", {
+  maxLength: 1200,
+  forbiddenClaims: [],
+  allowedFacts: [],
+  sections: [{ taskId: "H1", type: "unknown", status: "needs_human", responseMode: "handoff", facts: {}, allowedFacts: [] }]
+}, ["H1"], [{ taskId: "H1", responseMode: "handoff", text: ".\"" }]);
+assert.equal(punctuationOnly.ok, false);
+assert.ok(punctuationOnly.errors.includes("meaningless_reply"));
+assert.ok(punctuationOnly.errors.includes("handoff_deterministic_boundary"));
+
+const groundedPlan = {
+  maxLength: 1200,
+  forbiddenClaims: [],
+  allowedFacts: ["民宿旁空地可停車。"],
+  sections: [{ taskId: "F1", type: "amenity", status: "answered", responseMode: "answer", facts: { answer: "民宿旁空地可停車。" }, allowedFacts: ["民宿旁空地可停車。"] }]
+};
+assert.equal(validateClaims("民宿旁空地可停車。", groundedPlan, ["F1"], [{ taskId: "F1", responseMode: "answer", text: "民宿旁空地可停車。" }]).ok, true);
+const ungrounded = validateClaims("民宿旁空地可停車，並由外部工程師管理。", groundedPlan, ["F1"], [{ taskId: "F1", responseMode: "answer", text: "民宿旁空地可停車，並由外部工程師管理。" }]);
+assert.equal(ungrounded.ok, false);
+assert.ok(ungrounded.errors.includes("ungrounded_section_text"));
+
 console.log("conversation engine v2 task coverage: PASS");

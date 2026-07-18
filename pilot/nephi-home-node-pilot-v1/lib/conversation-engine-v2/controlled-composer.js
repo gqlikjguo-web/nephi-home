@@ -19,6 +19,25 @@ function composeSection(section) {
 }
 function composeControlledReply(plan) { const reply = plan.sections.map(composeSection).filter(Boolean).join("\n"); return (reply || "這個問題需要請業者確認，我會為您轉交。").slice(0, plan.maxLength || 1200); }
 
+function normalizedMeaning(value) { return String(value || "").normalize("NFKC").toLocaleLowerCase("zh-TW").replace(/[^\p{L}\p{N}]+/gu, ""); }
+function meaningfulCharacterCount(value) { return (String(value || "").match(/[\p{L}\p{N}]/gu) || []).length; }
+function validateComposedSection(section, text) {
+  const value = String(text || "").trim();
+  const errors = [];
+  if (!value) errors.push("empty_task_reply");
+  if (meaningfulCharacterCount(value) < 3) errors.push("meaningless_section_text");
+  if (section.responseMode === "handoff") errors.push("handoff_deterministic_boundary");
+  if (section.responseMode !== "handoff" && value) {
+    const expected = composeSection(section);
+    const proposedMeaning = normalizedMeaning(value);
+    const expectedMeaning = normalizedMeaning(expected);
+    const requiredFacts = (section.allowedFacts || []).map(normalizedMeaning).filter((fact) => fact && expectedMeaning.includes(fact));
+    if (requiredFacts.some((fact) => !proposedMeaning.includes(fact))) errors.push("allowed_fact_missing");
+    if (proposedMeaning !== expectedMeaning) errors.push(section.responseMode === "clarification" ? "response_mode_semantic_mismatch" : "ungrounded_section_text");
+  }
+  return { ok: errors.length === 0, errors: [...new Set(errors)] };
+}
+
 function mergeComposedSections(plan, composed) {
   const expected = (plan.sections || []).map((section) => section.taskId);
   const items = composed && Array.isArray(composed.sections) ? composed.sections : [];
@@ -37,10 +56,10 @@ function mergeComposedSections(plan, composed) {
     if (!item) continue;
     if (item.responseMode !== section.responseMode) errors.push("response_mode_mismatch");
     const text = String(item.text || "").trim();
-    if (!text) errors.push("empty_task_reply");
-    ordered.push({ taskId: section.taskId, text });
+    errors.push(...validateComposedSection(section, text).errors);
+    ordered.push({ taskId: section.taskId, responseMode: item.responseMode, text });
   }
-  return { ok: errors.length === 0, errors: [...new Set(errors)], replyText: ordered.map((item) => item.text).join("\n").slice(0, plan.maxLength || 1200), factTaskIds: ordered.map((item) => item.taskId), missingTaskIds };
+  return { ok: errors.length === 0, errors: [...new Set(errors)], replyText: ordered.map((item) => item.text).join("\n").slice(0, plan.maxLength || 1200), factTaskIds: ordered.map((item) => item.taskId), sections: ordered, missingTaskIds };
 }
 
-module.exports = { composeControlledReply, mergeComposedSections };
+module.exports = { composeSection, composeControlledReply, meaningfulCharacterCount, validateComposedSection, mergeComposedSections };

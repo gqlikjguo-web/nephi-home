@@ -57,3 +57,11 @@
 **理由：** 對話會分散、壓縮或失去上下文，且無法像 Git 一樣審查、追溯與共同維護。
 
 **長期後果：** 每個 Agent 任務先讀 `AGENTS.md` 指定的核心文件；重大決策、重要 bug 與正式驗收必須在同一工作流程中更新對應文件。
+
+## D-008：Controlled Composer 只能表達可信結果
+
+**決策：** Controlled Composer 只負責自然表達 Response Plan 已提供的 `allowedFacts`；handoff、review、Unknown 與不可靠結果一律使用 deterministic 安全文案。任何語意、grounding、handoff 或 claim validation 失敗都必須退回 deterministic 回覆。
+
+**理由：** JSON schema 合法且文字非空，不代表內容有意義或可信。模型曾在正常回覆後產生符號殘片及無來源的技術身分文字，現有 coverage 檢查無法阻止這類污染。
+
+**長期後果：** AI 不得覆蓋安全邊界、引入 Response Plan 以外的事實或替真人轉接自由造句；trace 只能記錄安全的驗證結果與原因碼，不記錄客人內容或敏感資料。

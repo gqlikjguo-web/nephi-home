@@ -40,6 +40,9 @@
 - 只有真正需要人工處理的子問題進 scoped review／真人轉接。
 - 同一句中已能安全回答的其他子問題仍須回答，不得被單一 handoff 覆蓋。
 - 任一流程不得沉默；若無法安全回答，必須有受控補問或安全退路。
+- handoff、review、Unknown、房況不可靠與房型無法解析的對客文案必須由 deterministic 安全邊界產生，不得由模型自由改寫。
+- 最終回覆不得包含無意義的標點／表情殘片，亦不得加入 Response Plan `allowedFacts` 以外的技術、身分、設備、政策或其他事實。
+- Controlled Composer 任一驗證失敗時必須完整退回 deterministic 回覆，不得把部分污染內容送至 LINE。
 
 ## Property 與安全隔離
 
