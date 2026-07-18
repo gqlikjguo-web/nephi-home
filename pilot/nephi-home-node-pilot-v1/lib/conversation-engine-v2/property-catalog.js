@@ -1,6 +1,6 @@
 "use strict";
 
-function clean(value, limit = 120) { return String(value || "").normalize("NFKC").replace(/\s+/g, " ").trim().slice(0, limit); }
+function clean(value, limit = 120) { return String(value || "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, limit); }
 function aliasesFor(property, id) { const map = property.semanticCatalog && property.semanticCatalog.aliases || {}; return Array.isArray(map[id]) ? map[id].map((x) => clean(x, 80)).filter(Boolean) : []; }
 
 function buildPropertyCatalog(property) {
@@ -19,9 +19,9 @@ function buildPropertyCatalog(property) {
   })) : (Array.isArray(confirmedEquipment) ? confirmedEquipment : []).map((name, index) => ({ canonicalId: `equipment_${index + 1}`, category: "amenity", publicName: clean(name, 80), aliases: [], status: "confirmed_yes", answer: "" }));
   const answers = property.commonAnswers || {};
   const policies = [
-    ["parking", "停車", "parkingRule", "amenity"], ["bbq", "烤肉", "bbqRule", "policy"], ["check_in", "入住", "checkInTime", "policy"], ["check_out", "退房", "checkOutTime", "policy"], ["payment", "付款", "paymentRule", "policy"], ["cancellation", "取消", "cancellationRule", "policy"]
+    ["parking", "停車", "parkingRule", "amenity"], ["bbq", "烤肉", "bbqRule", "policy"], ["check_in", "入住", "checkInTime", "policy"], ["check_out", "退房", "checkOutTime", "policy"], ["self_checkin", "自助入住", "selfCheckInRule", "policy"], ["payment", "付款", "paymentRule", "policy"], ["cancellation", "取消", "cancellationRule", "policy"]
   ].map(([id, name, key, category]) => ({ canonicalId: id, category, publicName: name, aliases: aliasesFor(property, id), status: answers[key] ? "confirmed_yes" : "unknown", answer: clean(answers[key], 800) }));
-  const faqs = (property.faqs || []).filter((item) => item && item.question && item.answer).map((item) => ({ canonicalId: clean(item.knowledgeId || item.id || item.knowledgeKey, 120), question: clean(item.question, 200), answer: clean(item.answer, 800), category: clean(item.knowledgeKey || "property_fact", 80) })).slice(0, 50);
+  const faqs = (property.faqs || []).filter((item) => item && item.question && item.answer).map((item) => { const canonicalId = clean(item.knowledgeId || item.id || item.knowledgeKey, 120); return { canonicalId, category: "amenity", publicName: clean(item.question, 200), aliases: aliasesFor(property, canonicalId), status: "confirmed_yes", answer: clean(item.answer, 800) }; }).slice(0, 50);
   return { propertyId: clean(property.propertyId), displayName: clean(property.displayName, 100), timezone: clean(property.timezone || "Asia/Taipei", 80), currency: clean(property.currency || "TWD", 10), rooms, amenities, policies, faqs };
 }
 

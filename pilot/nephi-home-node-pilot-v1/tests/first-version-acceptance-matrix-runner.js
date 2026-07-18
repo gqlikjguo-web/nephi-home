@@ -64,7 +64,7 @@ const properties = [
 const propertyById = new Map(properties.map((property) => [property.propertyId, property]));
 
 function availabilityTask(id, rawText, canonicalCandidate, queryMode = "any") {
-  return { taskId: id, type: queryMode === "bundle_only" ? "bundle_availability" : "availability", sourceText: rawText, requestedOutputs: ["availability"], dependsOnStayContext: true, entity: { category: "room", rawText, canonicalCandidate, confidence: 0.99 }, confidence: 0.99 };
+  return { taskId: id, type: queryMode === "bundle_only" ? "bundle_availability" : "availability", sourceText: rawText || "availability", requestedOutputs: ["availability"], dependsOnStayContext: true, entity: { category: "room", rawText, canonicalCandidate, confidence: 0.99 }, confidence: 0.99 };
 }
 function factTask(id, type, rawText, candidate) {
   return { taskId: id, type, sourceText: rawText, requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: type === "policy" ? "policy" : "amenity", rawText, canonicalCandidate: candidate, confidence: 0.99 }, confidence: 0.99 };
@@ -196,13 +196,15 @@ async function runCase(engine, item, index) {
   for (const { item, result } of outcomes) {
     assert.equal(result.claimValidation.ok, true, `${item.id}: reply claims must validate`);
     const availability = result.taskResults.find((task) => task.type === "availability" || task.type === "bundle_availability");
-    if (item.expectedStatus) assert.equal(availability && availability.status, item.expectedStatus, `${item.id}: deterministic boundary`);
+    const expectedTaskId = item.expectedTaskId || (item.tasks && item.tasks[0] && item.tasks[0].taskId);
+    const expectedTask = expectedTaskId ? result.taskResults.find((task) => task.taskId === expectedTaskId) : null;
+    if (item.expectedStatus) assert.equal(expectedTask && expectedTask.status, item.expectedStatus, `${item.id}: deterministic boundary`);
     if (item.result && item.result.reliable) {
       assert.equal(availability && availability.status, "answered", `${item.id}: reliable resolver answer`);
       assert.deepEqual((availability.facts.availableInventory || []).map((room) => room.canonicalId), item.result.roomIds, `${item.id}: resolver inventory`);
       assert.equal(availability.facts.propertyId, item.propertyId, `${item.id}: property-scoped facts`);
     }
-    for (const answer of item.answers || []) assert.ok(result.replyText.includes(answer), `${item.id}: response must contain property-backed fact`);
+    for (const answer of item.answers || []) { if (!result.replyText.includes(answer)) console.error(JSON.stringify({ id: item.id, taskResults: result.taskResults, replyText: result.replyText })); assert.ok(result.replyText.includes(answer), `${item.id}: response must contain property-backed fact`); }
     for (const excluded of item.excludes || []) assert.equal(result.replyText.includes(excluded), false, `${item.id}: must not leak another property fact`);
   }
 

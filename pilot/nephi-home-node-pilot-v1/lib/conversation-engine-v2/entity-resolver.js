@@ -1,10 +1,10 @@
 "use strict";
 
 function key(value) { return String(value || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""); }
-function allEntities(catalog) { return [...(catalog.rooms || []), ...(catalog.amenities || []), ...(catalog.policies || [])]; }
+function allEntities(catalog) { return [...(catalog.rooms || []), ...(catalog.amenities || []), ...(catalog.policies || []), ...(catalog.faqs || [])]; }
 function resolveEntity(catalog, candidate = {}) {
   const expected = candidate.category;
-  const entities = allEntities(catalog).filter((item) => expected === "room_feature" ? item.category === "room" : expected === "activity" ? item.category === "amenity" : item.category === expected);
+  const entities = allEntities(catalog).filter((item) => expected === "room" ? ["room", "bundle"].includes(item.category) : expected === "amenity" ? ["amenity", "policy"].includes(item.category) : expected === "room_feature" ? item.category === "room" : expected === "activity" ? item.category === "amenity" : item.category === expected);
   const canonical = key(candidate.canonicalCandidate);
   if (canonical) { const exact = entities.find((item) => key(item.canonicalId) === canonical); if (exact) return { status: "resolved", entity: exact }; }
   const raw = key(candidate.rawText);

@@ -391,6 +391,20 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     };
   }
 
+  function searchAvailableDates(query) {
+    const from = parseDateKey(query.dateFrom, "dateFrom"), to = parseDateKey(query.dateTo, "dateTo");
+    const nights = Number.isInteger(Number(query.nights)) && Number(query.nights) > 0 ? Number(query.nights) : 1;
+    const dates = [];
+    for (let checkIn = from; checkIn < to; checkIn = addDays(checkIn, 1)) {
+      const checkOut = addDays(checkIn, nights);
+      if (checkOut > to) break;
+      const result = searchAvailability({ customerId: query.customerId, checkIn, checkOut, guests: query.guests, roomType: query.roomType || "all", queryMode: query.queryMode || "any" });
+      if (!result.availabilityReliable) return { status: "unreliable", dates: [], source: "property_resolver" };
+      dates.push({ checkIn, checkOut, available: result.rooms.length > 0, roomTypes: result.rooms.map((room) => ({ roomTypeId: room.id, roomTypeName: publicRoomName(room) })) });
+    }
+    return { status: "answered", dates, source: "property_resolver" };
+  }
+
   function setDay(input) {
     const homestay = requireCustomerId(input.customerId);
     const date = parseDateKey(input.date, "date");
@@ -958,6 +972,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     getBootstrap,
     updateSettings,
     searchAvailability,
+    searchAvailableDates,
     getMonth,
     setDay,
     setDayNote,

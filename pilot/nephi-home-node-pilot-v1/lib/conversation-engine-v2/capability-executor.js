@@ -2,6 +2,7 @@
 
 const { resolveEntity } = require("./entity-resolver");
 const { addDays } = require("./temporal-resolver");
+const { resolveAvailability, resolveAvailableDates } = require("./resolver-adapter");
 
 function stayDates(checkIn, checkOut) { const dates = []; for (let d = checkIn; d && checkOut && d < checkOut && dates.length < 60; d = addDays(d, 1)) dates.push(d); return dates; }
 function publicInventory(item) { return { canonicalId: item.id, publicName: String(item.publicDisplayName || item.displayName || item.publicName || item.name || "房型").slice(0, 100), capacity: Number(item.capacity) || null, category: item.inventoryType === "bundle" ? "bundle" : "room" }; }
@@ -15,11 +16,7 @@ function selected(property, request, entities) {
 }
 function priceKey(date) { const day = new Date(`${date}T00:00:00Z`).getUTCDay(); return day === 5 ? "fridayPrice" : day === 6 ? "saturdayHolidayPrice" : day === 0 ? "sundayPrice" : "mondayThursdayPrice"; }
 
-function executeTasks({ property, catalog, tasks, request, availability, priceOverrides = [] }) {
-  const dates = stayDates(request.stay.checkIn, request.stay.checkOut);
-  const rows = dates.length && availability && typeof availability.getRows === "function" ? availability.getRows(property.propertyId, request.stay.checkIn, request.stay.checkOut) : [];
-  const byDate = Object.fromEntries(rows.map((row) => [row.date, row]));
-  const reliable = dates.length > 0 && dates.every((date) => byDate[date]);
+function executeTasks({ property, catalog, tasks, request, availabilityResolver, availableDatesResolver, priceOverrides = [] }) {
   return tasks.map((task) => {
     try {
     const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : null;
@@ -34,21 +31,18 @@ function executeTasks({ property, catalog, tasks, request, availability, priceOv
     if (task.type === "available_dates") {
       const range = request.stay.searchRange;
       if (!range || !range.from || !range.to) return { taskId: task.taskId, type: task.type, status: "needs_clarification", question: "想查哪一段日期呢？", facts: {}, missingInputs: ["stay.searchRange"] };
-      const rangeRows = availability.getRows(property.propertyId, range.from, range.to);
-      if (resolved && resolved.status === "not_found") return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "inventory_entity_unknown", facts: { subject: task.entity.rawText }, review: true };
-      const entities = resolved && resolved.status === "resolved" ? [resolved.entity] : resolved && resolved.status === "matched_set" ? resolved.entities : [];
-      const candidates = selected(property, request, entities);
-      const availableDates = rangeRows.filter((row) => candidates.some((room) => row[room.id] === "available")).map((row) => row.date);
-      return { taskId: task.taskId, type: task.type, status: "answered", facts: { availableDates, range, source: "availability_provider", propertyId: property.propertyId } };
+      if (resolved && resolved.status === "not_found" && task.entity && task.entity.rawText) return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "inventory_entity_unknown", facts: { subject: task.entity.rawText }, review: true };
+      const result = resolveAvailableDates({ availableDatesResolver, propertyId: property.propertyId, request, resolved });
+      if (result.status !== "answered") return { taskId: task.taskId, type: task.type, status: "needs_human", reason: `available_dates_${result.status}`, facts: {}, review: true };
+      return { taskId: task.taskId, type: task.type, status: "answered", facts: { availableDates: result.dates.filter((item) => item.available).map((item) => item.checkIn), range, source: result.source, propertyId: property.propertyId } };
     }
     if (["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type)) {
       if (!request.stay.checkIn || !request.stay.checkOut) return { taskId: task.taskId, type: task.type, status: "needs_clarification", question: "想查哪一天入住、住幾晚呢？", facts: {}, missingInputs: [!request.stay.checkIn ? "stay.checkIn" : "stay.checkOut"] };
-      if (!reliable) return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "availability_unreliable", facts: {}, review: true };
-      if (resolved && resolved.status === "not_found") return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "inventory_entity_unknown", facts: { subject: task.entity.rawText }, review: true };
-      const entities = resolved && resolved.status === "resolved" ? [resolved.entity] : resolved && resolved.status === "matched_set" ? resolved.entities : [];
-      const candidates = selected(property, request, entities).filter((room) => dates.every((date) => byDate[date] && byDate[date][room.id] === "available"));
-      const availableInventory = candidates.map(publicInventory);
-      if (["availability", "bundle_availability", "room_options", "capacity"].includes(task.type)) return { taskId: task.taskId, type: task.type, status: "answered", facts: { checkIn: request.stay.checkIn, checkOut: request.stay.checkOut, availableInventory, availability: availableInventory.length ? "available" : "full", source: "availability_provider", propertyId: property.propertyId } };
+      if (resolved && resolved.status === "not_found" && task.entity && task.entity.rawText) return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "inventory_entity_unknown", facts: { subject: task.entity.rawText }, review: true };
+      const adapted = resolveAvailability({ availabilityResolver, propertyId: property.propertyId, request, resolved });
+      if (!adapted.result.availabilityReliable) return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "availability_unreliable", facts: {}, review: true };
+      if (["availability", "bundle_availability", "room_options", "capacity"].includes(task.type)) return { taskId: task.taskId, type: task.type, status: "answered", facts: adapted.facts };
+      const availableInventory = adapted.facts.availableInventory;
       if (!availableInventory.length) return { taskId: task.taskId, type: task.type, status: "answered", facts: { availability: "full", checkIn: request.stay.checkIn, checkOut: request.stay.checkOut, prices: [], source: "availability_provider", propertyId: property.propertyId } };
       const prices = [];
       for (const room of candidates) {

@@ -44,8 +44,8 @@ function normalizedPlannerStay(plannerOutput) {
 const SAFE_FALLBACK = "這次有部分內容無法安全確認，我會請業者協助；您剛才的問題已經記錄。";
 
 class ConversationEngineV2 {
-  constructor({ planner, composer, persistence, getProperty, availability, listPriceOverrides, now = () => new Date(), onDiagnostic }) {
-    this.planner = planner; this.composer = composer; this.persistence = persistence; this.getProperty = getProperty; this.availability = availability; this.listPriceOverrides = listPriceOverrides || (() => []); this.now = now; this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null;
+  constructor({ planner, composer, persistence, getProperty, availabilityResolver, availableDatesResolver, listPriceOverrides, now = () => new Date(), onDiagnostic }) {
+    this.planner = planner; this.composer = composer; this.persistence = persistence; this.getProperty = getProperty; this.availabilityResolver = availabilityResolver; this.availableDatesResolver = availableDatesResolver; this.listPriceOverrides = listPriceOverrides || (() => []); this.now = now; this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null;
   }
 
   trace(traceId, stage, details) { if (this.onDiagnostic) this.onDiagnostic({ traceId, stage, ...details }); }
@@ -100,7 +100,7 @@ class ConversationEngineV2 {
     this.trace(traceId, "state", { discourse: plannerOutput.discourse, operations: operations.map((item) => ({ field: item.field, operation: item.operation })), conditions: state.conditions });
     this.persistence.setConversationState(input.customerId, input.channelId, input.lineUserId, state);
     this.trace(traceId, "entity_resolution", { tasks: plannerOutput.tasks.map((task) => { const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : { status: "not_requested" }; return { taskId: task.taskId, status: resolved.status, canonicalId: resolved.entity && resolved.entity.canonicalId || null, candidateCount: resolved.candidates && resolved.candidates.length || 0 }; }) });
-    let taskResults = executeTasks({ property, catalog, tasks: plannerOutput.tasks, request: state.conditions, availability: this.availability, priceOverrides: this.listPriceOverrides(input.customerId) });
+    let taskResults = executeTasks({ property, catalog, tasks: plannerOutput.tasks, request: state.conditions, availabilityResolver: this.availabilityResolver, availableDatesResolver: this.availableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) });
     const inputTaskIds = plannerOutput.tasks.map((task) => task.taskId);
     let executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     if (!executorCoverage.ok) {

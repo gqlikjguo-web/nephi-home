@@ -59,7 +59,7 @@ const unknownRoomResult = executeTasks({
   catalog: buildPropertyCatalog(groupedProperty),
   tasks: [{ taskId: "unknown-room", type: "availability", entity: { category: "room", rawText: "Unconfigured room class", canonicalCandidate: null } }],
   request: { stay: { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: null }, inventory: { mode: "room_only", entityId: null, features: [] } },
-  availability: { getRows: () => [{ date: "2026-08-06", g1: "closed", g2: "closed" }] }
+  availabilityResolver: () => ({ customerId: "property_alpha", checkIn: "2026-08-06", checkOut: "2026-08-07", availabilityReliable: true, rooms: [] })
 })[0];
 assert.equal(unknownRoomResult.status, "needs_human");
 assert.notEqual(unknownRoomResult.facts.availability, "full");
@@ -112,21 +112,24 @@ assert.equal(state.conditions.stay.guests, 4);
 state = reduceConversationState(state, plan({ stateOperations: [{ field: "inventory.features", operation: "clear", value: null, sourceText: "不用浴缸" }] }), { propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", eventId: "e3", now: "2026-07-17T02:02:00.000Z" });
 assert.deepEqual(state.conditions.inventory.features, []);
 
-const availability = { getRows: () => [
-  { date: "2026-08-06", r1: "available", r2: "available", b1: "available" },
-  { date: "2026-08-07", r1: "available", r2: "closed", b1: "closed" }
-] };
+const availabilityResolver = (query) => ({ ...query, availabilityReliable: true, rooms: property.rooms.filter((room) => room.id === "r1") });
 const taskResults = executeTasks({
   property, catalog, tasks: [
     plan().tasks[0],
     { taskId: "t2", type: "amenity", sourceText: "有KTV嗎", requestedOutputs: ["amenity"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "KTV", canonicalCandidate: "ktv", confidence: 0.95 }, confidence: 0.95 }
   ],
   request: { stay: { checkIn: "2026-08-06", checkOut: "2026-08-08", nights: 2, guests: 2 }, inventory: { mode: "room_only", entityId: "r1", features: [] } },
-  availability, priceOverrides: [{ roomId: "r1", date: "2026-08-06", price: 2500, currency: "TWD" }]
+  availabilityResolver, priceOverrides: [{ roomId: "r1", date: "2026-08-06", price: 2500, currency: "TWD" }]
 });
 assert.equal(taskResults[0].status, "answered");
 assert.equal(taskResults[0].facts.availableInventory[0].canonicalId, "r1");
 assert.equal(taskResults[1].facts.status, "confirmed_no");
+
+const availableDateCalls = [];
+const availableDateResult = executeTasks({ property, catalog, tasks: [{ taskId: "dates", type: "available_dates", sourceText: "哪幾天有房", requestedOutputs: ["availability"], dependsOnStayContext: true, entity: { category: "room", rawText: "", canonicalCandidate: null, confidence: 0.9 }, confidence: 0.9 }], request: { stay: { checkIn: null, checkOut: null, nights: 1, guests: 2, searchRange: { from: "2026-08-06", to: "2026-08-08" } }, inventory: { mode: "any", entityId: null, features: [] } }, availableDatesResolver: (query) => { availableDateCalls.push(query); return { status: "answered", dates: [{ checkIn: "2026-08-06", checkOut: "2026-08-07", available: true, roomTypes: [{ roomTypeId: "r1", roomTypeName: "森林雙人房" }] }], source: "property_resolver" }; } })[0];
+assert.equal(availableDateResult.status, "answered");
+assert.deepEqual(availableDateResult.facts.availableDates, ["2026-08-06"]);
+assert.deepEqual(availableDateCalls, [{ customerId: "property_alpha", dateFrom: "2026-08-06", dateTo: "2026-08-08", nights: 1, guests: 2, roomType: "all", queryMode: "any" }]);
 
 const responsePlan = buildResponsePlan({ propertyId: "property_alpha", taskResults, reviewActions: [] });
 const reply = composeControlledReply(responsePlan);
