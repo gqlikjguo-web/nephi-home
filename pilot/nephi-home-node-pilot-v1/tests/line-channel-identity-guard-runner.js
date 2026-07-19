@@ -33,6 +33,15 @@ function configuration(overrides = {}) {
   };
 }
 
+function productionConfiguration(overrides = {}) {
+  return configuration({
+    environment: "production",
+    webhookRoute: PRODUCTION_ROUTE,
+    actualWebhookRoute: PRODUCTION_ROUTE,
+    ...overrides
+  });
+}
+
 async function postWebhook(url, destination, events = []) {
   const rawBody = JSON.stringify({ destination, events });
   const signature = crypto.createHmac("sha256", TEST_SECRET).update(rawBody).digest("base64");
@@ -53,6 +62,29 @@ function rejects(code, input) {
 }
 
 async function main() {
+  const minimalTestOnlyIdentity = validateLineChannelConfiguration({
+    environment: "test-only",
+    webhookRoute: TEST_ROUTE,
+    actualWebhookRoute: TEST_ROUTE,
+    channelSecret: TEST_SECRET,
+    channelAccessToken: "test-channel-access-token"
+  });
+  assert.deepEqual(minimalTestOnlyIdentity, {
+    environment: "test-only",
+    channelId: "",
+    destinationId: "",
+    webhookRoute: TEST_ROUTE
+  });
+  const staleTestOnlyIdentity = validateLineChannelConfiguration({
+    environment: "test-only",
+    webhookRoute: TEST_ROUTE,
+    actualWebhookRoute: TEST_ROUTE,
+    channelSecret: TEST_SECRET,
+    channelSecretSha256: "0".repeat(64),
+    channelAccessToken: "test-channel-access-token"
+  });
+  assert.deepEqual(staleTestOnlyIdentity, minimalTestOnlyIdentity);
+
   rejects("LINE_ENVIRONMENT_ROUTE_MISMATCH", configuration({
     environment: "production",
     channelId: "production-channel-id"
@@ -63,7 +95,7 @@ async function main() {
     actualWebhookRoute: PRODUCTION_ROUTE
   }));
 
-  rejects("LINE_CHANNEL_SECRET_IDENTITY_MISMATCH", configuration({
+  rejects("LINE_CHANNEL_SECRET_IDENTITY_MISMATCH", productionConfiguration({
     channelSecret: "different-secret"
   }));
 
@@ -86,10 +118,10 @@ async function main() {
     "numeric Channel ID must not be accepted as webhook destination identity"
   );
 
-  rejects("LINE_CHANNEL_IDENTITY_INCOMPLETE", configuration({ channelId: "" }));
-  rejects("LINE_CHANNEL_IDENTITY_INCOMPLETE", configuration({ destinationId: "" }));
-  rejects("LINE_DESTINATION_ID_INVALID", configuration({ destinationId: TEST_CHANNEL_ID }));
-  rejects("LINE_CHANNEL_IDENTITY_INCOMPLETE", configuration({ channelSecretSha256: "" }));
+  rejects("LINE_CHANNEL_IDENTITY_INCOMPLETE", productionConfiguration({ channelId: "" }));
+  rejects("LINE_CHANNEL_IDENTITY_INCOMPLETE", productionConfiguration({ destinationId: "" }));
+  rejects("LINE_DESTINATION_ID_INVALID", productionConfiguration({ destinationId: TEST_CHANNEL_ID }));
+  rejects("LINE_CHANNEL_IDENTITY_INCOMPLETE", productionConfiguration({ channelSecretSha256: "" }));
   assert.throws(
     () => validateLineChannelConfiguration(configuration({ environment: "" })),
     (error) => error && error.code === "LINE_CHANNEL_IDENTITY_INCOMPLETE" &&

@@ -29,13 +29,13 @@ function validateLineChannelConfiguration(input = {}) {
 
   const invalidFields = [
     !["production", "test-only"].includes(environment) && "environment",
-    !channelId && "channelId",
-    !destinationId && "destinationId",
     !webhookRoute && "webhookRoute",
     !actualWebhookRoute && "actualWebhookRoute",
     !channelSecret && "channelSecret",
     !channelAccessToken && "channelAccessToken",
-    !/^[a-f0-9]{64}$/.test(channelSecretSha256) && "channelSecretSha256"
+    environment === "production" && !channelId && "channelId",
+    environment === "production" && !destinationId && "destinationId",
+    environment === "production" && !/^[a-f0-9]{64}$/.test(channelSecretSha256) && "channelSecretSha256"
   ].filter(Boolean);
   if (invalidFields.length) {
     throw fatal(
@@ -45,7 +45,7 @@ function validateLineChannelConfiguration(input = {}) {
       { invalidFields }
     );
   }
-  if (!/^U[0-9a-f]{32}$/i.test(destinationId)) {
+  if (destinationId && !/^U[0-9a-f]{32}$/i.test(destinationId)) {
     throw fatal("LINE_DESTINATION_ID_INVALID", "LINE webhook destination identity must be a Bot User ID");
   }
   if (webhookRoute !== actualWebhookRoute) {
@@ -57,7 +57,7 @@ function validateLineChannelConfiguration(input = {}) {
   }
 
   const actualSecretSha256 = crypto.createHash("sha256").update(channelSecret).digest("hex");
-  if (!crypto.timingSafeEqual(Buffer.from(actualSecretSha256), Buffer.from(channelSecretSha256))) {
+  if (environment === "production" && channelSecretSha256 && !crypto.timingSafeEqual(Buffer.from(actualSecretSha256), Buffer.from(channelSecretSha256))) {
     throw fatal("LINE_CHANNEL_SECRET_IDENTITY_MISMATCH", "LINE channel secret does not match its configured identity");
   }
 
@@ -66,7 +66,7 @@ function validateLineChannelConfiguration(input = {}) {
 
 function validateLineWebhookDestination(identity, destination) {
   const actualDestinationId = String(destination || "").trim();
-  if (!identity || !actualDestinationId || actualDestinationId !== identity.destinationId) {
+  if (!identity || (identity.destinationId && (!actualDestinationId || actualDestinationId !== identity.destinationId))) {
     throw fatal("LINE_CHANNEL_IDENTITY_MISMATCH", "LINE webhook destination does not match the configured channel identity");
   }
 }
