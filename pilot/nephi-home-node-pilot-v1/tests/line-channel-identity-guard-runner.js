@@ -108,7 +108,7 @@ async function main() {
     lineChannelSecret: TEST_SECRET,
     lineChannelAccessToken: "test-channel-access-token",
     conversationDebounceMs: 5,
-    lineReplyFetch: async () => ({ ok: true, status: 200, text: async () => "{}" }),
+    lineReplyFetch: async () => ({ ok: false, status: 400, text: async () => "{}" }),
     lineChannelIdentityGuardRequired: true
   };
   const invalidApp = createApp({
@@ -141,6 +141,8 @@ async function main() {
   assert.equal(accepted.body.data.accepted, true);
   assert.ok(validApp.providers.persistence.findMessageByEventId("demo_homestay_a", eventId), "webhook should enter the coordinator after guard validation");
   await new Promise((resolve) => setTimeout(resolve, 100));
+  const failedReply = validApp.providers.persistence.findMessageByEventId("demo_homestay_a", eventId);
+  assert.equal(failedReply.deliveryErrorCode, "line_reply_http_error_400");
   await validApp.stop();
   fs.rmSync(temp, { recursive: true, force: true });
 
