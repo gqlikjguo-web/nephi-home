@@ -627,6 +627,7 @@ function createApp(options = {}) {
           await updateEventStatus(id, channelId, eventId, {
             processingStatus: "reply_failed",
             deliveryErrorCode: `line_reply_http_error_${reply.status}`,
+            deliveryErrorDetail: String(reply.responseText || "").slice(0, 500),
             replyDelivered: false,
             needsReview: true,
             status: "pending",
