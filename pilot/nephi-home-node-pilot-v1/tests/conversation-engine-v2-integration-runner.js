@@ -203,6 +203,29 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   assert.equal(pastExplicitDate.state.conditions.stay.checkOut, null);
   assert.equal(pastExplicitDate.taskResults[0].status, "needs_clarification");
 
+  const conditionStateUser = "condition-state-matrix";
+  const initialConditions = await runTemporal("two guests two nights bathtub", temporalPlanner({
+    message: "two guests two nights bathtub",
+    operations: [
+      { field: "stay.nightsCandidate", operation: "set", value: 2, sourceText: "two nights" },
+      { field: "stay.guestCountCandidate", operation: "set", value: 2, sourceText: "two guests" },
+      { field: "inventory.features", operation: "set", value: ["bathtub"], sourceText: "bathtub" }
+    ], nightsCandidate: 2, guestCountCandidate: 2
+  }), conditionStateUser);
+  assert.deepEqual(initialConditions.state.conditions.stay, { checkIn: null, checkOut: null, nights: 2, guests: 2, searchRange: null });
+  const replacedGuests = await runTemporal("change to four guests", temporalPlanner({
+    message: "change to four guests", operations: [{ field: "stay.guestCountCandidate", operation: "replace", value: 4, sourceText: "four guests" }], guestCountCandidate: 4
+  }), conditionStateUser);
+  assert.equal(replacedGuests.state.conditions.stay.guests, 4);
+  assert.equal(replacedGuests.state.conditions.stay.nights, 2);
+  assert.deepEqual(replacedGuests.state.conditions.inventory.features, ["bathtub"]);
+  const clearedFeature = await runTemporal("no bathtub needed", temporalPlanner({
+    message: "no bathtub needed", operations: [{ field: "inventory.features", operation: "clear", value: null, sourceText: "no bathtub" }]
+  }), conditionStateUser);
+  assert.equal(clearedFeature.state.conditions.stay.guests, 4);
+  assert.equal(clearedFeature.state.conditions.stay.nights, 2);
+  assert.deepEqual(clearedFeature.state.conditions.inventory.features, []);
+
   const crossYearTimestamp = Date.parse("2026-12-20T10:00:00+08:00");
   const crossYear = await runTemporal("1/5 有雙人房嗎？", temporalPlanner({ message: "1/5 有雙人房嗎？", operations: dateOperations("1/5") }), "date-cross-year", crossYearTimestamp);
   assert.equal(crossYear.state.conditions.stay.checkIn, "2027-01-05");
