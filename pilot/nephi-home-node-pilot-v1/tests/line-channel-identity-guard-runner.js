@@ -90,6 +90,12 @@ async function main() {
   rejects("LINE_CHANNEL_IDENTITY_INCOMPLETE", configuration({ destinationId: "" }));
   rejects("LINE_DESTINATION_ID_INVALID", configuration({ destinationId: TEST_CHANNEL_ID }));
   rejects("LINE_CHANNEL_IDENTITY_INCOMPLETE", configuration({ channelSecretSha256: "" }));
+  assert.throws(
+    () => validateLineChannelConfiguration(configuration({ environment: "" })),
+    (error) => error && error.code === "LINE_CHANNEL_IDENTITY_INCOMPLETE" &&
+      Array.isArray(error.invalidFields) && error.invalidFields.includes("environment"),
+    "incomplete configuration must name the invalid non-secret field without exposing values"
+  );
 
   assert.equal(runtimeConfig({ NEPHI_PILOT_LINE_DESTINATION_ID: TEST_DESTINATION_ID }).lineDestinationId, TEST_DESTINATION_ID);
 

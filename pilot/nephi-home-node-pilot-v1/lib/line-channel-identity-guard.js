@@ -4,11 +4,12 @@ const crypto = require("node:crypto");
 
 const TEST_ROUTE_PREFIX = "/api/test-line/";
 
-function fatal(code, message, status = 400) {
+function fatal(code, message, status = 400, details = {}) {
   const error = new Error(message);
   error.code = code;
   error.fatal = true;
   error.status = status;
+  Object.assign(error, details);
   return error;
 }
 
@@ -26,9 +27,18 @@ function validateLineChannelConfiguration(input = {}) {
   const channelSecretSha256 = String(input.channelSecretSha256 || "").trim().toLowerCase();
   const channelAccessToken = String(input.channelAccessToken || "");
 
-  if (!["production", "test-only"].includes(environment) || !channelId || !destinationId || !webhookRoute ||
-      !actualWebhookRoute || !channelSecret || !channelAccessToken || !/^[a-f0-9]{64}$/.test(channelSecretSha256)) {
-    throw fatal("LINE_CHANNEL_IDENTITY_INCOMPLETE", "LINE channel identity configuration is incomplete");
+  const invalidFields = [
+    !["production", "test-only"].includes(environment) && "environment",
+    !channelId && "channelId",
+    !destinationId && "destinationId",
+    !webhookRoute && "webhookRoute",
+    !actualWebhookRoute && "actualWebhookRoute",
+    !channelSecret && "channelSecret",
+    !channelAccessToken && "channelAccessToken",
+    !/^[a-f0-9]{64}$/.test(channelSecretSha256) && "channelSecretSha256"
+  ].filter(Boolean);
+  if (invalidFields.length) {
+    throw fatal("LINE_CHANNEL_IDENTITY_INCOMPLETE", "LINE channel identity configuration is incomplete", 400, { invalidFields });
   }
   if (!/^U[0-9a-f]{32}$/i.test(destinationId)) {
     throw fatal("LINE_DESTINATION_ID_INVALID", "LINE webhook destination identity must be a Bot User ID");
