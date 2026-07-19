@@ -93,7 +93,8 @@ async function main() {
   assert.throws(
     () => validateLineChannelConfiguration(configuration({ environment: "" })),
     (error) => error && error.code === "LINE_CHANNEL_IDENTITY_INCOMPLETE" &&
-      Array.isArray(error.invalidFields) && error.invalidFields.includes("environment"),
+      Array.isArray(error.invalidFields) && error.invalidFields.includes("environment") &&
+      error.message.includes("environment"),
     "incomplete configuration must name the invalid non-secret field without exposing values"
   );
 

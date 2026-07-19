@@ -38,7 +38,12 @@ function validateLineChannelConfiguration(input = {}) {
     !/^[a-f0-9]{64}$/.test(channelSecretSha256) && "channelSecretSha256"
   ].filter(Boolean);
   if (invalidFields.length) {
-    throw fatal("LINE_CHANNEL_IDENTITY_INCOMPLETE", "LINE channel identity configuration is incomplete", 400, { invalidFields });
+    throw fatal(
+      "LINE_CHANNEL_IDENTITY_INCOMPLETE",
+      `LINE channel identity configuration is incomplete: ${invalidFields.join(", ")}`,
+      400,
+      { invalidFields }
+    );
   }
   if (!/^U[0-9a-f]{32}$/i.test(destinationId)) {
     throw fatal("LINE_DESTINATION_ID_INVALID", "LINE webhook destination identity must be a Bot User ID");
