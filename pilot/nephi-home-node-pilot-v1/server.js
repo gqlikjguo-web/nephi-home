@@ -14,7 +14,7 @@ const { ConversationEngineV2 } = require("./lib/conversation-engine-v2/engine");
 const { ConversationEngineV2Coordinator } = require("./lib/conversation-engine-v2/coordinator");
 const { createMvpService, AppError } = require("./lib/mvp-service");
 const { ConversationCoordinator } = require("./lib/conversation-coordinator");
-const { verifyLineSignature, replyToTestLine } = require("./lib/test-line-webhook");
+const { verifyLineSignature, replyToTestLine, pushToTestLine } = require("./lib/test-line-webhook");
 const {
   validateLineChannelConfiguration,
   validateLineWebhookDestination
@@ -624,6 +624,13 @@ function createApp(options = {}) {
         logTestLineDiagnostic("reply_api_result", { status: reply.status, ok: reply.ok });
         if (config.testOnlyConversationTraceV2 && result.traceId) console.log(JSON.stringify({ scope: "conversation-engine-v2", traceId: result.traceId, stage: "line_reply", delivered: Boolean(reply.ok), coveredTaskIds: result.claimValidation && result.claimValidation.coveredTaskIds || [], missingTaskIds: result.claimValidation && result.claimValidation.missingTaskIds || [] }));
         if (!reply.ok) {
+          if (event.source && event.source.userId) {
+            const pushed = await pushToTestLine(event.source.userId, result.replyText, lineChannelAccessToken, lineReplyFetch);
+            if (pushed.ok) {
+              await updateEventStatus(id, channelId, eventId, { processingStatus: "reply_succeeded", deliveryErrorCode: "", replyDelivered: true, deliveryFallback: "push" });
+              return;
+            }
+          }
           await updateEventStatus(id, channelId, eventId, {
             processingStatus: "reply_failed",
             deliveryErrorCode: `line_reply_http_error_${reply.status}`,
