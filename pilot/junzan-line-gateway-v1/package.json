@@ -1,0 +1,15 @@
+{
+  "name": "junzan-line-gateway-v1",
+  "private": true,
+  "version": "1.0.0",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "node --check gateway.js && node --check index.js",
+    "start": "node index.js",
+    "test": "node gateway.test.js"
+  },
+  "dependencies": {
+    "@line/bot-sdk": "^11.2.0",
+    "pg": "^8.16.3"
+  }
+}

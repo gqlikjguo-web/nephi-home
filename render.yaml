@@ -42,3 +42,28 @@ services:
         sync: false
       - key: NEPHI_PILOT_LINE_CHANNEL_ACCESS_TOKEN
         sync: false
+
+  - type: web
+    name: nephi-home-junzan-line-gateway-test
+    runtime: node
+    branch: test-only/node-pilot-integration
+    rootDir: pilot/junzan-line-gateway-v1
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: PROPERTY_ID
+        value: nephi_home
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_TEST_API_KEY
+        sync: false
+      - key: OPENAI_TEST_MODEL
+        sync: false

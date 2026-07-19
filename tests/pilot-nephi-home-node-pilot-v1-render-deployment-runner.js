@@ -13,7 +13,7 @@ const secretNames = [
   "RESEND_API_KEY"
 ];
 
-assert.equal((yaml.match(/^\s*- type: web\s*$/gm) || []).length, 1);
+assert.equal((yaml.match(/^\s*- type: web\s*$/gm) || []).length, 2);
 assert.equal((yaml.match(/^\s*- name: nephi-home-node-pilot-db\s*$/gm) || []).length, 1);
 assert.equal((yaml.match(/^\s*region: singapore\s*$/gm) || []).length, 2);
 assert.match(yaml, /databases:[\s\S]*?plan:\s*basic-256mb[\s\S]*?diskSizeGB:\s*1/);
@@ -29,6 +29,8 @@ assert.doesNotMatch(yaml, /key:\s*NEPHI_PILOT_PORT/);
 assert.equal(runtimeConfig({ PORT: "10000" }).port, 10000);
 assert.equal(runtimeConfig({ PORT: "10000" }).host, "0.0.0.0");
 for (const name of secretNames) assert.match(yaml, new RegExp(`key:\\s*${name}\\s*\\n\\s*sync:\\s*false`));
-assert.equal((yaml.match(/sync:\s*false/g) || []).length, 5);
+assert.match(yaml, /name:\s*nephi-home-junzan-line-gateway-test[\s\S]*?rootDir:\s*pilot\/junzan-line-gateway-v1[\s\S]*?buildCommand:\s*npm ci[\s\S]*?startCommand:\s*npm start[\s\S]*?healthCheckPath:\s*\/health[\s\S]*?autoDeploy:\s*true/);
+for (const name of ["LINE_CHANNEL_SECRET", "LINE_CHANNEL_ACCESS_TOKEN", "DATABASE_URL", "OPENAI_TEST_API_KEY", "OPENAI_TEST_MODEL"]) assert.match(yaml, new RegExp(`name:\\s*nephi-home-junzan-line-gateway-test[\\s\\S]*?key:\\s*${name}\\s*\\n\\s*sync:\\s*false`));
+assert.equal((yaml.match(/sync:\s*false/g) || []).length, 10);
 assert.doesNotMatch(yaml, /sk-[A-Za-z0-9_-]+|Bearer\s+\S+/i);
-console.log(JSON.stringify({ caseCount: 24, passCount: 24, failCount: 0 }));
+console.log(JSON.stringify({ caseCount: 31, passCount: 31, failCount: 0 }));
