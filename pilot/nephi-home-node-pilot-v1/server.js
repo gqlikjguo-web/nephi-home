@@ -1,6 +1,7 @@
 "use strict";
 
 const http = require("http");
+const { messagingApi, validateSignature } = require("@line/bot-sdk");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -34,6 +35,7 @@ const { renderPublicHtml } = require("./lib/public-brand-html");
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const TEST_LINE_WEBHOOK_ROUTE = "/api/test-line/webhook";
+const JUNZAN_TEST_LINE_WEBHOOK_ROUTE = "/api/junzan-test-line/webhook";
 
 function sendJson(response, status, payload, headers = {}) {
   response.writeHead(status, {
@@ -188,6 +190,7 @@ function createRequestHandler(service, options = {}) {
   const testLineSecret = String(options.testLineSecret || "");
   const resolveTestLineRequest = options.resolveTestLineRequest || ((input) => service.resolveTestLine(input));
   const lineWebhookHandler = options.lineWebhookHandler;
+  const junzanTestLineGateway = options.junzanTestLineGateway;
   const persistence = options.persistence;
   const customerSettings = options.customerSettings;
   const onboarding = options.onboarding;
@@ -210,6 +213,10 @@ function createRequestHandler(service, options = {}) {
           customerId: url.searchParams.get("customerId")
         });
         return sendData(response, result);
+      }
+      if (request.method === "POST" && pathname === JUNZAN_TEST_LINE_WEBHOOK_ROUTE) {
+        if (!junzanTestLineGateway) throw new AppError(503, "JUNZAN_TEST_LINE_GATEWAY_NOT_CONFIGURED", "JunZan test-only LINE gateway is not configured");
+        return sendData(response, await junzanTestLineGateway({ rawBody: await readRawBody(request), signature: request.headers["x-line-signature"], customerId: url.searchParams.get("customerId") }));
       }
       if (request.method === "POST" && pathname === "/api/test-line/resolve") {
         if (!testLineSecret) throw new AppError(503, "TEST_LINE_BRIDGE_NOT_CONFIGURED", "Test-only LINE bridge is not configured");
@@ -670,7 +677,37 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { testLineSecret, resolveTestLineRequest, lineWebhookHandler, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
+  const junzanTestLineGateway = async ({ rawBody, signature, customerId }) => {
+    if (!lineChannelSecret || !lineChannelAccessToken) throw new AppError(503, "JUNZAN_TEST_LINE_GATEWAY_NOT_CONFIGURED", "JunZan test-only LINE gateway is not configured");
+    if (!validateSignature(rawBody, lineChannelSecret, String(signature || ""))) throw new AppError(401, "INVALID_LINE_SIGNATURE", "Invalid LINE signature");
+    let payload;
+    try { payload = JSON.parse(rawBody.toString("utf8")); } catch { throw new AppError(400, "INVALID_JSON", "Request body must be valid JSON"); }
+    const id = String(customerId || "").trim();
+    if (!id) throw new AppError(400, "MISSING_CUSTOMER_ID", "customerId is required");
+    if (!providers.customerSettings.getProperty(id)) throw new AppError(404, "UNKNOWN_CUSTOMER_ID", "Unknown Pilot customerId");
+    const channelId = String(payload.destination || "").trim();
+    const textEvents = (payload.events || []).filter((event) => event && event.type === "message" && event.message && event.message.type === "text");
+    for (const event of textEvents) {
+      const eventId = String(event.webhookEventId || event.message.id || "");
+      const eventInput = { customerId: id, channelId, lineUserId: event.source && event.source.userId || "", eventId, eventTimestamp: event.timestamp || "", replyToken: event.replyToken || "", messageText: event.message.text || "" };
+      const claimed = await claimEvent(eventInput);
+      if (!claimed.claimed) continue;
+      lineWebhookCoordinator.enqueue(eventInput).then(async (result) => {
+        if (!result.shouldReply || !result.replyText || !result.replyToken) return updateEventStatus(id, channelId, eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true });
+        let reply;
+        try {
+          const client = lineReplyClientFactory ? lineReplyClientFactory({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken });
+          reply = await client.replyMessageWithHttpInfo({ replyToken: result.replyToken, messages: [{ type: "text", text: result.replyText }] });
+        } catch (error) {
+          const status = Number(error && (error.status || error.statusCode));
+          return updateEventStatus(id, channelId, eventId, { processingStatus: "reply_failed", deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception", replyDelivered: false, needsReview: true, status: "pending", reviewNote: "LINE 回覆傳送失敗，請人工確認是否需要聯絡客人。" });
+        }
+        await updateEventStatus(id, channelId, eventId, { processingStatus: "reply_succeeded", deliveryErrorCode: "", replyDelivered: true });
+      }).catch(async () => updateEventStatus(id, channelId, eventId, { processingStatus: "processing_failed", deliveryErrorCode: "message_processing_exception", needsReview: true, status: "pending", reviewNote: "訊息處理失敗，請人工確認。" }));
+    }
+    return { accepted: true };
+  };
+  const server = http.createServer(createRequestHandler(service, { testLineSecret, resolveTestLineRequest, lineWebhookHandler, junzanTestLineGateway, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
 
   return {
     providers,
