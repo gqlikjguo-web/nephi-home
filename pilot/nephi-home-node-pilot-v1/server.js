@@ -14,7 +14,7 @@ const { ConversationEngineV2 } = require("./lib/conversation-engine-v2/engine");
 const { ConversationEngineV2Coordinator } = require("./lib/conversation-engine-v2/coordinator");
 const { createMvpService, AppError } = require("./lib/mvp-service");
 const { ConversationCoordinator } = require("./lib/conversation-coordinator");
-const { verifyLineSignature, replyToTestLine, pushToTestLine } = require("./lib/test-line-webhook");
+const { verifyTestLineSignature, createFetchBackedLineClientFactory, replyToTestLine, pushToTestLine } = require("./lib/test-line-webhook");
 const {
   validateLineChannelConfiguration,
   validateLineWebhookDestination
@@ -477,7 +477,7 @@ function createApp(options = {}) {
     channelSecretSha256: config.lineChannelSecretSha256
   };
   let validatedLineChannelIdentity = null;
-  const lineReplyFetch = options.lineReplyFetch || fetch;
+  const lineReplyClientFactory = options.lineReplyClientFactory || (options.lineReplyFetch && createFetchBackedLineClientFactory(options.lineReplyFetch));
   const providers = options.providers || createProviders({ databaseUrl: config.databaseUrl, dataFile, seedFile, now });
   const adminAuthRequired = Object.hasOwn(options, "adminAuthRequired") ? Boolean(options.adminAuthRequired) : providers.kind === "postgres";
   const service = createMvpService(providers, { now });
@@ -566,7 +566,7 @@ function createApp(options = {}) {
       logTestLineDiagnostic("configuration_missing", { hasChannelSecret: Boolean(lineChannelSecret), hasChannelAccessToken: Boolean(lineChannelAccessToken) });
       throw new AppError(503, "TEST_LINE_WEBHOOK_NOT_CONFIGURED", "Test-only LINE webhook is not configured");
     }
-    if (!verifyLineSignature(rawBody, signature, lineChannelSecret)) {
+    if (!verifyTestLineSignature(rawBody, signature, lineChannelSecret)) {
       logTestLineDiagnostic("signature_rejected");
       throw new AppError(401, "INVALID_LINE_SIGNATURE", "Invalid LINE signature");
     }
@@ -608,7 +608,7 @@ function createApp(options = {}) {
         }
         let reply;
         try {
-          reply = await replyToTestLine(result.replyToken, result.replyText, lineChannelAccessToken, lineReplyFetch);
+          reply = await replyToTestLine(result.replyToken, result.replyText, lineChannelAccessToken, lineReplyClientFactory);
         } catch {
           await updateEventStatus(id, channelId, eventId, {
             processingStatus: "reply_failed",
@@ -624,8 +624,19 @@ function createApp(options = {}) {
         logTestLineDiagnostic("reply_api_result", { status: reply.status, ok: reply.ok });
         if (config.testOnlyConversationTraceV2 && result.traceId) console.log(JSON.stringify({ scope: "conversation-engine-v2", traceId: result.traceId, stage: "line_reply", delivered: Boolean(reply.ok), coveredTaskIds: result.claimValidation && result.claimValidation.coveredTaskIds || [], missingTaskIds: result.claimValidation && result.claimValidation.missingTaskIds || [] }));
         if (!reply.ok) {
+          if (reply.exception) {
+            await updateEventStatus(id, channelId, eventId, {
+              processingStatus: "reply_failed",
+              deliveryErrorCode: "line_reply_exception",
+              replyDelivered: false,
+              needsReview: true,
+              status: "pending",
+              reviewNote: "LINE 回覆傳送失敗，請人工確認是否需要聯絡客人。"
+            });
+            return;
+          }
           if (event.source && event.source.userId) {
-            const pushed = await pushToTestLine(event.source.userId, result.replyText, lineChannelAccessToken, lineReplyFetch);
+            const pushed = await pushToTestLine(event.source.userId, result.replyText, lineChannelAccessToken, lineReplyClientFactory);
             if (pushed.ok) {
               await updateEventStatus(id, channelId, eventId, { processingStatus: "reply_succeeded", deliveryErrorCode: "", replyDelivered: true, deliveryFallback: "push" });
               return;
@@ -634,7 +645,6 @@ function createApp(options = {}) {
           await updateEventStatus(id, channelId, eventId, {
             processingStatus: "reply_failed",
             deliveryErrorCode: `line_reply_http_error_${reply.status}`,
-            deliveryErrorDetail: String(reply.responseText || "").slice(0, 500),
             replyDelivered: false,
             needsReview: true,
             status: "pending",

@@ -140,7 +140,10 @@ async function main() {
     lineChannelSecret: TEST_SECRET,
     lineChannelAccessToken: "test-channel-access-token",
     conversationDebounceMs: 5,
-    lineReplyFetch: async () => ({ ok: false, status: 400, text: async () => "{}" }),
+    lineReplyClientFactory: () => ({
+      replyMessageWithHttpInfo: async () => { const error = new Error("test reply rejection"); error.status = 400; throw error; },
+      pushMessageWithHttpInfo: async () => { const error = new Error("test push rejection"); error.status = 400; throw error; }
+    }),
     lineChannelIdentityGuardRequired: true
   };
   const invalidApp = createApp({
@@ -156,6 +159,13 @@ async function main() {
   const validApp = createApp({ ...appOptions, lineChannelIdentity: configuration() });
   const running = await validApp.start(0, "127.0.0.1");
   assert.match(running.url, /^http:\/\/127\.0\.0\.1:\d+$/);
+  const invalidSignature = await fetch(`${running.url}${TEST_ROUTE}?customerId=demo_homestay_a`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-line-signature": "invalid" },
+    body: JSON.stringify({ destination: TEST_DESTINATION_ID, events: [] })
+  });
+  assert.equal(invalidSignature.status, 401);
+  assert.equal((await invalidSignature.json()).error.code, "INVALID_LINE_SIGNATURE");
   const mismatch = await postWebhook(running.url, "Uwrongdestinationidentity");
   assert.equal(mismatch.status, 400);
   assert.equal(mismatch.body.error.code, "LINE_CHANNEL_IDENTITY_MISMATCH");
@@ -176,9 +186,22 @@ async function main() {
   const failedReply = validApp.providers.persistence.findMessageByEventId("demo_homestay_a", eventId);
   assert.equal(failedReply.deliveryErrorCode, "line_reply_http_error_400");
   await validApp.stop();
+
+  const missingCredentialsApp = createApp({
+    ...appOptions,
+    lineChannelSecret: "",
+    lineChannelAccessToken: "",
+    lineChannelIdentityGuardRequired: false,
+    lineChannelIdentity: configuration()
+  });
+  const missingCredentialsRunning = await missingCredentialsApp.start(0, "127.0.0.1");
+  const missingCredentials = await postWebhook(missingCredentialsRunning.url, TEST_DESTINATION_ID);
+  assert.equal(missingCredentials.status, 503);
+  assert.equal(missingCredentials.body.error.code, "TEST_LINE_WEBHOOK_NOT_CONFIGURED");
+  await missingCredentialsApp.stop();
   fs.rmSync(temp, { recursive: true, force: true });
 
-  console.log(JSON.stringify({ caseCount: 19, passCount: 19, failCount: 0 }));
+  console.log(JSON.stringify({ caseCount: 23, passCount: 23, failCount: 0 }));
 }
 
 main().catch((error) => {

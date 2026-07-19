@@ -177,7 +177,7 @@ function appOptions(dataFile, classifier, lineReplyFetch, providers) {
 
     // 7. Non-2xx and exceptions become reply_failed, enter review, and duplicates never re-run AI.
     for (const failure of [
-      { id: "status-http-failed", fetch: async () => ({ ok: false, status: 500, text: async () => "external payload" }), code: "line_reply_http_error" },
+      { id: "status-http-failed", fetch: async () => ({ ok: false, status: 500, text: async () => "external payload" }), code: "line_reply_http_error_500" },
       { id: "status-exception", fetch: async () => { throw new Error("external sensitive exception"); }, code: "line_reply_exception" }
     ]) {
       const failureFile = path.join(tempDir, `${failure.id}.json`);
