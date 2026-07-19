@@ -6,6 +6,10 @@ function partsAt(timestamp, timezone) {
 }
 function valid(key) { if (!/^\d{4}-\d{2}-\d{2}$/.test(key || "")) return false; const date = new Date(`${key}T00:00:00Z`); return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === key; }
 function addDays(key, days) { const date = new Date(`${key}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
+function inferExplicitTemporalExpression(text) {
+  const match = String(text || "").normalize("NFKC").match(/(?:\b\d{4}\s*[/-]\s*)?\b\d{1,2}\s*[/-]\s*\d{1,2}\b/);
+  return match ? { rawText: match[0].replace(/\s+/g, ""), kind: "absolute", anchor: "message_time" } : null;
+}
 function absoluteDateFromRaw(raw, base) {
   const explicitYear = raw.match(/^(\d{4})\s*(?:年|[-/])\s*(\d{1,2})\s*(?:月|[-/])\s*(\d{1,2})\s*(?:日|號)?$/u);
   const yearless = explicitYear ? null : raw.match(/^(\d{1,2})\s*(?:月|[-/])\s*(\d{1,2})\s*(?:日|號)?$/u);
@@ -16,8 +20,13 @@ function absoluteDateFromRaw(raw, base) {
   const day = Number(match[explicitYear ? 3 : 2]);
   let candidate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   if (!explicitYear && valid(candidate) && candidate < base) {
-    year += 1;
-    candidate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const nextYearCandidate = `${year + 1}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const daysUntilNextYearCandidate = Math.round((Date.parse(`${nextYearCandidate}T00:00:00Z`) - Date.parse(`${base}T00:00:00Z`)) / 86400000);
+    // A yearless date just after a year boundary (for example, 1/5 when it
+    // is 12/20) is naturally an upcoming stay. A date from yesterday is not:
+    // retain it so the caller can safely request a future date rather than
+    // silently converting it into a stay almost a year away.
+    if (daysUntilNextYearCandidate <= 183) candidate = nextYearCandidate;
   }
   return candidate;
 }
@@ -85,4 +94,4 @@ function resolveTemporalExpression(expression = {}, context = {}) {
   return { checkIn, checkOut, nights, searchRange, timezone, resolutionStatus: checkIn || searchRange ? "resolved" : "ambiguous", ambiguity: checkIn || searchRange ? null : "date_missing", originalExpression: raw };
 }
 
-module.exports = { resolveTemporalExpression, addDays, valid };
+module.exports = { resolveTemporalExpression, inferExplicitTemporalExpression, addDays, valid };

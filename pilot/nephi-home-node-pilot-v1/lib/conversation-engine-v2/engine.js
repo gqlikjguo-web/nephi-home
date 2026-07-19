@@ -4,7 +4,7 @@ const crypto = require("node:crypto");
 
 const { validatePlannerOutput } = require("./planner-schema");
 const { buildPropertyCatalog } = require("./property-catalog");
-const { resolveTemporalExpression } = require("./temporal-resolver");
+const { resolveTemporalExpression, inferExplicitTemporalExpression } = require("./temporal-resolver");
 const { migrateStateV2, reduceConversationState } = require("./state-reducer");
 const { executeTasks, isGenericAvailabilityEntity } = require("./capability-executor");
 const { buildResponsePlan } = require("./response-planner");
@@ -45,7 +45,7 @@ function normalizePlannerOutput(plannerOutput, { messageText, eventTimestamp, ti
   return output;
 }
 
-function normalizedPlannerStay(plannerOutput) {
+function normalizedPlannerStay(plannerOutput, messageText) {
   const stay = {
     ...plannerOutput.stay,
     dateExpression: { ...plannerOutput.stay.dateExpression }
@@ -68,6 +68,11 @@ function normalizedPlannerStay(plannerOutput) {
     if (scalarCandidate && ["set", "replace"].includes(item.operation)) stay[scalarCandidate] = item.value;
     const expressionField = expressionFields[item.field];
     if (expressionField && ["set", "replace"].includes(item.operation)) stay.dateExpression[expressionField] = item.value;
+  }
+
+  if ((!stay.dateExpression.rawText || stay.dateExpression.kind === "none") && (plannerOutput.tasks || []).some((task) => task.dependsOnStayContext)) {
+    const inferred = inferExplicitTemporalExpression(messageText);
+    if (inferred) stay.dateExpression = inferred;
   }
 
   return stay;
@@ -102,7 +107,7 @@ class ConversationEngineV2 {
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };
     }
     plannerOutput = normalizePlannerOutput(plannerOutput, { messageText: input.messageText, eventTimestamp: input.eventTimestamp, timezone: catalog.timezone, previousConditions: previous.conditions });
-    const plannerStay = normalizedPlannerStay(plannerOutput);
+    const plannerStay = normalizedPlannerStay(plannerOutput, input.messageText);
     const temporal = resolveTemporalExpression(plannerStay.dateExpression, {
       eventTimestamp: input.eventTimestamp, timezone: catalog.timezone,
       checkInCandidate: plannerStay.checkInCandidate, checkOutCandidate: plannerStay.checkOutCandidate,
@@ -119,6 +124,9 @@ class ConversationEngineV2 {
     const operations = plannerOutput.stateOperations.flatMap((item) => {
       if (item.field === "*" || item.field.startsWith("inventory.")) return [item];
       if (item.field === "stay.guestCountCandidate") return [{ ...item, field: "stay.guests" }];
+      // Guest count and nights are independently useful context. Do not drop
+      // a supplied value merely because the same turn still needs a date.
+      if (item.field === "stay.nightsCandidate" && ["set", "replace"].includes(item.operation)) return [{ ...item, field: "stay.nights" }];
       if (item.operation === "clear" || item.operation === "keep") {
         const canonicalPath = { "stay.checkInCandidate": "stay.checkIn", "stay.checkOutCandidate": "stay.checkOut", "stay.nightsCandidate": "stay.nights" }[item.field];
         return canonicalPath ? [{ ...item, field: canonicalPath }] : [];
@@ -130,6 +138,13 @@ class ConversationEngineV2 {
       if (temporal.checkOut) operations.push({ field: "stay.checkOut", operation: previous.conditions.stay.checkOut ? "replace" : "set", value: temporal.checkOut, sourceText: temporal.originalExpression });
       if (temporal.nights) operations.push({ field: "stay.nights", operation: previous.conditions.stay.nights ? "replace" : "set", value: temporal.nights, sourceText: temporal.originalExpression });
       if (temporal.searchRange) operations.push({ field: "stay.searchRange", operation: previous.conditions.stay.searchRange ? "replace" : "set", value: temporal.searchRange, sourceText: temporal.originalExpression });
+    }
+    if (temporal.resolutionStatus === "invalid" && plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none") {
+      // An explicit invalid date (notably a date already past) is a new
+      // constraint, never permission to reuse an older stay from state.
+      for (const field of ["stay.checkIn", "stay.checkOut", "stay.searchRange"]) {
+        operations.push({ field, operation: "clear", value: null, sourceText: temporal.originalExpression });
+      }
     }
     if (plannerOutput.searchRange) operations.push({ field: "stay.searchRange", operation: previous.conditions.stay.searchRange ? "replace" : "set", value: plannerOutput.searchRange, sourceText: input.messageText });
     const state = reduceConversationState(previous, { ...plannerOutput, stateOperations: operations }, scope);

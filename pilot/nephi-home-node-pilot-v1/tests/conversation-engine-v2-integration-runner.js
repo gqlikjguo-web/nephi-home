@@ -181,6 +181,28 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   assert.equal(missingDate.taskResults[0].status, "needs_clarification");
   assert.ok(missingDate.taskResults[0].missingInputs.includes("stay.checkIn"));
 
+  const nightsWithoutDate = await runTemporal("two guests for two nights with bathtub", temporalPlanner({
+    message: "two guests for two nights with bathtub",
+    operations: [
+      { field: "stay.nightsCandidate", operation: "set", value: 2, sourceText: "two nights" },
+      { field: "stay.guestCountCandidate", operation: "set", value: 2, sourceText: "two guests" },
+      { field: "inventory.features", operation: "set", value: ["bathtub"], sourceText: "bathtub" }
+    ],
+    nightsCandidate: 2,
+    guestCountCandidate: 2
+  }), "nights-without-date");
+  assert.equal(nightsWithoutDate.state.conditions.stay.nights, 2);
+  assert.equal(nightsWithoutDate.state.conditions.stay.guests, 2);
+  assert.equal(nightsWithoutDate.taskResults[0].status, "needs_clarification");
+  assert.deepEqual(nightsWithoutDate.taskResults[0].missingInputs, ["stay.checkIn"]);
+
+  const staleStateUser = "explicit-date-replaces-state";
+  await runTemporal("8/6 availability", temporalPlanner({ message: "8/6 availability", operations: dateOperations("8/6", "absolute", { checkInCandidate: "2026-08-06" }) }), staleStateUser);
+  const pastExplicitDate = await runTemporal("7/18 availability", temporalPlanner({ message: "7/18 availability", operations: [] }), staleStateUser, Date.parse("2026-07-19T10:00:00+08:00"));
+  assert.equal(pastExplicitDate.state.conditions.stay.checkIn, null);
+  assert.equal(pastExplicitDate.state.conditions.stay.checkOut, null);
+  assert.equal(pastExplicitDate.taskResults[0].status, "needs_clarification");
+
   const crossYearTimestamp = Date.parse("2026-12-20T10:00:00+08:00");
   const crossYear = await runTemporal("1/5 有雙人房嗎？", temporalPlanner({ message: "1/5 有雙人房嗎？", operations: dateOperations("1/5") }), "date-cross-year", crossYearTimestamp);
   assert.equal(crossYear.state.conditions.stay.checkIn, "2027-01-05");

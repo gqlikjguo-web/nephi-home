@@ -45,3 +45,4 @@
 - 會影響所有旅宿的 Shared Core 能力改變
 
 單一 bug fix、文案調整、例行重構與一般 commit 不加入本文件。
+# 2026-07-19 — V2 preserves partial stay constraints and blocks stale-date reuse

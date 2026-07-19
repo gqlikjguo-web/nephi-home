@@ -14,6 +14,8 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(requestBody.text.format.name, "junzan_conversation_plan_v2");
   assert.equal(requestBody.text.format.strict, true);
   assert.equal(requestBody.text.format.schema.properties.tasks.minItems, 1);
+  assert.match(requestBody.input[0].content[0].text, /preserve every stated nights, guest count, and feature even when a date is missing/i);
+  assert.match(requestBody.input[0].content[0].text, /explicit calendar expression/i);
   assert.equal(JSON.stringify(requestBody).includes("test-key"), false);
   assert.equal(runtimeConfig({ TEST_ONLY_CONVERSATION_ENGINE_V2: "true" }).testOnlyConversationEngineV2, true);
   assert.equal(runtimeConfig({}).testOnlyConversationEngineV2, false);
