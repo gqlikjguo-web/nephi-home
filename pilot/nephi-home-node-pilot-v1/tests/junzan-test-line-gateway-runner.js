@@ -8,7 +8,7 @@ const path = require("node:path");
 const { createApp } = require("../server");
 
 const secret = "test-channel-secret";
-const route = "/api/junzan-test-line/webhook";
+const route = "/api/test-line/webhook";
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-line-gateway-"));
 
 async function post(url, rawBody, signature) {

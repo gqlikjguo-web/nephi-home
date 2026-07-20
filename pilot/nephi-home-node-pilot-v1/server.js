@@ -6,25 +6,8 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { createProviders } = require("./lib/providers/provider-factory");
-const {
-  createTestOnlyOpenAiStructuredClassifierFromEnv
-} = require("./lib/providers/test-only-openai-structured-classifier");
-const { createTestOnlyOpenAiConversationPlannerFromEnv } = require("./lib/providers/test-only-openai-conversation-planner");
-const { createTestOnlyOpenAiControlledComposerFromEnv } = require("./lib/providers/test-only-openai-controlled-composer");
-const { ConversationEngineV2 } = require("./lib/conversation-engine-v2/engine");
-const { ConversationEngineV2Coordinator } = require("./lib/conversation-engine-v2/coordinator");
+const { createV2CompositionRoot } = require("./lib/v2-composition-root");
 const { createMvpService, AppError } = require("./lib/mvp-service");
-const { ConversationCoordinator } = require("./lib/conversation-coordinator");
-const { verifyTestLineSignature, createFetchBackedLineClientFactory, replyToTestLine, pushToTestLine } = require("./lib/test-line-webhook");
-const {
-  validateLineChannelConfiguration,
-  validateLineWebhookDestination
-} = require("./lib/line-channel-identity-guard");
-const {
-  createAiFirstDecisionPipeline,
-  DEFAULT_INTENTS,
-  DEFAULT_ROUTES
-} = require("./lib/ai-first-decision-pipeline");
 const { runtimeConfig } = require("./config/runtime");
 const { verifyPassword, sessionTokenHash } = require("./lib/admin-auth");
 const { createOnboardingService } = require("./lib/onboarding-service");
@@ -35,7 +18,6 @@ const { renderPublicHtml } = require("./lib/public-brand-html");
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const TEST_LINE_WEBHOOK_ROUTE = "/api/test-line/webhook";
-const JUNZAN_TEST_LINE_WEBHOOK_ROUTE = "/api/junzan-test-line/webhook";
 
 function sendJson(response, status, payload, headers = {}) {
   response.writeHead(status, {
@@ -187,10 +169,7 @@ function publicAvailabilityResult(result) {
 }
 
 function createRequestHandler(service, options = {}) {
-  const testLineSecret = String(options.testLineSecret || "");
-  const resolveTestLineRequest = options.resolveTestLineRequest || ((input) => service.resolveTestLine(input));
   const lineWebhookHandler = options.lineWebhookHandler;
-  const junzanTestLineGateway = options.junzanTestLineGateway;
   const persistence = options.persistence;
   const customerSettings = options.customerSettings;
   const onboarding = options.onboarding;
@@ -213,17 +192,6 @@ function createRequestHandler(service, options = {}) {
           customerId: url.searchParams.get("customerId")
         });
         return sendData(response, result);
-      }
-      if (request.method === "POST" && pathname === JUNZAN_TEST_LINE_WEBHOOK_ROUTE) {
-        if (!junzanTestLineGateway) throw new AppError(503, "JUNZAN_TEST_LINE_GATEWAY_NOT_CONFIGURED", "JunZan test-only LINE gateway is not configured");
-        return sendData(response, await junzanTestLineGateway({ rawBody: await readRawBody(request), signature: request.headers["x-line-signature"], customerId: url.searchParams.get("customerId") }));
-      }
-      if (request.method === "POST" && pathname === "/api/test-line/resolve") {
-        if (!testLineSecret) throw new AppError(503, "TEST_LINE_BRIDGE_NOT_CONFIGURED", "Test-only LINE bridge is not configured");
-        if (!secretsMatch(request.headers["x-test-line-secret"], testLineSecret)) {
-          throw new AppError(401, "INVALID_TEST_LINE_SECRET", "Invalid test-only bridge secret");
-        }
-        return sendData(response, await resolveTestLineRequest(await readJsonBody(request)));
       }
       if (request.method === "GET" && pathname === "/") return sendStatic(response, "home.html", publicBrand);
       if (request.method === "GET" && pathname === "/guest") return sendStatic(response, "guest.html", publicBrand);
@@ -484,12 +452,36 @@ function createApp(options = {}) {
     channelSecretSha256: config.lineChannelSecretSha256
   };
   let validatedLineChannelIdentity = null;
-  const lineReplyClientFactory = options.lineReplyClientFactory || (options.lineReplyFetch && createFetchBackedLineClientFactory(options.lineReplyFetch));
   const providers = options.providers || createProviders({ databaseUrl: config.databaseUrl, dataFile, seedFile, now });
   const adminAuthRequired = Object.hasOwn(options, "adminAuthRequired") ? Boolean(options.adminAuthRequired) : providers.kind === "postgres";
   const service = createMvpService(providers, { now });
   const onboardingEmailNotifier=createOnboardingEmailNotifier({env:options.onboardingEmailEnv||process.env,fetchImpl:options.onboardingEmailFetch||globalThis.fetch,publicBaseUrl:publicBrand.publicBaseUrl});
   const onboarding = createOnboardingService(providers.onboarding,{emailNotifier:onboardingEmailNotifier});
+  const replyClient = options.lineReplyClientFactory || (options.lineReplyFetch && (({ channelAccessToken }) => ({ replyMessageWithHttpInfo: async (body) => { const response = await options.lineReplyFetch("https://api.line.me/v2/bot/message/reply", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${channelAccessToken}` }, body: JSON.stringify(body) }); if (!response.ok) { const error = new Error("line_reply_failed"); error.status = response.status; throw error; } return { httpResponse: { status: response.status } }; } })));
+  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2 });
+  const claimEvent = (input) => providers.persistence.claimMessageEvent(input.customerId, input.channelId, input.eventId, { lineUserId: String(input.lineUserId || ""), eventTimestamp: input.eventTimestamp || "", guestMessage: String(input.messageText || ""), replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
+  const updateEventStatus = (customerId, channelId, eventId, patch) => providers.persistence.updateMessageEvent(customerId, channelId, eventId, patch);
+  const lineWebhookHandler = async ({ rawBody, signature, customerId }) => {
+    if (!lineChannelSecret || !lineChannelAccessToken) throw new AppError(503, "TEST_LINE_WEBHOOK_NOT_CONFIGURED", "Test-only LINE webhook is not configured");
+    if (!validateSignature(rawBody, lineChannelSecret, String(signature || ""))) throw new AppError(401, "INVALID_LINE_SIGNATURE", "Invalid LINE signature");
+    let payload; try { payload = JSON.parse(rawBody.toString("utf8")); } catch { throw new AppError(400, "INVALID_JSON", "Request body must be valid JSON"); }
+    const id = String(customerId || "").trim();
+    if (!id) throw new AppError(400, "MISSING_CUSTOMER_ID", "customerId is required");
+    if (!providers.customerSettings.getProperty(id)) throw new AppError(404, "UNKNOWN_CUSTOMER_ID", "Unknown Pilot customerId");
+    for (const event of (payload.events || []).filter((item) => item && item.type === "message" && item.message && item.message.type === "text" && item.replyToken)) {
+      const input = { customerId: id, channelId: String(payload.destination || "line"), lineUserId: String(event.source && event.source.userId || ""), eventId: String(event.webhookEventId || event.message.id || ""), eventTimestamp: event.timestamp || "", messageText: event.message.text || "" };
+      if (!(await claimEvent(input)).claimed) continue;
+      void root.coordinator.enqueue(input).then(async (result) => {
+        if (!result.shouldReply || !result.replyText) return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true });
+        try { await (replyClient ? replyClient({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: result.replyText }] }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" }); }
+        catch (error) { const status = Number(error && (error.status || error.statusCode)); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); }
+      }).catch(() => updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "processing_failed", deliveryErrorCode: "message_processing_exception", needsReview: true }));
+    }
+    return { accepted: true };
+  };
+  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
+  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host })); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
+  /* legacy runtime kept below temporarily unreachable during source migration */ {
   const structuredClassifier = Object.hasOwn(options, "structuredClassifier")
     ? options.structuredClassifier
     : createTestOnlyOpenAiStructuredClassifierFromEnv({
@@ -739,6 +731,7 @@ function createApp(options = {}) {
       if (typeof providers.close === "function") await providers.close();
     }
   };
+}
 }
 
 if (require.main === module) {
