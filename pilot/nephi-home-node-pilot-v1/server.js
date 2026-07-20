@@ -475,7 +475,16 @@ function createApp(options = {}) {
         if (!result.shouldReply || !result.replyText) return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true });
         try { await (replyClient ? replyClient({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: result.replyText }] }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" }); }
         catch (error) { const status = Number(error && (error.status || error.statusCode)); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); }
-      }).catch(() => updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "processing_failed", deliveryErrorCode: "message_processing_exception", needsReview: true }));
+      }).catch(async () => {
+        const fallbackText = "目前無法安全確認這項資訊，請由業者協助確認。";
+        try {
+          await (replyClient ? replyClient({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: fallbackText }] });
+          await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, needsReview: true, deliveryErrorCode: "message_processing_exception" });
+        } catch (error) {
+          const status = Number(error && (error.status || error.statusCode));
+          await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
+        }
+      });
     }
     return { accepted: true };
   };

@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 
 const { validatePlannerOutput } = require("./planner-schema");
+const { normalizeDetailIntent } = require("./detail-intent");
 const { buildPropertyCatalog } = require("./property-catalog");
 const { resolveTemporalExpression, inferExplicitTemporalExpression } = require("./temporal-resolver");
 const { migrateStateV2, reduceConversationState } = require("./state-reducer");
@@ -22,7 +23,8 @@ function dateKeyAt(timestamp, timezone) {
 function addUtcDays(dateKey, days) { const value = new Date(`${dateKey}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); }
 function traceState(state) { const copy = JSON.parse(JSON.stringify(state || {})); if (copy.scope) delete copy.scope.lineUserId; return copy; }
 function normalizePlannerOutput(plannerOutput, { messageText, eventTimestamp, timezone, previousConditions } = {}) {
-  const output = { ...plannerOutput, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, detailIntent: task.detailIntent === undefined ? "general" : task.detailIntent, entity: task.entity ? { ...task.entity } : task.entity })) };
+  if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) return null;
+  const output = { ...plannerOutput, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, detailIntent: normalizeDetailIntent(task.detailIntent), entity: task.entity ? { ...task.entity } : task.entity })) };
   const availableDatesRequested = output.tasks.some((task) => task.type === "available_dates");
   const genericAvailability = output.tasks.some((task) => isGenericAvailabilityEntity(task));
   const genericAvailableDates = output.tasks.some((task) => task.type === "available_dates" && isGenericAvailabilityEntity(task));
@@ -110,7 +112,15 @@ class ConversationEngineV2 {
     try { plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], eventTimestamp: input.eventTimestamp, catalog, conversationState: previous }); }
     catch { plannerOutput = null; }
     this.trace(traceId, "planner", { taskCount: plannerOutput && Array.isArray(plannerOutput.tasks) ? plannerOutput.tasks.length : 0, tasks: plannerOutput && Array.isArray(plannerOutput.tasks) ? (this.diagnosticDetail ? plannerOutput.tasks : plannerOutput.tasks.map((task) => ({ taskId: task.taskId, type: task.type, sourceText: String(task.sourceText || "").slice(0, 120), canonicalCandidate: task.entity && task.entity.canonicalCandidate || null, confidence: task.confidence }))) : [] });
+    if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) {
+      const item = this.persistReview(input, "planner_empty_output", "Planner did not produce a usable task result.", "");
+      return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };
+    }
     plannerOutput = normalizePlannerOutput(plannerOutput, { messageText: input.messageText, eventTimestamp: input.eventTimestamp, timezone: catalog.timezone, previousConditions: previous.conditions });
+    if (!plannerOutput) {
+      const item = this.persistReview(input, "planner_normalization_failed", "Planner output could not be normalized safely.", "");
+      return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };
+    }
     const validation = validatePlannerOutput(plannerOutput);
     this.trace(traceId, "validation", { acceptedTaskIds: validation.ok ? plannerOutput.tasks.map((task) => task.taskId) : [], rejected: validation.ok ? [] : validation.errors });
     if (!validation.ok) {
