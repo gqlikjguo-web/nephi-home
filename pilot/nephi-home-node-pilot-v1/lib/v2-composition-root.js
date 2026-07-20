@@ -16,7 +16,7 @@ function createV2CompositionRoot({ providers, service, env = process.env, now = 
     listPriceOverrides: (propertyId) => providers.customerSettings.listRoomPriceOverrides(propertyId),
     now
   });
-  return { engine, coordinator: new ConversationEngineV2Coordinator({ engine, debounceMs }) };
+  return { engine, coordinator: new ConversationEngineV2Coordinator({ engine, debounceMs, externalReplyToken: true }) };
 }
 
 module.exports = { createV2CompositionRoot };

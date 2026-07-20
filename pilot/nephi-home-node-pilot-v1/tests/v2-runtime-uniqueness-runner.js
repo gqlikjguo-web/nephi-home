@@ -26,6 +26,7 @@ assert.doesNotMatch(runtime, /ConversationCoordinator|pushToTestLine|lineWebhook
 assert.doesNotMatch(runtime, /line-channel-identity-guard|createLineChannelIdentityGuard|validateLineDestination|validateChannelIdentity|requireChannelSecretSha256/);
 assert.equal((root.match(/new ConversationEngineV2\(/g) || []).length, 1, "composition root creates one V2 engine");
 assert.equal((root.match(/new ConversationEngineV2Coordinator\(/g) || []).length, 1, "composition root creates one V2 coordinator");
+assert.match(root, /new ConversationEngineV2Coordinator\(\{ engine, debounceMs, externalReplyToken: true \}\)/, "the LINE transport owns reply tokens, so the V2 coordinator must not suppress a valid reply when no reply token is injected");
 assert.equal((root.match(/createTestOnlyOpenAiConversationPlannerFromEnv/g) || []).length, 2, "only the composition root wires the planner");
 assert.equal((root.match(/createTestOnlyOpenAiControlledComposerFromEnv/g) || []).length, 2, "only the composition root wires the controlled composer");
 assert.match(root, /availabilityResolver:\s*\(query\) => service\.searchAvailability\(query\)/);
