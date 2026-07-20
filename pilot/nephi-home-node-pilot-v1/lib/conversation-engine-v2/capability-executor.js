@@ -3,6 +3,7 @@
 const { resolveEntity } = require("./entity-resolver");
 const { addDays } = require("./temporal-resolver");
 const { resolveAvailability, resolveAvailableDates } = require("./resolver-adapter");
+const { detailFactCandidates, includeBaseAnswer, normalizeDetailIntent } = require("./detail-intent");
 
 function stayDates(checkIn, checkOut) { const dates = []; for (let d = checkIn; d && checkOut && d < checkOut && dates.length < 60; d = addDays(d, 1)) dates.push(d); return dates; }
 function publicInventory(item) { return { canonicalId: item.id, publicName: String(item.publicDisplayName || item.displayName || item.publicName || item.name || "房型").slice(0, 100), capacity: Number(item.capacity) || null, category: item.inventoryType === "bundle" ? "bundle" : "room" }; }
@@ -21,18 +22,30 @@ function isGenericAvailabilityEntity(task) {
   return entity.category === "other" && entity.canonicalCandidate === null;
 }
 
+function catalogFactByCanonicalId(catalog, canonicalIds) {
+  const wanted = new Set(canonicalIds.map((id) => String(id).toLocaleLowerCase("en-US")));
+  return [...(catalog.amenities || []), ...(catalog.policies || []), ...(catalog.faqs || [])]
+    .find((item) => wanted.has(String(item.canonicalId || "").toLocaleLowerCase("en-US")) && item.status !== "unknown") || null;
+}
+
+function executePropertyFactTask({ property, catalog, task, resolved }) {
+  if (!resolved || resolved.status !== "resolved") return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "property_fact_unknown", facts: { subject: task.entity && task.entity.rawText || "question" }, review: true };
+  const entity = resolved.entity;
+  if (entity.status === "unknown") return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "property_fact_unknown", facts: { subject: entity.publicName }, review: true };
+  const detailIntent = normalizeDetailIntent(task.detailIntent);
+  if (detailIntent === "general") return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", source: "property_catalog", propertyId: property.propertyId, detailIntent } };
+  const detail = catalogFactByCanonicalId(catalog, detailFactCandidates(entity.canonicalId, detailIntent));
+  if (detail) return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: detail.status, answer: detail.answer || "", source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: true } };
+  return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: entity.status, answer: includeBaseAnswer(detailIntent) ? entity.answer || "" : "", source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: false, detailNeedsConfirmation: true } };
+}
+
 function executeTasks({ property, catalog, tasks, request, availabilityResolver, availableDatesResolver, priceOverrides = [] }) {
   return tasks.map((task) => {
     try {
     const genericAvailabilityEntity = isGenericAvailabilityEntity(task);
     const resolved = task.entity && task.entity.rawText && !genericAvailabilityEntity ? resolveEntity(catalog, task.entity) : null;
     if (resolved && resolved.status === "ambiguous") return { taskId: task.taskId, type: task.type, status: "needs_clarification", question: "想確認您指的是哪一個？", candidates: resolved.candidates, facts: {}, missingInputs: ["entity.canonicalId"] };
-    if (["amenity", "policy", "property_fact"].includes(task.type)) {
-      if (!resolved || resolved.status !== "resolved") return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "property_fact_unknown", facts: { subject: task.entity && task.entity.rawText || "這項資訊" }, review: true };
-      const entity = resolved.entity;
-      if (entity.status === "unknown") return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "property_fact_unknown", facts: { subject: entity.publicName }, review: true };
-      return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", source: "property_catalog", propertyId: property.propertyId } };
-    }
+    if (["amenity", "policy", "property_fact"].includes(task.type)) return executePropertyFactTask({ property, catalog, task, resolved });
     if (task.type === "amenity_list") return { taskId: task.taskId, type: task.type, status: "answered", facts: { amenities: catalog.amenities.filter((x) => x.status === "confirmed_yes").map((x) => x.publicName), source: "property_catalog", propertyId: property.propertyId } };
     if (task.type === "available_dates") {
       const range = request.stay.searchRange;
@@ -68,4 +81,4 @@ function executeTasks({ property, catalog, tasks, request, availabilityResolver,
   });
 }
 
-module.exports = { executeTasks, priceKey, isGenericAvailabilityEntity };
+module.exports = { executeTasks, priceKey, isGenericAvailabilityEntity, executePropertyFactTask, catalogFactByCanonicalId };

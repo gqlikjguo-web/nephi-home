@@ -1,8 +1,14 @@
 "use strict";
 
+const { detailLabel } = require("./detail-intent");
+
 function money(value) { return new Intl.NumberFormat("zh-TW").format(value); }
 function composeSection(section) {
   const facts = section.facts || {};
+  if (facts.detailNeedsConfirmation) {
+    const known = facts.answer ? `${facts.answer}\n` : "";
+    return `${known}${detailLabel(facts.detailIntent)}目前沒有正式資料，需由業者依當日狀況確認。`;
+  }
   if (section.status === "needs_clarification") return section.question || "可以再補充一下嗎？";
   if (["needs_human", "property_data_missing", "failed"].includes(section.status)) return facts.subject ? `${facts.subject}這部分需要請業者確認。` : "這部分需要請業者確認。";
   if (facts.availableInventory) return facts.availableInventory.length ? `${facts.checkIn} 入住可選：${facts.availableInventory.map((item) => item.publicName).join("、")}。` : `${facts.checkIn} 入住目前沒有符合條件的空房。`;
