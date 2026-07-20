@@ -45,6 +45,16 @@ function normalizePlannerOutput(plannerOutput, { messageText, eventTimestamp, ti
   return output;
 }
 
+const FOLLOW_UP_FACT_TYPES = new Set(["amenity", "policy", "property_fact"]);
+function applyFollowUpTopic(plannerOutput, previousConditions) {
+  const topic = previousConditions && previousConditions.topic;
+  if (!topic || !topic.canonicalId || !["continue", "answer_clarification"].includes(plannerOutput.discourse && plannerOutput.discourse.relation)) return plannerOutput;
+  return { ...plannerOutput, tasks: plannerOutput.tasks.map((task) => {
+    if (!FOLLOW_UP_FACT_TYPES.has(task.type) || !task.entity || task.entity.canonicalCandidate) return task;
+    return { ...task, entity: { ...task.entity, category: topic.category || task.entity.category, canonicalCandidate: topic.canonicalId } };
+  }) };
+}
+
 function normalizedPlannerStay(plannerOutput, messageText) {
   const stay = {
     ...plannerOutput.stay,
@@ -106,7 +116,7 @@ class ConversationEngineV2 {
       const item = this.persistReview(input, "planner_invalid", "整體訊息無法安全理解，請協助確認。", "");
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };
     }
-    plannerOutput = normalizePlannerOutput(plannerOutput, { messageText: input.messageText, eventTimestamp: input.eventTimestamp, timezone: catalog.timezone, previousConditions: previous.conditions });
+    plannerOutput = applyFollowUpTopic(normalizePlannerOutput(plannerOutput, { messageText: input.messageText, eventTimestamp: input.eventTimestamp, timezone: catalog.timezone, previousConditions: previous.conditions }), previous.conditions);
     const plannerStay = normalizedPlannerStay(plannerOutput, input.messageText);
     const temporal = resolveTemporalExpression(plannerStay.dateExpression, {
       eventTimestamp: input.eventTimestamp, timezone: catalog.timezone,
@@ -207,4 +217,4 @@ class ConversationEngineV2 {
   }
 }
 
-module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS };
+module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, applyFollowUpTopic, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS };
