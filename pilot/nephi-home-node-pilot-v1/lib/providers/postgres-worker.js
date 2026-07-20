@@ -22,7 +22,7 @@ async function operation(name, args) {
     const filter = name === "getProperty" ? "WHERE p.property_id=$1" : "";
     const result = await client.query(`SELECT p.property_id,p.display_name,s.settings,
       COALESCE((SELECT json_agg(json_build_object('id',r.room_id,'name',r.name,'capacity',r.capacity,'type',r.type,'description',r.description,'mondayThursdayPrice',r.monday_thursday_price,'fridayPrice',r.friday_price,'saturdayHolidayPrice',r.saturday_holiday_price,'sundayPrice',r.sunday_price,'enabled',r.enabled) ORDER BY r.position) FROM room_types r WHERE r.property_id=p.property_id AND r.enabled=true),'[]') rooms,
-      COALESCE((SELECT json_agg(json_build_object('question',k.question,'answer',k.answer,'knowledgeKey',k.knowledge_key) ORDER BY k.position) FROM knowledge_items k WHERE k.property_id=p.property_id),'[]') faqs
+      COALESCE((SELECT json_agg(json_build_object('knowledgeId',k.knowledge_id,'question',k.question,'answer',k.answer,'knowledgeKey',k.knowledge_key) ORDER BY k.position) FROM knowledge_items k WHERE k.property_id=p.property_id),'[]') faqs
       FROM properties p LEFT JOIN property_settings s ON s.property_id=p.property_id ${filter} ORDER BY p.property_id`, name === "getProperty" ? [args[0]] : []);
     const mapped = result.rows.map((row) => {
       const settings = typeof row.settings === "string" ? JSON.parse(row.settings) : (row.settings || {});

@@ -13,6 +13,7 @@ async function seedPostgres(connection) {
   try {
     const existing = await client.query("SELECT property_id FROM properties WHERE property_id=$1", [property.propertyId]);
     if (existing.rows.length) {
+      await materializeCanonicalKnowledgeKeys(client, property);
       await ensureNephiBundle(client, property.propertyId);
       return { seeded: false, propertyId: property.propertyId };
     }
@@ -38,10 +39,19 @@ async function seedPostgres(connection) {
     return { seeded: true, propertyId: property.propertyId, roomTypeCount: property.rooms.length, knowledgeItemCount: property.faqs.length, availabilityDayCount: availability.days.length };
   } catch (error) { await client.query("ROLLBACK"); throw error; } finally { await client.close(); }
 }
+async function materializeCanonicalKnowledgeKeys(client, property) {
+  for (const faq of property.faqs || []) {
+    if (!faq.knowledgeKey) continue;
+    await client.query(
+      "UPDATE knowledge_items SET knowledge_key=$3 WHERE property_id=$1 AND question=$2 AND COALESCE(knowledge_key,'')=''",
+      [property.propertyId, faq.question, faq.knowledgeKey]
+    );
+  }
+}
 async function ensureNephiBundle(client, propertyId) {
   if(propertyId!=="nephi_home")return;
   const id="bundle_four_room_whole_house";
   await client.query("INSERT INTO bundle_offers(property_id,bundle_id,name,capacity,base_price,enabled) VALUES($1,$2,$3,$4,$5,true) ON CONFLICT DO NOTHING",[propertyId,id,"四房包棟",10,0]);
   for(const [index,roomId] of ["room301","room302","room401","room402"].entries())await client.query("INSERT INTO bundle_offer_members(property_id,bundle_id,room_id,position) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",[propertyId,id,roomId,index]);
 }
-module.exports = { seedPostgres };
+module.exports = { seedPostgres, materializeCanonicalKnowledgeKeys };

@@ -13,7 +13,10 @@ const FAQ_KNOWLEDGE_SAFE_FACTS = Object.freeze({
   baby_supplies: "babySuppliesRule",
   pet_rule: "petRule",
   self_checkin: "selfCheckInRule",
-  equipment: "equipment"
+  equipment: "equipment",
+  // `singing` is a canonical property knowledge identifier.  Unlike the
+  // entries above it remains a FAQ fact, so it has no commonAnswers mirror.
+  singing: null
 });
 
 function requiredText(value, field, maxLength = 1000) {
@@ -78,7 +81,7 @@ function validateFriendlyProperty(input) {
     };
   });
   const faqSafeFacts = Object.fromEntries(faqs
-    .filter((faq) => faq.knowledgeKey)
+    .filter((faq) => faq.knowledgeKey && FAQ_KNOWLEDGE_SAFE_FACTS[faq.knowledgeKey])
     .map((faq) => [FAQ_KNOWLEDGE_SAFE_FACTS[faq.knowledgeKey], faq.answer]));
 
   const parking = requiredText(input.parking, "parking", 1000);
@@ -107,7 +110,9 @@ function validateFriendlyProperty(input) {
       selfCheckInRule: faqSafeFacts.selfCheckInRule || "",
       priceRule: `平日：${pricing.weekday}；假日：${pricing.holiday}`,
       paymentRule: paymentMethod,
-      lodgingRules: cancellationPolicy,
+      // All new materializations expose the V2 canonical cancellation fact.
+      // property-catalog retains read compatibility for older lodgingRules.
+      cancellationRule: cancellationPolicy,
       otherFacts: input.selfCheckIn ? "提供自助入住，實際方式由業者確認。" : "不提供自助入住。"
     },
     onboarding: { isReady: true, nextStepLabel: "設定房況月曆" }

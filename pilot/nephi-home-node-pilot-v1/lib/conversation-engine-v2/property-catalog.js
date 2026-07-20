@@ -3,6 +3,16 @@
 function clean(value, limit = 120) { return String(value || "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, limit); }
 function aliasesFor(property, id) { const map = property.semanticCatalog && property.semanticCatalog.aliases || {}; return Array.isArray(map[id]) ? map[id].map((x) => clean(x, 80)).filter(Boolean) : []; }
 
+// Canonical IDs describe shared hospitality capabilities, never a property's
+// answer.  A capability appears in a catalog only when that property supplied
+// a fact carrying the ID; aliases therefore cannot create facts by themselves.
+const CANONICAL_FACT_ALIASES = Object.freeze({
+  singing: Object.freeze(["唱歌", "卡拉 OK", "卡拉OK", "KTV"]),
+  cancellation: Object.freeze(["取消", "退費", "退訂", "延期", "改日期"])
+});
+function canonicalAliases(id) { return CANONICAL_FACT_ALIASES[id] || []; }
+function mergedAliases(property, id) { return [...new Set([...canonicalAliases(id), ...aliasesFor(property, id)])]; }
+
 // This is a registry of data keys, not question text.  A property may expose
 // only a subset; any additional non-empty property-backed setting is retained
 // below as a generic policy fact instead of silently becoming unanswerable.
@@ -26,15 +36,18 @@ const PROPERTY_SETTING_CATALOG = Object.freeze([
 
 function propertySettingFacts(property, answers) {
   const knownKeys = new Set(PROPERTY_SETTING_CATALOG.map(([key]) => key));
-  const known = PROPERTY_SETTING_CATALOG.map(([settingKey, canonicalId, publicName, category]) => ({
-    canonicalId, category, publicName,
-    aliases: aliasesFor(property, canonicalId),
-    status: answers[settingKey] ? "confirmed_yes" : "unknown",
-    answer: clean(answers[settingKey], 800)
-  }));
+  const known = PROPERTY_SETTING_CATALOG.map(([settingKey, canonicalId, publicName, category]) => {
+    // lodgingRules was the pre-V2 cancellation storage key.  It is read only
+    // as the canonical cancellation fact when the new key is absent.
+    const answer = settingKey === "cancellationRule" ? (answers.cancellationRule || answers.lodgingRules) : answers[settingKey];
+    return { canonicalId, category, publicName,
+      aliases: mergedAliases(property, canonicalId),
+      status: answer ? "confirmed_yes" : "unknown",
+      answer: clean(answer, 800) };
+  });
   const additional = Object.entries(answers).flatMap(([settingKey, answer]) => {
     if (knownKeys.has(settingKey) || typeof answer !== "string" || !clean(answer, 800)) return [];
-    return [{ canonicalId: clean(settingKey, 120), category: "policy", publicName: clean(settingKey, 120), aliases: aliasesFor(property, settingKey), status: "confirmed_yes", answer: clean(answer, 800) }];
+    return [{ canonicalId: clean(settingKey, 120), category: "policy", publicName: clean(settingKey, 120), aliases: mergedAliases(property, settingKey), status: "confirmed_yes", answer: clean(answer, 800) }];
   });
   return [...known, ...additional];
 }
@@ -55,8 +68,8 @@ function buildPropertyCatalog(property) {
   })) : (Array.isArray(confirmedEquipment) ? confirmedEquipment : []).map((name, index) => ({ canonicalId: `equipment_${index + 1}`, category: "amenity", publicName: clean(name, 80), aliases: [], status: "confirmed_yes", answer: "" }));
   const answers = property.commonAnswers || {};
   const policies = propertySettingFacts(property, answers);
-  const faqs = (property.faqs || []).filter((item) => item && item.question && item.answer).map((item) => { const canonicalId = clean(item.knowledgeId || item.id || item.knowledgeKey, 120); return { canonicalId, category: "amenity", publicName: clean(item.question, 200), aliases: aliasesFor(property, canonicalId), status: "confirmed_yes", answer: clean(item.answer, 800) }; }).slice(0, 50);
+  const faqs = (property.faqs || []).filter((item) => item && item.question && item.answer).map((item) => { const canonicalId = clean(item.knowledgeKey || item.knowledgeId || item.id, 120); return { canonicalId, category: "amenity", publicName: clean(item.question, 200), aliases: mergedAliases(property, canonicalId), status: "confirmed_yes", answer: clean(item.answer, 800) }; }).slice(0, 50);
   return { propertyId: clean(property.propertyId), displayName: clean(property.displayName, 100), timezone: clean(property.timezone || "Asia/Taipei", 80), currency: clean(property.currency || "TWD", 10), rooms, amenities, policies, faqs };
 }
 
-module.exports = { buildPropertyCatalog, PROPERTY_SETTING_CATALOG };
+module.exports = { buildPropertyCatalog, PROPERTY_SETTING_CATALOG, CANONICAL_FACT_ALIASES };
