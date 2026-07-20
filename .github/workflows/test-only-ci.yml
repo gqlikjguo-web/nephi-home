@@ -1,0 +1,29 @@
+name: test-only-ci
+
+on:
+  push:
+    branches: [test-only/node-pilot-integration]
+  pull_request:
+    branches: [test-only/node-pilot-integration]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pilot/nephi-home-node-pilot-v1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: pilot/nephi-home-node-pilot-v1/package-lock.json
+      - run: npm ci
+      - run: node tests/v2-runtime-uniqueness-runner.js
+      - run: node tests/junzan-ai-constitution-contract-runner.js
+      - run: node tests/v1-golden-acceptance-matrix-runner.js
+      - run: node tests/conversation-engine-v2-runner.js
+      - run: node tests/v2-live-availability-regression-runner.js
+      - run: node tests/conversation-engine-v2-integration-runner.js
+      - run: npm test

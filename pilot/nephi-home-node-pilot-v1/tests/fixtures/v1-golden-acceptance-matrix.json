@@ -1,0 +1,19 @@
+{
+  "referenceDate": "2026-07-17T10:00:00+08:00",
+  "categories": {
+    "availability": ["named-room", "any-room", "colloquial-room", "bundle-multi-night", "full-day", "room-alias"],
+    "multiQuestion": ["availability-parking-bbq", "coverage", "unknown-not-no"],
+    "state": ["first-turn", "follow-up", "topic-change", "date-change", "property-change", "room-type-change", "invalid-date", "missing-stay"],
+    "faq": ["pool", "ktv", "children", "kitchen", "cancellation", "address"],
+    "boundary": ["unreliable-resolver", "missing-data", "no-inventory", "invalid-input", "unknown"],
+    "data": ["resolver-only", "no-hard-code", "no-cross-property-leak", "property-scoped"],
+    "runtime": ["one-claim", "one-v2-execution", "one-reply", "no-push", "property-routing"]
+  },
+  "cases": [
+    {"id":"availability-double","message":"8/6 \u6709\u96d9\u4eba\u623f\u55ce\uff1f","requiredTasks":["availability"]},
+    {"id":"availability-four","message":"8/6 \u6709\u56db\u4eba\u623f\u55ce\uff1f","requiredTasks":["availability"]},
+    {"id":"multi-question","message":"8/6 \u6709\u96d9\u4eba\u623f\u55ce\uff1f\u6709\u8eca\u4f4d\u55ce\uff1f\u53ef\u4ee5\u70e4\u8089\u55ce\uff1f","requiredTasks":["availability","amenity","policy"]},
+    {"id":"nearest-date","message":"\u6700\u8fd1\u54ea\u5929\u6709\u7a7a\u623f","requiredTasks":["available_dates"]},
+    {"id":"unknown-not-no","message":"\u6709\u6c92\u6709\u672a\u63d0\u4f9b\u7684\u8a2d\u65bd\uff1f","requiredTasks":["unknown"]}
+  ]
+}

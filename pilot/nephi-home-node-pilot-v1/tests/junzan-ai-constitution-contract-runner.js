@@ -1,0 +1,15 @@
+"use strict";
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const engine = fs.readFileSync(path.resolve(__dirname, "../lib/conversation-engine-v2/engine.js"), "utf8");
+const executor = fs.readFileSync(path.resolve(__dirname, "../lib/conversation-engine-v2/capability-executor.js"), "utf8");
+const composer = fs.readFileSync(path.resolve(__dirname, "../lib/conversation-engine-v2/controlled-composer.js"), "utf8");
+assert.match(engine, /executeTasks\(/);
+assert.match(engine, /buildResponsePlan\(/);
+assert.match(engine, /validateClaims\(/);
+assert.match(executor, /availabilityResolver/);
+assert.match(executor, /availableDatesResolver/);
+assert.match(composer, /needs_human/);
+assert.doesNotMatch(engine, /nephi_home|room_301|room_302/);
+console.log(JSON.stringify({ caseCount: 7, passCount: 7, failCount: 0 }));
