@@ -8,14 +8,14 @@
 </head>
 <body data-public-base-url="{{PUBLIC_BASE_URL}}">
   <main class="guest-shell">
-    <header><p class="eyebrow">{{PUBLIC_BRAND_NAME}}</p><h1 id="propertyName">客人查房</h1></header>
+    <header><p class="eyebrow">{{PUBLIC_BRAND_NAME}}</p><h1 id="propertyName">空房查詢</h1></header>
     <section class="card">
       <form id="searchForm">
         <label>入住日期<input id="checkIn" name="checkIn" type="date" required></label>
         <p>退房日期：<strong id="checkOut">—</strong></p>
         <label>入住人數（可不填）<input name="guests" type="number" min="1" max="50" inputmode="numeric"></label>
         <label>查詢模式<select name="queryMode"><option value="any">全部可售方案</option><option value="room_only">僅散房</option><option value="bundle_only">僅包棟</option></select></label>
-        <label>指定房型或方案（可不填）<input name="roomType" maxlength="80" placeholder="例如：301、雙人房、四房包棟"></label>
+        <label>指定房型或方案（可不填）<select id="roomType" name="roomType" disabled><option value="all">不指定</option></select></label>
         <button type="submit">查詢</button>
       </form>
       <p id="message" class="message" role="status"></p>
@@ -25,8 +25,9 @@
       <p id="stayDates" class="stay-dates"></p>
       <div id="roomResults"></div>
       <div id="bundleResults"></div>
-      <a id="lineLink" class="line-button" target="_blank" rel="noopener noreferrer" hidden>加入 LINE 詢問</a>
+      <a id="lineLink" class="line-button" target="_blank" rel="noopener noreferrer" hidden>加入 LINE 詢問／立即訂房</a>
       <p id="lineUnavailable" class="line-unavailable" hidden>此旅宿尚未設定 LINE 聯絡方式</p>
+      <p id="lineDisclaimer" class="line-disclaimer" hidden>最終房況與訂房請以民宿 LINE 確認為準。</p>
     </section>
     <footer><small>由 {{PUBLIC_BRAND_NAME}} 提供房況查詢服務</small></footer>
   </main>

@@ -3,12 +3,13 @@
 const { ROOM_COLUMNS } = require("./domain");
 const { createServiceDataAccess } = require("./providers/service-data-access");
 const { roomMatchesType } = require("./conversation-coordinator");
+const { normalizeGoogleMapsUrl } = require("./google-maps-url");
 
-const INDIVIDUAL_ROOMS = ROOM_COLUMNS.slice(0, 4);
 const ALLOWED_STATUSES = new Set(["available", "closed"]);
 const ALLOWED_ACTIONS = new Set(["correct", "needs_fix", "should_handoff"]);
 const LINE_USER_ID_PATTERN = /^[A-Za-z0-9_-]{3,128}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const LINE_URL_HOSTS = new Set(["lin.ee", "line.me"]);
 const SAFE_FACT_KEYS = [
   "checkInTime", "checkOutTime", "parkingRule", "bbqRule", "petRule",
   "equipment", "breakfastRule", "drinkingWaterRule", "laundryRule",
@@ -346,8 +347,8 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     const rooms = availabilityReliable ? candidateRooms.filter((room) => dates.every((date) => {
       const row = byDate[date];
       if (!row) return false;
-      if (room.id === "wholeHouse") {
-        return row.wholeHouse === "available" && INDIVIDUAL_ROOMS.every((id) => row[id] === "available");
+      if (room.inventoryType === "bundle") {
+        return row[room.id] === "available" && (room.memberRoomIds || []).every((id) => row[id] === "available");
       }
       return row[room.id] === "available";
     })) : [];
@@ -390,6 +391,49 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       rooms: homestay.rooms,
       rows: repository.getAvailabilityRows(homestay.customerId, from, to),
       notesByDate
+    };
+  }
+
+  function getPropertyProfile(customerId) {
+    const property = requireCustomerId(customerId);
+    return {
+      propertyName: property.name,
+      googleMapsUrl: normalizeGoogleMapsUrl(property.businessProfile && property.businessProfile.googleMapsUrl),
+      lineUrl: property.lineUrl || "",
+      contactInfo: String(property.businessProfile && property.businessProfile.contactInfo || ""),
+      checkInTime: String(property.safeFacts && property.safeFacts.checkInTime || ""),
+      checkOutTime: String(property.safeFacts && property.safeFacts.checkOutTime || "")
+    };
+  }
+
+  function updatePropertyProfile(input) {
+    const property = requireCustomerId(input.customerId);
+    const propertyName = cleanText(input.propertyName, 80);
+    const googleMapsUrl = normalizeGoogleMapsUrl(input.googleMapsUrl);
+    const contactInfo = cleanText(input.contactInfo, 300);
+    const checkInTime = cleanText(input.checkInTime, 5);
+    const checkOutTime = cleanText(input.checkOutTime, 5);
+    const lineUrl = cleanText(input.lineUrl, 500);
+    if (!propertyName || !TIME_PATTERN.test(checkInTime) || !TIME_PATTERN.test(checkOutTime)) throw new AppError(400, "INVALID_PROFILE", "請填寫民宿名稱與有效的入住、退房時間");
+    if (input.googleMapsUrl && !googleMapsUrl) throw new AppError(400, "INVALID_GOOGLE_MAPS_URL", "Google Maps 網址格式不正確");
+    if (lineUrl) {
+      let parsed;
+      try { parsed = new URL(lineUrl); } catch { throw new AppError(400, "INVALID_LINE_URL", "LINE 官方帳號網址格式不正確"); }
+      if (parsed.protocol !== "https:" || !LINE_URL_HOSTS.has(parsed.hostname.toLowerCase())) throw new AppError(400, "INVALID_LINE_URL", "LINE 官方帳號網址格式不正確");
+    }
+    const updated = repository.updatePropertyProfile(property.customerId, {
+      displayName: propertyName,
+      businessProfile: { ...(property.businessProfile || {}), googleMapsUrl, contactInfo },
+      contactLink: lineUrl,
+      commonAnswers: { ...(property.safeFacts || {}), checkInTime, checkOutTime }
+    });
+    return {
+      propertyName: updated.displayName,
+      googleMapsUrl: normalizeGoogleMapsUrl(updated.businessProfile && updated.businessProfile.googleMapsUrl),
+      lineUrl: updated.contactLink || "",
+      contactInfo: String(updated.businessProfile && updated.businessProfile.contactInfo || ""),
+      checkInTime: String(updated.commonAnswers && updated.commonAnswers.checkInTime || ""),
+      checkOutTime: String(updated.commonAnswers && updated.commonAnswers.checkOutTime || "")
     };
   }
 
@@ -972,6 +1016,8 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
   return {
     listHomestays,
     getBootstrap,
+    getPropertyProfile,
+    updatePropertyProfile,
     updateSettings,
     searchAvailability,
     searchAvailableDates,

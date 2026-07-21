@@ -8,6 +8,7 @@ function toLegacyProperty(property) {
     rooms: property.rooms || [],
     safeFacts: property.commonAnswers || {},
     faqs: property.faqs || [],
+    businessProfile: property.businessProfile || {},
     lineUrl: property.contactLink || "",
     publicEnabled: !property.onboarding || property.onboarding.isReady !== false
   };
@@ -25,6 +26,7 @@ function createServiceDataAccess(providers) {
       rooms: input.rooms,
       commonAnswers: input.safeFacts
     })),
+    updatePropertyProfile: (...args) => settings.updatePropertyProfile(...args),
     getAvailabilityRows: (...args) => availability.getRows(...args),
     setAvailabilityDay: (...args) => availability.setDay(...args),
     getAvailabilityDayNotes: (...args) => availability.getDayNotes(...args),

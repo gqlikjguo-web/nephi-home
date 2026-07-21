@@ -167,7 +167,7 @@ class JsonFileRepository {
   }
 
   listHomestays() {
-    return this.read().homestays.map((item) => ({ customerId: item.customerId, name: item.name }));
+    return this.read().homestays.map((item) => JSON.parse(JSON.stringify(item)));
   }
 
   getHomestay(customerId) {
@@ -191,6 +191,8 @@ class JsonFileRepository {
       homestay.name = input.name;
       homestay.rooms = input.rooms.map((room) => ({ ...room }));
       homestay.safeFacts = { ...input.safeFacts };
+      if (input.businessProfile) homestay.businessProfile = { ...input.businessProfile };
+      if (Object.hasOwn(input, "lineUrl")) homestay.lineUrl = input.lineUrl;
       homestay.updatedAt = this.now().toISOString();
       return JSON.parse(JSON.stringify(homestay));
     });

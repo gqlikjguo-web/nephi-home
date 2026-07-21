@@ -34,6 +34,18 @@ class JsonCustomerSettingsProvider extends CustomerSettingsProvider {
     });
     return toProperty(updated);
   }
+  updatePropertyProfile(propertyId, input) {
+    const current = this.repository.getHomestay(propertyId);
+    if (!current) return null;
+    const updated = this.repository.updateHomestay(propertyId, {
+      name: input.displayName,
+      rooms: current.rooms || [],
+      safeFacts: input.commonAnswers,
+      businessProfile: input.businessProfile,
+      lineUrl: input.contactLink
+    });
+    return toProperty(updated);
+  }
   updateRoomPricingBatch(propertyId, items) {
     const homestay = this.repository.getHomestay(propertyId);
     if (!homestay) throw new Error("room not found");

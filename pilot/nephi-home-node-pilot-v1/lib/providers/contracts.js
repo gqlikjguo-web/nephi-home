@@ -8,6 +8,7 @@ class CustomerSettingsProvider {
   listProperties() { return notImplemented("CustomerSettingsProvider", "listProperties"); }
   getProperty() { return notImplemented("CustomerSettingsProvider", "getProperty"); }
   updateProperty() { return notImplemented("CustomerSettingsProvider", "updateProperty"); }
+  updatePropertyProfile() { return notImplemented("CustomerSettingsProvider", "updatePropertyProfile"); }
 }
 
 class AvailabilityProvider {

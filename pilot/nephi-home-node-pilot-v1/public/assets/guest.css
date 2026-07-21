@@ -20,5 +20,6 @@ button, .line-button { border: 0; background: #315d3b; color: #fff; font-weight:
 .line-button { display: block; background: #06c755; }
 .line-button[hidden] { display: none; }
 .line-unavailable { color: #607268; text-align: center; }
+.line-disclaimer { margin: 12px 0 0; color: #607268; text-align: center; font-size: .9rem; }
 .stay-dates { white-space: nowrap; font-variant-numeric: tabular-nums; }
 @media (max-width: 390px) { .guest-shell { width: 100%; max-width: 390px; padding: 16px 12px 36px; overflow-x: hidden; } .card { padding: 15px; } .stay-dates { font-size: .94rem; } }

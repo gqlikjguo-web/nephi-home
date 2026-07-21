@@ -9,6 +9,7 @@ const mutationVersions = new Map();
 const saveStates = new Map();
 let noteEditorState = null;
 const pricingState = { rooms: [], overrides: [], original: new Map(), dirty: false, saving: false };
+const expectedSlug = (() => { const parts = location.pathname.split("/").filter(Boolean); return parts.length === 2 && parts[1] === "admin" ? parts[0] : ""; })();
 
 async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers: { "content-type": "application/json", ...(options.headers || {}) } });
@@ -46,17 +47,17 @@ function renderSaveState(container, key) {
 }
 
 function createStatusControl(date, room) {
-  const wrapper = element("div", "room-status-control"), current = availabilityState.days.get(date)?.[room.id] || "closed";
-  for (const [status, label] of [["available", "可售"], ["closed", "不可售"]]) {
-    const button = element("button", `status-choice ${current === status ? `is-${status}` : ""}`, label); button.type = "button"; button.setAttribute("aria-pressed", String(current === status)); button.setAttribute("aria-label", `${dateLabel(date)} ${room.name}設為${label}`); button.onclick = () => saveDay(date, room, status); wrapper.append(button);
-  }
+  const wrapper = element("div", "room-status-control"), current = availabilityState.days.get(date)?.[room.id] || "closed", available = current === "available";
+  const label = element("span", "status-text", available ? "可售" : "不可售");
+  const input = document.createElement("input"); input.type = "checkbox"; input.className = "status-toggle"; input.checked = available; input.setAttribute("aria-label", `${dateLabel(date)} ${room.name}目前${label.textContent}`); input.onchange = () => saveDay(date, room, input.checked ? "available" : "closed");
+  wrapper.append(label, input);
   return wrapper;
 }
 
 function createRoomRow(date, room) {
   const row = element("article", "availability-room-row"), name = element("div", "room-label", room.name), actions = element("div", "room-actions"), statusArea = element("div", "room-save-area");
   actions.append(createStatusControl(date, room));
-  const note = noteFor(date, room), button = element("button", `note-button${note ? " has-note" : ""}`, note ? "編輯備註" : "＋備註"); button.type = "button"; button.setAttribute("aria-label", `${dateLabel(date)} ${room.name}${note ? "有內部備註，編輯備註" : "新增內部備註"}`); button.onclick = () => openNoteEditor(date, room.id); actions.append(button);
+  const note = noteFor(date, room), button = element("button", `note-button${note ? " has-note" : ""}`, note ? "已備註" : "＋備註"); button.type = "button"; button.setAttribute("aria-label", `${dateLabel(date)} ${room.name}${note ? "有內部備註，編輯備註" : "新增內部備註"}`); button.onclick = () => openNoteEditor(date, room.id); actions.append(button);
   renderSaveState(statusArea, mutationKey("status", date, room.id)); row.append(name, actions, statusArea); return row;
 }
 
@@ -100,7 +101,6 @@ async function loadMonth() {
   finally { if (generation === requestGeneration) { availabilityState.loading = false; $("availabilityLoading").hidden = true; } }
 }
 async function saveDay(date, room, status) {
-  if (room.inventoryType === "bundle" && !confirm(status === "closed" ? "關閉此包棟方案，將同時關閉包含的所有房間。" : "開放此包棟方案，將同時開放包含的所有房間。")) return;
   const key = mutationKey("status", date, room.id), version = nextMutationVersion(key), retry = () => saveDay(date, room, status); saveStates.set(key, { phase: "saving", message: "儲存中…" }); renderAvailability();
   return queueMutation(key, async () => { try { const data = await api("/api/availability/day", { method: "POST", body: JSON.stringify({ propertyId: session.propertyId, date, roomTypeId: room.id, status }) }); const row = data.row || {}; if (availabilityState.days.has(date)) for (const currentRoom of availabilityState.rooms) if (row[currentRoom.id]) availabilityState.days.get(date)[currentRoom.id] = row[currentRoom.id]; if (isLatestMutation(key, version)) saveStates.set(key, { phase: "success", message: "已儲存" }); }
     catch (error) { if (isLatestMutation(key, version)) saveStates.set(key, { phase: "failed", message: `儲存失敗：${error.message}`, retry }); } finally { renderAvailability(); } });
@@ -163,14 +163,20 @@ async function loadPricing() {
   $("overrideList").replaceChildren(...data.overrides.map(item => cell("p", `${item.date}｜${data.rooms.find(room => room.id === item.roomId)?.name || "房型"}｜${item.price} 元`)));
 }
 
-$("bundleForm").onsubmit = async event => { event.preventDefault(); const id = $("bundleId").value, payload = { customerId: session.propertyId, name: $("bundleName").value, capacity: Number($("bundleCapacity").value), mondayThursdayPrice: Number($("bundleMondayThursdayPrice").value), fridayPrice: Number($("bundleFridayPrice").value), saturdayHolidayPrice: Number($("bundleSaturdayHolidayPrice").value), sundayPrice: Number($("bundleSundayPrice").value), enabled: $("bundleEnabled").checked, memberRoomIds: [...document.querySelectorAll('[name="memberRoom"]:checked')].map(input => input.value) }; try { await api(id ? `/api/bundles/${encodeURIComponent(id)}` : "/api/bundles", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }); clearBundle(); await Promise.all([loadBundles(), loadMonth()]); } catch (error) { alert(error.message); } };
+async function loadProfile() {
+  const profile = await api(`/api/property-profile?propertyId=${encodeURIComponent(session.propertyId)}`);
+  $("profileName").value = profile.propertyName || ""; $("profileGoogleMapsUrl").value = profile.googleMapsUrl || ""; $("profileLineUrl").value = profile.lineUrl || ""; $("profileContactInfo").value = profile.contactInfo || ""; $("profileCheckInTime").value = profile.checkInTime || ""; $("profileCheckOutTime").value = profile.checkOutTime || "";
+}
+
+$("bundleForm").onsubmit = async event => { event.preventDefault(); const id = $("bundleId").value, status = $("bundleStatus"), payload = { customerId: session.propertyId, name: $("bundleName").value, capacity: Number($("bundleCapacity").value), mondayThursdayPrice: Number($("bundleMondayThursdayPrice").value), fridayPrice: Number($("bundleFridayPrice").value), saturdayHolidayPrice: Number($("bundleSaturdayHolidayPrice").value), sundayPrice: Number($("bundleSundayPrice").value), enabled: $("bundleEnabled").checked, memberRoomIds: [...document.querySelectorAll('[name="memberRoom"]:checked')].map(input => input.value) }; status.textContent = "儲存中…"; try { await api(id ? `/api/bundles/${encodeURIComponent(id)}` : "/api/bundles", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }); await Promise.all([loadBundles(), loadMonth()]); status.textContent = "已儲存"; clearBundle(); } catch (error) { status.textContent = `儲存失敗：${error.message}。輸入內容仍保留，請重試。`; } };
 $("pricingMatrixForm").onsubmit = event => { event.preventDefault(); savePricingMatrix(); };
-$("overrideForm").onsubmit = async event => { event.preventDefault(); try { await api("/api/room-price-overrides", { method: "POST", body: JSON.stringify({ customerId: session.propertyId, roomId: $("overrideRoom").value, date: $("overrideDate").value, price: Number($("overridePrice").value) }) }); await loadPricing(); event.currentTarget.reset(); } catch (error) { alert(error.message); } };
-async function enter(value) { if (value.requiresPropertySelection || !value.propertyId) return showPropertyChooser(value); session = value; $("login").hidden = true; $("propertyChooser").hidden = true; $("workspace").hidden = false; $("logout").hidden = false; $("propertyLabel").textContent = `業者：${value.propertyId}`; $("month").value = $("month").value || currentMonth(); let savedView = "daily"; try { savedView = localStorage.getItem("junzanAvailabilityView") || "daily"; } catch {} availabilityState.view = matchMedia("(max-width: 640px)").matches ? "daily" : ["daily", "calendar"].includes(savedView) ? savedView : "daily"; await Promise.all([loadMonth(), loadBundles(), loadPricing()]); }
+$("profileForm").onsubmit = async event => { event.preventDefault(); const form = event.currentTarget; if (!form.reportValidity()) return; const status = $("profileStatus"), payload = { propertyId: session.propertyId, propertyName: $("profileName").value, googleMapsUrl: $("profileGoogleMapsUrl").value, lineUrl: $("profileLineUrl").value, contactInfo: $("profileContactInfo").value, checkInTime: $("profileCheckInTime").value, checkOutTime: $("profileCheckOutTime").value }; status.textContent = "儲存中…"; try { const profile = await api("/api/property-profile", { method: "PUT", body: JSON.stringify(payload) }); $("profileName").value = profile.propertyName; status.textContent = "已儲存"; } catch (error) { status.textContent = `儲存失敗：${error.message}。輸入內容仍保留，請重試。`; } };
+$("overrideForm").onsubmit = async event => { event.preventDefault(); const roomId = $("overrideRoom").value, date = $("overrideDate").value, status = $("overrideStatus"), exists = pricingState.overrides.some(item => item.roomId === roomId && item.date === date); if (exists && !confirm("此房型在該日期已有特殊價格，確定覆蓋嗎？")) return; status.textContent = "儲存中…"; try { await api("/api/room-price-overrides", { method: "POST", body: JSON.stringify({ customerId: session.propertyId, roomId, date, price: Number($("overridePrice").value) }) }); await loadPricing(); status.textContent = "已儲存"; event.currentTarget.reset(); } catch (error) { status.textContent = `儲存失敗：${error.message}。輸入內容仍保留，請重試。`; } };
+async function enter(value) { if (value.requiresPropertySelection || !value.propertyId) return showPropertyChooser(value); if (expectedSlug) value = await api(`/api/admin/session?slug=${encodeURIComponent(expectedSlug)}`); session = value; $("login").hidden = true; $("propertyChooser").hidden = true; $("workspace").hidden = false; $("logout").hidden = false; $("propertyLabel").textContent = `業者：${value.propertyId}`; $("month").value = $("month").value || currentMonth(); let savedView = "daily"; try { savedView = localStorage.getItem("junzanAvailabilityView") || "daily"; } catch {} availabilityState.view = matchMedia("(max-width: 640px)").matches ? "daily" : ["daily", "calendar"].includes(savedView) ? savedView : "daily"; await Promise.all([loadMonth(), loadBundles(), loadPricing(), loadProfile()]); }
 $("loginForm").onsubmit = async event => { event.preventDefault(); try { await enter(await api("/api/admin/login", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) })); } catch (error) { showLogin(error.message); } };
 document.querySelectorAll("[data-view]").forEach(button => { button.onclick = () => switchView(button.dataset.view); });
 $("noteText").oninput = updateNoteCount; $("noteSave").onclick = () => saveNote(); $("noteClear").onclick = () => saveNote(""); $("noteClose").onclick = closeNoteEditor;
 $("month").onchange = () => { if (hasUnsavedNote() && !confirm("備註尚未儲存，確定切換月份嗎？")) { $("month").value = availabilityState.loadedMonth; return; } noteEditorState = null; $("noteEditor").hidden = true; loadMonth(); };
 $("bundleCancel").onclick = clearBundle; $("logout").onclick = async () => { await api("/api/admin/logout", { method: "POST", body: "{}" }); showLogin(); };
 window.addEventListener("beforeunload", event => { if (!hasUnsavedNote() && !pricingState.dirty && !mutationQueues.size) return; event.preventDefault(); event.returnValue = ""; });
-api("/api/admin/session").then(enter).catch(() => showLogin());
+api(`/api/admin/session${expectedSlug ? `?slug=${encodeURIComponent(expectedSlug)}` : ""}`).then(enter).catch(() => showLogin());

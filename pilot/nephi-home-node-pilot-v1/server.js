@@ -11,6 +11,7 @@ const { createMvpService, AppError } = require("./lib/mvp-service");
 const { runtimeConfig } = require("./config/runtime");
 const { verifyPassword, sessionTokenHash } = require("./lib/admin-auth");
 const { createOnboardingService } = require("./lib/onboarding-service");
+const { resolvePublicProperty, normalizePublicSlug } = require("./lib/public-property-routing");
 const { createOnboardingEmailNotifier } = require("./lib/onboarding-email");
 const { createPublicBrand } = require("./config/public-brand");
 const { renderPublicHtml } = require("./lib/public-brand-html");
@@ -42,7 +43,7 @@ function cookieValue(request, name) {
 }
 
 function isAdminDataRoute(pathname) {
-  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
+  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname === "/api/property-profile" || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
 }
 
 function sendData(response, data, status = 200) {
@@ -176,6 +177,20 @@ function publicAvailabilityResult(result) {
   };
 }
 
+function publicPropertyMetadata(property) {
+  const rooms = (property.rooms || []).filter((room) => room && room.enabled !== false);
+  let lineUrl = "";
+  try {
+    const parsed = new URL(String(property.contactLink || ""));
+    if (parsed.protocol === "https:" && new Set(["lin.ee", "line.me"]).has(parsed.hostname.toLowerCase())) lineUrl = parsed.toString();
+  } catch {}
+  return {
+    propertyName: String(property.displayName || ""),
+    inventoryOptions: [{ id: "all", name: "不指定", inventoryType: "all" }, ...rooms.map((room) => ({ id: room.id, name: room.name, inventoryType: room.inventoryType || "room", capacity: room.capacity, basePrice: room.mondayThursdayPrice ?? room.basePrice ?? null }))],
+    lineUrl
+  };
+}
+
 function createRequestHandler(service, options = {}) {
   const lineWebhookHandler = options.lineWebhookHandler;
   const persistence = options.persistence;
@@ -208,6 +223,11 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "GET" && pathname === "/admin/onboarding") {const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");return sendStatic(response,"admin-onboarding.html",publicBrand);}
       if (request.method === "GET" && pathname === "/admin") return sendStatic(response, "admin.html", publicBrand);
       if (request.method === "GET" && pathname.startsWith("/assets/")) return sendStatic(response, pathname.slice(1), publicBrand);
+
+      const slugRoute = /^\/([a-z0-9-]+)(?:\/(admin))?$/i.exec(pathname);
+      if (request.method === "GET" && slugRoute) {
+        return sendStatic(response, slugRoute[2] ? "admin.html" : "guest.html", publicBrand);
+      }
 
       if(pathname==="/api/public/onboarding/drafts"&&request.method==="POST"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");return sendData(response,onboarding.createDraft(),201);}
       if(pathname==="/api/public/onboarding/resume"&&request.method==="GET"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");return sendData(response,onboarding.resolveResume(url.searchParams.get("token")));}
@@ -242,16 +262,24 @@ function createRequestHandler(service, options = {}) {
         }
       }
 
+      if (request.method === "GET" && pathname === "/api/public/property") {
+        const property = resolvePublicProperty(customerSettings.listProperties(), url.searchParams.get("slug"));
+        if (!property) throw new AppError(404, "PUBLIC_PROPERTY_NOT_FOUND", "此查房連結無效，請重新由民宿官方連結進入。");
+        return sendData(response, publicPropertyMetadata(property));
+      }
       if (request.method === "GET" && pathname === "/api/public/availability") {
-        const propertyId = String(url.searchParams.get("propertyId") || "").trim();
+        const slug = normalizePublicSlug(url.searchParams.get("slug"));
+        const property = slug ? resolvePublicProperty(customerSettings.listProperties(), slug) : null;
+        if (!property) throw new AppError(404, "PUBLIC_PROPERTY_NOT_FOUND", "此查房連結無效，請重新由民宿官方連結進入。");
+        const propertyId = property.propertyId;
         const checkIn = String(url.searchParams.get("checkIn") || "").trim();
         const checkOut = String(url.searchParams.get("checkOut") || "").trim() || nextDateKey(checkIn);
         const queryMode = String(url.searchParams.get("queryMode") || "any").trim();
         if (!["any", "room_only", "bundle_only"].includes(queryMode)) {
           throw new AppError(400, "INVALID_QUERY_MODE", "Invalid query mode");
         }
-        const property = service.getBootstrap(propertyId);
-        if (property.publicEnabled === false) throw new AppError(404, "PROPERTY_NOT_AVAILABLE", "Property is not available");
+        const bootstrap = service.getBootstrap(propertyId);
+        if (bootstrap.publicEnabled === false) throw new AppError(404, "PROPERTY_NOT_AVAILABLE", "Property is not available");
         const result = service.searchAvailability({
           customerId: propertyId,
           checkIn,
@@ -297,6 +325,11 @@ function createRequestHandler(service, options = {}) {
         const token = cookieValue(request, "nephi_admin_session");
         const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
         if (!session) throw new AppError(401, "LOGIN_REQUIRED", "請先登入");
+        const expected = normalizePublicSlug(url.searchParams.get("slug"));
+        if (expected) {
+          const property = resolvePublicProperty(customerSettings.listProperties(), expected);
+          if (!property || session.propertyId !== property.propertyId) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權管理此旅宿");
+        }
         return sendData(response, adminSessionData(session));
       }
 
@@ -318,6 +351,8 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "GET" && pathname === "/api/bootstrap") {
         return sendData(response, service.getBootstrap(url.searchParams.get("customerId")));
       }
+      if (request.method === "GET" && pathname === "/api/property-profile") return sendData(response, service.getPropertyProfile(url.searchParams.get("propertyId") || url.searchParams.get("customerId")));
+      if (request.method === "PUT" && pathname === "/api/property-profile") { const body = request.adminBody || await readJsonBody(request); return sendData(response, service.updatePropertyProfile({ ...body, customerId: body.propertyId || body.customerId })); }
       if (request.method === "PUT" && pathname === "/api/settings") {
         return sendData(response, { settings: service.updateSettings(request.adminBody || await readJsonBody(request)) });
       }
