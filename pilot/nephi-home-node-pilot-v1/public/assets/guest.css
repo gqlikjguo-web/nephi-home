@@ -17,9 +17,12 @@ button, .line-button { border: 0; background: #315d3b; color: #fff; font-weight:
 .result-list { margin: 8px 0 18px; padding: 0; list-style: none; }
 .result-list li { padding: 10px 0; border-bottom: 1px solid #ecefec; }
 .result-list strong { display: block; }
+.result-card { display: grid; gap: 8px; padding: 14px !important; margin-bottom: 10px; border: 1px solid #dce6df !important; border-radius: 10px; overflow-wrap: anywhere; }
+.available-label { color: #237043; font-weight: 700; }
+.result-price { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .line-button { display: block; background: #06c755; }
 .line-button[hidden] { display: none; }
 .line-unavailable { color: #607268; text-align: center; }
 .line-disclaimer { margin: 12px 0 0; color: #607268; text-align: center; font-size: .9rem; }
 .stay-dates { white-space: nowrap; font-variant-numeric: tabular-nums; }
-@media (max-width: 390px) { .guest-shell { width: 100%; max-width: 390px; padding: 16px 12px 36px; overflow-x: hidden; } .card { padding: 15px; } .stay-dates { font-size: .94rem; } }
+@media (max-width: 390px) { .guest-shell { width: 100%; max-width: 390px; padding: 16px 12px 36px; overflow-x: hidden; } .card { padding: 15px; } .stay-dates { font-size: .94rem; } .result-card,.line-button { min-width: 0; max-width: 100%; } }

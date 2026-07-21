@@ -18,11 +18,23 @@ function dateKey(date) { return date.toISOString().slice(0, 10); }
 function nextDate(value) { const date = new Date(`${value}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 1); return dateKey(date); }
 function formatDate(value) { const date = new Date(`${value}T00:00:00Z`); return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date); }
 
-function resultList(title, items) {
+function formatPrice(value) {
+  return Number.isInteger(value) && value > 0 ? `NT$${new Intl.NumberFormat("zh-TW").format(value)}` : "價格請洽民宿";
+}
+
+function resultList(title, items, lineUrl) {
   const section = document.createElement("section");
   const heading = document.createElement("h3"); heading.textContent = title;
   const list = document.createElement("ul"); list.className = "result-list";
-  for (const item of items) { const row = document.createElement("li"); const name = document.createElement("strong"); name.textContent = item.name; row.append(name, document.createTextNode(`價格：${item.price ?? "請洽民宿"}`)); list.append(row); }
+  for (const item of items) {
+    const row = document.createElement("li"); row.className = "result-card";
+    const name = document.createElement("strong"); name.textContent = item.name;
+    const status = document.createElement("span"); status.className = "available-label"; status.textContent = "✓ 可入住";
+    const price = document.createElement("span"); price.className = "result-price"; price.textContent = formatPrice(item.price);
+    row.append(name, status, price);
+    if (lineUrl) { const link = document.createElement("a"); link.className = "line-button"; link.href = lineUrl; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = "加入 LINE 訂房"; row.append(link); }
+    list.append(row);
+  }
   section.append(heading, list); return section;
 }
 
@@ -30,14 +42,12 @@ function renderResult(data) {
   document.querySelector("#stayDates").textContent = `${formatDate(data.checkIn)} 至 ${formatDate(data.checkOut)}`;
   const roomResults = document.querySelector("#roomResults");
   const bundleResults = document.querySelector("#bundleResults");
-  roomResults.replaceChildren(...(data.rooms.length ? [resultList("可詢問房型", data.rooms)] : []));
-  bundleResults.replaceChildren(...(data.bundles.length ? [resultList("可詢問包棟方案", data.bundles)] : []));
+  roomResults.replaceChildren(...(data.rooms.length ? [resultList("可售房型", data.rooms, data.lineUrl)] : []));
+  bundleResults.replaceChildren(...(data.bundles.length ? [resultList("可售包棟方案", data.bundles, data.lineUrl)] : []));
   message.textContent = data.empty ? "此日期目前沒有符合條件的可售房型或包棟方案。" : "";
-  const lineLink = document.querySelector("#lineLink");
   const lineUnavailable = document.querySelector("#lineUnavailable");
-  lineLink.hidden = !data.lineUrl; lineUnavailable.hidden = Boolean(data.lineUrl);
+  lineUnavailable.hidden = Boolean(data.lineUrl);
   document.querySelector("#lineDisclaimer").hidden = !data.lineUrl;
-  if (data.lineUrl) lineLink.href = data.lineUrl; else lineLink.removeAttribute("href");
   results.hidden = false;
 }
 

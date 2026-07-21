@@ -147,7 +147,16 @@ function nextDateKey(dateKey) {
   return date.toISOString().slice(0, 10);
 }
 
-function publicAvailabilityResult(result) {
+function publicPriceForDate(room, date, overrides = []) {
+  const override = overrides.find((item) => item.roomId === room.id && item.date === date);
+  if (override && Number.isInteger(Number(override.price)) && Number(override.price) > 0) return Number(override.price);
+  const weekday = new Date(`${date}T00:00:00.000Z`).getUTCDay();
+  const key = weekday === 0 ? "sundayPrice" : weekday === 5 ? "fridayPrice" : weekday === 6 ? "saturdayHolidayPrice" : "mondayThursdayPrice";
+  const value = Number(room[key] ?? room.basePrice);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function publicAvailabilityResult(result, property, overrides = []) {
   let lineUrl = "";
   try {
     const parsed = new URL(String(result.lineUrl || ""));
@@ -158,7 +167,8 @@ function publicAvailabilityResult(result) {
     id: room.id,
     name: room.name,
     capacity: Number(room.capacity || 0),
-    basePrice: Number(room.basePrice || 0) || null
+    price: publicPriceForDate(room, result.checkIn, overrides),
+    currency: String(property.currency || "TWD")
   });
   const rooms = result.rooms.filter((room) => room.inventoryType !== "bundle").map(item);
   const bundles = result.rooms.filter((room) => room.inventoryType === "bundle").map(item);
@@ -179,6 +189,7 @@ function publicAvailabilityResult(result) {
 
 function publicPropertyMetadata(property) {
   const rooms = (property.rooms || []).filter((room) => room && room.enabled !== false);
+  const hasBundles = rooms.some((room) => room.inventoryType === "bundle");
   let lineUrl = "";
   try {
     const parsed = new URL(String(property.contactLink || ""));
@@ -186,7 +197,7 @@ function publicPropertyMetadata(property) {
   } catch {}
   return {
     propertyName: String(property.displayName || ""),
-    inventoryOptions: [{ id: "all", name: "不指定", inventoryType: "all" }, ...rooms.map((room) => ({ id: room.id, name: room.name, inventoryType: room.inventoryType || "room", capacity: room.capacity, basePrice: room.mondayThursdayPrice ?? room.basePrice ?? null }))],
+    inventoryOptions: [{ id: "all", name: hasBundles ? "全部房型與包棟" : "全部房型", inventoryType: "all" }, ...rooms.map((room) => ({ id: room.id, name: room.name, inventoryType: room.inventoryType || "room", capacity: room.capacity, basePrice: room.mondayThursdayPrice ?? room.basePrice ?? null }))],
     lineUrl
   };
 }
@@ -288,7 +299,7 @@ function createRequestHandler(service, options = {}) {
           roomType: String(url.searchParams.get("roomType") || "all").trim() || "all",
           queryMode
         });
-        return sendData(response, publicAvailabilityResult(result));
+        return sendData(response, publicAvailabilityResult(result, property, customerSettings.listRoomPriceOverrides(propertyId)));
       }
 
       if (request.method === "POST" && pathname === "/api/admin/login") {

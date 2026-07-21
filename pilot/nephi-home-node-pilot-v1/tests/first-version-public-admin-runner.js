@@ -36,8 +36,13 @@ function property(propertyId, name, lineUrl) {
   assert.equal(guestScript.includes("propertyId"), false, "guest code must not accept or expose propertyId");
   assert.match(guestScript, /inventoryOptions/, "guest room choices must be supplied by public property data");
   assert.match(guestScript, /lineDisclaimer/, "guest results must include the LINE booking disclaimer");
+  assert.match(guestScript, /✓ 可入住/, "each public result card must state that the inventory is available");
+  assert.match(guestScript, /加入 LINE 訂房/, "each public result card must use the approved LINE booking label");
+  assert.match(guestScript, /Intl\.NumberFormat\("zh-TW"/, "public prices must use a locale-safe currency formatter");
   assert.match(adminScript, /status-toggle/, "admin availability must use a single controlled toggle");
-  assert.match(adminScript, /已備註/, "admin must distinguish existing notes from empty notes");
+  assert.match(adminScript, /＋備註/, "admin must expose an explicit add-note action");
+  assert.match(adminScript, /編輯備註/, "admin must expose an explicit edit-note action");
+  assert.match(adminScript, /bundle-members/, "bundle cards must render member room names as structured content");
   assert.match(adminScript, /已有特殊價格，確定覆蓋/, "overwriting a special price must require confirmation");
   assert.match(adminScript, /bundleStatus/, "bundle writes must expose explicit success or failure feedback");
   assert.match(guestCss, /max-width: 390px/, "guest mobile layout must include a narrow-screen rule");
@@ -66,6 +71,13 @@ function property(propertyId, name, lineUrl) {
       lineUrl: "https://lin.ee/otherOfficial",
       rooms: [{ id: "other", name: "另一間房", type: "other", capacity: 2, enabled: true, mondayThursdayPrice: 1000 }],
       availability: { "2026-08-06": { other: "available" } }
+    }, {
+      customerId: "bundle_home",
+      name: "包棟測試旅宿",
+      rooms: [
+        { id: "a", name: "A 房", type: "double", capacity: 2, enabled: true, mondayThursdayPrice: 1800 },
+        { id: "all-house", name: "六人包棟", type: "bundle", capacity: 6, enabled: true, inventoryType: "bundle", memberRoomIds: ["a"], mondayThursdayPrice: 4800 }
+      ]
     }],
     messageLogs: { nephi_home: [], other_home: [] }
   }));
@@ -77,7 +89,11 @@ function property(propertyId, name, lineUrl) {
     assert.equal(metadata.body.data.propertyName, "尼腓的家");
     assert.equal(Object.hasOwn(metadata.body.data, "propertyId"), false);
     assert.deepEqual(metadata.body.data.inventoryOptions.map((item) => item.id), ["all", "room301", "room302", "room401", "room402"], "guest options must come from the current property data");
+    assert.equal(metadata.body.data.inventoryOptions[0].name, "全部房型", "a property without bundles must label the all option as all rooms");
     assert.equal(metadata.body.data.lineUrl, "https://lin.ee/nephiOfficial");
+
+    const bundleMetadata = await json(`${running.url}/api/public/property?slug=bundlehome`);
+    assert.equal(bundleMetadata.body.data.inventoryOptions[0].name, "全部房型與包棟", "a property with bundles must identify both inventory types");
 
     const guestPage = await fetch(`${running.url}/nephihome`);
     const adminPage = await fetch(`${running.url}/nephihome/admin`);
@@ -88,10 +104,15 @@ function property(propertyId, name, lineUrl) {
     assert.equal(invalid.response.status, 404);
     assert.equal(invalid.body.error.message, "此查房連結無效，請重新由民宿官方連結進入。");
 
+    app.providers.customerSettings.listRoomPriceOverrides = () => [{ roomId: "room301", date: "2026-08-06", price: 2500, currency: "TWD" }];
     const availability = await json(`${running.url}/api/public/availability?slug=nephihome&checkIn=2026-08-06&checkOut=2026-08-07&guests=2`);
     assert.equal(availability.response.status, 200);
     assert.equal(availability.body.data.propertyName, "尼腓的家");
     assert.deepEqual(availability.body.data.rooms.map((item) => item.id), ["room301", "room302", "room401", "room402"], "public availability must use the slug-resolved property only");
+    assert.equal(availability.body.data.rooms.find((item) => item.id === "room301").price, 2500, "a date-specific price must override the base weekday price");
+    assert.equal(availability.body.data.rooms.find((item) => item.id === "room302").price, 3000, "the matching weekday base price must be used when there is no date override");
+    assert.equal(availability.body.data.rooms.find((item) => item.id === "room302").name, "家庭房", "public results must retain the formal property room name");
+    assert.equal(availability.body.data.lineUrl, "https://lin.ee/nephiOfficial", "public results must retain the current property's validated LINE URL");
     assert.equal(JSON.stringify(availability.body).includes("note"), false, "admin notes must never be public data");
 
     const profileResponse = await fetch(`${running.url}/api/property-profile`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", propertyName: "更新後旅宿", googleMapsUrl: "https://maps.app.goo.gl/nephi", lineUrl: "https://lin.ee/nephiOfficial", contactInfo: "0900-000-000", checkInTime: "15:00", checkOutTime: "11:00" }) });

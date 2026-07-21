@@ -57,7 +57,7 @@ function createStatusControl(date, room) {
 function createRoomRow(date, room) {
   const row = element("article", "availability-room-row"), name = element("div", "room-label", room.name), actions = element("div", "room-actions"), statusArea = element("div", "room-save-area");
   actions.append(createStatusControl(date, room));
-  const note = noteFor(date, room), button = element("button", `note-button${note ? " has-note" : ""}`, note ? "已備註" : "＋備註"); button.type = "button"; button.setAttribute("aria-label", `${dateLabel(date)} ${room.name}${note ? "有內部備註，編輯備註" : "新增內部備註"}`); button.onclick = () => openNoteEditor(date, room.id); actions.append(button);
+  const note = noteFor(date, room), button = element("button", `note-button${note ? " has-note" : ""}`, note ? "編輯備註" : "＋備註"); button.type = "button"; button.setAttribute("aria-label", `${dateLabel(date)} ${room.name}${note ? "有內部備註，編輯備註" : "新增內部備註"}`); button.onclick = () => openNoteEditor(date, room.id); actions.append(button);
   renderSaveState(statusArea, mutationKey("status", date, room.id)); row.append(name, actions, statusArea); return row;
 }
 
@@ -79,7 +79,7 @@ function renderCalendarView() {
   const grid = $("calendarGrid"), [year, month] = $("month").value.split("-").map(Number), dates = [...availabilityState.days.keys()];
   const nodes = "日一二三四五六".split("").map(day => element("div", "calendar-weekday", day));
   const leading = new Date(Date.UTC(year, month - 1, 1)).getUTCDay(); for (let index = 0; index < leading; index += 1) nodes.push(element("div", "calendar-cell is-empty"));
-  for (const date of dates) { const day = availabilityState.days.get(date), part = dateParts(date), available = availabilityState.rooms.filter(room => day[room.id] === "available").length, closed = availabilityState.rooms.length - available, hasNote = Boolean(availabilityState.notesByDate[date] && Object.keys(availabilityState.notesByDate[date]).length), button = element("button", `calendar-cell${date === currentDateKey() ? " is-today" : ""}${date === availabilityState.selectedDate ? " is-selected" : ""}`); button.type = "button"; button.setAttribute("aria-label", `${dateLabel(date)}，${available} 個可售，${closed} 個不可售${hasNote ? "，有內部備註" : ""}`); const top = element("span", "calendar-date", String(part.day)); if (hasNote) top.append(element("i", "calendar-note-dot")); button.append(top, element("span", "calendar-count available", `${available} 可售`), element("span", "calendar-count closed", `${closed} 不可售`)); button.onclick = () => { availabilityState.selectedDate = date; renderCalendarView(); }; nodes.push(button); }
+  for (const date of dates) { const day = availabilityState.days.get(date), part = dateParts(date), available = availabilityState.rooms.filter(room => day[room.id] === "available").length, closed = availabilityState.rooms.length - available, hasNote = Boolean(availabilityState.notesByDate[date] && Object.keys(availabilityState.notesByDate[date]).length), button = element("button", `calendar-cell${date === currentDateKey() ? " is-today" : ""}${date === availabilityState.selectedDate ? " is-selected" : ""}`); button.type = "button"; button.setAttribute("aria-label", `${dateLabel(date)}，${available} 個可售，${closed} 個不可售${hasNote ? "，有內部備註" : ""}`); const top = element("span", "calendar-date", String(part.day)); if (hasNote) top.append(element("i", "calendar-note-dot")); button.append(top, element("span", "calendar-count available", `${available} 可售`), element("span", "calendar-count closed", `${closed} 不可售`), element("span", "calendar-note-action", hasNote ? "查看備註" : "＋備註")); button.onclick = () => { availabilityState.selectedDate = date; renderCalendarView(); }; nodes.push(button); }
   grid.replaceChildren(...nodes); renderDayDetails(availabilityState.selectedDate);
 }
 
@@ -127,8 +127,10 @@ async function loadBundles() {
   $("bundleList").replaceChildren(...bundles.map(bundle => {
     const names = bundle.memberRoomIds.map(id => rooms.find(room => room.id === id)?.name).filter(Boolean);
     const row = document.createElement("article"); row.className = "bundle-row";
-    const text = cell("div", `${bundle.name}｜${bundle.capacity} 人｜週一至週四 ${bundle.mondayThursdayPrice} 元｜週五 ${bundle.fridayPrice} 元｜週六及連續假期 ${bundle.saturdayHolidayPrice} 元｜週日 ${bundle.sundayPrice} 元｜${bundle.enabled ? "啟用" : "停用"}｜${names.join("、")}`), edit = cell("button", "修改"), del = cell("button", "刪除");
-    edit.className = "secondary"; del.className = "danger"; edit.onclick = () => editBundle(bundle); del.onclick = () => deleteBundle(bundle); row.append(text, edit, del); return row;
+    const details = element("div", "bundle-details");
+    details.append(element("strong", "bundle-name", bundle.name), element("span", "bundle-capacity", `人數：${bundle.capacity} 人`), element("span", "bundle-price", `基本價格：NT$${new Intl.NumberFormat("zh-TW").format(bundle.mondayThursdayPrice)}`), element("span", "bundle-status", `狀態：${bundle.enabled ? "啟用" : "停用"}`), element("span", "bundle-members", `包含房型：${names.length ? names.join("、") : "未設定"}`));
+    const edit = cell("button", "修改"), del = cell("button", "刪除");
+    edit.className = "secondary"; del.className = "danger"; edit.onclick = () => editBundle(bundle); del.onclick = () => deleteBundle(bundle); row.append(details, edit, del); return row;
   }));
 }
 function editBundle(bundle) { $("bundleId").value = bundle.id; $("bundleName").value = bundle.name; $("bundleCapacity").value = bundle.capacity; $("bundleMondayThursdayPrice").value = bundle.mondayThursdayPrice; $("bundleFridayPrice").value = bundle.fridayPrice; $("bundleSaturdayHolidayPrice").value = bundle.saturdayHolidayPrice; $("bundleSundayPrice").value = bundle.sundayPrice; $("bundleEnabled").checked = bundle.enabled; document.querySelectorAll('[name="memberRoom"]').forEach(input => { input.checked = bundle.memberRoomIds.includes(input.value); }); }
