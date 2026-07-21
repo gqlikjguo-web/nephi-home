@@ -19,7 +19,7 @@ const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property
     const rawClient = require("../lib/providers/postgres-client");
     const client = await rawClient.openPostgres(connection);
     const mapUrl = "https://maps.app.goo.gl/PostgresLocation";
-    await client.query("UPDATE property_settings SET settings=settings || jsonb_build_object('commonAnswers',COALESCE(settings->'commonAnswers','{}'::jsonb)||jsonb_build_object('transport',$2::text)) WHERE property_id=$1", ["nephi_home", mapUrl]);
+    await client.query("UPDATE property_settings SET settings=settings || jsonb_build_object('commonAnswers',COALESCE(settings->'commonAnswers','{}'::jsonb)||jsonb_build_object('transport',$2::text)) WHERE property_id=$1", ["nephi_home", `導航與周邊位置請開啟 Google 地圖：\n${mapUrl}`]);
     await client.close();
     const providers = createProviders({ databaseUrl: "pglite:phase1", postgresConnection: connection });
     const property = providers.customerSettings.getProperty("nephi_home");

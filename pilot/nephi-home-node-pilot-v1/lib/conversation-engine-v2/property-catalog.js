@@ -1,6 +1,6 @@
 "use strict";
 
-const { normalizeGoogleMapsUrl } = require("../google-maps-url");
+const { normalizeGoogleMapsUrl, extractGoogleMapsUrl } = require("../google-maps-url");
 
 function clean(value, limit = 120) { return String(value || "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, limit); }
 function aliasesFor(property, id) { const map = property.semanticCatalog && property.semanticCatalog.aliases || {}; return Array.isArray(map[id]) ? map[id].map((x) => clean(x, 80)).filter(Boolean) : []; }
@@ -74,11 +74,18 @@ function buildPropertyCatalog(property) {
   // dedicated business profile field was introduced.  It is accepted only
   // when its complete value is a validated Google Maps URL; arbitrary
   // transport prose can never become a location fact.
-  const mapUrl = normalizeGoogleMapsUrl(property.businessProfile && property.businessProfile.googleMapsUrl)
-    || normalizeGoogleMapsUrl(answers.transport);
+  const profileMapUrl = normalizeGoogleMapsUrl(property.businessProfile && property.businessProfile.googleMapsUrl);
+  const legacyTransportMapUrl = extractGoogleMapsUrl(answers.transport);
+  const mapUrl = profileMapUrl || legacyTransportMapUrl;
+  const locationDiagnostics = {
+    source: profileMapUrl ? "businessProfile.googleMapsUrl" : legacyTransportMapUrl ? "commonAnswers.transport" : "none",
+    profileValuePresent: Boolean(property.businessProfile && property.businessProfile.googleMapsUrl),
+    transportValuePresent: Boolean(answers.transport),
+    urlValidation: mapUrl ? "pass" : "fail"
+  };
   const policies = [...propertySettingFacts(property, answers), { canonicalId: "location", category: "transport", publicName: "位置與導航", aliases: [...new Set([...LOCATION_ALIASES, ...aliasesFor(property, "location")])], status: mapUrl ? "confirmed_yes" : "unknown", answer: mapUrl }];
   const faqs = (property.faqs || []).filter((item) => item && item.question && item.answer).map((item) => { const canonicalId = clean(item.knowledgeKey || item.knowledgeId || item.id, 120); return { canonicalId, category: "amenity", publicName: clean(item.question, 200), aliases: mergedAliases(property, canonicalId), status: "confirmed_yes", answer: clean(item.answer, 800) }; }).slice(0, 50);
-  return { propertyId: clean(property.propertyId), displayName: clean(property.displayName, 100), timezone: clean(property.timezone || "Asia/Taipei", 80), currency: clean(property.currency || "TWD", 10), rooms, amenities, policies, faqs };
+  return { propertyId: clean(property.propertyId), displayName: clean(property.displayName, 100), timezone: clean(property.timezone || "Asia/Taipei", 80), currency: clean(property.currency || "TWD", 10), rooms, amenities, policies, faqs, locationDiagnostics };
 }
 
 module.exports = { buildPropertyCatalog, PROPERTY_SETTING_CATALOG, CANONICAL_FACT_ALIASES };

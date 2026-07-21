@@ -19,6 +19,14 @@ const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const TEST_LINE_WEBHOOK_ROUTE = "/api/test-line/webhook";
 
+function logSafeTestOnlyConversationTrace(details) {
+  const base = { scope: "conversation-engine-v2", traceId: details.traceId || "", correlationId: details.correlationId || "", eventId: details.eventId || "", propertyId: details.propertyId || "", stage: details.stage || "" };
+  if (details.stage === "property_catalog") return console.log(JSON.stringify({ ...base, providerType: details.providerType || "unknown", location: details.location || {} }));
+  if (details.stage === "planner") return console.log(JSON.stringify({ ...base, taskCount: details.taskCount || 0, tasks: (details.tasks || []).map((task) => ({ taskId: task.taskId || "", type: task.type || "", canonicalCandidate: task.canonicalCandidate || null, category: task.entity && task.entity.category || "" })) }));
+  if (details.stage === "executor") return console.log(JSON.stringify({ ...base, results: (details.results || []).map((item) => ({ taskId: item.taskId || "", status: item.status || "", reason: item.reason || "", locationFactProvided: Boolean(item.locationFactProvided), factSource: item.factSource || "" })) }));
+  if (["response_plan", "composer", "claim_validator", "line_ready"].includes(details.stage)) return console.log(JSON.stringify({ ...base, sectionCount: details.sectionCount, coveredTaskIds: details.coveredTaskIds || [], missingTaskIds: details.missingTaskIds || [], replyLength: details.replyLength, composerSource: details.composerSource || "", validationResult: details.validationResult || "" }));
+}
+
 function sendJson(response, status, payload, headers = {}) {
   response.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
@@ -458,7 +466,7 @@ function createApp(options = {}) {
   const onboardingEmailNotifier=createOnboardingEmailNotifier({env:options.onboardingEmailEnv||process.env,fetchImpl:options.onboardingEmailFetch||globalThis.fetch,publicBaseUrl:publicBrand.publicBaseUrl});
   const onboarding = createOnboardingService(providers.onboarding,{emailNotifier:onboardingEmailNotifier});
   const replyClient = options.lineReplyClientFactory || (options.lineReplyFetch && (({ channelAccessToken }) => ({ replyMessageWithHttpInfo: async (body) => { const response = await options.lineReplyFetch("https://api.line.me/v2/bot/message/reply", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${channelAccessToken}` }, body: JSON.stringify(body) }); if (!response.ok) { const error = new Error("line_reply_failed"); error.status = response.status; throw error; } return { httpResponse: { status: response.status } }; } })));
-  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2 });
+  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: false, onDiagnostic: config.testOnlyConversationEngineV2 ? logSafeTestOnlyConversationTrace : null });
   const claimEvent = (input) => providers.persistence.claimMessageEvent(input.customerId, input.channelId, input.eventId, { lineUserId: String(input.lineUserId || ""), eventTimestamp: input.eventTimestamp || "", guestMessage: String(input.messageText || ""), replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
   const updateEventStatus = (customerId, channelId, eventId, patch) => providers.persistence.updateMessageEvent(customerId, channelId, eventId, patch);
   const lineWebhookHandler = async ({ rawBody, signature, customerId }) => {

@@ -13,4 +13,16 @@ function normalizeGoogleMapsUrl(value) {
   } catch { return ""; }
 }
 
-module.exports = { normalizeGoogleMapsUrl };
+function extractGoogleMapsUrl(value) {
+  const direct = normalizeGoogleMapsUrl(value);
+  if (direct) return direct;
+  const raw = String(value || "").replace(/&amp;/gi, "&");
+  for (const match of raw.matchAll(/https:\/\/[^\s<>"'`]+/gi)) {
+    const candidate = match[0].replace(/[),.;!?，。！？]+$/u, "");
+    const normalized = normalizeGoogleMapsUrl(candidate);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+module.exports = { normalizeGoogleMapsUrl, extractGoogleMapsUrl };
