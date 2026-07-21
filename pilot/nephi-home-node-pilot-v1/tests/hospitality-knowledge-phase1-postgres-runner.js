@@ -16,6 +16,11 @@ const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property
   try {
     await migratePostgres(connection);
     await seedPostgres(connection);
+    const rawClient = require("../lib/providers/postgres-client");
+    const client = await rawClient.openPostgres(connection);
+    const mapUrl = "https://maps.app.goo.gl/PostgresLocation";
+    await client.query("UPDATE property_settings SET settings=settings || jsonb_build_object('businessProfile',COALESCE(settings->'businessProfile','{}'::jsonb)||jsonb_build_object('googleMapsUrl',$2::text)) WHERE property_id=$1", ["nephi_home", mapUrl]);
+    await client.close();
     const providers = createProviders({ databaseUrl: "pglite:phase1", postgresConnection: connection });
     const property = providers.customerSettings.getProperty("nephi_home");
     assert.equal(property.commonAnswers.cancellationRule, "退款、退費、退訂、取消、改期、延期、天災或臨時狀況相關問題，一律由真人客服確認。");
@@ -25,10 +30,11 @@ const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property
     const catalog = buildPropertyCatalog(property);
     assert.equal(catalog.faqs.find((item) => item.canonicalId === "singing").answer, singing.answer);
     assert.equal(catalog.policies.find((item) => item.canonicalId === "cancellation").answer, property.commonAnswers.cancellationRule);
-    const rawClient = require("../lib/providers/postgres-client");
-    const client = await rawClient.openPostgres(connection);
-    await client.query("UPDATE knowledge_items SET knowledge_key=NULL WHERE property_id=$1 AND question=$2", ["nephi_home", singing.question]);
-    await client.close();
+    const rematerializeClient = await rawClient.openPostgres(connection);
+    await rematerializeClient.query("UPDATE knowledge_items SET knowledge_key=NULL WHERE property_id=$1 AND question=$2", ["nephi_home", singing.question]);
+    await rematerializeClient.close();
+    const mapCatalog = buildPropertyCatalog(providers.customerSettings.getProperty("nephi_home"));
+    assert.equal(mapCatalog.policies.find((item) => item.canonicalId === "location").answer, mapUrl, "PostgreSQL property settings must supply the property-scoped Google Maps fact");
     await seedPostgres(connection);
     const rematerialized = providers.customerSettings.getProperty("nephi_home").faqs.find((item) => item.question === singing.question);
     assert.equal(rematerialized.knowledgeKey, "singing", "existing property facts must receive their property-provided canonical key");

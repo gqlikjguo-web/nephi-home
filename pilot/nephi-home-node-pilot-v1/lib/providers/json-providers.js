@@ -13,6 +13,7 @@ function toProperty(homestay) {
     pricing: homestay.pricing || {},
     faqs: homestay.faqs || [],
     humanHandoffSituations: homestay.humanHandoffSituations || [],
+    businessProfile: homestay.businessProfile || {},
     contactLink: homestay.lineUrl || "",
     onboarding: {
       isReady: Boolean(homestay.name && (homestay.rooms || []).length),
@@ -41,6 +42,7 @@ class JsonCustomerSettingsProvider extends CustomerSettingsProvider {
     const updated = this.repository.updateHomestay(propertyId, { name: homestay.name, rooms: homestay.rooms.map((room) => changes.has(room.id) ? { ...room, ...changes.get(room.id) } : room), safeFacts: homestay.safeFacts || {} });
     return toProperty(updated);
   }
+  listRoomPriceOverrides() { return []; }
 }
 
 class JsonAvailabilityProvider extends AvailabilityProvider {

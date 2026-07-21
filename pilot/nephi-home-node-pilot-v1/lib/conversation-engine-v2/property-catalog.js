@@ -1,5 +1,7 @@
 "use strict";
 
+const { normalizeGoogleMapsUrl } = require("../google-maps-url");
+
 function clean(value, limit = 120) { return String(value || "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, limit); }
 function aliasesFor(property, id) { const map = property.semanticCatalog && property.semanticCatalog.aliases || {}; return Array.isArray(map[id]) ? map[id].map((x) => clean(x, 80)).filter(Boolean) : []; }
 
@@ -12,6 +14,7 @@ const CANONICAL_FACT_ALIASES = Object.freeze({
 });
 function canonicalAliases(id) { return CANONICAL_FACT_ALIASES[id] || []; }
 function mergedAliases(property, id) { return [...new Set([...canonicalAliases(id), ...aliasesFor(property, id)])]; }
+const LOCATION_ALIASES = Object.freeze(["location", "navigation", "directions", "google maps"]);
 
 // This is a registry of data keys, not question text.  A property may expose
 // only a subset; any additional non-empty property-backed setting is retained
@@ -67,7 +70,8 @@ function buildPropertyCatalog(property) {
     canonicalId: clean(item.id), category: "amenity", publicName: clean(item.name, 80), aliases: (item.aliases || []).map((x) => clean(x, 80)), status: ["confirmed_yes", "confirmed_no", "unknown"].includes(item.status) ? item.status : "unknown", answer: clean(item.answer, 500)
   })) : (Array.isArray(confirmedEquipment) ? confirmedEquipment : []).map((name, index) => ({ canonicalId: `equipment_${index + 1}`, category: "amenity", publicName: clean(name, 80), aliases: [], status: "confirmed_yes", answer: "" }));
   const answers = property.commonAnswers || {};
-  const policies = propertySettingFacts(property, answers);
+  const mapUrl = normalizeGoogleMapsUrl(property.businessProfile && property.businessProfile.googleMapsUrl);
+  const policies = [...propertySettingFacts(property, answers), { canonicalId: "location", category: "transport", publicName: "位置與導航", aliases: [...new Set([...LOCATION_ALIASES, ...aliasesFor(property, "location")])], status: mapUrl ? "confirmed_yes" : "unknown", answer: mapUrl }];
   const faqs = (property.faqs || []).filter((item) => item && item.question && item.answer).map((item) => { const canonicalId = clean(item.knowledgeKey || item.knowledgeId || item.id, 120); return { canonicalId, category: "amenity", publicName: clean(item.question, 200), aliases: mergedAliases(property, canonicalId), status: "confirmed_yes", answer: clean(item.answer, 800) }; }).slice(0, 50);
   return { propertyId: clean(property.propertyId), displayName: clean(property.displayName, 100), timezone: clean(property.timezone || "Asia/Taipei", 80), currency: clean(property.currency || "TWD", 10), rooms, amenities, policies, faqs };
 }

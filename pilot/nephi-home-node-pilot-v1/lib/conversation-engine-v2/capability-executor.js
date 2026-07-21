@@ -33,7 +33,7 @@ function executePropertyFactTask({ property, catalog, task, resolved }) {
   const entity = resolved.entity;
   if (entity.status === "unknown") return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "property_fact_unknown", facts: { subject: entity.publicName }, review: true };
   const detailIntent = normalizeDetailIntent(task.detailIntent);
-  if (detailIntent === "general") return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", source: "property_catalog", propertyId: property.propertyId, detailIntent } };
+  if (detailIntent === "general") return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", ...(entity.canonicalId === "location" ? { locationMapUrl: entity.answer || "" } : {}), source: "property_catalog", propertyId: property.propertyId, detailIntent } };
   const detail = catalogFactByCanonicalId(catalog, detailFactCandidates(entity.canonicalId, detailIntent));
   if (detail) return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: detail.status, answer: detail.answer || "", source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: true } };
   return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: entity.status, answer: includeBaseAnswer(detailIntent) ? entity.answer || "" : "", source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: false, detailNeedsConfirmation: true } };
