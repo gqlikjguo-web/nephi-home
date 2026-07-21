@@ -20,12 +20,45 @@ const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const TEST_LINE_WEBHOOK_ROUTE = "/api/test-line/webhook";
 
+function safePlannerTraceTask(task) {
+  return {
+    taskId: String(task && task.taskId || "").slice(0, 80),
+    type: String(task && task.type || "").slice(0, 80),
+    category: String(task && task.category || "").slice(0, 80),
+    canonicalCandidate: task && task.canonicalCandidate !== undefined && task.canonicalCandidate !== null
+      ? String(task.canonicalCandidate).slice(0, 120)
+      : null,
+    detailIntent: String(task && task.detailIntent || "").slice(0, 80)
+  };
+}
+
+function formatSafeTestOnlyConversationTrace(details = {}) {
+  const base = { scope: "conversation-engine-v2", traceId: String(details.traceId || ""), propertyId: String(details.propertyId || ""), stage: String(details.stage || "") };
+  if (details.stage === "property_catalog") {
+    const location = details.location || {};
+    return { ...base, providerType: String(details.providerType || "unknown"), location: {
+      source: String(location.source || "none"),
+      profileValuePresent: Boolean(location.profileValuePresent),
+      transportValuePresent: Boolean(location.transportValuePresent),
+      urlValidation: String(location.urlValidation || "fail")
+    } };
+  }
+  if (details.stage === "planner") return { ...base, parserSucceeded: Boolean(details.parserSucceeded), taskCount: Number(details.taskCount || 0), tasks: (details.tasks || []).map(safePlannerTraceTask) };
+  if (details.stage === "validation") return {
+    ...base,
+    acceptedTasks: (details.acceptedTasks || []).map(safePlannerTraceTask),
+    rejectedTasks: (details.rejectedTasks || []).map((task) => ({ ...safePlannerTraceTask(task), reasons: (task.reasons || []).map(String) })),
+    rejectionReasons: (details.rejectionReasons || []).map(String),
+    finalTasks: (details.finalTasks || []).map(safePlannerTraceTask)
+  };
+  if (details.stage === "executor") return { ...base, results: (details.results || []).map((item) => ({ taskId: item.taskId || "", status: item.status || "", reason: item.reason || "", locationFactProvided: Boolean(item.locationFactProvided), factSource: item.factSource || "" })) };
+  if (["response_plan", "composer", "claim_validator", "line_ready"].includes(details.stage)) return { ...base, sectionCount: details.sectionCount, coveredTaskIds: details.coveredTaskIds || [], missingTaskIds: details.missingTaskIds || [], replyLength: details.replyLength, composerSource: details.composerSource || "", validationResult: details.validationResult || "" };
+  return null;
+}
+
 function logSafeTestOnlyConversationTrace(details) {
-  const base = { scope: "conversation-engine-v2", traceId: details.traceId || "", correlationId: details.correlationId || "", eventId: details.eventId || "", propertyId: details.propertyId || "", stage: details.stage || "" };
-  if (details.stage === "property_catalog") return console.log(JSON.stringify({ ...base, providerType: details.providerType || "unknown", location: details.location || {} }));
-  if (details.stage === "planner") return console.log(JSON.stringify({ ...base, taskCount: details.taskCount || 0, tasks: (details.tasks || []).map((task) => ({ taskId: task.taskId || "", type: task.type || "", canonicalCandidate: task.canonicalCandidate || null, category: task.entity && task.entity.category || "" })) }));
-  if (details.stage === "executor") return console.log(JSON.stringify({ ...base, results: (details.results || []).map((item) => ({ taskId: item.taskId || "", status: item.status || "", reason: item.reason || "", locationFactProvided: Boolean(item.locationFactProvided), factSource: item.factSource || "" })) }));
-  if (["response_plan", "composer", "claim_validator", "line_ready"].includes(details.stage)) return console.log(JSON.stringify({ ...base, sectionCount: details.sectionCount, coveredTaskIds: details.coveredTaskIds || [], missingTaskIds: details.missingTaskIds || [], replyLength: details.replyLength, composerSource: details.composerSource || "", validationResult: details.validationResult || "" }));
+  const record = formatSafeTestOnlyConversationTrace(details);
+  if (record) console.log(JSON.stringify(record));
 }
 
 function sendJson(response, status, payload, headers = {}) {
@@ -512,7 +545,7 @@ function createApp(options = {}) {
   const onboardingEmailNotifier=createOnboardingEmailNotifier({env:options.onboardingEmailEnv||process.env,fetchImpl:options.onboardingEmailFetch||globalThis.fetch,publicBaseUrl:publicBrand.publicBaseUrl});
   const onboarding = createOnboardingService(providers.onboarding,{emailNotifier:onboardingEmailNotifier});
   const replyClient = options.lineReplyClientFactory || (options.lineReplyFetch && (({ channelAccessToken }) => ({ replyMessageWithHttpInfo: async (body) => { const response = await options.lineReplyFetch("https://api.line.me/v2/bot/message/reply", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${channelAccessToken}` }, body: JSON.stringify(body) }); if (!response.ok) { const error = new Error("line_reply_failed"); error.status = response.status; throw error; } return { httpResponse: { status: response.status } }; } })));
-  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: false, onDiagnostic: config.testOnlyConversationEngineV2 ? logSafeTestOnlyConversationTrace : null });
+  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: false, onDiagnostic: logSafeTestOnlyConversationTrace });
   const claimEvent = (input) => providers.persistence.claimMessageEvent(input.customerId, input.channelId, input.eventId, { lineUserId: String(input.lineUserId || ""), eventTimestamp: input.eventTimestamp || "", guestMessage: String(input.messageText || ""), replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
   const updateEventStatus = (customerId, channelId, eventId, patch) => providers.persistence.updateMessageEvent(customerId, channelId, eventId, patch);
   const lineWebhookHandler = async ({ rawBody, signature, customerId }) => {
@@ -807,4 +840,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createApp };
+module.exports = { createApp, formatSafeTestOnlyConversationTrace };

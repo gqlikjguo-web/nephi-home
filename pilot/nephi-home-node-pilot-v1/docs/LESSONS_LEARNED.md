@@ -43,3 +43,7 @@
 # 2026-07-19 — Explicit guest constraints must not be discarded by a missing companion field
 
 When a guest states duration or guest count without a date, preserve the confirmed constraint and clarify only the missing date. An explicit invalid/past date must clear any prior stay date instead of reusing state from an earlier request.
+
+## 2026-07-22 — Compare raw Planner tasks with validated tasks safely
+
+When fixture-driven acceptance tests disagree with a real model-backed runtime, capture the Planner task contract before normalization and the accepted, rejected, and final task sets after validation under one trace ID. The trace must be allowlisted field by field so diagnostic evidence never includes the guest message, user/event identifiers, credentials, signatures, or full location URLs.

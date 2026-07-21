@@ -22,6 +22,35 @@ function dateKeyAt(timestamp, timezone) {
 }
 function addUtcDays(dateKey, days) { const value = new Date(`${dateKey}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); }
 function traceState(state) { const copy = JSON.parse(JSON.stringify(state || {})); if (copy.scope) delete copy.scope.lineUserId; return copy; }
+function plannerTaskTrace(task) {
+  const entity = task && task.entity || {};
+  return {
+    taskId: String(task && task.taskId || "").slice(0, 80),
+    type: String(task && task.type || "").slice(0, 80),
+    category: String(entity.category || "").slice(0, 80),
+    canonicalCandidate: entity.canonicalCandidate === null || entity.canonicalCandidate === undefined
+      ? null
+      : String(entity.canonicalCandidate).slice(0, 120),
+    detailIntent: String(task && task.detailIntent || "").slice(0, 80)
+  };
+}
+function plannerValidationTrace(plannerOutput, validation) {
+  const tasks = Array.isArray(plannerOutput && plannerOutput.tasks) ? plannerOutput.tasks : [];
+  const summaries = tasks.map(plannerTaskTrace);
+  const reasons = Array.isArray(validation && validation.errors) ? validation.errors.map(String) : [];
+  if (validation && validation.ok) {
+    return { acceptedTasks: summaries, rejectedTasks: [], rejectionReasons: [], finalTasks: summaries };
+  }
+  return {
+    acceptedTasks: [],
+    rejectedTasks: summaries.map((task, index) => {
+      const taskReasons = reasons.filter((reason) => reason === `tasks.${index}` || reason.startsWith(`tasks.${index}.`));
+      return { ...task, reasons: taskReasons.length ? taskReasons : reasons };
+    }),
+    rejectionReasons: reasons,
+    finalTasks: []
+  };
+}
 function normalizePlannerOutput(plannerOutput, { messageText, eventTimestamp, timezone, previousConditions } = {}) {
   if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) return null;
   const output = { ...plannerOutput, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, detailIntent: normalizeDetailIntent(task.detailIntent), entity: task.entity ? { ...task.entity } : task.entity })) };
@@ -109,21 +138,31 @@ class ConversationEngineV2 {
     const catalog = buildPropertyCatalog(property);
     this.trace(traceId, "property_catalog", { providerType: this.diagnosticMetadata.providerType || "unknown", location: catalog.locationDiagnostics || { source: "none", profileValuePresent: false, transportValuePresent: false, urlValidation: "fail" } });
     if (this.diagnosticDetail) this.trace(traceId, "state_before", { state: traceState(previous) });
-    let plannerOutput;
-    try { plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], eventTimestamp: input.eventTimestamp, catalog, conversationState: previous }); }
-    catch { plannerOutput = null; }
-    this.trace(traceId, "planner", { taskCount: plannerOutput && Array.isArray(plannerOutput.tasks) ? plannerOutput.tasks.length : 0, tasks: plannerOutput && Array.isArray(plannerOutput.tasks) ? (this.diagnosticDetail ? plannerOutput.tasks : plannerOutput.tasks.map((task) => ({ taskId: task.taskId, type: task.type, sourceText: String(task.sourceText || "").slice(0, 120), canonicalCandidate: task.entity && task.entity.canonicalCandidate || null, confidence: task.confidence }))) : [] });
+    let plannerOutput, parserSucceeded = false;
+    try {
+      plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], eventTimestamp: input.eventTimestamp, catalog, conversationState: previous });
+      parserSucceeded = true;
+    } catch { plannerOutput = null; }
+    this.trace(traceId, "planner", {
+      parserSucceeded,
+      taskCount: plannerOutput && Array.isArray(plannerOutput.tasks) ? plannerOutput.tasks.length : 0,
+      tasks: plannerOutput && Array.isArray(plannerOutput.tasks)
+        ? (this.diagnosticDetail ? plannerOutput.tasks : plannerOutput.tasks.map(plannerTaskTrace))
+        : []
+    });
     if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) {
+      this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: [parserSucceeded ? "planner_output_unusable" : "planner_parse_failed"], finalTasks: [] });
       const item = this.persistReview(input, "planner_empty_output", "Planner did not produce a usable task result.", "");
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };
     }
     plannerOutput = normalizePlannerOutput(plannerOutput, { messageText: input.messageText, eventTimestamp: input.eventTimestamp, timezone: catalog.timezone, previousConditions: previous.conditions });
     if (!plannerOutput) {
+      this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: ["planner_normalization_failed"], finalTasks: [] });
       const item = this.persistReview(input, "planner_normalization_failed", "Planner output could not be normalized safely.", "");
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };
     }
     const validation = validatePlannerOutput(plannerOutput);
-    this.trace(traceId, "validation", { acceptedTaskIds: validation.ok ? plannerOutput.tasks.map((task) => task.taskId) : [], rejected: validation.ok ? [] : validation.errors });
+    this.trace(traceId, "validation", plannerValidationTrace(plannerOutput, validation));
     if (!validation.ok) {
       const item = this.persistReview(input, "planner_invalid", "整體訊息無法安全理解，請協助確認。", "");
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };

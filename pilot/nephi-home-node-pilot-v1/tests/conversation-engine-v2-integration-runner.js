@@ -1,6 +1,7 @@
 "use strict";
 const assert = require("node:assert/strict");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
+const { formatSafeTestOnlyConversationTrace } = require("../server");
 
 const states = new Map(), logs = [];
 const persistence = {
@@ -50,6 +51,37 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   assert.deepEqual(guarded.claimValidation.coveredTaskIds.sort(), ["a", "b", "c"]);
   assert.deepEqual(diagnostics.map((item) => item.stage), ["property_catalog", "planner", "validation", "temporal", "state", "entity_resolution", "executor", "response_plan", "composer", "claim_validator", "line_ready"]);
   assert.equal(new Set(diagnostics.map((item) => item.traceId)).size, 1);
+  assert.equal(guarded.replyText, result.replyText);
+  const safeDiagnostics = diagnostics.map(formatSafeTestOnlyConversationTrace).filter(Boolean);
+  const safePlanner = safeDiagnostics.find((item) => item.stage === "planner");
+  assert.equal(safePlanner.parserSucceeded, true);
+  assert.deepEqual(safePlanner.tasks.map(({ taskId, type, category, canonicalCandidate, detailIntent }) => ({ taskId, type, category, canonicalCandidate, detailIntent })), [
+    { taskId: "a", type: "availability", category: "room", canonicalCandidate: "r1", detailIntent: "" },
+    { taskId: "b", type: "amenity", category: "amenity", canonicalCandidate: "parking", detailIntent: "" },
+    { taskId: "c", type: "amenity", category: "amenity", canonicalCandidate: "mahjong", detailIntent: "" }
+  ]);
+  const safeValidation = safeDiagnostics.find((item) => item.stage === "validation");
+  const normalizedTasks = safePlanner.tasks.map((task) => ({ ...task, detailIntent: "general" }));
+  assert.deepEqual(safeValidation.acceptedTasks, normalizedTasks);
+  assert.deepEqual(safeValidation.rejectedTasks, []);
+  assert.deepEqual(safeValidation.rejectionReasons, []);
+  assert.deepEqual(safeValidation.finalTasks, normalizedTasks);
+  const rejectedTrace = formatSafeTestOnlyConversationTrace({
+    traceId: "rejected-trace", propertyId: "p1", stage: "validation", acceptedTasks: [],
+    rejectedTasks: [{ ...normalizedTasks[0], reasons: ["tasks.0"] }], rejectionReasons: ["tasks.0"], finalTasks: []
+  });
+  assert.deepEqual(rejectedTrace.rejectedTasks[0].reasons, ["tasks.0"]);
+  assert.deepEqual(rejectedTrace.finalTasks, []);
+  const hostileTrace = formatSafeTestOnlyConversationTrace({
+    traceId: "safe-trace", propertyId: "p1", stage: "planner", parserSucceeded: true, taskCount: 0, tasks: [],
+    messageText: "PRIVATE GUEST MESSAGE", eventId: "PRIVATE EVENT ID", lineUserId: "PRIVATE USER ID",
+    apiKey: "PRIVATE API KEY", accessToken: "PRIVATE LINE TOKEN", signature: "PRIVATE SIGNATURE",
+    googleMapsUrl: "https://maps.example.invalid/private"
+  });
+  const safeSerialized = JSON.stringify([...safeDiagnostics, rejectedTrace, hostileTrace]);
+  for (const forbidden of ["PRIVATE GUEST MESSAGE", "PRIVATE EVENT ID", "PRIVATE USER ID", "PRIVATE API KEY", "PRIVATE LINE TOKEN", "PRIVATE SIGNATURE", "maps.example.invalid"]) {
+    assert.equal(safeSerialized.includes(forbidden), false, `safe trace leaked ${forbidden}`);
+  }
 
   const detailedDiagnostics = [];
   const detailedEngine = new ConversationEngineV2({ planner, persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [], diagnosticDetail: true, onDiagnostic: (item) => detailedDiagnostics.push(item) });
