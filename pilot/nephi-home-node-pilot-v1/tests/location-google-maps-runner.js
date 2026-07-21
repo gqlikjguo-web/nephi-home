@@ -33,6 +33,9 @@ async function runEngine(property, messages) {
   const betaUrl = "https://maps.app.goo.gl/BetaLocation";
   const alpha = { propertyId: "location_alpha", displayName: "Alpha", businessProfile: { googleMapsUrl: alphaUrl }, rooms: [], commonAnswers: {} };
   const beta = { propertyId: "location_beta", displayName: "Beta", businessProfile: { googleMapsUrl: betaUrl }, rooms: [], commonAnswers: {} };
+  const legacy = { propertyId: "location_legacy", displayName: "Legacy", businessProfile: {}, rooms: [], commonAnswers: { transport: alphaUrl } };
+  const [legacyResult] = await runEngine(legacy, new Map([["我要導航", plan()]]));
+  assert.ok(legacyResult.replyText.includes(alphaUrl), "a legacy property-scoped transport map URL must materialize as the location fact");
   for (const message of ["民宿在哪裡？", "地址可以給我嗎？", "有 Google 地圖嗎？", "可以傳定位給我嗎？", "我要怎麼導航過去？", "附近有夜市嗎？", "最近的超商是哪一家？", "離車站遠嗎？", "附近有什麼景點？", "到羅東夜市要多久？"]) {
     const [result] = await runEngine(alpha, new Map([[message, plan()]]));
     assert.ok(result.replyText.includes(alphaUrl), `${message} must use the current property's map URL`);
