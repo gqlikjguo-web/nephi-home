@@ -63,6 +63,22 @@ async function runEngine(property, messages, diagnostics = []) {
   assert.equal(invalid.taskResults[0].status, "needs_human");
   assert.equal(/https:\/\//.test(invalid.replyText), false);
 
+  const locationRelationCases = [
+    "\u6c11\u5bbf\u96e2\u591c\u5e02\u8fd1\u55ce", "\u96e2\u8d85\u5e02\u9060\u4e0d\u9060", "\u8eca\u7ad9\u5728\u9644\u8fd1\u55ce", "\u6d77\u908a\u96e2\u4f60\u5011\u8fd1\u55ce", "\u5e02\u5340\u6703\u5f88\u9060\u55ce",
+    "\u53bb\u8eca\u7ad9\u8981\u5e7e\u5206\u9418", "\u96e2\u67d0\u666f\u9ede\u591a\u9060", "\u958b\u8eca\u904e\u53bb\u8981\u591a\u4e45", "\u5468\u908a\u6709\u9910\u5ef3\u55ce", "\u9644\u8fd1\u6709\u91ab\u9662\u55ce", "\u6709\u6c92\u6709\u591c\u5e02\u5728\u9644\u8fd1",
+    "\u5230\u5b8c\u5168\u672a\u5217\u8209\u7684\u862d\u967d\u535a\u7269\u9928\u600e\u9ebc\u8d70"
+  ];
+  for (const message of locationRelationCases) {
+    const [result] = await runEngine(alpha, new Map([[message, plan()]]));
+    assert.equal(result.taskResults[0].status, "answered", `${message} must complete through the shared location fact`);
+    assert.ok(result.replyText.includes(alphaUrl), `${message} must retain the property-scoped map URL`);
+  }
+  for (const message of ["\u591c\u5e02\u53ef\u4ee5\u70e4\u8089\u55ce", "\u8d85\u5e02\u53ef\u4ee5\u5237\u5361\u55ce", "\u8eca\u7ad9\u6709\u7f6e\u7269\u6ac3\u55ce", "\u6211\u559c\u6b61\u901b\u591c\u5e02"]) {
+    const notLocation = { ...plan(), tasks: [{ ...plan().tasks[0], taskId: "not-location", entity: { category: "other", rawText: message, canonicalCandidate: null, confidence: 1 } }] };
+    const [result] = await runEngine(alpha, new Map([[message, notLocation]]));
+    assert.equal(result.replyText.includes(alphaUrl), false, `${message} must not become location merely because it names a place`);
+  }
+
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "location-chain-"));
   const seedFile = path.join(temp, "seed.json"), dataFile = path.join(temp, "store.json"), secret = "location-chain-secret", replies = [];
   fs.writeFileSync(seedFile, JSON.stringify({ testOnly: true, homestays: [{ customerId: "location_line", name: "Line location", businessProfile: { googleMapsUrl: alphaUrl }, safeFacts: {}, rooms: [] }], messageLogs: { location_line: [] } }));
