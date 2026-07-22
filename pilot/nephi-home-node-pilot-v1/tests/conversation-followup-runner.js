@@ -5,13 +5,13 @@ const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine")
 const { validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
 const { instructions } = require("../lib/providers/test-only-openai-conversation-planner");
 
-function plan({ relation, type, category, sourceText, topic = null, detailIntent = "general" }) {
+function plan({ relation, type, category, sourceText, topic = null, detailIntent = "general", eligibilityEvidence = { kind: "none", sourceText: "" } }) {
   return {
     schemaVersion: 2,
     discourse: { relation, confidence: 1 },
     stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-    tasks: [{ taskId: "question", type, sourceText, detailIntent, requestedOutputs: [detailIntent === "eligibility" ? "eligibility" : "answer"], dependsOnStayContext: false,
+    tasks: [{ taskId: "question", type, sourceText, detailIntent, requestedOutputs: [detailIntent === "eligibility" ? "eligibility" : "answer"], eligibilityEvidence, dependsOnStayContext: false,
       entity: { category, rawText: sourceText, canonicalCandidate: topic, confidence: 1 }, confidence: 1 }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: relation
   };
@@ -59,7 +59,7 @@ async function runFollowUp({ id, propertyId = "property_alpha", first, followUp,
   const propertyReads = [];
   const plans = new Map([
     [first.message, plan({ relation: "new_request", type: first.type, category: first.category, sourceText: first.message, topic: first.topic })],
-    [followUp.message, plan({ relation: followUp.relation || "continue", type: followUp.type, category: followUp.category, sourceText: followUp.message, topic: followUp.topic || null, detailIntent: followUp.detailIntent })]
+    [followUp.message, plan({ relation: followUp.relation || "continue", type: followUp.type, category: followUp.category, sourceText: followUp.message, topic: followUp.topic || null, detailIntent: followUp.detailIntent, eligibilityEvidence: followUp.eligibilityEvidence })]
   ]);
   const { engine, memory } = createEngine({ plans, properties, propertyReads });
   const input = (eventId, messageText) => ({ customerId: propertyId, channelId: id, lineUserId: "guest", eventId, eventTimestamp: 1, messageText });
@@ -75,7 +75,7 @@ async function runFollowUp({ id, propertyId = "property_alpha", first, followUp,
     { id: "singing-fee", first: { message: "singing available", topic: "singing", type: "amenity", category: "amenity" }, followUp: { message: "is there a fee?", type: "amenity", category: "other", detailIntent: "fee" }, expected: ["Singing fee: 500"], forbidden: ["08:00-22:00"] },
     { id: "bbq-reservation", first: { message: "bbq available", topic: "bbq", type: "policy", category: "policy" }, followUp: { message: "do I need a reservation?", type: "policy", category: "other", detailIntent: "reservation_required" }, expected: ["BBQ reservation must be confirmed"] },
     { id: "parking-quantity", first: { message: "parking available", topic: "parking", type: "amenity", category: "amenity" }, followUp: { message: "how many spaces?", type: "amenity", category: "other", detailIntent: "quantity" }, expected: ["3 spaces"] },
-    { id: "pool-eligibility", first: { message: "pool available", topic: "pool", type: "amenity", category: "amenity" }, followUp: { message: "can children use it?", type: "amenity", category: "other", detailIntent: "eligibility" }, expected: ["Children must be accompanied"] }
+    { id: "pool-eligibility", first: { message: "pool available", topic: "pool", type: "amenity", category: "amenity" }, followUp: { message: "can children use it?", type: "amenity", category: "other", detailIntent: "eligibility", eligibilityEvidence: { kind: "person", sourceText: "children" } }, expected: ["Children must be accompanied"] }
   ];
   const overrides = { singing__fee: "Singing fee: 500", bbq__reservation_required: "BBQ reservation must be confirmed", parking__quantity: "3 spaces", pool__eligibility: "Children must be accompanied" };
   for (const item of cases) {

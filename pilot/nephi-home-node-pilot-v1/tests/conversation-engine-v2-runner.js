@@ -17,7 +17,7 @@ function plan(overrides = {}) {
     discourse: { relation: "new_request", confidence: 0.95 },
     stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-    tasks: [{ taskId: "t1", type: "availability", sourceText: "有房嗎", requestedOutputs: ["availability"], dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: null, confidence: 0.9 }, confidence: 0.95 }],
+    tasks: [{ taskId: "t1", type: "availability", sourceText: "有房嗎", requestedOutputs: ["availability"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: null, confidence: 0.9 }, confidence: 0.95 }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "availability_request",
     ...overrides
   };
@@ -36,7 +36,7 @@ const property = {
 };
 
 assert.equal(validatePlannerOutput(plan()).ok, true);
-assert.equal(validatePlannerOutput(plan({ tasks: [{ taskId: "nearest", type: "available_dates", sourceText: "最近哪天有空房", requestedOutputs: ["availability"], dependsOnStayContext: true, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 0.95 }, confidence: 0.95 }] })).ok, true);
+assert.equal(validatePlannerOutput(plan({ tasks: [{ taskId: "nearest", type: "available_dates", sourceText: "最近哪天有空房", requestedOutputs: ["availability"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 0.95 }, confidence: 0.95 }] })).ok, true);
 assert.equal(validatePlannerOutput(plan({ tasks: [] })).ok, false);
 assert.equal(validatePlannerOutput({ ...plan(), schemaVersion: 1 }).ok, false);
 assert.equal(validatePlannerOutput(plan({ stateOperations: [{ field: "stay.unapprovedCandidate", operation: "set", value: "x", sourceText: "x" }] })).ok, false);
