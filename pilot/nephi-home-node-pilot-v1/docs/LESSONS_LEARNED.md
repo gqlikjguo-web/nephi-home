@@ -51,3 +51,7 @@ When fixture-driven acceptance tests disagree with a real model-backed runtime, 
 ## 2026-07-22 — Structural validity does not prove semantic validity
 
 A Planner task can satisfy the strict JSON schema while carrying contradictory meaning, such as a transport fact without the canonical location ID or a base facility question marked as an eligibility detail. The runtime must enforce controlled relationships between task type, category, canonical candidate, detail intent, and requested outputs before the Resolver; safely repair only contract-determined cases and locally downgrade anything that cannot be repaired without guessing.
+
+## 2026-07-23 — Property identity must follow verified Channel credentials
+
+A webhook URL parameter or unverified payload cannot establish tenant identity. Multi-Channel LINE handling must first select one opaque binding candidate, verify the raw body with that binding's Secret, and only then use the binding's property and Access Token. Tests must attempt query/body tampering and cross-signing, not only exercise two successful Channels.

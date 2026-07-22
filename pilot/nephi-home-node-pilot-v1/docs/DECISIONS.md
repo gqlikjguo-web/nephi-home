@@ -73,3 +73,11 @@
 **理由：** 詞彙清單會把 Shared Core 退化成關鍵字補丁，且無法承接不同說法。`available_dates` 是明確能力，應由 Planner 表達後經 schema、state 與 property-scoped resolver 完整執行。
 
 **長期後果：** 空 entity 對 `availability` 與 `available_dates` 是合法 schema；模糊房型不會變成單一房號，類別房型仍由 property metadata 解析為完整 matched set。
+
+## D-010：LINE Channel binding 是 property 的可信邊界
+
+**決策：** 多業者 LINE webhook 先以不可猜測的 webhook key 找到唯一 binding，再使用該 binding 的 Channel Secret 驗證原始 request body；只有驗簽成功後，runtime 才能信任 binding 綁定的 property，並以同一 binding 的 Access Token 回覆。
+
+**理由：** query string、request body 與 LINE destination 在驗簽前都不是可信 property 身分。service-wide credential 也無法在同一 service 中安全隔離多個 Channel。
+
+**長期後果：** 新業者不需要獨立 Render service；credential 必須以環境金鑰加密後 property-scoped 保存，管理 API 不得回傳明文或密文。legacy test-only route 僅保留既有尼腓相容性，不得供新業者使用。

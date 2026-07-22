@@ -101,6 +101,10 @@
 
 ## 5. LINE 驗收
 
+- [x] 共用 service 已具備 property-scoped LINE binding：每個 Channel 使用獨立 webhook key、加密 Secret、加密 Access Token 與 enabled 狀態；binding 驗簽成功後才可決定 property。
+- [x] 平台管理者可透過最小安全 API 建立／更新、查詢安全狀態及啟用／停用 binding；API 不回傳 credential 或密文。
+- [x] 雙 Channel、錯誤 Secret、URL／body 篡改、Token 選擇、停用／未知 binding、property isolation 與 legacy test-only webhook 已有自動回歸測試。
+- [ ] 總後台需提供 LINE binding 管理 UI，僅顯示是否已設定、webhook URL 與啟用狀態，不得讀回 Secret、Token 或密文。
 - [ ] 真實 test-only LINE 可收到單一、非空回覆，且同一 event 不會重複處理或重複回覆。
 - [ ] 指定日期、指定房型與最近可住房況完成真實驗收。
 - [ ] 後台切換可售／不可售後，下一次 LINE 查詢立即取得最新房況。

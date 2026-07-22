@@ -44,6 +44,7 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 
 - 目前沒有已由程式或部署證據確認的 blocker。
 - 真實 test-only LINE 人工驗收尚未完成，因此不得宣稱第一版完成或建議切正式 LINE。
+- 多業者共用 service 的 property-scoped LINE binding 核心與最小 platform-admin API 已完成自動驗證；尚缺總後台 LINE 管理 UI，且本次未部署。
 
 ## 第一版驗收狀態
 

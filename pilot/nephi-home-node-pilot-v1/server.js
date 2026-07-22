@@ -17,6 +17,7 @@ const { createPublicBrand } = require("./config/public-brand");
 const { renderPublicHtml } = require("./lib/public-brand-html");
 const { normalizeRoomRecord, normalizeRoomHighlights, characterCount } = require("./lib/room-data");
 const { providedAmenities } = require("./lib/bundle-entertainment");
+const { createLineBindingService } = require("./lib/line-binding-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -260,6 +261,8 @@ function publicPropertyMetadata(property) {
 
 function createRequestHandler(service, options = {}) {
   const lineWebhookHandler = options.lineWebhookHandler;
+  const sharedLineWebhookHandler = options.sharedLineWebhookHandler;
+  const lineBindingService = options.lineBindingService;
   const persistence = options.persistence;
   const customerSettings = options.customerSettings;
   const onboarding = options.onboarding;
@@ -280,6 +283,16 @@ function createRequestHandler(service, options = {}) {
           rawBody: await readRawBody(request),
           signature: request.headers["x-line-signature"],
           customerId: url.searchParams.get("customerId")
+        });
+        return sendData(response, result);
+      }
+      const sharedLineWebhookMatch = /^\/api\/line\/webhooks\/([A-Za-z0-9_-]{32,128})$/.exec(pathname);
+      if (request.method === "POST" && sharedLineWebhookMatch) {
+        if (!sharedLineWebhookHandler) throw new AppError(503, "LINE_BINDING_WEBHOOK_NOT_CONFIGURED", "LINE webhook is not configured");
+        const result = await sharedLineWebhookHandler({
+          rawBody: await readRawBody(request),
+          signature: request.headers["x-line-signature"],
+          webhookKey: sharedLineWebhookMatch[1]
         });
         return sendData(response, result);
       }
@@ -326,6 +339,31 @@ function createRequestHandler(service, options = {}) {
             return sendData(response,{...reviewed.application,...safeReview,resumeUrl:`${publicBrand.publicBaseUrl}/onboarding?resume=${encodeURIComponent(resumeToken)}`});
           }
           return sendData(response,reviewed);
+        }
+      }
+
+      const lineBindingMatch = /^\/api\/admin\/line-bindings\/([^/]+)(?:\/(enabled))?$/.exec(pathname);
+      if (lineBindingMatch) {
+        const token = cookieValue(request, "nephi_admin_session");
+        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        if (!session || !onboarding || !onboarding.isPlatformAdmin(session)) throw new AppError(401, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
+        if (!lineBindingService) throw new AppError(503, "LINE_BINDING_NOT_CONFIGURED", "LINE binding storage is not configured");
+        const propertyId = decodeURIComponent(lineBindingMatch[1]);
+        if (request.method === "GET" && !lineBindingMatch[2]) {
+          const status = lineBindingService.status(propertyId);
+          if (!status) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE binding was not found");
+          return sendData(response, status);
+        }
+        if (request.method === "PUT" && !lineBindingMatch[2]) {
+          if (!customerSettings.getProperty(propertyId)) throw new AppError(404, "PROPERTY_NOT_FOUND", "Property was not found");
+          return sendData(response, lineBindingService.upsert(propertyId, await readJsonBody(request)));
+        }
+        if (request.method === "PATCH" && lineBindingMatch[2] === "enabled") {
+          const body = await readJsonBody(request);
+          if (typeof body.enabled !== "boolean") throw new AppError(400, "LINE_BINDING_ENABLED_REQUIRED", "enabled must be boolean");
+          const status = lineBindingService.setEnabled(propertyId, body.enabled);
+          if (!status) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE binding was not found");
+          return sendData(response, status);
         }
       }
 
@@ -569,6 +607,7 @@ function createApp(options = {}) {
   const service = createMvpService(providers, { now });
   const onboardingEmailNotifier=createOnboardingEmailNotifier({env:options.onboardingEmailEnv||process.env,fetchImpl:options.onboardingEmailFetch||globalThis.fetch,publicBaseUrl:publicBrand.publicBaseUrl});
   const onboarding = createOnboardingService(providers.onboarding,{emailNotifier:onboardingEmailNotifier});
+  const lineBindingService = createLineBindingService({ provider: providers.lineBindings, env: options.lineBindingEnv || process.env });
   const replyClient = options.lineReplyClientFactory || (options.lineReplyFetch && (({ channelAccessToken }) => ({ replyMessageWithHttpInfo: async (body) => { const response = await options.lineReplyFetch("https://api.line.me/v2/bot/message/reply", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${channelAccessToken}` }, body: JSON.stringify(body) }); if (!response.ok) { const error = new Error("line_reply_failed"); error.status = response.status; throw error; } return { httpResponse: { status: response.status } }; } })));
   const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: false, onDiagnostic: logSafeTestOnlyConversationTrace });
   const claimEvent = (input) => providers.persistence.claimMessageEvent(input.customerId, input.channelId, input.eventId, { lineUserId: String(input.lineUserId || ""), eventTimestamp: input.eventTimestamp || "", guestMessage: String(input.messageText || ""), replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
@@ -600,7 +639,41 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
+  const sharedLineWebhookHandler = async ({ rawBody, signature, webhookKey }) => {
+    if (!lineBindingService) throw new AppError(503, "LINE_BINDING_WEBHOOK_NOT_CONFIGURED", "LINE webhook is not configured");
+    const binding = lineBindingService.resolve(webhookKey);
+    if (!binding) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE webhook is unavailable");
+    if (!validateSignature(rawBody, binding.channelSecret, String(signature || ""))) throw new AppError(401, "INVALID_LINE_SIGNATURE", "Invalid LINE signature");
+    let payload; try { payload = JSON.parse(rawBody.toString("utf8")); } catch { throw new AppError(400, "INVALID_JSON", "Request body must be valid JSON"); }
+    const id = binding.propertyId;
+    if (!providers.customerSettings.getProperty(id)) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE webhook is unavailable");
+    const channelId = `line-binding:${crypto.createHash("sha256").update(binding.webhookKey).digest("hex").slice(0, 24)}`;
+    for (const event of (payload.events || []).filter((item) => item && item.type === "message" && item.message && item.message.type === "text" && item.replyToken)) {
+      const input = { customerId: id, channelId, lineUserId: String(event.source && event.source.userId || ""), eventId: String(event.webhookEventId || event.message.id || ""), eventTimestamp: event.timestamp || "", messageText: event.message.text || "" };
+      if (!(await claimEvent(input)).claimed) continue;
+      void root.coordinator.enqueue(input).then(async (result) => {
+        if (!result.shouldReply || !result.replyText) return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true });
+        try {
+          await (replyClient ? replyClient({ channelAccessToken: binding.channelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: binding.channelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: result.replyText }] });
+          await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" });
+        } catch (error) {
+          const status = Number(error && (error.status || error.statusCode));
+          await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
+        }
+      }).catch(async () => {
+        const fallbackText = "目前暫時無法安全確認，請由業者協助。";
+        try {
+          await (replyClient ? replyClient({ channelAccessToken: binding.channelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: binding.channelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: fallbackText }] });
+          await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, needsReview: true, deliveryErrorCode: "message_processing_exception" });
+        } catch (error) {
+          const status = Number(error && (error.status || error.statusCode));
+          await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
+        }
+      });
+    }
+    return { accepted: true };
+  };
+  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host })); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
   /* legacy runtime kept below temporarily unreachable during source migration */ {
   const structuredClassifier = Object.hasOwn(options, "structuredClassifier")

@@ -315,6 +315,19 @@ async function operation(name, args) {
   if (name === "getAdminSession") return loadAdminSession(args[0]);
   if (name === "selectAdminProperty") {const [tokenHash,propertyId]=args,r=await client.query("SELECT user_id FROM admin_sessions WHERE token_hash=$1 AND expires_at>now()",[tokenHash]);if(!r.rows[0]||!r.rows[0].user_id)return null;const membership=await client.query("SELECT username FROM admin_user_properties WHERE user_id=$1 AND property_id=$2",[r.rows[0].user_id,propertyId]);if(!membership.rows[0])return null;await client.query("UPDATE admin_sessions SET property_id=$2,username=$3 WHERE token_hash=$1",[tokenHash,propertyId,membership.rows[0].username]);return loadAdminSession(tokenHash);}
   if (name === "deleteAdminSession") { await client.query("DELETE FROM admin_sessions WHERE token_hash=$1",args); return true; }
+  if(name==="getLineBindingByPropertyId"||name==="getLineBindingByWebhookKey"){
+    const column=name==="getLineBindingByPropertyId"?"property_id":"webhook_key";
+    const r=await client.query(`SELECT property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at FROM property_line_bindings WHERE ${column}=$1`,args),row=r.rows[0];
+    return row?{propertyId:row.property_id,webhookKey:row.webhook_key,channelSecretEncrypted:payload({payload:row.channel_secret_encrypted}),channelAccessTokenEncrypted:payload({payload:row.channel_access_token_encrypted}),enabled:Boolean(row.enabled),createdAt:row.created_at,updatedAt:row.updated_at}:null;
+  }
+  if(name==="upsertLineBinding"){
+    const row=args[0],r=await client.query("INSERT INTO property_line_bindings(property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled) VALUES($1,$2,$3::jsonb,$4::jsonb,$5) ON CONFLICT(property_id) DO UPDATE SET webhook_key=excluded.webhook_key,channel_secret_encrypted=excluded.channel_secret_encrypted,channel_access_token_encrypted=excluded.channel_access_token_encrypted,enabled=excluded.enabled,updated_at=now() RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at",[row.propertyId,row.webhookKey,JSON.stringify(row.channelSecretEncrypted),JSON.stringify(row.channelAccessTokenEncrypted),Boolean(row.enabled)]),saved=r.rows[0];
+    return{propertyId:saved.property_id,webhookKey:saved.webhook_key,channelSecretEncrypted:payload({payload:saved.channel_secret_encrypted}),channelAccessTokenEncrypted:payload({payload:saved.channel_access_token_encrypted}),enabled:Boolean(saved.enabled),createdAt:saved.created_at,updatedAt:saved.updated_at};
+  }
+  if(name==="setLineBindingEnabled"){
+    const r=await client.query("UPDATE property_line_bindings SET enabled=$2,updated_at=now() WHERE property_id=$1 RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at",args),saved=r.rows[0];
+    return saved?{propertyId:saved.property_id,webhookKey:saved.webhook_key,channelSecretEncrypted:payload({payload:saved.channel_secret_encrypted}),channelAccessTokenEncrypted:payload({payload:saved.channel_access_token_encrypted}),enabled:Boolean(saved.enabled),createdAt:saved.created_at,updatedAt:saved.updated_at}:null;
+  }
   if (name === "getConversationState") {
     const r=await client.query("SELECT state FROM conversation_states WHERE property_id=$1 AND channel_id=$2 AND line_user_id=$3",args); return r.rows[0] ? (typeof r.rows[0].state === "string" ? JSON.parse(r.rows[0].state) : r.rows[0].state) : null;
   }

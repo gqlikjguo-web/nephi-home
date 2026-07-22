@@ -29,3 +29,12 @@
 - Both identity types are required at startup and must never substitute for each other.
 - The Bot User ID is a non-secret identifier obtained from the same Messaging API Channel's LINE Developers Basic settings page. Never copy it from another Channel or guess it.
 - Channel Secret and Access Token remain sensitive and must never be written to documentation, Git, or conversation logs.
+
+## Property-scoped LINE binding
+
+- 共用多業者 route 使用 `/api/line/webhooks/<webhookKey>`；`webhookKey` 只用來選出唯一候選 binding，不直接授權 property。
+- 必須先用候選 binding 的 Channel Secret 驗證 raw body，驗簽成功後才可信任 binding 的 `propertyId`。
+- query string 與 request body 中的 `customerId`、`propertyId` 或 destination 不得切換 property。
+- Channel Secret 與 Access Token 以 AES-256-GCM 加密保存；加密金鑰只來自 `JUNZAN_LINE_CREDENTIAL_ENCRYPTION_KEY`，不得保存至資料庫、Repository、log 或 API response。
+- 缺少加密金鑰時，新 binding 的建立、credential 更新與 runtime 使用必須拒絕；既有 legacy test-only env webhook 不受影響。
+- 管理 API 僅限 platform admin，且只能回傳是否已設定、webhook key 與 enabled 狀態。

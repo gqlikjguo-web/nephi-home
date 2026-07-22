@@ -4,17 +4,19 @@
 
 ## 目前順序
 
-1. 部署目前通用 V2 語意修正至 test-only，並以真實 LINE 驗收最近可住、指定日期、房型類別與多問題回覆。
-2. 由使用者在後台切換 7/18 的 301：
+1. 建立 platform-admin LINE binding 管理 UI：安全輸入／輪替 credential、顯示 webhook URL、設定狀態與啟用／停用；不得提供 credential 或密文讀回。
+2. 經另行授權後部署 property-scoped LINE binding migration 與 runtime，再以兩個 test-only Channel 驗收隔離；本次不得部署。
+3. 部署目前通用 V2 語意修正至 test-only，並以真實 LINE 驗收最近可住、指定日期、房型類別與多問題回覆。
+4. 由使用者在後台切換 7/18 的 301：
    - 可售後，下一次 LINE 查詢立即回答有房。
    - 不可售後，下一次 LINE 查詢立即回答無房。
-3. 真實 test-only LINE 驗收 `8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？`，確認三個 task 都回答且住宿需求優先。
-4. 驗收 Conversation State 修改鏈：
+5. 真實 test-only LINE 驗收 `8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？`，確認三個 task 都回答且住宿需求優先。
+6. 驗收 Conversation State 修改鏈：
    - `兩個人住兩晚，要有浴缸`
    - `改四個人`
    - `不用浴缸了，那多少錢？`
-5. test-only 全部通過後建立正式切換前回退點。
-6. 只有取得使用者逐次明確授權後，才執行正式 LINE webhook 切換與真實正式驗收。
+7. test-only 全部通過後建立正式切換前回退點。
+8. 只有取得使用者逐次明確授權後，才執行正式 LINE webhook 切換與真實正式驗收。
 
 ## 不得提前執行
 

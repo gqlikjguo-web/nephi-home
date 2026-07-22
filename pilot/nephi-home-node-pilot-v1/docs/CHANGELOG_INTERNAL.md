@@ -50,3 +50,7 @@
 ## 2026-07-22 — Planner semantic contract boundary
 
 - Added deterministic semantic-contract enforcement between structural Planner validation and Resolver execution, covering location tuple consistency, base-versus-eligibility detail intent, local safe downgrade, and multi-task preservation.
+
+## 2026-07-23 — Property-scoped multi-Channel LINE binding
+
+- Added one shared multi-tenant LINE webhook transport backed by encrypted property bindings, while preserving the existing test-only legacy route and the single V2 composition root.
