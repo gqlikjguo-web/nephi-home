@@ -16,6 +16,7 @@ const { resolveEntity } = require("./entity-resolver");
 const { availabilityTraceSummary } = require("./resolver-adapter");
 
 const DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS = 31;
+const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
 function dateKeyAt(timestamp, timezone) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(timestamp)).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
   return `${parts.year}-${parts.month}-${parts.day}`;
@@ -167,12 +168,21 @@ class ConversationEngineV2 {
       const item = this.persistReview(input, "planner_invalid", "整體訊息無法安全理解，請協助確認。", "");
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };
     }
-    plannerOutput = applyPlannerSemanticContract(plannerOutput);
+    plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog });
     const validation = validatePlannerOutput(plannerOutput);
     this.trace(traceId, "validation", { ...plannerValidationTrace(plannerOutput, validation), semanticValidation: plannerOutput.semanticValidation });
     if (!validation.ok) {
       const item = this.persistReview(input, "planner_semantic_repair_invalid", "Planner task could not be repaired safely.", "");
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };
+    }
+    const hasActionableTask = plannerOutput.tasks.some((task) => !NON_ACTIONABLE_TASK_TYPES.has(task.type));
+    if (plannerOutput.shouldIgnore && !hasActionableTask) {
+      const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "acknowledgement", replyType: "no_reply_v2", replyText: "", route: "no_reply_silent_ignore", decisionReason: plannerOutput.reason || "planner_should_ignore", shouldReply: false, noReply: true, needsReview: false, status: "resolved", processingStatus: "decided" };
+      if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
+      else this.persistence.appendMessageLog(input.customerId, messageRecord);
+      this.trace(traceId, "controlled_decision", { decision: "no_reply", reason: messageRecord.decisionReason, actionableTaskCount: 0 });
+      this.traceContexts.delete(traceId);
+      return { shouldReply: false, noReply: true, replyText: "", taskResults: [], reviewCount: 0, reviewIds: [], claimValidation: { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [] }, traceId };
     }
     plannerOutput = applyFollowUpTopic(plannerOutput, previous.conditions);
     const plannerStay = normalizedPlannerStay(plannerOutput, input.messageText);

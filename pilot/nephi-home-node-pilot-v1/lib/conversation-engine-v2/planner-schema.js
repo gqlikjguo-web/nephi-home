@@ -8,6 +8,7 @@ const DATE_KINDS = new Set(["absolute", "relative", "weekday", "weekend", "range
 const ANCHORS = new Set(["message_time", "previous_check_in", "previous_check_out", "none"]);
 const ELIGIBILITY_EVIDENCE_KINDS = new Set(["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
 const { DETAIL_INTENTS } = require("./detail-intent");
+const { resolveEntity } = require("./entity-resolver");
 const PLANNER_OPERATION_PATHS = new Set([
   "*",
   "stay.dateExpression.rawText",
@@ -69,7 +70,7 @@ function validatePlannerOutput(value) {
   return { ok: errors.length === 0, errors };
 }
 
-function applyPlannerSemanticContract(value) {
+function applyPlannerSemanticContract(value, { catalog } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tasks)) return value;
   const acceptedTasks = [], repairedTasks = [], rejectedTasks = [];
   const tasks = value.tasks.map((original, index) => {
@@ -77,16 +78,24 @@ function applyPlannerSemanticContract(value) {
     const entity = task && task.entity;
     if (!entity) return task;
 
-    if (entity.canonicalCandidate === "location") {
+    if (task.type === "availability" && entity.category === "room" && entity.canonicalCandidate === null && catalog) {
+      const inventoryEntity = resolveEntity(catalog, entity);
+      if (!["resolved", "matched_set"].includes(inventoryEntity.status)) {
+        task = { ...task, entity: { ...entity, category: "other", rawText: "", canonicalCandidate: null } };
+        repairedTasks.push({ taskId: task.taskId, index, reason: "generic_availability_entity_unresolved" });
+      }
+    }
+
+    if (task.entity.canonicalCandidate === "location") {
       const changed = task.type !== "property_fact" || entity.category !== "transport" || task.detailIntent !== "general";
-      task = { ...task, type: "property_fact", detailIntent: "general", requestedOutputs: ["map_url"], entity: { ...entity, category: "transport", canonicalCandidate: "location" } };
+      task = { ...task, type: "property_fact", detailIntent: "general", requestedOutputs: ["map_url"], entity: { ...task.entity, category: "transport", canonicalCandidate: "location" } };
       if (changed) repairedTasks.push({ taskId: task.taskId, index, reason: "location_contract_mismatch" });
-    } else if (task.type === "property_fact" && entity.category === "transport" && entity.canonicalCandidate === null) {
-      task = { ...task, detailIntent: "general", requestedOutputs: ["map_url"], entity: { ...entity, canonicalCandidate: "location" } };
+    } else if (task.type === "property_fact" && task.entity.category === "transport" && task.entity.canonicalCandidate === null) {
+      task = { ...task, detailIntent: "general", requestedOutputs: ["map_url"], entity: { ...task.entity, canonicalCandidate: "location" } };
       repairedTasks.push({ taskId: task.taskId, index, reason: "transport_location_candidate_missing" });
-    } else if (task.type === "property_fact" && entity.category === "other" && entity.canonicalCandidate === null) {
+    } else if (task.type === "property_fact" && task.entity.category === "other" && task.entity.canonicalCandidate === null) {
       rejectedTasks.push({ taskId: task.taskId, index, reason: "unresolved_property_fact" });
-      task = { ...task, type: "unknown", detailIntent: "general", requestedOutputs: ["answer"], entity: { ...entity, category: "other", canonicalCandidate: null } };
+      task = { ...task, type: "unknown", detailIntent: "general", requestedOutputs: ["answer"], entity: { ...task.entity, category: "other", canonicalCandidate: null } };
     }
 
     if (task.detailIntent === "eligibility" && !hasExplicitEligibilityEvidence(task)) {
