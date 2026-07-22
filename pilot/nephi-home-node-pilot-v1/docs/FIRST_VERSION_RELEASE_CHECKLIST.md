@@ -2,6 +2,8 @@
 
 本清單是第一版正式上線前的統一追蹤入口。已驗收且不得退步的產品行為以 [PRODUCT_BASELINE.md](PRODUCT_BASELINE.md) 為準；目前執行順序以 [NEXT_TASKS.md](NEXT_TASKS.md) 為準。本清單不得取代正式測試、真實驗收或逐次正式環境操作授權。
 
+永久產品原則：旅客前台不得寫死任何旅宿資訊。前台只呈現業者填寫並經核准的正式 property-scoped 資料；業者表單、正式資料、業者後台、旅客前台與 AI 必須共用同一資料來源。
+
 ## 1. AI 核心
 
 以下項目延續既有第一版驗收基準，不得因上線收尾而降低：
@@ -20,26 +22,34 @@
 
 ### 公開 API 不得暴露 propertyId
 
-- [ ] 公開 API 已移除內部 `propertyId`。
-- [ ] 已完成防退化測試，證明公開 response 不會重新出現內部 `propertyId`。
+- [x] 公開 API 已移除內部 `propertyId`。
+- [x] 已完成防退化測試，證明公開 response 不會重新出現內部 `propertyId`。
 
-目前：公開 Availability API 仍可能回傳 `propertyId`。
+完成證據：`d9de04a0106aef35ac374aeef88376f65eb3cbae`；`first-version-room-data-chain-runner`、`first-version-public-admin-runner` 與完整 `npm test` exit 0。
 
 正式版規則：任何公開 API 均不得暴露內部 `propertyId`。
 
-狀態：**待修**
+狀態：**自動驗證完成；尚待旅客前台真人驗收**
 
 ### 是否支援多晚查詢
 
-目前：旅客只能查一晚；選擇入住日期後，退房日期固定為隔天。
+- [x] 已提供可編輯的入住與退房日期。
+- [x] 已拒絕零晚與負晚數。
+- [x] 區間任一天不可售時，不會把整段住宿顯示為可售。
 
-待使用者決策：第一版是否支援多晚查詢。
+完成證據：`d9de04a0106aef35ac374aeef88376f65eb3cbae`；完整區間 API integration 與完整 `npm test` exit 0。
 
-狀態：**待決策**
+狀態：**自動驗證完成；尚待桌機與手機真人驗收**
 
 ## 3. 後台（Admin）
 
-目前未發現第一版必修問題。
+- [x] 房型代號、顯示名稱、入住人數、亮點、四類價格與啟用狀態共用正式 property-scoped 資料並可在既有房型／價格區維護。
+- [x] 儲存成功／失敗狀態明確，失敗時保留輸入。
+- [x] PostgreSQL 與 JSON provider 均有 property isolation 回歸測試。
+
+完成證據：`d9de04a0106aef35ac374aeef88376f65eb3cbae`；`room-data-postgres-runner`、`first-version-public-admin-runner` 與完整 `npm test` exit 0。
+
+狀態：**自動驗證完成；尚待業者後台真人驗收**
 
 後續若驗收發現第一版 blocker，再新增至本節；不得把第二版功能提前列為第一版上線必要條件。
 
@@ -47,15 +57,17 @@
 
 ### 最後預覽頁需完整
 
-- [ ] 送審前可完整預覽基本資料。
-- [ ] 送審前可完整預覽地址與 LINE。
-- [ ] 送審前可完整預覽房型與四類價格。
-- [ ] 送審前可完整預覽包棟資料。
-- [ ] 送審前可完整預覽 FAQ 與設施。
-- [ ] 送審前可完整預覽入住時間與退房時間。
-- [ ] 送審前可完整預覽第一版所有送審內容。
+- [x] 送審前可完整預覽基本資料。
+- [x] 送審前可完整預覽地址與 LINE。
+- [x] 送審前可完整預覽房型與四類價格。
+- [x] 送審前可完整預覽包棟資料。
+- [x] 送審前可完整預覽 FAQ 與設施。
+- [x] 送審前可完整預覽入住時間與退房時間。
+- [x] 送審前可完整預覽第一版所有送審內容。
 
-狀態：**待修**
+完成證據：`d9de04a0106aef35ac374aeef88376f65eb3cbae`；房型草稿、submitted snapshot、核准 materialization、補件續填與完整 `npm test` exit 0。
+
+狀態：**自動驗證完成；尚待業者送審前真人預覽驗收**
 
 ### FAQ 狀態文字
 
@@ -73,16 +85,19 @@
 - 需要人工說明
 - 尚未確認
 
-狀態：**待修**
+完成證據：`d9de04a0106aef35ac374aeef88376f65eb3cbae`；前端顯示文字契約測試與完整 `npm test` exit 0，後端狀態值未變更。
+
+狀態：**自動驗證完成；尚待畫面真人驗收**
 
 ### LINE 官方帳號驗證
 
-待確認第一版是否要求：
+- [x] 勾選已有 LINE 官方帳號時，加好友網址必填且只接受 `https://lin.ee/` 或 `https://line.me/`。
+- [x] Channel ID 第一版未作為公開聯絡鏈必要資料，保留為選填，不阻擋 Onboarding。
+- [x] 表單不蒐集任何 LINE 私密憑證。
 
-- [ ] 加好友網址必填。
-- [ ] Channel ID 保留。
+完成證據：`d9de04a0106aef35ac374aeef88376f65eb3cbae`；Onboarding contract test 與完整 `npm test` exit 0。
 
-狀態：**待決策**
+狀態：**自動驗證完成；尚待真人表單驗收**
 
 ## 5. LINE 驗收
 
