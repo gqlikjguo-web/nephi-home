@@ -49,7 +49,7 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   assert.ok(guarded.replyText.includes("停車位"));
   assert.ok(guarded.replyText.includes("麻將"));
   assert.deepEqual(guarded.claimValidation.coveredTaskIds.sort(), ["a", "b", "c"]);
-  assert.deepEqual(diagnostics.map((item) => item.stage), ["property_catalog", "planner", "validation", "temporal", "state", "entity_resolution", "executor", "response_plan", "composer", "claim_validator", "line_ready"]);
+  assert.deepEqual(diagnostics.map((item) => item.stage), ["property_catalog", "planner", "validation", "semantic_contract", "pending_request", "no_reply_gate", "temporal", "state", "entity_resolution", "pending_request", "executor", "response_plan", "composer", "claim_validator", "line_ready", "final_decision"]);
   assert.equal(new Set(diagnostics.map((item) => item.traceId)).size, 1);
   assert.equal(guarded.replyText, result.replyText);
   const safeDiagnostics = diagnostics.map(formatSafeTestOnlyConversationTrace).filter(Boolean);

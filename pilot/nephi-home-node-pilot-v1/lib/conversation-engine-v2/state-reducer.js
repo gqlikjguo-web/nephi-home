@@ -1,10 +1,12 @@
 "use strict";
 
+const { migratePendingRequest } = require("./pending-request");
+
 const PATHS = new Set(["stay.checkIn", "stay.checkOut", "stay.nights", "stay.guests", "stay.searchRange", "inventory.mode", "inventory.entityId", "inventory.features"]);
 const TOPIC_TASK_TYPES = new Set(["amenity", "policy", "property_fact"]);
 function blankTopic() { return { capabilityType: null, canonicalId: null, category: null, detailIntent: "general", detailFields: [] }; }
 function blankConditions() { return { stay: { checkIn: null, checkOut: null, nights: null, guests: null, searchRange: null }, inventory: { mode: "any", entityId: null, features: [] }, topic: blankTopic() }; }
-function emptyStateV2(scope = {}) { return { schemaVersion: 2, scope: { propertyId: scope.propertyId || "", channelId: scope.channelId || "", lineUserId: scope.lineUserId || "" }, conditions: blankConditions(), transition: { set: [], replaced: [], cleared: [], kept: [], sourceEventId: "" }, updatedAt: scope.now || new Date().toISOString() }; }
+function emptyStateV2(scope = {}) { return { schemaVersion: 2, scope: { propertyId: scope.propertyId || "", channelId: scope.channelId || "", lineUserId: scope.lineUserId || "" }, conditions: blankConditions(), pendingRequest: null, transition: { set: [], replaced: [], cleared: [], kept: [], sourceEventId: "" }, updatedAt: scope.now || new Date().toISOString() }; }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function setPath(root, path, value) { const [group, field] = path.split("."); root[group][field] = value; }
 function migrateStateV2(state, scope) {
@@ -12,6 +14,7 @@ function migrateStateV2(state, scope) {
   const migrated = clone(state);
   migrated.conditions = migrated.conditions || blankConditions();
   migrated.conditions.topic = migrated.conditions.topic && typeof migrated.conditions.topic === "object" ? { ...blankTopic(), ...migrated.conditions.topic } : blankTopic();
+  migrated.pendingRequest = migratePendingRequest(migrated.pendingRequest);
   delete migrated.conditions.tasks;
   return migrated;
 }

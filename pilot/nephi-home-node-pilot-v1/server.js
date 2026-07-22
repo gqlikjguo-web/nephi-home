@@ -45,7 +45,7 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       urlValidation: String(location.urlValidation || "fail")
     } };
   }
-  if (details.stage === "planner") return { ...base, parserSucceeded: Boolean(details.parserSucceeded), taskCount: Number(details.taskCount || 0), tasks: (details.tasks || []).map(safePlannerTraceTask) };
+  if (details.stage === "planner") return { ...base, parserSucceeded: Boolean(details.parserSucceeded), taskCount: Number(details.taskCount || 0), discourse: details.discourse || null, shouldIgnore: Boolean(details.shouldIgnore), missingInformation: (details.missingInformation || []).map(String), tasks: (details.tasks || []).map(safePlannerTraceTask) };
   if (details.stage === "validation") return {
     ...base,
     acceptedTasks: (details.acceptedTasks || []).map(safePlannerTraceTask),
@@ -54,6 +54,11 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
     finalTasks: (details.finalTasks || []).map(safePlannerTraceTask)
   };
   if (details.stage === "executor") return { ...base, results: (details.results || []).map((item) => ({ taskId: item.taskId || "", status: item.status || "", reason: item.reason || "", locationFactProvided: Boolean(item.locationFactProvided), factSource: item.factSource || "" })) };
+  if (details.stage === "semantic_contract") return { ...base, inputTasks: (details.inputTasks || []).map(safePlannerTraceTask), outputTasks: (details.outputTasks || []).map(safePlannerTraceTask), shouldIgnore: Boolean(details.shouldIgnore), validationPassed: Boolean(details.validationPassed), semanticValidation: details.semanticValidation || null };
+  if (details.stage === "no_reply_gate") return { ...base, shouldIgnore: Boolean(details.shouldIgnore), actionableTaskCount: Number(details.actionableTaskCount || 0), unknownTaskCount: Number(details.unknownTaskCount || 0), gateHit: Boolean(details.gateHit), reasonCode: String(details.reasonCode || "") };
+  if (details.stage === "pending_request") return { ...base, action: String(details.action || ""), reasonCode: String(details.reasonCode || ""), capability: String(details.capability || ""), missingFields: (details.missingFields || []).map(String) };
+  if (details.stage === "fallback") return { ...base, reasonCode: String(details.reasonCode || ""), branch: String(details.branch || "") };
+  if (details.stage === "final_decision" || details.stage === "line_transport") return { ...base, decision: String(details.decision || ""), reasonCode: String(details.reasonCode || ""), attempted: Boolean(details.attempted), delivered: Boolean(details.delivered) };
   if (["response_plan", "composer", "claim_validator", "line_ready"].includes(details.stage)) return { ...base, sectionCount: details.sectionCount, coveredTaskIds: details.coveredTaskIds || [], missingTaskIds: details.missingTaskIds || [], replyLength: details.replyLength, composerSource: details.composerSource || "", validationResult: details.validationResult || "" };
   return null;
 }
@@ -579,9 +584,9 @@ function createApp(options = {}) {
       const input = { customerId: id, channelId: String(payload.destination || "line"), lineUserId: String(event.source && event.source.userId || ""), eventId: String(event.webhookEventId || event.message.id || ""), eventTimestamp: event.timestamp || "", messageText: event.message.text || "" };
       if (!(await claimEvent(input)).claimed) continue;
       void root.coordinator.enqueue(input).then(async (result) => {
-        if (!result.shouldReply || !result.replyText) return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true });
-        try { await (replyClient ? replyClient({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: result.replyText }] }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" }); }
-        catch (error) { const status = Number(error && (error.status || error.statusCode)); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); }
+        if (!result.shouldReply || !result.replyText) { logSafeTestOnlyConversationTrace({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision: "no_reply", reasonCode: "engine_should_reply_false", attempted: false, delivered: false }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
+        try { logSafeTestOnlyConversationTrace({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision: "reply", reasonCode: "reply_attempt", attempted: true, delivered: false }); await (replyClient ? replyClient({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: result.replyText }] }); logSafeTestOnlyConversationTrace({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision: "reply", reasonCode: "reply_succeeded", attempted: true, delivered: true }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" }); }
+        catch (error) { const status = Number(error && (error.status || error.statusCode)); logSafeTestOnlyConversationTrace({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision: "reply", reasonCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception", attempted: true, delivered: false }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); }
       }).catch(async () => {
         const fallbackText = "目前無法安全確認這項資訊，請由業者協助確認。";
         try {
