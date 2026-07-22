@@ -11,7 +11,7 @@ function plan({ relation, type, category, sourceText, topic = null, detailIntent
     discourse: { relation, confidence: 1 },
     stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-    tasks: [{ taskId: "question", type, sourceText, detailIntent, requestedOutputs: ["answer"], dependsOnStayContext: false,
+    tasks: [{ taskId: "question", type, sourceText, detailIntent, requestedOutputs: [detailIntent === "eligibility" ? "eligibility" : "answer"], dependsOnStayContext: false,
       entity: { category, rawText: sourceText, canonicalCandidate: topic, confidence: 1 }, confidence: 1 }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: relation
   };

@@ -47,3 +47,7 @@ When a guest states duration or guest count without a date, preserve the confirm
 ## 2026-07-22 — Compare raw Planner tasks with validated tasks safely
 
 When fixture-driven acceptance tests disagree with a real model-backed runtime, capture the Planner task contract before normalization and the accepted, rejected, and final task sets after validation under one trace ID. The trace must be allowlisted field by field so diagnostic evidence never includes the guest message, user/event identifiers, credentials, signatures, or full location URLs.
+
+## 2026-07-22 — Structural validity does not prove semantic validity
+
+A Planner task can satisfy the strict JSON schema while carrying contradictory meaning, such as a transport fact without the canonical location ID or a base facility question marked as an eligibility detail. The runtime must enforce controlled relationships between task type, category, canonical candidate, detail intent, and requested outputs before the Resolver; safely repair only contract-determined cases and locally downgrade anything that cannot be repaired without guessing.

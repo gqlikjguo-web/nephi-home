@@ -46,3 +46,7 @@
 
 單一 bug fix、文案調整、例行重構與一般 commit 不加入本文件。
 # 2026-07-19 — V2 preserves partial stay constraints and blocks stale-date reuse
+
+## 2026-07-22 — Planner semantic contract boundary
+
+- Added deterministic semantic-contract enforcement between structural Planner validation and Resolver execution, covering location tuple consistency, base-versus-eligibility detail intent, local safe downgrade, and multi-task preservation.

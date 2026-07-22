@@ -2,7 +2,7 @@
 
 const crypto = require("node:crypto");
 
-const { validatePlannerOutput } = require("./planner-schema");
+const { validatePlannerOutput, applyPlannerSemanticContract } = require("./planner-schema");
 const { normalizeDetailIntent } = require("./detail-intent");
 const { buildPropertyCatalog } = require("./property-catalog");
 const { resolveTemporalExpression, inferExplicitTemporalExpression } = require("./temporal-resolver");
@@ -161,10 +161,17 @@ class ConversationEngineV2 {
       const item = this.persistReview(input, "planner_normalization_failed", "Planner output could not be normalized safely.", "");
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };
     }
-    const validation = validatePlannerOutput(plannerOutput);
-    this.trace(traceId, "validation", plannerValidationTrace(plannerOutput, validation));
-    if (!validation.ok) {
+    const structuralValidation = validatePlannerOutput(plannerOutput);
+    if (!structuralValidation.ok) {
+      this.trace(traceId, "validation", plannerValidationTrace(plannerOutput, structuralValidation));
       const item = this.persistReview(input, "planner_invalid", "整體訊息無法安全理解，請協助確認。", "");
+      return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };
+    }
+    plannerOutput = applyPlannerSemanticContract(plannerOutput);
+    const validation = validatePlannerOutput(plannerOutput);
+    this.trace(traceId, "validation", { ...plannerValidationTrace(plannerOutput, validation), semanticValidation: plannerOutput.semanticValidation });
+    if (!validation.ok) {
+      const item = this.persistReview(input, "planner_semantic_repair_invalid", "Planner task could not be repaired safely.", "");
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean) };
     }
     plannerOutput = applyFollowUpTopic(plannerOutput, previous.conditions);

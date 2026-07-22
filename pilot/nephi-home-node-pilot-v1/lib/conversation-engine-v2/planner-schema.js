@@ -49,6 +49,36 @@ function validatePlannerOutput(value) {
   return { ok: errors.length === 0, errors };
 }
 
+function applyPlannerSemanticContract(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tasks)) return value;
+  const acceptedTasks = [], repairedTasks = [], rejectedTasks = [];
+  const tasks = value.tasks.map((original, index) => {
+    let task = { ...original, entity: original && original.entity ? { ...original.entity } : original && original.entity };
+    const entity = task && task.entity;
+    if (!entity) return task;
+
+    if (entity.canonicalCandidate === "location") {
+      const changed = task.type !== "property_fact" || entity.category !== "transport" || task.detailIntent !== "general";
+      task = { ...task, type: "property_fact", detailIntent: "general", requestedOutputs: ["map_url"], entity: { ...entity, category: "transport", canonicalCandidate: "location" } };
+      if (changed) repairedTasks.push({ taskId: task.taskId, index, reason: "location_contract_mismatch" });
+    } else if (task.type === "property_fact" && entity.category === "transport" && entity.canonicalCandidate === null) {
+      task = { ...task, detailIntent: "general", requestedOutputs: ["map_url"], entity: { ...entity, canonicalCandidate: "location" } };
+      repairedTasks.push({ taskId: task.taskId, index, reason: "transport_location_candidate_missing" });
+    } else if (task.type === "property_fact" && entity.category === "other" && entity.canonicalCandidate === null) {
+      rejectedTasks.push({ taskId: task.taskId, index, reason: "unresolved_property_fact" });
+      task = { ...task, type: "unknown", detailIntent: "general", requestedOutputs: ["answer"], entity: { ...entity, category: "other", canonicalCandidate: null } };
+    }
+
+    if (task.detailIntent === "eligibility" && !task.requestedOutputs.includes("eligibility")) {
+      task = { ...task, detailIntent: "general" };
+      repairedTasks.push({ taskId: task.taskId, index, reason: "detail_intent_output_mismatch" });
+    }
+    if (!repairedTasks.some((item) => item.index === index) && !rejectedTasks.some((item) => item.index === index)) acceptedTasks.push({ taskId: task.taskId, index });
+    return task;
+  });
+  return { ...value, tasks, semanticValidation: { acceptedTasks, repairedTasks, rejectedTasks } };
+}
+
 function plannerJsonSchema() {
   const stringEnum = (values) => ({ type: "string", enum: [...values] });
   return {
@@ -65,4 +95,4 @@ function plannerJsonSchema() {
   };
 }
 
-module.exports = { validatePlannerOutput, plannerJsonSchema, TASK_TYPES };
+module.exports = { validatePlannerOutput, applyPlannerSemanticContract, plannerJsonSchema, TASK_TYPES };
