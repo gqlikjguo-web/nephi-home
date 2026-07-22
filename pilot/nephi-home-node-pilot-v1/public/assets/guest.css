@@ -1,7 +1,7 @@
 :root { color-scheme: light; font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif; color: #202124; background: #f5f6f7; }
 * { box-sizing: border-box; }
 body { margin: 0; }
-.guest-shell { width: min(100% - 24px, 32rem); margin: 0 auto; padding: 24px 0 48px; }
+.guest-shell { width: min(100% - 32px, 72rem); margin: 0 auto; padding: 24px 0 48px; }
 header { margin-bottom: 18px; }
 h1, h2, p { margin-top: 0; }
 .eyebrow { margin-bottom: 4px; color: #55705b; font-size: .875rem; }
@@ -25,4 +25,10 @@ button, .line-button { border: 0; background: #315d3b; color: #fff; font-weight:
 .line-unavailable { color: #607268; text-align: center; }
 .line-disclaimer { margin: 12px 0 0; color: #607268; text-align: center; font-size: .9rem; }
 .stay-dates { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.guest-count span { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.guest-count b { font-weight: 600; }
+.room-code,.room-capacity { color: #526057; }
+.room-highlights { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.room-highlights li { padding: 4px 8px; border: 0 !important; border-radius: 999px; background: #eef5f0; font-size: .9rem; }
+@media (min-width: 768px) { .guest-layout { display: grid; grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr); align-items: start; gap: 18px; } .search-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; } .search-grid label:nth-child(n+3) { grid-column: 1 / -1; } .results-card { min-height: 18rem; } .result-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; } }
 @media (max-width: 390px) { .guest-shell { width: 100%; max-width: 390px; padding: 16px 12px 36px; overflow-x: hidden; } .card { padding: 15px; } .stay-dates { font-size: .94rem; } .result-card,.line-button { min-width: 0; max-width: 100%; } }

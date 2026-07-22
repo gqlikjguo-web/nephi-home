@@ -1,35 +1,6 @@
 <!doctype html>
-<html lang="zh-Hant">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{{PUBLIC_BRAND_NAME}}｜客人查房</title>
-  <link rel="stylesheet" href="/assets/guest.css">
-</head>
-<body data-public-base-url="{{PUBLIC_BASE_URL}}">
-  <main class="guest-shell">
-    <header><p class="eyebrow">{{PUBLIC_BRAND_NAME}}</p><h1 id="propertyName">空房查詢</h1></header>
-    <section class="card">
-      <form id="searchForm">
-        <label>入住日期<input id="checkIn" name="checkIn" type="date" required></label>
-        <p>退房日期：<strong id="checkOut">—</strong></p>
-        <label>入住人數（可不填）<input name="guests" type="number" min="1" max="50" inputmode="numeric"></label>
-        <label>查詢模式<select name="queryMode"><option value="any">全部房型</option><option value="room_only">僅散房</option><option value="bundle_only">僅包棟</option></select></label>
-        <label>指定房型或方案（可不填）<select id="roomType" name="roomType" disabled><option value="all">不指定</option></select></label>
-        <button type="submit">查詢</button>
-      </form>
-      <p id="message" class="message" role="status"></p>
-    </section>
-    <section id="results" class="card" hidden>
-      <h2>查詢結果</h2>
-      <p id="stayDates" class="stay-dates"></p>
-      <div id="roomResults"></div>
-      <div id="bundleResults"></div>
-      <p id="lineUnavailable" class="line-unavailable" hidden>此旅宿尚未設定 LINE 聯絡方式</p>
-      <p id="lineDisclaimer" class="line-disclaimer" hidden>最終房況與訂房請以民宿 LINE 確認為準。</p>
-    </section>
-    <footer><small>由 {{PUBLIC_BRAND_NAME}} 提供房況查詢服務</small></footer>
-  </main>
-  <script src="/assets/guest.js" defer></script>
-</body>
-</html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{PUBLIC_BRAND_NAME}}｜旅客查房</title><link rel="stylesheet" href="/assets/guest.css"></head>
+<body><main class="guest-shell"><header><p class="eyebrow">{{PUBLIC_BRAND_NAME}}</p><h1 id="propertyName">旅客查房</h1></header>
+<div class="guest-layout"><section class="card search-card"><form id="searchForm"><div class="search-grid"><label>入住日期<input id="checkIn" name="checkIn" type="date" required></label><label>退房日期<input id="checkOut" name="checkOut" type="date" required></label><label class="guest-count">入住人數（可不填）<span><input name="guests" type="number" min="1" max="50" inputmode="numeric" placeholder="例如：2"><b>人</b></span></label><label>想查什麼？<select id="inventoryChoice" name="inventoryChoice" disabled><option value="all">載入中</option></select></label></div><button type="submit">查詢</button></form><p id="message" class="message" role="status"></p></section>
+<section id="results" class="card results-card" hidden><h2>查詢結果</h2><p id="stayDates" class="stay-dates"></p><div id="roomResults"></div><div id="bundleResults"></div><p id="lineUnavailable" class="line-unavailable" hidden>此旅宿尚未提供 LINE 加好友網址，請使用旅宿公布的其他方式聯絡。</p><p id="lineDisclaimer" class="line-disclaimer" hidden>將開啟此旅宿正式 LINE 聯絡頁面。</p></section></div>
+</main><script src="/assets/guest.js" defer></script></body></html>

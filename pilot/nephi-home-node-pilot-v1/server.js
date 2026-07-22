@@ -15,6 +15,7 @@ const { resolvePublicProperty, normalizePublicSlug } = require("./lib/public-pro
 const { createOnboardingEmailNotifier } = require("./lib/onboarding-email");
 const { createPublicBrand } = require("./config/public-brand");
 const { renderPublicHtml } = require("./lib/public-brand-html");
+const { normalizeRoomRecord, normalizeRoomHighlights, characterCount } = require("./lib/room-data");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -189,6 +190,17 @@ function publicPriceForDate(room, date, overrides = []) {
   return Number.isInteger(value) && value > 0 ? value : null;
 }
 
+function publicPriceForStay(room, checkIn, checkOut, overrides = []) {
+  let date = checkIn, total = 0;
+  while (date < checkOut) {
+    const nightly = publicPriceForDate(room, date, overrides);
+    if (nightly === null) return null;
+    total += nightly;
+    date = nextDateKey(date);
+  }
+  return total > 0 ? total : null;
+}
+
 function publicAvailabilityResult(result, property, overrides = []) {
   let lineUrl = "";
   try {
@@ -196,17 +208,21 @@ function publicAvailabilityResult(result, property, overrides = []) {
     const allowedLineHosts = new Set(["lin.ee", "line.me"]);
     if (parsed.protocol === "https:" && allowedLineHosts.has(parsed.hostname.toLowerCase())) lineUrl = parsed.toString();
   } catch {}
-  const item = (room) => ({
+  const item = (input) => {
+    const room = normalizeRoomRecord(input);
+    return ({
     id: room.id,
-    name: room.name,
+    displayName: room.displayName,
+    name: room.displayName,
+    roomCode: room.roomCode,
     capacity: Number(room.capacity || 0),
-    price: publicPriceForDate(room, result.checkIn, overrides),
+    highlights: room.highlights,
+    price: publicPriceForStay(room, result.checkIn, result.checkOut, overrides),
     currency: String(property.currency || "TWD")
-  });
+  });};
   const rooms = result.rooms.filter((room) => room.inventoryType !== "bundle").map(item);
   const bundles = result.rooms.filter((room) => room.inventoryType === "bundle").map(item);
   return {
-    propertyId: result.customerId,
     propertyName: result.homestayName,
     checkInDate: result.checkIn,
     checkOutDate: result.checkOut,
@@ -221,7 +237,7 @@ function publicAvailabilityResult(result, property, overrides = []) {
 }
 
 function publicPropertyMetadata(property) {
-  const rooms = (property.rooms || []).filter((room) => room && room.enabled !== false);
+  const rooms = (property.rooms || []).filter((room) => room && room.enabled !== false).map(normalizeRoomRecord);
   const hasBundles = rooms.some((room) => room.inventoryType === "bundle");
   let lineUrl = "";
   try {
@@ -230,7 +246,7 @@ function publicPropertyMetadata(property) {
   } catch {}
   return {
     propertyName: String(property.displayName || ""),
-    inventoryOptions: [{ id: "all", name: hasBundles ? "全部房型與包棟" : "全部房型", inventoryType: "all" }, ...rooms.map((room) => ({ id: room.id, name: room.name, inventoryType: room.inventoryType || "room", capacity: room.capacity, basePrice: room.mondayThursdayPrice ?? room.basePrice ?? null }))],
+    inventoryOptions: [{ id: "all", name: hasBundles ? "全部房型與包棟" : "全部房型", inventoryType: "all" }, ...rooms.map((room) => ({ id: room.id, name: room.displayName, inventoryType: room.inventoryType || "room", capacity: room.capacity, basePrice: room.mondayThursdayPrice ?? room.basePrice ?? null }))],
     lineUrl
   };
 }
@@ -430,20 +446,22 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "POST" && pathname === "/api/availability/batch") {
         return sendData(response, service.applyBatch(request.adminBody || await readJsonBody(request)));
       }
-      if(request.method==="GET"&&pathname==="/api/room-pricing"){const property=customerSettings.getProperty(url.searchParams.get("customerId"));return sendData(response,{currency:property.currency||"TWD",rooms:property.rooms.filter(x=>x.inventoryType!=="bundle"),overrides:customerSettings.listRoomPriceOverrides(property.propertyId)});}
+      if(request.method==="GET"&&pathname==="/api/room-pricing"){const property=customerSettings.getProperty(url.searchParams.get("customerId")),rooms=typeof customerSettings.listRoomRecords==="function"?customerSettings.listRoomRecords(property.propertyId):property.rooms.filter(x=>x.inventoryType!=="bundle");return sendData(response,{currency:property.currency||"TWD",rooms,overrides:customerSettings.listRoomPriceOverrides(property.propertyId)});}
       if(request.method==="PUT"&&pathname==="/api/room-pricing"){
         const body=request.adminBody||await readJsonBody(request),propertyId=String(body.propertyId||body.customerId||"").trim();
         if(!Array.isArray(body.rooms)||!body.rooms.length)throw new AppError(400,"INVALID_PRICING_MATRIX","請提供至少一個房型價格");
-        const property=customerSettings.getProperty(propertyId);if(!property)throw new AppError(400,"UNKNOWN_PROPERTY","找不到旅宿");const validIds=new Set((property.rooms||[]).filter((room)=>room.inventoryType!=="bundle").map((room)=>room.id)),seen=new Set(),items=[];
+        const property=customerSettings.getProperty(propertyId);if(!property)throw new AppError(400,"UNKNOWN_PROPERTY","找不到旅宿");const editableRooms=typeof customerSettings.listRoomRecords==="function"?customerSettings.listRoomRecords(propertyId):(property.rooms||[]).filter((room)=>room.inventoryType!=="bundle"),validIds=new Set(editableRooms.map((room)=>room.id)),seen=new Set(),items=[];
         for(const row of body.rooms){
           const roomTypeId=String(row&&row.roomTypeId||"").trim();
           if(!roomTypeId||seen.has(roomTypeId)||!validIds.has(roomTypeId))throw new AppError(400,"UNKNOWN_ROOM","房型不存在或重複");
           seen.add(roomTypeId);const item={roomTypeId};
           for(const key of ["mondayThursdayPrice","fridayPrice","saturdayHolidayPrice","sundayPrice"]){item[key]=Number(row[key]);if(!Number.isInteger(item[key])||item[key]<0)throw new AppError(400,"INVALID_PRICE","價格必須是零或正整數");}
+          const editsRoomData=["roomCode","displayName","capacity","highlights","enabled"].some((key)=>Object.hasOwn(row,key));
+          if(editsRoomData){item.roomCode=String(row.roomCode||"").trim();item.displayName=String(row.displayName||"").trim();item.capacity=Number(row.capacity);item.highlights=normalizeRoomHighlights(row.highlights);item.enabled=Boolean(row.enabled);if(!item.displayName)throw new AppError(400,"MISSING_ROOM_DISPLAY_NAME","房型顯示名稱不得空白");if(characterCount(item.roomCode)>40||characterCount(item.displayName)>80)throw new AppError(400,"ROOM_TEXT_TOO_LONG","房型代號或顯示名稱過長");if(!Number.isInteger(item.capacity)||item.capacity<1)throw new AppError(400,"INVALID_ROOM_CAPACITY","最多入住人數必須是正整數");if(item.highlights.length>3||item.highlights.some((value)=>characterCount(value)>15))throw new AppError(400,"INVALID_ROOM_HIGHLIGHTS","房型亮點最多 3 項，每項最多 15 字");}
           items.push(item);
         }
-        const updated=customerSettings.updateRoomPricingBatch(propertyId,items);
-        return sendData(response,{currency:updated.currency||"TWD",rooms:updated.rooms.filter((room)=>room.inventoryType!=="bundle"),overrides:customerSettings.listRoomPriceOverrides(propertyId)});
+        const updated=customerSettings.updateRoomPricingBatch(propertyId,items),rooms=typeof customerSettings.listRoomRecords==="function"?customerSettings.listRoomRecords(propertyId):updated.rooms.filter((room)=>room.inventoryType!=="bundle");
+        return sendData(response,{currency:updated.currency||"TWD",rooms,overrides:customerSettings.listRoomPriceOverrides(propertyId)});
       }
       const pricingMatch=/^\/api\/room-pricing\/([^/]+)$/.exec(pathname);
       if(pricingMatch&&request.method==="PUT"){const b=request.adminBody||await readJsonBody(request),price={};for(const key of ["mondayThursdayPrice","fridayPrice","saturdayHolidayPrice","sundayPrice"]){price[key]=Number(b[key]);if(!Number.isInteger(price[key])||price[key]<0)throw new AppError(400,"INVALID_PRICE","價格必須是零或正整數");}return sendData(response,{property:customerSettings.updateRoomPricing(b.customerId,decodeURIComponent(pricingMatch[1]),price)});}

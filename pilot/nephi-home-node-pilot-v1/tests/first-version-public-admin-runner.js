@@ -37,7 +37,8 @@ function property(propertyId, name, lineUrl) {
   assert.match(guestScript, /inventoryOptions/, "guest room choices must be supplied by public property data");
   assert.match(guestScript, /lineDisclaimer/, "guest results must include the LINE booking disclaimer");
   assert.match(guestScript, /✓ 可入住/, "each public result card must state that the inventory is available");
-  assert.match(guestScript, /加入 LINE 訂房/, "each public result card must use the approved LINE booking label");
+  assert.match(guestScript, /詢問此房型/, "room cards must use the approved LINE inquiry label");
+  assert.match(guestScript, /詢問此包棟方案/, "bundle cards must use the approved LINE inquiry label");
   assert.match(guestScript, /Intl\.NumberFormat\("zh-TW"/, "public prices must use a locale-safe currency formatter");
   assert.match(adminScript, /status-toggle/, "admin availability must use a single controlled toggle");
   assert.match(adminScript, /＋備註/, "admin must expose an explicit add-note action");
@@ -60,7 +61,7 @@ function property(propertyId, name, lineUrl) {
       businessProfile: { googleMapsUrl: "https://maps.app.goo.gl/nephi" },
       safeFacts: { checkInTime: "15:00", checkOutTime: "11:00" },
       rooms: [
-        { id: "room301", name: "雙人房", type: "double", capacity: 2, enabled: true, mondayThursdayPrice: 2000 },
+        { id: "room301", roomCode: "R-A", displayName: "陽光客房", name: "陽光客房", highlights: ["採光佳", "安靜"], type: "double", capacity: 2, enabled: true, mondayThursdayPrice: 2000 },
         { id: "room302", name: "家庭房", type: "family", capacity: 4, enabled: true, mondayThursdayPrice: 3000 },
         { id: "room401", name: "景觀雙人房", type: "double", capacity: 2, enabled: true, mondayThursdayPrice: 2200 },
         { id: "room402", name: "景觀家庭房", type: "family", capacity: 4, enabled: true, mondayThursdayPrice: 3200 }
@@ -108,12 +109,31 @@ function property(propertyId, name, lineUrl) {
     const availability = await json(`${running.url}/api/public/availability?slug=nephihome&checkIn=2026-08-06&checkOut=2026-08-07&guests=2`);
     assert.equal(availability.response.status, 200);
     assert.equal(availability.body.data.propertyName, "尼腓的家");
+    assert.equal(Object.hasOwn(availability.body.data, "propertyId"), false, "public availability must not expose internal propertyId");
     assert.deepEqual(availability.body.data.rooms.map((item) => item.id), ["room301", "room302", "room401", "room402"], "public availability must use the slug-resolved property only");
     assert.equal(availability.body.data.rooms.find((item) => item.id === "room301").price, 2500, "a date-specific price must override the base weekday price");
     assert.equal(availability.body.data.rooms.find((item) => item.id === "room302").price, 3000, "the matching weekday base price must be used when there is no date override");
     assert.equal(availability.body.data.rooms.find((item) => item.id === "room302").name, "家庭房", "public results must retain the formal property room name");
+    assert.deepEqual(availability.body.data.rooms.find((item) => item.id === "room301"), { id: "room301", displayName: "陽光客房", name: "陽光客房", roomCode: "R-A", capacity: 2, highlights: ["採光佳", "安靜"], price: 2500, currency: "TWD" }, "public cards must use the complete formal room presentation data");
     assert.equal(availability.body.data.lineUrl, "https://lin.ee/nephiOfficial", "public results must retain the current property's validated LINE URL");
     assert.equal(JSON.stringify(availability.body).includes("note"), false, "admin notes must never be public data");
+
+    app.service.setDay({ customerId: "nephi_home", date: "2026-08-07", roomId: "room301", status: "closed" });
+    const multiNight = await json(`${running.url}/api/public/availability?slug=nephihome&checkIn=2026-08-06&checkOut=2026-08-08&guests=2`);
+    assert.equal(multiNight.response.status, 200);
+    assert.equal(multiNight.body.data.rooms.some((item) => item.id === "room301"), false, "a room closed on any night must not be shown for the full stay");
+    assert.equal(multiNight.body.data.checkInDate, "2026-08-06");
+    assert.equal(multiNight.body.data.checkOutDate, "2026-08-08");
+
+    const roomUpdate = await fetch(`${running.url}/api/room-pricing`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", rooms: [{ roomTypeId: "room301", roomCode: "A-01", displayName: "更新客房", capacity: 3, highlights: [" 陽台 ", "陽台", "浴缸"], enabled: true, mondayThursdayPrice: 2100, fridayPrice: 2300, saturdayHolidayPrice: 2900, sundayPrice: 2200 }] }) });
+    assert.equal(roomUpdate.status, 200, "admin must save complete room data through the existing property-scoped route");
+    const savedRooms = (await json(`${running.url}/api/room-pricing?customerId=nephi_home`)).body.data.rooms;
+    const savedRoom = savedRooms.find((room) => room.id === "room301");
+    assert.equal(savedRoom.roomCode, "A-01");
+    assert.equal(savedRoom.displayName, "更新客房");
+    assert.equal(savedRoom.capacity, 3);
+    assert.deepEqual(savedRoom.highlights, ["陽台", "浴缸"]);
+    assert.equal((await json(`${running.url}/api/room-pricing?customerId=other_home`)).body.data.rooms[0].displayName, "另一間房", "room writes must remain property-scoped");
 
     const profileResponse = await fetch(`${running.url}/api/property-profile`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", propertyName: "更新後旅宿", googleMapsUrl: "https://maps.app.goo.gl/nephi", lineUrl: "https://lin.ee/nephiOfficial", contactInfo: "0900-000-000", checkInTime: "15:00", checkOutTime: "11:00" }) });
     const profile = await profileResponse.json();

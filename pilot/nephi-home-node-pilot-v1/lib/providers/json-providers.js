@@ -2,13 +2,14 @@
 
 const { JsonFileRepository } = require("../json-repository");
 const { CustomerSettingsProvider, AvailabilityProvider, PersistenceProvider } = require("./contracts");
+const { normalizeRoomRecord } = require("../room-data");
 
 function toProperty(homestay) {
   if (!homestay) return null;
   return {
     propertyId: homestay.customerId,
     displayName: homestay.name,
-    rooms: homestay.rooms || [],
+    rooms: (homestay.rooms || []).map(normalizeRoomRecord),
     commonAnswers: homestay.safeFacts || {},
     pricing: homestay.pricing || {},
     faqs: homestay.faqs || [],
@@ -26,6 +27,7 @@ class JsonCustomerSettingsProvider extends CustomerSettingsProvider {
   constructor(repository) { super(); this.repository = repository; }
   listProperties() { return this.repository.listHomestays().map(toProperty); }
   getProperty(propertyId) { return toProperty(this.repository.getHomestay(propertyId)); }
+  listRoomRecords(propertyId) { const homestay=this.repository.getHomestay(propertyId);return homestay?(homestay.rooms||[]).filter(room=>room.inventoryType!=="bundle").map(normalizeRoomRecord):[]; }
   updateProperty(propertyId, input) {
     const updated = this.repository.updateHomestay(propertyId, {
       name: input.displayName,
@@ -51,7 +53,7 @@ class JsonCustomerSettingsProvider extends CustomerSettingsProvider {
     if (!homestay) throw new Error("room not found");
     const changes = new Map(items.map((item) => [item.roomTypeId, item]));
     if (changes.size !== items.length || [...changes.keys()].some((id) => !(homestay.rooms || []).some((room) => room.id === id && room.inventoryType !== "bundle"))) throw new Error("room not found");
-    const updated = this.repository.updateHomestay(propertyId, { name: homestay.name, rooms: homestay.rooms.map((room) => changes.has(room.id) ? { ...room, ...changes.get(room.id) } : room), safeFacts: homestay.safeFacts || {} });
+    const updated = this.repository.updateHomestay(propertyId, { name: homestay.name, rooms: homestay.rooms.map((room) => changes.has(room.id) ? normalizeRoomRecord({ ...room, ...changes.get(room.id) }) : room), safeFacts: homestay.safeFacts || {} });
     return toProperty(updated);
   }
   listRoomPriceOverrides() { return []; }

@@ -1,90 +1,24 @@
 "use strict";
 
-const form = document.querySelector("#searchForm");
-const message = document.querySelector("#message");
-const results = document.querySelector("#results");
-const propertyName = document.querySelector("#propertyName");
-const roomType = document.querySelector("#roomType");
-const checkIn = document.querySelector("#checkIn");
-const checkOut = document.querySelector("#checkOut");
-const INVALID_LINK_MESSAGE = "此查房連結無效，請重新由民宿官方連結進入。";
-const slug = (() => {
-  const parts = location.pathname.split("/").filter(Boolean);
-  return parts.length === 1 && parts[0] !== "guest" ? parts[0] : "";
-})();
-let publicProperty = null;
+const form=document.querySelector("#searchForm"),message=document.querySelector("#message"),results=document.querySelector("#results"),propertyName=document.querySelector("#propertyName"),inventoryChoice=document.querySelector("#inventoryChoice"),checkIn=document.querySelector("#checkIn"),checkOut=document.querySelector("#checkOut");
+const INVALID_LINK_MESSAGE="此查房連結無效，請重新由旅宿官方連結進入。";
+const slug=(()=>{const parts=location.pathname.split("/").filter(Boolean);return parts.length===1&&parts[0]!=="guest"?parts[0]:""})();
+let publicProperty=null;
 
-function dateKey(date) { return date.toISOString().slice(0, 10); }
-function nextDate(value) { const date = new Date(`${value}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 1); return dateKey(date); }
-function formatDate(value) { const date = new Date(`${value}T00:00:00Z`); return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date); }
+function dateKey(date){return date.toISOString().slice(0,10)}
+function nextDate(value){const date=new Date(`${value}T00:00:00Z`);date.setUTCDate(date.getUTCDate()+1);return dateKey(date)}
+function formatDate(value){const date=new Date(`${value}T00:00:00Z`);return Number.isNaN(date.getTime())?"—":new Intl.DateTimeFormat("zh-TW",{year:"numeric",month:"2-digit",day:"2-digit"}).format(date)}
+function formatPrice(value){return Number.isInteger(value)&&value>0?`NT$${new Intl.NumberFormat("zh-TW").format(value)}`:"價格請洽民宿"}
 
-function formatPrice(value) {
-  return Number.isInteger(value) && value > 0 ? `NT$${new Intl.NumberFormat("zh-TW").format(value)}` : "價格請洽民宿";
-}
+function resultList(title,items,lineUrl,kind){const section=document.createElement("section"),heading=document.createElement("h3"),list=document.createElement("ul");heading.textContent=title;list.className="result-list";for(const item of items){const row=document.createElement("li"),name=document.createElement("strong"),status=document.createElement("span"),capacity=document.createElement("span"),price=document.createElement("span");row.className="result-card";name.textContent=item.displayName||item.name;status.className="available-label";status.textContent="✓ 可入住";capacity.className="room-capacity";capacity.textContent=`最多入住 ${item.capacity} 人`;price.className="result-price";price.textContent=formatPrice(item.price);row.append(name);if(kind==="room"&&item.roomCode){const code=document.createElement("span");code.className="room-code";code.textContent=`房型代號／房號：${item.roomCode}`;row.append(code)}row.append(capacity);if(kind==="room"&&Array.isArray(item.highlights)&&item.highlights.length){const highlights=document.createElement("ul");highlights.className="room-highlights";for(const value of item.highlights){const li=document.createElement("li");li.textContent=value;highlights.append(li)}row.append(highlights)}row.append(status,price);if(lineUrl){const link=document.createElement("a");link.className="line-button";link.href=lineUrl;link.target="_blank";link.rel="noopener noreferrer";link.textContent=kind==="bundle"?"詢問此包棟方案":"詢問此房型";row.append(link)}list.append(row)}section.append(heading,list);return section}
 
-function resultList(title, items, lineUrl) {
-  const section = document.createElement("section");
-  const heading = document.createElement("h3"); heading.textContent = title;
-  const list = document.createElement("ul"); list.className = "result-list";
-  for (const item of items) {
-    const row = document.createElement("li"); row.className = "result-card";
-    const name = document.createElement("strong"); name.textContent = item.name;
-    const status = document.createElement("span"); status.className = "available-label"; status.textContent = "✓ 可入住";
-    const price = document.createElement("span"); price.className = "result-price"; price.textContent = formatPrice(item.price);
-    row.append(name, status, price);
-    if (lineUrl) { const link = document.createElement("a"); link.className = "line-button"; link.href = lineUrl; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = "加入 LINE 訂房"; row.append(link); }
-    list.append(row);
-  }
-  section.append(heading, list); return section;
-}
+function renderResult(data){document.querySelector("#stayDates").textContent=`${formatDate(data.checkInDate)} 至 ${formatDate(data.checkOutDate)}`;const roomResults=document.querySelector("#roomResults"),bundleResults=document.querySelector("#bundleResults");roomResults.replaceChildren(...(data.rooms.length?[resultList("可售房型",data.rooms,data.lineUrl,"room")]:[]));bundleResults.replaceChildren(...(data.bundles.length?[resultList("可售包棟／組合方案",data.bundles,data.lineUrl,"bundle")]:[]));message.textContent=data.empty?"此區間目前沒有符合條件的可售房型或方案。":"";document.querySelector("#lineUnavailable").hidden=Boolean(data.lineUrl);document.querySelector("#lineDisclaimer").hidden=!data.lineUrl;results.hidden=false}
 
-function renderResult(data) {
-  document.querySelector("#stayDates").textContent = `${formatDate(data.checkIn)} 至 ${formatDate(data.checkOut)}`;
-  const roomResults = document.querySelector("#roomResults");
-  const bundleResults = document.querySelector("#bundleResults");
-  roomResults.replaceChildren(...(data.rooms.length ? [resultList("可售房型", data.rooms, data.lineUrl)] : []));
-  bundleResults.replaceChildren(...(data.bundles.length ? [resultList("可售包棟方案", data.bundles, data.lineUrl)] : []));
-  message.textContent = data.empty ? "此日期目前沒有符合條件的可售房型或包棟方案。" : "";
-  const lineUnavailable = document.querySelector("#lineUnavailable");
-  lineUnavailable.hidden = Boolean(data.lineUrl);
-  document.querySelector("#lineDisclaimer").hidden = !data.lineUrl;
-  results.hidden = false;
-}
+function setInventoryOptions(items){const rooms=items.filter(item=>item.inventoryType==="room"),bundles=items.filter(item=>item.inventoryType==="bundle"),all=items.find(item=>item.inventoryType==="all")||{name:bundles.length?"全部房型與包棟":"全部房型"};const options=[{value:"all",name:all.name}];if(rooms.length)options.push({value:"rooms",name:"僅查看房間"});if(bundles.length)options.push({value:"bundles",name:"僅查看包棟"});for(const item of rooms)options.push({value:`room:${item.id}`,name:item.name});for(const item of bundles)options.push({value:`bundle:${item.id}`,name:item.name});inventoryChoice.replaceChildren(...options.map(item=>{const option=document.createElement("option");option.value=item.value;option.textContent=item.name;return option}));inventoryChoice.disabled=false}
 
-function setInventoryOptions(items) {
-  roomType.replaceChildren(...items.map((item) => { const option = document.createElement("option"); option.value = item.id; option.textContent = item.name; return option; }));
-  roomType.disabled = false;
-}
+async function loadProperty(){if(!slug){message.textContent=INVALID_LINK_MESSAGE;form.querySelector("button[type=submit]").disabled=true;return}try{const response=await fetch(`/api/public/property?slug=${encodeURIComponent(slug)}`),payload=await response.json();if(!response.ok)throw new Error(payload.error?.message||INVALID_LINK_MESSAGE);publicProperty=payload.data;propertyName.textContent=`${publicProperty.propertyName}｜旅客查房`;document.title=`${publicProperty.propertyName}｜旅客查房`;setInventoryOptions(publicProperty.inventoryOptions||[])}catch(error){message.textContent=error.message||INVALID_LINK_MESSAGE;form.querySelector("button[type=submit]").disabled=true}}
 
-async function loadProperty() {
-  if (!slug) { message.textContent = INVALID_LINK_MESSAGE; form.querySelector("button[type=submit]").disabled = true; return; }
-  try {
-    const response = await fetch(`/api/public/property?slug=${encodeURIComponent(slug)}`);
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error?.message || INVALID_LINK_MESSAGE);
-    publicProperty = payload.data;
-    propertyName.textContent = `${publicProperty.propertyName}｜空房查詢`;
-    document.title = `${publicProperty.propertyName}｜空房查詢`;
-    setInventoryOptions(publicProperty.inventoryOptions || [{ id: "all", name: "不指定" }]);
-  } catch (error) { message.textContent = error.message || INVALID_LINK_MESSAGE; form.querySelector("button[type=submit]").disabled = true; }
-}
-
-checkIn.onchange = () => { checkOut.textContent = checkIn.value ? formatDate(nextDate(checkIn.value)) : "—"; };
-form.onsubmit = async (event) => {
-  event.preventDefault();
-  if (!publicProperty) { message.textContent = INVALID_LINK_MESSAGE; return; }
-  if (!form.reportValidity()) return;
-  const values = new FormData(form);
-  const guests = String(values.get("guests") || "").trim();
-  if (guests && (!/^\d+$/.test(guests) || Number(guests) < 1)) { message.textContent = "入住人數請輸入正整數。"; return; }
-  const params = new URLSearchParams({ slug, checkIn: values.get("checkIn"), queryMode: values.get("queryMode"), roomType: values.get("roomType") || "all" });
-  if (guests) params.set("guests", guests);
-  try {
-    const response = await fetch(`/api/public/availability?${params}`);
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error?.message || "系統查詢失敗，請稍後再試。");
-    renderResult(payload.data);
-  } catch (error) { message.textContent = error.message || "系統查詢失敗，請稍後再試。"; results.hidden = true; }
-};
+checkIn.onchange=()=>{if(checkIn.value)checkOut.value=nextDate(checkIn.value)};
+form.onsubmit=async event=>{event.preventDefault();if(!publicProperty){message.textContent=INVALID_LINK_MESSAGE;return}if(!form.reportValidity())return;const values=new FormData(form),guests=String(values.get("guests")||"").trim(),inDate=String(values.get("checkIn")||""),outDate=String(values.get("checkOut")||"");if(outDate<=inDate){message.textContent="退房日期必須晚於入住日期";return}if(guests&&(!/^\d+$/.test(guests)||Number(guests)<1)){message.textContent="入住人數請填寫正整數";return}const selected=String(values.get("inventoryChoice")||"all");let queryMode="any",roomType="all";if(selected==="rooms")queryMode="room_only";else if(selected==="bundles")queryMode="bundle_only";else if(selected.startsWith("room:")){queryMode="room_only";roomType=selected.slice(5)}else if(selected.startsWith("bundle:")){queryMode="bundle_only";roomType=selected.slice(7)}const params=new URLSearchParams({slug,checkIn:inDate,checkOut:outDate,queryMode,roomType});if(guests)params.set("guests",guests);try{const response=await fetch(`/api/public/availability?${params}`),payload=await response.json();if(!response.ok)throw new Error(payload.error?.message||"查詢失敗，請稍後再試");renderResult(payload.data)}catch(error){message.textContent=error.message||"查詢失敗，請稍後再試";results.hidden=true}};
 
 loadProperty();

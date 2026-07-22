@@ -16,3 +16,8 @@
 
 /* Explicit note and bundle details */
 .calendar-note-action{font-size:10px;font-weight:700;color:#785315}.bundle-details{display:grid;gap:5px;min-width:0}.bundle-details span{overflow-wrap:anywhere}.bundle-name{font-size:1.05rem}
+.room-details { display: grid; gap: 14px; margin-bottom: 18px; }
+.room-detail-card { padding: 14px; border: 1px solid #d8ded9; border-radius: 10px; background: #f9fbf9; }
+.room-detail-grid { display: grid; gap: 10px; }
+.room-highlight-fields { display: grid; gap: 8px; margin: 12px 0; }
+@media (min-width: 760px) { .room-details { grid-template-columns: repeat(2,minmax(0,1fr)); } .room-detail-grid { grid-template-columns: repeat(3,minmax(0,1fr)); } }
