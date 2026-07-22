@@ -44,7 +44,7 @@ function onboarding(overrides = {}) {
 
   const onboardingHtml = read("public/onboarding.html");
   const onboardingJs = read("public/assets/onboarding.js");
-  for (const label of ["房型代號／房號", "房型顯示名稱", "房型亮點", "已有正式資料", "不提供／不適用", "需要人工說明", "尚未確認"]) assert.ok(onboardingJs.includes(label), `onboarding must include ${label}`);
+  for (const label of ["房型代號／房號", "房型名稱", "房型亮點", "已有正式資料", "不提供／不適用", "需要人工說明", "尚未確認"]) assert.ok(onboardingJs.includes(label), `onboarding must include ${label}`);
   assert.ok(onboardingHtml.includes("Google Maps"));
   for (const field of ["propertyName", "contactName", "phone", "email", "address", "rooms", "bundles", "knowledge"]) assert.ok(onboardingJs.includes(field));
   assert.equal(onboardingHtml.includes("Channel Secret"), false);

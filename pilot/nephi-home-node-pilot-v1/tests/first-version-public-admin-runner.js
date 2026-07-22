@@ -36,7 +36,7 @@ function property(propertyId, name, lineUrl) {
   assert.equal(guestScript.includes("propertyId"), false, "guest code must not accept or expose propertyId");
   assert.match(guestScript, /inventoryOptions/, "guest room choices must be supplied by public property data");
   assert.match(guestScript, /lineDisclaimer/, "guest results must include the LINE booking disclaimer");
-  assert.match(guestScript, /✓ 可入住/, "each public result card must state that the inventory is available");
+  assert.doesNotMatch(guestScript, /✓ 可入住/, "public cards must not repeat the redundant availability label");
   assert.match(guestScript, /詢問此房型/, "room cards must use the approved LINE inquiry label");
   assert.match(guestScript, /詢問此包棟方案/, "bundle cards must use the approved LINE inquiry label");
   assert.match(guestScript, /Intl\.NumberFormat\("zh-TW"/, "public prices must use a locale-safe currency formatter");

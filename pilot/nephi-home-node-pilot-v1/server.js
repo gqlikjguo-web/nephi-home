@@ -16,6 +16,7 @@ const { createOnboardingEmailNotifier } = require("./lib/onboarding-email");
 const { createPublicBrand } = require("./config/public-brand");
 const { renderPublicHtml } = require("./lib/public-brand-html");
 const { normalizeRoomRecord, normalizeRoomHighlights, characterCount } = require("./lib/room-data");
+const { providedAmenities } = require("./lib/bundle-entertainment");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -217,6 +218,7 @@ function publicAvailabilityResult(result, property, overrides = []) {
     roomCode: room.roomCode,
     capacity: Number(room.capacity || 0),
     highlights: room.highlights,
+    ...(input.inventoryType === "bundle" ? { entertainmentAmenities: providedAmenities(input.entertainmentAmenities).slice(0, 5).map(({ key, displayName, source, position }) => ({ key, displayName, source, position })) } : {}),
     price: publicPriceForStay(room, result.checkIn, result.checkOut, overrides),
     currency: String(property.currency || "TWD")
   });};

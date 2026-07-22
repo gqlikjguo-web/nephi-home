@@ -1,6 +1,7 @@
 "use strict";
 
 const { normalizeGoogleMapsUrl, extractGoogleMapsUrl } = require("../google-maps-url");
+const { PRESET_AMENITIES, providedAmenities } = require("../bundle-entertainment");
 
 function clean(value, limit = 120) { return String(value || "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, limit); }
 function aliasesFor(property, id) { const map = property.semanticCatalog && property.semanticCatalog.aliases || {}; return Array.isArray(map[id]) ? map[id].map((x) => clean(x, 80)).filter(Boolean) : []; }
@@ -66,9 +67,23 @@ function buildPropertyCatalog(property) {
   }));
   const explicitAmenities = property.semanticCatalog && property.semanticCatalog.amenities;
   const confirmedEquipment = property.commonAnswers && property.commonAnswers.equipment;
-  const amenities = Array.isArray(explicitAmenities) ? explicitAmenities.map((item) => ({
+  const legacyAmenities = Array.isArray(explicitAmenities) ? explicitAmenities.map((item) => ({
     canonicalId: clean(item.id), category: "amenity", publicName: clean(item.name, 80), aliases: (item.aliases || []).map((x) => clean(x, 80)), status: ["confirmed_yes", "confirmed_no", "unknown"].includes(item.status) ? item.status : "unknown", answer: clean(item.answer, 500)
   })) : (Array.isArray(confirmedEquipment) ? confirmedEquipment : []).map((name, index) => ({ canonicalId: `equipment_${index + 1}`, category: "amenity", publicName: clean(name, 80), aliases: [], status: "confirmed_yes", answer: "" }));
+  const presetMap = new Map(PRESET_AMENITIES.map((item) => [item.key, item]));
+  const bundleFacts = new Map();
+  for (const room of (property.rooms || []).filter((item) => item.inventoryType === "bundle" && item.enabled !== false)) {
+    for (const amenity of providedAmenities(room.entertainmentAmenities)) {
+      const current = bundleFacts.get(amenity.key) || { canonicalId: amenity.key, category: "amenity", publicName: amenity.displayName, aliases: [...(presetMap.get(amenity.key)?.aliases || [])], status: "confirmed_yes", answer: "", applicableBundles: [] };
+      current.applicableBundles.push({ id: clean(room.id), name: clean(room.publicDisplayName || room.displayName || room.name, 80), note: clean(amenity.note, 100) });
+      bundleFacts.set(amenity.key, current);
+    }
+  }
+  for (const fact of bundleFacts.values()) {
+    fact.answer = fact.applicableBundles.map((bundle) => `${bundle.name}${bundle.note ? `：${bundle.note}` : ""}`).join("；");
+  }
+  const structuredIds = new Set(bundleFacts.keys());
+  const amenities = [...bundleFacts.values(), ...legacyAmenities.filter((item) => !structuredIds.has(item.canonicalId))];
   const answers = property.commonAnswers || {};
   // `transport` is the existing property-scoped storage key used before the
   // dedicated business profile field was introduced.  It is accepted only

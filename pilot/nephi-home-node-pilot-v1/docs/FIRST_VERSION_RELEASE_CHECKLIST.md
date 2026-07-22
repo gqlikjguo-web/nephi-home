@@ -155,4 +155,46 @@
 
 - [ ] **JunZan AI 第一版正式完成**
 
+## 9. Onboarding 欄位用途與第一版輸入原則
+
+每個保留欄位至少有一個第一版正式使用端；沒有使用端的欄位不得要求業者填寫。既有正式資料與退回補件草稿必須自動帶入。輸入方式依「自動帶入、勾選、單選／下拉、短備註、自由文字」排序選擇。
+
+| 表單欄位 | 輸入方式 | 正式資料欄位 | 後台用途 | 前台用途 | AI 用途 | 審核用途 | 本輪處置與理由 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 民宿正式名稱 | 短文字 | `properties.display_name` | 顯示與管理 | 顯示旅宿名稱 | 回覆主體名稱 | 核准建帳 | 保留；四個使用端皆需要 |
+| 聯絡人姓名 | 短文字 | `onboarding_applications.core_data.contactName` | — | — | — | 身分聯絡與審核 | 保留；核准聯絡需要 |
+| 聯絡電話 | 電話 | `businessProfile.phone`／submission | 聯絡資料 | 依授權顯示 | 真人轉交聯絡資料 | 審核聯絡 | 保留；正式聯絡需要 |
+| Email | Email | `businessProfile.email`／submission | 帳號與通知 | — | — | 邀請、補件與核准通知 | 保留；帳號建立與安全流程需要 |
+| 地址 | 短文字 | `businessProfile.address` | 旅宿資料 | 依授權顯示 | Location 正式事實 | 審核 | 保留；Location 與審核需要 |
+| Google Maps 網址 | URL | `businessProfile.googleMapsUrl` | 可維護 | 地圖連結 | Location 正式事實 | 審核 | 保留；前台與 AI 共用 |
+| 入住／退房時間 | 下拉選單 | `commonAnswers.checkInTime`／`checkOutTime` | 可維護 | — | 入退房政策 | 審核 | 保留；AI 與後台使用 |
+| 是否已有 LINE 官方帳號 | 勾選 | submission `line.hasOfficialAccount` | — | — | — | 決定是否要求加好友網址 | 保留；條件驗證需要 |
+| LINE 加好友網址 | 條件式 URL | `property_settings.contactLink` | 可維護 | 訂房按鈕 | — | 審核 | 保留；前台訂房入口使用 |
+| Channel ID | 不顯示 | 僅容忍舊 submission | — | — | — | — | 移除；第一版無任何讀取端，舊資料仍可載入 |
+| 房型代號／房號 | 短文字 | `room_types.room_code` | 房況管理 | 房卡顯示 | 指定房號查詢 | 審核 | 保留；三個正式使用端需要 |
+| 房型名稱 | 短文字 | `room_types.display_name` | 房型管理 | 房卡顯示 | 房型實體解析 | 審核 | 保留並改名；避免程式術語 |
+| 房型類型 | 下拉＋其他 | `room_types.type` | 房型管理 | 篩選資訊 | 房型語意解析 | 審核 | 改為固定選單；非標準舊值以「其他」保留 |
+| 最多入住人數 | 數字 | `room_types.capacity` | 房型管理 | 房卡顯示 | 人數與可售查詢 | 審核 | 保留；正式查詢需要 |
+| 房型亮點 | 最多三項短文字 | `room_types.highlights` | 可維護 | 房卡摘要 | — | 審核 | 保留；前台實際使用 |
+| 四類房價 | 數字 | `room_types`／`bundle_offers` 四類價格欄位 | 價格管理 | 查房價格 | 價格查詢 | 審核 | 保留；所有價格只讀正式欄位 |
+| 啟用狀態 | 勾選 | `enabled` | 上下架管理 | 控制是否顯示 | 控制可查詢 inventory | 審核 | 保留；安全與正式查詢需要 |
+| 包棟方案名稱 | 短文字 | `bundle_offers.name` | 方案管理 | 方案卡片 | 包棟實體解析 | 審核 | 保留 |
+| 包含房型 | 複選 | `bundle_offer_members` | 方案管理 | 方案內容 | 包棟房況 | 審核 | 保留；不得寫死房號 |
+| 包棟娛樂設備 | 分類勾選 | `bundle_offers.entertainment_amenities` | 每方案查看與修改 | 最多五項摘要 | property-scoped Resolver | 審核 | 新增結構化單一事實來源 |
+| 設備備註 | 勾選後短備註 | `entertainment_amenities[].note` | 可維護 | 卡片不顯示 | 只轉述已確認限制 | 審核 | 條件顯示；取消勾選即清除 |
+| 其他娛樂設備 | 可新增多項短文字 | `entertainment_amenities[]` custom item | 可維護 | 精簡摘要 | Resolver | 審核 | 保留；20 字、去空白與去重 |
+| FAQ 狀態 | 下拉 | onboarding knowledge status | — | — | 決定 known／unknown／handoff | 審核 | 保留；使用一般業者可理解文字 |
+| FAQ 補充內容 | 狀態條件式文字 | `knowledge_items`／`commonAnswers` | — | — | 正式政策事實 | 審核 | 只有「已有正式資料／需要人工說明」時顯示 |
+
+### Bundle entertainment fact 防退化 Gate
+
+- [x] 固定設備使用 stable key，自訂設備使用安全唯一 key。
+- [x] 未勾選不保存舊 note，且不得被 Resolver 解讀為 `no`。
+- [x] Onboarding 草稿、核准 materialization、業者後台、旅客前台與 Resolver 共用 `bundle_offers.entertainment_amenities`。
+- [x] 結構化設備不轉成另一份 FAQ；舊 FAQ 只保留政策說明，且不得推測成 `provided=true`。
+- [x] 不同 bundle 的設備與 note 維持方案層級及 propertyId 隔離。
+- [x] 旅客前台只顯示前五項設備名稱，不顯示未勾選項目與完整備註。
+- [x] 房內備品不在本輪娛樂設備範圍。
+- [x] 公開房卡已移除重複的「✓ 可入住」。
+
 任何未完成、未決策或缺少真實驗收證據的項目，都會阻擋第一版正式完成；不得只以自動測試、health 或 test-only 部署取代正式驗收。
