@@ -5,9 +5,6 @@ const PENDING_FIELDS = new Set([
   "stay.checkIn", "stay.checkOut", "stay.nights", "stay.guests", "stay.searchRange",
   "inventory.mode", "inventory.entityId", "inventory.features"
 ]);
-const CONTINUATION_PLACEHOLDER_TYPES = new Set(["available_dates", "unknown"]);
-
-function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function safeText(value, limit) { return String(value || "").slice(0, limit); }
 function unique(values) { return [...new Set(values)]; }
 
@@ -98,15 +95,19 @@ function resumePendingRequest(plannerOutput, pending) {
   const temporalSupplement = hasTemporalSupplement(plannerOutput);
   const sameCapability = plannerOutput.tasks.some((task) => task.type === pending.capability);
   if (!["continue", "answer_clarification"].includes(relation) && !temporalSupplement && !sameCapability) return { plannerOutput, resumed: false, reason: "not_a_continuation" };
-
-  const currentSameCapability = plannerOutput.tasks.filter((task) => task.type === pending.capability);
-  const restored = pending.tasks.map((task, index) => ({ ...clone(currentSameCapability[index] || task), taskId: task.taskId, sourceText: "pending_request" }));
-  const additional = plannerOutput.tasks.filter((task) => !CONTINUATION_PLACEHOLDER_TYPES.has(task.type) && task.type !== pending.capability);
-  const stateOperations = (plannerOutput.stateOperations || []).filter((item) => item.field !== "stay.searchRange");
-  stateOperations.push({ field: "stay.searchRange", operation: "clear", value: null, sourceText: "pending_request" });
-  const merged = { ...plannerOutput, discourse: { ...(plannerOutput.discourse || {}), relation: "answer_clarification" }, tasks: [...restored, ...additional], stateOperations, missingInformation: pending.missingFields, shouldIgnore: false };
-  delete merged.searchRange;
-  return { plannerOutput: merged, resumed: true, reason: "pending_request_resumed" };
+  const suppliedFields = new Set((plannerOutput.stateOperations || []).filter((item) => item && ["set", "replace"].includes(item.operation)).map((item) => ({
+    "stay.checkInCandidate": "stay.checkIn",
+    "stay.checkOutCandidate": "stay.checkOut",
+    "stay.nightsCandidate": "stay.nights",
+    "stay.guestCountCandidate": "stay.guests"
+  }[item.field] || item.field)));
+  const stay = plannerOutput.stay || {};
+  if (stay.dateExpression && stay.dateExpression.rawText && stay.dateExpression.kind !== "none") suppliedFields.add("stay.checkIn");
+  if (Number.isInteger(stay.nightsCandidate)) suppliedFields.add("stay.nights");
+  if (Number.isInteger(stay.guestCountCandidate)) suppliedFields.add("stay.guests");
+  const matchedFields = pending.missingFields.filter((field) => suppliedFields.has(field));
+  if (!matchedFields.length) return { plannerOutput, resumed: false, reason: "no_valid_pending_supplement", matchedFields: [] };
+  return { plannerOutput, resumed: true, reason: "pending_supplement_detected", matchedFields };
 }
 
 function pendingFromResults({ plannerOutput, taskResults, conditions, scope }) {
