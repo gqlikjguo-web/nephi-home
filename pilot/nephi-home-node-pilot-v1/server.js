@@ -626,16 +626,7 @@ function createApp(options = {}) {
         if (!result.shouldReply || !result.replyText) { logSafeTestOnlyConversationTrace({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision: "no_reply", reasonCode: "engine_should_reply_false", attempted: false, delivered: false }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
         try { logSafeTestOnlyConversationTrace({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision: "reply", reasonCode: "reply_attempt", attempted: true, delivered: false }); await (replyClient ? replyClient({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: result.replyText }] }); logSafeTestOnlyConversationTrace({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision: "reply", reasonCode: "reply_succeeded", attempted: true, delivered: true }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" }); }
         catch (error) { const status = Number(error && (error.status || error.statusCode)); logSafeTestOnlyConversationTrace({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision: "reply", reasonCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception", attempted: true, delivered: false }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); }
-      }).catch(async () => {
-        const fallbackText = "目前無法安全確認這項資訊，請由業者協助確認。";
-        try {
-          await (replyClient ? replyClient({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: fallbackText }] });
-          await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, needsReview: true, deliveryErrorCode: "message_processing_exception" });
-        } catch (error) {
-          const status = Number(error && (error.status || error.statusCode));
-          await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
-        }
-      });
+      }).catch(async () => updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
     }
     return { accepted: true };
   };
@@ -662,16 +653,7 @@ function createApp(options = {}) {
           const status = Number(error && (error.status || error.statusCode));
           await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
         }
-      }).catch(async () => {
-        const fallbackText = "目前暫時無法安全確認，請由業者協助。";
-        try {
-          await (replyClient ? replyClient({ channelAccessToken: binding.channelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: binding.channelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: fallbackText }] });
-          await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, needsReview: true, deliveryErrorCode: "message_processing_exception" });
-        } catch (error) {
-          const status = Number(error && (error.status || error.statusCode));
-          await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
-        }
-      });
+      }).catch(async () => updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
     }
     return { accepted: true };
   };

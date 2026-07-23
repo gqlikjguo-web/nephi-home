@@ -78,16 +78,6 @@ function normalizePlannerOutput(plannerOutput, { messageText, eventTimestamp, ti
   return output;
 }
 
-const FOLLOW_UP_FACT_TYPES = new Set(["amenity", "policy", "property_fact"]);
-function applyFollowUpTopic(plannerOutput, previousConditions) {
-  const topic = previousConditions && previousConditions.topic;
-  if (!topic || !topic.canonicalId || !["continue", "answer_clarification"].includes(plannerOutput.discourse && plannerOutput.discourse.relation)) return plannerOutput;
-  return { ...plannerOutput, tasks: plannerOutput.tasks.map((task) => {
-    if (!FOLLOW_UP_FACT_TYPES.has(task.type) || !task.entity || task.entity.canonicalCandidate) return task;
-    return { ...task, entity: { ...task.entity, category: topic.category || task.entity.category, canonicalCandidate: topic.canonicalId } };
-  }) };
-}
-
 function normalizedPlannerStay(plannerOutput, messageText) {
   const stay = {
     ...plannerOutput.stay,
@@ -194,7 +184,6 @@ class ConversationEngineV2 {
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), traceId };
     }
     const pendingMerge = resumePendingRequest(plannerOutput, previous.pendingRequest);
-    plannerOutput = pendingMerge.plannerOutput;
     this.trace(traceId, "pending_request", { action: pendingMerge.resumed ? "resumed" : "unchanged", reasonCode: pendingMerge.reason, capability: previous.pendingRequest && previous.pendingRequest.capability || "", missingFields: previous.pendingRequest && previous.pendingRequest.missingFields || [] });
     const hasActionableTask = plannerOutput.tasks.some((task) => !NON_ACTIONABLE_TASK_TYPES.has(task.type));
     const unknownTaskCount = plannerOutput.tasks.filter((task) => NON_ACTIONABLE_TASK_TYPES.has(task.type)).length;
@@ -209,13 +198,17 @@ class ConversationEngineV2 {
       this.traceContexts.delete(traceId);
       return { shouldReply: false, noReply: true, replyText: "", taskResults: [], reviewCount: 0, reviewIds: [], claimValidation: { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [] }, traceId };
     }
-    plannerOutput = applyFollowUpTopic(plannerOutput, previous.conditions);
+    // Pending state can nominate only a previously validated capability after
+    // this turn supplies one of its missing fields. It never changes Planner
+    // output; the Engine owns this execution choice.
+    const executionTasks = pendingMerge.resumed ? previous.pendingRequest.tasks : plannerOutput.tasks;
+    const executionPlannerOutput = pendingMerge.resumed ? { ...plannerOutput, tasks: executionTasks } : plannerOutput;
     const plannerStay = normalizedPlannerStay(plannerOutput, input.messageText);
     const temporal = resolveTemporalExpression(plannerStay.dateExpression, {
       eventTimestamp: input.eventTimestamp, timezone: catalog.timezone,
       checkInCandidate: plannerStay.checkInCandidate, checkOutCandidate: plannerStay.checkOutCandidate,
       nightsCandidate: plannerStay.nightsCandidate,
-      defaultNights: plannerOutput.tasks.some((task) => ["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type)) ? 1 : null,
+      defaultNights: executionTasks.some((task) => ["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type)) ? 1 : null,
       previousCheckIn: previous.conditions.stay.checkIn, previousCheckOut: previous.conditions.stay.checkOut
     });
     this.trace(traceId, "temporal", {
@@ -252,19 +245,19 @@ class ConversationEngineV2 {
     if (plannerOutput.searchRange) operations.push({ field: "stay.searchRange", operation: previous.conditions.stay.searchRange ? "replace" : "set", value: plannerOutput.searchRange, sourceText: input.messageText });
     const state = reduceConversationState(previous, { ...plannerOutput, stateOperations: operations }, scope);
     this.trace(traceId, "state", { discourse: plannerOutput.discourse, operations: operations.map((item) => ({ field: item.field, operation: item.operation })), conditions: state.conditions, ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {}) });
-    this.trace(traceId, "entity_resolution", { tasks: plannerOutput.tasks.map((task) => { const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : { status: "not_requested" }; return this.diagnosticDetail ? { taskId: task.taskId, resolved } : { taskId: task.taskId, status: resolved.status, canonicalId: resolved.entity && resolved.entity.canonicalId || null, candidateCount: resolved.candidates && resolved.candidates.length || 0 }; }) });
+    this.trace(traceId, "entity_resolution", { tasks: executionTasks.map((task) => { const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : { status: "not_requested" }; return this.diagnosticDetail ? { taskId: task.taskId, resolved } : { taskId: task.taskId, status: resolved.status, canonicalId: resolved.entity && resolved.entity.canonicalId || null, candidateCount: resolved.candidates && resolved.candidates.length || 0 }; }) });
     const resolverCalls = [];
     const tracedAvailabilityResolver = (request) => { const result = this.availabilityResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
     const tracedAvailableDatesResolver = (request) => { const result = this.availableDatesResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
-    let taskResults = executeTasks({ property, catalog, tasks: plannerOutput.tasks, request: state.conditions, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) });
-    const inputTaskIds = plannerOutput.tasks.map((task) => task.taskId);
+    let taskResults = executeTasks({ property, catalog, tasks: executionTasks, request: state.conditions, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) });
+    const inputTaskIds = executionTasks.map((task) => task.taskId);
     let executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     if (!executorCoverage.ok) {
       taskResults = [...taskResults, ...executorCoverage.missingTaskIds.map((taskId) => ({ taskId, type: "unknown", status: "failed", reason: "executor_missing_task", facts: { subject: "這個問題" }, review: true }))];
       executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     }
     state.pendingRequest = pendingFromResults({
-      plannerOutput,
+      plannerOutput: executionPlannerOutput,
       taskResults,
       conditions: state.conditions,
       scope: {
@@ -282,7 +275,7 @@ class ConversationEngineV2 {
     this.trace(traceId, "executor", { results: this.diagnosticDetail ? taskResults : taskResults.map((item) => ({ taskId: item.taskId, status: item.status, reason: item.reason || "", locationFactProvided: Boolean(item.facts && item.facts.locationMapUrl), factSource: item.facts && item.facts.source || "" })), resolverCalls: this.diagnosticDetail ? resolverCalls : undefined, coverage: executorCoverage });
     const reviewIds = [];
     for (const result of taskResults.filter((item) => item.review)) {
-      const sourceTask = plannerOutput.tasks.find((task) => task.taskId === result.taskId);
+      const sourceTask = executionTasks.find((task) => task.taskId === result.taskId);
       const item = this.persistReview(input, result.reason || result.status, `「${sourceTask && sourceTask.sourceText || "該問題"}」需要業者確認。`, result.taskId);
       if (item.reviewId) reviewIds.push(item.reviewId);
     }
@@ -326,4 +319,4 @@ class ConversationEngineV2 {
   }
 }
 
-module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, applyFollowUpTopic, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS };
+module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS };

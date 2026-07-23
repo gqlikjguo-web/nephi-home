@@ -118,6 +118,8 @@ async function main() {
   assert.equal(JSON.stringify(first.state.pendingRequest).includes("facts"), false);
 
   const second = await engine.process(input("pending-second", "今天"));
+  assert.ok(diagnostics.filter((entry) => entry.stage === "pending_request").some((entry) => entry.reasonCode === "pending_supplement_detected"), "a validated missing date must be recognized before execution");
+  assert.equal(second.state.conditions.stay.checkIn, "2026-07-23", "the validated date must reach the Engine state before pending execution");
   assert.equal(calls.availability, 1, "the original availability resolver must run after the missing date is supplied");
   assert.equal(calls.availableDates, 0, "a date-only continuation must not become available_dates");
   assert.equal(second.taskResults[0].type, "availability");
@@ -153,6 +155,12 @@ async function main() {
   assert.equal(replacement.reason, "explicit_new_request");
   const explicitRange = resumePendingRequest(plan([availabilityTask({ taskId: "range", type: "available_dates" })], { relation: "new_request" }), null);
   assert.equal(explicitRange.plannerOutput.tasks[0].type, "available_dates", "available_dates remains available for an explicit standalone range search");
+
+  const acknowledgement = plan([], { relation: "continue", shouldIgnore: true });
+  const acknowledgementSnapshot = JSON.parse(JSON.stringify(acknowledgement));
+  const acknowledgementWithPending = resumePendingRequest(acknowledgement, pending);
+  assert.equal(acknowledgementWithPending.resumed, false, "a pending request must not take ownership of an acknowledgement turn");
+  assert.deepEqual(acknowledgementWithPending.plannerOutput, acknowledgementSnapshot, "pending handling must preserve this turn's tasks, discourse, missing information, and shouldIgnore decision");
 
   const gate = diagnostics.find((entry) => entry.stage === "no_reply_gate");
   assert.ok(gate, "every valid planner result must emit a no-reply gate diagnostic");
