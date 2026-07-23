@@ -58,3 +58,7 @@
 ## 2026-07-23 — V2 final decision ownership
 
 - Made Engine `finalDecision` the sole production decision boundary; Response Plan, Controlled Composer, coordinator, and both registered V2 LINE transports can no longer create or infer competing traveler-visible outcomes.
+
+## 2026-07-23 — Canonical pending arbitration
+
+- Moved pending arbitration behind Temporal/canonical slot extraction, made Planner discourse non-authoritative, and unified date, nights, guests, and room-preference continuation before property-scoped Resolver execution.

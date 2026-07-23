@@ -5,6 +5,10 @@ const PENDING_FIELDS = new Set([
   "stay.checkIn", "stay.checkOut", "stay.nights", "stay.guests", "stay.searchRange",
   "inventory.mode", "inventory.entityId", "inventory.features"
 ]);
+const STAY_CAPABILITIES = new Set([
+  "availability", "available_dates", "bundle_availability", "room_options",
+  "capacity", "price", "total_price"
+]);
 function safeText(value, limit) { return String(value || "").slice(0, limit); }
 function unique(values) { return [...new Set(values)]; }
 
@@ -79,35 +83,139 @@ function migratePendingRequest(value) {
   return createPendingRequest({ tasks: value.tasks, conditions: value.conditions, missingFields: value.missingFields, clarificationTarget: value.clarificationTarget, scope: value.metadata || {} });
 }
 
-function hasTemporalSupplement(plannerOutput) {
-  const stay = plannerOutput && plannerOutput.stay || {};
-  const expression = stay.dateExpression || {};
-  if (expression.rawText && expression.kind && expression.kind !== "none") return true;
-  if (stay.checkInCandidate || stay.checkOutCandidate || Number.isInteger(stay.nightsCandidate) || Number.isInteger(stay.guestCountCandidate)) return true;
-  return (plannerOutput && plannerOutput.stateOperations || []).some((item) => item && typeof item.field === "string" && item.field.startsWith("stay.") && ["set", "replace"].includes(item.operation));
-}
-
-function resumePendingRequest(plannerOutput, pending) {
-  if (!isPendingRequest(pending) || !plannerOutput || !Array.isArray(plannerOutput.tasks)) return { plannerOutput, resumed: false, reason: "pending_unavailable" };
-  const relation = plannerOutput.discourse && plannerOutput.discourse.relation;
-  if (relation === "new_topic") return { plannerOutput, resumed: false, reason: "explicit_new_topic" };
-  if (relation === "new_request") return { plannerOutput, resumed: false, reason: "explicit_new_request" };
-  const temporalSupplement = hasTemporalSupplement(plannerOutput);
-  const sameCapability = plannerOutput.tasks.some((task) => task.type === pending.capability);
-  if (!["continue", "answer_clarification"].includes(relation) && !temporalSupplement && !sameCapability) return { plannerOutput, resumed: false, reason: "not_a_continuation" };
-  const suppliedFields = new Set((plannerOutput.stateOperations || []).filter((item) => item && ["set", "replace"].includes(item.operation)).map((item) => ({
+function canonicalField(field) {
+  return {
     "stay.checkInCandidate": "stay.checkIn",
     "stay.checkOutCandidate": "stay.checkOut",
     "stay.nightsCandidate": "stay.nights",
     "stay.guestCountCandidate": "stay.guests"
-  }[item.field] || item.field)));
-  const stay = plannerOutput.stay || {};
-  if (stay.dateExpression && stay.dateExpression.rawText && stay.dateExpression.kind !== "none") suppliedFields.add("stay.checkIn");
-  if (Number.isInteger(stay.nightsCandidate)) suppliedFields.add("stay.nights");
-  if (Number.isInteger(stay.guestCountCandidate)) suppliedFields.add("stay.guests");
+  }[field] || field;
+}
+
+function canonicalOperationsFromPlanner(plannerOutput) {
+  const operations = (plannerOutput && plannerOutput.stateOperations || [])
+    .filter((item) => item && ["set", "replace"].includes(item.operation))
+    .map((item) => ({ ...item, field: canonicalField(item.field) }))
+    .filter((item) => PENDING_FIELDS.has(item.field));
+  const stay = plannerOutput && plannerOutput.stay || {};
+  if (stay.checkInCandidate) operations.push({ field: "stay.checkIn", operation: "set", value: stay.checkInCandidate });
+  if (stay.checkOutCandidate) operations.push({ field: "stay.checkOut", operation: "set", value: stay.checkOutCandidate });
+  if (Number.isInteger(stay.nightsCandidate)) operations.push({ field: "stay.nights", operation: "set", value: stay.nightsCandidate });
+  if (Number.isInteger(stay.guestCountCandidate)) operations.push({ field: "stay.guests", operation: "set", value: stay.guestCountCandidate });
+  return operations;
+}
+
+function explicitSuppliedFields(plannerOutput, canonicalOperations) {
+  const fields = new Set((canonicalOperations || []).filter((item) => item && ["set", "replace"].includes(item.operation)).map((item) => canonicalField(item.field)).filter((field) => PENDING_FIELDS.has(field)));
+  const stay = plannerOutput && plannerOutput.stay || {};
+  if (stay.checkInCandidate) fields.add("stay.checkIn");
+  if (stay.checkOutCandidate) fields.add("stay.checkOut");
+  if (Number.isInteger(stay.nightsCandidate)) fields.add("stay.nights");
+  if (Number.isInteger(stay.guestCountCandidate)) fields.add("stay.guests");
+  return fields;
+}
+
+function uniqueTasks(tasks) {
+  const seen = new Set();
+  return (tasks || []).filter((task) => {
+    const key = `${task && task.taskId || ""}:${task && task.type || ""}`;
+    if (!task || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function resumePendingRequest(plannerOutput, pending, context = {}) {
+  if (context.noReply) {
+    return {
+      plannerOutput,
+      resumed: false,
+      action: "no_reply",
+      reason: "no_reply_gate_hit",
+      matchedFields: [],
+      remainingMissingFields: isPendingRequest(pending) ? pending.missingFields : [],
+      executionTasks: []
+    };
+  }
+  if (!isPendingRequest(pending) || !plannerOutput || !Array.isArray(plannerOutput.tasks)) {
+    return {
+      plannerOutput,
+      resumed: false,
+      action: context.noReply ? "no_reply" : "replace_pending",
+      reason: "pending_unavailable",
+      matchedFields: [],
+      remainingMissingFields: [],
+      executionTasks: plannerOutput && Array.isArray(plannerOutput.tasks) ? plannerOutput.tasks : []
+    };
+  }
+  const relation = plannerOutput.discourse && plannerOutput.discourse.relation;
+  const canonicalOperations = context.canonicalOperations || canonicalOperationsFromPlanner(plannerOutput);
+  const suppliedFields = explicitSuppliedFields(plannerOutput, canonicalOperations);
   const matchedFields = pending.missingFields.filter((field) => suppliedFields.has(field));
-  if (!matchedFields.length) return { plannerOutput, resumed: false, reason: "no_valid_pending_supplement", matchedFields: [] };
-  return { plannerOutput, resumed: true, reason: "pending_supplement_detected", matchedFields };
+  const remainingMissingFields = pending.missingFields.filter((field) => !matchedFields.includes(field));
+  const currentTasks = plannerOutput.tasks.filter((task) => task && task.type !== "unknown");
+  const explicitRangeSearch = Boolean(context.explicitRangeSearch && currentTasks.some((task) => task.type === "available_dates"));
+  const sameCapability = currentTasks.some((task) => task.type === pending.capability);
+  const explicitCompleteSameCapability = Boolean(
+    relation === "new_request"
+    && sameCapability
+    && suppliedFields.has("stay.checkIn")
+    && (suppliedFields.has("stay.checkOut") || suppliedFields.has("stay.nights"))
+    && [...suppliedFields].some((field) => !pending.missingFields.includes(field))
+  );
+  const independentTasks = currentTasks.filter((task) => {
+    if (task.type === pending.capability) return false;
+    if (STAY_CAPABILITIES.has(task.type) && STAY_CAPABILITIES.has(pending.capability)) {
+      return explicitRangeSearch && task.type === "available_dates";
+    }
+    return true;
+  });
+
+  if (explicitRangeSearch || explicitCompleteSameCapability) {
+    return {
+      plannerOutput,
+      resumed: false,
+      action: "replace_pending",
+      reason: "explicit_new_request",
+      matchedFields,
+      remainingMissingFields,
+      executionTasks: currentTasks
+    };
+  }
+
+  if (matchedFields.length) {
+    return {
+      plannerOutput,
+      resumed: true,
+      action: independentTasks.length ? "continue_pending_with_new_tasks" : "continue_pending",
+      reason: "pending_missing_fields_matched",
+      matchedFields,
+      remainingMissingFields,
+      executionTasks: uniqueTasks([...pending.tasks, ...independentTasks])
+    };
+  }
+
+  if (independentTasks.length || (currentTasks.length && ["new_request", "new_topic"].includes(relation))) {
+    return {
+      plannerOutput,
+      resumed: false,
+      action: "replace_pending",
+      reason: relation === "new_topic" ? "explicit_new_topic" : "explicit_new_request",
+      matchedFields: [],
+      remainingMissingFields: pending.missingFields,
+      executionTasks: currentTasks
+    };
+  }
+
+  return {
+    plannerOutput,
+    resumed: false,
+    action: "keep_pending",
+    reason: "no_valid_pending_supplement",
+    matchedFields: [],
+    remainingMissingFields: pending.missingFields,
+    executionTasks: []
+  };
 }
 
 function pendingFromResults({ plannerOutput, taskResults, conditions, scope }) {
@@ -119,4 +227,15 @@ function pendingFromResults({ plannerOutput, taskResults, conditions, scope }) {
   return createPendingRequest({ tasks, conditions, missingFields, clarificationTarget: missingFields[0], scope });
 }
 
-module.exports = { PENDING_VERSION, PENDING_FIELDS, createPendingRequest, isPendingRequest, migratePendingRequest, normalizeMissingFields, pendingConditions, pendingFromResults, resumePendingRequest };
+module.exports = {
+  PENDING_VERSION,
+  PENDING_FIELDS,
+  STAY_CAPABILITIES,
+  createPendingRequest,
+  isPendingRequest,
+  migratePendingRequest,
+  normalizeMissingFields,
+  pendingConditions,
+  pendingFromResults,
+  resumePendingRequest
+};

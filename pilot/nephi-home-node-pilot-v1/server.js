@@ -46,7 +46,26 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       urlValidation: String(location.urlValidation || "fail")
     } };
   }
-  if (details.stage === "planner") return { ...base, parserSucceeded: Boolean(details.parserSucceeded), taskCount: Number(details.taskCount || 0), discourse: details.discourse || null, shouldIgnore: Boolean(details.shouldIgnore), missingInformation: (details.missingInformation || []).map(String), tasks: (details.tasks || []).map(safePlannerTraceTask) };
+  if (details.stage === "planner") return {
+    ...base,
+    parserSucceeded: Boolean(details.parserSucceeded),
+    taskCount: Number(details.taskCount || 0),
+    discourse: details.discourse || null,
+    shouldIgnore: Boolean(details.shouldIgnore),
+    missingInformation: (details.missingInformation || []).map(String),
+    dateExpression: {
+      rawTextPresent: Boolean(details.dateExpression && details.dateExpression.rawTextPresent),
+      kind: String(details.dateExpression && details.dateExpression.kind || "none").slice(0, 40),
+      anchor: String(details.dateExpression && details.dateExpression.anchor || "none").slice(0, 40)
+    },
+    dateCandidates: {
+      checkIn: details.candidates && details.candidates.checkIn || null,
+      checkOut: details.candidates && details.candidates.checkOut || null,
+      nights: details.candidates && details.candidates.nights || null,
+      guests: details.candidates && details.candidates.guests || null
+    },
+    tasks: (details.tasks || []).map(safePlannerTraceTask)
+  };
   if (details.stage === "validation") return {
     ...base,
     acceptedTasks: (details.acceptedTasks || []).map(safePlannerTraceTask),
@@ -57,7 +76,42 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
   if (details.stage === "executor") return { ...base, results: (details.results || []).map((item) => ({ taskId: item.taskId || "", status: item.status || "", reason: item.reason || "", locationFactProvided: Boolean(item.locationFactProvided), factSource: item.factSource || "" })) };
   if (details.stage === "semantic_contract") return { ...base, inputTasks: (details.inputTasks || []).map(safePlannerTraceTask), outputTasks: (details.outputTasks || []).map(safePlannerTraceTask), shouldIgnore: Boolean(details.shouldIgnore), validationPassed: Boolean(details.validationPassed), semanticValidation: details.semanticValidation || null };
   if (details.stage === "no_reply_gate") return { ...base, shouldIgnore: Boolean(details.shouldIgnore), actionableTaskCount: Number(details.actionableTaskCount || 0), unknownTaskCount: Number(details.unknownTaskCount || 0), gateHit: Boolean(details.gateHit), reasonCode: String(details.reasonCode || "") };
-  if (details.stage === "pending_request") return { ...base, action: String(details.action || ""), reasonCode: String(details.reasonCode || ""), capability: String(details.capability || ""), missingFields: (details.missingFields || []).map(String) };
+  if (details.stage === "temporal") return {
+    ...base,
+    operationPaths: (details.operationPaths || []).map(String).slice(0, 30),
+    input: {
+      dateExpression: {
+        rawTextPresent: Boolean(details.input && details.input.dateExpression && details.input.dateExpression.rawTextPresent),
+        kind: String(details.input && details.input.dateExpression && details.input.dateExpression.kind || "none").slice(0, 40),
+        anchor: String(details.input && details.input.dateExpression && details.input.dateExpression.anchor || "none").slice(0, 40)
+      },
+      candidates: {
+        checkIn: details.input && details.input.candidates && details.input.candidates.checkIn || null,
+        checkOut: details.input && details.input.candidates && details.input.candidates.checkOut || null,
+        nights: details.input && details.input.candidates && details.input.candidates.nights || null,
+        guests: details.input && details.input.candidates && details.input.candidates.guests || null
+      }
+    },
+    output: {
+      resolutionStatus: String(details.output && details.output.resolutionStatus || details.resolutionStatus || ""),
+      ambiguity: details.output && details.output.ambiguity || null,
+      checkIn: details.output && details.output.checkIn || null,
+      checkOut: details.output && details.output.checkOut || null,
+      nights: details.output && details.output.nights || null,
+      searchRange: details.output && details.output.searchRange || null
+    }
+  };
+  if (details.stage === "pending_request") return {
+    ...base,
+    action: String(details.action || ""),
+    reasonCode: String(details.reasonCode || ""),
+    capability: String(details.capability || ""),
+    missingFields: (details.missingFields || []).map(String),
+    acceptedFields: (details.acceptedFields || []).map(String),
+    rejectedFields: (details.rejectedFields || []).map(String),
+    remainingMissingFields: (details.remainingMissingFields || []).map(String),
+    candidateTaskTypes: (details.candidateTaskTypes || []).map(String)
+  };
   if (details.stage === "fallback") return { ...base, reasonCode: String(details.reasonCode || ""), branch: String(details.branch || "") };
   if (details.stage === "final_decision" || details.stage === "line_transport") return { ...base, decision: String(details.decision || ""), reasonCode: String(details.reasonCode || ""), attempted: Boolean(details.attempted), delivered: Boolean(details.delivered) };
   if (["response_plan", "composer", "claim_validator", "line_ready"].includes(details.stage)) return { ...base, sectionCount: details.sectionCount, coveredTaskIds: details.coveredTaskIds || [], missingTaskIds: details.missingTaskIds || [], replyLength: details.replyLength, composerSource: details.composerSource || "", validationResult: details.validationResult || "" };

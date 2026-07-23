@@ -77,7 +77,7 @@ async function main() {
   const plannerOutputs = [
     plan([availabilityTask()], { missingInformation: ["stay.checkIn"] }),
     plan([availabilityTask({ taskId: "mistaken-search", type: "available_dates" })], {
-      relation: "answer_clarification",
+      relation: "new_request",
       dateText: "今天",
       dateKind: "relative",
       stateOperations: [
@@ -118,7 +118,7 @@ async function main() {
   assert.equal(JSON.stringify(first.state.pendingRequest).includes("facts"), false);
 
   const second = await engine.process(input("pending-second", "今天"));
-  assert.ok(diagnostics.filter((entry) => entry.stage === "pending_request").some((entry) => entry.reasonCode === "pending_supplement_detected"), "a validated missing date must be recognized before execution");
+  assert.ok(diagnostics.filter((entry) => entry.stage === "pending_request").some((entry) => entry.reasonCode === "pending_missing_fields_matched"), "a validated missing date must be recognized before execution");
   assert.equal(second.state.conditions.stay.checkIn, "2026-07-23", "the validated date must reach the Engine state before pending execution");
   assert.equal(calls.availability, 1, "the original availability resolver must run after the missing date is supplied");
   assert.equal(calls.availableDates, 0, "a date-only continuation must not become available_dates");

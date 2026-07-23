@@ -89,3 +89,11 @@
 **理由：** task status、coverage gap、空 section、Composer failure 或 transport exception 若各自能改變旅客結果，會形成互相競爭的決策出口，讓 pending、Unknown 與安全 fallback 的行為無法追溯。
 
 **長期後果：** `no_reply` 不建立 Response Plan、不呼叫 Composer且不送 LINE；Response Plan 不得合成缺漏 task 或升級 fallback；Composer 不得自行追問、轉真人或產生全域 fallback；Composer 失敗只由 Engine 決定是否採用已核准的 deterministic 表達。新能力不得新增平行 Decision 層。
+
+## D-012：本輪候選語意與 pending 必須由 canonical slot 仲裁
+
+**決策：** Planner 的 task 與 discourse 只構成本輪候選語意。受控核心必須先完成 Temporal 與 canonical slot extraction，再依 pending capability、missing fields、已驗證 slots，以及本輪是否形成獨立完整需求，決定延續、取代、保留 pending 或 `no_reply`。`discourse.relation` 不得單獨否決有效補值。
+
+**理由：** 真實 runtime 曾在 pending `availability` 缺 `stay.checkIn` 時，把下一輪日期候選分類成 `available_dates/new_request`；舊流程在 slot matching 前直接放棄 pending，造成有效日期完全未被檢查並錯誤執行 31 天日期搜尋。
+
+**長期後果：** 日期、晚數、人數與房型共用同一 canonical matching 契約；單一日期若能填入 pending `stay.checkIn`，不得只因候選 task 是 `available_dates` 而取代原 capability。只有明確日期範圍搜尋或其他完整新需求可取代 pending；無有效補值且無有效新需求時不得重播舊 clarification。

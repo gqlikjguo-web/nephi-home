@@ -3,12 +3,13 @@
 function availabilityRequest(propertyId, request, resolved) {
   const entity = resolved && resolved.status === "resolved" ? resolved.entity : null;
   const roomTypeSet = resolved && resolved.status === "matched_set" ? resolved.entities.map((item) => item.canonicalId).filter(Boolean) : [];
+  const confirmedEntityId = request && request.inventory && request.inventory.entityId || null;
   return {
     customerId: propertyId,
     checkIn: request.stay.checkIn,
     checkOut: request.stay.checkOut,
     guests: request.stay.guests || null,
-    roomType: entity ? entity.canonicalId : "all",
+    roomType: entity ? entity.canonicalId : confirmedEntityId || "all",
     ...(roomTypeSet.length ? { roomTypeSet } : {}),
     queryMode: request.inventory.mode || "any"
   };
@@ -44,7 +45,8 @@ function resolveAvailableDates({ availableDatesResolver, propertyId, request, re
   if (typeof availableDatesResolver !== "function") throw new Error("available_dates_resolver_required");
   const entity = resolved && resolved.status === "resolved" ? resolved.entity : null;
   const roomTypeSet = resolved && resolved.status === "matched_set" ? resolved.entities.map((item) => item.canonicalId).filter(Boolean) : [];
-  const result = availableDatesResolver({ customerId: propertyId, dateFrom: request.stay.searchRange.from, dateTo: request.stay.searchRange.to, nights: request.stay.nights || 1, guests: request.stay.guests || null, roomType: entity ? entity.canonicalId : "all", ...(roomTypeSet.length ? { roomTypeSet } : {}), queryMode: request.inventory.mode || "any" });
+  const confirmedEntityId = request && request.inventory && request.inventory.entityId || null;
+  const result = availableDatesResolver({ customerId: propertyId, dateFrom: request.stay.searchRange.from, dateTo: request.stay.searchRange.to, nights: request.stay.nights || 1, guests: request.stay.guests || null, roomType: entity ? entity.canonicalId : confirmedEntityId || "all", ...(roomTypeSet.length ? { roomTypeSet } : {}), queryMode: request.inventory.mode || "any" });
   if (!result || !["answered", "unknown", "unreliable"].includes(result.status)) throw new Error("available_dates_resolver_invalid_result");
   return result;
 }

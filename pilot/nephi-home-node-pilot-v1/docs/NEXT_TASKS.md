@@ -29,3 +29,10 @@
 1. 將已通過完整自動回歸的 V2 final-decision 收斂部署至 `nephi-home-node-pilot-test-only`。
 2. 確認 test-only Live commit、health `200`、`status=ready`、`testOnly=true`。
 3. 由使用者在 test-only 真實 LINE 驗收 acknowledgement、pending 補值、Unknown、同句多問題與 property-scoped 雙 Channel；正式環境維持不變。
+
+## 2026-07-23 pending canonical 仲裁更新
+
+1. 部署已通過完整回歸的 pending canonical 仲裁至 `nephi-home-node-pilot-test-only`。
+2. 確認 Live commit、health `200`、`status=ready`、`testOnly=true`。
+3. 由使用者依序重測「房況缺日期 → 下一輪只補日期」，確認執行原 `availability`，不再進入預設 `available_dates` 範圍搜尋。
+4. 補測日期、晚數、人數、房型、acknowledgement 加有效問題，以及明確日期範圍搜尋；正式環境維持不變。

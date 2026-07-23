@@ -14,7 +14,7 @@ const { validateClaims } = require("./claim-validator");
 const { coverageByStatus, assertTaskCoverage } = require("./task-coverage");
 const { resolveEntity } = require("./entity-resolver");
 const { availabilityTraceSummary } = require("./resolver-adapter");
-const { pendingFromResults, resumePendingRequest } = require("./pending-request");
+const { createPendingRequest, pendingFromResults, resumePendingRequest } = require("./pending-request");
 
 const DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS = 31;
 const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
@@ -53,16 +53,13 @@ function plannerValidationTrace(plannerOutput, validation) {
     finalTasks: []
   };
 }
-function normalizePlannerOutput(plannerOutput, { messageText, eventTimestamp, timezone, previousConditions } = {}) {
-  if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) return null;
-  const output = { ...plannerOutput, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, detailIntent: normalizeDetailIntent(task.detailIntent), eligibilityEvidence: normalizeEligibilityEvidence(task.eligibilityEvidence), entity: task.entity ? { ...task.entity } : task.entity })) };
+function applyAvailableDatesDefaults(plannerOutput, { messageText, eventTimestamp, timezone } = {}) {
+  const output = { ...plannerOutput, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, entity: task.entity ? { ...task.entity } : task.entity })) };
   const availableDatesRequested = output.tasks.some((task) => task.type === "available_dates");
   const genericAvailability = output.tasks.some((task) => isGenericAvailabilityEntity(task));
   const genericAvailableDates = output.tasks.some((task) => task.type === "available_dates" && isGenericAvailabilityEntity(task));
   const freshAvailabilityRequest = availableDatesRequested || (genericAvailability && ["new_request", "new_topic"].includes(output.discourse && output.discourse.relation));
-  if (availableDatesRequested) {
-    // An available_dates task is a search for the next matching stay, so it
-    // starts at the immutable message date rather than an earlier stay range.
+  if (availableDatesRequested && !output.searchRange) {
     const dateFrom = dateKeyAt(eventTimestamp, timezone || "Asia/Taipei");
     output.tasks = output.tasks.map((task) => {
       if (task.type !== "available_dates" || !isGenericAvailabilityEntity(task)) return task;
@@ -76,6 +73,14 @@ function normalizePlannerOutput(plannerOutput, { messageText, eventTimestamp, ti
       { field: "inventory.entityId", operation: "clear", value: null, sourceText: String(messageText || "") }];
   }
   return output;
+}
+
+function normalizePlannerOutput(plannerOutput, { messageText, eventTimestamp, timezone, deferAvailableDatesDefaults = false } = {}) {
+  if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) return null;
+  const output = { ...plannerOutput, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, detailIntent: normalizeDetailIntent(task.detailIntent), eligibilityEvidence: normalizeEligibilityEvidence(task.eligibilityEvidence), entity: task.entity ? { ...task.entity } : task.entity })) };
+  return deferAvailableDatesDefaults
+    ? output
+    : applyAvailableDatesDefaults(output, { messageText, eventTimestamp, timezone });
 }
 
 function normalizedPlannerStay(plannerOutput, messageText) {
@@ -109,6 +114,78 @@ function normalizedPlannerStay(plannerOutput, messageText) {
   }
 
   return stay;
+}
+
+function canonicalTurnOperations(plannerOutput, temporal, previousConditions) {
+  const operations = (plannerOutput.stateOperations || []).flatMap((item) => {
+    if (item.field === "*" || item.field.startsWith("inventory.")) return [item];
+    if (item.field === "stay.guestCountCandidate") return [{ ...item, field: "stay.guests" }];
+    if (item.field === "stay.nightsCandidate" && ["set", "replace"].includes(item.operation)) return [{ ...item, field: "stay.nights" }];
+    if (item.operation === "clear" || item.operation === "keep") {
+      const canonicalPath = { "stay.checkInCandidate": "stay.checkIn", "stay.checkOutCandidate": "stay.checkOut", "stay.nightsCandidate": "stay.nights" }[item.field];
+      return canonicalPath ? [{ ...item, field: canonicalPath }] : [];
+    }
+    return [];
+  });
+  if (temporal.resolutionStatus === "resolved") {
+    if (temporal.checkIn) operations.push({ field: "stay.checkIn", operation: previousConditions.stay.checkIn ? "replace" : "set", value: temporal.checkIn, sourceText: temporal.originalExpression });
+    if (temporal.checkOut) operations.push({ field: "stay.checkOut", operation: previousConditions.stay.checkOut ? "replace" : "set", value: temporal.checkOut, sourceText: temporal.originalExpression });
+    if (temporal.nights) operations.push({ field: "stay.nights", operation: previousConditions.stay.nights ? "replace" : "set", value: temporal.nights, sourceText: temporal.originalExpression });
+    if (temporal.searchRange) operations.push({ field: "stay.searchRange", operation: previousConditions.stay.searchRange ? "replace" : "set", value: temporal.searchRange, sourceText: temporal.originalExpression });
+  }
+  if (temporal.resolutionStatus === "invalid" && temporal.originalExpression) {
+    for (const field of ["stay.checkIn", "stay.checkOut", "stay.searchRange"]) {
+      operations.push({ field, operation: "clear", value: null, sourceText: temporal.originalExpression });
+    }
+  }
+  return operations;
+}
+
+function pendingClarificationQuestion(fields) {
+  const labels = {
+    "stay.checkIn": "\u5165\u4f4f\u65e5\u671f",
+    "stay.checkOut": "\u9000\u623f\u65e5\u671f",
+    "stay.nights": "\u4f4f\u5bbf\u665a\u6578",
+    "stay.guests": "\u5165\u4f4f\u4eba\u6578",
+    "stay.searchRange": "\u65e5\u671f\u7bc4\u570d",
+    "inventory.mode": "\u4f4f\u5bbf\u985e\u578b",
+    "inventory.entityId": "\u623f\u578b",
+    "inventory.features": "\u623f\u9593\u9700\u6c42"
+  };
+  const names = (fields || []).map((field) => labels[field]).filter(Boolean);
+  return names.length ? `\u9084\u9700\u8981\u88dc\u5145${names.join("\u3001")}\u3002` : "";
+}
+
+function derivedStayOperations(previousConditions, operations) {
+  const stay = { ...(previousConditions.stay || {}) };
+  for (const item of operations) {
+    if (!item || !item.field.startsWith("stay.")) continue;
+    const field = item.field.split(".")[1];
+    if (item.operation === "clear") stay[field] = null;
+    else if (["set", "replace"].includes(item.operation)) stay[field] = item.value;
+  }
+  if (stay.checkIn && Number.isInteger(stay.nights) && stay.nights > 0 && !stay.checkOut) {
+    return [{ field: "stay.checkOut", operation: "set", value: addUtcDays(stay.checkIn, stay.nights), sourceText: "" }];
+  }
+  return [];
+}
+
+function plannerDateTrace(stay = {}) {
+  stay = stay || {};
+  const expression = stay.dateExpression || {};
+  return {
+    dateExpression: {
+      rawTextPresent: Boolean(expression.rawText),
+      kind: String(expression.kind || "none").slice(0, 40),
+      anchor: String(expression.anchor || "none").slice(0, 40)
+    },
+    candidates: {
+      checkIn: stay.checkInCandidate ? String(stay.checkInCandidate).slice(0, 10) : null,
+      checkOut: stay.checkOutCandidate ? String(stay.checkOutCandidate).slice(0, 10) : null,
+      nights: Number.isInteger(stay.nightsCandidate) ? stay.nightsCandidate : null,
+      guests: Number.isInteger(stay.guestCountCandidate) ? stay.guestCountCandidate : null
+    }
+  };
 }
 
 const SAFE_FALLBACK = "這次有部分內容無法安全確認，我會請業者協助；您剛才的問題已經記錄。";
@@ -200,6 +277,7 @@ class ConversationEngineV2 {
       discourse: plannerOutput && plannerOutput.discourse || null,
       shouldIgnore: Boolean(plannerOutput && plannerOutput.shouldIgnore),
       missingInformation: plannerOutput && Array.isArray(plannerOutput.missingInformation) ? plannerOutput.missingInformation.map(String).slice(0, 20) : [],
+      ...plannerDateTrace(plannerOutput && plannerOutput.stay),
       tasks: plannerOutput && Array.isArray(plannerOutput.tasks)
         ? (this.diagnosticDetail ? plannerOutput.tasks : plannerOutput.tasks.map(plannerTaskTrace))
         : []
@@ -213,7 +291,12 @@ class ConversationEngineV2 {
       this.traceContexts.delete(traceId);
       return { finalDecision, shouldReply: finalDecision.shouldReply, noReply: false, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), traceId };
     }
-    plannerOutput = normalizePlannerOutput(plannerOutput, { messageText: input.messageText, eventTimestamp: input.eventTimestamp, timezone: catalog.timezone, previousConditions: previous.conditions });
+    plannerOutput = normalizePlannerOutput(plannerOutput, {
+      messageText: input.messageText,
+      eventTimestamp: input.eventTimestamp,
+      timezone: catalog.timezone,
+      deferAvailableDatesDefaults: true
+    });
     if (!plannerOutput) {
       this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: ["planner_normalization_failed"], finalTasks: [] });
       this.trace(traceId, "fallback", { reasonCode: "planner_normalization_failed", branch: "planner_normalization_guard" });
@@ -246,13 +329,67 @@ class ConversationEngineV2 {
       this.traceContexts.delete(traceId);
       return { finalDecision, shouldReply: finalDecision.shouldReply, noReply: false, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), traceId };
     }
-    const pendingMerge = resumePendingRequest(plannerOutput, previous.pendingRequest);
-    this.trace(traceId, "pending_request", { action: pendingMerge.resumed ? "resumed" : "unchanged", reasonCode: pendingMerge.reason, capability: previous.pendingRequest && previous.pendingRequest.capability || "", missingFields: previous.pendingRequest && previous.pendingRequest.missingFields || [] });
     const hasActionableTask = plannerOutput.tasks.some((task) => !NON_ACTIONABLE_TASK_TYPES.has(task.type));
     const unknownTaskCount = plannerOutput.tasks.filter((task) => NON_ACTIONABLE_TASK_TYPES.has(task.type)).length;
     const noReplyGateHit = Boolean(plannerOutput.shouldIgnore && !hasActionableTask);
+    const plannerStay = normalizedPlannerStay(plannerOutput, input.messageText);
+    const pendingRequiresNights = Boolean(previous.pendingRequest && previous.pendingRequest.missingFields.includes("stay.nights"));
+    const temporal = resolveTemporalExpression(plannerStay.dateExpression, {
+      eventTimestamp: input.eventTimestamp,
+      timezone: catalog.timezone,
+      checkInCandidate: plannerStay.checkInCandidate,
+      checkOutCandidate: plannerStay.checkOutCandidate,
+      nightsCandidate: plannerStay.nightsCandidate,
+      defaultNights: !pendingRequiresNights && [
+        ...(plannerOutput.tasks || []),
+        ...(previous.pendingRequest && previous.pendingRequest.tasks || [])
+      ].some((task) => ["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type)) ? 1 : null,
+      previousCheckIn: previous.conditions.stay.checkIn,
+      previousCheckOut: previous.conditions.stay.checkOut
+    });
+    const explicitSearchRange = plannerStay.dateExpression.kind === "range" && temporal.checkIn && temporal.checkOut
+      ? { from: temporal.checkIn, to: temporal.checkOut }
+      : temporal.searchRange;
+    let operations = canonicalTurnOperations(plannerOutput, temporal, previous.conditions);
+    if (explicitSearchRange && !operations.some((item) => item.field === "stay.searchRange")) {
+      operations.push({ field: "stay.searchRange", operation: previous.conditions.stay.searchRange ? "replace" : "set", value: explicitSearchRange, sourceText: temporal.originalExpression });
+    }
+    this.trace(traceId, "temporal", {
+      operationPaths: plannerOutput.stateOperations.map((item) => item.field),
+      input: {
+        ...plannerDateTrace(plannerStay),
+        previousCheckInPresent: Boolean(previous.conditions.stay.checkIn),
+        previousCheckOutPresent: Boolean(previous.conditions.stay.checkOut)
+      },
+      output: {
+        resolutionStatus: temporal.resolutionStatus,
+        ambiguity: temporal.ambiguity || null,
+        checkIn: temporal.checkIn || null,
+        checkOut: temporal.checkOut || null,
+        nights: temporal.nights || null,
+        searchRange: explicitSearchRange || null
+      },
+      dateExpressionPresent: Boolean(plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none"),
+      resolutionStatus: temporal.resolutionStatus,
+      produced: { checkIn: Boolean(temporal.checkIn), checkOut: Boolean(temporal.checkOut), nights: Boolean(temporal.nights), searchRange: Boolean(explicitSearchRange) }
+    });
+    const pendingMerge = resumePendingRequest(plannerOutput, previous.pendingRequest, {
+      canonicalOperations: operations,
+      explicitRangeSearch: Boolean(explicitSearchRange),
+      noReply: noReplyGateHit
+    });
+    this.trace(traceId, "pending_request", {
+      action: pendingMerge.action,
+      reasonCode: pendingMerge.reason,
+      capability: previous.pendingRequest && previous.pendingRequest.capability || "",
+      missingFields: previous.pendingRequest && previous.pendingRequest.missingFields || [],
+      acceptedFields: pendingMerge.matchedFields || [],
+      rejectedFields: (previous.pendingRequest && previous.pendingRequest.missingFields || []).filter((field) => !(pendingMerge.matchedFields || []).includes(field)),
+      remainingMissingFields: pendingMerge.remainingMissingFields || [],
+      candidateTaskTypes: plannerOutput.tasks.map((task) => task.type)
+    });
     this.trace(traceId, "no_reply_gate", { shouldIgnore: plannerOutput.shouldIgnore, actionableTaskCount: plannerOutput.tasks.length - unknownTaskCount, unknownTaskCount, gateHit: noReplyGateHit, reasonCode: noReplyGateHit ? "no_reply_gate_hit" : plannerOutput.shouldIgnore ? "actionable_task_present" : "should_ignore_false" });
-    if (plannerOutput.shouldIgnore && !hasActionableTask) {
+    if (pendingMerge.action === "no_reply") {
       const finalDecision = createFinalDecision({ type: "no_reply", reasonCode: "no_reply_gate_hit" });
       const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "acknowledgement", replyType: "no_reply_v2", replyText: "", route: "no_reply_silent_ignore", decisionReason: finalDecision.reasonCode, shouldReply: finalDecision.shouldReply, noReply: true, needsReview: false, status: "resolved", processingStatus: "decided" };
       if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
@@ -260,76 +397,102 @@ class ConversationEngineV2 {
       this.trace(traceId, "controlled_decision", { decision: "no_reply", reason: messageRecord.decisionReason, actionableTaskCount: 0 });
       this.trace(traceId, "final_decision", { decision: finalDecision.type, reasonCode: finalDecision.reasonCode });
       this.traceContexts.delete(traceId);
-      return { finalDecision, shouldReply: finalDecision.shouldReply, noReply: true, replyText: "", taskResults: [], reviewCount: 0, reviewIds: [], claimValidation: { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [] }, traceId };
+      return { finalDecision, shouldReply: finalDecision.shouldReply, noReply: true, replyText: "", taskResults: [], reviewCount: 0, reviewIds: [], claimValidation: { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [] }, state: previous, traceId };
     }
-    // Pending state can nominate only a previously validated capability after
-    // this turn supplies one of its missing fields. It never changes Planner
-    // output; the Engine owns this execution choice.
-    const executionTasks = pendingMerge.resumed ? previous.pendingRequest.tasks : plannerOutput.tasks;
-    const executionPlannerOutput = pendingMerge.resumed ? { ...plannerOutput, tasks: executionTasks } : plannerOutput;
-    const plannerStay = normalizedPlannerStay(plannerOutput, input.messageText);
-    const temporal = resolveTemporalExpression(plannerStay.dateExpression, {
-      eventTimestamp: input.eventTimestamp, timezone: catalog.timezone,
-      checkInCandidate: plannerStay.checkInCandidate, checkOutCandidate: plannerStay.checkOutCandidate,
-      nightsCandidate: plannerStay.nightsCandidate,
-      defaultNights: executionTasks.some((task) => ["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type)) ? 1 : null,
-      previousCheckIn: previous.conditions.stay.checkIn, previousCheckOut: previous.conditions.stay.checkOut
+
+    if (pendingMerge.action === "keep_pending") {
+      const finalDecision = createFinalDecision({ type: "no_reply", reasonCode: "pending_unchanged_no_actionable_request" });
+      const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "pending_unchanged", replyType: "no_reply_v2", replyText: "", route: "pending_unchanged", decisionReason: finalDecision.reasonCode, shouldReply: false, noReply: true, needsReview: false, status: "resolved", processingStatus: "decided" };
+      if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
+      else this.persistence.appendMessageLog(input.customerId, messageRecord);
+      this.trace(traceId, "final_decision", { decision: finalDecision.type, reasonCode: finalDecision.reasonCode });
+      this.traceContexts.delete(traceId);
+      return { finalDecision, shouldReply: false, noReply: true, replyText: "", taskResults: [], reviewCount: 0, reviewIds: [], claimValidation: { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [] }, state: previous, traceId };
+    }
+
+    const executionTasks = pendingMerge.executionTasks;
+    let executionPlannerOutput = {
+      ...plannerOutput,
+      tasks: executionTasks,
+      discourse: pendingMerge.resumed ? { ...plannerOutput.discourse, relation: "continue" } : plannerOutput.discourse,
+      ...(explicitSearchRange ? { searchRange: explicitSearchRange } : {})
+    };
+    executionPlannerOutput = applyAvailableDatesDefaults(executionPlannerOutput, {
+      messageText: input.messageText,
+      eventTimestamp: input.eventTimestamp,
+      timezone: catalog.timezone
     });
-    this.trace(traceId, "temporal", {
-      operationPaths: plannerOutput.stateOperations.map((item) => item.field),
-      dateExpressionPresent: Boolean(plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none"),
-      resolutionStatus: temporal.resolutionStatus,
-      produced: { checkIn: Boolean(temporal.checkIn), checkOut: Boolean(temporal.checkOut), nights: Boolean(temporal.nights) }
-    });
-    const operations = plannerOutput.stateOperations.flatMap((item) => {
-      if (item.field === "*" || item.field.startsWith("inventory.")) return [item];
-      if (item.field === "stay.guestCountCandidate") return [{ ...item, field: "stay.guests" }];
-      // Guest count and nights are independently useful context. Do not drop
-      // a supplied value merely because the same turn still needs a date.
-      if (item.field === "stay.nightsCandidate" && ["set", "replace"].includes(item.operation)) return [{ ...item, field: "stay.nights" }];
-      if (item.operation === "clear" || item.operation === "keep") {
-        const canonicalPath = { "stay.checkInCandidate": "stay.checkIn", "stay.checkOutCandidate": "stay.checkOut", "stay.nightsCandidate": "stay.nights" }[item.field];
-        return canonicalPath ? [{ ...item, field: canonicalPath }] : [];
+
+    if (pendingMerge.resumed) {
+      const allowedFields = new Set(pendingMerge.matchedFields);
+      if (allowedFields.has("stay.checkIn")) {
+        allowedFields.add("stay.checkOut");
+        allowedFields.add("stay.nights");
       }
-      return [];
-    });
-    if (temporal.resolutionStatus === "resolved") {
-      if (temporal.checkIn) operations.push({ field: "stay.checkIn", operation: previous.conditions.stay.checkIn ? "replace" : "set", value: temporal.checkIn, sourceText: temporal.originalExpression });
-      if (temporal.checkOut) operations.push({ field: "stay.checkOut", operation: previous.conditions.stay.checkOut ? "replace" : "set", value: temporal.checkOut, sourceText: temporal.originalExpression });
-      if (temporal.nights) operations.push({ field: "stay.nights", operation: previous.conditions.stay.nights ? "replace" : "set", value: temporal.nights, sourceText: temporal.originalExpression });
-      if (temporal.searchRange) operations.push({ field: "stay.searchRange", operation: previous.conditions.stay.searchRange ? "replace" : "set", value: temporal.searchRange, sourceText: temporal.originalExpression });
+      if (allowedFields.has("inventory.entityId")) allowedFields.add("inventory.mode");
+      operations = operations.filter((item) => item.field !== "*" && allowedFields.has(item.field));
+    } else {
+      const normalizedInventoryOperations = (executionPlannerOutput.stateOperations || []).filter((item) => item.field.startsWith("inventory."));
+      operations = [...operations.filter((item) => !item.field.startsWith("inventory.")), ...normalizedInventoryOperations];
     }
-    if (temporal.resolutionStatus === "invalid" && plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none") {
-      // An explicit invalid date (notably a date already past) is a new
-      // constraint, never permission to reuse an older stay from state.
-      for (const field of ["stay.checkIn", "stay.checkOut", "stay.searchRange"]) {
-        operations.push({ field, operation: "clear", value: null, sourceText: temporal.originalExpression });
-      }
+    if (executionPlannerOutput.searchRange && !operations.some((item) => item.field === "stay.searchRange")) {
+      operations.push({ field: "stay.searchRange", operation: previous.conditions.stay.searchRange ? "replace" : "set", value: executionPlannerOutput.searchRange, sourceText: "" });
     }
-    if (plannerOutput.searchRange) operations.push({ field: "stay.searchRange", operation: previous.conditions.stay.searchRange ? "replace" : "set", value: plannerOutput.searchRange, sourceText: input.messageText });
-    const state = reduceConversationState(previous, { ...plannerOutput, stateOperations: operations }, scope);
+    operations.push(...derivedStayOperations(previous.conditions, operations));
+    const state = reduceConversationState(previous, { ...executionPlannerOutput, stateOperations: operations }, scope);
     this.trace(traceId, "state", { discourse: plannerOutput.discourse, operations: operations.map((item) => ({ field: item.field, operation: item.operation })), conditions: state.conditions, ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {}) });
     this.trace(traceId, "entity_resolution", { tasks: executionTasks.map((task) => { const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : { status: "not_requested" }; return this.diagnosticDetail ? { taskId: task.taskId, resolved } : { taskId: task.taskId, status: resolved.status, canonicalId: resolved.entity && resolved.entity.canonicalId || null, candidateCount: resolved.candidates && resolved.candidates.length || 0 }; }) });
     const resolverCalls = [];
     const tracedAvailabilityResolver = (request) => { const result = this.availabilityResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
     const tracedAvailableDatesResolver = (request) => { const result = this.availableDatesResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
-    let taskResults = executeTasks({ property, catalog, tasks: executionTasks, request: state.conditions, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) });
+    const continuedPendingNeedsMore = Boolean(pendingMerge.resumed && pendingMerge.remainingMissingFields.length);
+    let taskResults;
+    if (continuedPendingNeedsMore) {
+      const pendingTaskIds = new Set(previous.pendingRequest.tasks.map((task) => task.taskId));
+      const independentTasks = executionTasks.filter((task) => !pendingTaskIds.has(task.taskId));
+      const independentResults = executeTasks({ property, catalog, tasks: independentTasks, request: state.conditions, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) });
+      const question = pendingClarificationQuestion(pendingMerge.remainingMissingFields);
+      const clarificationByTaskId = new Map(previous.pendingRequest.tasks.map((task) => [task.taskId, {
+        taskId: task.taskId,
+        type: task.type,
+        status: "needs_clarification",
+        question,
+        facts: {},
+        missingInputs: pendingMerge.remainingMissingFields
+      }]));
+      const independentByTaskId = new Map(independentResults.map((result) => [result.taskId, result]));
+      taskResults = executionTasks.map((task) => clarificationByTaskId.get(task.taskId) || independentByTaskId.get(task.taskId)).filter(Boolean);
+    } else {
+      taskResults = executeTasks({ property, catalog, tasks: executionTasks, request: state.conditions, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) });
+    }
     const inputTaskIds = executionTasks.map((task) => task.taskId);
     let executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     if (!executorCoverage.ok) {
       taskResults = [...taskResults, ...executorCoverage.missingTaskIds.map((taskId) => ({ taskId, type: "unknown", status: "failed", reason: "executor_missing_task", facts: { subject: "這個問題" }, review: true }))];
       executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     }
-    state.pendingRequest = pendingFromResults({
-      plannerOutput: executionPlannerOutput,
-      taskResults,
-      conditions: state.conditions,
-      scope: {
-        eventId: input.eventId,
-        now: scope.now,
-        createdAt: previous.pendingRequest && previous.pendingRequest.metadata && previous.pendingRequest.metadata.createdAt
-      }
-    });
+    state.pendingRequest = continuedPendingNeedsMore
+      ? createPendingRequest({
+        tasks: previous.pendingRequest.tasks,
+        conditions: state.conditions,
+        missingFields: pendingMerge.remainingMissingFields,
+        clarificationTarget: pendingMerge.remainingMissingFields[0],
+        scope: {
+          eventId: input.eventId,
+          now: scope.now,
+          createdAt: previous.pendingRequest.metadata && previous.pendingRequest.metadata.createdAt
+        }
+      })
+      : pendingFromResults({
+        plannerOutput: executionPlannerOutput,
+        taskResults,
+        conditions: state.conditions,
+        scope: {
+          eventId: input.eventId,
+          now: scope.now,
+          createdAt: previous.pendingRequest && previous.pendingRequest.metadata && previous.pendingRequest.metadata.createdAt
+        }
+      });
     this.persistence.setConversationState(input.customerId, input.channelId, input.lineUserId, state);
     this.trace(traceId, "pending_request", {
       action: state.pendingRequest ? "stored" : previous.pendingRequest ? "cleared" : "none",

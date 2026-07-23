@@ -55,3 +55,10 @@ A Planner task can satisfy the strict JSON schema while carrying contradictory m
 ## 2026-07-23 — Property identity must follow verified Channel credentials
 
 A webhook URL parameter or unverified payload cannot establish tenant identity. Multi-Channel LINE handling must first select one opaque binding candidate, verify the raw body with that binding's Secret, and only then use the binding's property and Access Token. Tests must attempt query/body tampering and cross-signing, not only exercise two successful Channels.
+
+## 2026-07-23 — Planner discourse cannot bypass canonical pending matching
+
+- `new_request` is a Planner interpretation, not proof that a turn is independent of an existing request.
+- Pending arbitration performed before Temporal resolution can discard a valid date, duration, guest count, or room preference without ever testing it against the missing-field contract.
+- Regression tests must reproduce the real failure shape: a conflicting candidate task and `new_request` relation plus a valid canonical slot, then prove the original capability reaches the Resolver.
+- Safe diagnostics should expose date-expression shape, Temporal candidates/results, accepted or rejected canonical fields, and reason codes without logging raw guest messages or credentials.

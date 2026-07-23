@@ -206,3 +206,16 @@
 - [x] 公開房卡已移除重複的「✓ 可入住」。
 
 任何未完成、未決策或缺少真實驗收證據的項目，都會阻擋第一版正式完成；不得只以自動測試、health 或 test-only 部署取代正式驗收。
+
+## 10. Pending canonical 仲裁防退化 Gate
+
+- [x] Temporal／canonical slot extraction 發生在 pending arbitration 之前。
+- [x] `discourse.relation=new_request` 不得單獨否決可填入 missing fields 的有效 slot。
+- [x] pending `availability` 缺 `stay.checkIn` 時，候選 `available_dates` 加單一 canonical 日期仍延續原 capability。
+- [x] 日期、晚數、人數與房型共用同一 matching、merge 與 missing-fields recomputation 契約。
+- [x] 明確日期範圍搜尋可取代 pending 並執行 `available_dates`。
+- [x] acknowledgement 與無有效補值不會重播舊 clarification。
+- [x] production multi-Channel HTTP webhook 經 V2 composition root 的黑箱測試覆蓋真實失敗形狀。
+- [x] 安全診斷記錄 Planner 日期結構、Temporal 輸入／輸出與 slot 接受／拒絕 reason code，不記錄 raw guest message 或 credential。
+- [x] 完整 `npm test` 自然 exit 0。
+- [ ] test-only 真實 LINE 依原訊息順序完成人工驗收。

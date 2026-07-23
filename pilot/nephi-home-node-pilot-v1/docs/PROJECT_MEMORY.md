@@ -71,3 +71,10 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - Engine 已成為 V2 唯一 `finalDecision` 擁有者；Response Plan、Controlled Composer 與兩條已註冊 LINE transport 的競爭決策能力已移除。
 - pending 與 follow-up 不再改寫本輪 Planner task；測試中的 follow-up context 必須由 Planner 輸出明確 candidate，不再依賴 state 覆寫。
 - 完整 `npm test` 已自然 exit 0；下一步只剩 test-only 部署驗證與真實 LINE 人工驗收，正式環境仍未授權。
+
+## 2026-07-23 pending canonical 仲裁狀態
+
+- 已證實並修正 pending `availability` 遇到 Planner 候選 `available_dates/new_request` 時，在 canonical slot matching 前被放棄的問題。
+- 新順序為 Planner／semantic contract → Temporal／canonical slots → pending arbitration → merge／missing fields recomputation → Engine finalDecision → Resolver／Composer／LINE。
+- 單一日期、晚數、人數與房型共用同一 missing-field matching 契約；明確日期範圍搜尋與完整新需求仍可取代 pending。
+- 新增 production HTTP route 黑箱回歸與安全日期診斷；完整 `npm test` 已自然 exit 0。下一步是 test-only 部署後由使用者重測原真實訊息順序。

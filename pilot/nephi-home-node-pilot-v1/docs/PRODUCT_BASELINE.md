@@ -33,6 +33,10 @@
 - 多輪補充、修改與清除必須經 versioned state reducer，舊 state 不得污染新需求。
 - 相同輸入與相同事實來源不得因 Planner 或 Composer 變異而漏答、沉默或改變事實。
 - 回覆只能使用 Response Plan 的可信 facts；Claim Validator 必須阻止未覆蓋或無來源的主張。
+- pending 仲裁必須發生在 Temporal 與 canonical slot extraction 之後；Planner `discourse.relation` 不得單獨決定延續或取代 pending。
+- 本輪有效日期、晚數、人數或房型若可填入 pending missing fields，必須保留原 capability、重算剩餘欄位，並在補齊後重新查詢 property-scoped Resolver。
+- pending `availability` 缺入住日時，單一 canonical 日期不得因候選 task 為 `available_dates` 而啟動預設 31 天搜尋；只有明確日期範圍搜尋才能取代。
+- 無有效補值且無有效新需求時不得重播舊 clarification；acknowledgement 仍由 Engine 決定 `no_reply`。
 
 ## Unknown 與真人轉接
 
