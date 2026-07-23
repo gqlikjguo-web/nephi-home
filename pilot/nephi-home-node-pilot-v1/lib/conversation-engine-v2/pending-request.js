@@ -56,6 +56,8 @@ function createPendingRequest({ tasks, conditions, missingFields, clarificationT
   if (!safeTasks.length || !missing.length) return null;
   return {
     version: PENDING_VERSION,
+    pendingRequestId: scope.pendingRequestId || null,
+    requestCycleId: scope.requestCycleId || null,
     capability: safeTasks[0].type,
     tasks: safeTasks,
     conditions: pendingConditions(conditions),
@@ -64,7 +66,8 @@ function createPendingRequest({ tasks, conditions, missingFields, clarificationT
     metadata: {
       sourceEventId: safeText(scope.eventId, 120),
       createdAt: safeText(scope.createdAt || scope.now, 40),
-      updatedAt: safeText(scope.now, 40)
+      updatedAt: safeText(scope.now, 40),
+      expiresAt: safeText(scope.expiresAt, 40)
     }
   };
 }
@@ -76,38 +79,7 @@ function isPendingRequest(value) {
 
 function migratePendingRequest(value) {
   if (!isPendingRequest(value)) return null;
-  return createPendingRequest({ tasks: value.tasks, conditions: value.conditions, missingFields: value.missingFields, clarificationTarget: value.clarificationTarget, scope: value.metadata || {} });
-}
-
-function hasTemporalSupplement(plannerOutput) {
-  const stay = plannerOutput && plannerOutput.stay || {};
-  const expression = stay.dateExpression || {};
-  if (expression.rawText && expression.kind && expression.kind !== "none") return true;
-  if (stay.checkInCandidate || stay.checkOutCandidate || Number.isInteger(stay.nightsCandidate) || Number.isInteger(stay.guestCountCandidate)) return true;
-  return (plannerOutput && plannerOutput.stateOperations || []).some((item) => item && typeof item.field === "string" && item.field.startsWith("stay.") && ["set", "replace"].includes(item.operation));
-}
-
-function resumePendingRequest(plannerOutput, pending) {
-  if (!isPendingRequest(pending) || !plannerOutput || !Array.isArray(plannerOutput.tasks)) return { plannerOutput, resumed: false, reason: "pending_unavailable" };
-  const relation = plannerOutput.discourse && plannerOutput.discourse.relation;
-  if (relation === "new_topic") return { plannerOutput, resumed: false, reason: "explicit_new_topic" };
-  if (relation === "new_request") return { plannerOutput, resumed: false, reason: "explicit_new_request" };
-  const temporalSupplement = hasTemporalSupplement(plannerOutput);
-  const sameCapability = plannerOutput.tasks.some((task) => task.type === pending.capability);
-  if (!["continue", "answer_clarification"].includes(relation) && !temporalSupplement && !sameCapability) return { plannerOutput, resumed: false, reason: "not_a_continuation" };
-  const suppliedFields = new Set((plannerOutput.stateOperations || []).filter((item) => item && ["set", "replace"].includes(item.operation)).map((item) => ({
-    "stay.checkInCandidate": "stay.checkIn",
-    "stay.checkOutCandidate": "stay.checkOut",
-    "stay.nightsCandidate": "stay.nights",
-    "stay.guestCountCandidate": "stay.guests"
-  }[item.field] || item.field)));
-  const stay = plannerOutput.stay || {};
-  if (stay.dateExpression && stay.dateExpression.rawText && stay.dateExpression.kind !== "none") suppliedFields.add("stay.checkIn");
-  if (Number.isInteger(stay.nightsCandidate)) suppliedFields.add("stay.nights");
-  if (Number.isInteger(stay.guestCountCandidate)) suppliedFields.add("stay.guests");
-  const matchedFields = pending.missingFields.filter((field) => suppliedFields.has(field));
-  if (!matchedFields.length) return { plannerOutput, resumed: false, reason: "no_valid_pending_supplement", matchedFields: [] };
-  return { plannerOutput, resumed: true, reason: "pending_supplement_detected", matchedFields };
+  return createPendingRequest({ tasks: value.tasks, conditions: value.conditions, missingFields: value.missingFields, clarificationTarget: value.clarificationTarget, scope: { ...(value.metadata || {}), pendingRequestId: value.pendingRequestId, requestCycleId: value.requestCycleId } });
 }
 
 function pendingFromResults({ plannerOutput, taskResults, conditions, scope }) {
@@ -119,4 +91,4 @@ function pendingFromResults({ plannerOutput, taskResults, conditions, scope }) {
   return createPendingRequest({ tasks, conditions, missingFields, clarificationTarget: missingFields[0], scope });
 }
 
-module.exports = { PENDING_VERSION, PENDING_FIELDS, createPendingRequest, isPendingRequest, migratePendingRequest, normalizeMissingFields, pendingConditions, pendingFromResults, resumePendingRequest };
+module.exports = { PENDING_VERSION, PENDING_FIELDS, createPendingRequest, isPendingRequest, migratePendingRequest, normalizeMissingFields, pendingConditions, pendingFromResults };

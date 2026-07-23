@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
-const { createPendingRequest, resumePendingRequest } = require("../lib/conversation-engine-v2/pending-request");
+const { createPendingRequest } = require("../lib/conversation-engine-v2/pending-request");
 
 const property = {
   propertyId: "pending_contract_property",
@@ -110,6 +110,8 @@ async function main() {
   const first = await engine.process(input("pending-first", "還有房嗎"));
   assert.equal(first.taskResults[0].status, "needs_clarification");
   assert.equal(first.state.pendingRequest.version, 1);
+  assert.ok(first.state.pendingRequest.pendingRequestId);
+  assert.ok(first.state.pendingRequest.requestCycleId);
   assert.equal(first.state.pendingRequest.capability, "availability");
   assert.deepEqual(first.state.pendingRequest.missingFields, ["stay.checkIn"]);
   assert.equal(first.state.pendingRequest.clarificationTarget, "stay.checkIn");
@@ -118,7 +120,7 @@ async function main() {
   assert.equal(JSON.stringify(first.state.pendingRequest).includes("facts"), false);
 
   const second = await engine.process(input("pending-second", "今天"));
-  assert.ok(diagnostics.filter((entry) => entry.stage === "pending_request").some((entry) => entry.reasonCode === "pending_supplement_detected"), "a validated missing date must be recognized before execution");
+  assert.ok(diagnostics.filter((entry) => entry.stage === "pending_request").some((entry) => entry.action === "resumed" && entry.reasonCode === "continue"), "only the validated context relation may resume a pending request");
   assert.equal(second.state.conditions.stay.checkIn, "2026-07-23", "the validated date must reach the Engine state before pending execution");
   assert.equal(calls.availability, 1, "the original availability resolver must run after the missing date is supplied");
   assert.equal(calls.availableDates, 0, "a date-only continuation must not become available_dates");
@@ -138,29 +140,7 @@ async function main() {
   assert.deepEqual(pending.missingFields, ["stay.nights", "stay.guests", "inventory.entityId"]);
   assert.equal(Object.hasOwn(pending, "resolverResult"), false);
 
-  for (const [field, operation] of [
-    ["stay.nights", { field: "stay.nightsCandidate", operation: "set", value: 2, sourceText: "supplement" }],
-    ["stay.guests", { field: "stay.guestCountCandidate", operation: "set", value: 4, sourceText: "supplement" }],
-    ["inventory.entityId", { field: "inventory.entityId", operation: "set", value: "room_double", sourceText: "supplement" }]
-  ]) {
-    const item = createPendingRequest({ tasks: [availabilityTask()], conditions: { stay: {}, inventory: {} }, missingFields: [field], clarificationTarget: field, scope: { eventId: `missing-${field}`, now: "2026-07-23T02:00:00.000Z" } });
-    const merged = resumePendingRequest(plan([availabilityTask({ taskId: "continuation" })], { relation: "answer_clarification", stateOperations: [operation] }), item);
-    assert.equal(merged.resumed, true, `${field} must resume the canonical pending capability`);
-    assert.equal(merged.plannerOutput.tasks[0].type, "availability");
-    assert.ok(merged.plannerOutput.stateOperations.some((entry) => entry.field === operation.field));
-  }
-
-  const replacement = resumePendingRequest(plan([availabilityTask({ taskId: "new-complete" })], { relation: "new_request", checkInCandidate: "2026-07-30", nightsCandidate: 1 }), pending);
-  assert.equal(replacement.resumed, false, "an explicit complete new request replaces rather than merges the pending request");
-  assert.equal(replacement.reason, "explicit_new_request");
-  const explicitRange = resumePendingRequest(plan([availabilityTask({ taskId: "range", type: "available_dates" })], { relation: "new_request" }), null);
-  assert.equal(explicitRange.plannerOutput.tasks[0].type, "available_dates", "available_dates remains available for an explicit standalone range search");
-
-  const acknowledgement = plan([], { relation: "continue", shouldIgnore: true });
-  const acknowledgementSnapshot = JSON.parse(JSON.stringify(acknowledgement));
-  const acknowledgementWithPending = resumePendingRequest(acknowledgement, pending);
-  assert.equal(acknowledgementWithPending.resumed, false, "a pending request must not take ownership of an acknowledgement turn");
-  assert.deepEqual(acknowledgementWithPending.plannerOutput, acknowledgementSnapshot, "pending handling must preserve this turn's tasks, discourse, missing information, and shouldIgnore decision");
+  assert.equal(Object.hasOwn(pending, "resumed"), false, "pending data carries identity and scope only; it does not choose a continuation");
 
   const gate = diagnostics.find((entry) => entry.stage === "no_reply_gate");
   assert.ok(gate, "every valid planner result must emit a no-reply gate diagnostic");

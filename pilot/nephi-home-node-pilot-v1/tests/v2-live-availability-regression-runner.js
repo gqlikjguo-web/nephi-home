@@ -53,7 +53,7 @@ const normalizedRecentAfterPriorStay = normalizePlannerOutput(plannerOutput, {
   previousConditions: { stay: { checkIn: "2026-08-06", searchRange: { from: "2026-08-06", to: "2026-09-06" } } }
 });
 assert.deepEqual(normalizedRecentAfterPriorStay.searchRange, { from: "2026-07-18", to: "2026-08-18" });
-assert.deepEqual(normalizedRecentAfterPriorStay.stateOperations.map((item) => [item.field, item.operation, item.value]), [["inventory.mode", "replace", "any"], ["inventory.entityId", "clear", null]]);
+assert.deepEqual(normalizedRecentAfterPriorStay.inventoryCandidates, { mode: "any", entityId: null, features: null });
 
 const structurallyPlannedAvailableDates = normalizePlannerOutput({
   stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" } },
@@ -67,7 +67,7 @@ const structurallyPlannedAvailableDates = normalizePlannerOutput({
 });
 assert.equal(structurallyPlannedAvailableDates.tasks[0].entity.rawText, "");
 assert.deepEqual(structurallyPlannedAvailableDates.searchRange, { from: "2026-07-18", to: "2026-08-18" });
-assert.deepEqual(structurallyPlannedAvailableDates.stateOperations.map((item) => [item.field, item.operation, item.value]), [["inventory.mode", "replace", "any"], ["inventory.entityId", "clear", null]]);
+assert.deepEqual(structurallyPlannedAvailableDates.inventoryCandidates, { mode: "any", entityId: null, features: null });
 
 const catalog = buildPropertyCatalog(property);
 const genericAvailability = executeTasks({

@@ -49,7 +49,7 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   assert.ok(guarded.replyText.includes("停車位"));
   assert.ok(guarded.replyText.includes("麻將"));
   assert.deepEqual(guarded.claimValidation.coveredTaskIds.sort(), ["a", "b", "c"]);
-  assert.deepEqual(diagnostics.map((item) => item.stage), ["property_catalog", "planner", "validation", "semantic_contract", "pending_request", "no_reply_gate", "temporal", "state", "entity_resolution", "pending_request", "executor", "response_plan", "composer", "claim_validator", "line_ready", "final_decision"]);
+  assert.deepEqual(diagnostics.map((item) => item.stage), ["property_catalog", "planner", "validation", "semantic_contract", "context_validation", "pending_request", "no_reply_gate", "temporal", "state", "entity_resolution", "pending_request", "executor", "response_plan", "composer", "claim_validator", "line_ready", "final_decision"]);
   assert.equal(new Set(diagnostics.map((item) => item.traceId)).size, 1);
   assert.equal(guarded.replyText, result.replyText);
   const safeDiagnostics = diagnostics.map(formatSafeTestOnlyConversationTrace).filter(Boolean);
@@ -230,7 +230,7 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
 
   const staleStateUser = "explicit-date-replaces-state";
   await runTemporal("8/6 availability", temporalPlanner({ message: "8/6 availability", operations: dateOperations("8/6", "absolute", { checkInCandidate: "2026-08-06" }) }), staleStateUser);
-  const pastExplicitDate = await runTemporal("7/18 availability", temporalPlanner({ message: "7/18 availability", operations: [] }), staleStateUser, Date.parse("2026-07-19T10:00:00+08:00"));
+  const pastExplicitDate = await runTemporal("7/18 availability", temporalPlanner({ message: "7/18 availability", operations: dateOperations("7/18", "absolute", { checkInCandidate: "2026-07-18" }) }), staleStateUser, Date.parse("2026-07-19T10:00:00+08:00"));
   assert.equal(pastExplicitDate.state.conditions.stay.checkIn, null);
   assert.equal(pastExplicitDate.state.conditions.stay.checkOut, null);
   assert.equal(pastExplicitDate.taskResults[0].status, "needs_clarification");
