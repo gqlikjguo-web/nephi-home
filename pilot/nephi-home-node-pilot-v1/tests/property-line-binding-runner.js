@@ -115,13 +115,14 @@ async function waitFor(predicate, timeoutMs = 1000) {
   providers.onboarding = { isPlatformAdmin: (_propertyId, _username, userId) => userId === "platform-user" };
 
   const plannerProperties = [];
+  const plannerStates = [];
   const replies = [];
   const app = createApp({
     providers,
     adminAuthRequired: true,
     lineBindingEnv: { JUNZAN_LINE_CREDENTIAL_ENCRYPTION_KEY: encryptionKey },
     conversationDebounceMs: 1,
-    conversationPlannerV2: { classify: async ({ catalog }) => { plannerProperties.push(catalog.propertyId); return planParking(); } },
+    conversationPlannerV2: { classify: async ({ catalog, currentMessage, conversationState }) => { plannerProperties.push(catalog.propertyId); plannerStates.push({ propertyId: catalog.propertyId, message: currentMessage, features: conversationState.conditions.inventory.features }); const plan = planParking(); if (currentMessage === "remember-binding-a") plan.stateOperations = [{ field: "inventory.features", operation: "set", value: ["binding-a-state"], sourceText: "test" }]; return plan; } },
     lineReplyClientFactory: ({ channelAccessToken }) => ({ replyMessageWithHttpInfo: async (body) => { replies.push({ channelAccessToken, body }); return { httpResponse: { status: 200 } }; } })
   });
   const running = await app.start(0, "127.0.0.1");
@@ -139,6 +140,23 @@ async function waitFor(predicate, timeoutMs = 1000) {
     assert.deepEqual(replies.map((item) => item.channelAccessToken).sort(), [tokenA, tokenB].sort());
     assert.match(replies.find((item) => item.channelAccessToken === tokenA).body.messages[0].text, /Parking A/);
     assert.match(replies.find((item) => item.channelAccessToken === tokenB).body.messages[0].text, /Parking B/);
+
+    const statePayload = (id, text) => JSON.stringify({ events: [{ type: "message", webhookEventId: id, replyToken: `reply-${id}`, timestamp: 2, source: { userId: "same-user" }, message: { type: "text", id: `message-${id}`, text } }] });
+    const stateA = statePayload("state-a", "remember-binding-a");
+    assert.equal((await post(running.url, `/api/line/webhooks/${bindingA.webhookKey}`, stateA, signed(secretA, stateA))).status, 200);
+    await waitFor(() => replies.length === 3);
+    const stateB = statePayload("state-b", "read-binding-b");
+    assert.equal((await post(running.url, `/api/line/webhooks/${bindingB.webhookKey}`, stateB, signed(secretB, stateB))).status, 200);
+    await waitFor(() => replies.length === 4);
+    const stateARead = statePayload("state-a-read", "read-binding-a");
+    assert.equal((await post(running.url, `/api/line/webhooks/${bindingA.webhookKey}`, stateARead, signed(secretA, stateARead))).status, 200);
+    await waitFor(() => replies.length === 5);
+    assert.deepEqual(plannerStates.slice(-3).map((entry) => entry.features), [[], [], ["binding-a-state"]], "same LINE user must read state only from its binding/property scope");
+    const bindingChannel = (binding) => `line-binding:${crypto.createHash("sha256").update(binding.webhookKey).digest("hex").slice(0, 24)}`;
+    const storedA = providers.persistence.getConversationState("property_a", bindingChannel(bindingA), "same-user");
+    const storedB = providers.persistence.getConversationState("property_b", bindingChannel(bindingB), "same-user");
+    assert.deepEqual(storedA.conditions.inventory.features, ["binding-a-state"], "Binding A must persist its own state for the shared LINE user");
+    assert.deepEqual(storedB.conditions.inventory.features, [], "Binding B must persist an independent state for the same LINE user");
 
     const callsBeforeFailures = plannerProperties.length;
     assert.equal((await post(running.url, `/api/line/webhooks/${bindingB.webhookKey}`, payloadA, signed(secretA, payloadA))).status, 401);
