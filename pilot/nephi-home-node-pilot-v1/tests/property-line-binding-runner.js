@@ -35,6 +35,11 @@ function memoryBindingProvider() {
       const current = rowsByProperty.get(propertyId);
       if (!current) return null;
       return this.upsertLineBinding({ ...current, enabled: Boolean(enabled) });
+    },
+    recordValidLineWebhook(propertyId) {
+      const current = rowsByProperty.get(propertyId);
+      if (!current || !current.enabled) return null;
+      return this.upsertLineBinding({ ...current, lastWebhookAt: new Date().toISOString() });
     }
   };
 }
@@ -136,6 +141,7 @@ async function waitFor(predicate, timeoutMs = 1000) {
     assert.equal((await post(running.url, routeA, payloadA, signed(secretA, payloadA))).status, 200);
     assert.equal((await post(running.url, routeB, payloadB, signed(secretB, payloadB))).status, 200);
     await waitFor(() => replies.length === 2);
+    assert.ok(bindingService.status("property_a").lastWebhookAt, "a valid enabled production webhook must record its receipt time");
     assert.deepEqual(plannerProperties, ["property_a", "property_b"]);
     assert.deepEqual(replies.map((item) => item.channelAccessToken).sort(), [tokenA, tokenB].sort());
     assert.match(replies.find((item) => item.channelAccessToken === tokenA).body.messages[0].text, /Parking A/);
@@ -159,11 +165,13 @@ async function waitFor(predicate, timeoutMs = 1000) {
     assert.deepEqual(storedB.conditions.inventory.features, [], "Binding B must persist an independent state for the same LINE user");
 
     const callsBeforeFailures = plannerProperties.length;
+    const bindingBWebhookBeforeRejectedRequests = bindingService.status("property_b").lastWebhookAt;
     assert.equal((await post(running.url, `/api/line/webhooks/${bindingB.webhookKey}`, payloadA, signed(secretA, payloadA))).status, 401);
     assert.equal((await post(running.url, "/api/line/webhooks/unknown-binding-key", payloadA, signed(secretA, payloadA))).status, 404);
     bindingService.setEnabled("property_b", false);
     assert.equal((await post(running.url, `/api/line/webhooks/${bindingB.webhookKey}`, payloadB, signed(secretB, payloadB))).status, 404);
     assert.equal(plannerProperties.length, callsBeforeFailures);
+    assert.equal(bindingService.status("property_b").lastWebhookAt, bindingBWebhookBeforeRejectedRequests, "invalid or disabled requests must not update webhook receipt time");
 
     const unauthenticated = await fetch(`${running.url}/api/admin/line-bindings/property_a`);
     assert.equal(unauthenticated.status, 401);
@@ -172,8 +180,11 @@ async function waitFor(predicate, timeoutMs = 1000) {
     const authenticated = await fetch(`${running.url}/api/admin/line-bindings/property_a`, { headers: { cookie: "nephi_admin_session=platform-session" } });
     assert.equal(authenticated.status, 200);
     const statusBody = await authenticated.json();
-    assert.deepEqual(Object.keys(statusBody.data).sort(), ["enabled", "hasChannelAccessToken", "hasChannelSecret", "propertyId", "webhookKey"].sort());
+    assert.deepEqual(Object.keys(statusBody.data).sort(), ["enabled", "hasChannelAccessToken", "hasChannelSecret", "lastWebhookAt", "propertyId", "webhookKey"].sort());
     assert.doesNotMatch(JSON.stringify(statusBody), new RegExp([secretA, tokenA].join("|")));
+    const blankUpdate = await fetch(`${running.url}/api/admin/line-bindings/property_a`, { method: "PUT", headers: { cookie: "nephi_admin_session=platform-session", "content-type": "application/json" }, body: JSON.stringify({ channelSecret: "", channelAccessToken: "" }) });
+    assert.equal(blankUpdate.status, 200, "blank update fields must preserve existing credentials");
+    assert.equal((await blankUpdate.json()).data.webhookKey, bindingA.webhookKey);
     const disabledByAdmin = await fetch(`${running.url}/api/admin/line-bindings/property_a/enabled`, { method: "PATCH", headers: { cookie: "nephi_admin_session=platform-session", "content-type": "application/json" }, body: JSON.stringify({ enabled: false }) });
     assert.equal(disabledByAdmin.status, 200);
     assert.equal((await disabledByAdmin.json()).data.enabled, false);

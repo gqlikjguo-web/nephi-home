@@ -107,6 +107,7 @@
 - [x] 同一 LINE user 經 production shared webhook、V2 composition root 與真實 conversation-state provider：Binding B 讀取獨立 persisted state，Binding A 保留自身 state。
 - [x] PostgreSQL/PGlite production route：migration 015、AES-256-GCM credential envelope、A/B Secret／property／token isolation、cross-binding Secret rejection 與 disabled binding 不執行 AI 已有端到端測試。
 - [x] 完整 `npm test` 自然 exit 0；未提高 timeout、跳過 runner、強制 exit、部署或使用真實 credential。
+- [x] 已核准案件可由平台總後台直接開啟該正式 property 的 LINE 串接設定：安全輸入／輪替 credential、顯示專屬 Webhook URL、啟用／停用與最近有效 Webhook 時間；不提供 credential 讀回。
 - [ ] 總後台需提供 LINE binding 管理 UI，僅顯示是否已設定、webhook URL 與啟用狀態，不得讀回 Secret、Token 或密文。
 - [ ] 真實 test-only LINE 可收到單一、非空回覆，且同一 event 不會重複處理或重複回覆。
 - [ ] 指定日期、指定房型與最近可住房況完成真實驗收。

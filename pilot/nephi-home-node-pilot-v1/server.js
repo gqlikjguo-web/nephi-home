@@ -648,7 +648,9 @@ function createApp(options = {}) {
     const id = binding.propertyId;
     if (!providers.customerSettings.getProperty(id)) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE webhook is unavailable");
     const channelId = `line-binding:${crypto.createHash("sha256").update(binding.webhookKey).digest("hex").slice(0, 24)}`;
-    for (const event of (payload.events || []).filter((item) => item && item.type === "message" && item.message && item.message.type === "text" && item.replyToken)) {
+    const messageEvents = (payload.events || []).filter((item) => item && item.type === "message" && item.message && item.message.type === "text" && item.replyToken);
+    if (messageEvents.length) lineBindingService.recordValidWebhook(id);
+    for (const event of messageEvents) {
       const input = { customerId: id, channelId, lineUserId: String(event.source && event.source.userId || ""), eventId: String(event.webhookEventId || event.message.id || ""), eventTimestamp: event.timestamp || "", messageText: event.message.text || "" };
       if (!(await claimEvent(input)).claimed) continue;
       void root.coordinator.enqueue(input).then(async (result) => {

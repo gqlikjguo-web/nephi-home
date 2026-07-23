@@ -64,6 +64,10 @@ check(
   asset.includes("propertyOptions.length===1") && asset.includes("existing.value=propertyOptions[0].propertyId")
 );
 check("第一階段按鈕只檢查核准內容，不直接宣稱核准", asset.includes("檢查核准內容"));
+check("已核准案件提供固定 property 的 LINE 串接入口", asset.includes('app.status==="approved"&&app.approvedPropertyId') && asset.includes("LINE 串接設定") && asset.includes("lineBindingPanel(app)"));
+check("LINE 串接頁只使用核准案件 closure 的 propertyId 呼叫安全 API", asset.includes("encodeURIComponent(propertyId)") && asset.includes("/api/admin/line-bindings/${encodeURIComponent(propertyId)}") && !asset.includes("placeholder=\"輸入 propertyId\"") );
+check("LINE credential 輸入儲存後立即清空且不提供讀回功能", asset.includes('secret.value="";token.value=""') && asset.includes("儲存後無法再次查看"));
+check("Webhook URL 使用 webhookKey 且顯示有效 webhook 時間", asset.includes("/api/line/webhooks/${binding.webhookKey}") && asset.includes("最近收到有效 Webhook"));
 check("既有旅宿核准有獨立預覽且清楚標示尚未核准", asset.includes("renderExistingApprovalPreview") && asset.includes("尚未核准"));
 check("預覽列出目標 property、將更新與不更新資料", asset.includes("目標 property") && asset.includes("將更新的資料") && asset.includes("不會更新的資料"));
 check("預覽列出 room 與 bundle mapping 結果", asset.includes("房型對應結果") && asset.includes("方案對應結果"));

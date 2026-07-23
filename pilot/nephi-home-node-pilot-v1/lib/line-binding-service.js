@@ -42,7 +42,8 @@ function safeStatus(row) {
     webhookKey: row.webhookKey,
     enabled: Boolean(row.enabled),
     hasChannelSecret: Boolean(row.channelSecretEncrypted),
-    hasChannelAccessToken: Boolean(row.channelAccessTokenEncrypted)
+    hasChannelAccessToken: Boolean(row.channelAccessTokenEncrypted),
+    lastWebhookAt: row.lastWebhookAt || ""
   };
 }
 
@@ -64,11 +65,10 @@ function createLineBindingService({ provider, env = process.env } = {}) {
       const id = String(propertyId || "").trim();
       if (!id) throw new AppError(400, "PROPERTY_ID_REQUIRED", "propertyId is required");
       const current = provider.getLineBindingByPropertyId(id);
-      const channelSecret = Object.hasOwn(input, "channelSecret") ? requiredCredential(input.channelSecret, "LINE_CHANNEL_SECRET_REQUIRED") : null;
-      const channelAccessToken = Object.hasOwn(input, "channelAccessToken") ? requiredCredential(input.channelAccessToken, "LINE_CHANNEL_ACCESS_TOKEN_REQUIRED") : null;
+      const channelSecret = String(input.channelSecret || "").trim() || null;
+      const channelAccessToken = String(input.channelAccessToken || "").trim() || null;
       if (!current && (!channelSecret || !channelAccessToken)) throw new AppError(400, "LINE_CREDENTIALS_REQUIRED", "Both LINE Channel Secret and Channel Access Token are required");
-      if ((channelSecret || channelAccessToken) && !(channelSecret && channelAccessToken)) throw new AppError(400, "LINE_CREDENTIAL_PAIR_REQUIRED", "LINE credentials must be updated together");
-      const encryption = requireKey();
+      const encryption = channelSecret || channelAccessToken || !current ? requireKey() : null;
       const row = {
         propertyId: id,
         webhookKey: current && current.webhookKey || crypto.randomBytes(32).toString("base64url"),
@@ -80,9 +80,12 @@ function createLineBindingService({ provider, env = process.env } = {}) {
     },
     status(propertyId) { return safeStatus(provider.getLineBindingByPropertyId(String(propertyId || "").trim())); },
     setEnabled(propertyId, enabled) {
+      const current = provider.getLineBindingByPropertyId(String(propertyId || "").trim());
+      if (enabled && (!current || !current.channelSecretEncrypted || !current.channelAccessTokenEncrypted)) throw new AppError(400, "LINE_CREDENTIALS_REQUIRED", "LINE credentials must be configured before enabling");
       requireKey();
       return safeStatus(provider.setLineBindingEnabled(String(propertyId || "").trim(), Boolean(enabled)));
     },
+    recordValidWebhook(propertyId) { return typeof provider.recordValidLineWebhook === "function" ? safeStatus(provider.recordValidLineWebhook(String(propertyId || "").trim())) : null; },
     resolve(webhookKey) {
       const row = provider.getLineBindingByWebhookKey(String(webhookKey || "").trim());
       if (!row || !row.enabled) return null;
