@@ -2,8 +2,10 @@
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
+const { createApp } = require("../server");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
 const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
@@ -265,6 +267,26 @@ async function main() {
   const runtime = fs.readFileSync(path.resolve(__dirname, "../server.js"), "utf8").split("/* legacy runtime kept below")[0];
   assert.equal((runtime.match(/result\.finalDecision/g) || []).length >= 2, true);
   assert.doesNotMatch(runtime, /if\s*\(\s*!result\.shouldReply\s*\|\|\s*!result\.replyText/, "registered V2 transports must not decide from a legacy boolean");
+
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "final-decision-health-"));
+  const app = createApp({
+    dataFile: path.join(temp, "store.json"),
+    seedFile: path.resolve(__dirname, "../fixtures/seed.json"),
+    deploymentCommit: "0123456789abcdef",
+    adminAuthRequired: false
+  });
+  const running = await app.start(0, "127.0.0.1");
+  try {
+    const response = await fetch(`${running.url}/api/health`);
+    const health = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(health.data.status, "ready");
+    assert.equal(health.data.testOnly, true);
+    assert.equal(health.data.commit, "0123456789abcdef");
+  } finally {
+    await app.stop();
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
 
   console.log("final decision contract: PASS");
 }

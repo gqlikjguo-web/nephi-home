@@ -268,13 +268,15 @@ function createRequestHandler(service, options = {}) {
   const onboarding = options.onboarding;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
   const publicBrand = options.publicBrand || createPublicBrand();
+  const deploymentCommitCandidate = String(options.deploymentCommit || "").trim();
+  const deploymentCommit = /^[0-9a-f]{7,64}$/i.test(deploymentCommitCandidate) ? deploymentCommitCandidate : "";
   return async function handleRequest(request, response) {
     const url = new URL(request.url, "http://127.0.0.1");
     const pathname = url.pathname;
 
     try {
       if (request.method === "GET" && pathname === "/api/health") {
-        return sendData(response, { status: "ready", testOnly: true });
+        return sendData(response, { status: "ready", testOnly: true, commit: deploymentCommit });
       }
       if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
       if (request.method === "POST" && pathname === TEST_LINE_WEBHOOK_ROUTE) {
@@ -659,7 +661,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
+  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, deploymentCommit: options.deploymentCommit || process.env.RENDER_GIT_COMMIT }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host })); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
   /* legacy runtime kept below temporarily unreachable during source migration */ {
   const structuredClassifier = Object.hasOwn(options, "structuredClassifier")
