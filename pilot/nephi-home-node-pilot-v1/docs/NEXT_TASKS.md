@@ -39,7 +39,6 @@
 
 ## 2026-07-23 dialogue-act／temporal 有限修正更新
 
-1. 部署已通過完整回歸的 dialogue-act semantic contract、canonical Temporal 與 stale-date Resolver gate 至 `nephi-home-node-pilot-test-only`。
-2. 確認 Live commit、health `200`、`status=ready`、`testOnly=true`。
-3. 由使用者以乾淨對話依序驗收一般社交訊息、相對日期、`7/25` 明確房況、房型 follow-up、訂房可行性與無法解析日期。
-4. 真實 LINE 驗收前不得宣稱第一版完成；正式 LINE、正式 credential、正式 webhook 與正式 Render service 維持不變。
+1. test-only 已部署核心修正 commit `34c5faa599fdfdac25a4320248e0963ef6b66d3e`，health 已確認 `200`／`ready`／`testOnly=true`。
+2. 由使用者以乾淨對話依序驗收一般社交訊息、相對日期、`7/25` 明確房況、房型 follow-up、訂房可行性與無法解析日期。
+3. 真實 LINE 驗收前不得宣稱第一版完成；正式 LINE、正式 credential、正式 webhook 與正式 Render service 維持不變。

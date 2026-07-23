@@ -84,4 +84,5 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - acknowledgement 與 task／`shouldIgnore` 的矛盾已由 semantic contract 收斂；無可信 substantive task 時不再進 Executor，同句有效住宿問題仍保留。
 - Temporal 已將 Planner `kind` 降為候選，建立 absent／resolved／unresolved 的 canonical 日期意圖；明確日期嘗試解析失敗時，state reducer 清除舊 stay 日期且 Resolver gate 不建立預設日期範圍。
 - 使用 production Planner output shape 的完整鏈回歸已涵蓋錯標相對日期、舊日期污染、合法房型 follow-up、相對日期與訂房可行性；完整 `npm test` 自然 exit 0。
-- 第一版仍未完成；下一步是 test-only 部署後由使用者執行最後一次真實 LINE 驗收，正式環境維持未授權。
+- 核心修正 commit `34c5faa599fdfdac25a4320248e0963ef6b66d3e` 已部署至 test-only，health 為 HTTP 200／`ready`／`testOnly=true`。
+- 第一版仍未完成；下一步由使用者執行最後一次真實 LINE 驗收，正式環境維持未授權。
