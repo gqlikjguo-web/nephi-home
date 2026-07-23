@@ -43,6 +43,9 @@
 - handoff、review、Unknown、房況不可靠與房型無法解析的對客文案必須由 deterministic 安全邊界產生，不得由模型自由改寫。
 - 最終回覆不得包含無意義的標點／表情殘片，亦不得加入 Response Plan `allowedFacts` 以外的技術、身分、設備、政策或其他事實。
 - Controlled Composer 任一驗證失敗時必須完整退回 deterministic 回覆，不得把部分污染內容送至 LINE。
+- Engine 的結構化 `finalDecision` 是 V2 唯一使用者可見行為來源，且只允許 `reply`、`clarification`、`human_handoff`、`no_reply`。
+- `no_reply` 不得建立 Response Plan、呼叫 Composer或送出 LINE；Response Plan 與 Composer 均不得從 task status、coverage gap、空內容或生成失敗另行推導行為。
+- clarification 只能使用 Engine 核准的缺少欄位，human handoff 只能使用 Engine 核准的原因，reply 只能使用 Engine 核准的正式 facts。
 
 ## Property 與安全隔離
 

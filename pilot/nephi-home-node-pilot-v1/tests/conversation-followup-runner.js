@@ -59,7 +59,7 @@ async function runFollowUp({ id, propertyId = "property_alpha", first, followUp,
   const propertyReads = [];
   const plans = new Map([
     [first.message, plan({ relation: "new_request", type: first.type, category: first.category, sourceText: first.message, topic: first.topic })],
-    [followUp.message, plan({ relation: followUp.relation || "continue", type: followUp.type, category: followUp.category, sourceText: followUp.message, topic: followUp.topic || null, detailIntent: followUp.detailIntent, eligibilityEvidence: followUp.eligibilityEvidence })]
+    [followUp.message, plan({ relation: followUp.relation || "continue", type: followUp.type, category: followUp.category, sourceText: followUp.message, topic: followUp.topic === undefined ? first.topic : followUp.topic, detailIntent: followUp.detailIntent, eligibilityEvidence: followUp.eligibilityEvidence })]
   ]);
   const { engine, memory } = createEngine({ plans, properties, propertyReads });
   const input = (eventId, messageText) => ({ customerId: propertyId, channelId: id, lineUserId: "guest", eventId, eventTimestamp: 1, messageText });

@@ -65,3 +65,9 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - 重要 bug 與可重複避免的事件更新 `LESSONS_LEARNED.md`。
 - 核心能力或安全邊界的重要 commit 以一句摘要更新 `CHANGELOG_INTERNAL.md`。
 - 每次正式驗收或優先順序改變，同步更新本文件與 `NEXT_TASKS.md`。
+
+## 2026-07-23 V2 final decision 收斂狀態
+
+- Engine 已成為 V2 唯一 `finalDecision` 擁有者；Response Plan、Controlled Composer 與兩條已註冊 LINE transport 的競爭決策能力已移除。
+- pending 與 follow-up 不再改寫本輪 Planner task；測試中的 follow-up context 必須由 Planner 輸出明確 candidate，不再依賴 state 覆寫。
+- 完整 `npm test` 已自然 exit 0；下一步只剩 test-only 部署驗證與真實 LINE 人工驗收，正式環境仍未授權。

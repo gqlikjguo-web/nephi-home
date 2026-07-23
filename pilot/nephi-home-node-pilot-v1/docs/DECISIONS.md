@@ -81,3 +81,11 @@
 **理由：** query string、request body 與 LINE destination 在驗簽前都不是可信 property 身分。service-wide credential 也無法在同一 service 中安全隔離多個 Channel。
 
 **長期後果：** 新業者不需要獨立 Render service；credential 必須以環境金鑰加密後 property-scoped 保存，管理 API 不得回傳明文或密文。legacy test-only route 僅保留既有尼腓相容性，不得供新業者使用。
+
+## D-011：Engine 是 V2 唯一 final decision 擁有者
+
+**決策：** V2 Engine 必須明確產生 `reply`、`clarification`、`human_handoff` 或 `no_reply` 其中一種結構化 `finalDecision`。Response Plan 只能整理 Engine 核准的 task results、facts、clarification fields 與 handoff reason；Controlled Composer 只能表達這些核准內容；LINE transport 只執行 `finalDecision`。
+
+**理由：** task status、coverage gap、空 section、Composer failure 或 transport exception 若各自能改變旅客結果，會形成互相競爭的決策出口，讓 pending、Unknown 與安全 fallback 的行為無法追溯。
+
+**長期後果：** `no_reply` 不建立 Response Plan、不呼叫 Composer且不送 LINE；Response Plan 不得合成缺漏 task 或升級 fallback；Composer 不得自行追問、轉真人或產生全域 fallback；Composer 失敗只由 Engine 決定是否採用已核准的 deterministic 表達。新能力不得新增平行 Decision 層。

@@ -54,3 +54,7 @@
 ## 2026-07-23 — Property-scoped multi-Channel LINE binding
 
 - Added one shared multi-tenant LINE webhook transport backed by encrypted property bindings, while preserving the existing test-only legacy route and the single V2 composition root.
+
+## 2026-07-23 — V2 final decision ownership
+
+- Made Engine `finalDecision` the sole production decision boundary; Response Plan, Controlled Composer, coordinator, and both registered V2 LINE transports can no longer create or infer competing traveler-visible outcomes.

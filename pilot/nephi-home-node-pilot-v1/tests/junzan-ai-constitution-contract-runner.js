@@ -8,8 +8,11 @@ const composer = fs.readFileSync(path.resolve(__dirname, "../lib/conversation-en
 assert.match(engine, /executeTasks\(/);
 assert.match(engine, /buildResponsePlan\(/);
 assert.match(engine, /validateClaims\(/);
+assert.match(engine, /createFinalDecision\(/);
 assert.match(executor, /availabilityResolver/);
 assert.match(executor, /availableDatesResolver/);
-assert.match(composer, /needs_human/);
+assert.match(composer, /finalDecision/);
+assert.match(composer, /responseMode/);
+assert.doesNotMatch(composer, /needs_human|needs_clarification|property_data_missing|section\.status/);
 assert.doesNotMatch(engine, /nephi_home|room_301|room_302/);
-console.log(JSON.stringify({ caseCount: 7, passCount: 7, failCount: 0 }));
+console.log(JSON.stringify({ caseCount: 10, passCount: 10, failCount: 0 }));

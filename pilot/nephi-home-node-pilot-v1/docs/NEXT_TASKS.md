@@ -23,3 +23,9 @@
 - test-only 驗收未完成前，不得宣稱第一版完成。
 - 未建立回退點前，不得切正式 LINE。
 - 未經使用者明確授權，不得修改正式 LINE、Render、環境變數、資料庫、Secret 或 Token。
+
+## 2026-07-23 更新
+
+1. 將已通過完整自動回歸的 V2 final-decision 收斂部署至 `nephi-home-node-pilot-test-only`。
+2. 確認 test-only Live commit、health `200`、`status=ready`、`testOnly=true`。
+3. 由使用者在 test-only 真實 LINE 驗收 acknowledgement、pending 補值、Unknown、同句多問題與 property-scoped 雙 Channel；正式環境維持不變。
