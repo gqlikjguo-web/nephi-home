@@ -5,7 +5,7 @@ const crypto = require("node:crypto");
 const { validatePlannerOutput, applyPlannerSemanticContract, normalizeEligibilityEvidence } = require("./planner-schema");
 const { normalizeDetailIntent } = require("./detail-intent");
 const { buildPropertyCatalog } = require("./property-catalog");
-const { resolveTemporalExpression, inferExplicitTemporalExpression } = require("./temporal-resolver");
+const { resolveTemporalExpression, inferExplicitTemporalExpression, canonicalizeTemporalInput } = require("./temporal-resolver");
 const { migrateStateV2, reduceConversationState } = require("./state-reducer");
 const { executeTasks, isGenericAvailabilityEntity } = require("./capability-executor");
 const { buildResponsePlan } = require("./response-planner");
@@ -53,13 +53,13 @@ function plannerValidationTrace(plannerOutput, validation) {
     finalTasks: []
   };
 }
-function applyAvailableDatesDefaults(plannerOutput, { messageText, eventTimestamp, timezone } = {}) {
+function applyAvailableDatesDefaults(plannerOutput, { messageText, eventTimestamp, timezone, allowDefaultSearchRange = true } = {}) {
   const output = { ...plannerOutput, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, entity: task.entity ? { ...task.entity } : task.entity })) };
   const availableDatesRequested = output.tasks.some((task) => task.type === "available_dates");
   const genericAvailability = output.tasks.some((task) => isGenericAvailabilityEntity(task));
   const genericAvailableDates = output.tasks.some((task) => task.type === "available_dates" && isGenericAvailabilityEntity(task));
   const freshAvailabilityRequest = availableDatesRequested || (genericAvailability && ["new_request", "new_topic"].includes(output.discourse && output.discourse.relation));
-  if (availableDatesRequested && !output.searchRange) {
+  if (availableDatesRequested && !output.searchRange && allowDefaultSearchRange) {
     const dateFrom = dateKeyAt(eventTimestamp, timezone || "Asia/Taipei");
     output.tasks = output.tasks.map((task) => {
       if (task.type !== "available_dates" || !isGenericAvailabilityEntity(task)) return task;
@@ -113,6 +113,7 @@ function normalizedPlannerStay(plannerOutput, messageText) {
     if (inferred) stay.dateExpression = inferred;
   }
 
+  stay.canonicalTemporal = canonicalizeTemporalInput(stay);
   return stay;
 }
 
@@ -337,6 +338,7 @@ class ConversationEngineV2 {
     const temporal = resolveTemporalExpression(plannerStay.dateExpression, {
       eventTimestamp: input.eventTimestamp,
       timezone: catalog.timezone,
+      canonicalTemporal: plannerStay.canonicalTemporal,
       checkInCandidate: plannerStay.checkInCandidate,
       checkOutCandidate: plannerStay.checkOutCandidate,
       nightsCandidate: plannerStay.nightsCandidate,
@@ -364,6 +366,7 @@ class ConversationEngineV2 {
       output: {
         resolutionStatus: temporal.resolutionStatus,
         ambiguity: temporal.ambiguity || null,
+        dateIntentStatus: temporal.dateIntentStatus,
         checkIn: temporal.checkIn || null,
         checkOut: temporal.checkOut || null,
         nights: temporal.nights || null,
@@ -420,7 +423,8 @@ class ConversationEngineV2 {
     executionPlannerOutput = applyAvailableDatesDefaults(executionPlannerOutput, {
       messageText: input.messageText,
       eventTimestamp: input.eventTimestamp,
-      timezone: catalog.timezone
+      timezone: catalog.timezone,
+      allowDefaultSearchRange: temporal.dateIntentStatus !== "unresolved"
     });
 
     if (pendingMerge.resumed) {
@@ -439,7 +443,11 @@ class ConversationEngineV2 {
       operations.push({ field: "stay.searchRange", operation: previous.conditions.stay.searchRange ? "replace" : "set", value: executionPlannerOutput.searchRange, sourceText: "" });
     }
     operations.push(...derivedStayOperations(previous.conditions, operations));
-    const state = reduceConversationState(previous, { ...executionPlannerOutput, stateOperations: operations }, scope);
+    const state = reduceConversationState(previous, {
+      ...executionPlannerOutput,
+      stateOperations: operations,
+      currentTurnDateIntent: temporal.dateIntentStatus
+    }, scope);
     this.trace(traceId, "state", { discourse: plannerOutput.discourse, operations: operations.map((item) => ({ field: item.field, operation: item.operation })), conditions: state.conditions, ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {}) });
     this.trace(traceId, "entity_resolution", { tasks: executionTasks.map((task) => { const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : { status: "not_requested" }; return this.diagnosticDetail ? { taskId: task.taskId, resolved } : { taskId: task.taskId, status: resolved.status, canonicalId: resolved.entity && resolved.entity.canonicalId || null, candidateCount: resolved.candidates && resolved.candidates.length || 0 }; }) });
     const resolverCalls = [];

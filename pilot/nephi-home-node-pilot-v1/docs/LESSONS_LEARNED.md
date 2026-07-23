@@ -62,3 +62,10 @@ A webhook URL parameter or unverified payload cannot establish tenant identity. 
 - Pending arbitration performed before Temporal resolution can discard a valid date, duration, guest count, or room preference without ever testing it against the missing-field contract.
 - Regression tests must reproduce the real failure shape: a conflicting candidate task and `new_request` relation plus a valid canonical slot, then prove the original capability reaches the Resolver.
 - Safe diagnostics should expose date-expression shape, Temporal candidates/results, accepted or rejected canonical fields, and reason codes without logging raw guest messages or credentials.
+
+## 2026-07-23 — Cross-field contradictions must fail before state reuse
+
+- Structural schema validity does not make `relation`、task type、`shouldIgnore` or temporal `kind` mutually consistent.
+- A dialogue act is substantive only when its task is a real hospitality capability or is grounded in the selected property's catalog; otherwise acknowledgement must not reach the Executor.
+- Date intent and date resolution are separate facts. When a guest clearly attempts a date but canonical resolution fails, retaining the previous stay date silently turns an invalid current request into a valid-looking Resolver query.
+- Deterministic regressions must use real production Planner output shapes and traverse semantic validation, Temporal, state reduction, Resolver gating and Engine `finalDecision`; isolated Temporal tests cannot prove stale-state safety.

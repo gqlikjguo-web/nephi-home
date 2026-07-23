@@ -78,3 +78,10 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - 新順序為 Planner／semantic contract → Temporal／canonical slots → pending arbitration → merge／missing fields recomputation → Engine finalDecision → Resolver／Composer／LINE。
 - 單一日期、晚數、人數與房型共用同一 missing-field matching 契約；明確日期範圍搜尋與完整新需求仍可取代 pending。
 - 新增 production HTTP route 黑箱回歸與安全日期診斷；完整 `npm test` 已自然 exit 0。下一步是 test-only 部署後由使用者重測原真實訊息順序。
+
+## 2026-07-23 dialogue-act／temporal 最終有限修正狀態
+
+- acknowledgement 與 task／`shouldIgnore` 的矛盾已由 semantic contract 收斂；無可信 substantive task 時不再進 Executor，同句有效住宿問題仍保留。
+- Temporal 已將 Planner `kind` 降為候選，建立 absent／resolved／unresolved 的 canonical 日期意圖；明確日期嘗試解析失敗時，state reducer 清除舊 stay 日期且 Resolver gate 不建立預設日期範圍。
+- 使用 production Planner output shape 的完整鏈回歸已涵蓋錯標相對日期、舊日期污染、合法房型 follow-up、相對日期與訂房可行性；完整 `npm test` 自然 exit 0。
+- 第一版仍未完成；下一步是 test-only 部署後由使用者執行最後一次真實 LINE 驗收，正式環境維持未授權。

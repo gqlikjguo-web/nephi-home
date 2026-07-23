@@ -9,6 +9,7 @@ const ANCHORS = new Set(["message_time", "previous_check_in", "previous_check_ou
 const ELIGIBILITY_EVIDENCE_KINDS = new Set(["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
 const { DETAIL_INTENTS } = require("./detail-intent");
 const { resolveEntity } = require("./entity-resolver");
+const { canonicalizeTemporalInput } = require("./temporal-resolver");
 const PLANNER_OPERATION_PATHS = new Set([
   "*",
   "stay.dateExpression.rawText",
@@ -42,6 +43,29 @@ function controlledRequestedOutputs(task) {
   if (["amenity", "policy", "property_fact"].includes(task.type)) return [task.detailIntent === "general" ? "answer" : task.detailIntent];
   return task.requestedOutputs;
 }
+function isCredibleSubstantiveTask(task, catalog) {
+  if (!task || task.type === "unknown") return false;
+  if (!["amenity", "policy", "property_fact"].includes(task.type)) return true;
+  if (!catalog || !task.entity) return false;
+  const resolved = resolveEntity(catalog, task.entity);
+  return ["resolved", "matched_set"].includes(resolved.status);
+}
+function unknownTaskFrom(task) {
+  return {
+    ...task,
+    type: "unknown",
+    detailIntent: "general",
+    requestedOutputs: ["answer"],
+    eligibilityEvidence: { kind: "none", sourceText: "" },
+    dependsOnStayContext: false,
+    entity: {
+      ...(task.entity || {}),
+      category: "other",
+      rawText: String(task.entity && task.entity.rawText || task.sourceText || "").slice(0, 200),
+      canonicalCandidate: null
+    }
+  };
+}
 
 function validatePlannerOutput(value) {
   const errors = [];
@@ -72,6 +96,7 @@ function validatePlannerOutput(value) {
 
 function applyPlannerSemanticContract(value, { catalog } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tasks)) return value;
+  const canonicalTemporal = canonicalizeTemporalInput(value.stay);
   const acceptedTasks = [], repairedTasks = [], rejectedTasks = [];
   const tasks = value.tasks.map((original, index) => {
     let task = { ...original, eligibilityEvidence: normalizeEligibilityEvidence(original && original.eligibilityEvidence), entity: original && original.entity ? { ...original.entity } : original && original.entity };
@@ -106,7 +131,30 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
     if (!repairedTasks.some((item) => item.index === index) && !rejectedTasks.some((item) => item.index === index)) acceptedTasks.push({ taskId: task.taskId, index });
     return task;
   });
-  return { ...value, tasks, semanticValidation: { acceptedTasks, repairedTasks, rejectedTasks } };
+  let finalTasks = tasks;
+  let shouldIgnore = value.shouldIgnore;
+  const acknowledgement = value.discourse && value.discourse.relation === "acknowledgement";
+  let dialogueAct = { relation: value.discourse && value.discourse.relation || "", outcome: "unchanged" };
+  if (acknowledgement) {
+    const substantiveTasks = tasks.filter((task) => isCredibleSubstantiveTask(task, catalog));
+    if (substantiveTasks.length) {
+      finalTasks = substantiveTasks;
+      shouldIgnore = false;
+      dialogueAct = { relation: "acknowledgement", outcome: "substantive_tasks_preserved" };
+    } else {
+      finalTasks = [unknownTaskFrom(tasks[0])];
+      shouldIgnore = true;
+      dialogueAct = { relation: "acknowledgement", outcome: "non_substantive_no_reply" };
+    }
+  }
+  return {
+    ...value,
+    stay: { ...value.stay, canonicalTemporal },
+    tasks: finalTasks,
+    shouldIgnore,
+    needsHuman: acknowledgement && shouldIgnore ? false : value.needsHuman,
+    semanticValidation: { acceptedTasks, repairedTasks, rejectedTasks, dialogueAct, temporal: canonicalTemporal }
+  };
 }
 
 function plannerJsonSchema() {

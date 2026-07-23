@@ -28,6 +28,12 @@ function reduceConversationState(previous, planner, scope) {
   let state = migrateStateV2(previous, scope);
   if (planner.discourse && (planner.discourse.relation === "new_topic" || planner.discourse.relation === "new_request") && planner.stateOperations.some((item) => item.field === "*" && item.operation === "clear")) state.conditions = blankConditions();
   const transition = { set: [], replaced: [], cleared: [], kept: [], sourceEventId: scope.eventId || "" };
+  if (planner.currentTurnDateIntent === "unresolved") {
+    for (const field of ["stay.checkIn", "stay.checkOut", "stay.searchRange"]) {
+      setPath(state.conditions, field, null);
+      transition.cleared.push(field);
+    }
+  }
   for (const item of planner.stateOperations || []) {
     if (!PATHS.has(item.field)) continue;
     if (item.operation === "clear") { setPath(state.conditions, item.field, item.field === "inventory.features" ? [] : null); transition.cleared.push(item.field); }

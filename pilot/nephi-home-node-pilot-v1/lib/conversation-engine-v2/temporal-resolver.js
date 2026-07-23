@@ -10,6 +10,41 @@ function inferExplicitTemporalExpression(text) {
   const match = String(text || "").normalize("NFKC").match(/(?:\b\d{4}\s*[/-]\s*)?\b\d{1,2}\s*[/-]\s*\d{1,2}\b/);
   return match ? { rawText: match[0].replace(/\s+/g, ""), kind: "absolute", anchor: "message_time" } : null;
 }
+function relativeOffsetDays(rawText) {
+  const raw = String(rawText || "").normalize("NFKC").replace(/\s+/g, "");
+  if (!raw) return null;
+  if (raw.includes("大後天")) return 3;
+  if (raw.includes("後天")) return 2;
+  if (raw.includes("明")) return 1;
+  return 0;
+}
+function hasAbsoluteDateSyntax(rawText) {
+  const raw = String(rawText || "").normalize("NFKC").replace(/\s+/g, "");
+  return /^(?:\d{4}\s*(?:年|[-/])\s*)?\d{1,2}\s*(?:月|[-/])\s*\d{1,2}\s*(?:日|號)?$/u.test(raw);
+}
+function canonicalizeTemporalInput(stay = {}) {
+  const expression = stay.dateExpression || {};
+  const rawText = String(expression.rawText || "").normalize("NFKC").replace(/\s+/g, "");
+  const kind = String(expression.kind || "none");
+  const hasCandidate = Boolean(stay.checkInCandidate || stay.checkOutCandidate);
+  const intent = Boolean(rawText || kind !== "none" || hasCandidate) ? "present" : "absent";
+  if (intent === "absent") return { intent, status: "absent", valueType: "none", value: null, reasonCode: "date_intent_absent" };
+  if (kind === "relative") {
+    const offset = expression.anchor === "message_time" ? relativeOffsetDays(rawText) : null;
+    return Number.isInteger(offset)
+      ? { intent, status: "candidate", valueType: "relative_offset", value: offset, reasonCode: "relative_offset_candidate" }
+      : { intent, status: "ambiguous", valueType: "relative_offset", value: null, reasonCode: "relative_offset_missing" };
+  }
+  if (kind === "absolute") {
+    return hasAbsoluteDateSyntax(rawText)
+      ? { intent, status: "candidate", valueType: "absolute_expression", value: rawText, reasonCode: "absolute_expression_candidate" }
+      : { intent, status: "ambiguous", valueType: "absolute_expression", value: null, reasonCode: "absolute_candidate_missing" };
+  }
+  if (kind === "none") {
+    return { intent, status: "ambiguous", valueType: "none", value: null, reasonCode: hasCandidate ? "candidate_without_expression" : "date_kind_missing" };
+  }
+  return { intent, status: "candidate", valueType: `${kind}_expression`, value: rawText, reasonCode: `${kind}_expression_candidate` };
+}
 function absoluteDateFromRaw(raw, base) {
   const explicitYear = raw.match(/^(\d{4})\s*(?:年|[-/])\s*(\d{1,2})\s*(?:月|[-/])\s*(\d{1,2})\s*(?:日|號)?$/u);
   const yearless = explicitYear ? null : raw.match(/^(\d{1,2})\s*(?:月|[-/])\s*(\d{1,2})\s*(?:日|號)?$/u);
@@ -37,21 +72,42 @@ function resolveTemporalExpression(expression = {}, context = {}) {
   const timestamp = Number(context.eventTimestamp) || Date.parse(context.eventTimestamp || "") || Date.now();
   const base = partsAt(timestamp, timezone).key;
   const raw = String(expression.rawText || "").normalize("NFKC").replace(/\s+/g, "");
+  const canonicalTemporal = context.canonicalTemporal || canonicalizeTemporalInput({
+    dateExpression: expression,
+    checkInCandidate: context.checkInCandidate,
+    checkOutCandidate: context.checkOutCandidate
+  });
+  if (canonicalTemporal.status === "ambiguous" || canonicalTemporal.status === "invalid") {
+    return {
+      checkIn: null,
+      checkOut: null,
+      nights: Number.isInteger(context.nightsCandidate) ? context.nightsCandidate : null,
+      searchRange: null,
+      timezone,
+      resolutionStatus: canonicalTemporal.status,
+      ambiguity: canonicalTemporal.reasonCode,
+      originalExpression: raw,
+      dateIntentStatus: "unresolved",
+      canonicalTemporal
+    };
+  }
   const deterministicAbsolute = absoluteDateFromRaw(raw, base);
-  let checkIn = deterministicAbsolute || context.checkInCandidate || null;
+  let checkIn = deterministicAbsolute || (expression.kind === "range" && valid(context.checkInCandidate) ? context.checkInCandidate : null);
   let searchRange = null;
   const absolute = raw.match(/^(?:(\d{4})[年\/-])?(\d{1,2})[月\/-](\d{1,2})日?$/u);
-  if (!valid(checkIn) && absolute) {
+  if (canonicalTemporal.valueType === "relative_offset" && Number.isInteger(canonicalTemporal.value)) {
+    checkIn = addDays(base, canonicalTemporal.value);
+  } else if (!valid(checkIn) && absolute) {
     let year = Number(absolute[1] || base.slice(0, 4));
     const candidate = `${year}-${String(absolute[2]).padStart(2, "0")}-${String(absolute[3]).padStart(2, "0")}`;
     if (!absolute[1] && valid(candidate) && candidate < base) year += 1;
     checkIn = `${year}-${String(absolute[2]).padStart(2, "0")}-${String(absolute[3]).padStart(2, "0")}`;
   } else if (expression.kind === "relative") {
-    const offset = raw.includes("大後天") ? 3 : raw.includes("後天") ? 2 : raw.includes("明") ? 1 : 0;
-    checkIn = addDays(base, offset);
+    const offset = relativeOffsetDays(raw);
+    checkIn = Number.isInteger(offset) ? addDays(base, offset) : null;
   } else if (expression.kind === "weekday") {
     const target = weekdayNumber(raw);
-    if (target === null) return { timezone, resolutionStatus: "ambiguous", ambiguity: "weekday_missing", originalExpression: raw };
+    if (target === null) return { timezone, resolutionStatus: "ambiguous", ambiguity: "weekday_missing", originalExpression: raw, dateIntentStatus: "unresolved", canonicalTemporal };
     const baseWeekday = partsAt(timestamp, timezone).weekday;
     const weeks = raw.includes("下下") ? 2 : raw.includes("下") ? 1 : 0;
     let delta;
@@ -86,12 +142,24 @@ function resolveTemporalExpression(expression = {}, context = {}) {
     if (raw.includes("隔天") || raw.includes("明天")) checkIn = valid(anchor) ? addDays(anchor, 1) : null;
     else checkIn = anchor || null;
   }
-  if (checkIn && !valid(checkIn)) return { timezone, resolutionStatus: "invalid", ambiguity: "invalid_date", originalExpression: raw };
-  if (checkIn && checkIn < base) return { timezone, resolutionStatus: "invalid", ambiguity: "past_date", originalExpression: raw };
+  if (checkIn && !valid(checkIn)) return { timezone, resolutionStatus: "invalid", ambiguity: "invalid_date", originalExpression: raw, dateIntentStatus: "unresolved", canonicalTemporal };
+  if (checkIn && checkIn < base) return { timezone, resolutionStatus: "invalid", ambiguity: "past_date", originalExpression: raw, dateIntentStatus: "unresolved", canonicalTemporal };
   const nights = Number.isInteger(context.nightsCandidate) ? context.nightsCandidate : Number.isInteger(context.defaultNights) ? context.defaultNights : null;
   const checkOut = valid(context.checkOutCandidate) ? context.checkOutCandidate : checkIn && nights ? addDays(checkIn, nights) : null;
-  if (checkIn && checkOut && checkOut <= checkIn) return { timezone, resolutionStatus: "invalid", ambiguity: "checkout_not_after_checkin", originalExpression: raw };
-  return { checkIn, checkOut, nights, searchRange, timezone, resolutionStatus: checkIn || searchRange ? "resolved" : "ambiguous", ambiguity: checkIn || searchRange ? null : "date_missing", originalExpression: raw };
+  if (checkIn && checkOut && checkOut <= checkIn) return { timezone, resolutionStatus: "invalid", ambiguity: "checkout_not_after_checkin", originalExpression: raw, dateIntentStatus: "unresolved", canonicalTemporal };
+  const resolutionStatus = checkIn || searchRange ? "resolved" : "ambiguous";
+  return {
+    checkIn,
+    checkOut,
+    nights,
+    searchRange,
+    timezone,
+    resolutionStatus,
+    ambiguity: resolutionStatus === "resolved" ? null : "date_missing",
+    originalExpression: raw,
+    dateIntentStatus: resolutionStatus === "resolved" ? "resolved" : canonicalTemporal.intent === "absent" ? "absent" : "unresolved",
+    canonicalTemporal
+  };
 }
 
-module.exports = { resolveTemporalExpression, inferExplicitTemporalExpression, addDays, valid };
+module.exports = { resolveTemporalExpression, inferExplicitTemporalExpression, canonicalizeTemporalInput, relativeOffsetDays, addDays, valid };

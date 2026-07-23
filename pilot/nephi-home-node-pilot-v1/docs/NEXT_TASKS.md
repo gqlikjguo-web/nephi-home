@@ -36,3 +36,10 @@
 2. 確認 Live commit、health `200`、`status=ready`、`testOnly=true`。
 3. 由使用者依序重測「房況缺日期 → 下一輪只補日期」，確認執行原 `availability`，不再進入預設 `available_dates` 範圍搜尋。
 4. 補測日期、晚數、人數、房型、acknowledgement 加有效問題，以及明確日期範圍搜尋；正式環境維持不變。
+
+## 2026-07-23 dialogue-act／temporal 有限修正更新
+
+1. 部署已通過完整回歸的 dialogue-act semantic contract、canonical Temporal 與 stale-date Resolver gate 至 `nephi-home-node-pilot-test-only`。
+2. 確認 Live commit、health `200`、`status=ready`、`testOnly=true`。
+3. 由使用者以乾淨對話依序驗收一般社交訊息、相對日期、`7/25` 明確房況、房型 follow-up、訂房可行性與無法解析日期。
+4. 真實 LINE 驗收前不得宣稱第一版完成；正式 LINE、正式 credential、正式 webhook 與正式 Render service 維持不變。

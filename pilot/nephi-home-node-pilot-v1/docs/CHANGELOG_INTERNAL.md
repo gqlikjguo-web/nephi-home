@@ -62,3 +62,7 @@
 ## 2026-07-23 — Canonical pending arbitration
 
 - Moved pending arbitration behind Temporal/canonical slot extraction, made Planner discourse non-authoritative, and unified date, nights, guests, and room-preference continuation before property-scoped Resolver execution.
+
+## 2026-07-23 — Dialogue-act and temporal state boundary
+
+- Added cross-field acknowledgement normalization, canonical temporal intent validation, and a current-turn state boundary that blocks unresolved date attempts from reusing an earlier stay date.

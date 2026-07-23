@@ -97,3 +97,11 @@
 **理由：** 真實 runtime 曾在 pending `availability` 缺 `stay.checkIn` 時，把下一輪日期候選分類成 `available_dates/new_request`；舊流程在 slot matching 前直接放棄 pending，造成有效日期完全未被檢查並錯誤執行 31 天日期搜尋。
 
 **長期後果：** 日期、晚數、人數與房型共用同一 canonical matching 契約；單一日期若能填入 pending `stay.checkIn`，不得只因候選 task 是 `available_dates` 而取代原 capability。只有明確日期範圍搜尋或其他完整新需求可取代 pending；無有效補值且無有效新需求時不得重播舊 clarification。
+
+## D-013：Dialogue act 與日期意圖必須先通過跨欄位 semantic contract
+
+**決策：** Planner 的 `discourse.relation`、task、`shouldIgnore` 與日期 `kind` 都只是彼此需要交叉驗證的候選。acknowledgement 沒有可由 property catalog 或住宿 capability 證實的 substantive task 時，不得進 Executor；日期則必須形成 canonical temporal input，並明確區分本輪無日期意圖、已解析及解析失敗。
+
+**理由：** 真實 Planner 曾把一般社交訊息同時標成 acknowledgement 與 `unknown`／`property_fact`，也曾把相對日期標為 `absolute` 且不提供 candidate。若 routing 信任任一單欄位，會把社交訊息錯誤轉真人，或在日期解析失敗後沿用舊 state 查詢錯誤日期。
+
+**長期後果：** 純 acknowledgement 由 Engine 形成安全 `no_reply`，同句有效住宿問題仍保留；Temporal 以 LINE event timestamp 與 property timezone 解析受驗證的 canonical input。任何明確日期嘗試若 unresolved，不得取得預設日期範圍、不得承接舊 stay 日期，也不得呼叫房況 Resolver；無日期意圖的合法 follow-up 才能沿用既有住宿日期。
