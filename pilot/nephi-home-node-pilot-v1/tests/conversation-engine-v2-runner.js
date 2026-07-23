@@ -10,6 +10,11 @@ const { executeTasks } = require("../lib/conversation-engine-v2/capability-execu
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
 const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
 const { validateClaims } = require("../lib/conversation-engine-v2/claim-validator");
+const { decideTaskResults } = require("../lib/conversation-engine-v2/engine");
+
+function buildApprovedPlan(options) {
+  return buildResponsePlan({ ...options, finalDecision: decideTaskResults(options.taskResults) });
+}
 
 function plan(overrides = {}) {
   return {
@@ -50,7 +55,7 @@ assert.equal(resolveEntity(catalog, { category: "room", rawText: "兩人房", ca
 assert.equal(resolveEntity(catalog, { category: "amenity", rawText: "卡拉 OK", canonicalCandidate: "ktv" }).entity.status, "confirmed_no");
 assert.equal(resolveEntity(catalog, { category: "amenity", rawText: "麻將", canonicalCandidate: "mahjong" }).status, "not_found");
 assert.deepEqual(
-  buildResponsePlan({ propertyId: property.propertyId, taskResults: [
+  buildApprovedPlan({ propertyId: property.propertyId, taskResults: [
     { taskId: "parking-first", type: "amenity", status: "answered", facts: { subject: "停車", status: "confirmed_yes", answer: "有停車位" } },
     { taskId: "availability-second", type: "availability", status: "answered", facts: { checkIn: "2026-08-06", availableInventory: [{ publicName: "森林雙人房" }] } }
   ] }).sections.map((section) => section.taskId),
@@ -152,7 +157,7 @@ assert.equal(availableDateResult.status, "answered");
 assert.deepEqual(availableDateResult.facts.availableDates, ["2026-08-06"]);
 assert.deepEqual(availableDateCalls, [{ customerId: "property_alpha", dateFrom: "2026-08-06", dateTo: "2026-08-08", nights: 1, guests: 2, roomType: "all", queryMode: "any" }]);
 
-const responsePlan = buildResponsePlan({ propertyId: "property_alpha", taskResults, reviewActions: [] });
+const responsePlan = buildApprovedPlan({ propertyId: "property_alpha", taskResults, reviewActions: [] });
 const reply = composeControlledReply(responsePlan);
 assert.ok(reply.includes("森林雙人房"));
 assert.ok(reply.includes("唱歌設備"));

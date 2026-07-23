@@ -28,7 +28,7 @@ function validateClaims(reply, plan, claimedTaskIds, composedSections = null) {
     }
   }
   const executionTypes = new Set(["availability", "available_dates", "room_options", "bundle_availability", "capacity", "price", "total_price"]);
-  const incompleteExecution = (plan.sections || []).some((section) => executionTypes.has(section.type) && section.status === "needs_clarification" && !(section.missingInputs || []).length);
+  const incompleteExecution = (plan.sections || []).some((section) => executionTypes.has(section.type) && section.responseMode === "clarification" && !(section.missingInputs || []).length);
   if (incompleteExecution) errors.push("incomplete_task_execution");
   return { ok: errors.length === 0, errors: [...new Set(errors)], coveredTaskIds: claimCoverage.coveredTaskIds, missingTaskIds: claimCoverage.missingTaskIds, unexpectedTaskIds: claimCoverage.unexpectedTaskIds };
 }

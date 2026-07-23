@@ -8,6 +8,11 @@ const { executeTasks } = require("../lib/conversation-engine-v2/capability-execu
 const { resolveTemporalExpression, inferExplicitTemporalExpression } = require("../lib/conversation-engine-v2/temporal-resolver");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
 const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
+const { decideTaskResults } = require("../lib/conversation-engine-v2/engine");
+
+function buildApprovedPlan(options) {
+  return buildResponsePlan({ ...options, finalDecision: decideTaskResults(options.taskResults) });
+}
 
 const eventTime = Date.parse("2026-07-17T10:00:00+08:00");
 const properties = [
@@ -40,7 +45,7 @@ const named = resolveEntity(alphaCatalog, { category: "room", rawText: "A4", can
 const house = resolveEntity(alphaCatalog, { category: "room", rawText: "House", canonicalCandidate: null }); assert.equal(house.entity.canonicalId, "a_house"); cases += 1;
 const recent = run(alpha, alphaCatalog, [{ taskId: "recent", type: "available_dates", entity: { category: "other", rawText: "", canonicalCandidate: null } }], { ...request, stay: { ...request.stay, searchRange: { from: "2026-07-18", to: "2026-07-20" } } })[0]; assert.equal(recent.status, "answered"); assert.equal(recent.facts.availableDates[0], "2026-07-18"); cases += 1;
 const multi = run(alpha, alphaCatalog, [{ taskId: "stay", type: "availability", entity: { category: "room", rawText: "Double", canonicalCandidate: null } }, { taskId: "parking", type: "amenity", entity: { category: "amenity", rawText: "parking", canonicalCandidate: "parking" } }, { taskId: "bbq", type: "policy", entity: { category: "policy", rawText: "bbq", canonicalCandidate: "bbq" } }, { taskId: "checkin", type: "policy", entity: { category: "policy", rawText: "checkin", canonicalCandidate: "check_in" } }, { taskId: "unknown", type: "amenity", entity: { category: "amenity", rawText: "unknown amenity", canonicalCandidate: null } }]);
-assert.deepEqual(multi.map((item) => item.status), ["answered", "answered", "answered", "answered", "needs_human"]); const reply = composeControlledReply(buildResponsePlan({ propertyId: alpha.propertyId, taskResults: multi })); for (const expected of ["A1", "A2", "Alpha parking.", "Alpha barbecue.", "Alpha check-in."]) assert.ok(reply.includes(expected)); assert.ok(reply.includes("unknown amenity")); cases += 1;
+assert.deepEqual(multi.map((item) => item.status), ["answered", "answered", "answered", "answered", "needs_human"]); const reply = composeControlledReply(buildApprovedPlan({ propertyId: alpha.propertyId, taskResults: multi })); for (const expected of ["A1", "A2", "Alpha parking.", "Alpha barbecue.", "Alpha check-in."]) assert.ok(reply.includes(expected)); assert.ok(reply.includes("unknown amenity")); cases += 1;
 const betaResult = run(properties[1], buildPropertyCatalog(properties[1]), [{ taskId: "pool", type: "amenity", entity: { category: "amenity", rawText: "pool", canonicalCandidate: "pool" } }, { taskId: "parking", type: "amenity", entity: { category: "amenity", rawText: "parking", canonicalCandidate: "parking" } }], { ...request, stay: { ...request.stay, checkIn: "2026-07-18", checkOut: "2026-07-19" } }); assert.deepEqual(betaResult.map((item) => item.facts.answer), ["Beta pool.", "Beta parking."]); cases += 1;
 const first = run(alpha, alphaCatalog, [{ taskId: "repeat", type: "availability", entity: { category: "other", rawText: "有房", canonicalCandidate: null } }])[0].facts.availableInventory.map((room) => room.canonicalId); for (let index = 0; index < 3; index += 1) assert.deepEqual(run(alpha, alphaCatalog, [{ taskId: `repeat-${index}`, type: "availability", entity: { category: "other", rawText: "有房", canonicalCandidate: null } }])[0].facts.availableInventory.map((room) => room.canonicalId), first); cases += 3;
 console.log(JSON.stringify({ suite: "v2-semantic-core-matrix", caseCount: cases, passCount: cases, failCount: 0 }));

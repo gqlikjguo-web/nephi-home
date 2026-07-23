@@ -3,6 +3,11 @@
 const assert = require("node:assert/strict");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
 const { composeControlledReply, mergeComposedSections } = require("../lib/conversation-engine-v2/controlled-composer");
+const { decideTaskResults } = require("../lib/conversation-engine-v2/engine");
+
+function buildApprovedPlan(options) {
+  return buildResponsePlan({ ...options, finalDecision: decideTaskResults(options.taskResults) });
+}
 
 const taskResults = [
   { taskId: "equipment", type: "amenity", status: "answered", facts: { subject: "設備", answer: "設備資訊" } },
@@ -12,7 +17,7 @@ const taskResults = [
   { taskId: "stay", type: "availability", status: "answered", facts: { subject: "住宿", answer: "住宿資訊" } }
 ];
 
-const plan = buildResponsePlan({
+const plan = buildApprovedPlan({
   propertyId: "property_alpha",
   taskResults,
   inputTaskIds: taskResults.map((item) => item.taskId),
@@ -56,7 +61,7 @@ const unnecessaryClarification = mergeComposedSections(plan, {
 assert.equal(unnecessaryClarification.ok, false);
 assert.ok(unnecessaryClarification.errors.includes("response_mode_mismatch"));
 
-const handoffPlan = buildResponsePlan({
+const handoffPlan = buildApprovedPlan({
   propertyId: "property_alpha",
   taskResults: [{ taskId: "handoff", type: "unknown", status: "needs_human", facts: {}, review: true }],
   inputTaskIds: ["handoff"],
@@ -72,7 +77,7 @@ for (const unsafeText of [":-(", ".", ".\"", ".NET開發者需要人工協助。
   assert.ok(rejected.errors.includes("handoff_deterministic_boundary"));
 }
 
-const groundedPlan = buildResponsePlan({
+const groundedPlan = buildApprovedPlan({
   propertyId: "property_alpha",
   taskResults: [{ taskId: "parking", type: "amenity", status: "answered", facts: { subject: "停車", answer: "民宿旁空地可停車。", source: "property_catalog", propertyId: "property_alpha" } }],
   inputTaskIds: ["parking"]
@@ -93,7 +98,7 @@ for (const taskResult of [
   { taskId: "unknown-inventory", type: "availability", status: "needs_human", reason: "inventory_entity_unknown", facts: { subject: "雙人房" }, review: true },
   { taskId: "unreliable-availability", type: "availability", status: "needs_human", reason: "availability_unreliable", facts: {}, review: true }
 ]) {
-  const safetyPlan = buildResponsePlan({ propertyId: "property_alpha", taskResults: [taskResult], inputTaskIds: [taskResult.taskId] });
+  const safetyPlan = buildApprovedPlan({ propertyId: "property_alpha", taskResults: [taskResult], inputTaskIds: [taskResult.taskId] });
   const safeReply = composeControlledReply(safetyPlan);
   assert.ok(safeReply.includes("需要請業者確認"));
   assert.equal(safeReply.includes("沒有空房"), false);

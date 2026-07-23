@@ -18,7 +18,8 @@ class ConversationEngineV2Coordinator {
     try {
       const result = await this.engine.process({ ...last, messageText: burst.messages.map((x) => x.messageText).join("\n"), currentMessages: burst.messages.map((x) => x.messageText), eventIds: burst.messages.map((x) => x.eventId) });
       burst.messages.forEach((x) => this.seenEvents.add(`${x.customerId}:${x.eventId}`));
-      burst.waiters.forEach(({ resolve }, index) => { const trailing = index === burst.waiters.length - 1; resolve(trailing ? { ...result, replyToken: this.externalReplyToken ? "" : String(last.replyToken || ""), shouldReply: Boolean(result.shouldReply && (this.externalReplyToken || last.replyToken)), noReply: !result.shouldReply } : { shouldReply: false, noReply: true, merged: true, replyToken: "" }); });
+      const engineShouldReply = Boolean(result.finalDecision && result.finalDecision.shouldReply);
+      burst.waiters.forEach(({ resolve }, index) => { const trailing = index === burst.waiters.length - 1; resolve(trailing ? { ...result, replyToken: this.externalReplyToken ? "" : String(last.replyToken || ""), shouldReply: Boolean(engineShouldReply && (this.externalReplyToken || last.replyToken)), noReply: !engineShouldReply } : { shouldReply: false, noReply: true, merged: true, replyToken: "" }); });
     } catch (error) { burst.waiters.forEach(({ reject }) => reject(error)); }
   }
 }

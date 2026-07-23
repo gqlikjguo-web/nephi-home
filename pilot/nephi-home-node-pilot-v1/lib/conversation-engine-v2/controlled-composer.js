@@ -3,14 +3,11 @@
 const { detailLabel } = require("./detail-intent");
 
 function money(value) { return new Intl.NumberFormat("zh-TW").format(value); }
-function composeSection(section) {
-  const facts = section.facts || {};
+function composeAnswer(facts) {
   if (facts.detailNeedsConfirmation) {
     const known = facts.answer ? `${facts.answer}\n` : "";
     return `${known}${detailLabel(facts.detailIntent)}目前沒有正式資料，需由業者依當日狀況確認。`;
   }
-  if (section.status === "needs_clarification") return section.question || "可以再補充一下嗎？";
-  if (["needs_human", "property_data_missing", "failed"].includes(section.status)) return facts.subject ? `${facts.subject}這部分需要請業者確認。` : "這部分需要請業者確認。";
   if (facts.availableInventory) return facts.availableInventory.length ? `${facts.checkIn} 入住可選：${facts.availableInventory.map((item) => item.publicName).join("、")}。` : `${facts.checkIn} 入住目前沒有符合條件的空房。`;
   if (facts.availableDates) return facts.availableDates.length ? `這段期間可查詢的日期有：${facts.availableDates.join("、")}。` : "這段期間目前沒有可售日期。";
   if (facts.prices) {
@@ -22,9 +19,22 @@ function composeSection(section) {
   if (facts.status === "confirmed_yes") return facts.answer || `${facts.subject}有提供。`;
   if (facts.status === "confirmed_no") return `${facts.subject}目前沒有提供。`;
   if (facts.answer) return facts.answer;
-  return "這部分需要請業者確認。";
+  return "";
 }
-function composeControlledReply(plan) { const reply = plan.sections.map(composeSection).filter(Boolean).join("\n"); return (reply || "這個問題需要請業者確認，我會為您轉交。").slice(0, plan.maxLength || 1200); }
+function composeSection(section) {
+  if (!section || !["answer", "clarification", "handoff"].includes(section.responseMode)) return "";
+  if (section.responseMode === "clarification") return String(section.question || "").trim();
+  if (section.responseMode === "handoff") {
+    if (!section.handoffReason) return "";
+    const subject = String(section.facts && section.facts.subject || "").trim();
+    return subject ? `${subject}這部分需要請業者確認。` : "這部分需要請業者確認。";
+  }
+  return composeAnswer(section.facts || {});
+}
+function composeControlledReply(plan) {
+  if (!plan || plan.ok !== true || !plan.finalDecision || plan.finalDecision.type === "no_reply") return "";
+  return (plan.sections || []).map(composeSection).filter(Boolean).join("\n").slice(0, plan.maxLength || 1200);
+}
 
 function normalizedMeaning(value) { return String(value || "").normalize("NFKC").toLocaleLowerCase("zh-TW").replace(/[^\p{L}\p{N}]+/gu, ""); }
 function meaningfulCharacterCount(value) { return (String(value || "").match(/[\p{L}\p{N}]/gu) || []).length; }
@@ -46,6 +56,9 @@ function validateComposedSection(section, text) {
 }
 
 function mergeComposedSections(plan, composed) {
+  if (!plan || plan.ok !== true || !plan.finalDecision || plan.finalDecision.type === "no_reply") {
+    return { ok: false, errors: ["response_plan_contract_invalid"], replyText: "", factTaskIds: [], sections: [], missingTaskIds: [] };
+  }
   const expected = (plan.sections || []).map((section) => section.taskId);
   const items = composed && Array.isArray(composed.sections) ? composed.sections : [];
   const occurrences = new Map();

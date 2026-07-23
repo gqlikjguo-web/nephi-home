@@ -2,13 +2,17 @@
 
 const assert = require("node:assert/strict");
 const { createMvpService } = require("../lib/mvp-service");
-const { normalizePlannerOutput } = require("../lib/conversation-engine-v2/engine");
+const { normalizePlannerOutput, decideTaskResults } = require("../lib/conversation-engine-v2/engine");
 const { availabilityRequest } = require("../lib/conversation-engine-v2/resolver-adapter");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { resolveEntity } = require("../lib/conversation-engine-v2/entity-resolver");
 const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
 const { executeTasks } = require("../lib/conversation-engine-v2/capability-executor");
+
+function buildApprovedPlan(options) {
+  return buildResponsePlan({ ...options, finalDecision: decideTaskResults(options.taskResults) });
+}
 
 const property = {
   propertyId: "regression_lodge",
@@ -112,7 +116,7 @@ assert.deepEqual(
   ["room_402"]
 );
 
-const reply = composeControlledReply(buildResponsePlan({ propertyId: property.propertyId, taskResults: [{ taskId: "double", type: "availability", status: "answered", facts: { checkIn: "2026-08-06", availableInventory: [{ publicName: "301" }, { publicName: "401" }] } }] }));
+const reply = composeControlledReply(buildApprovedPlan({ propertyId: property.propertyId, taskResults: [{ taskId: "double", type: "availability", status: "answered", facts: { checkIn: "2026-08-06", availableInventory: [{ publicName: "301" }, { publicName: "401" }] } }] }));
 assert.ok(reply.includes("301"));
 assert.ok(reply.includes("401"));
 assert.equal(reply.includes("402"), false);
@@ -132,7 +136,7 @@ const multiTaskResults = executeTasks({
 assert.deepEqual(multiTaskResults[0].facts.availableInventory.map((room) => room.canonicalId), ["room_301", "room_401"]);
 assert.equal(multiTaskResults[1].status, "answered");
 assert.equal(multiTaskResults[2].status, "answered");
-const multiReply = composeControlledReply(buildResponsePlan({ propertyId: property.propertyId, taskResults: multiTaskResults }));
+const multiReply = composeControlledReply(buildApprovedPlan({ propertyId: property.propertyId, taskResults: multiTaskResults }));
 assert.ok(multiReply.includes("301"));
 assert.ok(multiReply.includes("401"));
 assert.ok(multiReply.includes("Parking is available."));
