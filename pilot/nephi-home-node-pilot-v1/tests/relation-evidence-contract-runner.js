@@ -65,31 +65,52 @@ function snapshot() {
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
-async function processWithoutExplicitRelation(priorState) {
+function protectedState({ cycleStatus = "active", cycleExpiry = "2026-07-25T00:00:00.000Z", stateScope = scope } = {}) {
+  const state = emptyStateV2(stateScope);
+  state.conditions.stay = { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: 2, searchRange: null };
+  state.conditions.inventory = { mode: "room_only", entityId: "protected-room", features: [] };
+  state.conditions.topic = { capabilityType: "price", canonicalId: "protected-price", category: "price", detailIntent: "general", detailFields: [] };
+  state.contextCycle = { requestCycleId: "cycle-a", requestKind: "policy", status: cycleStatus, confirmedInputs: { checkIn: "2026-08-06", roomType: "protected-room", price: 9999 }, contextReuseExpiresAt: cycleExpiry };
+  return state;
+}
+
+async function processRejectedCase({ name, output, priorState = protectedState(), events = sourceEvents, expectedReason = "context_relation_invalid", expectedFallbackReason = expectedReason }) {
   let persisted = clone(priorState);
   const logs = [];
+  const diagnostics = [];
+  let resolverCalls = 0;
   const engine = new ConversationEngineV2({
-    planner: { classify: async () => plannerOutput() },
+    planner: { classify: async () => output },
     persistence: {
       getConversationState: () => clone(persisted),
       setConversationState: (_propertyId, _channelId, _userId, state) => { persisted = clone(state); },
       appendMessageLog: (_propertyId, item) => { logs.push(clone(item)); return { reviewId: `review-${logs.length}` }; }
     },
     getProperty: () => ({ propertyId: scope.propertyId, timezone: "Asia/Taipei", rooms: [], commonAnswers: { parkingRule: "Parking is available." } }),
-    availabilityResolver: () => ({ availabilityReliable: true, rooms: [] }),
+    availabilityResolver: () => { resolverCalls += 1; return { availabilityReliable: true, rooms: [] }; },
+    availableDatesResolver: () => { resolverCalls += 1; return { availabilityReliable: true, rooms: [] }; },
     listPriceOverrides: () => [],
-    now: () => new Date(scope.now)
+    now: () => new Date(scope.now),
+    onDiagnostic: (item) => diagnostics.push(item)
   });
   const result = await engine.process({
     customerId: scope.propertyId,
     channelId: scope.channelId,
     lineUserId: scope.lineUserId,
-    eventId: "event-a",
+    eventId: events[0].eventId,
     eventTimestamp: scope.now,
-    messageText: sourceEvents[0].messageText,
-    sourceEvents
+    messageText: events.map((event) => event.messageText).join("\n"),
+    sourceEvents: events
   });
-  return { result, persisted, logs };
+  assert.deepEqual(persisted, priorState, `${name}: rejected relation/evidence must not mutate persisted state`);
+  assert.equal(result.shouldReply, true, `${name}: formal safe degradation must remain delivery-ready`);
+  assert.ok(result.replyText.length > 0, `${name}: safe reply must be non-empty`);
+  for (const protectedFact of ["2026-08-06", "protected-room", "9999"]) assert.ok(!result.replyText.includes(protectedFact), `${name}: reply must not disclose unapproved fact ${protectedFact}`);
+  assert.equal(resolverCalls, 0, `${name}: rejected input must not call a Resolver`);
+  assert.ok(logs.length > 0 && logs.every((item) => item.processingStatus !== "processing_failed"), `${name}: safe degradation must not persist processing_failed`);
+  assert.equal(logs.at(-1).decisionReason, expectedReason, `${name}: rejection must persist the controlled safety outcome`);
+  assert.ok(diagnostics.some((item) => item.stage === "fallback" && item.reasonCode === expectedFallbackReason), `${name}: Engine must reach the formal safety fallback`);
+  return { result, persisted, logs, diagnostics, resolverCalls };
 }
 
 async function main() {
@@ -128,15 +149,34 @@ async function main() {
     assert.equal(rejected.ok, false, "ended, expired, or scope-mismatched snapshot cycles cannot be referenced");
   }
 
-  const before = emptyStateV2(scope);
-  before.conditions.stay.checkIn = "2026-08-06";
-  before.contextCycle = { requestCycleId: "cycle-a", requestKind: "policy", status: "active", confirmedInputs: {}, contextReuseExpiresAt: "2026-07-25T00:00:00.000Z" };
-  const unchanged = await processWithoutExplicitRelation(before);
-  assert.deepEqual(unchanged.persisted, before, "missing explicit relation must not mutate persisted state even with one snapshot cycle");
-  assert.equal(unchanged.result.shouldReply, true);
-  assert.ok(unchanged.result.replyText.length > 0, "missing explicit relation must produce a non-empty safe reply");
-  assert.ok(unchanged.logs.every((item) => item.processingStatus !== "processing_failed"), "contract failure must not be recorded as processing_failed");
-  assert.ok(unchanged.logs.every((item) => !String(item.replyText || "").includes("2026-08-06")), "safe fallback must not disclose unapproved state facts");
+  const continuingRelation = (overrides = {}) => plannerOutput({
+    contextRelationCandidates: [relation({ kind: "supplement_existing", refs: ["cycle-a"], ...overrides })]
+  });
+  const burstEvents = [
+    { eventId: "burst-a", messageRef: "message-burst-a", messageText: "Need" },
+    { eventId: "burst-b", messageRef: "message-burst-b", messageText: "Second" }
+  ];
+  const rejectionCases = [
+    { name: "missing explicit relation", output: plannerOutput(), expectedReason: "planner_invalid", expectedFallbackReason: "planner_schema_invalid" },
+    { name: "snapshot outside cycle", output: continuingRelation({ refs: ["cycle-outside"] }) },
+    { name: "ended cycle", output: continuingRelation(), priorState: protectedState({ cycleStatus: "ended" }) },
+    { name: "expired cycle", output: continuingRelation(), priorState: protectedState({ cycleExpiry: "2026-07-23T00:00:00.000Z" }) },
+    { name: "property scope mismatch", output: continuingRelation(), priorState: protectedState({ stateScope: { ...scope, propertyId: "other-property" } }) },
+    { name: "channel scope mismatch", output: continuingRelation(), priorState: protectedState({ stateScope: { ...scope, channelId: "other-channel" } }) },
+    { name: "user scope mismatch", output: continuingRelation(), priorState: protectedState({ stateScope: { ...scope, lineUserId: "other-user" } }) },
+    { name: "wrong eventId", output: continuingRelation({ evidenceRefs: [{ eventId: "event-missing", startOffset: 5, endOffset: 17, quote: "availability" }] }) },
+    { name: "wrong messageRef", output: continuingRelation({ evidenceRefs: [{ messageRef: "message-missing", startOffset: 5, endOffset: 17, quote: "availability" }] }) },
+    { name: "out of bounds offset", output: continuingRelation({ evidenceRefs: [{ eventId: "event-a", startOffset: 5, endOffset: 99, quote: "availability" }] }) },
+    { name: "inverted offset", output: continuingRelation({ evidenceRefs: [{ eventId: "event-a", startOffset: 17, endOffset: 5, quote: "" }] }) },
+    { name: "quote mismatch", output: continuingRelation({ evidenceRefs: [{ eventId: "event-a", startOffset: 5, endOffset: 17, quote: "different" }] }) },
+    { name: "unknown candidateIndex", output: plannerOutput({ contextRelationCandidates: [relation({ candidateIndex: 1, kind: "supplement_existing", refs: ["cycle-a"] })] }) },
+    { name: "duplicate candidateIndex", output: plannerOutput({ tasks: [task(0), task(1)], contextRelationCandidates: [relation({ candidateIndex: 0, kind: "supplement_existing", refs: ["cycle-a"] }), relation({ candidateIndex: 0, kind: "supplement_existing", refs: ["cycle-a"] })] }) },
+    { name: "burst wrong source", output: continuingRelation({ evidenceRefs: [{ eventId: "burst-a", startOffset: 0, endOffset: 6, quote: "Second" }] }), events: burstEvents }
+  ];
+  for (const rejectionCase of rejectionCases) {
+    await processRejectedCase(rejectionCase);
+    console.log(`Engine rejection: ${rejectionCase.name}: PASS`);
+  }
 
   const burstDiagnostics = [];
   const burstPlanner = plannerOutput({
@@ -147,6 +187,8 @@ async function main() {
     ]
   });
   let burstState = emptyStateV2(scope);
+  const burstStateBefore = clone(burstState);
+  let burstResolverCalls = 0;
   const burstEngine = new ConversationEngineV2({
     planner: { classify: async () => burstPlanner },
     persistence: {
@@ -155,19 +197,28 @@ async function main() {
       appendMessageLog: () => ({ reviewId: "burst-review" })
     },
     getProperty: () => ({ propertyId: scope.propertyId, timezone: "Asia/Taipei", rooms: [], commonAnswers: { parkingRule: "Parking is available." } }),
-    availabilityResolver: () => ({ availabilityReliable: true, rooms: [] }),
+    availabilityResolver: () => { burstResolverCalls += 1; return { availabilityReliable: true, rooms: [] }; },
+    availableDatesResolver: () => { burstResolverCalls += 1; return { availabilityReliable: true, rooms: [] }; },
     listPriceOverrides: () => [],
     now: () => new Date(scope.now),
     onDiagnostic: (item) => burstDiagnostics.push(item)
   });
   let scheduled = null;
-  const coordinator = new ConversationEngineV2Coordinator({ engine: burstEngine, schedule: (run) => { scheduled = run; return 1; }, cancel: () => {} });
+  const coordinator = new ConversationEngineV2Coordinator({ engine: burstEngine, externalReplyToken: true, schedule: (run) => { scheduled = run; return 1; }, cancel: () => {} });
   const first = coordinator.enqueue({ customerId: scope.propertyId, channelId: scope.channelId, lineUserId: scope.lineUserId, eventId: "burst-a", messageRef: "message-burst-a", eventTimestamp: scope.now, messageText: "Need" });
   const second = coordinator.enqueue({ customerId: scope.propertyId, channelId: scope.channelId, lineUserId: scope.lineUserId, eventId: "burst-b", messageRef: "message-burst-b", eventTimestamp: scope.now, messageText: "Second" });
   await scheduled();
-  await Promise.all([first, second]);
+  const [firstResult, burstResult] = await Promise.all([first, second]);
   assert.ok(burstDiagnostics.length > 0, "a merged burst must enter the engine once");
   assert.ok(burstDiagnostics.every((item) => JSON.stringify(item.sourceEventIds) === JSON.stringify(["burst-a", "burst-b"])), "every burst trace record must retain all source event IDs");
+  assert.equal(firstResult.merged, true, "only the trailing event receives the merged-burst result");
+  assert.equal(burstResult.shouldReply, true, "valid multi-event evidence must continue through the Engine");
+  assert.equal(burstResolverCalls, 0, "policy facts in a burst must not cause unrelated Resolver queries");
+  assert.deepEqual(burstState.conditions.stay, burstStateBefore.conditions.stay, "burst evidence must not cross-contaminate stay state");
+  const acceptedBurst = burstDiagnostics.find((item) => item.stage === "context_validation");
+  assert.deepEqual(acceptedBurst.acceptedRelations.map((item) => item.evidenceRefs[0].eventId), ["burst-a", "burst-b"], "each burst relation must retain its own source event");
+  assert.equal(burstDiagnostics.some((item) => item.stage === "fallback"), false, "valid burst evidence must not enter the safety fallback");
+  console.log("Engine burst valid evidence: PASS");
 
   console.log("relation evidence contract: PASS");
 }
