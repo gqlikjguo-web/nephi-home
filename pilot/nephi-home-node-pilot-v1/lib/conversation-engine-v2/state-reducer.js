@@ -76,18 +76,20 @@ function decideContextExecution(previous, relations, plannerTasks) {
   const relationsByCandidate = new Map((relations || []).filter((item) => item && item.stateAction !== "none").map((item) => [item.candidateIndex, item]));
   const contextDecisions = [...relationsByCandidate.values()].map((relation) => decisionForRelation(state, relation));
   let resumedPending = false;
-  const executionTasks = (plannerTasks || []).flatMap((task) => {
+  const executionItems = (plannerTasks || []).flatMap((task) => {
     const relation = relationsByCandidate.get(task.candidateIndex);
-    if (!relation || relation.stateAction !== "continue") return [task];
+    const decision = contextDecisions.find((item) => item.candidateIndex === task.candidateIndex) || null;
+    if (!relation || relation.stateAction !== "continue") return [{ candidateIndex: task.candidateIndex, requestCycleId: decision && decision.requestCycleId || null, task }];
     const pending = pendings.get(relation.requestCycleId);
-    if (pending && Array.isArray(pending.tasks)) { resumedPending = true; return pending.tasks; }
+    if (pending && Array.isArray(pending.tasks)) { resumedPending = true; return pending.tasks.map((pendingTask) => ({ candidateIndex: task.candidateIndex, requestCycleId: decision && decision.requestCycleId || null, task: { ...pendingTask, candidateIndex: task.candidateIndex, stayCandidate: task.stayCandidate } })); }
     const cycle = cycles.get(relation.requestCycleId);
     const topic = cycle && cycle.confirmedInputs && cycle.confirmedInputs.topic;
-    if (!topic || !topic.canonicalId || task.entity && task.entity.canonicalCandidate !== null && task.entity.canonicalCandidate !== undefined || task.type !== topic.capabilityType) return [task];
-    return [{ ...task, entity: { ...task.entity, category: topic.category, canonicalCandidate: topic.canonicalId } }];
+    if (!topic || !topic.canonicalId || task.entity && task.entity.canonicalCandidate !== null && task.entity.canonicalCandidate !== undefined || task.type !== topic.capabilityType) return [{ candidateIndex: task.candidateIndex, requestCycleId: decision && decision.requestCycleId || null, task }];
+    return [{ candidateIndex: task.candidateIndex, requestCycleId: decision && decision.requestCycleId || null, task: { ...task, entity: { ...task.entity, category: topic.category, canonicalCandidate: topic.canonicalId } } }];
   });
+  const executionTasks = executionItems.map((item) => item.task);
   const primaryDecision = contextDecisions.find((item) => item.action !== "none") || { action: "none", requestCycleId: null, candidateIndex: null };
-  return { contextDecision: primaryDecision, contextDecisions, primaryCycleId: primaryDecision.requestCycleId, executionTasks, resumedPending };
+  return { contextDecision: primaryDecision, contextDecisions, primaryCycleId: primaryDecision.requestCycleId, executionItems, executionTasks, resumedPending };
 }
 function addContextOperation(conditions, transition, field, value) {
   if (!PATHS.has(field) || value === null || value === undefined) return;
@@ -118,7 +120,9 @@ function conditionsForDecision(state, contextInput, decision, isPrimary, transit
   if (Object.hasOwn(byCandidate, decision.candidateIndex)) return clone(byCandidate[decision.candidateIndex]);
   const sourceId = decision.action === "replace" ? decision.referencedRequestCycleId : decision.requestCycleId;
   const conditions = conditionsForCycle(state, sourceId);
-  if (isPrimary) { contextOperationsFromInputs(conditions, contextInput, transition); applyReducerPatch(conditions, contextInput && contextInput.contextPatch, transition); }
+  const proposedInputs = contextInput && contextInput.candidateInputsByCandidateIndex || {};
+  if (Object.hasOwn(proposedInputs, decision.candidateIndex)) contextOperationsFromInputs(conditions, proposedInputs[decision.candidateIndex], transition);
+  else if (isPrimary) { contextOperationsFromInputs(conditions, contextInput, transition); applyReducerPatch(conditions, contextInput && contextInput.contextPatch, transition); }
   return conditions;
 }
 function reduceConversationState(previous, contextInput, scope = {}) {

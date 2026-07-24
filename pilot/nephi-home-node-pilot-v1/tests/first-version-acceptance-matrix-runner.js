@@ -83,8 +83,13 @@ function casePlan(item) {
     ...(item.request.guests ? [{ field: "stay.guestCountCandidate", operation: "set", value: item.request.guests, sourceText: String(item.request.guests) }] : []),
     { field: "inventory.mode", operation: "set", value: item.request.queryMode || "any", sourceText: item.request.queryMode || "any" }
   ] : [];
+  const stayTaskCount = (item.tasks || []).filter((task) => task.dependsOnStayContext).length;
+  const tasks = (item.tasks || []).map((task) => ({
+    ...task,
+    stayCandidate: task.stayCandidate !== undefined ? task.stayCandidate : task.dependsOnStayContext && stayTaskCount === 1 ? stay : null
+  }));
   return {
-    schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations, stay, tasks: item.tasks,
+    schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations, stay, tasks,
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "fixture_matrix"
   };
 }

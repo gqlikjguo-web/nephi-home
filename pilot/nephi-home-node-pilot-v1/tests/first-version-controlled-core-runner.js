@@ -54,18 +54,24 @@ function task({ taskId, type, sourceText, category, rawText, canonicalCandidate 
 }
 
 function plan(tasks, { shouldIgnore = false, relation = "new_request", dateText = "", dateKind = "none" } = {}) {
+  const stay = {
+    dateExpression: { rawText: dateText, kind: dateKind, anchor: dateText ? "message_time" : "none" },
+    checkInCandidate: null,
+    checkOutCandidate: null,
+    nightsCandidate: null,
+    guestCountCandidate: null
+  };
+  const stayTaskCount = tasks.filter((item) => item.dependsOnStayContext).length;
   return {
     schemaVersion: 2,
     discourse: { relation, confidence: 0.99 },
     stateOperations: [],
-    stay: {
-      dateExpression: { rawText: dateText, kind: dateKind, anchor: dateText ? "message_time" : "none" },
-      checkInCandidate: null,
-      checkOutCandidate: null,
-      nightsCandidate: null,
-      guestCountCandidate: null
-    },
-    tasks: tasks.map((item, candidateIndex) => ({ ...item, candidateIndex })),
+    stay,
+    tasks: tasks.map((item, candidateIndex) => ({
+      ...item,
+      candidateIndex,
+      stayCandidate: item.stayCandidate !== undefined ? item.stayCandidate : item.dependsOnStayContext && stayTaskCount === 1 ? stay : null
+    })),
     ambiguities: [],
     missingInformation: [],
     needsHuman: false,

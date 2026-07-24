@@ -32,6 +32,7 @@ function pendingConditions(conditions = {}) {
 function pendingTask(task) {
   if (!task || typeof task !== "object" || !task.taskId || !task.type || !task.entity) return null;
   return {
+    candidateIndex: Number.isInteger(task.candidateIndex) ? task.candidateIndex : null,
     taskId: safeText(task.taskId, 80),
     type: safeText(task.type, 80),
     detailIntent: safeText(task.detailIntent || "general", 80),

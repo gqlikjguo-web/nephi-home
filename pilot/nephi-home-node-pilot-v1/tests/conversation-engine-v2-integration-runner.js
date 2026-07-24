@@ -37,9 +37,9 @@ const planner = { classify: async () => ({
   ],
   stay: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2026-08-06", checkOutCandidate: null, nightsCandidate: 1, guestCountCandidate: 2 },
   tasks: [
-    { taskId: "a", type: "availability", sourceText: "8/6雙人房有空嗎", requestedOutputs: ["availability"], dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: "r1", confidence: 0.99 }, confidence: 0.99 },
-    { taskId: "b", type: "amenity", sourceText: "有車位嗎", requestedOutputs: ["amenity"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, confidence: 0.99 },
-    { taskId: "c", type: "amenity", sourceText: "有麻將嗎", requestedOutputs: ["amenity"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "麻將", canonicalCandidate: "mahjong", confidence: 0.7 }, confidence: 0.7 }
+    { taskId: "a", type: "availability", sourceText: "8/6雙人房有空嗎", requestedOutputs: ["availability"], dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: "r1", confidence: 0.99 }, stayCandidate: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2026-08-06", checkOutCandidate: null, nightsCandidate: 1, guestCountCandidate: 2 }, confidence: 0.99 },
+    { taskId: "b", type: "amenity", sourceText: "有車位嗎", requestedOutputs: ["amenity"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 },
+    { taskId: "c", type: "amenity", sourceText: "有麻將嗎", requestedOutputs: ["amenity"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "麻將", canonicalCandidate: "mahjong", confidence: 0.7 }, stayCandidate: null, confidence: 0.7 }
   ], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "multi_task"
 }) };
 const engine = new ConversationEngineV2({ planner: explicitPlanner(planner), persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [] });
@@ -148,9 +148,9 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
     schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
     stay: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: 1, guestCountCandidate: null },
     tasks: [
-      { taskId: "availability", type: "availability", sourceText: "8/6 有雙人房嗎？", requestedOutputs: ["room_options", "availability"], dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: null, confidence: 0.95 }, confidence: 0.95 },
-      { taskId: "parking", type: "amenity", sourceText: "有車位嗎？", requestedOutputs: ["availability", "policy"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, confidence: 0.99 },
-      { taskId: "bbq", type: "policy", sourceText: "可以烤肉嗎？", requestedOutputs: ["policy"], dependsOnStayContext: false, entity: { category: "policy", rawText: "烤肉", canonicalCandidate: "bbq", confidence: 0.99 }, confidence: 0.99 }
+      { taskId: "availability", type: "availability", sourceText: "8/6 有雙人房嗎？", requestedOutputs: ["room_options", "availability"], dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: null, confidence: 0.95 }, stayCandidate: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: 1, guestCountCandidate: null }, confidence: 0.95 },
+      { taskId: "parking", type: "amenity", sourceText: "有車位嗎？", requestedOutputs: ["availability", "policy"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 },
+      { taskId: "bbq", type: "policy", sourceText: "可以烤肉嗎？", requestedOutputs: ["policy"], dependsOnStayContext: false, entity: { category: "policy", rawText: "烤肉", canonicalCandidate: "bbq", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }
     ], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "multi_task"
   }) };
   const multiTaskEngine = new ConversationEngineV2({ planner: explicitPlanner(multiTaskPlanner), persistence, getProperty: () => multiRoomProperty,
@@ -171,26 +171,33 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
       kind: operationValues.get("stay.dateExpression.kind") || "none",
       anchor: operationValues.get("stay.dateExpression.anchor") || "none"
     };
+    const stay = {
+      dateExpression,
+      checkInCandidate: operationValues.get("stay.checkInCandidate") || null,
+      checkOutCandidate: operationValues.get("stay.checkOutCandidate") || null,
+      nightsCandidate: nightsCandidate || operationValues.get("stay.nightsCandidate") || null,
+      guestCountCandidate: guestCountCandidate || operationValues.get("stay.guestCountCandidate") || null
+    };
+    const rawTasks = tasks || [{
+      taskId: "availability",
+      type: "availability",
+      sourceText: message,
+      requestedOutputs: ["availability"],
+      dependsOnStayContext: true,
+      entity: { category: "room", rawText: "雙人房", canonicalCandidate: "r1", confidence: 0.98 },
+      confidence: 0.98
+    }];
+    const stayTaskCount = rawTasks.filter((task) => task.dependsOnStayContext).length;
+    const scopedTasks = rawTasks.map((task) => task.stayCandidate !== undefined ? task : {
+      ...task,
+      stayCandidate: task.dependsOnStayContext && stayTaskCount === 1 ? stay : null
+    });
     return { classify: async () => ({
       schemaVersion: 2,
       discourse: { relation: "new_request", confidence: 0.99 },
       stateOperations: [],
-      stay: {
-        dateExpression,
-        checkInCandidate: operationValues.get("stay.checkInCandidate") || null,
-        checkOutCandidate: operationValues.get("stay.checkOutCandidate") || null,
-        nightsCandidate: nightsCandidate || operationValues.get("stay.nightsCandidate") || null,
-        guestCountCandidate: guestCountCandidate || operationValues.get("stay.guestCountCandidate") || null
-      },
-      tasks: tasks || [{
-        taskId: "availability",
-        type: "availability",
-        sourceText: message,
-        requestedOutputs: ["availability"],
-        dependsOnStayContext: true,
-        entity: { category: "room", rawText: "雙人房", canonicalCandidate: "r1", confidence: 0.98 },
-        confidence: 0.98
-      }],
+      stay,
+      tasks: scopedTasks,
       ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "temporal_flow"
     }) };
   }
