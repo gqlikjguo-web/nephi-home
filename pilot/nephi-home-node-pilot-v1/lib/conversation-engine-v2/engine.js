@@ -106,22 +106,28 @@ function approvedTemporalContext(snapshot, relation, plannerStay) {
   const stay = cycle && cycle.confirmedInputs && cycle.confirmedInputs.stay;
   if (!stay) return null;
   const temporalFields = cycle && cycle.temporalResult && cycle.temporalResult.fields || {};
-  const sourceTurnRequestIds = [
-    ...(temporalFields.checkIn && temporalFields.checkIn.sourceTurnRequestIds || []),
-    ...(temporalFields.checkOut && temporalFields.checkOut.sourceTurnRequestIds || []),
-    ...(temporalFields.nights && temporalFields.nights.sourceTurnRequestIds || []),
-    ...(cycle && cycle.sourceTurnRequestIds || [])
+  const sourceEvidenceRefs = [
+    ...(temporalFields.checkIn && temporalFields.checkIn.sourceEvidenceRefs || []),
+    ...(temporalFields.checkOut && temporalFields.checkOut.sourceEvidenceRefs || []),
+    ...(temporalFields.nights && temporalFields.nights.sourceEvidenceRefs || []),
+    ...(cycle && cycle.sourceEvidenceRefs || [])
   ];
   return {
     checkIn: stay.checkIn || null,
     checkOut: stay.checkOut || null,
     nights: Number.isInteger(stay.nights) ? stay.nights : null,
-    sourceTurnRequestIds: [...new Set(sourceTurnRequestIds.map((value) => String(value || "").trim()).filter(Boolean))]
+    sourceEvidenceRefs
   };
 }
 
-function sourceTurnRequestIdsForRelation(relation) {
-  return [...new Set((relation && relation.evidenceRefs || []).map((evidenceRef) => String(evidenceRef && (evidenceRef.eventId || evidenceRef.messageRef) || "").trim()).filter(Boolean))];
+function sourceEvidenceRefsForRelation(relation) {
+  return (relation && relation.evidenceRefs || []).map((evidenceRef) => ({
+    eventId: String(evidenceRef && evidenceRef.eventId || "").trim(),
+    messageRef: String(evidenceRef && evidenceRef.messageRef || "").trim(),
+    startOffset: Number.isInteger(evidenceRef && evidenceRef.startOffset) ? evidenceRef.startOffset : 0,
+    endOffset: Number.isInteger(evidenceRef && evidenceRef.endOffset) ? evidenceRef.endOffset : 0,
+    quote: String(evidenceRef && evidenceRef.quote || "")
+  }));
 }
 
 function blockedTemporalConditions(conditions) {
@@ -261,7 +267,7 @@ class ConversationEngineV2 {
         defaultNightsRuleRef: SINGLE_DATE_DEFAULT_NIGHT_RULE_REF,
         defaultSearchRangeDays: item.task.type === "available_dates" ? DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS : null,
         defaultSearchRangeRuleRef: item.task.type === "available_dates" ? AVAILABLE_DATES_LOOKAHEAD_RULE_REF : null,
-        sourceTurnRequestIds: sourceTurnRequestIdsForRelation(relation),
+        sourceEvidenceRefs: sourceEvidenceRefsForRelation(relation),
         approvedContext,
         allowContextReuse: Boolean(approvedContext)
       });
@@ -269,7 +275,7 @@ class ConversationEngineV2 {
         confirmedFields: { guests: plannerStay.guestCountCandidate, nights: plannerStay.nightsCandidate, inventory: confirmedInventoryFromTask(catalog, item.task) },
         temporalResult: temporal,
         hasNewDateExpression: Boolean(plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none"),
-        sourceTurnRequestIds: sourceTurnRequestIdsForRelation(relation)
+        sourceEvidenceRefs: sourceEvidenceRefsForRelation(relation)
       };
       item.temporal = temporal;
     }

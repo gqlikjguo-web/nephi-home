@@ -69,7 +69,7 @@ function buildContextSnapshot(state, scope = {}) {
       status: String(cycle.status || "active"),
       confirmedInputs: cycle.confirmedInputs || {},
       temporalResult: cycle.temporalResult || null,
-      sourceTurnRequestIds: Array.isArray(cycle.sourceTurnRequestIds) ? cycle.sourceTurnRequestIds : [],
+      sourceEvidenceRefs: Array.isArray(cycle.sourceEvidenceRefs) ? cycle.sourceEvidenceRefs : [],
       contextReuseExpiresAt: cycle.contextReuseExpiresAt || null,
       pendingRequestId: pending && pending.pendingRequestId || null
     });
@@ -78,7 +78,7 @@ function buildContextSnapshot(state, scope = {}) {
   // mechanical event-derived cycle; no semantic matching is involved.
   for (const [requestCycleId, pending] of pendingByCycle) {
     if (knownCycleIds.has(requestCycleId)) continue;
-    snapshot.cycles.push({ requestCycleId, requestKind: String(pending.capability || ""), status: "active", confirmedInputs: pending.conditions || {}, temporalResult: null, sourceTurnRequestIds: [], contextReuseExpiresAt: pendingExpiry(pending), pendingRequestId: pending.pendingRequestId || null });
+    snapshot.cycles.push({ requestCycleId, requestKind: String(pending.capability || ""), status: "active", confirmedInputs: pending.conditions || {}, temporalResult: null, sourceEvidenceRefs: [], contextReuseExpiresAt: pendingExpiry(pending), pendingRequestId: pending.pendingRequestId || null });
   }
   return snapshot;
 }

@@ -86,11 +86,11 @@ function resolveLegacyTemporalExpression(expression = {}, context = {}) {
     if (raw.includes("隔天") || raw.includes("明天")) checkIn = valid(anchor) ? addDays(anchor, 1) : null;
     else checkIn = anchor || null;
   }
-  if (checkIn && !valid(checkIn)) return { timezone, resolutionStatus: "invalid", ambiguity: "invalid_date", originalExpression: raw };
-  if (checkIn && checkIn < base) return { timezone, resolutionStatus: "invalid", ambiguity: "past_date", originalExpression: raw };
   const nights = Number.isInteger(context.nightsCandidate) ? context.nightsCandidate : Number.isInteger(context.defaultNights) ? context.defaultNights : null;
+  if (checkIn && !valid(checkIn)) return { checkIn, checkOut: null, nights, searchRange, timezone, resolutionStatus: "invalid", ambiguity: "invalid_date", originalExpression: raw };
+  if (checkIn && checkIn < base) return { checkIn, checkOut: null, nights, searchRange, timezone, resolutionStatus: "invalid", ambiguity: "past_date", originalExpression: raw };
   const checkOut = valid(context.checkOutCandidate) ? context.checkOutCandidate : checkIn && nights ? addDays(checkIn, nights) : null;
-  if (checkIn && checkOut && checkOut <= checkIn) return { timezone, resolutionStatus: "invalid", ambiguity: "checkout_not_after_checkin", originalExpression: raw };
+  if (checkIn && checkOut && checkOut <= checkIn) return { checkIn, checkOut, nights, searchRange, timezone, resolutionStatus: "invalid", ambiguity: "checkout_not_after_checkin", originalExpression: raw };
   return { checkIn, checkOut, nights, searchRange, timezone, resolutionStatus: checkIn || searchRange ? "resolved" : "ambiguous", ambiguity: checkIn || searchRange ? null : "date_missing", originalExpression: raw };
 }
 
@@ -104,18 +104,38 @@ function emptyFieldMetadata() {
     provenance: { checkIn: null, checkOut: null, nights: null, searchRange: null },
     ruleRefs: { checkIn: null, checkOut: null, nights: null, searchRange: null },
     derivedFromFieldRefs: { checkIn: [], checkOut: [], nights: [], searchRange: [] },
-    sourceTurnRequestIds: { checkIn: [], checkOut: [], nights: [], searchRange: [] },
+    sourceEvidenceRefs: { checkIn: [], checkOut: [], nights: [], searchRange: [] },
     valueStatus: { checkIn: "missing", checkOut: "missing", nights: "missing", searchRange: "missing" }
   };
 }
 
-function sourceTurnRequestIds(values) {
-  return [...new Set((Array.isArray(values) ? values : []).map((value) => String(value || "").trim()).filter(Boolean))];
+function sourceEvidenceRefs(values) {
+  const seen = new Set();
+  return (Array.isArray(values) ? values : []).map((value) => {
+    if (!value || typeof value !== "object") return null;
+    const eventId = String(value.eventId || "").trim();
+    const messageRef = String(value.messageRef || "").trim();
+    if (!eventId && !messageRef) return null;
+    const reference = {
+      eventId,
+      messageRef,
+      startOffset: Number.isInteger(value.startOffset) ? value.startOffset : 0,
+      endOffset: Number.isInteger(value.endOffset) ? value.endOffset : 0,
+      quote: String(value.quote || "")
+    };
+    const key = JSON.stringify(reference);
+    if (seen.has(key)) return null;
+    seen.add(key);
+    return reference;
+  }).filter(Boolean);
 }
 
-function fieldStatus(resolutionStatus, value) {
-  if (resolutionStatus === "unresolved") return "uncertain";
-  if (resolutionStatus === "invalid" || resolutionStatus === "conflicting") return "invalid";
+function fieldStatus(field, result, value) {
+  const resolutionStatus = result.resolutionStatus;
+  const ambiguity = result.ambiguity;
+  if (field === "checkIn" && resolutionStatus === "unresolved") return "uncertain";
+  if (field === "checkIn" && resolutionStatus === "invalid") return "invalid";
+  if (field === "checkOut" && (ambiguity === "checkout_not_after_checkin" || resolutionStatus === "conflicting")) return "invalid";
   return value === null || value === undefined ? "missing" : "confirmed";
 }
 
@@ -124,8 +144,8 @@ function withFieldMetadata(result, metadata = {}) {
   const provenance = { ...fields.provenance, ...(metadata.provenance || {}) };
   const ruleRefs = { ...fields.ruleRefs, ...(metadata.ruleRefs || {}) };
   const derivedFromFieldRefs = { ...fields.derivedFromFieldRefs, ...(metadata.derivedFromFieldRefs || {}) };
-  const commonSourceTurnRequestIds = sourceTurnRequestIds(metadata.sourceTurnRequestIds || result.sourceTurnRequestIds);
-  const sourceByField = { ...fields.sourceTurnRequestIds, ...(metadata.sourceTurnRequestIdsByField || {}) };
+  const commonSourceEvidenceRefs = sourceEvidenceRefs(metadata.sourceEvidenceRefs || result.sourceEvidenceRefs);
+  const sourceByField = { ...fields.sourceEvidenceRefs, ...(metadata.sourceEvidenceRefsByField || {}) };
   const resolutionStatus = TEMPORAL_RESULT_STATUSES.has(result.resolutionStatus) ? result.resolutionStatus : "unresolved";
   const values = {
     checkIn: result.checkIn || null,
@@ -135,13 +155,13 @@ function withFieldMetadata(result, metadata = {}) {
   };
   const valueStatus = Object.fromEntries(Object.entries(values).map(([field, value]) => {
     const requested = metadata.valueStatus && metadata.valueStatus[field];
-    return [field, TEMPORAL_VALUE_STATUSES.has(requested) ? requested : fieldStatus(resolutionStatus, value)];
+    return [field, TEMPORAL_VALUE_STATUSES.has(requested) ? requested : fieldStatus(field, { ...result, resolutionStatus }, value)];
   }));
   const field = (name) => ({
     value: values[name],
     valueStatus: valueStatus[name],
     provenance: provenance[name],
-    sourceTurnRequestIds: sourceTurnRequestIds(sourceByField[name] && sourceByField[name].length ? sourceByField[name] : commonSourceTurnRequestIds),
+    sourceEvidenceRefs: sourceEvidenceRefs(sourceByField[name] && sourceByField[name].length ? sourceByField[name] : commonSourceEvidenceRefs),
     ruleRef: ruleRefs[name],
     derivedFromFieldRefs: derivedFromFieldRefs[name]
   });
@@ -172,7 +192,7 @@ function contextTemporalResult(expression, context, timezone) {
   if (!checkIn && !checkOut) return null;
   return withFieldMetadata({ checkIn, checkOut, nights, searchRange: null, timezone, resolutionStatus: "resolved", ambiguity: null, originalExpression: "" }, {
     provenance: { checkIn: checkIn ? "context" : null, checkOut: checkOut ? "context" : null, nights: nights ? "context" : null },
-    sourceTurnRequestIds: approved.sourceTurnRequestIds
+    sourceEvidenceRefs: approved.sourceEvidenceRefs
   });
 }
 
@@ -191,7 +211,7 @@ function resolveTemporalExpression(expression = {}, context = {}) {
       provenance: { searchRange: "defaulted" },
       ruleRefs: { searchRange: context.defaultSearchRangeRuleRef || null },
       derivedFromFieldRefs: { searchRange: ["eventTimestamp"] },
-      sourceTurnRequestIds: context.sourceTurnRequestIds
+      sourceEvidenceRefs: context.sourceEvidenceRefs
     });
   }
 
@@ -230,7 +250,7 @@ function resolveTemporalExpression(expression = {}, context = {}) {
     nights: [],
     searchRange: []
   };
-  return withFieldMetadata({ ...result, resolutionStatus: finalStatus }, { provenance, ruleRefs, derivedFromFieldRefs, sourceTurnRequestIds: context.sourceTurnRequestIds });
+  return withFieldMetadata({ ...result, resolutionStatus: finalStatus }, { provenance, ruleRefs, derivedFromFieldRefs, sourceEvidenceRefs: context.sourceEvidenceRefs });
 }
 
 module.exports = { resolveTemporalExpression, inferExplicitTemporalExpression, addDays, valid, TEMPORAL_RESULT_STATUSES, TEMPORAL_PROVENANCE, TEMPORAL_VALUE_STATUSES, CONTEXTUAL_TEMPORAL_RULE_REF };

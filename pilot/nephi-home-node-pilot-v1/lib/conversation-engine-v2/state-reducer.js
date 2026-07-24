@@ -9,6 +9,26 @@ const TOPIC_TASK_TYPES = new Set(["amenity", "policy", "property_fact"]);
 function blankTopic() { return { capabilityType: null, canonicalId: null, category: null, detailIntent: "general", detailFields: [] }; }
 function blankConditions() { return { stay: { checkIn: null, checkOut: null, nights: null, guests: null, searchRange: null }, inventory: { mode: "any", entityId: null, features: [] }, topic: blankTopic() }; }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
+function normalizeEvidenceRefs(values) {
+  const seen = new Set();
+  return (Array.isArray(values) ? values : []).map((value) => {
+    const legacyEventId = typeof value === "string" ? value : "";
+    const eventId = String(value && typeof value === "object" ? value.eventId : legacyEventId || "").trim();
+    const messageRef = String(value && typeof value === "object" ? value.messageRef || "" : "").trim();
+    if (!eventId && !messageRef) return null;
+    const ref = {
+      eventId,
+      messageRef,
+      startOffset: Number.isInteger(value && value.startOffset) ? value.startOffset : 0,
+      endOffset: Number.isInteger(value && value.endOffset) ? value.endOffset : 0,
+      quote: String(value && value.quote || "")
+    };
+    const key = JSON.stringify(ref);
+    if (seen.has(key)) return null;
+    seen.add(key);
+    return ref;
+  }).filter(Boolean);
+}
 function scopeOf(scope = {}) { return { propertyId: scope.propertyId || "", channelId: scope.channelId || "", lineUserId: scope.lineUserId || "" }; }
 function sameScope(left = {}, right = {}) { return left.propertyId === right.propertyId && left.channelId === right.channelId && left.lineUserId === right.lineUserId; }
 function emptyStateV2(scope = {}) { return { schemaVersion: 2, scope: scopeOf(scope), requestCycles: [], pendingRequests: [], transition: { set: [], replaced: [], cleared: [], kept: [], sourceEventId: "" }, updatedAt: scope.now || new Date().toISOString() }; }
@@ -22,7 +42,7 @@ function normalizedCycle(cycle, now) {
     status: ["active", "answered", "handoff", "ended", "expired"].includes(cycle.status) ? cycle.status : "active",
     confirmedInputs: cycle.confirmedInputs && typeof cycle.confirmedInputs === "object" ? clone(cycle.confirmedInputs) : blankConditions(),
     temporalResult: cycle.temporalResult && typeof cycle.temporalResult === "object" ? clone(cycle.temporalResult) : null,
-    sourceTurnRequestIds: [...new Set((Array.isArray(cycle.sourceTurnRequestIds) ? cycle.sourceTurnRequestIds : []).map((value) => String(value || "").trim()).filter(Boolean))],
+    sourceEvidenceRefs: normalizeEvidenceRefs(cycle.sourceEvidenceRefs || cycle.sourceTurnRequestIds),
     contextReuseExpiresAt: cycle.contextReuseExpiresAt || null,
     createdAt: cycle.createdAt || now,
     updatedAt: cycle.updatedAt || now
@@ -155,10 +175,12 @@ function reduceConversationState(previous, contextInput, scope = {}) {
     const existing = existingAt === undefined ? null : state.requestCycles[existingAt];
     const candidateInput = contextInput && contextInput.candidateInputsByCandidateIndex && contextInput.candidateInputsByCandidateIndex[decision.candidateIndex];
     const temporalResult = candidateInput && candidateInput.temporalResult || existing && existing.temporalResult || null;
-    const sourceTurnRequestIds = [...new Set([
-      ...(existing && existing.sourceTurnRequestIds || []),
-      ...(candidateInput && candidateInput.sourceTurnRequestIds || [])
-    ].map((value) => String(value || "").trim()).filter(Boolean))];
+    const sourceEvidenceRefs = normalizeEvidenceRefs(existing && (!candidateInput || !candidateInput.hasNewDateExpression)
+      ? existing.sourceEvidenceRefs
+      : [
+        ...(existing && existing.sourceEvidenceRefs || []),
+        ...(candidateInput && candidateInput.sourceEvidenceRefs || [])
+      ]);
     const canRefreshContextReuse = !existing || Boolean(
       candidateInput
       && candidateInput.hasNewDateExpression
@@ -168,7 +190,7 @@ function reduceConversationState(previous, contextInput, scope = {}) {
     const contextReuseExpiresAt = canRefreshContextReuse
       ? new Date(new Date(scope.now || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString()
       : existing.contextReuseExpiresAt || null;
-    const cycle = { requestCycleId, requestKind: conditions.topic && conditions.topic.capabilityType || existing && existing.requestKind || "", status: "active", confirmedInputs: conditions, temporalResult, sourceTurnRequestIds, contextReuseExpiresAt, createdAt: existing && existing.createdAt || scope.now || new Date().toISOString(), updatedAt: scope.now || new Date().toISOString() };
+    const cycle = { requestCycleId, requestKind: conditions.topic && conditions.topic.capabilityType || existing && existing.requestKind || "", status: "active", confirmedInputs: conditions, temporalResult, sourceEvidenceRefs, contextReuseExpiresAt, createdAt: existing && existing.createdAt || scope.now || new Date().toISOString(), updatedAt: scope.now || new Date().toISOString() };
     if (existingAt === undefined) { state.requestCycles.push(cycle); cycleIndex.set(requestCycleId, state.requestCycles.length - 1); transition.set.push(`cycle:${requestCycleId}`); }
     else { state.requestCycles[existingAt] = { ...existing, ...cycle, createdAt: existing.createdAt || cycle.createdAt }; transition.replaced.push(`cycle:${requestCycleId}`); }
   }

@@ -53,7 +53,7 @@ assert.deepEqual(
     timezone: property.timezone,
     defaultSearchRangeDays: 31,
     defaultSearchRangeRuleRef: "temporal:available_dates_default_lookahead",
-    sourceTurnRequestIds: ["recent-event"]
+    sourceEvidenceRefs: [{ eventId: "recent-event", messageRef: "", startOffset: 0, endOffset: 0, quote: "" }]
   }).fields.searchRange.value,
   { from: "2026-07-18", to: "2026-08-18" }
 );

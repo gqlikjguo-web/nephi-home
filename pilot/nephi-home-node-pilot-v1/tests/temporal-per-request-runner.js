@@ -46,14 +46,17 @@ function inputs(roomId, checkIn, checkOut, nights, guests) {
     topic: { capabilityType: "availability", canonicalId: roomId, category: "room", detailIntent: "general", detailFields: ["answer"] }
   };
 }
+function evidenceRef(eventId) {
+  return { eventId, messageRef: "", startOffset: 0, endOffset: 0, quote: "" };
+}
 function cycle(id, roomId, checkIn, checkOut, nights, guests, status = "answered", options = {}) {
   const contextReuseExpiresAt = options.contextReuseExpiresAt || "2026-07-25T00:00:00.000Z";
-  const sourceTurnRequestIds = options.sourceTurnRequestIds || [id + "-source"];
+  const sourceEvidenceRefs = options.sourceEvidenceRefs || [evidenceRef(id + "-source")];
   return {
     requestCycleId: id, requestKind: "availability", status,
     confirmedInputs: inputs(roomId, checkIn, checkOut, nights, guests),
     temporalResult: null,
-    sourceTurnRequestIds,
+    sourceEvidenceRefs,
     createdAt: NOW, updatedAt: NOW, contextReuseExpiresAt
   };
 }
@@ -137,8 +140,9 @@ async function contextReuseAndIsolation() {
   assert.equal(item.resolutionStatus, "resolved", "context reuse must be a resolved TemporalResult, not an implicit state side effect");
   assert.equal(item.provenance.checkIn, "context");
   assert.equal(item.provenance.checkOut, "context");
-  assert.deepEqual(item.fields.checkIn.sourceTurnRequestIds, ["cycle-b-source"], "context reuse must retain the original cycle source reference");
+  assert.deepEqual(item.fields.checkIn.sourceEvidenceRefs, [evidenceRef("cycle-b-source")], "context reuse must retain the original cycle evidence reference rather than the follow-up event");
   assert.equal(item.fields.checkIn.valueStatus, "confirmed");
+  assert.deepEqual(cycleById(state, "cycle-b").sourceEvidenceRefs, [evidenceRef("cycle-b-source")], "the persisted cycle must retain original evidence instead of the follow-up evidence");
   assert.equal(cycleById(state, "cycle-b").contextReuseExpiresAt, initial.requestCycles[1].contextReuseExpiresAt, "context reuse must not extend the existing TTL");
 }
 
@@ -160,7 +164,7 @@ async function failedDatesDoNotReuseOrMutate() {
     assert.equal(testHarness.state(userId).pendingRequests.length, 1, `${expectedStatus} dates must create only the cycle-scoped clarification pending`);
     assert.equal(testHarness.state(userId).pendingRequests[0].requestCycleId, "cycle-a");
     assert.equal(temporalItems(testHarness)[0].resolutionStatus, expectedStatus);
-    assert.equal(temporalItems(testHarness)[0].fields.checkIn.valueStatus, expectedStatus === "unresolved" ? "uncertain" : "invalid");
+    assert.equal(temporalItems(testHarness)[0].fields.checkIn.valueStatus, expectedStatus === "unresolved" ? "uncertain" : expectedStatus === "conflicting" ? "confirmed" : "invalid");
     assert.equal(cycleById(testHarness.state(userId), "cycle-a").contextReuseExpiresAt, initial.requestCycles[0].contextReuseExpiresAt, expectedStatus + " dates must not extend context reuse TTL");
     assert.equal(cycleById(testHarness.state(userId), "cycle-a").createdAt, initial.requestCycles[0].createdAt, expectedStatus + " dates must not replace cycle creation time");
   }
@@ -202,6 +206,13 @@ async function mixedTemporalOutcomesStayIsolated() {
     assert.deepEqual(cycleB.confirmedInputs.stay, existing.requestCycles[0].confirmedInputs.stay, "B's invalid date must not overwrite its confirmed inputs");
     assert.equal(cycleB.temporalResult.resolutionStatus, "invalid");
     assert.equal(cycleB.temporalResult.fields.checkIn.valueStatus, "invalid");
+    assert.equal(cycleB.temporalResult.fields.checkOut.valueStatus, "missing");
+    assert.equal(cycleB.temporalResult.fields.nights.valueStatus, "confirmed");
+    assert.equal(cycleB.temporalResult.fields.searchRange.valueStatus, "missing");
+    assert.equal(cycleA.temporalResult.fields.checkIn.valueStatus, "confirmed");
+    assert.equal(cycleA.temporalResult.fields.checkOut.valueStatus, "confirmed");
+    assert.equal(cycleA.temporalResult.fields.nights.valueStatus, "confirmed");
+    assert.equal(cycleA.temporalResult.fields.searchRange.valueStatus, "missing");
     assert.equal(cycleB.contextReuseExpiresAt, existing.requestCycles[0].contextReuseExpiresAt, "B's invalid date must not extend its existing context TTL");
     assert.deepEqual(testHarness.calls.map((item) => [item.roomType, item.checkIn, item.checkOut, item.guests]), [["room-a", "2026-08-06", "2026-08-07", 2]], "only A may call the date-dependent Resolver");
     assert.equal(state.pendingRequests.length, 1, "only B may have a clarification pending request");
@@ -241,7 +252,8 @@ async function noRelationAndIneligibleCyclesCannotReuse() {
 }
 
 function temporalContract() {
-  const explicit = resolveTemporalExpression({ rawText: "8/6", kind: "absolute", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", checkInCandidate: "2026-08-06", defaultNights: 1, defaultNightsRuleRef: "PRODUCT_BASELINE:single_date_availability_default_one_night", sourceTurnRequestIds: ["explicit-event"] });
+  const explicitEvidence = [evidenceRef("explicit-event")];
+  const explicit = resolveTemporalExpression({ rawText: "8/6", kind: "absolute", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", checkInCandidate: "2026-08-06", defaultNights: 1, defaultNightsRuleRef: "PRODUCT_BASELINE:single_date_availability_default_one_night", sourceEvidenceRefs: explicitEvidence });
   assert.equal(explicit.resolutionStatus, "resolved");
   assert.equal(explicit.provenance.checkIn, "explicit");
   assert.equal(explicit.provenance.nights, "defaulted");
@@ -251,48 +263,57 @@ function temporalContract() {
   assert.deepEqual(explicit.derivedFromFieldRefs.checkOut, ["stay.checkIn", "stay.nights"]);
   assert.deepEqual(explicit.fields.checkIn, {
     value: "2026-08-06", valueStatus: "confirmed", provenance: "explicit",
-    sourceTurnRequestIds: ["explicit-event"], ruleRef: null, derivedFromFieldRefs: []
+    sourceEvidenceRefs: explicitEvidence, ruleRef: null, derivedFromFieldRefs: []
   });
   assert.deepEqual(explicit.fields.nights, {
     value: 1, valueStatus: "confirmed", provenance: "defaulted",
-    sourceTurnRequestIds: ["explicit-event"], ruleRef: "PRODUCT_BASELINE:single_date_availability_default_one_night", derivedFromFieldRefs: []
+    sourceEvidenceRefs: explicitEvidence, ruleRef: "PRODUCT_BASELINE:single_date_availability_default_one_night", derivedFromFieldRefs: []
   });
   assert.deepEqual(explicit.fields.checkOut, {
     value: "2026-08-07", valueStatus: "confirmed", provenance: "derived",
-    sourceTurnRequestIds: ["explicit-event"], ruleRef: "PRODUCT_BASELINE:single_date_availability_default_one_night", derivedFromFieldRefs: ["stay.checkIn", "stay.nights"]
+    sourceEvidenceRefs: explicitEvidence, ruleRef: "PRODUCT_BASELINE:single_date_availability_default_one_night", derivedFromFieldRefs: ["stay.checkIn", "stay.nights"]
   });
   const reused = resolveTemporalExpression({ rawText: "", kind: "none", anchor: "none" }, {
     eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", allowContextReuse: true,
     approvedContext: {
       checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1,
-      sourceTurnRequestIds: ["original-cycle-event"]
+      sourceEvidenceRefs: [evidenceRef("original-cycle-event")]
     }
   });
   assert.deepEqual(reused.fields.checkIn, {
     value: "2026-08-06", valueStatus: "confirmed", provenance: "context",
-    sourceTurnRequestIds: ["original-cycle-event"], ruleRef: null, derivedFromFieldRefs: []
+    sourceEvidenceRefs: [evidenceRef("original-cycle-event")], ruleRef: null, derivedFromFieldRefs: []
   });
-  const unresolved = resolveTemporalExpression({ rawText: "ambiguous", kind: "weekday", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", sourceTurnRequestIds: ["unresolved-event"] });
+  const unresolved = resolveTemporalExpression({ rawText: "ambiguous", kind: "weekday", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", sourceEvidenceRefs: [evidenceRef("unresolved-event")] });
   assert.equal(unresolved.resolutionStatus, "unresolved");
   assert.equal(unresolved.fields.checkIn.valueStatus, "uncertain");
-  assert.deepEqual(unresolved.fields.checkIn.sourceTurnRequestIds, ["unresolved-event"]);
-  const invalid = resolveTemporalExpression({ rawText: "2/30", kind: "absolute", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", checkInCandidate: "2026-02-30", sourceTurnRequestIds: ["invalid-event"] });
+  assert.equal(unresolved.fields.checkOut.valueStatus, "missing");
+  assert.equal(unresolved.fields.nights.valueStatus, "missing");
+  assert.equal(unresolved.fields.searchRange.valueStatus, "missing");
+  assert.deepEqual(unresolved.fields.checkIn.sourceEvidenceRefs, [evidenceRef("unresolved-event")]);
+  const invalid = resolveTemporalExpression({ rawText: "2/30", kind: "absolute", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", checkInCandidate: "2026-02-30", nightsCandidate: 2, sourceEvidenceRefs: [evidenceRef("invalid-event")] });
   assert.equal(invalid.resolutionStatus, "invalid");
   assert.equal(invalid.fields.checkIn.valueStatus, "invalid");
-  const conflicting = resolveTemporalExpression({ rawText: "8/10", kind: "absolute", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", checkInCandidate: "2026-08-10", checkOutCandidate: "2026-08-09", nightsCandidate: 1, sourceTurnRequestIds: ["conflicting-event"] });
+  assert.equal(invalid.fields.checkOut.valueStatus, "missing");
+  assert.equal(invalid.fields.nights.valueStatus, "confirmed");
+  assert.equal(invalid.fields.searchRange.valueStatus, "missing");
+  const conflicting = resolveTemporalExpression({ rawText: "8/10", kind: "absolute", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", checkInCandidate: "2026-08-10", checkOutCandidate: "2026-08-09", nightsCandidate: 1, sourceEvidenceRefs: [evidenceRef("conflicting-event")] });
   assert.equal(conflicting.resolutionStatus, "conflicting");
-  assert.equal(conflicting.fields.checkIn.valueStatus, "invalid");
-  const explicitRange = resolveTemporalExpression({ rawText: "weekend", kind: "weekend", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", sourceTurnRequestIds: ["range-event"] });
+  assert.equal(conflicting.fields.checkIn.valueStatus, "confirmed");
+  assert.equal(conflicting.fields.checkOut.valueStatus, "invalid");
+  assert.equal(conflicting.fields.nights.valueStatus, "confirmed");
+  assert.equal(conflicting.fields.searchRange.valueStatus, "missing");
+  const explicitRange = resolveTemporalExpression({ rawText: "weekend", kind: "weekend", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", sourceEvidenceRefs: [evidenceRef("range-event")] });
   assert.equal(explicitRange.fields.searchRange.valueStatus, "confirmed");
   assert.equal(explicitRange.fields.searchRange.provenance, "explicit");
-  assert.deepEqual(explicitRange.fields.searchRange.sourceTurnRequestIds, ["range-event"]);
+  assert.deepEqual(explicitRange.fields.searchRange.sourceEvidenceRefs, [evidenceRef("range-event")]);
   const defaultedRange = resolveTemporalExpression({ rawText: "", kind: "none", anchor: "none" }, {
-    eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", sourceTurnRequestIds: ["available-dates-event"],
+    eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", sourceEvidenceRefs: [evidenceRef("available-dates-event")],
     defaultSearchRangeDays: 31, defaultSearchRangeRuleRef: "temporal:available_dates_default_lookahead"
   });
   assert.deepEqual(defaultedRange.fields.searchRange, {
     value: { from: "2026-07-24", to: "2026-08-24" }, valueStatus: "confirmed", provenance: "defaulted",
-    sourceTurnRequestIds: ["available-dates-event"], ruleRef: "temporal:available_dates_default_lookahead", derivedFromFieldRefs: ["eventTimestamp"]
+    sourceEvidenceRefs: [evidenceRef("available-dates-event")], ruleRef: "temporal:available_dates_default_lookahead", derivedFromFieldRefs: ["eventTimestamp"]
   });
   assert.equal(resolveTemporalExpression({ rawText: "", kind: "none", anchor: "none" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei" }).resolutionStatus, "absent");
 }
