@@ -46,8 +46,23 @@ function inputs(roomId, checkIn, checkOut, nights, guests) {
     topic: { capabilityType: "availability", canonicalId: roomId, category: "room", detailIntent: "general", detailFields: ["answer"] }
   };
 }
-function evidenceRef(eventId) {
-  return { eventId, messageRef: "", startOffset: 0, endOffset: 0, quote: "" };
+function evidenceRef(eventId, quote = "") {
+  return { eventId, messageRef: "", startOffset: 0, endOffset: quote.length, quote };
+}
+function resolvedTemporalResult(checkIn, checkOut, nights, sourceEvidenceRefs) {
+  const field = (value, provenance = "explicit", ruleRef = null, derivedFromFieldRefs = []) => ({
+    value, valueStatus: "confirmed", provenance, sourceEvidenceRefs, ruleRef, derivedFromFieldRefs
+  });
+  return {
+    checkIn, checkOut, nights, searchRange: null,
+    resolutionStatus: "resolved", timezone: "Asia/Taipei", ambiguity: null, originalExpression: "",
+    fields: {
+      checkIn: field(checkIn),
+      checkOut: field(checkOut, "derived", "temporal:checkout_from_checkin_and_nights", ["stay.checkIn", "stay.nights"]),
+      nights: field(nights),
+      searchRange: { value: null, valueStatus: "missing", provenance: null, sourceEvidenceRefs, ruleRef: null, derivedFromFieldRefs: [] }
+    }
+  };
 }
 function cycle(id, roomId, checkIn, checkOut, nights, guests, status = "answered", options = {}) {
   const contextReuseExpiresAt = options.contextReuseExpiresAt || "2026-07-25T00:00:00.000Z";
@@ -55,7 +70,7 @@ function cycle(id, roomId, checkIn, checkOut, nights, guests, status = "answered
   return {
     requestCycleId: id, requestKind: "availability", status,
     confirmedInputs: inputs(roomId, checkIn, checkOut, nights, guests),
-    temporalResult: null,
+    temporalResult: options.temporalResult || resolvedTemporalResult(checkIn, checkOut, nights, sourceEvidenceRefs),
     sourceEvidenceRefs,
     createdAt: NOW, updatedAt: NOW, contextReuseExpiresAt
   };
@@ -148,11 +163,14 @@ async function contextReuseAndIsolation() {
 
 async function failedDatesDoNotReuseOrMutate() {
   const userId = "reject";
-  const initial = stateFor(userId, [cycle("cycle-a", "room-a", "2026-08-06", "2026-08-07", 1, 2, "answered", { contextReuseExpiresAt: "2026-07-24T12:00:00.000Z" })]);
+  const initial = stateFor(userId, [cycle("cycle-a", "room-a", "2026-08-06", "2026-08-07", 1, 2, "answered", {
+    contextReuseExpiresAt: "2026-07-24T12:00:00.000Z",
+    sourceEvidenceRefs: [evidenceRef("event-A")]
+  })]);
   const cases = [
-    ["invalid", stay({ rawText: "2/30", kind: "absolute", checkInCandidate: "2026-02-30", nightsCandidate: 1, guestCountCandidate: 2 })],
-    ["unresolved", stay({ rawText: "someday", kind: "weekday", nightsCandidate: 1, guestCountCandidate: 2 })],
-    ["conflicting", stay({ rawText: "8/10", kind: "absolute", checkInCandidate: "2026-08-10", checkOutCandidate: "2026-08-09", nightsCandidate: 1, guestCountCandidate: 2 })]
+    ["invalid", stay({ rawText: "2/30", kind: "absolute", checkInCandidate: "2026-02-30", nightsCandidate: 2, guestCountCandidate: 2 })],
+    ["unresolved", stay({ rawText: "someday", kind: "weekday", nightsCandidate: 2, guestCountCandidate: 2 })],
+    ["conflicting", stay({ rawText: "8/10", kind: "absolute", checkInCandidate: "2026-08-10", checkOutCandidate: "2026-08-09", nightsCandidate: 2, guestCountCandidate: 2 })]
   ];
   for (const [expectedStatus, candidate] of cases) {
     const testHarness = harness({ [userId]: initial });
@@ -161,13 +179,43 @@ async function failedDatesDoNotReuseOrMutate() {
     assertSafe(result, testHarness);
     assert.equal(testHarness.calls.length, 0, `${expectedStatus} dates must not call a date-dependent Resolver`);
     assert.deepEqual(cycleById(testHarness.state(userId), "cycle-a").confirmedInputs, initial.requestCycles[0].confirmedInputs, `${expectedStatus} dates must not overwrite confirmed cycle dates`);
+    assert.deepEqual(cycleById(testHarness.state(userId), "cycle-a").sourceEvidenceRefs, [evidenceRef("event-A")], `${expectedStatus} evidence must not pollute confirmed date evidence`);
+    assert.deepEqual(cycleById(testHarness.state(userId), "cycle-a").temporalResult, initial.requestCycles[0].temporalResult, `${expectedStatus} attempt must not replace the confirmed resolved TemporalResult`);
     assert.equal(testHarness.state(userId).pendingRequests.length, 1, `${expectedStatus} dates must create only the cycle-scoped clarification pending`);
     assert.equal(testHarness.state(userId).pendingRequests[0].requestCycleId, "cycle-a");
     assert.equal(temporalItems(testHarness)[0].resolutionStatus, expectedStatus);
     assert.equal(temporalItems(testHarness)[0].fields.checkIn.valueStatus, expectedStatus === "unresolved" ? "uncertain" : expectedStatus === "conflicting" ? "confirmed" : "invalid");
     assert.equal(cycleById(testHarness.state(userId), "cycle-a").contextReuseExpiresAt, initial.requestCycles[0].contextReuseExpiresAt, expectedStatus + " dates must not extend context reuse TTL");
     assert.equal(cycleById(testHarness.state(userId), "cycle-a").createdAt, initial.requestCycles[0].createdAt, expectedStatus + " dates must not replace cycle creation time");
+
+    testHarness.queue(plan([availabilityTask(4, "room-a", stay({ guestCountCandidate: 2 }))], [{ candidateIndex: 4, kind: "supplement_existing", refs: ["cycle-a"] }]));
+    const followUp = await testHarness.process(userId, `${expectedStatus}-follow-up`, "follow up without a new date");
+    const reused = temporalItems(testHarness)[0];
+    assert.ok(followUp.replyText.length > 0);
+    assert.equal(testHarness.calls.length, 1, `${expectedStatus} follow-up may query only with the original confirmed date`);
+    assert.deepEqual(testHarness.calls[0].checkIn, "2026-08-06");
+    assert.equal(reused.provenance.checkIn, "context");
+    assert.deepEqual(reused.fields.checkIn.sourceEvidenceRefs, [evidenceRef("event-A")], `${expectedStatus} follow-up must reuse only event-A`);
   }
+}
+
+async function resolvedDateReplacesConfirmedTemporalEvidence() {
+  const userId = "resolved-update";
+  const initial = stateFor(userId, [cycle("cycle-a", "room-a", "2026-08-06", "2026-08-07", 1, 2, "answered", {
+    contextReuseExpiresAt: "2026-07-24T12:00:00.000Z",
+    sourceEvidenceRefs: [evidenceRef("event-A")]
+  })]);
+  const testHarness = harness({ [userId]: initial });
+  testHarness.queue(plan([availabilityTask(8, "room-a", stay({ rawText: "8/10", kind: "absolute", checkInCandidate: "2026-08-10", nightsCandidate: 2, guestCountCandidate: 2 }))], [{ candidateIndex: 8, kind: "supplement_existing", refs: ["cycle-a"] }]));
+  const result = await testHarness.process(userId, "event-C", "new legal date");
+  const updated = cycleById(testHarness.state(userId), "cycle-a");
+  assert.ok(result.replyText.length > 0);
+  assert.deepEqual(updated.confirmedInputs.stay, { checkIn: "2026-08-10", checkOut: "2026-08-12", nights: 2, guests: 2, searchRange: null });
+  assert.equal(updated.temporalResult.resolutionStatus, "resolved");
+  assert.deepEqual(updated.temporalResult.fields.checkIn.sourceEvidenceRefs, [evidenceRef("event-C", "new legal date")]);
+  assert.deepEqual(updated.sourceEvidenceRefs, [evidenceRef("event-A"), evidenceRef("event-C", "new legal date")]);
+  assert.notEqual(updated.contextReuseExpiresAt, initial.requestCycles[0].contextReuseExpiresAt);
+  assert.deepEqual(testHarness.calls.map((item) => [item.checkIn, item.checkOut]), [["2026-08-10", "2026-08-12"]]);
 }
 
 async function mixedTemporalOutcomesStayIsolated() {
@@ -204,11 +252,8 @@ async function mixedTemporalOutcomesStayIsolated() {
     assert.ok(cycleA && cycleB);
     assert.deepEqual(cycleA.confirmedInputs.stay, { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: 2, searchRange: null });
     assert.deepEqual(cycleB.confirmedInputs.stay, existing.requestCycles[0].confirmedInputs.stay, "B's invalid date must not overwrite its confirmed inputs");
-    assert.equal(cycleB.temporalResult.resolutionStatus, "invalid");
-    assert.equal(cycleB.temporalResult.fields.checkIn.valueStatus, "invalid");
-    assert.equal(cycleB.temporalResult.fields.checkOut.valueStatus, "missing");
-    assert.equal(cycleB.temporalResult.fields.nights.valueStatus, "confirmed");
-    assert.equal(cycleB.temporalResult.fields.searchRange.valueStatus, "missing");
+    assert.deepEqual(cycleB.temporalResult, existing.requestCycles[0].temporalResult, "B's failed attempt must not replace its resolved temporal context");
+    assert.deepEqual(cycleB.sourceEvidenceRefs, existing.requestCycles[0].sourceEvidenceRefs, "B's failed evidence must not pollute B confirmed evidence");
     assert.equal(cycleA.temporalResult.fields.checkIn.valueStatus, "confirmed");
     assert.equal(cycleA.temporalResult.fields.checkOut.valueStatus, "confirmed");
     assert.equal(cycleA.temporalResult.fields.nights.valueStatus, "confirmed");
@@ -323,6 +368,7 @@ async function main() {
   await perCandidateIsolation();
   await contextReuseAndIsolation();
   await failedDatesDoNotReuseOrMutate();
+  await resolvedDateReplacesConfirmedTemporalEvidence();
   await mixedTemporalOutcomesStayIsolated();
   await noRelationAndIneligibleCyclesCannotReuse();
   console.log("temporal per request: PASS");

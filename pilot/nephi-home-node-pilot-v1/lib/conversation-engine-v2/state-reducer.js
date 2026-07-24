@@ -6,6 +6,7 @@ const { legacyCycleId } = require("./contracts");
 
 const PATHS = new Set(["stay.checkIn", "stay.checkOut", "stay.nights", "stay.guests", "stay.searchRange", "inventory.mode", "inventory.entityId", "inventory.features"]);
 const TOPIC_TASK_TYPES = new Set(["amenity", "policy", "property_fact"]);
+const FAILED_TEMPORAL_STATUSES = new Set(["invalid", "unresolved", "conflicting"]);
 function blankTopic() { return { capabilityType: null, canonicalId: null, category: null, detailIntent: "general", detailFields: [] }; }
 function blankConditions() { return { stay: { checkIn: null, checkOut: null, nights: null, guests: null, searchRange: null }, inventory: { mode: "any", entityId: null, features: [] }, topic: blankTopic() }; }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
@@ -142,8 +143,16 @@ function conditionsForDecision(state, contextInput, decision, isPrimary, transit
   const sourceId = decision.action === "replace" ? decision.referencedRequestCycleId : decision.requestCycleId;
   const conditions = conditionsForCycle(state, sourceId);
   const proposedInputs = contextInput && contextInput.candidateInputsByCandidateIndex || {};
-  if (Object.hasOwn(proposedInputs, decision.candidateIndex)) contextOperationsFromInputs(conditions, proposedInputs[decision.candidateIndex], transition);
-  else if (isPrimary) { contextOperationsFromInputs(conditions, contextInput, transition); applyReducerPatch(conditions, contextInput && contextInput.contextPatch, transition); }
+  const candidateInput = proposedInputs[decision.candidateIndex];
+  const existing = (state.requestCycles || []).find((cycle) => cycle.requestCycleId === sourceId);
+  const failedTemporalAttempt = Boolean(existing
+    && candidateInput
+    && candidateInput.hasNewDateExpression
+    && candidateInput.temporalResult
+    && FAILED_TEMPORAL_STATUSES.has(candidateInput.temporalResult.resolutionStatus));
+  if (Object.hasOwn(proposedInputs, decision.candidateIndex)) {
+    if (!failedTemporalAttempt) contextOperationsFromInputs(conditions, candidateInput, transition);
+  } else if (isPrimary) { contextOperationsFromInputs(conditions, contextInput, transition); applyReducerPatch(conditions, contextInput && contextInput.contextPatch, transition); }
   return conditions;
 }
 function reduceConversationState(previous, contextInput, scope = {}) {
@@ -174,8 +183,15 @@ function reduceConversationState(previous, contextInput, scope = {}) {
     const existingAt = cycleIndex.get(requestCycleId);
     const existing = existingAt === undefined ? null : state.requestCycles[existingAt];
     const candidateInput = contextInput && contextInput.candidateInputsByCandidateIndex && contextInput.candidateInputsByCandidateIndex[decision.candidateIndex];
-    const temporalResult = candidateInput && candidateInput.temporalResult || existing && existing.temporalResult || null;
-    const sourceEvidenceRefs = normalizeEvidenceRefs(existing && (!candidateInput || !candidateInput.hasNewDateExpression)
+    const failedTemporalAttempt = Boolean(existing
+      && candidateInput
+      && candidateInput.hasNewDateExpression
+      && candidateInput.temporalResult
+      && FAILED_TEMPORAL_STATUSES.has(candidateInput.temporalResult.resolutionStatus));
+    const temporalResult = failedTemporalAttempt
+      ? existing.temporalResult
+      : candidateInput && candidateInput.temporalResult || existing && existing.temporalResult || null;
+    const sourceEvidenceRefs = normalizeEvidenceRefs(existing && (failedTemporalAttempt || !candidateInput || !candidateInput.hasNewDateExpression)
       ? existing.sourceEvidenceRefs
       : [
         ...(existing && existing.sourceEvidenceRefs || []),
@@ -184,8 +200,8 @@ function reduceConversationState(previous, contextInput, scope = {}) {
     const canRefreshContextReuse = !existing || Boolean(
       candidateInput
       && candidateInput.hasNewDateExpression
-      && temporalResult
-      && temporalResult.resolutionStatus === "resolved"
+      && candidateInput.temporalResult
+      && candidateInput.temporalResult.resolutionStatus === "resolved"
     );
     const contextReuseExpiresAt = canRefreshContextReuse
       ? new Date(new Date(scope.now || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString()
