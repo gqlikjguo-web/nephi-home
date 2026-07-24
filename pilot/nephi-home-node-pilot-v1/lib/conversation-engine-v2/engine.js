@@ -2,7 +2,7 @@
 
 const crypto = require("node:crypto");
 
-const { validatePlannerOutput, applyPlannerSemanticContract, normalizeEligibilityEvidence } = require("./planner-schema");
+const { validatePlannerOutput, applyPlannerSemanticContract, normalizeEligibilityEvidence, discardLegacyPlannerStateControls } = require("./planner-schema");
 const { normalizeDetailIntent } = require("./detail-intent");
 const { buildPropertyCatalog } = require("./property-catalog");
 const { resolveTemporalExpression } = require("./temporal-resolver");
@@ -20,6 +20,7 @@ const { validateUnderstandingContext } = require("./understanding-validator");
 
 const DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS = 31;
 const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
+const INVENTORY_TASK_TYPES = new Set(["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"]);
 function dateKeyAt(timestamp, timezone) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(timestamp)).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
   return `${parts.year}-${parts.month}-${parts.day}`;
@@ -58,28 +59,7 @@ function plannerValidationTrace(plannerOutput, validation) {
 function normalizePlannerOutput(plannerOutput, { eventTimestamp, timezone } = {}) {
   if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) return null;
   const stay = { ...(plannerOutput.stay || {}), dateExpression: { ...plannerOutput.stay && plannerOutput.stay.dateExpression } };
-  const inventory = { mode: null, entityId: null, features: null };
-  const inventoryClears = new Set();
-  for (const item of plannerOutput.stateOperations || []) {
-    if (!item) continue;
-    if (item.operation === "clear" && ["inventory.mode", "inventory.entityId", "inventory.features"].includes(item.field)) {
-      inventoryClears.add(item.field);
-      continue;
-    }
-    if (!["set", "replace"].includes(item.operation)) continue;
-    if (item.field === "stay.checkInCandidate" && !stay.checkInCandidate) stay.checkInCandidate = item.value;
-    if (item.field === "stay.checkOutCandidate" && !stay.checkOutCandidate) stay.checkOutCandidate = item.value;
-    if (item.field === "stay.nightsCandidate" && !stay.nightsCandidate) stay.nightsCandidate = item.value;
-    if (item.field === "stay.guestCountCandidate" && !stay.guestCountCandidate) stay.guestCountCandidate = item.value;
-    if (item.field === "stay.dateExpression.rawText" && !stay.dateExpression.rawText) stay.dateExpression.rawText = item.value;
-    if (item.field === "stay.dateExpression.kind" && stay.dateExpression.kind === "none") stay.dateExpression.kind = item.value;
-    if (item.field === "stay.dateExpression.anchor" && stay.dateExpression.anchor === "none") stay.dateExpression.anchor = item.value;
-    if (item.field === "inventory.mode") inventory.mode = item.value;
-    if (item.field === "inventory.entityId") inventory.entityId = item.value;
-    if (item.field === "inventory.features") inventory.features = item.value;
-  }
-  const legacyReset = (plannerOutput.stateOperations || []).some((item) => item && item.field === "*" && item.operation === "clear");
-  const output = { ...plannerOutput, stateOperations: [], legacyReset, stay, inventoryCandidates: inventory, inventoryClears: [...inventoryClears], tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, detailIntent: normalizeDetailIntent(task.detailIntent), eligibilityEvidence: normalizeEligibilityEvidence(task.eligibilityEvidence), entity: task.entity ? { ...task.entity } : task.entity })) };
+  const output = { ...plannerOutput, stay, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, detailIntent: normalizeDetailIntent(task.detailIntent), eligibilityEvidence: normalizeEligibilityEvidence(task.eligibilityEvidence), entity: task.entity ? { ...task.entity } : task.entity })) };
   const availableDatesRequested = output.tasks.some((task) => task.type === "available_dates");
   const genericAvailability = output.tasks.some((task) => isGenericAvailabilityEntity(task));
   const genericAvailableDates = output.tasks.some((task) => task.type === "available_dates" && isGenericAvailabilityEntity(task));
@@ -93,7 +73,7 @@ function normalizePlannerOutput(plannerOutput, { eventTimestamp, timezone } = {}
     });
     output.searchRange = { from: dateFrom, to: addUtcDays(dateFrom, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS) };
   }
-  if (genericAvailableDates || genericAvailability) output.inventoryCandidates = { ...output.inventoryCandidates, mode: "any", entityId: null };
+  if (genericAvailableDates || genericAvailability) output.inventoryCandidates = { mode: "any", entityId: null, features: null };
   return output;
 }
 
@@ -103,6 +83,18 @@ function normalizedPlannerStay(plannerOutput) {
     dateExpression: { ...plannerOutput.stay.dateExpression }
   };
   return stay;
+}
+
+function confirmedInventoryFromTasks(catalog, tasks) {
+  const candidate = [...(tasks || [])].reverse().find((task) => INVENTORY_TASK_TYPES.has(task && task.type)
+    && task.entity && (task.entity.rawText || task.entity.canonicalCandidate));
+  if (!candidate) return null;
+  const resolved = resolveEntity(catalog, candidate.entity);
+  if (!resolved || resolved.status !== "resolved" || !resolved.entity || !["room", "bundle"].includes(resolved.entity.category)) return null;
+  return {
+    mode: resolved.entity.category === "bundle" ? "bundle_only" : "room_only",
+    entityId: String(resolved.entity.canonicalId)
+  };
 }
 
 const SAFE_FALLBACK = "這次有部分內容無法安全確認，我會請業者協助；您剛才的問題已經記錄。";
@@ -148,6 +140,7 @@ class ConversationEngineV2 {
       this.traceContexts.delete(traceId);
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), traceId };
     }
+    plannerOutput = discardLegacyPlannerStateControls(plannerOutput);
     plannerOutput = normalizePlannerOutput(plannerOutput, { eventTimestamp: input.eventTimestamp, timezone: catalog.timezone });
     if (!plannerOutput) {
       this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: ["planner_normalization_failed"], finalTasks: [] });
@@ -187,7 +180,7 @@ class ConversationEngineV2 {
       this.traceContexts.delete(traceId);
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), traceId };
     }
-    const contextExecution = decideContextExecution(previous, contextValidation.relations, plannerOutput.tasks, { resetConditions: plannerOutput.legacyReset });
+    const contextExecution = decideContextExecution(previous, contextValidation.relations, plannerOutput.tasks);
     this.trace(traceId, "pending_request", { action: contextExecution.resumedPending ? "resumed" : "unchanged", reasonCode: contextExecution.contextDecision.action, capability: previous.pendingRequest && previous.pendingRequest.capability || "", missingFields: previous.pendingRequest && previous.pendingRequest.missingFields || [] });
     const hasActionableTask = plannerOutput.tasks.some((task) => !NON_ACTIONABLE_TASK_TYPES.has(task.type));
     const unknownTaskCount = plannerOutput.tasks.filter((task) => NON_ACTIONABLE_TASK_TYPES.has(task.type)).length;
@@ -218,30 +211,15 @@ class ConversationEngineV2 {
       resolutionStatus: temporal.resolutionStatus,
       produced: { checkIn: Boolean(temporal.checkIn), checkOut: Boolean(temporal.checkOut), nights: Boolean(temporal.nights) }
     });
-    const contextPatch = [];
-    const patchOperation = (field, value) => contextPatch.push({ field, operation: previous.conditions.stay && previous.conditions.stay[field.split(".")[1]] ? "replace" : "set", value });
-    if (Number.isInteger(plannerStay.guestCountCandidate)) patchOperation("stay.guests", plannerStay.guestCountCandidate);
-    if (Number.isInteger(plannerStay.nightsCandidate)) patchOperation("stay.nights", plannerStay.nightsCandidate);
-    if (plannerOutput.inventoryCandidates && plannerOutput.inventoryCandidates.mode !== null) contextPatch.push({ field: "inventory.mode", operation: "replace", value: plannerOutput.inventoryCandidates.mode });
-    if (plannerOutput.inventoryCandidates && plannerOutput.inventoryCandidates.entityId !== null) contextPatch.push({ field: "inventory.entityId", operation: "replace", value: plannerOutput.inventoryCandidates.entityId });
-    if (plannerOutput.inventoryCandidates && Array.isArray(plannerOutput.inventoryCandidates.features)) contextPatch.push({ field: "inventory.features", operation: "replace", value: plannerOutput.inventoryCandidates.features });
-    for (const field of plannerOutput.inventoryClears || []) contextPatch.push({ field, operation: "clear", value: null });
-    if (temporal.resolutionStatus === "resolved") {
-      if (temporal.checkIn) patchOperation("stay.checkIn", temporal.checkIn);
-      if (temporal.checkOut) patchOperation("stay.checkOut", temporal.checkOut);
-      if (temporal.nights) patchOperation("stay.nights", temporal.nights);
-      if (temporal.searchRange) patchOperation("stay.searchRange", temporal.searchRange);
-    }
-    if (temporal.resolutionStatus === "invalid" && plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none") {
-      // An explicit invalid date (notably a date already past) is a new
-      // constraint, never permission to reuse an older stay from state.
-      for (const field of ["stay.checkIn", "stay.checkOut", "stay.searchRange"]) {
-        contextPatch.push({ field, operation: "clear", value: null });
-      }
-    }
-    if (plannerOutput.searchRange) patchOperation("stay.searchRange", plannerOutput.searchRange);
-    const state = reduceConversationState(previous, { tasks: executionTasks, contextDecision: contextExecution.contextDecision, contextPatch }, scope);
-    this.trace(traceId, "state", { contextAction: contextExecution.contextDecision.action, operations: contextPatch.map((item) => ({ field: item.field, operation: item.operation })), conditions: state.conditions, ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {}) });
+    const state = reduceConversationState(previous, {
+      tasks: executionTasks,
+      contextDecision: contextExecution.contextDecision,
+      confirmedFields: { guests: plannerStay.guestCountCandidate, nights: plannerStay.nightsCandidate, inventory: confirmedInventoryFromTasks(catalog, executionTasks) },
+      temporalResult: temporal,
+      hasNewDateExpression: Boolean(plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none"),
+      searchRange: plannerOutput.searchRange || null
+    }, scope);
+    this.trace(traceId, "state", { contextAction: contextExecution.contextDecision.action, operations: state.transition, conditions: state.conditions, ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {}) });
     this.trace(traceId, "entity_resolution", { tasks: executionTasks.map((task) => { const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : { status: "not_requested" }; return this.diagnosticDetail ? { taskId: task.taskId, resolved } : { taskId: task.taskId, status: resolved.status, canonicalId: resolved.entity && resolved.entity.canonicalId || null, candidateCount: resolved.candidates && resolved.candidates.length || 0 }; }) });
     const resolverCalls = [];
     const tracedAvailabilityResolver = (request) => { const result = this.availabilityResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };

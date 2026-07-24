@@ -149,16 +149,22 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   assert.deepEqual(multiTask.claimValidation.missingTaskIds, []);
 
   function temporalPlanner({ message, operations = [], tasks, nightsCandidate = null, guestCountCandidate = null }) {
+    const operationValues = new Map(operations.filter((item) => item && item.operation !== "clear").map((item) => [item.field, item.value]));
+    const dateExpression = {
+      rawText: operationValues.get("stay.dateExpression.rawText") || "",
+      kind: operationValues.get("stay.dateExpression.kind") || "none",
+      anchor: operationValues.get("stay.dateExpression.anchor") || "none"
+    };
     return { classify: async () => ({
       schemaVersion: 2,
       discourse: { relation: "new_request", confidence: 0.99 },
-      stateOperations: operations,
+      stateOperations: [],
       stay: {
-        dateExpression: { rawText: "", kind: "none", anchor: "none" },
-        checkInCandidate: null,
-        checkOutCandidate: null,
-        nightsCandidate,
-        guestCountCandidate
+        dateExpression,
+        checkInCandidate: operationValues.get("stay.checkInCandidate") || null,
+        checkOutCandidate: operationValues.get("stay.checkOutCandidate") || null,
+        nightsCandidate: nightsCandidate || operationValues.get("stay.nightsCandidate") || null,
+        guestCountCandidate: guestCountCandidate || operationValues.get("stay.guestCountCandidate") || null
       },
       tasks: tasks || [{
         taskId: "availability",
@@ -250,7 +256,7 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   }), conditionStateUser);
   assert.equal(replacedGuests.state.conditions.stay.guests, 4);
   assert.equal(replacedGuests.state.conditions.stay.nights, 2);
-  assert.deepEqual(replacedGuests.state.conditions.inventory.features, ["bathtub"]);
+  assert.deepEqual(replacedGuests.state.conditions.inventory.features, []);
   const clearedFeature = await runTemporal("no bathtub needed", temporalPlanner({
     message: "no bathtub needed", operations: [{ field: "inventory.features", operation: "clear", value: null, sourceText: "no bathtub" }]
   }), conditionStateUser);

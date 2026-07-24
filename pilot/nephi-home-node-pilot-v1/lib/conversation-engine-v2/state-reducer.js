@@ -27,7 +27,7 @@ function topicFromTasks(tasks) {
   return { capabilityType: task.type, canonicalId: String(task.entity.canonicalCandidate), category: String(task.entity.category || "other"), detailIntent: String(task.detailIntent || "general"), detailFields: [...new Set((task.requestedOutputs || []).map(String).filter(Boolean))].slice(0, 12) };
 }
 
-function decideContextExecution(previous, relations, plannerTasks, options = {}) {
+function decideContextExecution(previous, relations, plannerTasks) {
   const relation = (relations || []).find((item) => item && item.stateAction !== "none") || null;
   const pending = previous && previous.pendingRequest;
   const pendingCycleId = legacyCycleId(pending);
@@ -45,26 +45,66 @@ function decideContextExecution(previous, relations, plannerTasks, options = {})
   return {
     contextDecision: {
       action: relation && relation.stateAction || "none",
-      requestCycleId: relation && relation.requestCycleId || null,
-      resetConditions: Boolean(relation && relation.stateAction === "start" && options.resetConditions === true)
+      requestCycleId: relation && relation.requestCycleId || null
     },
     executionTasks,
     resumedPending: mayContinue
   };
 }
 
+function addContextOperation(state, transition, field, value) {
+  if (!PATHS.has(field) || value === null || value === undefined) return;
+  const [group, key] = field.split(".");
+  const operation = state.conditions[group] && state.conditions[group][key] === null ? "set" : "replaced";
+  setPath(state.conditions, field, clone(value));
+  transition[operation].push(field);
+}
+
+function contextOperationsFromInputs(state, contextInput, transition) {
+  const confirmed = contextInput && contextInput.confirmedFields || {};
+  if (Number.isInteger(confirmed.guests)) addContextOperation(state, transition, "stay.guests", confirmed.guests);
+  if (Number.isInteger(confirmed.nights)) addContextOperation(state, transition, "stay.nights", confirmed.nights);
+  if (confirmed.inventory && typeof confirmed.inventory === "object") {
+    addContextOperation(state, transition, "inventory.mode", confirmed.inventory.mode);
+    addContextOperation(state, transition, "inventory.entityId", confirmed.inventory.entityId);
+  }
+  const temporal = contextInput && contextInput.temporalResult || {};
+  if (temporal.resolutionStatus === "resolved") {
+    addContextOperation(state, transition, "stay.checkIn", temporal.checkIn);
+    addContextOperation(state, transition, "stay.checkOut", temporal.checkOut);
+    addContextOperation(state, transition, "stay.nights", temporal.nights);
+    addContextOperation(state, transition, "stay.searchRange", temporal.searchRange);
+  }
+  if (temporal.resolutionStatus === "invalid" && contextInput && contextInput.hasNewDateExpression) {
+    for (const field of ["stay.checkIn", "stay.checkOut", "stay.searchRange"]) {
+      setPath(state.conditions, field, null);
+      transition.cleared.push(field);
+    }
+  }
+  if (contextInput && contextInput.searchRange) addContextOperation(state, transition, "stay.searchRange", contextInput.searchRange);
+}
+
+function applyReducerPatch(state, patch, transition) {
+  for (const item of Array.isArray(patch) ? patch : []) {
+    if (!item || !PATHS.has(item.field)) continue;
+    if (item.operation === "clear") {
+      setPath(state.conditions, item.field, item.field === "inventory.features" ? [] : null);
+      transition.cleared.push(item.field);
+    } else if (item.operation === "keep") {
+      transition.kept.push(item.field);
+    } else if (item.operation === "set" || item.operation === "replace") {
+      setPath(state.conditions, item.field, clone(item.value));
+      transition[item.operation === "replace" ? "replaced" : "set"].push(item.field);
+    }
+  }
+}
+
 function reduceConversationState(previous, contextInput, scope) {
   let state = migrateStateV2(previous, scope);
   const transition = { set: [], replaced: [], cleared: [], kept: [], sourceEventId: scope.eventId || "" };
   const decision = contextInput && contextInput.contextDecision || {};
-  const patch = contextInput && contextInput.contextPatch || [];
-  if (decision.resetConditions === true) state.conditions = blankConditions();
-  for (const item of patch) {
-    if (!PATHS.has(item.field)) continue;
-    if (item.operation === "clear") { setPath(state.conditions, item.field, item.field === "inventory.features" ? [] : null); transition.cleared.push(item.field); }
-    else if (item.operation === "keep") transition.kept.push(item.field);
-    else { setPath(state.conditions, item.field, clone(item.value)); transition[item.operation === "replace" ? "replaced" : "set"].push(item.field); }
-  }
+  contextOperationsFromInputs(state, contextInput, transition);
+  applyReducerPatch(state, contextInput && contextInput.contextPatch, transition);
   const topic = topicFromTasks(contextInput && contextInput.tasks);
   if (topic) state.conditions.topic = topic;
   if (decision.action !== "none" && state.conditions.topic && state.conditions.topic.canonicalId) {

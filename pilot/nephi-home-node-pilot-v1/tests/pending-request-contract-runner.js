@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
-const { createPendingRequest } = require("../lib/conversation-engine-v2/pending-request");
+const { createPendingRequest, pendingFromResults } = require("../lib/conversation-engine-v2/pending-request");
 
 const property = {
   propertyId: "pending_contract_property",
@@ -141,6 +141,16 @@ async function main() {
   assert.equal(Object.hasOwn(pending, "resolverResult"), false);
 
   assert.equal(Object.hasOwn(pending, "resumed"), false, "pending data carries identity and scope only; it does not choose a continuation");
+
+  const newlyCreatedOnly = pendingFromResults({
+    plannerOutput: plan([availabilityTask({ taskId: "new-pending" })], { missingInformation: ["stay.guests"] }),
+    taskResults: [{ taskId: "new-pending", status: "needs_clarification", missingInputs: ["stay.guests"] }],
+    conditions: pending.conditions,
+    scope: { pendingRequestId: "new-pending-id", requestCycleId: "reducer-approved-cycle", eventId: "new-event", now: "2026-07-23T02:00:00.000Z", previousPendingRequest: pending }
+  });
+  assert.equal(newlyCreatedOnly.pendingRequestId, "new-pending-id");
+  assert.equal(newlyCreatedOnly.requestCycleId, "reducer-approved-cycle");
+  assert.deepEqual(newlyCreatedOnly.tasks.map((task) => task.taskId), ["new-pending"], "pendingFromResults may create only the supplied task result; it cannot select an older pending request");
 
   const gate = diagnostics.find((entry) => entry.stage === "no_reply_gate");
   assert.ok(gate, "every valid planner result must emit a no-reply gate diagnostic");

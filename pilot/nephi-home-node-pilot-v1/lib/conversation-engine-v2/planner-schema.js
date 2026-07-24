@@ -44,6 +44,15 @@ function controlledRequestedOutputs(task) {
   return task.requestedOutputs;
 }
 
+// Legacy planner state controls are accepted only for wire compatibility with
+// the existing planner provider.  They are discarded at the schema boundary:
+// no downstream component receives them as a state input.
+function discardLegacyPlannerStateControls(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const { stateOperations: _discarded, ...rest } = value;
+  return { ...rest, stateOperations: [] };
+}
+
 function validatePlannerOutput(value) {
   const errors = [];
   if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, errors: ["root"] };
@@ -128,4 +137,4 @@ function plannerJsonSchema() {
   };
 }
 
-module.exports = { validatePlannerOutput, applyPlannerSemanticContract, plannerJsonSchema, normalizeEligibilityEvidence, TASK_TYPES };
+module.exports = { validatePlannerOutput, applyPlannerSemanticContract, plannerJsonSchema, normalizeEligibilityEvidence, discardLegacyPlannerStateControls, TASK_TYPES };
