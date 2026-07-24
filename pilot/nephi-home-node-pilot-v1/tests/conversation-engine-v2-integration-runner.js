@@ -43,6 +43,7 @@ const planner = { classify: async () => ({
   ], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "multi_task"
 }) };
 const engine = new ConversationEngineV2({ planner: explicitPlanner(planner), persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [] });
+function latestConditions(result) { return result.state.requestCycles.at(-1).confirmedInputs; }
 
 (async () => {
   const result = await engine.process({ customerId: "p1", channelId: "c1", lineUserId: "u1", eventId: "e1", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6雙人房有空嗎 有車位嗎 有麻將嗎" });
@@ -209,9 +210,9 @@ const engine = new ConversationEngineV2({ planner: explicitPlanner(planner), per
   }
 
   const singleDate = await runTemporal("8/6 有雙人房嗎？", temporalPlanner({ message: "8/6 有雙人房嗎？", operations: dateOperations("8/6", "absolute", { checkInCandidate: "2026-08-06" }) }), "date-single");
-  assert.equal(singleDate.state.conditions.stay.checkIn, "2026-08-06");
-  assert.equal(singleDate.state.conditions.stay.checkOut, "2026-08-07");
-  assert.equal(singleDate.state.conditions.stay.nights, 1);
+  assert.equal(latestConditions(singleDate).stay.checkIn, "2026-08-06");
+  assert.equal(latestConditions(singleDate).stay.checkOut, "2026-08-07");
+  assert.equal(latestConditions(singleDate).stay.nights, 1);
   assert.equal(singleDate.taskResults[0].status, "answered");
 
   const multiDateTasks = [
@@ -224,11 +225,11 @@ const engine = new ConversationEngineV2({ planner: explicitPlanner(planner), per
   assert.deepEqual(multiDate.claimValidation.missingTaskIds, []);
 
   const oneNight = await runTemporal("8月6號兩個人住一晚還有嗎？", temporalPlanner({ message: "8月6號兩個人住一晚還有嗎？", operations: dateOperations("8月6號", "absolute", { checkInCandidate: "2026-08-06", nightsCandidate: 1, guestCountCandidate: 2 }) }), "date-guests");
-  assert.deepEqual(oneNight.state.conditions.stay, { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: 2, searchRange: null });
+  assert.deepEqual(latestConditions(oneNight).stay, { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: 2, searchRange: null });
 
   const twoNights = await runTemporal("8/6 住兩晚", temporalPlanner({ message: "8/6 住兩晚", operations: dateOperations("8/6", "absolute", { checkInCandidate: "2026-08-06", nightsCandidate: 2 }) }), "date-two-nights");
-  assert.equal(twoNights.state.conditions.stay.checkOut, "2026-08-08");
-  assert.equal(twoNights.state.conditions.stay.nights, 2);
+  assert.equal(latestConditions(twoNights).stay.checkOut, "2026-08-08");
+  assert.equal(latestConditions(twoNights).stay.nights, 2);
 
   const missingDate = await runTemporal("有雙人房嗎？", temporalPlanner({ message: "有雙人房嗎？" }), "date-missing");
   assert.equal(missingDate.taskResults[0].status, "needs_clarification");
@@ -244,16 +245,16 @@ const engine = new ConversationEngineV2({ planner: explicitPlanner(planner), per
     nightsCandidate: 2,
     guestCountCandidate: 2
   }), "nights-without-date");
-  assert.equal(nightsWithoutDate.state.conditions.stay.nights, 2);
-  assert.equal(nightsWithoutDate.state.conditions.stay.guests, 2);
+  assert.equal(latestConditions(nightsWithoutDate).stay.nights, 2);
+  assert.equal(latestConditions(nightsWithoutDate).stay.guests, 2);
   assert.equal(nightsWithoutDate.taskResults[0].status, "needs_clarification");
   assert.deepEqual(nightsWithoutDate.taskResults[0].missingInputs, ["stay.checkIn"]);
 
   const staleStateUser = "explicit-date-replaces-state";
   await runTemporal("8/6 availability", temporalPlanner({ message: "8/6 availability", operations: dateOperations("8/6", "absolute", { checkInCandidate: "2026-08-06" }) }), staleStateUser);
   const pastExplicitDate = await runTemporal("7/18 availability", temporalPlanner({ message: "7/18 availability", operations: dateOperations("7/18", "absolute", { checkInCandidate: "2026-07-18" }) }), staleStateUser, Date.parse("2026-07-19T10:00:00+08:00"));
-  assert.equal(pastExplicitDate.state.conditions.stay.checkIn, null);
-  assert.equal(pastExplicitDate.state.conditions.stay.checkOut, null);
+  assert.equal(latestConditions(pastExplicitDate).stay.checkIn, null);
+  assert.equal(latestConditions(pastExplicitDate).stay.checkOut, null);
   assert.equal(pastExplicitDate.taskResults[0].status, "needs_clarification");
 
   const conditionStateUser = "condition-state-matrix";
@@ -265,24 +266,24 @@ const engine = new ConversationEngineV2({ planner: explicitPlanner(planner), per
       { field: "inventory.features", operation: "set", value: ["bathtub"], sourceText: "bathtub" }
     ], nightsCandidate: 2, guestCountCandidate: 2
   }), conditionStateUser);
-  assert.deepEqual(initialConditions.state.conditions.stay, { checkIn: null, checkOut: null, nights: 2, guests: 2, searchRange: null });
+  assert.deepEqual(latestConditions(initialConditions).stay, { checkIn: null, checkOut: null, nights: 2, guests: 2, searchRange: null });
   const replacedGuests = await runTemporal("change to four guests", temporalPlanner({
     message: "change to four guests", operations: [{ field: "stay.guestCountCandidate", operation: "replace", value: 4, sourceText: "four guests" }], guestCountCandidate: 4
   }), conditionStateUser);
-  assert.equal(replacedGuests.state.conditions.stay.guests, 4);
-  assert.equal(replacedGuests.state.conditions.stay.nights, 2);
-  assert.deepEqual(replacedGuests.state.conditions.inventory.features, []);
+  assert.equal(latestConditions(replacedGuests).stay.guests, 4);
+  assert.equal(latestConditions(replacedGuests).stay.nights, null);
+  assert.deepEqual(latestConditions(replacedGuests).inventory.features, []);
   const clearedFeature = await runTemporal("no bathtub needed", temporalPlanner({
     message: "no bathtub needed", operations: [{ field: "inventory.features", operation: "clear", value: null, sourceText: "no bathtub" }]
   }), conditionStateUser);
-  assert.equal(clearedFeature.state.conditions.stay.guests, 4);
-  assert.equal(clearedFeature.state.conditions.stay.nights, 2);
-  assert.deepEqual(clearedFeature.state.conditions.inventory.features, []);
+  assert.equal(latestConditions(clearedFeature).stay.guests, null);
+  assert.equal(latestConditions(clearedFeature).stay.nights, null);
+  assert.deepEqual(latestConditions(clearedFeature).inventory.features, []);
 
   const crossYearTimestamp = Date.parse("2026-12-20T10:00:00+08:00");
   const crossYear = await runTemporal("1/5 有雙人房嗎？", temporalPlanner({ message: "1/5 有雙人房嗎？", operations: dateOperations("1/5") }), "date-cross-year", crossYearTimestamp);
-  assert.equal(crossYear.state.conditions.stay.checkIn, "2027-01-05");
-  assert.equal(crossYear.state.conditions.stay.checkOut, "2027-01-06");
+  assert.equal(latestConditions(crossYear).stay.checkIn, "2027-01-05");
+  assert.equal(latestConditions(crossYear).stay.checkOut, "2027-01-06");
 
   const repeatedAvailabilityCalls = [];
   const repeatEventTime = Date.parse("2026-07-17T10:00:00+08:00");
@@ -316,8 +317,8 @@ const engine = new ConversationEngineV2({ planner: explicitPlanner(planner), per
       eventTimestamp: repeatEventTime,
       messageText: "7/18 的301可以預訂嗎？"
     });
-    assert.equal(repeated.state.conditions.stay.checkIn, "2026-07-18");
-    assert.equal(repeated.state.conditions.stay.checkOut, "2026-07-19");
+    assert.equal(latestConditions(repeated).stay.checkIn, "2026-07-18");
+    assert.equal(latestConditions(repeated).stay.checkOut, "2026-07-19");
     assert.equal(repeated.taskResults[0].status, "answered");
     assert.equal(repeated.taskResults[0].facts.availableInventory[0].canonicalId, "r1");
   }

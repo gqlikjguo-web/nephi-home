@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const { validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { resolveTemporalExpression } = require("../lib/conversation-engine-v2/temporal-resolver");
-const { reduceConversationState, emptyStateV2 } = require("../lib/conversation-engine-v2/state-reducer");
+const { reduceConversationState, emptyStateV2, conditionsForCycle } = require("../lib/conversation-engine-v2/state-reducer");
 const { resolveEntity } = require("../lib/conversation-engine-v2/entity-resolver");
 const { executeTasks } = require("../lib/conversation-engine-v2/capability-executor");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
@@ -129,15 +129,15 @@ assert.deepEqual(resolveTemporalExpression({ rawText: "下週三", kind: "weekda
 assert.equal(resolveTemporalExpression({ rawText: "2/30", kind: "absolute", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei" }).resolutionStatus, "invalid");
 
 let state = emptyStateV2({ propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", now: "2026-07-17T02:00:00.000Z" });
-state = reduceConversationState(state, { contextDecision: { action: "start" }, contextPatch: [
+state = reduceConversationState(state, { contextDecision: { action: "start", requestCycleId: "state-test" }, contextPatch: [
   { field: "stay.checkIn", operation: "set", value: "2026-08-06", sourceText: "8/6" },
   { field: "stay.guests", operation: "set", value: 2, sourceText: "兩個人" }
 ] }, { propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", eventId: "e1", now: "2026-07-17T02:00:00.000Z" });
-assert.equal(state.conditions.stay.guests, 2);
+assert.equal(conditionsForCycle(state, "state-test").stay.guests, 2);
 state = reduceConversationState(state, { contextDecision: { action: "replace" }, contextPatch: [{ field: "stay.guests", operation: "replace", value: 4, sourceText: "改四個人" }] }, { propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", eventId: "e2", now: "2026-07-17T02:01:00.000Z" });
-assert.equal(state.conditions.stay.guests, 4);
+assert.equal(state.requestCycles.at(-1).confirmedInputs.stay.guests, 4);
 state = reduceConversationState(state, { contextDecision: { action: "continue" }, contextPatch: [{ field: "inventory.features", operation: "clear", value: null, sourceText: "不用浴缸" }] }, { propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", eventId: "e3", now: "2026-07-17T02:02:00.000Z" });
-assert.deepEqual(state.conditions.inventory.features, []);
+assert.deepEqual(state.requestCycles.at(-1).confirmedInputs.inventory.features, []);
 
 const availabilityResolver = (query) => ({ ...query, availabilityReliable: true, rooms: property.rooms.filter((room) => room.id === "r1") });
 const taskResults = executeTasks({

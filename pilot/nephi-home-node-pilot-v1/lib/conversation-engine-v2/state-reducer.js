@@ -8,17 +8,50 @@ const PATHS = new Set(["stay.checkIn", "stay.checkOut", "stay.nights", "stay.gue
 const TOPIC_TASK_TYPES = new Set(["amenity", "policy", "property_fact"]);
 function blankTopic() { return { capabilityType: null, canonicalId: null, category: null, detailIntent: "general", detailFields: [] }; }
 function blankConditions() { return { stay: { checkIn: null, checkOut: null, nights: null, guests: null, searchRange: null }, inventory: { mode: "any", entityId: null, features: [] }, topic: blankTopic() }; }
-function emptyStateV2(scope = {}) { return { schemaVersion: 2, scope: { propertyId: scope.propertyId || "", channelId: scope.channelId || "", lineUserId: scope.lineUserId || "" }, conditions: blankConditions(), pendingRequest: null, contextCycle: null, transition: { set: [], replaced: [], cleared: [], kept: [], sourceEventId: "" }, updatedAt: scope.now || new Date().toISOString() }; }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
+function scopeOf(scope = {}) { return { propertyId: scope.propertyId || "", channelId: scope.channelId || "", lineUserId: scope.lineUserId || "" }; }
+function sameScope(left = {}, right = {}) { return left.propertyId === right.propertyId && left.channelId === right.channelId && left.lineUserId === right.lineUserId; }
+function emptyStateV2(scope = {}) { return { schemaVersion: 2, scope: scopeOf(scope), requestCycles: [], pendingRequests: [], transition: { set: [], replaced: [], cleared: [], kept: [], sourceEventId: "" }, updatedAt: scope.now || new Date().toISOString() }; }
 function setPath(root, path, value) { const [group, field] = path.split("."); root[group][field] = value; }
-function migrateStateV2(state, scope) {
-  if (!state || state.schemaVersion !== 2 || !state.scope || state.scope.propertyId !== scope.propertyId || state.scope.channelId !== scope.channelId || state.scope.lineUserId !== scope.lineUserId) return emptyStateV2(scope);
+function validCycle(cycle) { return Boolean(cycle && typeof cycle === "object" && cycle.requestCycleId); }
+function normalizedCycle(cycle, now) {
+  if (!validCycle(cycle)) return null;
+  return {
+    requestCycleId: String(cycle.requestCycleId),
+    requestKind: String(cycle.requestKind || ""),
+    status: ["active", "answered", "handoff", "ended", "expired"].includes(cycle.status) ? cycle.status : "active",
+    confirmedInputs: cycle.confirmedInputs && typeof cycle.confirmedInputs === "object" ? clone(cycle.confirmedInputs) : blankConditions(),
+    contextReuseExpiresAt: cycle.contextReuseExpiresAt || null,
+    createdAt: cycle.createdAt || now,
+    updatedAt: cycle.updatedAt || now
+  };
+}
+function distinctCycles(cycles) {
+  const seen = new Set();
+  return cycles.filter((cycle) => cycle && !seen.has(cycle.requestCycleId) && seen.add(cycle.requestCycleId));
+}
+function migrateStateV2(state, scope = {}) {
+  if (!state || state.schemaVersion !== 2 || !sameScope(state.scope, scope)) return emptyStateV2(scope);
+  const now = scope.now || new Date().toISOString();
   const migrated = clone(state);
-  migrated.conditions = migrated.conditions || blankConditions();
-  migrated.conditions.topic = migrated.conditions.topic && typeof migrated.conditions.topic === "object" ? { ...blankTopic(), ...migrated.conditions.topic } : blankTopic();
-  migrated.pendingRequest = migratePendingRequest(migrated.pendingRequest);
-  migrated.contextCycle = migrated.contextCycle && typeof migrated.contextCycle === "object" ? migrated.contextCycle : null;
-  delete migrated.conditions.tasks;
+  const legacyCycle = normalizedCycle(migrated.contextCycle, now);
+  const cycles = Array.isArray(migrated.requestCycles) && migrated.requestCycles.length
+    ? migrated.requestCycles.map((cycle) => normalizedCycle(cycle, now)).filter(Boolean)
+    : legacyCycle ? [legacyCycle] : [];
+  const legacyPending = migratePendingRequest(migrated.pendingRequest);
+  const pendingRequests = (Array.isArray(migrated.pendingRequests) && migrated.pendingRequests.length
+    ? migrated.pendingRequests
+    : legacyPending ? [legacyPending] : []).map(migratePendingRequest).filter(Boolean);
+  for (const pending of pendingRequests) {
+    const requestCycleId = legacyCycleId(pending);
+    if (requestCycleId && !cycles.some((cycle) => cycle.requestCycleId === requestCycleId)) cycles.push(normalizedCycle({ requestCycleId, requestKind: pending.capability, status: "active", confirmedInputs: pending.conditions, contextReuseExpiresAt: pending.metadata && pending.metadata.expiresAt }, now));
+  }
+  migrated.requestCycles = distinctCycles(cycles);
+  migrated.pendingRequests = pendingRequests.filter((pending, index, all) => pending.requestCycleId && all.findIndex((item) => item.pendingRequestId === pending.pendingRequestId) === index);
+  migrated.transition = migrated.transition && typeof migrated.transition === "object" ? migrated.transition : { set: [], replaced: [], cleared: [], kept: [], sourceEventId: "" };
+  delete migrated.contextCycle;
+  delete migrated.pendingRequest;
+  delete migrated.conditions;
   return migrated;
 }
 function topicFromTasks(tasks) {
@@ -26,99 +59,109 @@ function topicFromTasks(tasks) {
   if (!task) return null;
   return { capabilityType: task.type, canonicalId: String(task.entity.canonicalCandidate), category: String(task.entity.category || "other"), detailIntent: String(task.detailIntent || "general"), detailFields: [...new Set((task.requestedOutputs || []).map(String).filter(Boolean))].slice(0, 12) };
 }
-
-function decideContextExecution(previous, relations, plannerTasks) {
-  const relation = (relations || []).find((item) => item && item.stateAction !== "none") || null;
-  const pending = previous && previous.pendingRequest;
-  const pendingCycleId = legacyCycleId(pending);
-  const currentCycleId = previous && previous.contextCycle && previous.contextCycle.requestCycleId || pendingCycleId;
-  const mayContinue = relation && relation.stateAction === "continue" && relation.requestCycleId === currentCycleId && Array.isArray(pending && pending.tasks);
-  const mayReuseTopic = relation && relation.stateAction === "continue" && relation.requestCycleId === currentCycleId
-    && previous && previous.conditions && previous.conditions.topic && previous.conditions.topic.canonicalId;
-  const taskCandidates = plannerTasks || [];
-  const executionTasks = mayContinue ? pending.tasks : mayReuseTopic ? taskCandidates.map((task) => {
-    const entity = task && task.entity || {};
-    if (entity.canonicalCandidate !== null && entity.canonicalCandidate !== undefined) return task;
-    if (task.type !== previous.conditions.topic.capabilityType) return task;
-    return { ...task, entity: { ...entity, category: previous.conditions.topic.category, canonicalCandidate: previous.conditions.topic.canonicalId } };
-  }) : taskCandidates;
-  return {
-    contextDecision: {
-      action: relation && relation.stateAction || "none",
-      requestCycleId: relation && relation.requestCycleId || null
-    },
-    executionTasks,
-    resumedPending: mayContinue
-  };
+function conditionsForCycle(state, requestCycleId) {
+  const cycle = (state && state.requestCycles || []).find((item) => item.requestCycleId === requestCycleId);
+  return cycle && cycle.confirmedInputs ? clone(cycle.confirmedInputs) : blankConditions();
 }
-
-function addContextOperation(state, transition, field, value) {
+function decisionForRelation(previous, relation) {
+  const action = relation && relation.stateAction || "none";
+  if (action === "start") return { candidateIndex: relation.candidateIndex, action, requestCycleId: crypto.randomUUID(), referencedRequestCycleId: null };
+  if (action === "replace") return { candidateIndex: relation.candidateIndex, action, requestCycleId: crypto.randomUUID(), referencedRequestCycleId: relation.requestCycleId || null };
+  return { candidateIndex: relation && relation.candidateIndex, action, requestCycleId: relation && relation.requestCycleId || null, referencedRequestCycleId: relation && relation.requestCycleId || null };
+}
+function decideContextExecution(previous, relations, plannerTasks) {
+  const state = previous || emptyStateV2();
+  const cycles = new Map((state.requestCycles || []).map((cycle) => [cycle.requestCycleId, cycle]));
+  const pendings = new Map((state.pendingRequests || []).map((pending) => [pending.requestCycleId, pending]));
+  const relationsByCandidate = new Map((relations || []).filter((item) => item && item.stateAction !== "none").map((item) => [item.candidateIndex, item]));
+  const contextDecisions = [...relationsByCandidate.values()].map((relation) => decisionForRelation(state, relation));
+  let resumedPending = false;
+  const executionTasks = (plannerTasks || []).flatMap((task) => {
+    const relation = relationsByCandidate.get(task.candidateIndex);
+    if (!relation || relation.stateAction !== "continue") return [task];
+    const pending = pendings.get(relation.requestCycleId);
+    if (pending && Array.isArray(pending.tasks)) { resumedPending = true; return pending.tasks; }
+    const cycle = cycles.get(relation.requestCycleId);
+    const topic = cycle && cycle.confirmedInputs && cycle.confirmedInputs.topic;
+    if (!topic || !topic.canonicalId || task.entity && task.entity.canonicalCandidate !== null && task.entity.canonicalCandidate !== undefined || task.type !== topic.capabilityType) return [task];
+    return [{ ...task, entity: { ...task.entity, category: topic.category, canonicalCandidate: topic.canonicalId } }];
+  });
+  const primaryDecision = contextDecisions.find((item) => item.action !== "none") || { action: "none", requestCycleId: null, candidateIndex: null };
+  return { contextDecision: primaryDecision, contextDecisions, primaryCycleId: primaryDecision.requestCycleId, executionTasks, resumedPending };
+}
+function addContextOperation(conditions, transition, field, value) {
   if (!PATHS.has(field) || value === null || value === undefined) return;
   const [group, key] = field.split(".");
-  const operation = state.conditions[group] && state.conditions[group][key] === null ? "set" : "replaced";
-  setPath(state.conditions, field, clone(value));
-  transition[operation].push(field);
+  const operation = conditions[group] && conditions[group][key] === null ? "set" : "replaced";
+  setPath(conditions, field, clone(value)); transition[operation].push(field);
 }
-
-function contextOperationsFromInputs(state, contextInput, transition) {
+function contextOperationsFromInputs(conditions, contextInput, transition) {
   const confirmed = contextInput && contextInput.confirmedFields || {};
-  if (Number.isInteger(confirmed.guests)) addContextOperation(state, transition, "stay.guests", confirmed.guests);
-  if (Number.isInteger(confirmed.nights)) addContextOperation(state, transition, "stay.nights", confirmed.nights);
-  if (confirmed.inventory && typeof confirmed.inventory === "object") {
-    addContextOperation(state, transition, "inventory.mode", confirmed.inventory.mode);
-    addContextOperation(state, transition, "inventory.entityId", confirmed.inventory.entityId);
-  }
+  if (Number.isInteger(confirmed.guests)) addContextOperation(conditions, transition, "stay.guests", confirmed.guests);
+  if (Number.isInteger(confirmed.nights)) addContextOperation(conditions, transition, "stay.nights", confirmed.nights);
+  if (confirmed.inventory && typeof confirmed.inventory === "object") { addContextOperation(conditions, transition, "inventory.mode", confirmed.inventory.mode); addContextOperation(conditions, transition, "inventory.entityId", confirmed.inventory.entityId); }
   const temporal = contextInput && contextInput.temporalResult || {};
-  if (temporal.resolutionStatus === "resolved") {
-    addContextOperation(state, transition, "stay.checkIn", temporal.checkIn);
-    addContextOperation(state, transition, "stay.checkOut", temporal.checkOut);
-    addContextOperation(state, transition, "stay.nights", temporal.nights);
-    addContextOperation(state, transition, "stay.searchRange", temporal.searchRange);
-  }
-  if (temporal.resolutionStatus === "invalid" && contextInput && contextInput.hasNewDateExpression) {
-    for (const field of ["stay.checkIn", "stay.checkOut", "stay.searchRange"]) {
-      setPath(state.conditions, field, null);
-      transition.cleared.push(field);
-    }
-  }
-  if (contextInput && contextInput.searchRange) addContextOperation(state, transition, "stay.searchRange", contextInput.searchRange);
+  if (temporal.resolutionStatus === "resolved") { addContextOperation(conditions, transition, "stay.checkIn", temporal.checkIn); addContextOperation(conditions, transition, "stay.checkOut", temporal.checkOut); addContextOperation(conditions, transition, "stay.nights", temporal.nights); addContextOperation(conditions, transition, "stay.searchRange", temporal.searchRange); }
+  if (temporal.resolutionStatus === "invalid" && contextInput && contextInput.hasNewDateExpression) for (const field of ["stay.checkIn", "stay.checkOut", "stay.searchRange"]) { setPath(conditions, field, null); transition.cleared.push(field); }
+  if (contextInput && contextInput.searchRange) addContextOperation(conditions, transition, "stay.searchRange", contextInput.searchRange);
 }
-
-function applyReducerPatch(state, patch, transition) {
+function applyReducerPatch(conditions, patch, transition) {
   for (const item of Array.isArray(patch) ? patch : []) {
     if (!item || !PATHS.has(item.field)) continue;
-    if (item.operation === "clear") {
-      setPath(state.conditions, item.field, item.field === "inventory.features" ? [] : null);
-      transition.cleared.push(item.field);
-    } else if (item.operation === "keep") {
-      transition.kept.push(item.field);
-    } else if (item.operation === "set" || item.operation === "replace") {
-      setPath(state.conditions, item.field, clone(item.value));
-      transition[item.operation === "replace" ? "replaced" : "set"].push(item.field);
-    }
+    if (item.operation === "clear") { setPath(conditions, item.field, item.field === "inventory.features" ? [] : null); transition.cleared.push(item.field); }
+    else if (item.operation === "keep") transition.kept.push(item.field);
+    else if (item.operation === "set" || item.operation === "replace") { setPath(conditions, item.field, clone(item.value)); transition[item.operation === "replace" ? "replaced" : "set"].push(item.field); }
   }
 }
-
-function reduceConversationState(previous, contextInput, scope) {
-  let state = migrateStateV2(previous, scope);
+function conditionsForDecision(state, contextInput, decision, isPrimary, transition) {
+  const byCandidate = contextInput && contextInput.cycleInputsByCandidateIndex || {};
+  if (Object.hasOwn(byCandidate, decision.candidateIndex)) return clone(byCandidate[decision.candidateIndex]);
+  const sourceId = decision.action === "replace" ? decision.referencedRequestCycleId : decision.requestCycleId;
+  const conditions = conditionsForCycle(state, sourceId);
+  if (isPrimary) { contextOperationsFromInputs(conditions, contextInput, transition); applyReducerPatch(conditions, contextInput && contextInput.contextPatch, transition); }
+  return conditions;
+}
+function reduceConversationState(previous, contextInput, scope = {}) {
+  const state = migrateStateV2(previous, scope);
   const transition = { set: [], replaced: [], cleared: [], kept: [], sourceEventId: scope.eventId || "" };
-  const decision = contextInput && contextInput.contextDecision || {};
-  contextOperationsFromInputs(state, contextInput, transition);
-  applyReducerPatch(state, contextInput && contextInput.contextPatch, transition);
-  const topic = topicFromTasks(contextInput && contextInput.tasks);
-  if (topic) state.conditions.topic = topic;
-  if (decision.action !== "none" && state.conditions.topic && state.conditions.topic.canonicalId) {
-    const existingId = state.contextCycle && state.contextCycle.requestCycleId;
-    state.contextCycle = {
-      requestCycleId: decision.action === "start" ? decision.requestCycleId || crypto.randomUUID() : decision.requestCycleId || existingId || crypto.randomUUID(),
-      requestKind: state.conditions.topic.capabilityType || "",
-      status: "active",
-      confirmedInputs: clone(state.conditions),
-      contextReuseExpiresAt: new Date(new Date(scope.now || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString()
-    };
+  const rawDecisions = Array.isArray(contextInput && contextInput.contextDecisions)
+    ? contextInput.contextDecisions
+    : contextInput && contextInput.contextDecision ? [contextInput.contextDecision] : [];
+  const decisions = rawDecisions.filter((item) => item && item.action && item.action !== "none");
+  const cycleIndex = new Map(state.requestCycles.map((cycle, index) => [cycle.requestCycleId, index]));
+  for (const [index, decision] of decisions.entries()) {
+    if (decision.action === "end") {
+      const cycleAt = cycleIndex.get(decision.requestCycleId);
+      if (cycleAt !== undefined) { state.requestCycles[cycleAt] = { ...state.requestCycles[cycleAt], status: "ended", updatedAt: scope.now || new Date().toISOString() }; state.pendingRequests = state.pendingRequests.filter((pending) => pending.requestCycleId !== decision.requestCycleId); transition.cleared.push(`cycle:${decision.requestCycleId}`); }
+      continue;
+    }
+    if (decision.action === "replace" && decision.referencedRequestCycleId) {
+      const replacedAt = cycleIndex.get(decision.referencedRequestCycleId);
+      if (replacedAt !== undefined) state.requestCycles[replacedAt] = { ...state.requestCycles[replacedAt], status: "ended", updatedAt: scope.now || new Date().toISOString() };
+      state.pendingRequests = state.pendingRequests.filter((pending) => pending.requestCycleId !== decision.referencedRequestCycleId);
+      transition.replaced.push(`cycle:${decision.referencedRequestCycleId}`);
+    }
+    const task = (contextInput && contextInput.tasks || []).find((item) => item.candidateIndex === decision.candidateIndex);
+    const topic = topicFromTasks(task ? [task] : []);
+    const conditions = conditionsForDecision(state, contextInput, decision, index === 0, transition);
+    if (topic) conditions.topic = topic;
+    const requestCycleId = decision.requestCycleId || crypto.randomUUID();
+    const existingAt = cycleIndex.get(requestCycleId);
+    const existing = existingAt === undefined ? null : state.requestCycles[existingAt];
+    const cycle = { requestCycleId, requestKind: conditions.topic && conditions.topic.capabilityType || existing && existing.requestKind || "", status: "active", confirmedInputs: conditions, contextReuseExpiresAt: new Date(new Date(scope.now || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString(), createdAt: existing && existing.createdAt || scope.now || new Date().toISOString(), updatedAt: scope.now || new Date().toISOString() };
+    if (existingAt === undefined) { state.requestCycles.push(cycle); cycleIndex.set(requestCycleId, state.requestCycles.length - 1); transition.set.push(`cycle:${requestCycleId}`); }
+    else { state.requestCycles[existingAt] = { ...existing, ...cycle, createdAt: existing.createdAt || cycle.createdAt }; transition.replaced.push(`cycle:${requestCycleId}`); }
   }
   state.transition = transition; state.updatedAt = scope.now || new Date().toISOString();
   return state;
 }
+function reducePendingRequests(previous, { requestCycleId, pendingRequest } = {}, scope = {}) {
+  const state = migrateStateV2(previous, scope);
+  if (!requestCycleId) return state;
+  state.pendingRequests = state.pendingRequests.filter((pending) => pending.requestCycleId !== requestCycleId);
+  if (pendingRequest) state.pendingRequests.push(migratePendingRequest(pendingRequest));
+  state.updatedAt = scope.now || new Date().toISOString();
+  return state;
+}
 
-module.exports = { emptyStateV2, migrateStateV2, reduceConversationState, blankTopic, topicFromTasks, decideContextExecution };
+module.exports = { emptyStateV2, migrateStateV2, reduceConversationState, reducePendingRequests, blankTopic, blankConditions, topicFromTasks, conditionsForCycle, decideContextExecution };

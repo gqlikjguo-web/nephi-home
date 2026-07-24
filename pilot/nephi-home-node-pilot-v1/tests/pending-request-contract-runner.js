@@ -125,24 +125,25 @@ async function main() {
 
   const first = await engine.process(input("pending-first", "還有房嗎"));
   assert.equal(first.taskResults[0].status, "needs_clarification");
-  assert.equal(first.state.pendingRequest.version, 1);
-  assert.ok(first.state.pendingRequest.pendingRequestId);
-  assert.ok(first.state.pendingRequest.requestCycleId);
-  assert.equal(first.state.pendingRequest.capability, "availability");
-  assert.deepEqual(first.state.pendingRequest.missingFields, ["stay.checkIn"]);
-  assert.equal(first.state.pendingRequest.clarificationTarget, "stay.checkIn");
-  assert.equal(first.state.pendingRequest.tasks[0].type, "availability");
-  assert.equal(Object.hasOwn(first.state.pendingRequest, "replyText"), false);
-  assert.equal(JSON.stringify(first.state.pendingRequest).includes("facts"), false);
+  const firstPending = first.state.pendingRequests[0];
+  assert.equal(firstPending.version, 1);
+  assert.ok(firstPending.pendingRequestId);
+  assert.ok(firstPending.requestCycleId);
+  assert.equal(firstPending.capability, "availability");
+  assert.deepEqual(firstPending.missingFields, ["stay.checkIn"]);
+  assert.equal(firstPending.clarificationTarget, "stay.checkIn");
+  assert.equal(firstPending.tasks[0].type, "availability");
+  assert.equal(Object.hasOwn(firstPending, "replyText"), false);
+  assert.equal(JSON.stringify(firstPending).includes("facts"), false);
 
   const second = await engine.process(input("pending-second", "今天"));
   assert.ok(diagnostics.filter((entry) => entry.stage === "pending_request").some((entry) => entry.action === "resumed" && entry.reasonCode === "continue"), "only the validated context relation may resume a pending request");
-  assert.equal(second.state.conditions.stay.checkIn, "2026-07-23", "the validated date must reach the Engine state before pending execution");
+  assert.equal(second.state.requestCycles.find((cycle) => cycle.requestCycleId === firstPending.requestCycleId).confirmedInputs.stay.checkIn, "2026-07-23", "the validated date must reach the Engine state before pending execution");
   assert.equal(calls.availability, 1, "the original availability resolver must run after the missing date is supplied");
   assert.equal(calls.availableDates, 0, "a date-only continuation must not become available_dates");
   assert.equal(second.taskResults[0].type, "availability");
   assert.equal(second.taskResults[0].status, "answered");
-  assert.equal(second.state.pendingRequest, null, "the pending request must clear after execution");
+  assert.equal(second.state.pendingRequests.length, 0, "the pending request must clear after execution");
 
   const pending = createPendingRequest({
     tasks: [availabilityTask({ entity: { category: "room", rawText: "雙人房", canonicalCandidate: "room_double", confidence: 0.95 } })],

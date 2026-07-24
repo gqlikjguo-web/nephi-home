@@ -100,9 +100,10 @@ async function runFollowUp({ id, propertyId = "property_alpha", first, followUp,
     assert.equal(result.initial.taskResults[0].status, "answered", `${item.id} initial topic must resolve`);
     assert.equal(result.second.taskResults[0].status, "answered", `${item.id} follow-up must preserve a partial answer instead of global fallback`);
     assert.equal(result.second.taskResults[0].facts.detailIntent, item.followUp.detailIntent, `${item.id} resolver must receive controlled detail intent`);
-    assert.equal(result.memory.get(`property_alpha:${item.id}:guest`).conditions.topic.canonicalId, item.first.topic, `${item.id} must retain the canonical topic`);
-    assert.equal(result.memory.get(`property_alpha:${item.id}:guest`).conditions.topic.detailIntent, item.followUp.detailIntent, `${item.id} state must retain only the controlled detail intent`);
-    assert.equal(result.memory.get(`property_alpha:${item.id}:guest`).conditions.tasks, undefined, `${item.id} must not retain a prior reply as fact`);
+    const persistedCycle = result.memory.get(`property_alpha:${item.id}:guest`).requestCycles[0];
+    assert.equal(persistedCycle.confirmedInputs.topic.canonicalId, item.first.topic, `${item.id} must retain the canonical topic`);
+    assert.equal(persistedCycle.confirmedInputs.topic.detailIntent, item.followUp.detailIntent, `${item.id} state must retain only the controlled detail intent`);
+    assert.equal(persistedCycle.confirmedInputs.tasks, undefined, `${item.id} must not retain a prior reply as fact`);
     assert.deepEqual(result.propertyReads, ["property_alpha", "property_alpha"], `${item.id} must re-read current property data each turn`);
     for (const expected of item.expected) assert.ok(result.second.replyText.includes(expected), `${item.id} must answer the requested detail`);
     for (const forbidden of item.forbidden || []) assert.equal(result.second.replyText.includes(forbidden), false, `${item.id} must not repeat unrelated base fact`);
@@ -114,7 +115,7 @@ async function runFollowUp({ id, propertyId = "property_alpha", first, followUp,
     properties: { property_alpha: () => property("property_alpha", overrides) }
   });
   assert.ok(newTopic.second.replyText.includes("15:00"), "an explicit new topic must not inherit parking detail");
-  assert.equal(newTopic.memory.get("property_alpha:new-topic:guest").conditions.topic.canonicalId, "check_in");
+  assert.equal(newTopic.memory.get("property_alpha:new-topic:guest").requestCycles.at(-1).confirmedInputs.topic.canonicalId, "check_in");
 
   let alphaVersion = 0;
   const fresh = await runFollowUp({

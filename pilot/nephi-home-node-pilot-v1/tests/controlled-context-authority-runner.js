@@ -82,7 +82,7 @@ function main() {
     candidateRequestCycleRefs: [],
     evidenceRefs
   }), scope);
-  assert.equal(unchanged.conditions.stay.guests, null, "legacy planner stateOperations cannot change conversation state directly");
+  assert.equal(unchanged.requestCycles[0].confirmedInputs.stay.guests, null, "legacy planner stateOperations cannot change conversation state directly");
 
   const reducerSource = fs.readFileSync(path.join(__dirname, "../lib/conversation-engine-v2/state-reducer.js"), "utf8");
   const pendingSource = fs.readFileSync(path.join(__dirname, "../lib/conversation-engine-v2/pending-request.js"), "utf8");

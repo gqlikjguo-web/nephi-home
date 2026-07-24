@@ -67,10 +67,9 @@ function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
 function protectedState({ cycleStatus = "active", cycleExpiry = "2026-07-25T00:00:00.000Z", stateScope = scope } = {}) {
   const state = emptyStateV2(stateScope);
-  state.conditions.stay = { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: 2, searchRange: null };
-  state.conditions.inventory = { mode: "room_only", entityId: "protected-room", features: [] };
-  state.conditions.topic = { capabilityType: "price", canonicalId: "protected-price", category: "price", detailIntent: "general", detailFields: [] };
-  state.contextCycle = { requestCycleId: "cycle-a", requestKind: "policy", status: cycleStatus, confirmedInputs: { checkIn: "2026-08-06", roomType: "protected-room", price: 9999 }, contextReuseExpiresAt: cycleExpiry };
+  state.requestCycles = [{ requestCycleId: "cycle-a", requestKind: "policy", status: cycleStatus,
+    confirmedInputs: { stay: { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: 2, searchRange: null }, inventory: { mode: "room_only", entityId: "protected-room", features: [] }, topic: { capabilityType: "price", canonicalId: "protected-price", category: "price", detailIntent: "general", detailFields: [] } },
+    contextReuseExpiresAt: cycleExpiry, createdAt: scope.now, updatedAt: scope.now }];
   return state;
 }
 
@@ -214,7 +213,9 @@ async function main() {
   assert.equal(firstResult.merged, true, "only the trailing event receives the merged-burst result");
   assert.equal(burstResult.shouldReply, true, "valid multi-event evidence must continue through the Engine");
   assert.equal(burstResolverCalls, 0, "policy facts in a burst must not cause unrelated Resolver queries");
-  assert.deepEqual(burstState.conditions.stay, burstStateBefore.conditions.stay, "burst evidence must not cross-contaminate stay state");
+  assert.equal(burstStateBefore.requestCycles.length, 0);
+  assert.equal(burstState.requestCycles.length, 2, "each explicitly related burst candidate must receive an isolated cycle");
+  assert.notEqual(burstState.requestCycles[0].requestCycleId, burstState.requestCycles[1].requestCycleId, "burst candidates must not overwrite one another");
   const acceptedBurst = burstDiagnostics.find((item) => item.stage === "context_validation");
   assert.deepEqual(acceptedBurst.acceptedRelations.map((item) => item.evidenceRefs[0].eventId), ["burst-a", "burst-b"], "each burst relation must retain its own source event");
   assert.equal(burstDiagnostics.some((item) => item.stage === "fallback"), false, "valid burst evidence must not enter the safety fallback");

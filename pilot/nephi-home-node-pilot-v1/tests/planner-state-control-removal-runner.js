@@ -73,23 +73,22 @@ async function processWith({ priorState, plannerOutput }) {
 
 async function main() {
   const initial = emptyStateV2(scope);
-  initial.conditions.stay.guests = 2;
+  initial.requestCycles = [{ requestCycleId: "existing-cycle", requestKind: "availability", status: "active", confirmedInputs: { stay: { checkIn: null, checkOut: null, nights: null, guests: 2, searchRange: null }, inventory: { mode: "any", entityId: null, features: [] }, topic: { capabilityType: null, canonicalId: null, category: null, detailIntent: "general", detailFields: [] } }, contextReuseExpiresAt: "2026-07-25T00:00:00.000Z", createdAt: scope.now, updatedAt: scope.now }];
   const legacy = await processWith({
     priorState: initial,
     plannerOutput: plan({ stateOperations: [{ field: "stay.guestCountCandidate", operation: "replace", value: 4, sourceText: "four guests" }] })
   });
-  assert.equal(legacy.persisted.conditions.stay.guests, 2, "legacy Planner state controls must not change persisted state");
+  assert.equal(legacy.persisted.requestCycles[0].confirmedInputs.stay.guests, 2, "legacy Planner state controls must not change persisted state");
 
   for (const invalidReference of ["outside", "expired", "ended", "scope-mismatch"]) {
     const before = emptyStateV2(scope);
-    before.conditions.stay.checkIn = "2026-08-06";
-    before.contextCycle = {
+    before.requestCycles = [{
       requestCycleId: "trusted-cycle",
       requestKind: "availability",
       status: invalidReference === "ended" ? "ended" : "active",
-      confirmedInputs: clone(before.conditions),
-      contextReuseExpiresAt: invalidReference === "expired" ? "2026-07-23T00:00:00.000Z" : "2026-07-25T00:00:00.000Z"
-    };
+      confirmedInputs: { stay: { checkIn: "2026-08-06", checkOut: null, nights: null, guests: null, searchRange: null }, inventory: { mode: "any", entityId: null, features: [] }, topic: { capabilityType: null, canonicalId: null, category: null, detailIntent: "general", detailFields: [] } },
+      contextReuseExpiresAt: invalidReference === "expired" ? "2026-07-23T00:00:00.000Z" : "2026-07-25T00:00:00.000Z", createdAt: scope.now, updatedAt: scope.now
+    }];
     if (invalidReference === "scope-mismatch") before.scope.lineUserId = "another-user";
     const snapshot = clone(before);
     const outcome = await processWith({ priorState: before, plannerOutput: plan({ relation: "continue", refs: [invalidReference] }) });

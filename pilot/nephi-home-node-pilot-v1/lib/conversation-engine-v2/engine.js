@@ -6,7 +6,7 @@ const { validatePlannerOutput, applyPlannerSemanticContract, normalizeEligibilit
 const { normalizeDetailIntent } = require("./detail-intent");
 const { buildPropertyCatalog } = require("./property-catalog");
 const { resolveTemporalExpression } = require("./temporal-resolver");
-const { migrateStateV2, reduceConversationState, decideContextExecution } = require("./state-reducer");
+const { migrateStateV2, reduceConversationState, reducePendingRequests, decideContextExecution, conditionsForCycle } = require("./state-reducer");
 const { executeTasks, isGenericAvailabilityEntity } = require("./capability-executor");
 const { buildResponsePlan } = require("./response-planner");
 const { composeControlledReply, mergeComposedSections } = require("./controlled-composer");
@@ -192,7 +192,9 @@ class ConversationEngineV2 {
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), traceId };
     }
     const contextExecution = decideContextExecution(previous, contextValidation.relations, plannerOutput.tasks);
-    this.trace(traceId, "pending_request", { action: contextExecution.resumedPending ? "resumed" : "unchanged", reasonCode: contextExecution.contextDecision.action, capability: previous.pendingRequest && previous.pendingRequest.capability || "", missingFields: previous.pendingRequest && previous.pendingRequest.missingFields || [] });
+    const previousPending = (previous.pendingRequests || []).find((pending) => pending.requestCycleId === contextExecution.primaryCycleId) || null;
+    const previousConditions = conditionsForCycle(previous, contextExecution.primaryCycleId);
+    this.trace(traceId, "pending_request", { action: contextExecution.resumedPending ? "resumed" : "unchanged", reasonCode: contextExecution.contextDecision.action, capability: previousPending && previousPending.capability || "", missingFields: previousPending && previousPending.missingFields || [] });
     const hasActionableTask = plannerOutput.tasks.some((task) => !NON_ACTIONABLE_TASK_TYPES.has(task.type));
     const unknownTaskCount = plannerOutput.tasks.filter((task) => NON_ACTIONABLE_TASK_TYPES.has(task.type)).length;
     const noReplyGateHit = Boolean(plannerOutput.shouldIgnore && !hasActionableTask);
@@ -214,7 +216,7 @@ class ConversationEngineV2 {
       checkInCandidate: plannerStay.checkInCandidate, checkOutCandidate: plannerStay.checkOutCandidate,
       nightsCandidate: plannerStay.nightsCandidate,
       defaultNights: executionTasks.some((task) => ["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type)) ? 1 : null,
-      previousCheckIn: previous.conditions.stay.checkIn, previousCheckOut: previous.conditions.stay.checkOut
+      previousCheckIn: previousConditions.stay.checkIn, previousCheckOut: previousConditions.stay.checkOut
     });
     this.trace(traceId, "temporal", {
       contextAction: contextExecution.contextDecision.action,
@@ -222,44 +224,46 @@ class ConversationEngineV2 {
       resolutionStatus: temporal.resolutionStatus,
       produced: { checkIn: Boolean(temporal.checkIn), checkOut: Boolean(temporal.checkOut), nights: Boolean(temporal.nights) }
     });
-    const state = reduceConversationState(previous, {
+    let state = reduceConversationState(previous, {
       tasks: executionTasks,
-      contextDecision: contextExecution.contextDecision,
+      contextDecisions: contextExecution.contextDecisions,
       confirmedFields: { guests: plannerStay.guestCountCandidate, nights: plannerStay.nightsCandidate, inventory: confirmedInventoryFromTasks(catalog, executionTasks) },
       temporalResult: temporal,
       hasNewDateExpression: Boolean(plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none"),
       searchRange: plannerOutput.searchRange || null
     }, scope);
-    this.trace(traceId, "state", { contextAction: contextExecution.contextDecision.action, operations: state.transition, conditions: state.conditions, ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {}) });
+    const executionConditions = conditionsForCycle(state, contextExecution.primaryCycleId);
+    this.trace(traceId, "state", { contextAction: contextExecution.contextDecision.action, operations: state.transition, requestCycles: state.requestCycles.map((cycle) => ({ requestCycleId: cycle.requestCycleId, status: cycle.status })), ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {}) });
     this.trace(traceId, "entity_resolution", { tasks: executionTasks.map((task) => { const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : { status: "not_requested" }; return this.diagnosticDetail ? { taskId: task.taskId, resolved } : { taskId: task.taskId, status: resolved.status, canonicalId: resolved.entity && resolved.entity.canonicalId || null, candidateCount: resolved.candidates && resolved.candidates.length || 0 }; }) });
     const resolverCalls = [];
     const tracedAvailabilityResolver = (request) => { const result = this.availabilityResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
     const tracedAvailableDatesResolver = (request) => { const result = this.availableDatesResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
-    let taskResults = executeTasks({ property, catalog, tasks: executionTasks, request: state.conditions, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) });
+    let taskResults = executeTasks({ property, catalog, tasks: executionTasks, request: executionConditions, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) });
     const inputTaskIds = executionTasks.map((task) => task.taskId);
     let executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     if (!executorCoverage.ok) {
       taskResults = [...taskResults, ...executorCoverage.missingTaskIds.map((taskId) => ({ taskId, type: "unknown", status: "failed", reason: "executor_missing_task", facts: { subject: "這個問題" }, review: true }))];
       executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     }
-    state.pendingRequest = pendingFromResults({
+    const pendingRequest = pendingFromResults({
       plannerOutput: executionPlannerOutput,
       taskResults,
-      conditions: state.conditions,
+      conditions: executionConditions,
       scope: {
         eventId: input.eventId,
         now: scope.now,
-        createdAt: previous.pendingRequest && previous.pendingRequest.metadata && previous.pendingRequest.metadata.createdAt,
-        pendingRequestId: previous.pendingRequest && previous.pendingRequest.pendingRequestId || crypto.randomUUID(),
-        requestCycleId: contextExecution.contextDecision.requestCycleId || state.contextCycle && state.contextCycle.requestCycleId || previous.pendingRequest && previous.pendingRequest.requestCycleId || crypto.randomUUID(),
+        createdAt: previousPending && previousPending.metadata && previousPending.metadata.createdAt,
+        pendingRequestId: previousPending && previousPending.pendingRequestId || crypto.randomUUID(),
+        requestCycleId: contextExecution.primaryCycleId || crypto.randomUUID(),
         expiresAt: new Date(new Date(scope.now).getTime() + 24 * 60 * 60 * 1000).toISOString()
       }
     });
+    state = reducePendingRequests(state, { requestCycleId: contextExecution.primaryCycleId, pendingRequest }, scope);
     this.persistence.setConversationState(input.customerId, input.channelId, input.lineUserId, state);
     this.trace(traceId, "pending_request", {
-      action: state.pendingRequest ? "stored" : previous.pendingRequest ? "cleared" : "none",
-      capability: state.pendingRequest && state.pendingRequest.capability || "",
-      missingFields: state.pendingRequest && state.pendingRequest.missingFields || []
+      action: pendingRequest ? "stored" : previousPending ? "cleared" : "none",
+      capability: pendingRequest && pendingRequest.capability || "",
+      missingFields: pendingRequest && pendingRequest.missingFields || []
     });
     this.trace(traceId, "executor", { results: this.diagnosticDetail ? taskResults : taskResults.map((item) => ({ taskId: item.taskId, status: item.status, reason: item.reason || "", locationFactProvided: Boolean(item.facts && item.facts.locationMapUrl), factSource: item.facts && item.facts.source || "" })), resolverCalls: this.diagnosticDetail ? resolverCalls : undefined, coverage: executorCoverage });
     const reviewIds = [];

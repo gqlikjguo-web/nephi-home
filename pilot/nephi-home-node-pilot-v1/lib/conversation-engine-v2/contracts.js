@@ -39,30 +39,42 @@ function buildContextSnapshot(state, scope = {}) {
     cycles: []
   };
   if (!state || !sameScope(state.scope, scope)) return snapshot;
-  if (state.contextCycle && state.contextCycle.status !== "ended" && state.contextCycle.status !== "expired"
-    && state.contextCycle.requestCycleId && (!state.contextCycle.contextReuseExpiresAt || new Date(state.contextCycle.contextReuseExpiresAt).getTime() > new Date(now).getTime())) {
-    snapshot.cycles.push({
-      requestCycleId: String(state.contextCycle.requestCycleId),
-      requestKind: String(state.contextCycle.requestKind || ""),
-      status: String(state.contextCycle.status || "active"),
-      confirmedInputs: state.contextCycle.confirmedInputs || {},
-      contextReuseExpiresAt: state.contextCycle.contextReuseExpiresAt || null,
-      pendingRequestId: state.pendingRequest && state.pendingRequest.pendingRequestId || null
-    });
-    return snapshot;
+  // Old states are read only through this mechanical compatibility view.  New
+  // states are always written as collections by the reducer.
+  const cycles = Array.isArray(state.requestCycles) && state.requestCycles.length
+    ? state.requestCycles
+    : state.contextCycle ? [state.contextCycle] : [];
+  const pendingRequests = Array.isArray(state.pendingRequests) && state.pendingRequests.length
+    ? state.pendingRequests
+    : state.pendingRequest ? [state.pendingRequest] : [];
+  const pendingByCycle = new Map();
+  for (const pending of pendingRequests) {
+    if (!isCurrentPending(pending, now)) continue;
+    const requestCycleId = legacyCycleId(pending);
+    if (requestCycleId && !pendingByCycle.has(requestCycleId)) pendingByCycle.set(requestCycleId, pending);
   }
-  if (!isCurrentPending(state.pendingRequest, now)) return snapshot;
-  const pending = state.pendingRequest;
-  const requestCycleId = legacyCycleId(pending);
-  if (!requestCycleId) return snapshot;
-  snapshot.cycles.push({
-    requestCycleId,
-    requestKind: String(pending.capability || ""),
-    status: "active",
-    confirmedInputs: pending.conditions || {},
-    contextReuseExpiresAt: pendingExpiry(pending),
-    pendingRequestId: pending.pendingRequestId || null
-  });
+  const knownCycleIds = new Set();
+  for (const cycle of cycles) {
+    if (!cycle || !cycle.requestCycleId || knownCycleIds.has(cycle.requestCycleId)) continue;
+    if (cycle.status === "ended" || cycle.status === "expired") continue;
+    if (cycle.contextReuseExpiresAt && new Date(cycle.contextReuseExpiresAt).getTime() <= new Date(now).getTime()) continue;
+    knownCycleIds.add(cycle.requestCycleId);
+    const pending = pendingByCycle.get(String(cycle.requestCycleId));
+    snapshot.cycles.push({
+      requestCycleId: String(cycle.requestCycleId),
+      requestKind: String(cycle.requestKind || ""),
+      status: String(cycle.status || "active"),
+      confirmedInputs: cycle.confirmedInputs || {},
+      contextReuseExpiresAt: cycle.contextReuseExpiresAt || null,
+      pendingRequestId: pending && pending.pendingRequestId || null
+    });
+  }
+  // A legacy pending without a contextCycle remains readable only as its
+  // mechanical event-derived cycle; no semantic matching is involved.
+  for (const [requestCycleId, pending] of pendingByCycle) {
+    if (knownCycleIds.has(requestCycleId)) continue;
+    snapshot.cycles.push({ requestCycleId, requestKind: String(pending.capability || ""), status: "active", confirmedInputs: pending.conditions || {}, contextReuseExpiresAt: pendingExpiry(pending), pendingRequestId: pending.pendingRequestId || null });
+  }
   return snapshot;
 }
 
