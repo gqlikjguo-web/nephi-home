@@ -89,6 +89,30 @@ function casePlan(item) {
   };
 }
 
+// The fixture models the AI contract explicitly.  Production must not derive
+// this relation from the legacy discourse field or from a single snapshot.
+function withExplicitRelations(plannerOutput, sourceEvents) {
+  const source = (sourceEvents || [])[0] || {};
+  const messageText = String(source.messageText || "");
+  const tasks = (plannerOutput.tasks || []).map((task, candidateIndex) => ({ ...task, candidateIndex }));
+  return {
+    ...plannerOutput,
+    tasks,
+    contextRelationCandidates: tasks.map((task) => ({
+      candidateIndex: task.candidateIndex,
+      kind: "new_request",
+      candidateRequestCycleRefs: [],
+      evidenceRefs: [{
+        eventId: String(source.eventId || ""),
+        messageRef: String(source.messageRef || ""),
+        startOffset: 0,
+        endOffset: messageText.length,
+        quote: messageText
+      }]
+    }))
+  };
+}
+
 // `message` is acceptance data.  The planner is deterministic by design so
 // this runner proves resolver and property behavior, not a particular model.
 const matrix = [
@@ -149,7 +173,7 @@ function createPersistence() {
 
 async function runCase(engine, item, index) {
   const plannerOutput = casePlan(item);
-  engine.planner = { classify: async () => plannerOutput };
+  engine.planner = { classify: async ({ sourceEvents }) => withExplicitRelations(plannerOutput, sourceEvents) };
   return engine.process({ customerId: item.propertyId, channelId: "matrix-channel", lineUserId: `matrix-user-${index}`, eventId: `matrix-event-${index}`, eventTimestamp: EVENT_TIME, messageText: item.message });
 }
 

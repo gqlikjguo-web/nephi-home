@@ -54,7 +54,8 @@ const otherCatalog = buildPropertyCatalog({
 });
 assert.equal(resolveEntity(otherCatalog, { category: "amenity", rawText: "KTV", canonicalCandidate: "singing" }).entity.answer, "Other property policy");
 
-const planner = { classify: async () => ({
+const planner = { classify: async ({ sourceEvents }) => {
+  const output = ({
   schemaVersion: 2,
   discourse: { relation: "new_request", confidence: 1 },
   stateOperations: [],
@@ -66,7 +67,15 @@ const planner = { classify: async () => ({
     { taskId: "missing", type: "amenity", sourceText: "有未提供的設施嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "未提供的設施", canonicalCandidate: "not_provided_feature", confidence: 1 }, confidence: 1 }
   ],
   ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "phase1_multi_question"
-}) };
+  });
+  const source = sourceEvents[0];
+  const tasks = output.tasks.map((item, candidateIndex) => ({ ...item, candidateIndex }));
+  return {
+    ...output,
+    tasks,
+    contextRelationCandidates: tasks.map((item) => ({ candidateIndex: item.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }] }))
+  };
+} };
 const memory = new Map();
 const engine = new ConversationEngineV2({
   planner,

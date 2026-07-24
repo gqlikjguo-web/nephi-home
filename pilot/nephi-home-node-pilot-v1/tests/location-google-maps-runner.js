@@ -10,7 +10,14 @@ const { createApp } = require("../server");
 const { instructions } = require("../lib/providers/test-only-openai-conversation-planner");
 
 function plan(relation = "new_request") {
-  return { schemaVersion: 2, discourse: { relation, confidence: 1 }, stateOperations: [], stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, tasks: [{ taskId: "location", type: "property_fact", sourceText: "location request", detailIntent: "general", requestedOutputs: ["map_url"], dependsOnStayContext: false, entity: { category: "transport", rawText: "location", canonicalCandidate: relation === "continue" ? null : "location", confidence: 1 }, confidence: 1 }], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "location" };
+  return { schemaVersion: 2, discourse: { relation, confidence: 1 }, stateOperations: [], stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, tasks: [{ candidateIndex: 0, taskId: "location", type: "property_fact", sourceText: "location request", detailIntent: "general", requestedOutputs: ["map_url"], dependsOnStayContext: false, entity: { category: "transport", rawText: "location", canonicalCandidate: relation === "continue" ? null : "location", confidence: 1 }, confidence: 1 }], contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "fixture", startOffset: 0, endOffset: 1, quote: "x" }] }], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "location" };
+}
+
+function withExplicitRelation(output, sourceEvents, contextSnapshot) {
+  const source = sourceEvents[0];
+  const kind = output.discourse.relation === "continue" ? "supplement_existing" : "new_request";
+  const cycle = contextSnapshot.cycles[0] && contextSnapshot.cycles[0].requestCycleId;
+  return { ...output, contextRelationCandidates: output.tasks.map((task) => ({ candidateIndex: task.candidateIndex, kind, candidateRequestCycleRefs: kind === "new_request" ? [] : cycle ? [cycle] : [], evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }] })) };
 }
 
 function memory() {
@@ -20,7 +27,7 @@ function memory() {
 
 async function runEngine(property, messages, diagnostics = []) {
   const persistence = memory();
-  const planner = { classify: async ({ currentMessage }) => messages.get(currentMessage) };
+  const planner = { classify: async ({ currentMessage, sourceEvents, contextSnapshot }) => withExplicitRelation(messages.get(currentMessage), sourceEvents, contextSnapshot) };
   const engine = new ConversationEngineV2({ planner, persistence, getProperty: () => property, availabilityResolver: () => ({ availabilityReliable: true, rooms: [] }), listPriceOverrides: () => [], onDiagnostic: (entry) => diagnostics.push(entry), diagnosticMetadata: { providerType: "test" } });
   const output = [];
   for (const [index, message] of [...messages].entries()) output.push(await engine.process({ customerId: property.propertyId, channelId: "line", lineUserId: "guest", eventId: `event-${index}`, eventTimestamp: Date.UTC(2026, 6, 21), messageText: message[0] }));
@@ -82,7 +89,7 @@ async function runEngine(property, messages, diagnostics = []) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "location-chain-"));
   const seedFile = path.join(temp, "seed.json"), dataFile = path.join(temp, "store.json"), secret = "location-chain-secret", replies = [];
   fs.writeFileSync(seedFile, JSON.stringify({ testOnly: true, homestays: [{ customerId: "location_line", name: "Line location", businessProfile: { googleMapsUrl: alphaUrl }, safeFacts: {}, rooms: [] }], messageLogs: { location_line: [] } }));
-  const app = createApp({ dataFile, seedFile, lineChannelSecret: secret, lineChannelAccessToken: "token", lineChannelIdentityGuardRequired: false, conversationDebounceMs: 1, conversationPlannerV2: { classify: async () => plan() }, lineReplyClientFactory: () => ({ replyMessageWithHttpInfo: async (body) => { replies.push(body); return { httpResponse: { status: 200 } }; } }) });
+  const app = createApp({ dataFile, seedFile, lineChannelSecret: secret, lineChannelAccessToken: "token", lineChannelIdentityGuardRequired: false, conversationDebounceMs: 1, conversationPlannerV2: { classify: async ({ sourceEvents, contextSnapshot }) => withExplicitRelation(plan(), sourceEvents, contextSnapshot) }, lineReplyClientFactory: () => ({ replyMessageWithHttpInfo: async (body) => { replies.push(body); return { httpResponse: { status: 200 } }; } }) });
   const running = await app.start(0, "127.0.0.1");
   try {
     const payload = JSON.stringify({ destination: "line", events: [{ type: "message", webhookEventId: "location-event", replyToken: "token", timestamp: 1, source: { userId: "guest" }, message: { type: "text", id: "m1", text: "我要怎麼導航過去？" } }] });

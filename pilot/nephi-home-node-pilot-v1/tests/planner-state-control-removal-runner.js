@@ -23,6 +23,7 @@ function plan({ relation = "new_request", refs = [], stateOperations = [] } = {}
       guestCountCandidate: null
     },
     tasks: [{
+      candidateIndex: 0,
       taskId: "availability-task",
       type: "availability",
       sourceText: "test",
@@ -33,7 +34,7 @@ function plan({ relation = "new_request", refs = [], stateOperations = [] } = {}
       entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 1 },
       confidence: 1
     }],
-    contextRelationCandidates: [{ candidateIndex: 0, kind: relation === "new_request" ? "new_request" : "supplement_existing", candidateRequestCycleRefs: refs, evidenceRefs: [] }],
+    contextRelationCandidates: [{ candidateIndex: 0, kind: relation === "new_request" ? "new_request" : "supplement_existing", candidateRequestCycleRefs: refs, evidenceRefs: [{ eventId: "event-a", startOffset: 0, endOffset: 4, quote: "test" }] }],
     ambiguities: [],
     missingInformation: [],
     needsHuman: false,

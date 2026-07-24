@@ -17,6 +17,7 @@ const property = {
 
 function availabilityTask(overrides = {}) {
   return {
+    candidateIndex: Number.isInteger(overrides.candidateIndex) ? overrides.candidateIndex : 0,
     taskId: overrides.taskId || "availability",
     type: overrides.type || "availability",
     sourceText: overrides.sourceText || "住宿需求",
@@ -48,6 +49,21 @@ function plan(tasks, options = {}) {
     needsHuman: false,
     shouldIgnore: Boolean(options.shouldIgnore),
     reason: options.reason || "pending_contract_test"
+  };
+}
+
+function withExplicitRelations(output, sourceEvents, contextSnapshot) {
+  const source = sourceEvents[0];
+  const relationKind = output.discourse.relation === "answer_clarification" ? "supplement_existing" : "new_request";
+  return {
+    ...output,
+    tasks: output.tasks.map((item, candidateIndex) => ({ ...item, candidateIndex })),
+    contextRelationCandidates: output.tasks.map((_item, candidateIndex) => ({
+      candidateIndex,
+      kind: relationKind,
+      candidateRequestCycleRefs: relationKind === "new_request" ? [] : [contextSnapshot.cycles[0].requestCycleId],
+      evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
+    }))
   };
 }
 
@@ -91,7 +107,7 @@ async function main() {
   const calls = { availability: 0, availableDates: 0 };
   const diagnostics = [];
   const engine = new ConversationEngineV2({
-    planner: { classify: async () => plannerOutputs.shift() },
+    planner: { classify: async ({ sourceEvents, contextSnapshot }) => withExplicitRelations(plannerOutputs.shift(), sourceEvents, contextSnapshot) },
     persistence,
     getProperty: () => property,
     availabilityResolver: (query) => {

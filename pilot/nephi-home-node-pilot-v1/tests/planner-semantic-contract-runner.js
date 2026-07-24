@@ -15,9 +15,15 @@ function plan(tasks) {
     discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-    tasks,
+    tasks: tasks.map((item, candidateIndex) => ({ ...item, candidateIndex })),
+    contextRelationCandidates: tasks.map((_, candidateIndex) => ({ candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "fixture", startOffset: 0, endOffset: 1, quote: "x" }] })),
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "semantic_contract_test"
   };
+}
+
+function withExplicitRelations(output, sourceEvents) {
+  const source = sourceEvents[0];
+  return { ...output, contextRelationCandidates: output.tasks.map((task) => ({ candidateIndex: task.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }] })) };
 }
 
 function memory() {
@@ -93,10 +99,10 @@ async function main() {
     semanticCatalog: { aliases: { bbq: ["barbecue"] }, amenities: [] }
   };
   const engine = new ConversationEngineV2({
-    planner: { classify: async () => plan([
+    planner: { classify: async ({ sourceEvents }) => withExplicitRelations(plan([
       task({ taskId: "location", category: "transport", canonicalCandidate: null, sourceText: "property near a market" }),
       task({ taskId: "bbq", type: "policy", category: "policy", canonicalCandidate: "bbq", detailIntent: "eligibility", requestedOutputs: ["eligibility"], sourceText: "barbecue available" })
-    ]) },
+    ]), sourceEvents) },
     persistence: memory(), getProperty: () => property,
     availabilityResolver: () => ({ availabilityReliable: true, rooms: [] }), listPriceOverrides: () => []
   });

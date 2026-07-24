@@ -21,7 +21,7 @@ function plannerOutput(relation) {
     discourse: { relation: "continue", confidence: 1 },
     stateOperations: [{ field: "stay.guests", operation: "replace", value: 4, sourceText: "four guests" }],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-    tasks: [],
+    tasks: [{ candidateIndex: 0, taskId: "context-task", type: "availability", sourceText: "test", detailIntent: "general", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: false, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 1 }, confidence: 1 }],
     contextRelationCandidates: [relation],
     ambiguities: [],
     missingInformation: [],
@@ -32,6 +32,8 @@ function plannerOutput(relation) {
 }
 
 function main() {
+  const sourceEvents = [{ eventId: "event-a", messageText: "test" }];
+  const evidenceRefs = [{ eventId: "event-a", startOffset: 0, endOffset: 4, quote: "test" }];
   const previous = emptyStateV2(scope);
   previous.pendingRequest = {
     version: 1,
@@ -52,8 +54,8 @@ function main() {
     candidateIndex: 0,
     kind: "supplement_existing",
     candidateRequestCycleRefs: ["cycle-a"],
-    evidenceRefs: []
-  }), snapshot);
+    evidenceRefs
+  }), snapshot, { sourceEvents });
   assert.equal(valid.ok, true);
   assert.equal(valid.relations[0].requestCycleId, "cycle-a");
 
@@ -61,16 +63,16 @@ function main() {
     candidateIndex: 0,
     kind: "supplement_existing",
     candidateRequestCycleRefs: ["cycle-not-in-snapshot"],
-    evidenceRefs: []
-  }), snapshot);
+    evidenceRefs
+  }), snapshot, { sourceEvents });
   assert.equal(invalid.ok, false, "a relation may reference only a current ContextSnapshot cycle");
 
   const uncertainty = validateUnderstandingContext(plannerOutput({
     candidateIndex: 0,
     kind: "relation_uncertain",
     candidateRequestCycleRefs: ["cycle-a"],
-    evidenceRefs: []
-  }), snapshot);
+    evidenceRefs
+  }), snapshot, { sourceEvents });
   assert.equal(uncertainty.ok, true);
   assert.equal(uncertainty.relations[0].stateAction, "none");
 
@@ -78,7 +80,7 @@ function main() {
     candidateIndex: 0,
     kind: "new_request",
     candidateRequestCycleRefs: [],
-    evidenceRefs: []
+    evidenceRefs
   }), scope);
   assert.equal(unchanged.conditions.stay.guests, null, "legacy planner stateOperations cannot change conversation state directly");
 

@@ -39,16 +39,18 @@ function memoryBindingProvider() {
   };
 }
 
-function planParking() {
+function planParking(sourceEvent = {}) {
+  const sourceText = String(sourceEvent.messageText || "Parking?");
   return {
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
     tasks: [{
+      candidateIndex: 0,
       taskId: "parking",
       type: "amenity",
-      sourceText: "parking availability",
+      sourceText,
       detailIntent: "general",
       requestedOutputs: ["answer"],
       eligibilityEvidence: { kind: "none", sourceText: "" },
@@ -56,6 +58,7 @@ function planParking() {
       entity: { category: "amenity", rawText: "parking", canonicalCandidate: "parking", confidence: 0.99 },
       confidence: 0.99
     }],
+    contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: String(sourceEvent.eventId || ""), startOffset: 0, endOffset: sourceText.length, quote: sourceText }] }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "line_binding_test"
   };
 }
@@ -121,7 +124,7 @@ async function waitFor(predicate, timeoutMs = 1000) {
     adminAuthRequired: true,
     lineBindingEnv: { JUNZAN_LINE_CREDENTIAL_ENCRYPTION_KEY: encryptionKey },
     conversationDebounceMs: 1,
-    conversationPlannerV2: { classify: async ({ catalog }) => { plannerProperties.push(catalog.propertyId); return planParking(); } },
+    conversationPlannerV2: { classify: async ({ catalog, sourceEvents }) => { plannerProperties.push(catalog.propertyId); return planParking(sourceEvents[0]); } },
     lineReplyClientFactory: ({ channelAccessToken }) => ({ replyMessageWithHttpInfo: async (body) => { replies.push({ channelAccessToken, body }); return { httpResponse: { status: 200 } }; } })
   });
   const running = await app.start(0, "127.0.0.1");

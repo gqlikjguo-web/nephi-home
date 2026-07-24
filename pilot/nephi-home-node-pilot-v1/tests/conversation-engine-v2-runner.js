@@ -12,7 +12,7 @@ const { composeControlledReply } = require("../lib/conversation-engine-v2/contro
 const { validateClaims } = require("../lib/conversation-engine-v2/claim-validator");
 
 function plan(overrides = {}) {
-  return {
+  const output = {
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 0.95 },
     stateOperations: [],
@@ -20,6 +20,12 @@ function plan(overrides = {}) {
     tasks: [{ taskId: "t1", type: "availability", sourceText: "有房嗎", requestedOutputs: ["availability"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: null, confidence: 0.9 }, confidence: 0.95 }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "availability_request",
     ...overrides
+  };
+  const tasks = (output.tasks || []).map((task, candidateIndex) => ({ ...task, candidateIndex }));
+  return {
+    ...output,
+    tasks,
+    contextRelationCandidates: output.contextRelationCandidates || tasks.map((task) => ({ candidateIndex: task.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "fixture", startOffset: 0, endOffset: 1, quote: "x" }] }))
   };
 }
 

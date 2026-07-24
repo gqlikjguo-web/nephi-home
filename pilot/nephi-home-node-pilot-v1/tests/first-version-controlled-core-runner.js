@@ -65,12 +65,25 @@ function plan(tasks, { shouldIgnore = false, relation = "new_request", dateText 
       nightsCandidate: null,
       guestCountCandidate: null
     },
-    tasks,
+    tasks: tasks.map((item, candidateIndex) => ({ ...item, candidateIndex })),
     ambiguities: [],
     missingInformation: [],
     needsHuman: false,
     shouldIgnore,
     reason: shouldIgnore ? "acknowledgement" : "controlled_core_test"
+  };
+}
+
+function withExplicitRelations(output, sourceEvents) {
+  const source = sourceEvents[0];
+  return {
+    ...output,
+    contextRelationCandidates: output.tasks.map((item) => ({
+      candidateIndex: item.candidateIndex,
+      kind: "new_request",
+      candidateRequestCycleRefs: [],
+      evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
+    }))
   };
 }
 
@@ -89,7 +102,7 @@ function memory() {
 function createEngine(plannerOutput, counters = {}) {
   const persistence = memory();
   const engine = new ConversationEngineV2({
-    planner: { classify: async () => plannerOutput },
+    planner: { classify: async ({ sourceEvents }) => withExplicitRelations(plannerOutput, sourceEvents) },
     composer: { compose: async () => { counters.composer = (counters.composer || 0) + 1; return null; } },
     persistence,
     getProperty: () => property,
@@ -199,9 +212,9 @@ async function main() {
     lineChannelAccessToken: "test-token",
     lineChannelIdentityGuardRequired: false,
     conversationDebounceMs: 1,
-    conversationPlannerV2: { classify: async () => plan([
+    conversationPlannerV2: { classify: async ({ sourceEvents }) => withExplicitRelations(plan([
       task({ taskId: "ack", type: "unknown", sourceText: "好的謝謝", category: "other", rawText: "好的謝謝" })
-    ], { shouldIgnore: true, relation: "acknowledgement" }) },
+    ], { shouldIgnore: true, relation: "acknowledgement" }), sourceEvents) },
     lineReplyClientFactory: () => ({ replyMessageWithHttpInfo: async (body) => { replies.push(body); return { httpResponse: { status: 200 } }; } })
   });
   const running = await app.start(0, "127.0.0.1");

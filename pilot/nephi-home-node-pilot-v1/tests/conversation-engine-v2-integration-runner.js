@@ -9,6 +9,21 @@ const persistence = {
   setConversationState: (p, c, u, value) => states.set(`${p}:${c}:${u}`, value),
   appendMessageLog: (p, value) => { const item = { ...value, customerId: p, reviewId: value.needsReview ? `review-${logs.length + 1}` : "" }; logs.push(item); return item; }
 };
+
+function explicitPlanner(basePlanner) {
+  return {
+    classify: async (input) => {
+      const output = await basePlanner.classify(input);
+      const source = input.sourceEvents[0];
+      const tasks = output.tasks.map((task, candidateIndex) => ({ ...task, candidateIndex }));
+      return {
+        ...output,
+        tasks,
+        contextRelationCandidates: tasks.map((task) => ({ candidateIndex: task.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }] }))
+      };
+    }
+  };
+}
 const property = { propertyId: "p1", displayName: "測試旅宿", timezone: "Asia/Taipei", currency: "TWD", rooms: [{ id: "r1", name: "湖景雙人房", type: "雙人房", capacity: 2, enabled: true, mondayThursdayPrice: 2000, fridayPrice: 2200, saturdayHolidayPrice: 2600, sundayPrice: 2100 }], commonAnswers: { parkingRule: "有一個停車位" }, semanticCatalog: { aliases: { r1: ["兩人房"], parking: ["車位"] }, amenities: [] } };
 const availabilityResolver = ({ customerId, checkIn, checkOut, guests, roomType, queryMode }) => ({ customerId, checkIn, checkOut, guests, roomType, queryMode, availabilityReliable: true, rooms: property.rooms.filter((room) => room.id === roomType || roomType === "all"), lineUrl: "" });
 const planner = { classify: async () => ({
@@ -27,7 +42,7 @@ const planner = { classify: async () => ({
     { taskId: "c", type: "amenity", sourceText: "有麻將嗎", requestedOutputs: ["amenity"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "麻將", canonicalCandidate: "mahjong", confidence: 0.7 }, confidence: 0.7 }
   ], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "multi_task"
 }) };
-const engine = new ConversationEngineV2({ planner, persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [] });
+const engine = new ConversationEngineV2({ planner: explicitPlanner(planner), persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [] });
 
 (async () => {
   const result = await engine.process({ customerId: "p1", channelId: "c1", lineUserId: "u1", eventId: "e1", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6雙人房有空嗎 有車位嗎 有麻將嗎" });
@@ -43,7 +58,7 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
 
   const incompleteComposer = { compose: async () => ({ replyText: "8/6 有湖景雙人房。", factTaskIds: ["a"] }) };
   const diagnostics = [];
-  const guardedEngine = new ConversationEngineV2({ planner, composer: incompleteComposer, persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [], onDiagnostic: (item) => diagnostics.push(item) });
+  const guardedEngine = new ConversationEngineV2({ planner: explicitPlanner(planner), composer: incompleteComposer, persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [], onDiagnostic: (item) => diagnostics.push(item) });
   const guarded = await guardedEngine.process({ customerId: "p1", channelId: "c1", lineUserId: "u2", eventId: "e2", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6雙人房有空嗎 有車位嗎 有麻將嗎" });
   assert.ok(guarded.replyText.includes("湖景雙人房"));
   assert.ok(guarded.replyText.includes("停車位"));
@@ -84,7 +99,7 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   }
 
   const detailedDiagnostics = [];
-  const detailedEngine = new ConversationEngineV2({ planner, persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [], diagnosticDetail: true, onDiagnostic: (item) => detailedDiagnostics.push(item) });
+  const detailedEngine = new ConversationEngineV2({ planner: explicitPlanner(planner), persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [], diagnosticDetail: true, onDiagnostic: (item) => detailedDiagnostics.push(item) });
   await detailedEngine.process({ customerId: "p1", channelId: "c1", lineUserId: "trace-user", eventId: "trace-event", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？" });
   assert.ok(detailedDiagnostics.some((item) => item.stage === "state_before" && item.userKeyHash && item.userKeyHash !== "trace-user"));
   assert.ok(detailedDiagnostics.some((item) => item.stage === "planner" && Array.isArray(item.tasks) && item.tasks[0].entity));
@@ -102,7 +117,7 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   for (const [index, unsafeText] of [":-(", ".", ".\"", ".NET開發者需要人工協助。"].entries()) {
     const unsafeDiagnostics = [];
     const unsafeComposer = { compose: async () => ({ sections: [{ taskId: "unknown", responseMode: "handoff", text: unsafeText }] }) };
-    const unsafeEngine = new ConversationEngineV2({ planner: unknownPlanner, composer: unsafeComposer, persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [], onDiagnostic: (item) => unsafeDiagnostics.push(item) });
+    const unsafeEngine = new ConversationEngineV2({ planner: explicitPlanner(unknownPlanner), composer: unsafeComposer, persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [], onDiagnostic: (item) => unsafeDiagnostics.push(item) });
     const unsafe = await unsafeEngine.process({ customerId: "p1", channelId: "c1", lineUserId: `unsafe-${index}`, eventId: `unsafe-${index}`, eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "你不開心是嗎？" });
     assert.equal(unsafe.replyText, "這部分需要請業者確認。");
     assert.equal(unsafe.replyText.includes(unsafeText), false);
@@ -118,7 +133,7 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "known_fact"
   }) };
   const groundedDiagnostics = [];
-  const groundedEngine = new ConversationEngineV2({ planner: groundedPlanner, composer: { compose: async () => ({ sections: [{ taskId: "parking", responseMode: "answer", text: "有一個停車位" }] }) }, persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [], onDiagnostic: (item) => groundedDiagnostics.push(item) });
+  const groundedEngine = new ConversationEngineV2({ planner: explicitPlanner(groundedPlanner), composer: { compose: async () => ({ sections: [{ taskId: "parking", responseMode: "answer", text: "有一個停車位" }] }) }, persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [], onDiagnostic: (item) => groundedDiagnostics.push(item) });
   const groundedReply = await groundedEngine.process({ customerId: "p1", channelId: "c1", lineUserId: "grounded", eventId: "grounded", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "有車位嗎？" });
   assert.equal(groundedReply.replyText, "有一個停車位");
   assert.equal(groundedDiagnostics.find((item) => item.stage === "composer").composerSource, "openai");
@@ -137,7 +152,7 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
       { taskId: "bbq", type: "policy", sourceText: "可以烤肉嗎？", requestedOutputs: ["policy"], dependsOnStayContext: false, entity: { category: "policy", rawText: "烤肉", canonicalCandidate: "bbq", confidence: 0.99 }, confidence: 0.99 }
     ], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "multi_task"
   }) };
-  const multiTaskEngine = new ConversationEngineV2({ planner: multiTaskPlanner, persistence, getProperty: () => multiRoomProperty,
+  const multiTaskEngine = new ConversationEngineV2({ planner: explicitPlanner(multiTaskPlanner), persistence, getProperty: () => multiRoomProperty,
     availabilityResolver: (query) => ({ ...query, availabilityReliable: true, rooms: multiRoomProperty.rooms.filter((room) => room.id !== "r3"), lineUrl: "" }), listPriceOverrides: () => [], now: () => new Date("2026-07-17T02:00:00.000Z") });
   const multiTask = await multiTaskEngine.process({ customerId: "p1", channelId: "c1", lineUserId: "multi", eventId: "multi-1", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？" });
   const availabilityResult = multiTask.taskResults.find((item) => item.taskId === "availability");
@@ -189,7 +204,7 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
   const temporalProperty = { ...property, commonAnswers: { parkingRule: "有停車位。", bbqRule: "可依規則烤肉。" }, semanticCatalog: { aliases: { r1: ["雙人房"], parking: ["車位"], bbq: ["烤肉"] }, amenities: [] } };
   const temporalAvailabilityResolver = (query) => ({ ...query, availabilityReliable: true, rooms: temporalProperty.rooms.filter((room) => query.roomType === "all" || room.id === query.roomType), lineUrl: "" });
   async function runTemporal(message, plannerOutput, userId, eventTimestamp = Date.parse("2026-07-17T10:00:00+08:00")) {
-    const temporalEngine = new ConversationEngineV2({ planner: plannerOutput, persistence, getProperty: () => temporalProperty, availabilityResolver: temporalAvailabilityResolver, listPriceOverrides: () => [], now: () => new Date(eventTimestamp) });
+    const temporalEngine = new ConversationEngineV2({ planner: explicitPlanner(plannerOutput), persistence, getProperty: () => temporalProperty, availabilityResolver: temporalAvailabilityResolver, listPriceOverrides: () => [], now: () => new Date(eventTimestamp) });
     return temporalEngine.process({ customerId: "p1", channelId: "c1", lineUserId: userId, eventId: `event-${userId}`, eventTimestamp, messageText: message });
   }
 
@@ -285,7 +300,7 @@ const engine = new ConversationEngineV2({ planner, persistence, getProperty: () 
     }]
   });
   const repeatedEngine = new ConversationEngineV2({
-    planner: wrongCandidatePlanner,
+    planner: explicitPlanner(wrongCandidatePlanner),
     persistence,
     getProperty: () => temporalProperty,
     availabilityResolver: (query) => { repeatedAvailabilityCalls.push({ propertyId: query.customerId, from: query.checkIn, to: query.checkOut }); return { ...query, availabilityReliable: true, rooms: temporalProperty.rooms.filter((room) => room.id === query.roomType), lineUrl: "" }; },

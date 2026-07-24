@@ -26,6 +26,16 @@ function dateKeyAt(timestamp, timezone) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 function addUtcDays(dateKey, days) { const value = new Date(`${dateKey}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); }
+function sourceEventsForInput(input = {}) {
+  const events = Array.isArray(input.sourceEvents) ? input.sourceEvents : [];
+  const normalized = events.map((event) => ({
+    eventId: String(event && event.eventId || "").trim(),
+    messageRef: String(event && event.messageRef || "").trim(),
+    messageText: String(event && event.messageText || "")
+  })).filter((event) => event.eventId || event.messageRef);
+  if (normalized.length) return normalized;
+  return [{ eventId: String(input.eventId || "").trim(), messageRef: String(input.messageRef || "").trim(), messageText: String(input.messageText || "") }];
+}
 function traceState(state) { const copy = JSON.parse(JSON.stringify(state || {})); if (copy.scope) delete copy.scope.lineUserId; return copy; }
 function plannerTaskTrace(task) {
   const entity = task && task.entity || {};
@@ -108,18 +118,19 @@ class ConversationEngineV2 {
 
   async process(input) {
     const traceId = crypto.randomUUID();
+    const sourceEvents = sourceEventsForInput(input);
     const property = this.getProperty(input.customerId);
     if (!property || property.propertyId !== input.customerId) throw new Error("property_not_found");
     const scope = { propertyId: input.customerId, channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, now: this.now().toISOString() };
     const previous = migrateStateV2(this.persistence.getConversationState(input.customerId, input.channelId, input.lineUserId), scope);
     const contextSnapshot = buildContextSnapshot(previous, scope);
-    this.traceContexts.set(traceId, { timestamp: new Date().toISOString(), correlationId: traceId, eventId: input.eventId, propertyId: input.customerId, ...(this.diagnosticDetail ? { userKeyHash: crypto.createHash("sha256").update(String(input.lineUserId || "")).digest("hex").slice(0, 16), messageText: input.messageText } : {}) });
+    this.traceContexts.set(traceId, { timestamp: new Date().toISOString(), correlationId: traceId, eventId: input.eventId, sourceEventIds: sourceEvents.map((event) => event.eventId).filter(Boolean), propertyId: input.customerId, ...(this.diagnosticDetail ? { userKeyHash: crypto.createHash("sha256").update(String(input.lineUserId || "")).digest("hex").slice(0, 16), messageText: input.messageText, sourceEvents } : {}) });
     const catalog = buildPropertyCatalog(property);
     this.trace(traceId, "property_catalog", { providerType: this.diagnosticMetadata.providerType || "unknown", location: catalog.locationDiagnostics || { source: "none", profileValuePresent: false, transportValuePresent: false, urlValidation: "fail" } });
     if (this.diagnosticDetail) this.trace(traceId, "state_before", { state: traceState(previous) });
     let plannerOutput, parserSucceeded = false;
     try {
-      plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], eventTimestamp: input.eventTimestamp, catalog, contextSnapshot });
+      plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], sourceEvents, eventTimestamp: input.eventTimestamp, catalog, contextSnapshot });
       parserSucceeded = true;
     } catch { plannerOutput = null; }
     this.trace(traceId, "planner", {
@@ -171,7 +182,7 @@ class ConversationEngineV2 {
       this.traceContexts.delete(traceId);
       return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), traceId };
     }
-    const contextValidation = validateUnderstandingContext(plannerOutput, contextSnapshot);
+    const contextValidation = validateUnderstandingContext(plannerOutput, contextSnapshot, { sourceEvents, scope });
     this.trace(traceId, "context_validation", { snapshotCycleIds: contextSnapshot.cycles.map((item) => item.requestCycleId), acceptedRelations: contextValidation.relations, rejectionReasons: contextValidation.errors });
     if (!contextValidation.ok) {
       this.trace(traceId, "fallback", { reasonCode: "context_relation_invalid", branch: "context_validation" });
@@ -297,4 +308,4 @@ class ConversationEngineV2 {
   }
 }
 
-module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS };
+module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS, sourceEventsForInput };
