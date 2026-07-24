@@ -32,7 +32,7 @@ function absoluteDateFromRaw(raw, base) {
 }
 function weekdayNumber(text) { const digits = { "日": 0, "天": 0, "一": 1, "1": 1, "二": 2, "2": 2, "三": 3, "3": 3, "四": 4, "4": 4, "五": 5, "5": 5, "六": 6, "6": 6 }; const match = String(text).match(/(?:週|星期|禮拜)\s*([日天一二三四五六1-6])/u); return match ? digits[match[1]] : null; }
 
-function resolveTemporalExpression(expression = {}, context = {}) {
+function resolveLegacyTemporalExpression(expression = {}, context = {}) {
   const timezone = context.timezone || "Asia/Taipei";
   const timestamp = Number(context.eventTimestamp) || Date.parse(context.eventTimestamp || "") || Date.now();
   const base = partsAt(timestamp, timezone).key;
@@ -94,4 +94,95 @@ function resolveTemporalExpression(expression = {}, context = {}) {
   return { checkIn, checkOut, nights, searchRange, timezone, resolutionStatus: checkIn || searchRange ? "resolved" : "ambiguous", ambiguity: checkIn || searchRange ? null : "date_missing", originalExpression: raw };
 }
 
-module.exports = { resolveTemporalExpression, inferExplicitTemporalExpression, addDays, valid };
+const TEMPORAL_RESULT_STATUSES = new Set(["absent", "resolved", "unresolved", "invalid", "conflicting"]);
+const TEMPORAL_PROVENANCE = new Set(["explicit", "context", "defaulted", "derived"]);
+const CONTEXTUAL_TEMPORAL_RULE_REF = "temporal:contextual_expression";
+
+function emptyFieldMetadata() {
+  return {
+    provenance: { checkIn: null, checkOut: null, nights: null, searchRange: null },
+    ruleRefs: { checkIn: null, checkOut: null, nights: null, searchRange: null },
+    derivedFromFieldRefs: { checkIn: [], checkOut: [], nights: [], searchRange: [] }
+  };
+}
+
+function withFieldMetadata(result, metadata = {}) {
+  const fields = emptyFieldMetadata();
+  const provenance = { ...fields.provenance, ...(metadata.provenance || {}) };
+  const ruleRefs = { ...fields.ruleRefs, ...(metadata.ruleRefs || {}) };
+  const derivedFromFieldRefs = { ...fields.derivedFromFieldRefs, ...(metadata.derivedFromFieldRefs || {}) };
+  return {
+    ...result,
+    resolutionStatus: TEMPORAL_RESULT_STATUSES.has(result.resolutionStatus) ? result.resolutionStatus : "unresolved",
+    provenance,
+    ruleRefs,
+    derivedFromFieldRefs,
+    fields: {
+      checkIn: { value: result.checkIn || null, provenance: provenance.checkIn, ruleRef: ruleRefs.checkIn, derivedFromFieldRefs: derivedFromFieldRefs.checkIn },
+      checkOut: { value: result.checkOut || null, provenance: provenance.checkOut, ruleRef: ruleRefs.checkOut, derivedFromFieldRefs: derivedFromFieldRefs.checkOut },
+      nights: { value: Number.isInteger(result.nights) ? result.nights : null, provenance: provenance.nights, ruleRef: ruleRefs.nights, derivedFromFieldRefs: derivedFromFieldRefs.nights },
+      searchRange: { value: result.searchRange || null, provenance: provenance.searchRange, ruleRef: ruleRefs.searchRange, derivedFromFieldRefs: derivedFromFieldRefs.searchRange }
+    }
+  };
+}
+
+function hasDateExpression(expression = {}) {
+  return Boolean(String(expression.rawText || "").trim()) && expression.kind !== "none";
+}
+
+function contextTemporalResult(expression, context, timezone) {
+  const approved = context.approvedContext || {};
+  const checkIn = valid(approved.checkIn) ? approved.checkIn : null;
+  const checkOut = valid(approved.checkOut) ? approved.checkOut : null;
+  const nights = Number.isInteger(approved.nights) ? approved.nights : null;
+  if (!checkIn && !checkOut) return null;
+  return withFieldMetadata({ checkIn, checkOut, nights, searchRange: null, timezone, resolutionStatus: "resolved", ambiguity: null, originalExpression: "" }, {
+    provenance: { checkIn: checkIn ? "context" : null, checkOut: checkOut ? "context" : null, nights: nights ? "context" : null }
+  });
+}
+
+function resolveTemporalExpression(expression = {}, context = {}) {
+  const timezone = context.timezone || "Asia/Taipei";
+  const hasExpression = hasDateExpression(expression);
+  const approved = context.approvedContext || null;
+  if (!hasExpression && context.allowContextReuse === true && approved) {
+    const reused = contextTemporalResult(expression, context, timezone);
+    if (reused) return reused;
+  }
+
+  const legacyContext = {
+    ...context,
+    previousCheckIn: approved && approved.checkIn || context.previousCheckIn,
+    previousCheckOut: approved && approved.checkOut || context.previousCheckOut
+  };
+  const result = resolveLegacyTemporalExpression(expression, legacyContext);
+  const status = result.resolutionStatus === "ambiguous"
+    ? hasExpression ? "unresolved" : "absent"
+    : result.resolutionStatus;
+  const invalidCheckOut = result.ambiguity === "checkout_not_after_checkin";
+  const finalStatus = invalidCheckOut ? "conflicting" : status;
+  const rawIsContextual = expression.kind === "contextual";
+  const explicitCheckIn = result.checkIn && !rawIsContextual ? "explicit" : result.checkIn && rawIsContextual ? "derived" : null;
+  const explicitNights = Number.isInteger(context.nightsCandidate);
+  const defaultedNights = !explicitNights && Number.isInteger(context.defaultNights);
+  const explicitCheckOut = valid(context.checkOutCandidate);
+  const ruleRef = context.defaultNightsRuleRef || null;
+  const provenance = {
+    checkIn: explicitCheckIn,
+    checkOut: explicitCheckOut ? "explicit" : result.checkOut && result.checkIn && result.nights ? "derived" : null,
+    nights: explicitNights ? "explicit" : defaultedNights ? "defaulted" : null
+  };
+  const ruleRefs = {
+    checkIn: rawIsContextual && result.checkIn ? CONTEXTUAL_TEMPORAL_RULE_REF : null,
+    checkOut: !explicitCheckOut && result.checkOut && result.checkIn && result.nights ? (defaultedNights ? ruleRef : "temporal:checkout_from_checkin_and_nights") : null,
+    nights: defaultedNights ? ruleRef : null
+  };
+  const derivedFromFieldRefs = {
+    checkIn: rawIsContextual && result.checkIn ? ["approvedTemporalContext"] : [],
+    checkOut: !explicitCheckOut && result.checkOut && result.checkIn && result.nights ? ["stay.checkIn", "stay.nights"] : [],
+    nights: []
+  };
+  return withFieldMetadata({ ...result, resolutionStatus: finalStatus }, { provenance, ruleRefs, derivedFromFieldRefs });
+}
+
+module.exports = { resolveTemporalExpression, inferExplicitTemporalExpression, addDays, valid, TEMPORAL_RESULT_STATUSES, TEMPORAL_PROVENANCE, CONTEXTUAL_TEMPORAL_RULE_REF };

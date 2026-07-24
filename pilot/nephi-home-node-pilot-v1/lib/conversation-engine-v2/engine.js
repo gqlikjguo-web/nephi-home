@@ -21,6 +21,8 @@ const { validateUnderstandingContext } = require("./understanding-validator");
 const DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS = 31;
 const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
 const INVENTORY_TASK_TYPES = new Set(["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"]);
+const TEMPORAL_FAILURE_STATUSES = new Set(["unresolved", "invalid", "conflicting"]);
+const SINGLE_DATE_DEFAULT_NIGHT_RULE_REF = "PRODUCT_BASELINE:single_date_availability_default_one_night";
 function dateKeyAt(timestamp, timezone) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(timestamp)).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
   return `${parts.year}-${parts.month}-${parts.day}`;
@@ -103,6 +105,19 @@ function normalizedTaskStay(task) {
     nightsCandidate: Number.isInteger(stay.nightsCandidate) ? stay.nightsCandidate : null,
     guestCountCandidate: Number.isInteger(stay.guestCountCandidate) ? stay.guestCountCandidate : null
   };
+}
+
+function approvedTemporalContext(snapshot, relation, plannerStay) {
+  if (!relation || relation.stateAction !== "continue" || !relation.requestCycleId) return null;
+  if (plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none") return null;
+  const cycle = (snapshot && snapshot.cycles || []).find((item) => item.requestCycleId === relation.requestCycleId);
+  const stay = cycle && cycle.confirmedInputs && cycle.confirmedInputs.stay;
+  if (!stay) return null;
+  return { checkIn: stay.checkIn || null, checkOut: stay.checkOut || null, nights: Number.isInteger(stay.nights) ? stay.nights : null };
+}
+
+function blockedTemporalConditions(conditions) {
+  return { ...conditions, stay: { ...(conditions && conditions.stay || {}), checkIn: null, checkOut: null, searchRange: null } };
 }
 
 function confirmedInventoryFromTask(catalog, candidate) {
@@ -224,16 +239,19 @@ class ConversationEngineV2 {
     }
     const executionTasks = contextExecution.executionTasks;
     const executionItems = contextExecution.executionItems;
+    const relationsByCandidateIndex = new Map(contextValidation.relations.map((relation) => [relation.candidateIndex, relation]));
     const candidateInputsByCandidateIndex = {};
     for (const item of executionItems) {
       const plannerStay = normalizedTaskStay(item.task);
-      const previousConditions = conditionsForCycle(previous, item.requestCycleId);
+      const approvedContext = approvedTemporalContext(contextSnapshot, relationsByCandidateIndex.get(item.candidateIndex), plannerStay);
       const temporal = resolveTemporalExpression(plannerStay.dateExpression, {
         eventTimestamp: input.eventTimestamp, timezone: catalog.timezone,
         checkInCandidate: plannerStay.checkInCandidate, checkOutCandidate: plannerStay.checkOutCandidate,
         nightsCandidate: plannerStay.nightsCandidate,
         defaultNights: ["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(item.task.type) ? 1 : null,
-        previousCheckIn: previousConditions.stay.checkIn, previousCheckOut: previousConditions.stay.checkOut
+        defaultNightsRuleRef: SINGLE_DATE_DEFAULT_NIGHT_RULE_REF,
+        approvedContext,
+        allowContextReuse: Boolean(approvedContext)
       });
       candidateInputsByCandidateIndex[item.candidateIndex] = {
         confirmedFields: { guests: plannerStay.guestCountCandidate, nights: plannerStay.nightsCandidate, inventory: confirmedInventoryFromTask(catalog, item.task) },
@@ -243,13 +261,16 @@ class ConversationEngineV2 {
       };
       item.temporal = temporal;
     }
-    this.trace(traceId, "temporal", { contextAction: contextExecution.contextDecision.action, items: executionItems.map((item) => ({ candidateIndex: item.candidateIndex, requestCycleId: item.requestCycleId, dateExpressionPresent: Boolean(normalizedTaskStay(item.task).dateExpression.rawText && normalizedTaskStay(item.task).dateExpression.kind !== "none"), resolutionStatus: item.temporal.resolutionStatus, produced: { checkIn: Boolean(item.temporal.checkIn), checkOut: Boolean(item.temporal.checkOut), nights: Boolean(item.temporal.nights) } })) });
+    this.trace(traceId, "temporal", { contextAction: contextExecution.contextDecision.action, items: executionItems.map((item) => ({ candidateIndex: item.candidateIndex, requestCycleId: item.requestCycleId, dateExpressionPresent: Boolean(normalizedTaskStay(item.task).dateExpression.rawText && normalizedTaskStay(item.task).dateExpression.kind !== "none"), resolutionStatus: item.temporal.resolutionStatus, provenance: item.temporal.provenance, ruleRefs: item.temporal.ruleRefs, produced: { checkIn: Boolean(item.temporal.checkIn), checkOut: Boolean(item.temporal.checkOut), nights: Boolean(item.temporal.nights) } })) });
     let state = reduceConversationState(previous, {
       tasks: executionTasks,
       contextDecisions: contextExecution.contextDecisions,
       candidateInputsByCandidateIndex
     }, scope);
-    const executableItems = executionItems.map((item) => ({ ...item, executionConditions: conditionsForCycle(state, item.requestCycleId) }));
+    const executableItems = executionItems.map((item) => {
+      const conditions = conditionsForCycle(state, item.requestCycleId);
+      return { ...item, executionConditions: TEMPORAL_FAILURE_STATUSES.has(item.temporal.resolutionStatus) ? blockedTemporalConditions(conditions) : conditions };
+    });
     this.trace(traceId, "state", { contextAction: contextExecution.contextDecision.action, operations: state.transition, requestCycles: state.requestCycles.map((cycle) => ({ requestCycleId: cycle.requestCycleId, status: cycle.status })), ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {}) });
     this.trace(traceId, "entity_resolution", { tasks: executionTasks.map((task) => { const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : { status: "not_requested" }; return this.diagnosticDetail ? { taskId: task.taskId, resolved } : { taskId: task.taskId, status: resolved.status, canonicalId: resolved.entity && resolved.entity.canonicalId || null, candidateCount: resolved.candidates && resolved.candidates.length || 0 }; }) });
     const resolverCalls = [];
@@ -334,4 +355,4 @@ class ConversationEngineV2 {
   }
 }
 
-module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS, sourceEventsForInput };
+module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS, SINGLE_DATE_DEFAULT_NIGHT_RULE_REF, sourceEventsForInput };

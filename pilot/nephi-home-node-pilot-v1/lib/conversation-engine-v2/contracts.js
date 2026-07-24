@@ -7,6 +7,8 @@ const CONTEXT_RELATION_KINDS = new Set([
   "end_existing",
   "relation_uncertain"
 ]);
+const TEMPORAL_RESULT_STATUSES = new Set(["absent", "resolved", "unresolved", "invalid", "conflicting"]);
+const TEMPORAL_PROVENANCE = new Set(["explicit", "context", "defaulted", "derived"]);
 
 function sameScope(stateScope = {}, scope = {}) {
   return stateScope.propertyId === scope.propertyId
@@ -78,4 +80,4 @@ function buildContextSnapshot(state, scope = {}) {
   return snapshot;
 }
 
-module.exports = { CONTEXT_RELATION_KINDS, buildContextSnapshot, isCurrentPending, legacyCycleId };
+module.exports = { CONTEXT_RELATION_KINDS, TEMPORAL_RESULT_STATUSES, TEMPORAL_PROVENANCE, buildContextSnapshot, isCurrentPending, legacyCycleId };

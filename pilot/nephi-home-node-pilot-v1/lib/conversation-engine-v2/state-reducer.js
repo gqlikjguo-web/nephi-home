@@ -21,6 +21,7 @@ function normalizedCycle(cycle, now) {
     requestKind: String(cycle.requestKind || ""),
     status: ["active", "answered", "handoff", "ended", "expired"].includes(cycle.status) ? cycle.status : "active",
     confirmedInputs: cycle.confirmedInputs && typeof cycle.confirmedInputs === "object" ? clone(cycle.confirmedInputs) : blankConditions(),
+    temporalResult: cycle.temporalResult && typeof cycle.temporalResult === "object" ? clone(cycle.temporalResult) : null,
     contextReuseExpiresAt: cycle.contextReuseExpiresAt || null,
     createdAt: cycle.createdAt || now,
     updatedAt: cycle.updatedAt || now
@@ -104,7 +105,6 @@ function contextOperationsFromInputs(conditions, contextInput, transition) {
   if (confirmed.inventory && typeof confirmed.inventory === "object") { addContextOperation(conditions, transition, "inventory.mode", confirmed.inventory.mode); addContextOperation(conditions, transition, "inventory.entityId", confirmed.inventory.entityId); }
   const temporal = contextInput && contextInput.temporalResult || {};
   if (temporal.resolutionStatus === "resolved") { addContextOperation(conditions, transition, "stay.checkIn", temporal.checkIn); addContextOperation(conditions, transition, "stay.checkOut", temporal.checkOut); addContextOperation(conditions, transition, "stay.nights", temporal.nights); addContextOperation(conditions, transition, "stay.searchRange", temporal.searchRange); }
-  if (temporal.resolutionStatus === "invalid" && contextInput && contextInput.hasNewDateExpression) for (const field of ["stay.checkIn", "stay.checkOut", "stay.searchRange"]) { setPath(conditions, field, null); transition.cleared.push(field); }
   if (contextInput && contextInput.searchRange) addContextOperation(conditions, transition, "stay.searchRange", contextInput.searchRange);
 }
 function applyReducerPatch(conditions, patch, transition) {
@@ -152,7 +152,8 @@ function reduceConversationState(previous, contextInput, scope = {}) {
     const requestCycleId = decision.requestCycleId || crypto.randomUUID();
     const existingAt = cycleIndex.get(requestCycleId);
     const existing = existingAt === undefined ? null : state.requestCycles[existingAt];
-    const cycle = { requestCycleId, requestKind: conditions.topic && conditions.topic.capabilityType || existing && existing.requestKind || "", status: "active", confirmedInputs: conditions, contextReuseExpiresAt: new Date(new Date(scope.now || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString(), createdAt: existing && existing.createdAt || scope.now || new Date().toISOString(), updatedAt: scope.now || new Date().toISOString() };
+    const candidateInput = contextInput && contextInput.candidateInputsByCandidateIndex && contextInput.candidateInputsByCandidateIndex[decision.candidateIndex];
+    const cycle = { requestCycleId, requestKind: conditions.topic && conditions.topic.capabilityType || existing && existing.requestKind || "", status: "active", confirmedInputs: conditions, temporalResult: candidateInput && candidateInput.temporalResult || existing && existing.temporalResult || null, contextReuseExpiresAt: new Date(new Date(scope.now || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString(), createdAt: existing && existing.createdAt || scope.now || new Date().toISOString(), updatedAt: scope.now || new Date().toISOString() };
     if (existingAt === undefined) { state.requestCycles.push(cycle); cycleIndex.set(requestCycleId, state.requestCycles.length - 1); transition.set.push(`cycle:${requestCycleId}`); }
     else { state.requestCycles[existingAt] = { ...existing, ...cycle, createdAt: existing.createdAt || cycle.createdAt }; transition.replaced.push(`cycle:${requestCycleId}`); }
   }
