@@ -23,11 +23,7 @@ const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
 const INVENTORY_TASK_TYPES = new Set(["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"]);
 const TEMPORAL_FAILURE_STATUSES = new Set(["unresolved", "invalid", "conflicting"]);
 const SINGLE_DATE_DEFAULT_NIGHT_RULE_REF = "PRODUCT_BASELINE:single_date_availability_default_one_night";
-function dateKeyAt(timestamp, timezone) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(timestamp)).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-function addUtcDays(dateKey, days) { const value = new Date(`${dateKey}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); }
+const AVAILABLE_DATES_LOOKAHEAD_RULE_REF = "temporal:available_dates_default_lookahead";
 function sourceEventsForInput(input = {}) {
   const events = Array.isArray(input.sourceEvents) ? input.sourceEvents : [];
   const normalized = events.map((event) => ({
@@ -83,14 +79,10 @@ function normalizePlannerOutput(plannerOutput, { eventTimestamp, timezone } = {}
   const genericAvailability = output.tasks.some((task) => isGenericAvailabilityEntity(task));
   const genericAvailableDates = output.tasks.some((task) => task.type === "available_dates" && isGenericAvailabilityEntity(task));
   if (availableDatesRequested) {
-    // An available_dates task is a search for the next matching stay, so it
-    // starts at the immutable message date rather than an earlier stay range.
-    const dateFrom = dateKeyAt(eventTimestamp, timezone || "Asia/Taipei");
     output.tasks = output.tasks.map((task) => {
       if (task.type !== "available_dates" || !isGenericAvailabilityEntity(task)) return task;
       return { ...task, entity: { ...task.entity, rawText: "", canonicalCandidate: null } };
     });
-    output.searchRange = { from: dateFrom, to: addUtcDays(dateFrom, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS) };
   }
   if (genericAvailableDates || genericAvailability) output.inventoryCandidates = { mode: "any", entityId: null, features: null };
   return output;
@@ -113,7 +105,23 @@ function approvedTemporalContext(snapshot, relation, plannerStay) {
   const cycle = (snapshot && snapshot.cycles || []).find((item) => item.requestCycleId === relation.requestCycleId);
   const stay = cycle && cycle.confirmedInputs && cycle.confirmedInputs.stay;
   if (!stay) return null;
-  return { checkIn: stay.checkIn || null, checkOut: stay.checkOut || null, nights: Number.isInteger(stay.nights) ? stay.nights : null };
+  const temporalFields = cycle && cycle.temporalResult && cycle.temporalResult.fields || {};
+  const sourceTurnRequestIds = [
+    ...(temporalFields.checkIn && temporalFields.checkIn.sourceTurnRequestIds || []),
+    ...(temporalFields.checkOut && temporalFields.checkOut.sourceTurnRequestIds || []),
+    ...(temporalFields.nights && temporalFields.nights.sourceTurnRequestIds || []),
+    ...(cycle && cycle.sourceTurnRequestIds || [])
+  ];
+  return {
+    checkIn: stay.checkIn || null,
+    checkOut: stay.checkOut || null,
+    nights: Number.isInteger(stay.nights) ? stay.nights : null,
+    sourceTurnRequestIds: [...new Set(sourceTurnRequestIds.map((value) => String(value || "").trim()).filter(Boolean))]
+  };
+}
+
+function sourceTurnRequestIdsForRelation(relation) {
+  return [...new Set((relation && relation.evidenceRefs || []).map((evidenceRef) => String(evidenceRef && (evidenceRef.eventId || evidenceRef.messageRef) || "").trim()).filter(Boolean))];
 }
 
 function blockedTemporalConditions(conditions) {
@@ -243,13 +251,17 @@ class ConversationEngineV2 {
     const candidateInputsByCandidateIndex = {};
     for (const item of executionItems) {
       const plannerStay = normalizedTaskStay(item.task);
-      const approvedContext = approvedTemporalContext(contextSnapshot, relationsByCandidateIndex.get(item.candidateIndex), plannerStay);
+      const relation = relationsByCandidateIndex.get(item.candidateIndex);
+      const approvedContext = approvedTemporalContext(contextSnapshot, relation, plannerStay);
       const temporal = resolveTemporalExpression(plannerStay.dateExpression, {
         eventTimestamp: input.eventTimestamp, timezone: catalog.timezone,
         checkInCandidate: plannerStay.checkInCandidate, checkOutCandidate: plannerStay.checkOutCandidate,
         nightsCandidate: plannerStay.nightsCandidate,
         defaultNights: ["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(item.task.type) ? 1 : null,
         defaultNightsRuleRef: SINGLE_DATE_DEFAULT_NIGHT_RULE_REF,
+        defaultSearchRangeDays: item.task.type === "available_dates" ? DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS : null,
+        defaultSearchRangeRuleRef: item.task.type === "available_dates" ? AVAILABLE_DATES_LOOKAHEAD_RULE_REF : null,
+        sourceTurnRequestIds: sourceTurnRequestIdsForRelation(relation),
         approvedContext,
         allowContextReuse: Boolean(approvedContext)
       });
@@ -257,11 +269,11 @@ class ConversationEngineV2 {
         confirmedFields: { guests: plannerStay.guestCountCandidate, nights: plannerStay.nightsCandidate, inventory: confirmedInventoryFromTask(catalog, item.task) },
         temporalResult: temporal,
         hasNewDateExpression: Boolean(plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none"),
-        searchRange: item.task.type === "available_dates" ? plannerOutput.searchRange || null : null
+        sourceTurnRequestIds: sourceTurnRequestIdsForRelation(relation)
       };
       item.temporal = temporal;
     }
-    this.trace(traceId, "temporal", { contextAction: contextExecution.contextDecision.action, items: executionItems.map((item) => ({ candidateIndex: item.candidateIndex, requestCycleId: item.requestCycleId, dateExpressionPresent: Boolean(normalizedTaskStay(item.task).dateExpression.rawText && normalizedTaskStay(item.task).dateExpression.kind !== "none"), resolutionStatus: item.temporal.resolutionStatus, provenance: item.temporal.provenance, ruleRefs: item.temporal.ruleRefs, produced: { checkIn: Boolean(item.temporal.checkIn), checkOut: Boolean(item.temporal.checkOut), nights: Boolean(item.temporal.nights) } })) });
+    this.trace(traceId, "temporal", { contextAction: contextExecution.contextDecision.action, items: executionItems.map((item) => ({ candidateIndex: item.candidateIndex, requestCycleId: item.requestCycleId, dateExpressionPresent: Boolean(normalizedTaskStay(item.task).dateExpression.rawText && normalizedTaskStay(item.task).dateExpression.kind !== "none"), resolutionStatus: item.temporal.resolutionStatus, provenance: item.temporal.provenance, ruleRefs: item.temporal.ruleRefs, fields: item.temporal.fields, produced: { checkIn: Boolean(item.temporal.checkIn), checkOut: Boolean(item.temporal.checkOut), nights: Boolean(item.temporal.nights) } })) });
     let state = reduceConversationState(previous, {
       tasks: executionTasks,
       contextDecisions: contextExecution.contextDecisions,
@@ -355,4 +367,4 @@ class ConversationEngineV2 {
   }
 }
 
-module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS, SINGLE_DATE_DEFAULT_NIGHT_RULE_REF, sourceEventsForInput };
+module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS, SINGLE_DATE_DEFAULT_NIGHT_RULE_REF, AVAILABLE_DATES_LOOKAHEAD_RULE_REF, sourceEventsForInput };

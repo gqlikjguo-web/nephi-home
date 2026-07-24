@@ -9,6 +9,7 @@ const CONTEXT_RELATION_KINDS = new Set([
 ]);
 const TEMPORAL_RESULT_STATUSES = new Set(["absent", "resolved", "unresolved", "invalid", "conflicting"]);
 const TEMPORAL_PROVENANCE = new Set(["explicit", "context", "defaulted", "derived"]);
+const TEMPORAL_VALUE_STATUSES = new Set(["missing", "uncertain", "invalid", "confirmed"]);
 
 function sameScope(stateScope = {}, scope = {}) {
   return stateScope.propertyId === scope.propertyId
@@ -67,6 +68,8 @@ function buildContextSnapshot(state, scope = {}) {
       requestKind: String(cycle.requestKind || ""),
       status: String(cycle.status || "active"),
       confirmedInputs: cycle.confirmedInputs || {},
+      temporalResult: cycle.temporalResult || null,
+      sourceTurnRequestIds: Array.isArray(cycle.sourceTurnRequestIds) ? cycle.sourceTurnRequestIds : [],
       contextReuseExpiresAt: cycle.contextReuseExpiresAt || null,
       pendingRequestId: pending && pending.pendingRequestId || null
     });
@@ -75,9 +78,9 @@ function buildContextSnapshot(state, scope = {}) {
   // mechanical event-derived cycle; no semantic matching is involved.
   for (const [requestCycleId, pending] of pendingByCycle) {
     if (knownCycleIds.has(requestCycleId)) continue;
-    snapshot.cycles.push({ requestCycleId, requestKind: String(pending.capability || ""), status: "active", confirmedInputs: pending.conditions || {}, contextReuseExpiresAt: pendingExpiry(pending), pendingRequestId: pending.pendingRequestId || null });
+    snapshot.cycles.push({ requestCycleId, requestKind: String(pending.capability || ""), status: "active", confirmedInputs: pending.conditions || {}, temporalResult: null, sourceTurnRequestIds: [], contextReuseExpiresAt: pendingExpiry(pending), pendingRequestId: pending.pendingRequestId || null });
   }
   return snapshot;
 }
 
-module.exports = { CONTEXT_RELATION_KINDS, TEMPORAL_RESULT_STATUSES, TEMPORAL_PROVENANCE, buildContextSnapshot, isCurrentPending, legacyCycleId };
+module.exports = { CONTEXT_RELATION_KINDS, TEMPORAL_RESULT_STATUSES, TEMPORAL_PROVENANCE, TEMPORAL_VALUE_STATUSES, buildContextSnapshot, isCurrentPending, legacyCycleId };

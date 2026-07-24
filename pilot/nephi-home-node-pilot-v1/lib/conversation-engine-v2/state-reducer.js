@@ -22,6 +22,7 @@ function normalizedCycle(cycle, now) {
     status: ["active", "answered", "handoff", "ended", "expired"].includes(cycle.status) ? cycle.status : "active",
     confirmedInputs: cycle.confirmedInputs && typeof cycle.confirmedInputs === "object" ? clone(cycle.confirmedInputs) : blankConditions(),
     temporalResult: cycle.temporalResult && typeof cycle.temporalResult === "object" ? clone(cycle.temporalResult) : null,
+    sourceTurnRequestIds: [...new Set((Array.isArray(cycle.sourceTurnRequestIds) ? cycle.sourceTurnRequestIds : []).map((value) => String(value || "").trim()).filter(Boolean))],
     contextReuseExpiresAt: cycle.contextReuseExpiresAt || null,
     createdAt: cycle.createdAt || now,
     updatedAt: cycle.updatedAt || now
@@ -153,7 +154,21 @@ function reduceConversationState(previous, contextInput, scope = {}) {
     const existingAt = cycleIndex.get(requestCycleId);
     const existing = existingAt === undefined ? null : state.requestCycles[existingAt];
     const candidateInput = contextInput && contextInput.candidateInputsByCandidateIndex && contextInput.candidateInputsByCandidateIndex[decision.candidateIndex];
-    const cycle = { requestCycleId, requestKind: conditions.topic && conditions.topic.capabilityType || existing && existing.requestKind || "", status: "active", confirmedInputs: conditions, temporalResult: candidateInput && candidateInput.temporalResult || existing && existing.temporalResult || null, contextReuseExpiresAt: new Date(new Date(scope.now || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString(), createdAt: existing && existing.createdAt || scope.now || new Date().toISOString(), updatedAt: scope.now || new Date().toISOString() };
+    const temporalResult = candidateInput && candidateInput.temporalResult || existing && existing.temporalResult || null;
+    const sourceTurnRequestIds = [...new Set([
+      ...(existing && existing.sourceTurnRequestIds || []),
+      ...(candidateInput && candidateInput.sourceTurnRequestIds || [])
+    ].map((value) => String(value || "").trim()).filter(Boolean))];
+    const canRefreshContextReuse = !existing || Boolean(
+      candidateInput
+      && candidateInput.hasNewDateExpression
+      && temporalResult
+      && temporalResult.resolutionStatus === "resolved"
+    );
+    const contextReuseExpiresAt = canRefreshContextReuse
+      ? new Date(new Date(scope.now || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString()
+      : existing.contextReuseExpiresAt || null;
+    const cycle = { requestCycleId, requestKind: conditions.topic && conditions.topic.capabilityType || existing && existing.requestKind || "", status: "active", confirmedInputs: conditions, temporalResult, sourceTurnRequestIds, contextReuseExpiresAt, createdAt: existing && existing.createdAt || scope.now || new Date().toISOString(), updatedAt: scope.now || new Date().toISOString() };
     if (existingAt === undefined) { state.requestCycles.push(cycle); cycleIndex.set(requestCycleId, state.requestCycles.length - 1); transition.set.push(`cycle:${requestCycleId}`); }
     else { state.requestCycles[existingAt] = { ...existing, ...cycle, createdAt: existing.createdAt || cycle.createdAt }; transition.replaced.push(`cycle:${requestCycleId}`); }
   }

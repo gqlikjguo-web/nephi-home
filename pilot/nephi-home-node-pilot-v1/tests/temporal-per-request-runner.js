@@ -46,12 +46,15 @@ function inputs(roomId, checkIn, checkOut, nights, guests) {
     topic: { capabilityType: "availability", canonicalId: roomId, category: "room", detailIntent: "general", detailFields: ["answer"] }
   };
 }
-function cycle(id, roomId, checkIn, checkOut, nights, guests, status = "answered") {
+function cycle(id, roomId, checkIn, checkOut, nights, guests, status = "answered", options = {}) {
+  const contextReuseExpiresAt = options.contextReuseExpiresAt || "2026-07-25T00:00:00.000Z";
+  const sourceTurnRequestIds = options.sourceTurnRequestIds || [id + "-source"];
   return {
     requestCycleId: id, requestKind: "availability", status,
     confirmedInputs: inputs(roomId, checkIn, checkOut, nights, guests),
     temporalResult: null,
-    createdAt: NOW, updatedAt: NOW, contextReuseExpiresAt: "2026-07-25T00:00:00.000Z"
+    sourceTurnRequestIds,
+    createdAt: NOW, updatedAt: NOW, contextReuseExpiresAt
   };
 }
 function stateFor(userId, cycles) {
@@ -121,7 +124,7 @@ async function contextReuseAndIsolation() {
   const userId = "reuse";
   const initial = stateFor(userId, [
     cycle("cycle-a", "room-a", "2026-08-06", "2026-08-07", 1, 2),
-    cycle("cycle-b", "room-b", "2026-08-10", "2026-08-12", 2, 4)
+    cycle("cycle-b", "room-b", "2026-08-10", "2026-08-12", 2, 4, "answered", { contextReuseExpiresAt: "2026-07-24T12:00:00.000Z" })
   ]);
   const testHarness = harness({ [userId]: initial });
   testHarness.queue(plan([availabilityTask(7, "room-b", stay({ guestCountCandidate: 4 }))], [{ candidateIndex: 7, kind: "supplement_existing", refs: ["cycle-b"] }]));
@@ -134,11 +137,14 @@ async function contextReuseAndIsolation() {
   assert.equal(item.resolutionStatus, "resolved", "context reuse must be a resolved TemporalResult, not an implicit state side effect");
   assert.equal(item.provenance.checkIn, "context");
   assert.equal(item.provenance.checkOut, "context");
+  assert.deepEqual(item.fields.checkIn.sourceTurnRequestIds, ["cycle-b-source"], "context reuse must retain the original cycle source reference");
+  assert.equal(item.fields.checkIn.valueStatus, "confirmed");
+  assert.equal(cycleById(state, "cycle-b").contextReuseExpiresAt, initial.requestCycles[1].contextReuseExpiresAt, "context reuse must not extend the existing TTL");
 }
 
 async function failedDatesDoNotReuseOrMutate() {
   const userId = "reject";
-  const initial = stateFor(userId, [cycle("cycle-a", "room-a", "2026-08-06", "2026-08-07", 1, 2)]);
+  const initial = stateFor(userId, [cycle("cycle-a", "room-a", "2026-08-06", "2026-08-07", 1, 2, "answered", { contextReuseExpiresAt: "2026-07-24T12:00:00.000Z" })]);
   const cases = [
     ["invalid", stay({ rawText: "2/30", kind: "absolute", checkInCandidate: "2026-02-30", nightsCandidate: 1, guestCountCandidate: 2 })],
     ["unresolved", stay({ rawText: "someday", kind: "weekday", nightsCandidate: 1, guestCountCandidate: 2 })],
@@ -154,13 +160,16 @@ async function failedDatesDoNotReuseOrMutate() {
     assert.equal(testHarness.state(userId).pendingRequests.length, 1, `${expectedStatus} dates must create only the cycle-scoped clarification pending`);
     assert.equal(testHarness.state(userId).pendingRequests[0].requestCycleId, "cycle-a");
     assert.equal(temporalItems(testHarness)[0].resolutionStatus, expectedStatus);
+    assert.equal(temporalItems(testHarness)[0].fields.checkIn.valueStatus, expectedStatus === "unresolved" ? "uncertain" : "invalid");
+    assert.equal(cycleById(testHarness.state(userId), "cycle-a").contextReuseExpiresAt, initial.requestCycles[0].contextReuseExpiresAt, expectedStatus + " dates must not extend context reuse TTL");
+    assert.equal(cycleById(testHarness.state(userId), "cycle-a").createdAt, initial.requestCycles[0].createdAt, expectedStatus + " dates must not replace cycle creation time");
   }
 }
 
 async function mixedTemporalOutcomesStayIsolated() {
   const userId = "mixed-outcomes";
   const existing = stateFor(userId, [
-    cycle("cycle-b", "room-b", "2026-08-10", "2026-08-12", 2, 4),
+    cycle("cycle-b", "room-b", "2026-08-10", "2026-08-12", 2, 4, "answered", { contextReuseExpiresAt: "2026-07-24T12:00:00.000Z" }),
     cycle("cycle-dormant", "room-dormant", "2026-08-20", "2026-08-21", 1, 1)
   ]);
   const validA = availabilityTask(11, "room-a", stay({ rawText: "8/6", kind: "absolute", checkInCandidate: "2026-08-06", nightsCandidate: 1, guestCountCandidate: 2 }));
@@ -192,6 +201,8 @@ async function mixedTemporalOutcomesStayIsolated() {
     assert.deepEqual(cycleA.confirmedInputs.stay, { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: 2, searchRange: null });
     assert.deepEqual(cycleB.confirmedInputs.stay, existing.requestCycles[0].confirmedInputs.stay, "B's invalid date must not overwrite its confirmed inputs");
     assert.equal(cycleB.temporalResult.resolutionStatus, "invalid");
+    assert.equal(cycleB.temporalResult.fields.checkIn.valueStatus, "invalid");
+    assert.equal(cycleB.contextReuseExpiresAt, existing.requestCycles[0].contextReuseExpiresAt, "B's invalid date must not extend its existing context TTL");
     assert.deepEqual(testHarness.calls.map((item) => [item.roomType, item.checkIn, item.checkOut, item.guests]), [["room-a", "2026-08-06", "2026-08-07", 2]], "only A may call the date-dependent Resolver");
     assert.equal(state.pendingRequests.length, 1, "only B may have a clarification pending request");
     assert.equal(state.pendingRequests[0].requestCycleId, "cycle-b");
@@ -230,7 +241,7 @@ async function noRelationAndIneligibleCyclesCannotReuse() {
 }
 
 function temporalContract() {
-  const explicit = resolveTemporalExpression({ rawText: "8/6", kind: "absolute", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", checkInCandidate: "2026-08-06", defaultNights: 1, defaultNightsRuleRef: "PRODUCT_BASELINE:single_date_availability_default_one_night" });
+  const explicit = resolveTemporalExpression({ rawText: "8/6", kind: "absolute", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", checkInCandidate: "2026-08-06", defaultNights: 1, defaultNightsRuleRef: "PRODUCT_BASELINE:single_date_availability_default_one_night", sourceTurnRequestIds: ["explicit-event"] });
   assert.equal(explicit.resolutionStatus, "resolved");
   assert.equal(explicit.provenance.checkIn, "explicit");
   assert.equal(explicit.provenance.nights, "defaulted");
@@ -238,6 +249,51 @@ function temporalContract() {
   assert.equal(explicit.provenance.checkOut, "derived");
   assert.equal(explicit.ruleRefs.checkOut, "PRODUCT_BASELINE:single_date_availability_default_one_night");
   assert.deepEqual(explicit.derivedFromFieldRefs.checkOut, ["stay.checkIn", "stay.nights"]);
+  assert.deepEqual(explicit.fields.checkIn, {
+    value: "2026-08-06", valueStatus: "confirmed", provenance: "explicit",
+    sourceTurnRequestIds: ["explicit-event"], ruleRef: null, derivedFromFieldRefs: []
+  });
+  assert.deepEqual(explicit.fields.nights, {
+    value: 1, valueStatus: "confirmed", provenance: "defaulted",
+    sourceTurnRequestIds: ["explicit-event"], ruleRef: "PRODUCT_BASELINE:single_date_availability_default_one_night", derivedFromFieldRefs: []
+  });
+  assert.deepEqual(explicit.fields.checkOut, {
+    value: "2026-08-07", valueStatus: "confirmed", provenance: "derived",
+    sourceTurnRequestIds: ["explicit-event"], ruleRef: "PRODUCT_BASELINE:single_date_availability_default_one_night", derivedFromFieldRefs: ["stay.checkIn", "stay.nights"]
+  });
+  const reused = resolveTemporalExpression({ rawText: "", kind: "none", anchor: "none" }, {
+    eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", allowContextReuse: true,
+    approvedContext: {
+      checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1,
+      sourceTurnRequestIds: ["original-cycle-event"]
+    }
+  });
+  assert.deepEqual(reused.fields.checkIn, {
+    value: "2026-08-06", valueStatus: "confirmed", provenance: "context",
+    sourceTurnRequestIds: ["original-cycle-event"], ruleRef: null, derivedFromFieldRefs: []
+  });
+  const unresolved = resolveTemporalExpression({ rawText: "ambiguous", kind: "weekday", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", sourceTurnRequestIds: ["unresolved-event"] });
+  assert.equal(unresolved.resolutionStatus, "unresolved");
+  assert.equal(unresolved.fields.checkIn.valueStatus, "uncertain");
+  assert.deepEqual(unresolved.fields.checkIn.sourceTurnRequestIds, ["unresolved-event"]);
+  const invalid = resolveTemporalExpression({ rawText: "2/30", kind: "absolute", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", checkInCandidate: "2026-02-30", sourceTurnRequestIds: ["invalid-event"] });
+  assert.equal(invalid.resolutionStatus, "invalid");
+  assert.equal(invalid.fields.checkIn.valueStatus, "invalid");
+  const conflicting = resolveTemporalExpression({ rawText: "8/10", kind: "absolute", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", checkInCandidate: "2026-08-10", checkOutCandidate: "2026-08-09", nightsCandidate: 1, sourceTurnRequestIds: ["conflicting-event"] });
+  assert.equal(conflicting.resolutionStatus, "conflicting");
+  assert.equal(conflicting.fields.checkIn.valueStatus, "invalid");
+  const explicitRange = resolveTemporalExpression({ rawText: "weekend", kind: "weekend", anchor: "message_time" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", sourceTurnRequestIds: ["range-event"] });
+  assert.equal(explicitRange.fields.searchRange.valueStatus, "confirmed");
+  assert.equal(explicitRange.fields.searchRange.provenance, "explicit");
+  assert.deepEqual(explicitRange.fields.searchRange.sourceTurnRequestIds, ["range-event"]);
+  const defaultedRange = resolveTemporalExpression({ rawText: "", kind: "none", anchor: "none" }, {
+    eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei", sourceTurnRequestIds: ["available-dates-event"],
+    defaultSearchRangeDays: 31, defaultSearchRangeRuleRef: "temporal:available_dates_default_lookahead"
+  });
+  assert.deepEqual(defaultedRange.fields.searchRange, {
+    value: { from: "2026-07-24", to: "2026-08-24" }, valueStatus: "confirmed", provenance: "defaulted",
+    sourceTurnRequestIds: ["available-dates-event"], ruleRef: "temporal:available_dates_default_lookahead", derivedFromFieldRefs: ["eventTimestamp"]
+  });
   assert.equal(resolveTemporalExpression({ rawText: "", kind: "none", anchor: "none" }, { eventTimestamp: Date.parse(NOW), timezone: "Asia/Taipei" }).resolutionStatus, "absent");
 }
 

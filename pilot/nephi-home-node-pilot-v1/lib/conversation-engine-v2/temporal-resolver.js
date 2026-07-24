@@ -96,14 +96,27 @@ function resolveLegacyTemporalExpression(expression = {}, context = {}) {
 
 const TEMPORAL_RESULT_STATUSES = new Set(["absent", "resolved", "unresolved", "invalid", "conflicting"]);
 const TEMPORAL_PROVENANCE = new Set(["explicit", "context", "defaulted", "derived"]);
+const TEMPORAL_VALUE_STATUSES = new Set(["missing", "uncertain", "invalid", "confirmed"]);
 const CONTEXTUAL_TEMPORAL_RULE_REF = "temporal:contextual_expression";
 
 function emptyFieldMetadata() {
   return {
     provenance: { checkIn: null, checkOut: null, nights: null, searchRange: null },
     ruleRefs: { checkIn: null, checkOut: null, nights: null, searchRange: null },
-    derivedFromFieldRefs: { checkIn: [], checkOut: [], nights: [], searchRange: [] }
+    derivedFromFieldRefs: { checkIn: [], checkOut: [], nights: [], searchRange: [] },
+    sourceTurnRequestIds: { checkIn: [], checkOut: [], nights: [], searchRange: [] },
+    valueStatus: { checkIn: "missing", checkOut: "missing", nights: "missing", searchRange: "missing" }
   };
+}
+
+function sourceTurnRequestIds(values) {
+  return [...new Set((Array.isArray(values) ? values : []).map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function fieldStatus(resolutionStatus, value) {
+  if (resolutionStatus === "unresolved") return "uncertain";
+  if (resolutionStatus === "invalid" || resolutionStatus === "conflicting") return "invalid";
+  return value === null || value === undefined ? "missing" : "confirmed";
 }
 
 function withFieldMetadata(result, metadata = {}) {
@@ -111,17 +124,38 @@ function withFieldMetadata(result, metadata = {}) {
   const provenance = { ...fields.provenance, ...(metadata.provenance || {}) };
   const ruleRefs = { ...fields.ruleRefs, ...(metadata.ruleRefs || {}) };
   const derivedFromFieldRefs = { ...fields.derivedFromFieldRefs, ...(metadata.derivedFromFieldRefs || {}) };
+  const commonSourceTurnRequestIds = sourceTurnRequestIds(metadata.sourceTurnRequestIds || result.sourceTurnRequestIds);
+  const sourceByField = { ...fields.sourceTurnRequestIds, ...(metadata.sourceTurnRequestIdsByField || {}) };
+  const resolutionStatus = TEMPORAL_RESULT_STATUSES.has(result.resolutionStatus) ? result.resolutionStatus : "unresolved";
+  const values = {
+    checkIn: result.checkIn || null,
+    checkOut: result.checkOut || null,
+    nights: Number.isInteger(result.nights) ? result.nights : null,
+    searchRange: result.searchRange || null
+  };
+  const valueStatus = Object.fromEntries(Object.entries(values).map(([field, value]) => {
+    const requested = metadata.valueStatus && metadata.valueStatus[field];
+    return [field, TEMPORAL_VALUE_STATUSES.has(requested) ? requested : fieldStatus(resolutionStatus, value)];
+  }));
+  const field = (name) => ({
+    value: values[name],
+    valueStatus: valueStatus[name],
+    provenance: provenance[name],
+    sourceTurnRequestIds: sourceTurnRequestIds(sourceByField[name] && sourceByField[name].length ? sourceByField[name] : commonSourceTurnRequestIds),
+    ruleRef: ruleRefs[name],
+    derivedFromFieldRefs: derivedFromFieldRefs[name]
+  });
   return {
     ...result,
-    resolutionStatus: TEMPORAL_RESULT_STATUSES.has(result.resolutionStatus) ? result.resolutionStatus : "unresolved",
+    resolutionStatus,
     provenance,
     ruleRefs,
     derivedFromFieldRefs,
     fields: {
-      checkIn: { value: result.checkIn || null, provenance: provenance.checkIn, ruleRef: ruleRefs.checkIn, derivedFromFieldRefs: derivedFromFieldRefs.checkIn },
-      checkOut: { value: result.checkOut || null, provenance: provenance.checkOut, ruleRef: ruleRefs.checkOut, derivedFromFieldRefs: derivedFromFieldRefs.checkOut },
-      nights: { value: Number.isInteger(result.nights) ? result.nights : null, provenance: provenance.nights, ruleRef: ruleRefs.nights, derivedFromFieldRefs: derivedFromFieldRefs.nights },
-      searchRange: { value: result.searchRange || null, provenance: provenance.searchRange, ruleRef: ruleRefs.searchRange, derivedFromFieldRefs: derivedFromFieldRefs.searchRange }
+      checkIn: field("checkIn"),
+      checkOut: field("checkOut"),
+      nights: field("nights"),
+      searchRange: field("searchRange")
     }
   };
 }
@@ -137,7 +171,8 @@ function contextTemporalResult(expression, context, timezone) {
   const nights = Number.isInteger(approved.nights) ? approved.nights : null;
   if (!checkIn && !checkOut) return null;
   return withFieldMetadata({ checkIn, checkOut, nights, searchRange: null, timezone, resolutionStatus: "resolved", ambiguity: null, originalExpression: "" }, {
-    provenance: { checkIn: checkIn ? "context" : null, checkOut: checkOut ? "context" : null, nights: nights ? "context" : null }
+    provenance: { checkIn: checkIn ? "context" : null, checkOut: checkOut ? "context" : null, nights: nights ? "context" : null },
+    sourceTurnRequestIds: approved.sourceTurnRequestIds
   });
 }
 
@@ -148,6 +183,16 @@ function resolveTemporalExpression(expression = {}, context = {}) {
   if (!hasExpression && context.allowContextReuse === true && approved) {
     const reused = contextTemporalResult(expression, context, timezone);
     if (reused) return reused;
+  }
+  if (!hasExpression && Number.isInteger(context.defaultSearchRangeDays) && context.defaultSearchRangeDays > 0) {
+    const from = partsAt(Number(context.eventTimestamp) || Date.parse(context.eventTimestamp || "") || Date.now(), timezone).key;
+    const searchRange = { from, to: addDays(from, context.defaultSearchRangeDays) };
+    return withFieldMetadata({ checkIn: null, checkOut: null, nights: null, searchRange, timezone, resolutionStatus: "resolved", ambiguity: null, originalExpression: "" }, {
+      provenance: { searchRange: "defaulted" },
+      ruleRefs: { searchRange: context.defaultSearchRangeRuleRef || null },
+      derivedFromFieldRefs: { searchRange: ["eventTimestamp"] },
+      sourceTurnRequestIds: context.sourceTurnRequestIds
+    });
   }
 
   const legacyContext = {
@@ -170,19 +215,22 @@ function resolveTemporalExpression(expression = {}, context = {}) {
   const provenance = {
     checkIn: explicitCheckIn,
     checkOut: explicitCheckOut ? "explicit" : result.checkOut && result.checkIn && result.nights ? "derived" : null,
-    nights: explicitNights ? "explicit" : defaultedNights ? "defaulted" : null
+    nights: explicitNights ? "explicit" : defaultedNights ? "defaulted" : null,
+    searchRange: result.searchRange ? "explicit" : null
   };
   const ruleRefs = {
     checkIn: rawIsContextual && result.checkIn ? CONTEXTUAL_TEMPORAL_RULE_REF : null,
     checkOut: !explicitCheckOut && result.checkOut && result.checkIn && result.nights ? (defaultedNights ? ruleRef : "temporal:checkout_from_checkin_and_nights") : null,
-    nights: defaultedNights ? ruleRef : null
+    nights: defaultedNights ? ruleRef : null,
+    searchRange: null
   };
   const derivedFromFieldRefs = {
     checkIn: rawIsContextual && result.checkIn ? ["approvedTemporalContext"] : [],
     checkOut: !explicitCheckOut && result.checkOut && result.checkIn && result.nights ? ["stay.checkIn", "stay.nights"] : [],
-    nights: []
+    nights: [],
+    searchRange: []
   };
-  return withFieldMetadata({ ...result, resolutionStatus: finalStatus }, { provenance, ruleRefs, derivedFromFieldRefs });
+  return withFieldMetadata({ ...result, resolutionStatus: finalStatus }, { provenance, ruleRefs, derivedFromFieldRefs, sourceTurnRequestIds: context.sourceTurnRequestIds });
 }
 
-module.exports = { resolveTemporalExpression, inferExplicitTemporalExpression, addDays, valid, TEMPORAL_RESULT_STATUSES, TEMPORAL_PROVENANCE, CONTEXTUAL_TEMPORAL_RULE_REF };
+module.exports = { resolveTemporalExpression, inferExplicitTemporalExpression, addDays, valid, TEMPORAL_RESULT_STATUSES, TEMPORAL_PROVENANCE, TEMPORAL_VALUE_STATUSES, CONTEXTUAL_TEMPORAL_RULE_REF };

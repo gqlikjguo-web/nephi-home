@@ -9,6 +9,7 @@ const { resolveEntity } = require("../lib/conversation-engine-v2/entity-resolver
 const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
 const { executeTasks } = require("../lib/conversation-engine-v2/capability-executor");
+const { resolveTemporalExpression } = require("../lib/conversation-engine-v2/temporal-resolver");
 
 const property = {
   propertyId: "regression_lodge",
@@ -45,14 +46,24 @@ const normalizedRecent = normalizePlannerOutput(plannerOutput, {
 });
 assert.equal(normalizedRecent.tasks[0].type, "available_dates");
 assert.equal(normalizedRecent.tasks[0].entity.rawText, "");
-assert.deepEqual(normalizedRecent.searchRange, { from: "2026-07-18", to: "2026-08-18" });
+assert.equal(normalizedRecent.searchRange, undefined, "Engine normalization must not calculate a canonical search range");
+assert.deepEqual(
+  resolveTemporalExpression({ rawText: "", kind: "none", anchor: "none" }, {
+    eventTimestamp: Date.parse("2026-07-18T10:00:00+08:00"),
+    timezone: property.timezone,
+    defaultSearchRangeDays: 31,
+    defaultSearchRangeRuleRef: "temporal:available_dates_default_lookahead",
+    sourceTurnRequestIds: ["recent-event"]
+  }).fields.searchRange.value,
+  { from: "2026-07-18", to: "2026-08-18" }
+);
 const normalizedRecentAfterPriorStay = normalizePlannerOutput(plannerOutput, {
   messageText: "最近哪一天有空房",
   eventTimestamp: Date.parse("2026-07-18T10:00:00+08:00"),
   timezone: property.timezone,
   previousConditions: { stay: { checkIn: "2026-08-06", searchRange: { from: "2026-08-06", to: "2026-09-06" } } }
 });
-assert.deepEqual(normalizedRecentAfterPriorStay.searchRange, { from: "2026-07-18", to: "2026-08-18" });
+assert.equal(normalizedRecentAfterPriorStay.searchRange, undefined);
 assert.deepEqual(normalizedRecentAfterPriorStay.inventoryCandidates, { mode: "any", entityId: null, features: null });
 
 const structurallyPlannedAvailableDates = normalizePlannerOutput({
@@ -66,7 +77,7 @@ const structurallyPlannedAvailableDates = normalizePlannerOutput({
   previousConditions: { stay: { checkIn: "2026-08-06", searchRange: { from: "2026-08-06", to: "2026-09-06" } } }
 });
 assert.equal(structurallyPlannedAvailableDates.tasks[0].entity.rawText, "");
-assert.deepEqual(structurallyPlannedAvailableDates.searchRange, { from: "2026-07-18", to: "2026-08-18" });
+assert.equal(structurallyPlannedAvailableDates.searchRange, undefined);
 assert.deepEqual(structurallyPlannedAvailableDates.inventoryCandidates, { mode: "any", entityId: null, features: null });
 
 const catalog = buildPropertyCatalog(property);
