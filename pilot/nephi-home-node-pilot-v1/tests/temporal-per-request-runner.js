@@ -157,6 +157,54 @@ async function failedDatesDoNotReuseOrMutate() {
   }
 }
 
+async function mixedTemporalOutcomesStayIsolated() {
+  const userId = "mixed-outcomes";
+  const existing = stateFor(userId, [
+    cycle("cycle-b", "room-b", "2026-08-10", "2026-08-12", 2, 4),
+    cycle("cycle-dormant", "room-dormant", "2026-08-20", "2026-08-21", 1, 1)
+  ]);
+  const validA = availabilityTask(11, "room-a", stay({ rawText: "8/6", kind: "absolute", checkInCandidate: "2026-08-06", nightsCandidate: 1, guestCountCandidate: 2 }));
+  const invalidB = availabilityTask(29, "room-b", stay({ rawText: "2/30", kind: "absolute", checkInCandidate: "2026-02-30", nightsCandidate: 2, guestCountCandidate: 4 }));
+  const relations = [
+    { candidateIndex: 11, kind: "new_request" },
+    { candidateIndex: 29, kind: "supplement_existing", refs: ["cycle-b"] }
+  ];
+
+  async function run(tasks, orderedRelations) {
+    const testHarness = harness({ [userId]: existing });
+    testHarness.queue(plan(tasks, orderedRelations));
+    const result = await testHarness.process(userId, `mixed-${tasks[0].candidateIndex}`, "two independent requests");
+    const state = testHarness.state(userId);
+    const cycleA = state.requestCycles.find((item) => item.requestCycleId !== "cycle-b" && item.requestCycleId !== "cycle-dormant");
+    const cycleB = cycleById(state, "cycle-b");
+    const aResult = result.taskResults.find((item) => item.taskId === validA.taskId);
+    const bResult = result.taskResults.find((item) => item.taskId === invalidB.taskId);
+    const temporal = temporalItems(testHarness).sort((left, right) => left.candidateIndex - right.candidateIndex);
+
+    assert.ok(result.replyText.length > 0, "mixed outcomes must still deliver a reply");
+    assert.ok(result.replyText.includes("Room A"), "the valid A result must remain answerable");
+    assert.equal(result.replyText.includes("2026-08-10"), false, "B's previous date must not leak into the reply");
+    assert.equal(aResult.status, "answered");
+    assert.equal(bResult.status, "needs_clarification");
+    assert.deepEqual(bResult.facts, {}, "the failed B request must not introduce an unauthorized fact");
+    assert.deepEqual(temporal.map((item) => [item.candidateIndex, item.resolutionStatus]), [[11, "resolved"], [29, "invalid"]]);
+    assert.ok(cycleA && cycleB);
+    assert.deepEqual(cycleA.confirmedInputs.stay, { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: 2, searchRange: null });
+    assert.deepEqual(cycleB.confirmedInputs.stay, existing.requestCycles[0].confirmedInputs.stay, "B's invalid date must not overwrite its confirmed inputs");
+    assert.equal(cycleB.temporalResult.resolutionStatus, "invalid");
+    assert.deepEqual(testHarness.calls.map((item) => [item.roomType, item.checkIn, item.checkOut, item.guests]), [["room-a", "2026-08-06", "2026-08-07", 2]], "only A may call the date-dependent Resolver");
+    assert.equal(state.pendingRequests.length, 1, "only B may have a clarification pending request");
+    assert.equal(state.pendingRequests[0].requestCycleId, "cycle-b");
+    assert.deepEqual(cycleById(state, "cycle-dormant"), existing.requestCycles[1], "an unrelated cycle must remain unchanged");
+    assertSafe(result, testHarness);
+    return { a: cycleA.confirmedInputs.stay, b: cycleB.confirmedInputs.stay, calls: testHarness.calls.map((item) => [item.roomType, item.checkIn, item.checkOut, item.guests]), pendingCycleId: state.pendingRequests[0].requestCycleId };
+  }
+
+  const forward = await run([validA, invalidB], relations);
+  const reversed = await run([invalidB, validA], [relations[1], relations[0]]);
+  assert.deepEqual(reversed, forward, "task and relation order must not change mixed temporal outcome alignment");
+}
+
 async function noRelationAndIneligibleCyclesCannotReuse() {
   const userId = "ineligible";
   const initial = stateFor(userId, [cycle("cycle-a", "room-a", "2026-08-06", "2026-08-07", 1, 2)]);
@@ -198,6 +246,7 @@ async function main() {
   await perCandidateIsolation();
   await contextReuseAndIsolation();
   await failedDatesDoNotReuseOrMutate();
+  await mixedTemporalOutcomesStayIsolated();
   await noRelationAndIneligibleCyclesCannotReuse();
   console.log("temporal per request: PASS");
 }
