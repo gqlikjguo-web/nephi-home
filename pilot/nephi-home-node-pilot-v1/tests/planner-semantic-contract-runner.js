@@ -6,7 +6,7 @@ const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine")
 const { instructions } = require("../lib/providers/test-only-openai-conversation-planner");
 
 function task({ taskId, type = "property_fact", category, canonicalCandidate, detailIntent = "general", requestedOutputs = ["answer"], eligibilityEvidence = { kind: "none", sourceText: "" }, sourceText }) {
-  return { taskId, type, sourceText, detailIntent, requestedOutputs, eligibilityEvidence, dependsOnStayContext: false, entity: { category, rawText: sourceText, canonicalCandidate, confidence: 0.99 }, confidence: 0.99 };
+  return { taskId, type, sourceText, detailIntent, requestedOutputs, eligibilityEvidence, dependsOnStayContext: false, entity: { category, rawText: sourceText, canonicalCandidate, confidence: 0.99 }, stayCandidate: null, confidence: 0.99 };
 }
 
 function plan(tasks) {

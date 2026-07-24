@@ -31,6 +31,7 @@ function task(candidateIndex = 0) {
     eligibilityEvidence: { kind: "none", sourceText: "" },
     dependsOnStayContext: false,
     entity: { category: "policy", rawText: "parking", canonicalCandidate: "parking", confidence: 1 },
+    stayCandidate: null,
     confidence: 1
   };
 }

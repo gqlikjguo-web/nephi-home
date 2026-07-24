@@ -69,10 +69,14 @@ function plannerValidationTrace(plannerOutput, validation) {
 function normalizePlannerOutput(plannerOutput, { eventTimestamp, timezone } = {}) {
   if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) return null;
   const stay = { ...(plannerOutput.stay || {}), dateExpression: { ...plannerOutput.stay && plannerOutput.stay.dateExpression } };
-  const output = { ...plannerOutput, stay, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, detailIntent: normalizeDetailIntent(task.detailIntent), eligibilityEvidence: normalizeEligibilityEvidence(task.eligibilityEvidence), entity: task.entity ? { ...task.entity } : task.entity, ...(task.stayCandidate ? { stayCandidate: { ...task.stayCandidate, dateExpression: { ...task.stayCandidate.dateExpression } } } : {}) })) };
+  const output = { ...plannerOutput, stay, tasks: (plannerOutput.tasks || []).map((task) => {
+    const normalized = { ...task, detailIntent: normalizeDetailIntent(task.detailIntent), eligibilityEvidence: normalizeEligibilityEvidence(task.eligibilityEvidence), entity: task.entity ? { ...task.entity } : task.entity };
+    if (Object.hasOwn(task, "stayCandidate")) normalized.stayCandidate = task.stayCandidate === null ? null : { ...task.stayCandidate, dateExpression: { ...task.stayCandidate.dateExpression } };
+    return normalized;
+  }) };
   const topLevelStayPresent = Boolean(stay.dateExpression && stay.dateExpression.rawText || stay.checkInCandidate || stay.checkOutCandidate || stay.nightsCandidate || stay.guestCountCandidate);
-  if (output.tasks.length === 1 && !output.tasks[0].stayCandidate) output.tasks[0] = { ...output.tasks[0], stayCandidate: stay };
-  output.ambiguousTopLevelStay = output.tasks.length > 1 && topLevelStayPresent && output.tasks.some((task) => task.stayCandidate === undefined);
+  if (output.tasks.length === 1 && !Object.hasOwn(output.tasks[0], "stayCandidate")) output.tasks[0] = { ...output.tasks[0], stayCandidate: stay };
+  output.ambiguousTopLevelStay = output.tasks.length > 1 && topLevelStayPresent && output.tasks.some((task) => task.dependsOnStayContext && (!Object.hasOwn(task, "stayCandidate") || task.stayCandidate === null));
   const availableDatesRequested = output.tasks.some((task) => task.type === "available_dates");
   const genericAvailability = output.tasks.some((task) => isGenericAvailabilityEntity(task));
   const genericAvailableDates = output.tasks.some((task) => task.type === "available_dates" && isGenericAvailabilityEntity(task));

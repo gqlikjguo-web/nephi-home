@@ -18,7 +18,7 @@ function validPlannerOutput() {
     discourse: { relation: "new_request", confidence: 1 },
     stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-    tasks: [{ candidateIndex: 0, taskId: "t", type: "policy", sourceText: "check in", detailIntent: "general", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: false, entity: { category: "policy", rawText: "check in", canonicalCandidate: "check_in", confidence: 1 }, confidence: 1 }],
+    tasks: [{ candidateIndex: 0, taskId: "t", type: "policy", sourceText: "check in", detailIntent: "general", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: false, entity: { category: "policy", rawText: "check in", canonicalCandidate: "check_in", confidence: 1 }, stayCandidate: null, confidence: 1 }],
     contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "test-event", startOffset: 0, endOffset: 4, quote: "test" }] }],
     ambiguities: [],
     missingInformation: [],
@@ -46,7 +46,7 @@ async function engineResult(output) {
 function invalidRelationOutput() {
   return {
     ...validPlannerOutput(),
-    tasks: [{ candidateIndex: 0, taskId: "availability", type: "availability", sourceText: "availability", detailIntent: "general", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 1 }, confidence: 1 }],
+    tasks: [{ candidateIndex: 0, taskId: "availability", type: "availability", sourceText: "availability", detailIntent: "general", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 1 }, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, confidence: 1 }],
     contextRelationCandidates: [{ candidateIndex: 0, kind: "supplement_existing", candidateRequestCycleRefs: ["not-in-snapshot"], evidenceRefs: [{ eventId: "invalid-relation-event", startOffset: 0, endOffset: 7, quote: "invalid" }] }]
   };
 }

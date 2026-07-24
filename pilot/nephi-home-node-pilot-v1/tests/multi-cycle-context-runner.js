@@ -6,6 +6,7 @@ const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine")
 const { createPendingRequest } = require("../lib/conversation-engine-v2/pending-request");
 const { buildContextSnapshot } = require("../lib/conversation-engine-v2/contracts");
 const { emptyStateV2, migrateStateV2, reduceConversationState, decideContextExecution } = require("../lib/conversation-engine-v2/state-reducer");
+const { validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
 
 const scope = { propertyId: "multi-property", channelId: "multi-channel", lineUserId: "multi-user", now: "2026-07-24T00:00:00.000Z", eventId: "multi-event" };
 const task = (candidateIndex, taskId, canonicalCandidate) => ({ candidateIndex, taskId, type: "policy", sourceText: taskId, detailIntent: "general", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "policy", rawText: taskId, canonicalCandidate, confidence: 1 }, confidence: 1 });
@@ -22,12 +23,12 @@ function legacyState() {
 }
 
 function clone(value) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
-function engineTask(candidateIndex, taskId, type, canonicalCandidate, stayCandidate = null) {
+function engineTask(candidateIndex, taskId, type, canonicalCandidate, stayCandidate = type === "availability" ? candidateStay("", null, null) : null, omitStayCandidate = false) {
   return {
     candidateIndex, taskId, type, sourceText: taskId, detailIntent: "general", requestedOutputs: ["answer"],
     eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: type === "availability",
     entity: { category: type === "availability" ? "room" : "policy", rawText: taskId, canonicalCandidate, confidence: 1 },
-    ...(stayCandidate ? { stayCandidate } : {}), confidence: 1
+    ...(omitStayCandidate ? {} : { stayCandidate }), confidence: 1
   };
 }
 function enginePlan({ tasks, relations, dateText = "", checkInCandidate = null, guests = null, missingInformation = [] }) {
@@ -92,6 +93,66 @@ function candidateStay(dateText, checkInCandidate, guests, nights = 1) {
 }
 function cycleByInventory(state, entityId) { return state.requestCycles.find((cycle) => cycle.confirmedInputs.inventory.entityId === entityId); }
 
+function assertSafeRejection(harness, result, userId) {
+  assert.ok(result.replyText.length > 0, "rejected input must receive a non-empty safe reply");
+  assert.equal(harness.state(userId) || null, null, "rejected input must not persist conversation state");
+  assert.equal(harness.resolverCalls.length, 0, "rejected input must not call a Resolver");
+  assertSafeLog(harness.logs);
+}
+
+async function explicitStayCandidateContractCoverage() {
+  const availabilityStay = candidateStay("8/6", "2026-08-06", 2);
+  const relations = [{ candidateIndex: 0, kind: "new_request" }];
+  const validAvailability = enginePlan({ tasks: [engineTask(0, "schema-availability", "availability", "room-a", availabilityStay)], relations })([{ eventId: "schema-event", messageText: "schema" }]);
+  const missingStayCandidate = clone(validAvailability);
+  delete missingStayCandidate.tasks[0].stayCandidate;
+  assert.equal(validatePlannerOutput(missingStayCandidate).ok, false, "a task without stayCandidate must fail schema validation");
+  const nullAvailability = clone(validAvailability);
+  nullAvailability.tasks[0].stayCandidate = null;
+  assert.equal(validatePlannerOutput(nullAvailability).ok, false, "a stay-dependent task with null stayCandidate must fail schema validation");
+  const nullAmenity = enginePlan({ tasks: [engineTask(0, "schema-amenity", "amenity", "parking", null)], relations })([{ eventId: "schema-event", messageText: "schema" }]);
+  assert.equal(validatePlannerOutput(nullAmenity).ok, true, "a non-stay task with null stayCandidate must be valid");
+  const objectAmenity = clone(nullAmenity);
+  objectAmenity.tasks[0].stayCandidate = availabilityStay;
+  assert.equal(validatePlannerOutput(objectAmenity).ok, true, "a non-stay task with a complete stayCandidate must be valid");
+  objectAmenity.tasks[0].stayCandidate = { checkInCandidate: "2026-08-06" };
+  assert.equal(validatePlannerOutput(objectAmenity).ok, false, "a non-stay task with an incomplete stayCandidate must fail schema validation");
+
+  const topLevelOnly = engineHarness();
+  topLevelOnly.queue(enginePlan({
+    tasks: [engineTask(0, "top-only-room-a", "availability", "room-a", null), engineTask(1, "top-only-room-b", "availability", "room-b", null)],
+    relations: [{ candidateIndex: 0, kind: "new_request" }, { candidateIndex: 1, kind: "new_request" }],
+    dateText: "8/6", checkInCandidate: "2026-08-06", guests: 2
+  }));
+  assertSafeRejection(topLevelOnly, await topLevelOnly.process("top-only", "top-only-event", "Room A and Room B"), "top-only");
+
+  const oneNullStayDependent = engineHarness();
+  oneNullStayDependent.queue(enginePlan({
+    tasks: [engineTask(0, "valid-room-a", "availability", "room-a", availabilityStay), engineTask(1, "null-room-b", "availability", "room-b", null)],
+    relations: [{ candidateIndex: 0, kind: "new_request" }, { candidateIndex: 1, kind: "new_request" }]
+  }));
+  assertSafeRejection(oneNullStayDependent, await oneNullStayDependent.process("one-null", "one-null-event", "Room A and Room B"), "one-null");
+
+  const mixed = engineHarness();
+  mixed.queue(enginePlan({
+    tasks: [engineTask(0, "valid-room", "availability", "room-a", availabilityStay), engineTask(1, "valid-parking", "amenity", "parking", null)],
+    relations: [{ candidateIndex: 0, kind: "new_request" }, { candidateIndex: 1, kind: "new_request" }]
+  }));
+  const mixedResult = await mixed.process("valid-mixed", "valid-mixed-event", "Room A and parking");
+  assert.ok(mixedResult.replyText.length > 0);
+  assert.equal(mixed.resolverCalls.length, 1, "an availability task with an explicit stayCandidate must still execute beside a null amenity candidate");
+
+  const singleLegacy = engineHarness();
+  singleLegacy.queue(enginePlan({
+    tasks: [engineTask(0, "legacy-single", "availability", "room-a", undefined, true)],
+    relations,
+    dateText: "8/6", checkInCandidate: "2026-08-06", guests: 2
+  }));
+  const legacyResult = await singleLegacy.process("legacy-single", "legacy-single-event", "Room A");
+  assert.ok(legacyResult.replyText.length > 0);
+  assert.deepEqual(singleLegacy.resolverCalls.map((call) => [call.roomType, call.checkIn, call.guests]), [["room-a", "2026-08-06", 2]], "a one-task legacy top-level stay must be mechanically compatible");
+}
+
 async function perCandidateConditionsCoverage() {
   const roomAStay = candidateStay("8/6", "2026-08-06", 2);
   const roomBStay = candidateStay("8/10", "2026-08-10", 4);
@@ -155,7 +216,7 @@ async function perCandidateConditionsCoverage() {
 
   const ambiguousLegacy = engineHarness();
   ambiguousLegacy.queue(enginePlan({
-    tasks: [engineTask(0, "legacy-room-a", "availability", "room-a"), engineTask(1, "legacy-room-b", "availability", "room-b")],
+    tasks: [engineTask(0, "legacy-room-a", "availability", "room-a", undefined, true), engineTask(1, "legacy-room-b", "availability", "room-b", undefined, true)],
     relations,
     dateText: "8/6", checkInCandidate: "2026-08-06", guests: 2
   }));
@@ -166,7 +227,7 @@ async function perCandidateConditionsCoverage() {
 
   const singleLegacy = engineHarness();
   singleLegacy.queue(enginePlan({
-    tasks: [engineTask(0, "single-legacy-room", "availability", "room-a")],
+    tasks: [engineTask(0, "single-legacy-room", "availability", "room-a", undefined, true)],
     relations: [{ candidateIndex: 0, kind: "new_request" }],
     dateText: "8/6", checkInCandidate: "2026-08-06", guests: 2
   }));
@@ -197,7 +258,7 @@ async function engineEndToEndCoverage() {
   const cycleBId = pendingB.requestCycleId;
   assert.ok(cycleBId && cycleById(afterPending, cycleBId));
 
-  harness.queue(enginePlan({ tasks: [engineTask(0, "room-a", "availability", "room-a")], relations: [{ candidateIndex: 0, kind: "new_request" }], dateText: "8/6", checkInCandidate: "2026-08-06", guests: 2 }));
+  harness.queue(enginePlan({ tasks: [engineTask(0, "room-a", "availability", "room-a", candidateStay("8/6", "2026-08-06", 2))], relations: [{ candidateIndex: 0, kind: "new_request" }], dateText: "8/6", checkInCandidate: "2026-08-06", guests: 2 }));
   const answerA = await harness.process("guest", "a-answer", "8/6 Room A for two");
   const afterA = harness.state("guest");
   const cycleA = afterA.requestCycles.find((cycle) => cycle.requestCycleId !== cycleBId);
@@ -217,7 +278,7 @@ async function engineEndToEndCoverage() {
   reordered.requestCycles.reverse();
   harness.states.set("multi-property:multi-channel:guest", clone(reordered));
   const cycleABeforeB = clone(cycleById(reordered, cycleA.requestCycleId));
-  harness.queue(enginePlan({ tasks: [engineTask(0, "room-b-return", "availability", "room-b")], relations: [{ candidateIndex: 0, kind: "supplement_existing", refs: [cycleBId] }], dateText: "8/10", checkInCandidate: "2026-08-10", guests: 4 }));
+  harness.queue(enginePlan({ tasks: [engineTask(0, "room-b-return", "availability", "room-b", candidateStay("8/10", "2026-08-10", 4))], relations: [{ candidateIndex: 0, kind: "supplement_existing", refs: [cycleBId] }], dateText: "8/10", checkInCandidate: "2026-08-10", guests: 4 }));
   const answerB = await harness.process("guest", "b-answer", "8/10 Room B for four");
   const afterB = harness.state("guest");
   const cycleBAfter = cycleById(afterB, cycleBId);
@@ -307,6 +368,7 @@ async function main() {
   assert.deepEqual(uncertain.requestCycles, continued.requestCycles, "relation uncertainty must leave every existing cycle unchanged");
   assert.deepEqual(uncertain.pendingRequests, continued.pendingRequests, "relation uncertainty must leave dormant pending unchanged");
 
+  await explicitStayCandidateContractCoverage();
   await perCandidateConditionsCoverage();
   await engineEndToEndCoverage();
 
