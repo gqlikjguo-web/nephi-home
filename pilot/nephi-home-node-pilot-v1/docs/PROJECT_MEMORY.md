@@ -54,6 +54,7 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - LINE 正式／test-only Channel Identity 安全硬隔離：完成。
 - Conversation Engine V2 已部署至 test-only；短日期 trust boundary 修正 commit：`0c743642b69c9d671410bb44dc1e8b42735c938a`。
 - 完整 `npm test`：最近一次驗證 exit 0（V2 generic availability／available-dates schema、property-backed setting catalog、回覆順序回歸後）。
+- Phase 6 local transport E2E：完成（reply／clarification／handoff success+failure、no_reply，以及 FinalDecision/transport alignment）。
 - 真實 test-only LINE 最終驗收：進行中。
 - 正式 LINE 切換與真實正式驗收：未開始，需使用者明確授權。
 

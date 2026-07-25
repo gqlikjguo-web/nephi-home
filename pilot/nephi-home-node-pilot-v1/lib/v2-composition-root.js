@@ -5,17 +5,18 @@ const { createTestOnlyOpenAiControlledComposerFromEnv } = require("./providers/t
 const { ConversationEngineV2 } = require("./conversation-engine-v2/engine");
 const { ConversationEngineV2Coordinator } = require("./conversation-engine-v2/coordinator");
 
-function createV2CompositionRoot({ providers, service, env = process.env, now = () => new Date(), debounceMs = 2000, planner, composer, onDiagnostic, diagnosticDetail = false } = {}) {
+function createV2CompositionRoot({ providers, service, env = process.env, now = () => new Date(), debounceMs = 2000, planner, composer, onDiagnostic, diagnosticDetail = false, testOnlyOverrides = null } = {}) {
+  const overrides = testOnlyOverrides || {};
   const engine = new ConversationEngineV2({
-    planner: planner || createTestOnlyOpenAiConversationPlannerFromEnv({ env }),
-    composer: composer || createTestOnlyOpenAiControlledComposerFromEnv({ env }),
-    persistence: providers.persistence,
-    getProperty: (propertyId) => providers.customerSettings.getProperty(propertyId),
-    availabilityResolver: (query) => service.searchAvailability(query),
-    availableDatesResolver: (query) => service.searchAvailableDates(query),
+    planner: overrides.planner || planner || createTestOnlyOpenAiConversationPlannerFromEnv({ env }),
+    composer: overrides.composer || composer || createTestOnlyOpenAiControlledComposerFromEnv({ env }),
+    persistence: overrides.persistence || providers.persistence,
+    getProperty: overrides.getProperty || ((propertyId) => providers.customerSettings.getProperty(propertyId)),
+    availabilityResolver: overrides.availabilityResolver || ((query) => service.searchAvailability(query)),
+    availableDatesResolver: overrides.availableDatesResolver || ((query) => service.searchAvailableDates(query)),
     listPriceOverrides: (propertyId) => providers.customerSettings.listRoomPriceOverrides(propertyId),
     now,
-    onDiagnostic,
+    onDiagnostic: overrides.onDiagnostic || onDiagnostic,
     diagnosticDetail,
     diagnosticMetadata: { providerType: providers.kind || "unknown" }
   });

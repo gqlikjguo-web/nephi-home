@@ -54,3 +54,7 @@
 ## 2026-07-23 — Property-scoped multi-Channel LINE binding
 
 - Added one shared multi-tenant LINE webhook transport backed by encrypted property bindings, while preserving the existing test-only legacy route and the single V2 composition root.
+
+## 2026-07-26 — Phase 6 transport final-decision alignment
+
+- Test-only LINE transport diagnostics now report reply failures through the injected server-factory seam with the stable `reply_failed` outcome, matching the FinalDecision action without exposing request or credential data.

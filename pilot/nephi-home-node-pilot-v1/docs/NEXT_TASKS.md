@@ -18,6 +18,11 @@
 7. test-only 全部通過後建立正式切換前回退點。
 8. 只有取得使用者逐次明確授權後，才執行正式 LINE webhook 切換與真實正式驗收。
 
+## 2026-07-26 Phase 6 local transport E2E
+
+- 已完成：FinalDecision 與 LINE transport action 對齊；reply／clarification／handoff 的成功與失敗、以及 no_reply 均由 E2E runner 驗證。
+- 未完成：真實 test-only LINE 驗收仍依上列既定項目執行；本次未部署、未切換 LINE、未接觸 credentials。
+
 ## 不得提前執行
 
 - test-only 驗收未完成前，不得宣稱第一版完成。

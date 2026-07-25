@@ -31,10 +31,12 @@ assert.doesNotMatch(runtime, /line-channel-identity-guard|createLineChannelIdent
 assert.equal((root.match(/new ConversationEngineV2\(/g) || []).length, 1, "composition root creates one V2 engine");
 assert.equal((root.match(/new ConversationEngineV2Coordinator\(/g) || []).length, 1, "composition root creates one V2 coordinator");
 assert.match(root, /new ConversationEngineV2Coordinator\(\{ engine, debounceMs, externalReplyToken: true \}\)/, "the LINE transport owns reply tokens, so the V2 coordinator must not suppress a valid reply when no reply token is injected");
+assert.match(root, /testOnlyOverrides = null/, "test-only overrides are an explicit composition-root seam");
+assert.match(server, /testOnlyOverrides: options\.testOnlyOverrides \|\| null/, "only the server factory may pass test-only overrides into the active root");
 assert.equal((root.match(/createTestOnlyOpenAiConversationPlannerFromEnv/g) || []).length, 2, "only the composition root wires the planner");
 assert.equal((root.match(/createTestOnlyOpenAiControlledComposerFromEnv/g) || []).length, 2, "only the composition root wires the controlled composer");
-assert.match(root, /availabilityResolver:\s*\(query\) => service\.searchAvailability\(query\)/);
-assert.match(root, /availableDatesResolver:\s*\(query\) => service\.searchAvailableDates\(query\)/);
+assert.match(root, /availabilityResolver: overrides\.availabilityResolver \|\| \(\(query\) => service\.searchAvailability\(query\)\)/);
+assert.match(root, /availableDatesResolver: overrides\.availableDatesResolver \|\| \(\(query\) => service\.searchAvailableDates\(query\)\)/);
 assert.doesNotMatch(engine, /availability\.getRows\s*\(/, "V2 must not bypass the property-scoped resolver");
 assert.match(engine, /reduceConversationState\(/, "V2 must use the single state reducer");
 assert.match(engine, /buildFormalRequest\(/, "V2 must establish a formal request before execution");

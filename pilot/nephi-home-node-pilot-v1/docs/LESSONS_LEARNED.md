@@ -55,3 +55,7 @@ A Planner task can satisfy the strict JSON schema while carrying contradictory m
 ## 2026-07-23 — Property identity must follow verified Channel credentials
 
 A webhook URL parameter or unverified payload cannot establish tenant identity. Multi-Channel LINE handling must first select one opaque binding candidate, verify the raw body with that binding's Secret, and only then use the binding's property and Access Token. Tests must attempt query/body tampering and cross-signing, not only exercise two successful Channels.
+
+## 2026-07-26 — Transport diagnostics must use the injected test seam
+
+When a test-only transport diagnostic callback is provided, every transport outcome, including reply failures, must use that callback. Do not bypass it with the production-safe logger; doing so makes E2E observability diverge from the actual transport result. Keep external trace reason codes stable (`reply_attempt`, `reply_succeeded`, `reply_failed`) and preserve detailed HTTP error codes only in persisted delivery metadata.

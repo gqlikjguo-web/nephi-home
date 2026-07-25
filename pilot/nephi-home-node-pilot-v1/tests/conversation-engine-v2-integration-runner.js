@@ -100,7 +100,8 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
   assert.ok(result.replyText.includes("麻將"));
   assert.equal(result.taskResults.length, 3);
   assert.equal(result.reviewCount, 1);
-  assert.equal(logs.filter((x) => x.needsReview).length, 1);
+  assert.equal(logs.filter((x) => x.needsReview && String(x.eventId).startsWith("e1:review:")).length, 1);
+  assert.equal(logs.find((x) => x.eventId === "e1").needsReview, true, "handoff FinalDecision must mark its primary message record for review");
   assert.equal(states.get("p1:c1:u1").schemaVersion, 2);
   assert.equal(result.claimValidation.ok, true);
 
