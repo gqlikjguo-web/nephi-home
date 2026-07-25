@@ -64,4 +64,19 @@ assert.deepEqual(twoFacts.map((result) => [result.taskId, result.requestCycleId,
   ["policy-general-two", "cycle-policy", "general", "15:00"]
 ]);
 
+const pricingProperty = { propertyId: "pricing-property", currency: "TWD", rooms: [{ id: "room-price", publicDisplayName: "Price room", capacity: 2, enabled: true, mondayThursdayPrice: 1000, fridayPrice: 1200, saturdayHolidayPrice: 1500, sundayPrice: 1100 }] };
+const pricingPlan = { ...plan, formalRequestId: "cycle-price:price", taskId: "price", candidateIndex: 3, requestCycleId: "cycle-price", propertyId: "pricing-property", capability: "price", operation: "price", entity: { status: "resolved", category: "room", canonicalId: "room-price", canonicalSet: [] }, conditions: { ...plan.conditions, stay: { ...plan.conditions.stay, checkOut: "2026-08-08", nights: 2 } } };
+const priced = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: pricingPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }), priceOverrides: [{ roomId: "room-price", date: "2026-08-07", price: 1300 }] });
+assert.equal(priced.outcome, "answered");
+assert.deepEqual(priced.facts.prices[0].daily.map((item) => [item.date, item.price, item.source]), [["2026-08-06", 1000, "room_pricing"], ["2026-08-07", 1300, "price_override"]]);
+assert.equal(priced.facts.prices[0].total, 2300);
+
+const noPrice = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...pricingPlan, capability: "total_price", operation: "total_price" }, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: [] }) });
+assert.equal(noPrice.outcome, "no_availability");
+assert.deepEqual(noPrice.facts.prices, []);
+
+const amenityList = executeQueryPlan({ property, catalog: { amenities: [{ publicName: "BBQ", status: "confirmed_yes" }, { publicName: "Pool", status: "unknown" }], policies: [], faqs: [] }, queryPlan: { ...plan, formalRequestId: "cycle:amenities", taskId: "amenities", capability: "amenity_list", operation: "amenity_list" }, availabilityResolver: () => { throw new Error("must_not_call"); } });
+assert.equal(amenityList.outcome, "answered");
+assert.deepEqual(amenityList.facts.amenities, ["BBQ"]);
+
 console.log("phase5 query plan execution: PASS");

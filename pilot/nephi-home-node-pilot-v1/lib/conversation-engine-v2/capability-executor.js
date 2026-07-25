@@ -16,6 +16,15 @@ function selected(property, request, entities) {
     .filter((room) => !request.stay.guests || Number(room.capacity) >= Number(request.stay.guests));
 }
 function priceKey(date) { const day = new Date(`${date}T00:00:00Z`).getUTCDay(); return day === 5 ? "fridayPrice" : day === 6 ? "saturdayHolidayPrice" : day === 0 ? "sundayPrice" : "mondayThursdayPrice"; }
+function buildPricingFacts({ property, availableInventory, checkIn, checkOut, priceOverrides = [] }) {
+  const availableIds = new Set((availableInventory || []).map((item) => item.canonicalId));
+  const dates = stayDates(checkIn, checkOut);
+  const prices = (property.rooms || []).filter((room) => availableIds.has(room.id)).map((room) => {
+    const daily = dates.map((date) => { const override = priceOverrides.find((item) => item.roomId === room.id && item.date === date); const price = override ? Number(override.price) : Number(room[priceKey(date)]); return { date, price: Number.isInteger(price) && price > 0 ? price : null, source: override ? "price_override" : "room_pricing" }; });
+    return { inventory: publicInventory(room), daily, total: daily.every((item) => item.price !== null) ? daily.reduce((sum, item) => sum + item.price, 0) : null, currency: property.currency || "TWD" };
+  });
+  return { prices, missing: prices.some((item) => item.total === null) };
+}
 function isGenericAvailabilityEntity(task) {
   if (!task || !["availability", "bundle_availability", "room_options", "capacity", "price", "total_price", "available_dates"].includes(task.type)) return false;
   const entity = task.entity || {};
@@ -114,15 +123,18 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
       if (result.status === "answered") return queryOutcome(queryPlan, "answered", { facts: { availableDates: result.dates.filter((item) => item.available).map((item) => item.checkIn), range: stay.searchRange, source: result.source, propertyId: property.propertyId }, resolverAttempted: true });
       return queryOutcome(queryPlan, result.status === "unknown" ? "unknown" : "technical_error", { reason: `available_dates_${result.status}`, resolverAttempted: true });
     }
+    if (queryPlan.capability === "amenity_list") return queryOutcome(queryPlan, "answered", { facts: { amenities: (catalog.amenities || []).filter((item) => item.status === "confirmed_yes").map((item) => item.publicName), source: "property_catalog", propertyId: property.propertyId }, resolverAttempted: false });
     if (["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(queryPlan.capability)) {
       if (!stay.checkIn || !stay.checkOut) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "missing_stay" });
       const adapted = resolveAvailability({ availabilityResolver, propertyId: property.propertyId, request, resolved });
       if (!adapted.result.availabilityReliable) return queryOutcome(queryPlan, "technical_error", { reason: "availability_unreliable", resolverAttempted: true });
       if (["availability", "bundle_availability", "room_options", "capacity"].includes(queryPlan.capability)) return queryOutcome(queryPlan, adapted.facts.availableInventory.length ? "answered" : "no_availability", { facts: adapted.facts, resolverAttempted: true });
-      return queryOutcome(queryPlan, "answered", { facts: adapted.facts, resolverAttempted: true });
+      if (!adapted.facts.availableInventory.length) return queryOutcome(queryPlan, "no_availability", { facts: { availability: "full", checkIn: stay.checkIn, checkOut: stay.checkOut, prices: [], source: "availability_provider", propertyId: property.propertyId }, resolverAttempted: true });
+      const pricing = buildPricingFacts({ property, availableInventory: adapted.facts.availableInventory, checkIn: stay.checkIn, checkOut: stay.checkOut, priceOverrides });
+      return queryOutcome(queryPlan, pricing.missing ? "property_data_missing" : "answered", { facts: { availability: "available", checkIn: stay.checkIn, checkOut: stay.checkOut, prices: pricing.prices, source: "pricing_provider", propertyId: property.propertyId }, resolverAttempted: true });
     }
     return queryOutcome(queryPlan, "unknown", { reason: "unsupported_capability" });
   } catch { return queryOutcome(queryPlan, "technical_error", { reason: "resolver_exception", resolverAttempted: true }); }
 }
 
-module.exports = { executeTasks, executeQueryPlan, executeQueryPlans, priceKey, isGenericAvailabilityEntity, executePropertyFactTask, catalogFactByCanonicalId };
+module.exports = { executeTasks, executeQueryPlan, executeQueryPlans, buildPricingFacts, priceKey, isGenericAvailabilityEntity, executePropertyFactTask, catalogFactByCanonicalId };
