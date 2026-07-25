@@ -10,6 +10,9 @@ let server = read("../server.js");
 let root = read("../lib/v2-composition-root.js");
 let engine = read("../lib/conversation-engine-v2/engine.js");
 const executor = read("../lib/conversation-engine-v2/capability-executor.js");
+const finalDecision = read("../lib/conversation-engine-v2/final-decision.js");
+const formalRequest = read("../lib/conversation-engine-v2/formal-request.js");
+const composer = read("../lib/conversation-engine-v2/controlled-composer.js");
 
 if (mutation === "second_runtime") server = server.replace("/* legacy runtime", "const secondRoot = createV2CompositionRoot({});\n  /* legacy runtime");
 if (mutation === "resolver_bypass") engine += "\nfunction forbidden() { return availability.getRows(); }";
@@ -38,6 +41,11 @@ assert.match(engine, /buildFormalRequest\(/, "V2 must establish a formal request
 assert.match(engine, /buildQueryPlan/, "V2 must establish a query plan before execution");
 assert.match(engine, /executeQueryPlans\(/, "V2 must execute only resolver-backed query plans");
 assert.doesNotMatch(engine, /executeTasks\(/, "V2 must not send Planner tasks directly to the executor");
+assert.equal((engine.match(/buildFinalDecision\(/g) || []).length, 1, "Engine must call the FinalDecision builder at one adapter location");
+assert.match(finalDecision, /function buildFinalDecision/, "FinalDecision module is the sole action authority");
+assert.doesNotMatch(formalRequest, /action:\s*["'](?:reply|handoff|clarification|no_reply)/, "FormalRequest must remain neutral");
+assert.doesNotMatch(executor, /action:\s*["'](?:reply|handoff|clarification|no_reply)/, "QueryPlan executor must remain neutral");
+assert.doesNotMatch(composer, /no_reply|finalDecision|buildFinalDecision/, "Composer must not decide business action");
 assert.match(executor.match(/function executeTasks\([\s\S]*?\n}\n\n\/\/ The active Engine runtime/)[0], /buildPricingFacts\(/, "legacy executor pricing must use the canonical pricing function");
 assert.match(executor.match(/function executeQueryPlans\([\s\S]*?\n}\n\nfunction queryOutcome/)[0], /executeQueryPlan\(/, "query-plan batch executor must delegate only to the per-plan executor");
 assert.doesNotMatch(executor.match(/function executeQueryPlans\([\s\S]*?\n}\n\nfunction queryOutcome/)[0], /executeTasks\(/, "query-plan batch executor must not fall back to legacy tasks");
