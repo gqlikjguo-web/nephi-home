@@ -1,6 +1,7 @@
 "use strict";
 
 require("./phase5-formal-request-runner");
+require("./phase5-query-plan-execution-runner");
 
 const assert = require("node:assert/strict");
 

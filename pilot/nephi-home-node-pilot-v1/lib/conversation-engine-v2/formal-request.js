@@ -38,11 +38,13 @@ function buildFormalRequest({ property, task, requestCycleId, temporalResult, co
   return {
     formalRequestId: stableFormalRequestId({ requestCycleId, task }), taskId: task.taskId,
     candidateIndex: task.candidateIndex, requestCycleId, propertyId: property.propertyId,
-    capability: task.type, requestedOutputs: Array.isArray(task.requestedOutputs) ? task.requestedOutputs : [],
+    capability: task.type,
+    detailIntent: task.detailIntent || (confirmedInputs.topic && confirmedInputs.topic.detailIntent) || "general",
+    requestedOutputs: Array.isArray(task.requestedOutputs) ? task.requestedOutputs : [],
     entity: { status: resolvedEntity && resolvedEntity.status || "not_requested", category: entity && entity.category || task.entity && task.entity.category || "other", rawText: task.entity && task.entity.rawText || "", canonicalId: entity && entity.canonicalId || null, canonicalSet: resolvedEntity && resolvedEntity.entities ? resolvedEntity.entities.map((item) => item.canonicalId).filter(Boolean) : (entity && entity.canonicalSet || []) },
     stay,
     inventory: { mode: inventory.mode || "any", entityId: inventory.entityId || (entity && entity.canonicalId) || null, entityIds: Array.isArray(inventory.entityIds) ? inventory.entityIds : [], features: Array.isArray(inventory.features) ? inventory.features : [] },
-    topic: confirmedInputs.topic || {},
+    topic: { ...(confirmedInputs.topic || {}), detailIntent: task.detailIntent || (confirmedInputs.topic && confirmedInputs.topic.detailIntent) || "general" },
     evidence: { sourceEvidenceRefs: Array.isArray(sourceEvidenceRefs) ? sourceEvidenceRefs : [], temporalFieldRefs: temporalResult && temporalResult.fields || {} },
     readiness,
     resolvedEntity: resolvedEntity || null
@@ -55,6 +57,7 @@ function buildQueryPlan(formalRequest) {
     formalRequestId: formalRequest.formalRequestId, taskId: formalRequest.taskId, candidateIndex: formalRequest.candidateIndex,
     requestCycleId: formalRequest.requestCycleId, propertyId: formalRequest.propertyId,
     capability: formalRequest.capability,
+    detailIntent: formalRequest.detailIntent,
     operation: formalRequest.capability,
     conditions: { stay: formalRequest.stay, inventory: formalRequest.inventory, topic: formalRequest.topic },
     entity: formalRequest.entity, resolvedEntity: formalRequest.resolvedEntity, expectedOutputs: formalRequest.requestedOutputs
@@ -62,13 +65,14 @@ function buildQueryPlan(formalRequest) {
 }
 
 function resultForNotReady(formalRequest) {
-  const status = formalRequest.readiness.status;
-  if (["missing_information", "invalid", "conflicting"].includes(status)) return {
-    taskId: formalRequest.taskId, type: formalRequest.capability, status: "needs_clarification", facts: {},
-    missingInputs: formalRequest.readiness.missingFields.length ? formalRequest.readiness.missingFields : [status === "entity_unresolved" ? "inventory.entityId" : "stay.checkIn"]
+  const readiness = formalRequest.readiness || {};
+  return {
+    taskId: formalRequest.taskId, type: formalRequest.capability,
+    formalRequestId: formalRequest.formalRequestId, requestCycleId: formalRequest.requestCycleId,
+    outcome: "not_ready", readinessStatus: readiness.status || "unsupported",
+    missingFields: readiness.missingFields || [], invalidFields: readiness.invalidFields || [], conflictingFields: readiness.conflictingFields || [],
+    facts: {}, resolverAttempted: false
   };
-  if (status === "entity_unresolved") return { taskId: formalRequest.taskId, type: formalRequest.capability, status: "needs_human", reason: status, facts: { subject: formalRequest.entity.rawText || "question" }, missingInputs: [], review: true };
-  return { taskId: formalRequest.taskId, type: formalRequest.capability, status: "needs_human", reason: status, facts: {}, missingInputs: [], review: true };
 }
 
 module.exports = { buildFormalRequest, buildQueryPlan, resultForNotReady, stableFormalRequestId };

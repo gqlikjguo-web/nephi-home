@@ -85,21 +85,44 @@ function executeTasks({ property, catalog, tasks, request, availabilityResolver,
 // The active Engine runtime calls this entrypoint exclusively.  The legacy
 // executeTasks export remains for isolated historical test fixtures only.
 function executeQueryPlans({ property, catalog, queryPlans, availabilityResolver, availableDatesResolver, priceOverrides = [] }) {
-  return (queryPlans || []).flatMap((plan) => {
-    const entity = plan.entity || {};
-    const resolved = plan.resolvedEntity || (entity.status === "matched_set"
-      ? { status: "matched_set", entities: (entity.canonicalSet || []).map((canonicalId) => ({ canonicalId, category: entity.category })) }
-      : entity.status === "resolved"
-        ? { status: "resolved", entity: { canonicalId: entity.canonicalId, category: entity.category } }
-        : null);
-    const task = {
-      taskId: plan.taskId, candidateIndex: plan.candidateIndex, type: plan.capability,
-      requestedOutputs: plan.expectedOutputs || [], detailIntent: plan.conditions.topic && plan.conditions.topic.detailIntent || "general",
-      sourceText: "", entity: { category: entity.category || "other", rawText: entity.rawText || entity.canonicalId || "", canonicalCandidate: entity.canonicalId || null },
-      _resolvedEntity: resolved
-    };
-    return executeTasks({ property, catalog, tasks: [task], request: plan.conditions, availabilityResolver, availableDatesResolver, priceOverrides });
-  });
+  return (queryPlans || []).map((queryPlan) => executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, availableDatesResolver, priceOverrides }));
 }
 
-module.exports = { executeTasks, executeQueryPlans, priceKey, isGenericAvailabilityEntity, executePropertyFactTask, catalogFactByCanonicalId };
+function queryOutcome(queryPlan, outcome, extra = {}) { return { taskId: queryPlan.taskId, type: queryPlan.capability, formalRequestId: queryPlan.formalRequestId, requestCycleId: queryPlan.requestCycleId, outcome, facts: {}, resolverAttempted: false, ...extra }; }
+function queryResolvedEntity(queryPlan) {
+  const entity = queryPlan.entity || {};
+  return queryPlan.resolvedEntity || (entity.status === "matched_set" ? { status: "matched_set", entities: (entity.canonicalSet || []).map((canonicalId) => ({ canonicalId, category: entity.category })) } : entity.status === "resolved" ? { status: "resolved", entity: { canonicalId: entity.canonicalId, category: entity.category } } : null);
+}
+function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, availableDatesResolver, priceOverrides = [] }) {
+  if (!queryPlan || queryPlan.propertyId !== property.propertyId) return queryOutcome(queryPlan || {}, "invalid_query_plan", { reason: "property_scope_mismatch" });
+  const request = queryPlan.conditions || {};
+  const stay = request.stay || {};
+  const resolved = queryResolvedEntity(queryPlan);
+  try {
+    if (["amenity", "policy", "property_fact"].includes(queryPlan.capability)) {
+      const entity = resolved && resolved.status === "resolved" && resolved.entity;
+      if (!entity || entity.status === "unknown") return queryOutcome(queryPlan, "unknown", { reason: "property_fact_unknown", facts: { subject: queryPlan.entity && queryPlan.entity.rawText || "question" } });
+      const detailIntent = normalizeDetailIntent(queryPlan.detailIntent);
+      if (detailIntent === "general") return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", ...(entity.canonicalId === "location" ? { locationMapUrl: entity.answer || "" } : {}), ...(Array.isArray(entity.applicableBundles) ? { applicableBundles: entity.applicableBundles } : {}), source: "property_catalog", propertyId: property.propertyId, detailIntent }, resolverAttempted: false });
+      if (Array.isArray(entity.applicableBundles) && entity.applicableBundles.some((bundle) => bundle.note)) return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", applicableBundles: entity.applicableBundles, source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: true }, resolverAttempted: false });
+      const detail = catalogFactByCanonicalId(catalog, detailFactCandidates(entity.canonicalId, detailIntent));
+      return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: (detail || entity).status, answer: detail ? detail.answer || "" : includeBaseAnswer(detailIntent) ? entity.answer || "" : "", source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: Boolean(detail), detailNeedsConfirmation: !detail }, resolverAttempted: false });
+    }
+    if (queryPlan.capability === "available_dates") {
+      if (!stay.searchRange || !stay.searchRange.from || !stay.searchRange.to) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "missing_search_range" });
+      const result = resolveAvailableDates({ availableDatesResolver, propertyId: property.propertyId, request, resolved });
+      if (result.status === "answered") return queryOutcome(queryPlan, "answered", { facts: { availableDates: result.dates.filter((item) => item.available).map((item) => item.checkIn), range: stay.searchRange, source: result.source, propertyId: property.propertyId }, resolverAttempted: true });
+      return queryOutcome(queryPlan, result.status === "unknown" ? "unknown" : "technical_error", { reason: `available_dates_${result.status}`, resolverAttempted: true });
+    }
+    if (["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(queryPlan.capability)) {
+      if (!stay.checkIn || !stay.checkOut) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "missing_stay" });
+      const adapted = resolveAvailability({ availabilityResolver, propertyId: property.propertyId, request, resolved });
+      if (!adapted.result.availabilityReliable) return queryOutcome(queryPlan, "technical_error", { reason: "availability_unreliable", resolverAttempted: true });
+      if (["availability", "bundle_availability", "room_options", "capacity"].includes(queryPlan.capability)) return queryOutcome(queryPlan, adapted.facts.availableInventory.length ? "answered" : "no_availability", { facts: adapted.facts, resolverAttempted: true });
+      return queryOutcome(queryPlan, "answered", { facts: adapted.facts, resolverAttempted: true });
+    }
+    return queryOutcome(queryPlan, "unknown", { reason: "unsupported_capability" });
+  } catch { return queryOutcome(queryPlan, "technical_error", { reason: "resolver_exception", resolverAttempted: true }); }
+}
+
+module.exports = { executeTasks, executeQueryPlan, executeQueryPlans, priceKey, isGenericAvailabilityEntity, executePropertyFactTask, catalogFactByCanonicalId };

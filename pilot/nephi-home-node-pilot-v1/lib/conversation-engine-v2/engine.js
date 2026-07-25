@@ -135,6 +135,15 @@ function blockedTemporalConditions(conditions) {
   return { ...conditions, stay: { ...(conditions && conditions.stay || {}), checkIn: null, checkOut: null, searchRange: null } };
 }
 
+function legacyTaskResult(execution) {
+  if (!execution || !execution.outcome) return execution;
+  const base = { taskId: execution.taskId, type: execution.type, facts: execution.facts || {} };
+  if (execution.outcome === "answered" || execution.outcome === "no_availability") return { ...base, status: "answered" };
+  if (execution.outcome === "not_ready") return { ...base, status: "needs_clarification", missingInputs: (execution.missingFields || []).length ? execution.missingFields : ["stay.checkIn"] };
+  if (execution.outcome === "unknown") return { ...base, status: "needs_human", reason: execution.reason || "unknown", review: true };
+  return { ...base, status: "needs_human", reason: execution.reason || execution.outcome, review: true };
+}
+
 function confirmedInventoryFromTask(catalog, candidate) {
   if (!candidate || !INVENTORY_TASK_TYPES.has(candidate.type)
     || !candidate.entity || !(candidate.entity.rawText || candidate.entity.canonicalCandidate)) return null;
@@ -302,10 +311,11 @@ class ConversationEngineV2 {
     const resolverCalls = [];
     const tracedAvailabilityResolver = (request) => { const result = this.availabilityResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
     const tracedAvailableDatesResolver = (request) => { const result = this.availableDatesResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
-    let taskResults = [
+    const executionOutcomes = [
       ...formalRequests.filter((request) => request.readiness.status !== "ready").map(resultForNotReady),
       ...executeQueryPlans({ property, catalog, queryPlans, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) })
     ];
+    let taskResults = executionOutcomes.map(legacyTaskResult);
     const inputTaskIds = executionTasks.map((task) => task.taskId);
     let executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     if (!executorCoverage.ok) {
