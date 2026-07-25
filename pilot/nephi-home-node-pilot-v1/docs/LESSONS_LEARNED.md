@@ -59,3 +59,5 @@ A webhook URL parameter or unverified payload cannot establish tenant identity. 
 ## 2026-07-26 — Transport diagnostics must use the injected test seam
 
 When a test-only transport diagnostic callback is provided, every transport outcome, including reply failures, must use that callback. Do not bypass it with the production-safe logger; doing so makes E2E observability diverge from the actual transport result. Keep external trace reason codes stable (`reply_attempt`, `reply_succeeded`, `reply_failed`) and preserve detailed HTTP error codes only in persisted delivery metadata.
+
+The safe logger remains mandatory even when the test callback exists, and callback exceptions must be swallowed so they cannot alter reply delivery. Persist the FinalDecision fields on the main event before transport so delivery success or failure never changes `needsReview`, `humanHandoff`, or `decisionReason`.

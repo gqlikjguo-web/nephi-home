@@ -609,7 +609,13 @@ function createApp(options = {}) {
   const onboarding = createOnboardingService(providers.onboarding,{emailNotifier:onboardingEmailNotifier});
   const lineBindingService = createLineBindingService({ provider: providers.lineBindings, env: options.lineBindingEnv || process.env });
   const replyClient = options.lineReplyClientFactory || (options.lineReplyFetch && (({ channelAccessToken }) => ({ replyMessageWithHttpInfo: async (body) => { const response = await options.lineReplyFetch("https://api.line.me/v2/bot/message/reply", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${channelAccessToken}` }, body: JSON.stringify(body) }); if (!response.ok) { const error = new Error("line_reply_failed"); error.status = response.status; throw error; } return { httpResponse: { status: response.status } }; } })));
-  const testOnlyTransportDiagnostic = typeof options.testOnlyTransportDiagnostic === "function" ? options.testOnlyTransportDiagnostic : logSafeTestOnlyConversationTrace;
+  const testOnlyTransportDiagnostic = typeof options.testOnlyTransportDiagnostic === "function" ? options.testOnlyTransportDiagnostic : null;
+  const emitTransportDiagnostic = (entry) => {
+    logSafeTestOnlyConversationTrace(entry);
+    if (testOnlyTransportDiagnostic) {
+      try { testOnlyTransportDiagnostic(entry); } catch { /* test-only diagnostics must not affect transport */ }
+    }
+  };
   const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: false, onDiagnostic: logSafeTestOnlyConversationTrace, testOnlyOverrides: options.testOnlyOverrides || null });
   const claimEvent = (input) => providers.persistence.claimMessageEvent(input.customerId, input.channelId, input.eventId, { lineUserId: String(input.lineUserId || ""), eventTimestamp: input.eventTimestamp || "", guestMessage: String(input.messageText || ""), replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
   const updateEventStatus = (customerId, channelId, eventId, patch) => providers.persistence.updateMessageEvent(customerId, channelId, eventId, patch);
@@ -625,10 +631,11 @@ function createApp(options = {}) {
       if (!(await claimEvent(input)).claimed) continue;
       void root.coordinator.enqueue(input).then(async (result) => {
         const decision = String(result.finalDecision && result.finalDecision.action || (result.shouldReply ? "reply" : "no_reply"));
-        const traceTransport = (details) => testOnlyTransportDiagnostic(details);
+        const traceTransport = (details) => emitTransportDiagnostic(details);
+        await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired) });
         if (decision === "no_reply" || !result.shouldReply || !result.replyText) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "engine_should_reply_false", attempted: false, delivered: false }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
         try { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_attempt", attempted: true, delivered: false }); await (replyClient ? replyClient({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: result.replyText }] }); traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_succeeded", attempted: true, delivered: true }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" }); }
-        catch (error) { const status = Number(error && (error.status || error.statusCode)); traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_failed", attempted: true, delivered: false }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); }
+        catch (error) { const status = Number(error && (error.status || error.statusCode)); traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_failed", attempted: true, delivered: false }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); }
       }).catch(async () => updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
     }
     return { accepted: true };
