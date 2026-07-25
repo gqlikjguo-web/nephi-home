@@ -44,7 +44,7 @@ function executeTasks({ property, catalog, tasks, request, availabilityResolver,
   return tasks.map((task) => {
     try {
     const genericAvailabilityEntity = isGenericAvailabilityEntity(task);
-    const resolved = task.entity && task.entity.rawText && !genericAvailabilityEntity ? resolveEntity(catalog, task.entity) : null;
+    const resolved = task._resolvedEntity || (task.entity && task.entity.rawText && !genericAvailabilityEntity ? resolveEntity(catalog, task.entity) : null);
     if (resolved && resolved.status === "ambiguous") return { taskId: task.taskId, type: task.type, status: "needs_clarification", question: "想確認您指的是哪一個？", candidates: resolved.candidates, facts: {}, missingInputs: ["entity.canonicalId"] };
     if (["amenity", "policy", "property_fact"].includes(task.type)) return executePropertyFactTask({ property, catalog, task, resolved });
     if (task.type === "amenity_list") return { taskId: task.taskId, type: task.type, status: "answered", facts: { amenities: catalog.amenities.filter((x) => x.status === "confirmed_yes").map((x) => x.publicName), source: "property_catalog", propertyId: property.propertyId } };
@@ -82,4 +82,24 @@ function executeTasks({ property, catalog, tasks, request, availabilityResolver,
   });
 }
 
-module.exports = { executeTasks, priceKey, isGenericAvailabilityEntity, executePropertyFactTask, catalogFactByCanonicalId };
+// The active Engine runtime calls this entrypoint exclusively.  The legacy
+// executeTasks export remains for isolated historical test fixtures only.
+function executeQueryPlans({ property, catalog, queryPlans, availabilityResolver, availableDatesResolver, priceOverrides = [] }) {
+  return (queryPlans || []).flatMap((plan) => {
+    const entity = plan.entity || {};
+    const resolved = plan.resolvedEntity || (entity.status === "matched_set"
+      ? { status: "matched_set", entities: (entity.canonicalSet || []).map((canonicalId) => ({ canonicalId, category: entity.category })) }
+      : entity.status === "resolved"
+        ? { status: "resolved", entity: { canonicalId: entity.canonicalId, category: entity.category } }
+        : null);
+    const task = {
+      taskId: plan.taskId, candidateIndex: plan.candidateIndex, type: plan.capability,
+      requestedOutputs: plan.expectedOutputs || [], detailIntent: plan.conditions.topic && plan.conditions.topic.detailIntent || "general",
+      sourceText: "", entity: { category: entity.category || "other", rawText: entity.rawText || entity.canonicalId || "", canonicalCandidate: entity.canonicalId || null },
+      _resolvedEntity: resolved
+    };
+    return executeTasks({ property, catalog, tasks: [task], request: plan.conditions, availabilityResolver, availableDatesResolver, priceOverrides });
+  });
+}
+
+module.exports = { executeTasks, executeQueryPlans, priceKey, isGenericAvailabilityEntity, executePropertyFactTask, catalogFactByCanonicalId };

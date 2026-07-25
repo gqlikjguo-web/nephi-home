@@ -33,7 +33,10 @@ assert.match(root, /availabilityResolver:\s*\(query\) => service\.searchAvailabi
 assert.match(root, /availableDatesResolver:\s*\(query\) => service\.searchAvailableDates\(query\)/);
 assert.doesNotMatch(engine, /availability\.getRows\s*\(/, "V2 must not bypass the property-scoped resolver");
 assert.match(engine, /reduceConversationState\(/, "V2 must use the single state reducer");
-assert.match(engine, /executeTasks\(/, "V2 must execute resolver-backed tasks");
+assert.match(engine, /buildFormalRequest\(/, "V2 must establish a formal request before execution");
+assert.match(engine, /buildQueryPlan/, "V2 must establish a query plan before execution");
+assert.match(engine, /executeQueryPlans\(/, "V2 must execute only resolver-backed query plans");
+assert.doesNotMatch(engine, /executeTasks\(/, "V2 must not send Planner tasks directly to the executor");
 assert.match(engine, /buildResponsePlan\(/, "V2 must plan facts before composition");
 assert.match(engine, /composeControlledReply\(/, "V2 must use the controlled composer");
 assert.doesNotMatch(runtime, /reply.*push|push.*reply/i, "LINE transport must not retain a push fallback");

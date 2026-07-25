@@ -7,7 +7,7 @@ const { normalizeDetailIntent } = require("./detail-intent");
 const { buildPropertyCatalog } = require("./property-catalog");
 const { resolveTemporalExpression } = require("./temporal-resolver");
 const { migrateStateV2, reduceConversationState, reducePendingRequests, decideContextExecution, conditionsForCycle } = require("./state-reducer");
-const { executeTasks, isGenericAvailabilityEntity } = require("./capability-executor");
+const { executeQueryPlans, isGenericAvailabilityEntity } = require("./capability-executor");
 const { buildResponsePlan } = require("./response-planner");
 const { composeControlledReply, mergeComposedSections } = require("./controlled-composer");
 const { validateClaims } = require("./claim-validator");
@@ -17,6 +17,7 @@ const { availabilityTraceSummary } = require("./resolver-adapter");
 const { pendingFromResults } = require("./pending-request");
 const { buildContextSnapshot } = require("./contracts");
 const { validateUnderstandingContext } = require("./understanding-validator");
+const { buildFormalRequest, buildQueryPlan, resultForNotReady } = require("./formal-request");
 
 const DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS = 31;
 const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
@@ -290,11 +291,21 @@ class ConversationEngineV2 {
       return { ...item, executionConditions: TEMPORAL_FAILURE_STATUSES.has(item.temporal.resolutionStatus) ? blockedTemporalConditions(conditions) : conditions };
     });
     this.trace(traceId, "state", { contextAction: contextExecution.contextDecision.action, operations: state.transition, requestCycles: state.requestCycles.map((cycle) => ({ requestCycleId: cycle.requestCycleId, status: cycle.status })), ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {}) });
-    this.trace(traceId, "entity_resolution", { tasks: executionTasks.map((task) => { const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : { status: "not_requested" }; return this.diagnosticDetail ? { taskId: task.taskId, resolved } : { taskId: task.taskId, status: resolved.status, canonicalId: resolved.entity && resolved.entity.canonicalId || null, candidateCount: resolved.candidates && resolved.candidates.length || 0 }; }) });
+    const formalRequests = executableItems.map((item) => {
+      const resolvedEntity = item.task.entity && item.task.entity.rawText && !isGenericAvailabilityEntity(item.task) ? resolveEntity(catalog, item.task.entity) : null;
+      return buildFormalRequest({ property, task: item.task, requestCycleId: item.requestCycleId, temporalResult: item.temporal, confirmedInputs: item.executionConditions, resolvedEntity, sourceEvidenceRefs: sourceEvidenceRefsForRelation(relationsByCandidateIndex.get(item.candidateIndex)) });
+    });
+    const queryPlans = formalRequests.map(buildQueryPlan).filter(Boolean);
+    this.trace(traceId, "entity_resolution", { tasks: formalRequests.map((request) => this.diagnosticDetail ? { taskId: request.taskId, resolved: request.entity } : { taskId: request.taskId, status: request.entity.status, canonicalId: request.entity.canonicalId, candidateCount: request.entity.canonicalSet.length }) });
+    this.trace(traceId, "formal_request", { items: formalRequests.map((request) => ({ formalRequestId: request.formalRequestId, taskId: request.taskId, candidateIndex: request.candidateIndex, requestCycleId: request.requestCycleId, readiness: request.readiness.status })) });
+    this.trace(traceId, "query_plan", { count: queryPlans.length, items: queryPlans.map((plan) => ({ formalRequestId: plan.formalRequestId, capability: plan.capability, operation: plan.operation, propertyId: plan.propertyId })) });
     const resolverCalls = [];
     const tracedAvailabilityResolver = (request) => { const result = this.availabilityResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
     const tracedAvailableDatesResolver = (request) => { const result = this.availableDatesResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
-    let taskResults = executableItems.flatMap((item) => executeTasks({ property, catalog, tasks: [item.task], request: item.executionConditions, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) }));
+    let taskResults = [
+      ...formalRequests.filter((request) => request.readiness.status !== "ready").map(resultForNotReady),
+      ...executeQueryPlans({ property, catalog, queryPlans, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) })
+    ];
     const inputTaskIds = executionTasks.map((task) => task.taskId);
     let executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     if (!executorCoverage.ok) {

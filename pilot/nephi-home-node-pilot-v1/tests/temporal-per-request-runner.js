@@ -1,5 +1,7 @@
 "use strict";
 
+require("./phase5-formal-request-runner");
+
 const assert = require("node:assert/strict");
 
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
