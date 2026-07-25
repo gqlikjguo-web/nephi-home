@@ -9,6 +9,7 @@ const read = (file) => fs.readFileSync(path.resolve(__dirname, file), "utf8");
 let server = read("../server.js");
 let root = read("../lib/v2-composition-root.js");
 let engine = read("../lib/conversation-engine-v2/engine.js");
+const executor = read("../lib/conversation-engine-v2/capability-executor.js");
 
 if (mutation === "second_runtime") server = server.replace("/* legacy runtime", "const secondRoot = createV2CompositionRoot({});\n  /* legacy runtime");
 if (mutation === "resolver_bypass") engine += "\nfunction forbidden() { return availability.getRows(); }";
@@ -37,6 +38,13 @@ assert.match(engine, /buildFormalRequest\(/, "V2 must establish a formal request
 assert.match(engine, /buildQueryPlan/, "V2 must establish a query plan before execution");
 assert.match(engine, /executeQueryPlans\(/, "V2 must execute only resolver-backed query plans");
 assert.doesNotMatch(engine, /executeTasks\(/, "V2 must not send Planner tasks directly to the executor");
+assert.match(executor.match(/function executeTasks\([\s\S]*?\n}\n\n\/\/ The active Engine runtime/)[0], /buildPricingFacts\(/, "legacy executor pricing must use the canonical pricing function");
+assert.match(executor.match(/function executeQueryPlans\([\s\S]*?\n}\n\nfunction queryOutcome/)[0], /executeQueryPlan\(/, "query-plan batch executor must delegate only to the per-plan executor");
+assert.doesNotMatch(executor.match(/function executeQueryPlans\([\s\S]*?\n}\n\nfunction queryOutcome/)[0], /executeTasks\(/, "query-plan batch executor must not fall back to legacy tasks");
+assert.match(executor.match(/function executeQueryPlan\([\s\S]*?\n}\n\nmodule\.exports/)[0], /buildPricingFacts\(/, "query-plan pricing must use the canonical pricing function");
+assert.doesNotMatch(executor.match(/function executeQueryPlan\([\s\S]*?\n}\n\nmodule\.exports/)[0], /executeTasks\(/, "query-plan executor must not invoke legacy tasks");
+assert.equal((executor.match(/const daily = dates\.map/g) || []).length, 1, "production code must have one daily pricing implementation");
+assert.equal((executor.match(/priceOverrides\.find/g) || []).length, 1, "production code must have one override-priority implementation");
 assert.match(engine, /buildResponsePlan\(/, "V2 must plan facts before composition");
 assert.match(engine, /composeControlledReply\(/, "V2 must use the controlled composer");
 assert.doesNotMatch(runtime, /reply.*push|push.*reply/i, "LINE transport must not retain a push fallback");

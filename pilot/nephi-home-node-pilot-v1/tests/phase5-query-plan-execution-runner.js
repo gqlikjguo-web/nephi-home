@@ -74,9 +74,35 @@ assert.equal(priced.facts.prices[0].total, 2300);
 const noPrice = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...pricingPlan, capability: "total_price", operation: "total_price" }, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: [] }) });
 assert.equal(noPrice.outcome, "no_availability");
 assert.deepEqual(noPrice.facts.prices, []);
+const totalPriceAvailable = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...pricingPlan, capability: "total_price", operation: "total_price" }, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
+assert.equal(totalPriceAvailable.outcome, "answered");
+assert.deepEqual(totalPriceAvailable.facts.prices[0].daily, [
+  { date: "2026-08-06", price: 1000, source: "room_pricing" },
+  { date: "2026-08-07", price: 1200, source: "room_pricing" }
+]);
+assert.equal(totalPriceAvailable.facts.prices[0].total, 2200);
 
 const amenityList = executeQueryPlan({ property, catalog: { amenities: [{ publicName: "BBQ", status: "confirmed_yes" }, { publicName: "Pool", status: "unknown" }], policies: [], faqs: [] }, queryPlan: { ...plan, formalRequestId: "cycle:amenities", taskId: "amenities", capability: "amenity_list", operation: "amenity_list" }, availabilityResolver: () => { throw new Error("must_not_call"); } });
 assert.equal(amenityList.outcome, "answered");
 assert.deepEqual(amenityList.facts.amenities, ["BBQ"]);
+
+for (const [date, checkOut, expected] of [["2026-08-06", "2026-08-07", 1000], ["2026-08-07", "2026-08-08", 1200], ["2026-08-08", "2026-08-09", 1500], ["2026-08-09", "2026-08-10", 1100]]) {
+  const weekday = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...pricingPlan, conditions: { ...pricingPlan.conditions, stay: { ...pricingPlan.conditions.stay, checkIn: date, checkOut } } }, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
+  assert.deepEqual(weekday.facts.prices[0].daily, [{ date, price: expected, source: "room_pricing" }]);
+  assert.equal(weekday.facts.prices[0].total, expected);
+}
+const missingPrice = executeQueryPlan({ property: { ...pricingProperty, rooms: [{ ...pricingProperty.rooms[0], fridayPrice: 0 }] }, catalog, queryPlan: pricingPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
+assert.equal(missingPrice.outcome, "property_data_missing");
+assert.equal(missingPrice.facts.prices[0].daily[1].price, null);
+assert.equal(missingPrice.facts.prices[0].total, null);
+const unreliable = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: pricingPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: false, rooms: [] }) });
+assert.equal(unreliable.outcome, "technical_error");
+assert.equal(unreliable.reason, "availability_unreliable");
+const exception = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: pricingPlan, availabilityResolver: () => { throw new Error("down"); } });
+assert.equal(exception.outcome, "technical_error");
+assert.equal(exception.reason, "resolver_exception");
+let amenityResolverCalls = 0;
+executeQueryPlan({ property, catalog: { amenities: [{ publicName: "BBQ", status: "confirmed_yes" }], policies: [], faqs: [] }, queryPlan: { ...plan, capability: "amenity_list", operation: "amenity_list" }, availabilityResolver: () => { amenityResolverCalls += 1; return null; } });
+assert.equal(amenityResolverCalls, 0);
 
 console.log("phase5 query plan execution: PASS");

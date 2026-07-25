@@ -73,16 +73,8 @@ function executeTasks({ property, catalog, tasks, request, availabilityResolver,
       if (["availability", "bundle_availability", "room_options", "capacity"].includes(task.type)) return { taskId: task.taskId, type: task.type, status: "answered", facts: adapted.facts };
       const availableInventory = adapted.facts.availableInventory;
       if (!availableInventory.length) return { taskId: task.taskId, type: task.type, status: "answered", facts: { availability: "full", checkIn: request.stay.checkIn, checkOut: request.stay.checkOut, prices: [], source: "availability_provider", propertyId: property.propertyId } };
-      const availableIds = new Set((availableInventory || []).map((item) => item.canonicalId));
-      const candidates = (property.rooms || []).filter((room) => availableIds.has(room.id));
-      const dates = stayDates(request.stay.checkIn, request.stay.checkOut);
-      const prices = [];
-      for (const room of candidates) {
-        const daily = dates.map((date) => { const override = priceOverrides.find((item) => item.roomId === room.id && item.date === date); const price = override ? Number(override.price) : Number(room[priceKey(date)]); return { date, price: Number.isInteger(price) && price > 0 ? price : null, source: override ? "price_override" : "room_pricing" }; });
-        prices.push({ inventory: publicInventory(room), daily, total: daily.every((x) => x.price !== null) ? daily.reduce((sum, x) => sum + x.price, 0) : null, currency: property.currency || "TWD" });
-      }
-      const missing = prices.some((item) => item.total === null);
-      return { taskId: task.taskId, type: task.type, status: missing ? "property_data_missing" : "answered", facts: { availability: "available", checkIn: request.stay.checkIn, checkOut: request.stay.checkOut, prices, source: "pricing_provider", propertyId: property.propertyId }, review: missing };
+      const pricing = buildPricingFacts({ property, availableInventory, checkIn: request.stay.checkIn, checkOut: request.stay.checkOut, priceOverrides });
+      return { taskId: task.taskId, type: task.type, status: pricing.missing ? "property_data_missing" : "answered", facts: { availability: "available", checkIn: request.stay.checkIn, checkOut: request.stay.checkOut, prices: pricing.prices, source: "pricing_provider", propertyId: property.propertyId }, review: pricing.missing };
     }
     return { taskId: task.taskId, type: task.type, status: ["booking_request", "human_help", "high_risk", "unknown"].includes(task.type) ? "needs_human" : "failed", reason: task.type, facts: {}, review: true };
     } catch {

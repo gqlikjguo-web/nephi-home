@@ -46,6 +46,42 @@ const engine = new ConversationEngineV2({ planner: explicitPlanner(planner), per
 function latestConditions(result) { return result.state.requestCycles.at(-1).confirmedInputs; }
 
 (async () => {
+  const pricingCalls = [];
+  let pricingAvailableDatesCalls = 0;
+  const pricingPlanner = { classify: async () => ({
+    schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
+    stay: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2026-08-06", checkOutCandidate: "2026-08-08", nightsCandidate: 2, guestCountCandidate: 2 },
+    tasks: [{
+      taskId: "active-engine-price", type: "price", sourceText: "price request", detailIntent: "general", requestedOutputs: ["price"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true,
+      entity: { category: "room", rawText: "Price room", canonicalCandidate: "r1", confidence: 0.99 },
+      stayCandidate: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2026-08-06", checkOutCandidate: "2026-08-08", nightsCandidate: 2, guestCountCandidate: 2 }, confidence: 0.99
+    }], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "active_engine_pricing"
+  }) };
+  const pricingEngine = new ConversationEngineV2({
+    planner: explicitPlanner(pricingPlanner), persistence, getProperty: () => property,
+    availabilityResolver: (query) => { pricingCalls.push(query); return { ...query, availabilityReliable: true, rooms: property.rooms, lineUrl: "" }; },
+    availableDatesResolver: () => { pricingAvailableDatesCalls += 1; return { status: "answered", dates: [] }; },
+    listPriceOverrides: () => [{ roomId: "r1", date: "2026-08-07", price: 2500 }], now: () => new Date("2026-07-17T02:00:00.000Z")
+  });
+  const pricingResult = await pricingEngine.process({ customerId: "p1", channelId: "pricing", lineUserId: "pricing-user", eventId: "pricing-event", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "price request" });
+  assert.equal(pricingResult.taskResults[0].status, "answered", "active Engine pricing runtime must execute QueryPlan pricing");
+  assert.equal(pricingCalls.length, 1, "active Engine pricing runtime must execute QueryPlan pricing through availability Resolver once");
+  assert.equal(pricingAvailableDatesCalls, 0, "active Engine pricing runtime must not call available-dates Resolver for price");
+  assert.deepEqual(pricingCalls[0], { customerId: "p1", checkIn: "2026-08-06", checkOut: "2026-08-08", guests: 2, roomType: "r1", queryMode: "room_only" });
+  assert.equal(pricingCalls[0].customerId, "p1", "availability Resolver property scope must equal the FormalRequest propertyId");
+  const activeEnginePrices = pricingResult.taskResults[0].facts.prices;
+  assert.ok(Array.isArray(activeEnginePrices) && activeEnginePrices.length === 1, "active Engine pricing runtime must return QueryPlan pricing facts");
+  assert.equal(activeEnginePrices[0].inventory.canonicalId, "r1");
+  assert.deepEqual(activeEnginePrices[0].daily, [
+    { date: "2026-08-06", price: 2000, source: "room_pricing" },
+    { date: "2026-08-07", price: 2500, source: "price_override" }
+  ]);
+  assert.equal(activeEnginePrices[0].total, 4500);
+  assert.equal(activeEnginePrices[0].currency, "TWD");
+  assert.equal(pricingResult.taskResults[0].facts.propertyId, "p1");
+  assert.equal(pricingResult.taskResults[0].facts.checkIn, "2026-08-06");
+  assert.equal(pricingResult.taskResults[0].facts.checkOut, "2026-08-08");
+
   const result = await engine.process({ customerId: "p1", channelId: "c1", lineUserId: "u1", eventId: "e1", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6雙人房有空嗎 有車位嗎 有麻將嗎" });
   assert.equal(result.shouldReply, true);
   assert.ok(result.replyText.includes("湖景雙人房"));
