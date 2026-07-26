@@ -59,3 +59,7 @@
 
 - Test-only LINE transport diagnostics now report reply failures through the injected server-factory seam with the stable `reply_failed` outcome, matching the FinalDecision action without exposing request or credential data.
 - The transport seam now preserves safe logging, isolates callback exceptions, and keeps the main event record aligned with FinalDecision through delivery failures.
+
+## 2026-07-26 — Phase 7 FinalDecision response-content authority
+
+- Added one final response renderer after Claim Validator so reply, clarification, handoff, claim-rejection fallback, Composer-exception fallback, and no_reply content remain aligned with the existing FinalDecision without adding a second action authority.

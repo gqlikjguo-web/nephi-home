@@ -11,11 +11,16 @@ let root = read("../lib/v2-composition-root.js");
 let engine = read("../lib/conversation-engine-v2/engine.js");
 const executor = read("../lib/conversation-engine-v2/capability-executor.js");
 const finalDecision = read("../lib/conversation-engine-v2/final-decision.js");
+const finalResponseRenderer = read("../lib/conversation-engine-v2/final-response-renderer.js");
 const formalRequest = read("../lib/conversation-engine-v2/formal-request.js");
 const composer = read("../lib/conversation-engine-v2/controlled-composer.js");
+const claimValidator = read("../lib/conversation-engine-v2/claim-validator.js");
+const finalResponseRendererFiles = fs.readdirSync(path.resolve(__dirname, "../lib/conversation-engine-v2"))
+  .filter((file) => /^final-response.*\.js$/.test(file));
 
 if (mutation === "second_runtime") server = server.replace("/* legacy runtime", "const secondRoot = createV2CompositionRoot({});\n  /* legacy runtime");
 if (mutation === "resolver_bypass") engine += "\nfunction forbidden() { return availability.getRows(); }";
+if (mutation === "second_final_renderer") engine += "\nfunction buildFinalResponse() { return { action: 'reply', replyText: '', shouldReply: false }; }";
 
 const runtimeEnd = server.indexOf("/* legacy runtime");
 assert.notEqual(runtimeEnd, -1, "runtime boundary marker must exist for the active source audit");
@@ -48,6 +53,13 @@ assert.match(engine, /executeQueryPlans\(/, "V2 must execute only resolver-backe
 assert.doesNotMatch(engine, /executeTasks\(/, "V2 must not send Planner tasks directly to the executor");
 assert.equal((engine.match(/buildFinalDecision\(/g) || []).length, 1, "Engine must call the FinalDecision builder at one adapter location");
 assert.match(finalDecision, /function buildFinalDecision/, "FinalDecision module is the sole action authority");
+assert.deepEqual(finalResponseRendererFiles, ["final-response-renderer.js"], "exactly one final response renderer module may exist");
+assert.equal((engine.match(/buildFinalResponse\(/g) || []).length, 1, "Engine must call the final response renderer through one adapter location");
+assert.match(finalResponseRenderer, /function buildFinalResponse/, "the single final response renderer must own final reply content");
+assert.doesNotMatch(finalResponseRenderer, /buildFinalDecision|require\(["']\.\/final-decision["']\)/, "the final response renderer must consume, not recreate, FinalDecision");
+assert.doesNotMatch(finalDecision, /buildFinalResponse|replyText|shouldReply/, "FinalDecision rules must remain content-neutral");
+assert.doesNotMatch(claimValidator, /buildFinalDecision|buildFinalResponse|action:\s*["'](?:reply|handoff|clarification|no_reply)/, "Claim Validator must not decide action or render final content");
+assert.doesNotMatch(runtime, /final-response-renderer|buildFinalResponse/, "server transport must consume Engine output without a second renderer");
 assert.doesNotMatch(formalRequest, /action:\s*["'](?:reply|handoff|clarification|no_reply)/, "FormalRequest must remain neutral");
 assert.doesNotMatch(executor, /action:\s*["'](?:reply|handoff|clarification|no_reply)/, "QueryPlan executor must remain neutral");
 assert.doesNotMatch(composer, /no_reply|finalDecision|buildFinalDecision/, "Composer must not decide business action");
@@ -62,4 +74,4 @@ assert.match(engine, /buildResponsePlan\(/, "V2 must plan facts before compositi
 assert.match(engine, /composeControlledReply\(/, "V2 must use the controlled composer");
 assert.doesNotMatch(runtime, /reply.*push|push.*reply/i, "LINE transport must not retain a push fallback");
 
-console.log(JSON.stringify({ caseCount: 21, passCount: 21, failCount: 0, mutation: mutation || "none" }));
+console.log(JSON.stringify({ caseCount: 28, passCount: 28, failCount: 0, mutation: mutation || "none" }));

@@ -19,6 +19,7 @@ const { buildContextSnapshot } = require("./contracts");
 const { validateUnderstandingContext } = require("./understanding-validator");
 const { buildFormalRequest, buildQueryPlan, resultForNotReady } = require("./formal-request");
 const { buildFinalDecision } = require("./final-decision");
+const { SAFE_HANDOFF_TEXT, buildFinalResponse } = require("./final-response-renderer");
 
 const DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS = 31;
 const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
@@ -27,6 +28,7 @@ const TEMPORAL_FAILURE_STATUSES = new Set(["unresolved", "invalid", "conflicting
 const SINGLE_DATE_DEFAULT_NIGHT_RULE_REF = "PRODUCT_BASELINE:single_date_availability_default_one_night";
 const AVAILABLE_DATES_LOOKAHEAD_RULE_REF = "temporal:available_dates_default_lookahead";
 function decideFinal(input) { return buildFinalDecision(input); }
+function renderFinal(input) { return buildFinalResponse(input); }
 function sourceEventsForInput(input = {}) {
   const events = Array.isArray(input.sourceEvents) ? input.sourceEvents : [];
   const normalized = events.map((event) => ({
@@ -157,7 +159,7 @@ function confirmedInventoryFromTask(catalog, candidate) {
   };
 }
 
-const SAFE_FALLBACK = "這次有部分內容無法安全確認，我會請業者協助；您剛才的問題已經記錄。";
+const SAFE_FALLBACK = SAFE_HANDOFF_TEXT;
 
 class ConversationEngineV2 {
   constructor({ planner, composer, persistence, getProperty, availabilityResolver, availableDatesResolver, listPriceOverrides, now = () => new Date(), onDiagnostic, diagnosticDetail = false, diagnosticMetadata = {} }) {
@@ -199,8 +201,10 @@ class ConversationEngineV2 {
       const finalDecision = decideFinal({ plannerFailure: parserSucceeded ? "planner_output_unusable" : "planner_parse_failed" });
       this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
       const item = this.persistReview(input, "planner_empty_output", "Planner did not produce a usable task result.", "");
+      const claimValidation = { ok: true, errors: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: SAFE_FALLBACK, claimValidation });
       this.traceContexts.delete(traceId);
-      return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), finalDecision, traceId };
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
     plannerOutput = discardLegacyPlannerStateControls(plannerOutput);
     plannerOutput = normalizePlannerOutput(plannerOutput, { eventTimestamp: input.eventTimestamp, timezone: catalog.timezone });
@@ -210,8 +214,10 @@ class ConversationEngineV2 {
       const finalDecision = decideFinal({ plannerFailure: "planner_normalization_failed" });
       this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
       const item = this.persistReview(input, "planner_normalization_failed", "Planner output could not be normalized safely.", "");
+      const claimValidation = { ok: true, errors: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: SAFE_FALLBACK, claimValidation });
       this.traceContexts.delete(traceId);
-      return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), finalDecision, traceId };
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
     const structuralValidation = validatePlannerOutput(plannerOutput);
     if (!structuralValidation.ok) {
@@ -220,8 +226,10 @@ class ConversationEngineV2 {
       const finalDecision = decideFinal({ plannerFailure: "planner_schema_invalid" });
       this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
       const item = this.persistReview(input, "planner_invalid", "整體訊息無法安全理解，請協助確認。", "");
+      const claimValidation = { ok: true, errors: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: SAFE_FALLBACK, claimValidation });
       this.traceContexts.delete(traceId);
-      return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), finalDecision, traceId };
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
     const semanticInputTasks = plannerOutput.tasks.map(plannerTaskTrace);
     plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog });
@@ -233,16 +241,20 @@ class ConversationEngineV2 {
       const finalDecision = decideFinal({ plannerFailure: "planner_semantic_validation_failed" });
       this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
       const item = this.persistReview(input, "planner_semantic_repair_invalid", "Planner task could not be repaired safely.", "");
+      const claimValidation = { ok: true, errors: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: SAFE_FALLBACK, claimValidation });
       this.traceContexts.delete(traceId);
-      return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), finalDecision, traceId };
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
     if (plannerOutput.ambiguousTopLevelStay) {
       this.trace(traceId, "fallback", { reasonCode: "multi_candidate_top_level_stay_ambiguous", branch: "candidate_stay_alignment" });
       const finalDecision = decideFinal({ plannerFailure: "multi_candidate_top_level_stay_ambiguous" });
       this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
       const item = this.persistReview(input, "multi_candidate_top_level_stay_ambiguous", "Planner did not bind stay candidates to individual requests.", "");
+      const claimValidation = { ok: true, errors: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: SAFE_FALLBACK, claimValidation });
       this.traceContexts.delete(traceId);
-      return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), finalDecision, traceId };
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
     const contextValidation = validateUnderstandingContext(plannerOutput, contextSnapshot, { sourceEvents, scope });
     this.trace(traceId, "context_validation", { snapshotCycleIds: contextSnapshot.cycles.map((item) => item.requestCycleId), acceptedRelations: contextValidation.relations, rejectionReasons: contextValidation.errors });
@@ -251,8 +263,10 @@ class ConversationEngineV2 {
       const finalDecision = decideFinal({ plannerFailure: "context_relation_invalid" });
       this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
       const item = this.persistReview(input, "context_relation_invalid", "Planner supplied an invalid context reference.", "");
+      const claimValidation = { ok: true, errors: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: SAFE_FALLBACK, claimValidation });
       this.traceContexts.delete(traceId);
-      return { shouldReply: true, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), finalDecision, traceId };
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
     const contextExecution = decideContextExecution(previous, contextValidation.relations, plannerOutput.tasks);
     this.trace(traceId, "pending_request", { action: contextExecution.resumedPending ? "resumed" : "unchanged", reasonCode: contextExecution.contextDecision.action, capability: "", missingFields: [] });
@@ -262,13 +276,15 @@ class ConversationEngineV2 {
     this.trace(traceId, "no_reply_gate", { shouldIgnore: plannerOutput.shouldIgnore, actionableTaskCount: plannerOutput.tasks.length - unknownTaskCount, unknownTaskCount, gateHit: noReplyGateHit, reasonCode: noReplyGateHit ? "no_reply_gate_hit" : plannerOutput.shouldIgnore ? "actionable_task_present" : "should_ignore_false" });
     if (plannerOutput.shouldIgnore && !hasActionableTask) {
       const finalDecision = decideFinal({ noReplyReason: "no_reply_gate_hit" });
-      const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "acknowledgement", replyType: "no_reply_v2", replyText: "", route: "no_reply_silent_ignore", decisionReason: plannerOutput.reason || "planner_should_ignore", shouldReply: false, noReply: true, needsReview: false, status: "resolved", processingStatus: "decided" };
+      const claimValidation = { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: "", claimValidation });
+      const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "acknowledgement", replyType: "no_reply_v2", replyText: finalResponse.replyText, route: "no_reply_silent_ignore", decisionReason: finalDecision.reasonCode, shouldReply: finalResponse.shouldReply, noReply: !finalResponse.shouldReply, needsReview: false, humanHandoff: false, status: "resolved", processingStatus: "decided" };
       if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
       else this.persistence.appendMessageLog(input.customerId, messageRecord);
       this.trace(traceId, "controlled_decision", { decision: finalDecision.action, reason: messageRecord.decisionReason, actionableTaskCount: 0 });
       this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
       this.traceContexts.delete(traceId);
-      return { shouldReply: false, noReply: true, replyText: "", taskResults: [], reviewCount: 0, reviewIds: [], claimValidation: { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [] }, finalDecision, traceId };
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 0, reviewIds: [], claimValidation, finalDecision, finalResponse, traceId };
     }
     const executionTasks = contextExecution.executionTasks;
     const executionItems = contextExecution.executionItems;
@@ -392,13 +408,13 @@ class ConversationEngineV2 {
     }
     this.trace(traceId, "claim_validator", { errors: claimValidation.errors, coveredTaskIds: claimValidation.coveredTaskIds, missingTaskIds: claimValidation.missingTaskIds });
     const finalDecision = decideFinal({ executionOutcomes, claimValidation: claimValidationRejected ? { ok: false } : claimValidation });
-    const shouldReply = finalDecision.action !== "no_reply";
-    const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "multi_task_v2", replyType: `${finalDecision.action}_v2`, replyText: shouldReply ? replyText : "", route: `final_decision_${finalDecision.action}`, shouldReply, noReply: !shouldReply, needsReview: finalDecision.reviewRequired, humanHandoff: finalDecision.action === "handoff", status: finalDecision.reviewRequired ? "pending" : "resolved", processingStatus: "decided", decisionReason: finalDecision.reasonCode };
+    const finalResponse = renderFinal({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation });
+    const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "multi_task_v2", replyType: `${finalResponse.action}_v2`, replyText: finalResponse.replyText, route: `final_decision_${finalResponse.action}`, shouldReply: finalResponse.shouldReply, noReply: !finalResponse.shouldReply, needsReview: finalDecision.reviewRequired, humanHandoff: finalDecision.action === "handoff", status: finalDecision.reviewRequired ? "pending" : "resolved", processingStatus: "decided", decisionReason: finalDecision.reasonCode };
     if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
     else this.persistence.appendMessageLog(input.customerId, messageRecord);
-    this.trace(traceId, "line_ready", { coveredTaskIds: claimValidation.coveredTaskIds, missingTaskIds: claimValidation.missingTaskIds, replyLength: shouldReply ? replyText.length : 0 });
+    this.trace(traceId, "line_ready", { coveredTaskIds: claimValidation.coveredTaskIds, missingTaskIds: claimValidation.missingTaskIds, replyLength: finalResponse.replyText.length });
     this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
-    this.traceContexts.delete(traceId); return { shouldReply, noReply: !shouldReply, replyText: shouldReply ? replyText : "", taskResults, reviewCount: reviewIds.length, reviewIds, claimValidation, finalDecision, state, traceId };
+    this.traceContexts.delete(traceId); return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults, reviewCount: reviewIds.length, reviewIds, claimValidation, finalDecision, finalResponse, state, traceId };
   }
 
   persistReview(input, reason, note, taskId) {

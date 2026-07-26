@@ -33,6 +33,9 @@
 - 多輪補充、修改與清除必須經 versioned state reducer，舊 state 不得污染新需求。
 - 相同輸入與相同事實來源不得因 Planner 或 Composer 變異而漏答、沉默或改變事實。
 - 回覆只能使用 Response Plan 的可信 facts；Claim Validator 必須阻止未覆蓋或無來源的主張。
+- Claim Validator 後只能有一個 final response renderer；其 action 必須與 FinalDecision 完整一致，LINE transport 不得再次決策或改寫內容。
+- reply 只能使用已通過 Claim Validator 的候選回答；clarification 只能保留安全回答並依 FinalDecision `missingFields` 追問；handoff 只能保留安全回答與 deterministic 安全文案。
+- Claim Validator rejection 或 Composer exception 不得讓被拒候選流入最終回覆；no_reply 必須是空字串、不得呼叫 Composer、不得呼叫 LINE。
 
 ## Unknown 與真人轉接
 

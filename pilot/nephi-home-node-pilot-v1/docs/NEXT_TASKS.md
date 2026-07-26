@@ -23,6 +23,12 @@
 - 已完成：FinalDecision 與 LINE transport action 對齊；reply／clarification／handoff 的成功與失敗、以及 no_reply 均由 E2E runner 驗證。
 - 未完成：真實 test-only LINE 驗收仍依上列既定項目執行；本次未部署、未切換 LINE、未接觸 credentials。
 
+## 2026-07-26 Phase 7 final response authority
+
+- 已完成：唯一 final response renderer 讓 FinalDecision 同時控制 action 與最終內容；reply／clarification／handoff／no_reply、claim rejection 與 Composer exception 均有自動驗證。
+- 已完成：signed webhook E2E 經既有 Coordinator、ConversationEngineV2 與 LINE mock 驗證六條路徑；runtime uniqueness 為 28/28，完整 `npm test` exit 0。
+- 未完成：真實 test-only LINE 驗收仍依上列既定項目執行；本次未部署、未切換 LINE、未接觸 credentials。
+
 ## 不得提前執行
 
 - test-only 驗收未完成前，不得宣稱第一版完成。
