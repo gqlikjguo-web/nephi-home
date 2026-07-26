@@ -1,6 +1,7 @@
 "use strict";
 
 const HANDOFF_OUTCOMES = new Set(["unknown", "property_data_missing", "technical_error", "invalid_query_plan"]);
+const PARTIAL_REPLY_OUTCOMES = new Set(["unknown", "property_data_missing"]);
 const REPLY_OUTCOMES = new Set(["answered", "no_availability"]);
 const MANDATORY_HANDOFF_TYPES = new Set(["booking_request", "human_help", "high_risk"]);
 
@@ -38,8 +39,8 @@ function buildFinalDecision({ executionOutcomes = [], plannerFailure = "", claim
   const mandatoryHandoff = outcomes.find((item) => item && HANDOFF_OUTCOMES.has(item.outcome)
     && (MANDATORY_HANDOFF_TYPES.has(item.type) || MANDATORY_HANDOFF_TYPES.has(item.reason)));
   if (mandatoryHandoff) return { action: "handoff", reasonCode: mandatoryHandoff.reason || mandatoryHandoff.outcome, taskIds, missingFields, reviewRequired: true, executionSummary: summary };
-  const scopedReview = outcomes.some((item) => item && HANDOFF_OUTCOMES.has(item.outcome));
-  if (answered && scopedReview) return { action: "reply", reasonCode: "execution_answered", taskIds, missingFields, reviewRequired: true, executionSummary: summary };
+  const partialReply = outcomes.some((item) => item && PARTIAL_REPLY_OUTCOMES.has(item.outcome));
+  if (answered && partialReply) return { action: "reply", reasonCode: "execution_answered", taskIds, missingFields, reviewRequired: true, executionSummary: summary };
   const handoff = outcomes.find((item) => item && HANDOFF_OUTCOMES.has(item.outcome));
   if (handoff) return { action: "handoff", reasonCode: handoff.reason || handoff.outcome, taskIds, missingFields, reviewRequired: true, executionSummary: summary };
   const clarification = outcomes.find((item) => item && item.outcome === "not_ready");
