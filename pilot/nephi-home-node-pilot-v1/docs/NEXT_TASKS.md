@@ -37,5 +37,11 @@
 ## 2026-07-26 Planner failure diagnostics
 
 - Required OpenAI invalid-request field tests, Phase 6/7 regressions, runtime uniqueness, and full `npm.cmd test` verification are complete with exit 0.
-- Preserve the local commit `fix: expose safe OpenAI invalid-request fields` for final review.
-- Do not push or deploy; operational verification on Render remains a separately authorized task.
+- The safe diagnostic checkpoint `5f862ff2be3c45c8383efcec2b502f8886a775ac` is pushed.
+- Do not deploy; operational verification on Render remains a separately authorized task.
+
+## 2026-07-26 OpenAI strict Planner schema compatibility
+
+- Required strict-schema, semantic, relation/evidence, Planner fallback, Phase 6/7, runtime uniqueness, and full `npm.cmd test` verification is complete with exit 0.
+- Preserve the local commit `fix: make planner schema strict-output compatible` for final review.
+- Do not push, deploy, operate Render or LINE, or change model, credentials, or environment variables without explicit authorization.

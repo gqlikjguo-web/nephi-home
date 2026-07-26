@@ -69,7 +69,14 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - 每次正式驗收或優先順序改變，同步更新本文件與 `NEXT_TASKS.md`。
 ## 2026-07-26 Planner failure diagnostics
 
-- The safe Planner failure diagnostic checkpoint is on `phase1-4-authoritative`. The current local extension extracts only sanitized OpenAI `error.type`, `error.code`, and `error.param` from non-2xx JSON responses; non-JSON responses retain the original HTTP failure with empty provider fields.
+- The safe Planner failure diagnostic checkpoint is on `phase1-4-authoritative` at `5f862ff2be3c45c8383efcec2b502f8886a775ac`. It extracts only sanitized OpenAI `error.type`, `error.code`, and `error.param` from non-2xx JSON responses; non-JSON responses retain the original HTTP failure with empty provider fields.
 - Targeted safety coverage includes 400 JSON and non-JSON responses, field allowlisting/truncation, 401, 404, 429, 5xx, timeout, empty response, parse, configuration, generic failure, sensitive-field exclusion, callback isolation, FinalDecision stability, and signed webhook LINE delivery.
 - Phase 6/7 regressions and runtime uniqueness pass; the completed full `npm.cmd test` returned OS exit 0, reached the final runner, and produced empty stderr.
-- The new diagnostic extension is intentionally local until review; no deployment, Render operation, LINE operation, or credential change is part of this task.
+- The diagnostic extension has been pushed; deployment and operational Render/LINE verification remain separately authorized work.
+
+## 2026-07-26 OpenAI strict Planner schema compatibility
+
+- The confirmed OpenAI `invalid_json_schema` at `text.format.schema` traced to `contextRelationCandidates[].evidenceRefs[]`: `eventId` and `messageRef` were declared properties but absent from `required`.
+- The local fix requires both fields while retaining empty-string support, relation/evidence validation, offsets, quote rules, strict mode, and all Planner semantics.
+- The recursive schema audit, targeted contracts, Phase 6/7 regressions, runtime uniqueness, and one complete `npm.cmd test` all pass with exit 0 and empty stderr.
+- The strict-schema fix remains local for review; no push, deployment, Render operation, LINE operation, model, credential, or environment change is part of this task.
