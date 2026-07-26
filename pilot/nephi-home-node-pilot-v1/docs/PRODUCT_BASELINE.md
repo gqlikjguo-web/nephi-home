@@ -60,6 +60,6 @@
 ## Planner failure diagnostic boundary
 
 - Planner exceptions retain the existing `planner_parse_failed` → FinalDecision handoff → safe fallback → LINE delivery behavior.
-- Test-only diagnostics may emit `planner_error` only through an allowlisted schema: error name, fixed code, normalized HTTP status, timeout, safe category, model, and provider.
+- Test-only diagnostics may emit `planner_error` only through an allowlisted schema: error name, fixed code, normalized HTTP status, timeout, safe category, model, provider, and sanitized OpenAI `error.type`, `error.code`, and `error.param`.
 - Diagnostic callbacks and loggers are non-authoritative; their exceptions cannot change conversation fallback or delivery.
-- Secrets, authorization data, guest content, prompts, source events, property catalogs, raw provider bodies, stacks, request headers, and credentials never enter the safe trace.
+- Secrets, authorization data, guest content, prompts, source events, property catalogs, provider error messages, raw provider bodies, stacks, request headers, and credentials never enter the safe trace.

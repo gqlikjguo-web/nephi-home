@@ -4,7 +4,26 @@ const { plannerJsonSchema } = require("../conversation-engine-v2/planner-schema"
 const RESPONSES_URL = "https://api.openai.com/v1/responses";
 const PLANNER_PROVIDER = "openai";
 
-function plannerFailure({ code, category, status = 0, timeout = false, model = "", name = "Error" }) {
+function safeProviderErrorField(value, maxLength) {
+  const text = String(value || "");
+  return /^[A-Za-z0-9._:-]+$/.test(text) ? text.slice(0, maxLength) : "";
+}
+
+async function readSafeProviderError(response) {
+  try {
+    const payload = await response.json();
+    const providerError = payload && payload.error && typeof payload.error === "object" ? payload.error : {};
+    return {
+      providerErrorType: safeProviderErrorField(providerError.type, 120),
+      providerErrorCode: safeProviderErrorField(providerError.code, 120),
+      providerErrorParam: safeProviderErrorField(providerError.param, 200)
+    };
+  } catch {
+    return { providerErrorType: "", providerErrorCode: "", providerErrorParam: "" };
+  }
+}
+
+function plannerFailure({ code, category, status = 0, timeout = false, model = "", name = "Error", providerErrorType = "", providerErrorCode = "", providerErrorParam = "" }) {
   const error = new Error(code);
   error.name = name;
   error.code = code;
@@ -13,15 +32,18 @@ function plannerFailure({ code, category, status = 0, timeout = false, model = "
   error.errorCategory = category;
   error.plannerModel = String(model || "");
   error.plannerProvider = PLANNER_PROVIDER;
+  error.providerErrorType = safeProviderErrorField(providerErrorType, 120);
+  error.providerErrorCode = safeProviderErrorField(providerErrorCode, 120);
+  error.providerErrorParam = safeProviderErrorField(providerErrorParam, 200);
   error.safePlannerFailure = true;
   return error;
 }
 
-function httpFailure(status, model) {
-  if (status === 401 || status === 403) return plannerFailure({ code: "planner_authentication_error", category: "authentication", status, model });
-  if (status === 404) return plannerFailure({ code: "planner_model_not_found", category: "provider", status, model });
-  if (status === 429) return plannerFailure({ code: "planner_rate_limit", category: "rate_limit", status, model });
-  return plannerFailure({ code: status >= 500 && status <= 599 ? "planner_provider_error" : "planner_http_error", category: "provider", status, model });
+function httpFailure(status, model, providerError) {
+  if (status === 401 || status === 403) return plannerFailure({ code: "planner_authentication_error", category: "authentication", status, model, ...providerError });
+  if (status === 404) return plannerFailure({ code: "planner_model_not_found", category: "provider", status, model, ...providerError });
+  if (status === 429) return plannerFailure({ code: "planner_rate_limit", category: "rate_limit", status, model, ...providerError });
+  return plannerFailure({ code: status >= 500 && status <= 599 ? "planner_provider_error" : "planner_http_error", category: "provider", status, model, ...providerError });
 }
 
 function instructions() {
@@ -62,7 +84,10 @@ class TestOnlyOpenAiConversationPlanner {
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` }, signal: controller.signal, body: JSON.stringify({ model: this.model, input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] } }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerJsonSchema() } } }) });
-      if (!response.ok) throw httpFailure(Number(response.status || response.statusCode || 0), this.model);
+      if (!response.ok) {
+        const providerError = await readSafeProviderError(response);
+        throw httpFailure(Number(response.status || response.statusCode || 0), this.model, providerError);
+      }
       let payload;
       try { payload = await response.json(); }
       catch { throw plannerFailure({ code: "planner_parse_error", category: "parse", model: this.model, name: "SyntaxError" }); }

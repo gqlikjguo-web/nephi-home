@@ -67,3 +67,4 @@
 ## 2026-07-26 — Safe Planner failure diagnostics
 
 - Added allowlisted `planner_error` traces for authentication, model/provider, rate-limit, timeout, parse, empty-response, configuration, and unknown failures without changing Planner fallback or LINE delivery.
+- Added sanitized OpenAI invalid-request `type`, `code`, and `param` diagnostics; provider messages and raw response bodies remain excluded.

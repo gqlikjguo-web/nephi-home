@@ -69,7 +69,7 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - 每次正式驗收或優先順序改變，同步更新本文件與 `NEXT_TASKS.md`。
 ## 2026-07-26 Planner failure diagnostics
 
-- Local implementation and verification complete: the test-only OpenAI Planner preserves safe error classification, Engine emits allowlisted `planner_error`, and trace callback failures cannot alter the existing handoff fallback.
-- Targeted safety coverage includes 401, 404, 429, 5xx, timeout, empty response, parse, configuration, generic failure, sensitive-field exclusion, callback isolation, FinalDecision stability, and signed webhook LINE delivery.
+- The safe Planner failure diagnostic checkpoint is on `phase1-4-authoritative`. The current local extension extracts only sanitized OpenAI `error.type`, `error.code`, and `error.param` from non-2xx JSON responses; non-JSON responses retain the original HTTP failure with empty provider fields.
+- Targeted safety coverage includes 400 JSON and non-JSON responses, field allowlisting/truncation, 401, 404, 429, 5xx, timeout, empty response, parse, configuration, generic failure, sensitive-field exclusion, callback isolation, FinalDecision stability, and signed webhook LINE delivery.
 - Phase 6/7 regressions and runtime uniqueness pass; the completed full `npm.cmd test` returned OS exit 0, reached the final runner, and produced empty stderr.
-- Commit is intentionally local until review; no deployment, Render operation, LINE operation, or credential change is part of this task.
+- The new diagnostic extension is intentionally local until review; no deployment, Render operation, LINE operation, or credential change is part of this task.

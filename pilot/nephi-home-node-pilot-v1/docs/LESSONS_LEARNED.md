@@ -65,3 +65,5 @@ The safe logger remains mandatory even when the test callback exists, and callba
 ## 2026-07-26 — Preserve failure class, never raw provider error content
 
 Collapsing every Planner exception to one fallback reason protects behavior but makes operations blind. Preserve only fixed, classifiable metadata at the provider boundary—normalized status, category, timeout, model, and provider—then discard raw messages and response bodies. Apply a second allowlist in the trace formatter, and isolate the diagnostic callback so observability can never become a new failure path.
+
+For OpenAI non-2xx responses, parse the body only transiently and retain only sanitized `error.type`, `error.code`, and `error.param`; discard every other field. A non-JSON body must leave these fields empty while preserving the original HTTP failure classification.

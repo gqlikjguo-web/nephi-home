@@ -163,6 +163,11 @@ const SAFE_FALLBACK = SAFE_HANDOFF_TEXT;
 const PLANNER_ERROR_CATEGORIES = new Set(["authentication", "rate_limit", "provider", "timeout", "parse", "empty_response", "configuration", "unknown"]);
 const PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
 
+function safePlannerProviderErrorField(value, maxLength) {
+  const text = String(value || "");
+  return /^[A-Za-z0-9._:-]+$/.test(text) ? text.slice(0, maxLength) : "";
+}
+
 function safePlannerErrorDiagnostic(error, planner) {
   const configured = Boolean(planner && typeof planner.classify === "function");
   const status = Number(error && (error.status || error.statusCode));
@@ -206,7 +211,10 @@ function safePlannerErrorDiagnostic(error, planner) {
     timeout,
     errorCategory,
     model: configured ? String(error && error.plannerModel || planner.model || "").slice(0, 120) : "",
-    provider: configured ? String(error && error.plannerProvider || planner.provider || "unknown").slice(0, 40) : "unknown"
+    provider: configured ? String(error && error.plannerProvider || planner.provider || "unknown").slice(0, 40) : "unknown",
+    providerErrorType: safePlannerProviderErrorField(error && error.providerErrorType, 120),
+    providerErrorCode: safePlannerProviderErrorField(error && error.providerErrorCode, 120),
+    providerErrorParam: safePlannerProviderErrorField(error && error.providerErrorParam, 200)
   };
 }
 

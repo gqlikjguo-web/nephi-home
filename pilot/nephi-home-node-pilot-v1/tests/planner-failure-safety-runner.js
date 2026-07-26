@@ -17,7 +17,8 @@ const sensitive = {
   apiKey: "sk-planner-diagnostic-secret",
   guestMessage: "SECRET_GUEST_MESSAGE",
   prompt: "SECRET_PLANNER_PROMPT",
-  responseBody: "SECRET_PROVIDER_RESPONSE_BODY"
+  responseBody: "SECRET_PROVIDER_RESPONSE_BODY",
+  providerMessage: "sensitive raw message"
 };
 const model = "gpt-4.1-mini";
 
@@ -112,6 +113,9 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
     "model",
     "propertyId",
     "provider",
+    "providerErrorCode",
+    "providerErrorParam",
+    "providerErrorType",
     "scope",
     "stage",
     "timeout",
@@ -124,6 +128,9 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
   assert.equal(diagnostic.errorCategory, expected.errorCategory, `${name} errorCategory`);
   assert.equal(diagnostic.model, expected.model);
   assert.equal(diagnostic.provider, expected.provider);
+  assert.equal(diagnostic.providerErrorType, expected.providerErrorType || "");
+  assert.equal(diagnostic.providerErrorCode, expected.providerErrorCode || "");
+  assert.equal(diagnostic.providerErrorParam, expected.providerErrorParam || "");
   const serialized = JSON.stringify(diagnostic);
   for (const forbidden of Object.values(sensitive)) {
     assert.equal(serialized.includes(forbidden), false, `${name} diagnostic leaked ${forbidden}`);
@@ -177,6 +184,71 @@ async function main() {
     name: "http-503",
     planner: httpFailure(503),
     expected: { errorName: "Error", errorCode: "planner_provider_error", httpStatus: 503, timeout: false, errorCategory: "provider", model, provider: "openai" }
+  });
+  await plannerFailureDiagnostic({
+    name: "http-400-invalid-schema",
+    planner: openAiPlanner(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: {
+          message: sensitive.providerMessage,
+          type: "invalid_request_error",
+          code: "invalid_json_schema",
+          param: "text.format.schema"
+        },
+        raw: sensitive.responseBody
+      })
+    })),
+    expected: {
+      errorName: "Error",
+      errorCode: "planner_http_error",
+      httpStatus: 400,
+      timeout: false,
+      errorCategory: "provider",
+      model,
+      provider: "openai",
+      providerErrorType: "invalid_request_error",
+      providerErrorCode: "invalid_json_schema",
+      providerErrorParam: "text.format.schema"
+    }
+  });
+  await plannerFailureDiagnostic({
+    name: "http-400-non-json",
+    planner: openAiPlanner(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => { throw new SyntaxError(sensitive.responseBody); }
+    })),
+    expected: { errorName: "Error", errorCode: "planner_http_error", httpStatus: 400, timeout: false, errorCategory: "provider", model, provider: "openai" }
+  });
+  const longProviderType = "a".repeat(160);
+  const longProviderParam = "text.format.schema.".repeat(20);
+  await plannerFailureDiagnostic({
+    name: "http-400-provider-field-sanitization",
+    planner: openAiPlanner(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: {
+          type: longProviderType,
+          code: "invalid json schema!",
+          param: longProviderParam
+        }
+      })
+    })),
+    expected: {
+      errorName: "Error",
+      errorCode: "planner_http_error",
+      httpStatus: 400,
+      timeout: false,
+      errorCategory: "provider",
+      model,
+      provider: "openai",
+      providerErrorType: longProviderType.slice(0, 120),
+      providerErrorCode: "",
+      providerErrorParam: longProviderParam.slice(0, 200)
+    }
   });
   await plannerFailureDiagnostic({
     name: "timeout",

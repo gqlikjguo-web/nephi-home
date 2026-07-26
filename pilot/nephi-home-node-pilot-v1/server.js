@@ -65,7 +65,10 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       timeout: Boolean(details.timeout),
       errorCategory: SAFE_PLANNER_ERROR_CATEGORIES.has(details.errorCategory) ? details.errorCategory : "unknown",
       model: safeDiagnosticLabel(details.model, "", 120),
-      provider: safeDiagnosticLabel(details.provider, "unknown", 40)
+      provider: safeDiagnosticLabel(details.provider, "unknown", 40),
+      providerErrorType: safeDiagnosticLabel(details.providerErrorType, "", 120),
+      providerErrorCode: safeDiagnosticLabel(details.providerErrorCode, "", 120),
+      providerErrorParam: safeDiagnosticLabel(details.providerErrorParam, "", 200)
     };
   }
   if (details.stage === "validation") return {
