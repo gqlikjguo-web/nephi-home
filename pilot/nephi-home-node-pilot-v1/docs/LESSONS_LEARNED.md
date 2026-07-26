@@ -71,3 +71,7 @@ For OpenAI non-2xx responses, parse the body only transiently and retain only sa
 ## 2026-07-26 — Strict Structured Outputs require every object property
 
 For OpenAI strict Structured Outputs, `additionalProperties: false` is not sufficient: every key declared in an object's `properties` must also appear in `required`. Represent semantically optional identifiers as required nullable or empty-capable fields, then preserve the real domain invariant in deterministic validation. Audit the complete generated schema recursively so one deeply nested omission cannot disable the Planner.
+
+## 2026-07-26 — Evidence diagnostics should report outcomes, not evidence
+
+When diagnosing context-relation rejection, emit only controlled structural paths, counts, relation kinds, and source-match booleans. Never copy evidence quotes, guest text, event/message identifiers, property data, or credentials into an operational trace. Derive the diagnostic booleans with the existing validator predicate so observability does not create a second relation rule.

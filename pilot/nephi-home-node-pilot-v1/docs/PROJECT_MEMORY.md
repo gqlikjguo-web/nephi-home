@@ -80,3 +80,10 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - The local fix requires both fields while retaining empty-string support, relation/evidence validation, offsets, quote rules, strict mode, and all Planner semantics.
 - The recursive schema audit, targeted contracts, Phase 6/7 regressions, runtime uniqueness, and one complete `npm.cmd test` all pass with exit 0 and empty stderr.
 - The strict-schema fix remains local for review; no push, deployment, Render operation, LINE operation, model, credential, or environment change is part of this task.
+
+## 2026-07-26 Safe context-validation diagnostics
+
+- Test-only traces now expose allowlisted `context_validation` rejection paths and candidate summaries: index, relation kind, request-cycle reference count, evidence count, and per-evidence source-match booleans.
+- Integration coverage includes accepted evidence, real validator rejection, hostile sensitive payload exclusion, and unchanged `context_relation_invalid` handoff behavior.
+- Relation/evidence, Planner-failure, Phase 6/7 transport, runtime uniqueness, and one complete `npm.cmd test` pass with exit 0 and empty stderr.
+- Changes remain local and uncommitted for review; no push, deployment, Render operation, LINE operation, or credential change occurred.

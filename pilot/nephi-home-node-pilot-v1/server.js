@@ -25,6 +25,7 @@ const TEST_LINE_WEBHOOK_ROUTE = "/api/test-line/webhook";
 const SAFE_PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
 const SAFE_PLANNER_ERROR_CODES = new Set(["planner_authentication_error", "planner_model_not_found", "planner_rate_limit", "planner_provider_error", "planner_http_error", "planner_timeout", "planner_parse_error", "planner_empty_response", "planner_configuration_error", "planner_unknown_error"]);
 const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["authentication", "rate_limit", "provider", "timeout", "parse", "empty_response", "configuration", "unknown"]);
+const SAFE_CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
 
 function safeDiagnosticLabel(value, fallback, maxLength) {
   const text = String(value || "");
@@ -41,6 +42,16 @@ function safePlannerTraceTask(task) {
       : null,
     detailIntent: String(task && task.detailIntent || "").slice(0, 80)
   };
+}
+
+function safeContextValidationReason(value) {
+  const text = String(value || "");
+  return /^(?:contextRelationCandidates(?:\.\d+(?:\.(?:candidateIndex|candidateRequestCycleRefs))?)?|tasks\.\d+\.(?:candidateIndex|contextRelationCandidate))$/.test(text) ? text : "";
+}
+
+function safeDiagnosticCount(value) {
+  const count = Number(value);
+  return Number.isInteger(count) && count >= 0 ? count : 0;
 }
 
 function formatSafeTestOnlyConversationTrace(details = {}) {
@@ -77,6 +88,17 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
     rejectedTasks: (details.rejectedTasks || []).map((task) => ({ ...safePlannerTraceTask(task), reasons: (task.reasons || []).map(String) })),
     rejectionReasons: (details.rejectionReasons || []).map(String),
     finalTasks: (details.finalTasks || []).map(safePlannerTraceTask)
+  };
+  if (details.stage === "context_validation") return {
+    ...base,
+    rejectionReasons: (details.rejectionReasons || []).map(safeContextValidationReason).filter(Boolean),
+    candidates: (details.candidates || []).map((candidate) => ({
+      candidateIndex: Number.isInteger(candidate && candidate.candidateIndex) && candidate.candidateIndex >= 0 ? candidate.candidateIndex : -1,
+      relationKind: SAFE_CONTEXT_RELATION_KINDS.has(candidate && candidate.relationKind) ? candidate.relationKind : "",
+      candidateRequestCycleRefCount: safeDiagnosticCount(candidate && candidate.candidateRequestCycleRefCount),
+      evidenceRefCount: safeDiagnosticCount(candidate && candidate.evidenceRefCount),
+      evidenceSourceMatches: (candidate && Array.isArray(candidate.evidenceSourceMatches) ? candidate.evidenceSourceMatches : []).map(Boolean)
+    }))
   };
   if (details.stage === "executor") return { ...base, results: (details.results || []).map((item) => ({ taskId: item.taskId || "", status: item.status || "", reason: item.reason || "", locationFactProvided: Boolean(item.locationFactProvided), factSource: item.factSource || "" })) };
   if (details.stage === "semantic_contract") return { ...base, inputTasks: (details.inputTasks || []).map(safePlannerTraceTask), outputTasks: (details.outputTasks || []).map(safePlannerTraceTask), shouldIgnore: Boolean(details.shouldIgnore), validationPassed: Boolean(details.validationPassed), semanticValidation: details.semanticValidation || null };

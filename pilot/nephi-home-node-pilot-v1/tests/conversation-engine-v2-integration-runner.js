@@ -130,22 +130,94 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
   assert.deepEqual(safeValidation.rejectedTasks, []);
   assert.deepEqual(safeValidation.rejectionReasons, []);
   assert.deepEqual(safeValidation.finalTasks, normalizedTasks);
+  const safeContextValidation = safeDiagnostics.find((item) => item.stage === "context_validation");
+  assert.deepEqual(safeContextValidation.rejectionReasons, []);
+  assert.deepEqual(safeContextValidation.candidates, [
+    { candidateIndex: 0, relationKind: "new_request", candidateRequestCycleRefCount: 0, evidenceRefCount: 1, evidenceSourceMatches: [true] },
+    { candidateIndex: 1, relationKind: "new_request", candidateRequestCycleRefCount: 0, evidenceRefCount: 1, evidenceSourceMatches: [true] },
+    { candidateIndex: 2, relationKind: "new_request", candidateRequestCycleRefCount: 0, evidenceRefCount: 1, evidenceSourceMatches: [true] }
+  ]);
   const rejectedTrace = formatSafeTestOnlyConversationTrace({
     traceId: "rejected-trace", propertyId: "p1", stage: "validation", acceptedTasks: [],
     rejectedTasks: [{ ...normalizedTasks[0], reasons: ["tasks.0"] }], rejectionReasons: ["tasks.0"], finalTasks: []
   });
   assert.deepEqual(rejectedTrace.rejectedTasks[0].reasons, ["tasks.0"]);
   assert.deepEqual(rejectedTrace.finalTasks, []);
+  const hostileContextTrace = formatSafeTestOnlyConversationTrace({
+    traceId: "hostile-context-trace",
+    propertyId: "p1",
+    stage: "context_validation",
+    rejectionReasons: ["contextRelationCandidates.0", "PRIVATE GUEST MESSAGE"],
+    candidates: [{
+      candidateIndex: 0,
+      relationKind: "modify_existing",
+      candidateRequestCycleRefCount: 2,
+      evidenceRefCount: 2,
+      evidenceSourceMatches: [true, false],
+      quote: "PRIVATE EVIDENCE QUOTE",
+      eventId: "PRIVATE EVENT ID",
+      messageRef: "PRIVATE MESSAGE REF"
+    }],
+    messageText: "PRIVATE GUEST MESSAGE",
+    propertyData: { rooms: "PRIVATE PROPERTY DATA" },
+    apiKey: "PRIVATE API KEY",
+    accessToken: "PRIVATE LINE TOKEN"
+  });
+  assert.deepEqual(hostileContextTrace.rejectionReasons, ["contextRelationCandidates.0"]);
+  assert.deepEqual(hostileContextTrace.candidates, [{
+    candidateIndex: 0,
+    relationKind: "modify_existing",
+    candidateRequestCycleRefCount: 2,
+    evidenceRefCount: 2,
+    evidenceSourceMatches: [true, false]
+  }]);
   const hostileTrace = formatSafeTestOnlyConversationTrace({
     traceId: "safe-trace", propertyId: "p1", stage: "planner", parserSucceeded: true, taskCount: 0, tasks: [],
     messageText: "PRIVATE GUEST MESSAGE", eventId: "PRIVATE EVENT ID", lineUserId: "PRIVATE USER ID",
     apiKey: "PRIVATE API KEY", accessToken: "PRIVATE LINE TOKEN", signature: "PRIVATE SIGNATURE",
     googleMapsUrl: "https://maps.example.invalid/private"
   });
-  const safeSerialized = JSON.stringify([...safeDiagnostics, rejectedTrace, hostileTrace]);
-  for (const forbidden of ["PRIVATE GUEST MESSAGE", "PRIVATE EVENT ID", "PRIVATE USER ID", "PRIVATE API KEY", "PRIVATE LINE TOKEN", "PRIVATE SIGNATURE", "maps.example.invalid"]) {
+  const safeSerialized = JSON.stringify([...safeDiagnostics, rejectedTrace, hostileContextTrace, hostileTrace]);
+  for (const forbidden of ["PRIVATE EVIDENCE QUOTE", "PRIVATE GUEST MESSAGE", "PRIVATE EVENT ID", "PRIVATE MESSAGE REF", "PRIVATE PROPERTY DATA", "PRIVATE USER ID", "PRIVATE API KEY", "PRIVATE LINE TOKEN", "PRIVATE SIGNATURE", "maps.example.invalid"]) {
     assert.equal(safeSerialized.includes(forbidden), false, `safe trace leaked ${forbidden}`);
   }
+
+  const rejectedContextDiagnostics = [];
+  const rejectedContextPlanner = {
+    classify: async (input) => {
+      const output = await explicitPlanner(planner).classify(input);
+      output.contextRelationCandidates[0].evidenceRefs[0].eventId = "PRIVATE REJECTED EVENT ID";
+      return output;
+    }
+  };
+  const rejectedContextEngine = new ConversationEngineV2({
+    planner: rejectedContextPlanner,
+    persistence,
+    getProperty: () => property,
+    availabilityResolver,
+    listPriceOverrides: () => [],
+    onDiagnostic: (item) => rejectedContextDiagnostics.push(item)
+  });
+  const rejectedContextResult = await rejectedContextEngine.process({
+    customerId: "p1",
+    channelId: "rejected-context",
+    lineUserId: "rejected-context-user",
+    eventId: "rejected-context-event",
+    eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"),
+    messageText: "rejected context"
+  });
+  const rejectedContextSafeTrace = rejectedContextDiagnostics.map(formatSafeTestOnlyConversationTrace).find((item) => item && item.stage === "context_validation");
+  assert.deepEqual(rejectedContextSafeTrace.rejectionReasons, ["contextRelationCandidates.0", "tasks.0.contextRelationCandidate"]);
+  assert.deepEqual(rejectedContextSafeTrace.candidates[0], {
+    candidateIndex: 0,
+    relationKind: "new_request",
+    candidateRequestCycleRefCount: 0,
+    evidenceRefCount: 1,
+    evidenceSourceMatches: [false]
+  });
+  assert.equal(JSON.stringify(rejectedContextSafeTrace).includes("PRIVATE REJECTED EVENT ID"), false);
+  assert.equal(rejectedContextResult.finalDecision.action, "handoff");
+  assert.equal(rejectedContextResult.finalDecision.reasonCode, "context_relation_invalid");
 
   const detailedDiagnostics = [];
   const detailedEngine = new ConversationEngineV2({ planner: explicitPlanner(planner), persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [], diagnosticDetail: true, onDiagnostic: (item) => detailedDiagnostics.push(item) });

@@ -45,3 +45,9 @@
 - Required strict-schema, semantic, relation/evidence, Planner fallback, Phase 6/7, runtime uniqueness, and full `npm.cmd test` verification is complete with exit 0.
 - Preserve the local commit `fix: make planner schema strict-output compatible` for final review.
 - Do not push, deploy, operate Render or LINE, or change model, credentials, or environment variables without explicit authorization.
+
+## 2026-07-26 Safe context-validation diagnostics
+
+- Review the local test-only safe formatter change and its integration evidence; no additional behavior work is required in this task.
+- Preserve Planner, validator, relation rules, and fallback unchanged.
+- Do not commit, push, deploy, operate Render or LINE, or change credentials without explicit authorization.

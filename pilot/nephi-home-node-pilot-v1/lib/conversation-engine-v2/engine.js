@@ -16,7 +16,7 @@ const { resolveEntity } = require("./entity-resolver");
 const { availabilityTraceSummary } = require("./resolver-adapter");
 const { pendingFromResults } = require("./pending-request");
 const { buildContextSnapshot } = require("./contracts");
-const { validateUnderstandingContext } = require("./understanding-validator");
+const { validateUnderstandingContext, evidenceMatchesSource } = require("./understanding-validator");
 const { buildFormalRequest, buildQueryPlan, resultForNotReady } = require("./formal-request");
 const { buildFinalDecision } = require("./final-decision");
 const { SAFE_HANDOFF_TEXT, buildFinalResponse } = require("./final-response-renderer");
@@ -68,6 +68,35 @@ function plannerValidationTrace(plannerOutput, validation) {
     rejectionReasons: reasons,
     finalTasks: []
   };
+}
+function diagnosticSourceEventMaps(sourceEvents) {
+  const byEventId = new Map();
+  const byMessageRef = new Map();
+  for (const sourceEvent of Array.isArray(sourceEvents) ? sourceEvents : []) {
+    if (!sourceEvent || typeof sourceEvent !== "object") continue;
+    const normalized = {
+      eventId: String(sourceEvent.eventId || "").trim(),
+      messageRef: String(sourceEvent.messageRef || "").trim(),
+      messageText: String(sourceEvent.messageText || "")
+    };
+    if (normalized.eventId) byEventId.set(normalized.eventId, byEventId.has(normalized.eventId) ? null : normalized);
+    if (normalized.messageRef) byMessageRef.set(normalized.messageRef, byMessageRef.has(normalized.messageRef) ? null : normalized);
+  }
+  return { byEventId, byMessageRef };
+}
+function contextValidationCandidateDiagnostics(plannerOutput, sourceEvents) {
+  const sourceMaps = diagnosticSourceEventMaps(sourceEvents);
+  return (Array.isArray(plannerOutput && plannerOutput.contextRelationCandidates) ? plannerOutput.contextRelationCandidates : []).map((candidate) => {
+    const cycleRefs = Array.isArray(candidate && candidate.candidateRequestCycleRefs) ? candidate.candidateRequestCycleRefs : [];
+    const evidenceRefs = Array.isArray(candidate && candidate.evidenceRefs) ? candidate.evidenceRefs : [];
+    return {
+      candidateIndex: Number.isInteger(candidate && candidate.candidateIndex) ? candidate.candidateIndex : -1,
+      relationKind: String(candidate && candidate.kind || ""),
+      candidateRequestCycleRefCount: cycleRefs.length,
+      evidenceRefCount: evidenceRefs.length,
+      evidenceSourceMatches: evidenceRefs.map((evidenceRef) => evidenceMatchesSource(evidenceRef, sourceMaps))
+    };
+  });
 }
 function normalizePlannerOutput(plannerOutput, { eventTimestamp, timezone } = {}) {
   if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) return null;
@@ -321,7 +350,12 @@ class ConversationEngineV2 {
       return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
     const contextValidation = validateUnderstandingContext(plannerOutput, contextSnapshot, { sourceEvents, scope });
-    this.trace(traceId, "context_validation", { snapshotCycleIds: contextSnapshot.cycles.map((item) => item.requestCycleId), acceptedRelations: contextValidation.relations, rejectionReasons: contextValidation.errors });
+    this.trace(traceId, "context_validation", {
+      snapshotCycleIds: contextSnapshot.cycles.map((item) => item.requestCycleId),
+      acceptedRelations: contextValidation.relations,
+      rejectionReasons: contextValidation.errors,
+      candidates: contextValidationCandidateDiagnostics(plannerOutput, sourceEvents)
+    });
     if (!contextValidation.ok) {
       this.trace(traceId, "fallback", { reasonCode: "context_relation_invalid", branch: "context_validation" });
       const finalDecision = decideFinal({ plannerFailure: "context_relation_invalid" });

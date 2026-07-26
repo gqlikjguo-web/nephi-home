@@ -72,3 +72,8 @@
 ## 2026-07-26 — OpenAI strict Planner schema compatibility
 
 - Required both `eventId` and `messageRef` in every evidence reference, with the unused identifier represented by an empty string, and added a recursive strict-schema contract runner without changing relation/evidence semantics.
+
+## 2026-07-26 — Safe context-validation diagnostics
+
+- Added a test-only `context_validation` trace projection with allowlisted rejection paths, candidate index, relation kind, cycle/evidence counts, and per-evidence source-match booleans.
+- Raw quotes, guest text, evidence identifiers, property data, and credentials remain excluded; Planner, validator, relation, and fallback behavior are unchanged.
