@@ -57,3 +57,9 @@
 ## Baseline 變更門檻
 
 只有通過自動回歸與真實驗收的行為才能加入本文件。若產品決策要改變既有基準，必須先 append 一筆重大決策，說明相容性、風險與回退方式。
+## Planner failure diagnostic boundary
+
+- Planner exceptions retain the existing `planner_parse_failed` → FinalDecision handoff → safe fallback → LINE delivery behavior.
+- Test-only diagnostics may emit `planner_error` only through an allowlisted schema: error name, fixed code, normalized HTTP status, timeout, safe category, model, and provider.
+- Diagnostic callbacks and loggers are non-authoritative; their exceptions cannot change conversation fallback or delivery.
+- Secrets, authorization data, guest content, prompts, source events, property catalogs, raw provider bodies, stacks, request headers, and credentials never enter the safe trace.

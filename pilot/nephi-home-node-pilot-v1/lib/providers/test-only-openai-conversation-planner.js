@@ -2,6 +2,27 @@
 
 const { plannerJsonSchema } = require("../conversation-engine-v2/planner-schema");
 const RESPONSES_URL = "https://api.openai.com/v1/responses";
+const PLANNER_PROVIDER = "openai";
+
+function plannerFailure({ code, category, status = 0, timeout = false, model = "", name = "Error" }) {
+  const error = new Error(code);
+  error.name = name;
+  error.code = code;
+  error.status = Number.isInteger(status) ? status : 0;
+  error.timeout = Boolean(timeout);
+  error.errorCategory = category;
+  error.plannerModel = String(model || "");
+  error.plannerProvider = PLANNER_PROVIDER;
+  error.safePlannerFailure = true;
+  return error;
+}
+
+function httpFailure(status, model) {
+  if (status === 401 || status === 403) return plannerFailure({ code: "planner_authentication_error", category: "authentication", status, model });
+  if (status === 404) return plannerFailure({ code: "planner_model_not_found", category: "provider", status, model });
+  if (status === 429) return plannerFailure({ code: "planner_rate_limit", category: "rate_limit", status, model });
+  return plannerFailure({ code: status >= 500 && status <= 599 ? "planner_provider_error" : "planner_http_error", category: "provider", status, model });
+}
 
 function instructions() {
   return [
@@ -29,13 +50,30 @@ function instructions() {
 function outputText(payload) { if (payload && typeof payload.output_text === "string") return payload.output_text; for (const item of payload && payload.output || []) for (const part of item.content || []) if (part.type === "output_text") return part.text || ""; return ""; }
 
 class TestOnlyOpenAiConversationPlanner {
-  constructor({ apiKey, model, fetchImpl = globalThis.fetch, timeoutMs = 15000 }) { if (!apiKey || !model) throw new Error("test_openai_not_configured"); this.apiKey = apiKey; this.model = model; this.fetchImpl = fetchImpl; this.timeoutMs = timeoutMs; }
+  constructor({ apiKey, model, fetchImpl = globalThis.fetch, timeoutMs = 15000 }) {
+    if (!apiKey || !model) throw plannerFailure({ code: "planner_configuration_error", category: "configuration", model });
+    this.apiKey = apiKey;
+    this.model = model;
+    this.provider = PLANNER_PROVIDER;
+    this.fetchImpl = fetchImpl;
+    this.timeoutMs = timeoutMs;
+  }
   async classify(input) {
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` }, signal: controller.signal, body: JSON.stringify({ model: this.model, input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] } }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerJsonSchema() } } }) });
-      if (!response.ok) throw new Error("planner_http_error");
-      const payload = await response.json(); const text = outputText(payload); if (!text) throw new Error("planner_empty"); return JSON.parse(text);
+      if (!response.ok) throw httpFailure(Number(response.status || response.statusCode || 0), this.model);
+      let payload;
+      try { payload = await response.json(); }
+      catch { throw plannerFailure({ code: "planner_parse_error", category: "parse", model: this.model, name: "SyntaxError" }); }
+      const text = outputText(payload);
+      if (!text) throw plannerFailure({ code: "planner_empty_response", category: "empty_response", model: this.model });
+      try { return JSON.parse(text); }
+      catch { throw plannerFailure({ code: "planner_parse_error", category: "parse", model: this.model, name: "SyntaxError" }); }
+    } catch (error) {
+      if (error && error.safePlannerFailure) throw error;
+      if (error && error.name === "AbortError") throw plannerFailure({ code: "planner_timeout", category: "timeout", timeout: true, model: this.model, name: "AbortError" });
+      throw plannerFailure({ code: "planner_unknown_error", category: "unknown", model: this.model });
     } finally { clearTimeout(timer); }
   }
 }

@@ -61,3 +61,7 @@ A webhook URL parameter or unverified payload cannot establish tenant identity. 
 When a test-only transport diagnostic callback is provided, every transport outcome, including reply failures, must use that callback. Do not bypass it with the production-safe logger; doing so makes E2E observability diverge from the actual transport result. Keep external trace reason codes stable (`reply_attempt`, `reply_succeeded`, `reply_failed`) and preserve detailed HTTP error codes only in persisted delivery metadata.
 
 The safe logger remains mandatory even when the test callback exists, and callback exceptions must be swallowed so they cannot alter reply delivery. Persist the FinalDecision fields on the main event before transport so delivery success or failure never changes `needsReview`, `humanHandoff`, or `decisionReason`.
+
+## 2026-07-26 — Preserve failure class, never raw provider error content
+
+Collapsing every Planner exception to one fallback reason protects behavior but makes operations blind. Preserve only fixed, classifiable metadata at the provider boundary—normalized status, category, timeout, model, and provider—then discard raw messages and response bodies. Apply a second allowlist in the trace formatter, and isolate the diagnostic callback so observability can never become a new failure path.

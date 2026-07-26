@@ -8,9 +8,18 @@ const path = require("node:path");
 
 const { ConversationEngineV2, normalizePlannerOutput } = require("../lib/conversation-engine-v2/engine");
 const { plannerJsonSchema, validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
-const { createApp } = require("../server");
+const { SAFE_HANDOFF_TEXT } = require("../lib/conversation-engine-v2/final-response-renderer");
+const { TestOnlyOpenAiConversationPlanner } = require("../lib/providers/test-only-openai-conversation-planner");
+const { createApp, formatSafeTestOnlyConversationTrace } = require("../server");
 
 const property = { propertyId: "demo_homestay_a", timezone: "Asia/Taipei", rooms: [], commonAnswers: { checkInTime: "15:00" } };
+const sensitive = {
+  apiKey: "sk-planner-diagnostic-secret",
+  guestMessage: "SECRET_GUEST_MESSAGE",
+  prompt: "SECRET_PLANNER_PROMPT",
+  responseBody: "SECRET_PROVIDER_RESPONSE_BODY"
+};
+const model = "gpt-4.1-mini";
 
 function validPlannerOutput() {
   return {
@@ -58,6 +67,78 @@ async function sendWebhook(url, secret, eventId, text) {
   assert.equal(response.status, 200);
 }
 
+function plannerPersistence() {
+  return {
+    getConversationState: () => null,
+    setConversationState: () => {},
+    appendMessageLog: () => ({ reviewId: "planner-review" })
+  };
+}
+
+async function plannerFailureDiagnostic({ name, planner, expected }) {
+  const diagnostics = [];
+  const engine = new ConversationEngineV2({
+    planner,
+    persistence: plannerPersistence(),
+    getProperty: () => property,
+    availabilityResolver: () => ({ availabilityReliable: true, rooms: [] }),
+    listPriceOverrides: () => [],
+    onDiagnostic: (entry) => diagnostics.push(entry)
+  });
+  const result = await engine.process({
+    customerId: property.propertyId,
+    channelId: "test",
+    lineUserId: "guest",
+    eventId: `planner-error-${name}`,
+    eventTimestamp: 1,
+    messageText: sensitive.guestMessage,
+    sourceEvents: [{
+      eventId: `planner-error-${name}`,
+      messageText: sensitive.guestMessage
+    }]
+  });
+  assert.equal(result.finalDecision.action, "handoff", `${name} must retain handoff`);
+  assert.equal(result.finalDecision.reasonCode, "planner_parse_failed", `${name} must retain planner_parse_failed`);
+  assert.equal(result.replyText, SAFE_HANDOFF_TEXT, `${name} must retain the safe fallback`);
+
+  const rawDiagnostic = diagnostics.find((entry) => entry.stage === "planner_error");
+  assert.ok(rawDiagnostic, `${name} must emit planner_error`);
+  const diagnostic = formatSafeTestOnlyConversationTrace(rawDiagnostic);
+  assert.deepEqual(Object.keys(diagnostic).sort(), [
+    "errorCategory",
+    "errorCode",
+    "errorName",
+    "httpStatus",
+    "model",
+    "propertyId",
+    "provider",
+    "scope",
+    "stage",
+    "timeout",
+    "traceId"
+  ].sort(), `${name} diagnostic must contain only the safe schema`);
+  assert.equal(diagnostic.errorName, expected.errorName, `${name} errorName`);
+  assert.equal(diagnostic.errorCode, expected.errorCode, `${name} errorCode`);
+  assert.equal(diagnostic.httpStatus, expected.httpStatus, `${name} httpStatus`);
+  assert.equal(diagnostic.timeout, expected.timeout, `${name} timeout`);
+  assert.equal(diagnostic.errorCategory, expected.errorCategory, `${name} errorCategory`);
+  assert.equal(diagnostic.model, expected.model);
+  assert.equal(diagnostic.provider, expected.provider);
+  const serialized = JSON.stringify(diagnostic);
+  for (const forbidden of Object.values(sensitive)) {
+    assert.equal(serialized.includes(forbidden), false, `${name} diagnostic leaked ${forbidden}`);
+  }
+}
+
+function openAiPlanner(fetchImpl) {
+  return new TestOnlyOpenAiConversationPlanner({
+    apiKey: sensitive.apiKey,
+    model,
+    fetchImpl,
+    timeoutMs: 10
+  });
+}
+
 async function main() {
   for (const output of [null, undefined, "not-an-object", { schemaVersion: 2 }]) await engineResult(output);
 
@@ -72,10 +153,88 @@ async function main() {
   assert.equal(normalized.tasks.length, 2);
   assert.equal(normalized.tasks[1].detailIntent, "general");
 
+  const httpFailure = (status) => openAiPlanner(async () => ({
+    ok: false,
+    status,
+    json: async () => ({ output_text: sensitive.responseBody })
+  }));
+  await plannerFailureDiagnostic({
+    name: "http-401",
+    planner: httpFailure(401),
+    expected: { errorName: "Error", errorCode: "planner_authentication_error", httpStatus: 401, timeout: false, errorCategory: "authentication", model, provider: "openai" }
+  });
+  await plannerFailureDiagnostic({
+    name: "http-404",
+    planner: httpFailure(404),
+    expected: { errorName: "Error", errorCode: "planner_model_not_found", httpStatus: 404, timeout: false, errorCategory: "provider", model, provider: "openai" }
+  });
+  await plannerFailureDiagnostic({
+    name: "http-429",
+    planner: httpFailure(429),
+    expected: { errorName: "Error", errorCode: "planner_rate_limit", httpStatus: 429, timeout: false, errorCategory: "rate_limit", model, provider: "openai" }
+  });
+  await plannerFailureDiagnostic({
+    name: "http-503",
+    planner: httpFailure(503),
+    expected: { errorName: "Error", errorCode: "planner_provider_error", httpStatus: 503, timeout: false, errorCategory: "provider", model, provider: "openai" }
+  });
+  await plannerFailureDiagnostic({
+    name: "timeout",
+    planner: openAiPlanner(async () => {
+      const error = new Error(`${sensitive.apiKey} ${sensitive.prompt}`);
+      error.name = "AbortError";
+      throw error;
+    }),
+    expected: { errorName: "AbortError", errorCode: "planner_timeout", httpStatus: 0, timeout: true, errorCategory: "timeout", model, provider: "openai" }
+  });
+  await plannerFailureDiagnostic({
+    name: "empty-response",
+    planner: openAiPlanner(async () => ({ ok: true, status: 200, json: async () => ({ output_text: "" }) })),
+    expected: { errorName: "Error", errorCode: "planner_empty_response", httpStatus: 0, timeout: false, errorCategory: "empty_response", model, provider: "openai" }
+  });
+  await plannerFailureDiagnostic({
+    name: "parse",
+    planner: openAiPlanner(async () => ({ ok: true, status: 200, json: async () => ({ output_text: `{${sensitive.responseBody}` }) })),
+    expected: { errorName: "SyntaxError", errorCode: "planner_parse_error", httpStatus: 0, timeout: false, errorCategory: "parse", model, provider: "openai" }
+  });
+  await plannerFailureDiagnostic({
+    name: "generic",
+    planner: openAiPlanner(async () => { throw new Error(`${sensitive.responseBody} ${sensitive.guestMessage}`); }),
+    expected: { errorName: "Error", errorCode: "planner_unknown_error", httpStatus: 0, timeout: false, errorCategory: "unknown", model, provider: "openai" }
+  });
+  await plannerFailureDiagnostic({
+    name: "configuration",
+    planner: null,
+    expected: { errorName: "TypeError", errorCode: "planner_configuration_error", httpStatus: 0, timeout: false, errorCategory: "configuration", model: "", provider: "unknown" }
+  });
+
+  const throwingDiagnosticEngine = new ConversationEngineV2({
+    planner: openAiPlanner(async () => { throw new Error("diagnostic callback test"); }),
+    persistence: plannerPersistence(),
+    getProperty: () => property,
+    availabilityResolver: () => ({ availabilityReliable: true, rooms: [] }),
+    listPriceOverrides: () => [],
+    onDiagnostic: (entry) => {
+      if (entry.stage === "planner_error") throw new Error("diagnostic callback failed");
+    }
+  });
+  const callbackFailureResult = await throwingDiagnosticEngine.process({
+    customerId: property.propertyId,
+    channelId: "test",
+    lineUserId: "guest",
+    eventId: "planner-error-callback",
+    eventTimestamp: 1,
+    messageText: "test"
+  });
+  assert.equal(callbackFailureResult.finalDecision.action, "handoff");
+  assert.equal(callbackFailureResult.finalDecision.reasonCode, "planner_parse_failed");
+  assert.equal(callbackFailureResult.replyText, SAFE_HANDOFF_TEXT);
+
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "planner-failure-safety-"));
   const dataFile = path.join(temp, "store.json");
   const secret = "planner-failure-secret";
   const replies = [];
+  const diagnostics = [];
   const app = createApp({
     dataFile,
     seedFile: path.resolve(__dirname, "../fixtures/seed.json"),
@@ -83,17 +242,29 @@ async function main() {
     lineChannelAccessToken: "token",
     conversationDebounceMs: 1,
     lineChannelIdentityGuardRequired: false,
-    conversationPlannerV2: { classify: async ({ currentMessage }) => currentMessage === "invalid relation" ? invalidRelationOutput() : null },
+    conversationPlannerV2: {
+      classify: async ({ currentMessage }) => {
+        if (currentMessage === "invalid relation") return invalidRelationOutput();
+        if (currentMessage === "planner throws") throw new Error("planner webhook failure");
+        return null;
+      }
+    },
+    testOnlyOverrides: { onDiagnostic: (entry) => diagnostics.push(entry) },
     lineReplyClientFactory: () => ({ replyMessageWithHttpInfo: async (body) => { replies.push(body); return { httpResponse: { status: 200 } }; } })
   });
   const running = await app.start(0, "127.0.0.1");
   try {
     await sendWebhook(running.url, secret, "planner-null-event", "test");
     await sendWebhook(running.url, secret, "invalid-relation-event", "invalid relation");
+    await sendWebhook(running.url, secret, "planner-throw-event", "planner throws");
     await new Promise((resolve) => setTimeout(resolve, 120));
-    assert.equal(replies.length, 2);
+    assert.equal(replies.length, 3);
     replies.forEach((body) => assert.ok(body.messages[0].text.length > 0, "contract failure must be delivered as a non-empty safe reply"));
     assert.ok(replies.every((body) => !body.messages[0].text.includes("SECRET_UNAUTHORIZED_FACT")), "unapproved facts must not enter the reply");
+    assert.equal(replies[2].messages[0].text, SAFE_HANDOFF_TEXT, "Planner exception must retain the existing LINE fallback");
+    const plannerFailureDecision = diagnostics.find((item) => item.stage === "final_decision" && item.reasonCode === "planner_parse_failed");
+    assert.ok(plannerFailureDecision);
+    assert.equal(plannerFailureDecision.decision, "handoff");
 
     const saved = JSON.parse(fs.readFileSync(dataFile, "utf8"));
     const records = (saved.messageLogs.demo_homestay_a || []).filter((item) => String(item.eventId || "").startsWith("invalid-relation-event"));
@@ -102,6 +273,11 @@ async function main() {
     const delivered = records.find((item) => item.eventId === "invalid-relation-event");
     assert.equal(delivered.processingStatus, "reply_succeeded", "the event must complete normal delivery");
     assert.equal(delivered.replyDelivered, true);
+    const plannerFailureRecord = (saved.messageLogs.demo_homestay_a || []).find((item) => item.eventId === "planner-throw-event");
+    assert.equal(plannerFailureRecord.decisionReason, "planner_parse_failed");
+    assert.equal(plannerFailureRecord.humanHandoff, true);
+    assert.equal(plannerFailureRecord.processingStatus, "reply_succeeded");
+    assert.equal(plannerFailureRecord.replyDelivered, true);
   } finally {
     await app.stop();
     fs.rmSync(temp, { recursive: true, force: true });

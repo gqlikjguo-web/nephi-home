@@ -63,3 +63,7 @@
 ## 2026-07-26 — Phase 7 FinalDecision response-content authority
 
 - Added one final response renderer after Claim Validator so reply, clarification, handoff, claim-rejection fallback, Composer-exception fallback, and no_reply content remain aligned with the existing FinalDecision without adding a second action authority.
+
+## 2026-07-26 — Safe Planner failure diagnostics
+
+- Added allowlisted `planner_error` traces for authentication, model/provider, rate-limit, timeout, parse, empty-response, configuration, and unknown failures without changing Planner fallback or LINE delivery.

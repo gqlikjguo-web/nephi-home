@@ -22,6 +22,14 @@ const { createLineBindingService } = require("./lib/line-binding-service");
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const TEST_LINE_WEBHOOK_ROUTE = "/api/test-line/webhook";
+const SAFE_PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
+const SAFE_PLANNER_ERROR_CODES = new Set(["planner_authentication_error", "planner_model_not_found", "planner_rate_limit", "planner_provider_error", "planner_http_error", "planner_timeout", "planner_parse_error", "planner_empty_response", "planner_configuration_error", "planner_unknown_error"]);
+const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["authentication", "rate_limit", "provider", "timeout", "parse", "empty_response", "configuration", "unknown"]);
+
+function safeDiagnosticLabel(value, fallback, maxLength) {
+  const text = String(value || "");
+  return /^[A-Za-z0-9._:-]+$/.test(text) ? text.slice(0, maxLength) : fallback;
+}
 
 function safePlannerTraceTask(task) {
   return {
@@ -47,6 +55,19 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
     } };
   }
   if (details.stage === "planner") return { ...base, parserSucceeded: Boolean(details.parserSucceeded), taskCount: Number(details.taskCount || 0), discourse: details.discourse || null, shouldIgnore: Boolean(details.shouldIgnore), missingInformation: (details.missingInformation || []).map(String), tasks: (details.tasks || []).map(safePlannerTraceTask) };
+  if (details.stage === "planner_error") {
+    const status = Number(details.httpStatus);
+    return {
+      ...base,
+      errorName: SAFE_PLANNER_ERROR_NAMES.has(details.errorName) ? details.errorName : "Error",
+      errorCode: SAFE_PLANNER_ERROR_CODES.has(details.errorCode) ? details.errorCode : "planner_unknown_error",
+      httpStatus: Number.isInteger(status) && status >= 100 && status <= 599 ? status : 0,
+      timeout: Boolean(details.timeout),
+      errorCategory: SAFE_PLANNER_ERROR_CATEGORIES.has(details.errorCategory) ? details.errorCategory : "unknown",
+      model: safeDiagnosticLabel(details.model, "", 120),
+      provider: safeDiagnosticLabel(details.provider, "unknown", 40)
+    };
+  }
   if (details.stage === "validation") return {
     ...base,
     acceptedTasks: (details.acceptedTasks || []).map(safePlannerTraceTask),

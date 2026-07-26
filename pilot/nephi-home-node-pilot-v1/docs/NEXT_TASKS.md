@@ -34,3 +34,8 @@
 - test-only 驗收未完成前，不得宣稱第一版完成。
 - 未建立回退點前，不得切正式 LINE。
 - 未經使用者明確授權，不得修改正式 LINE、Render、環境變數、資料庫、Secret 或 Token。
+## 2026-07-26 Planner failure diagnostics
+
+- Required targeted, Phase 6/7, runtime uniqueness, and full `npm.cmd test` verification is complete with exit 0.
+- Preserve the local commit `fix: expose safe planner failure diagnostics` for final review.
+- Do not push or deploy; operational verification on Render remains a separately authorized task.

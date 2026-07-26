@@ -160,13 +160,66 @@ function confirmedInventoryFromTask(catalog, candidate) {
 }
 
 const SAFE_FALLBACK = SAFE_HANDOFF_TEXT;
+const PLANNER_ERROR_CATEGORIES = new Set(["authentication", "rate_limit", "provider", "timeout", "parse", "empty_response", "configuration", "unknown"]);
+const PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
+
+function safePlannerErrorDiagnostic(error, planner) {
+  const configured = Boolean(planner && typeof planner.classify === "function");
+  const status = Number(error && (error.status || error.statusCode));
+  const httpStatus = Number.isInteger(status) && status >= 100 && status <= 599 ? status : 0;
+  const timeout = Boolean(error && (error.timeout === true || error.name === "AbortError"));
+  let errorCategory = configured && PLANNER_ERROR_CATEGORIES.has(error && error.errorCategory)
+    ? error.errorCategory
+    : configured ? "unknown" : "configuration";
+  let errorCode = "planner_unknown_error";
+  if (!configured) {
+    errorCode = "planner_configuration_error";
+  } else if (timeout) {
+    errorCategory = "timeout";
+    errorCode = "planner_timeout";
+  } else if (httpStatus === 401 || httpStatus === 403) {
+    errorCategory = "authentication";
+    errorCode = "planner_authentication_error";
+  } else if (httpStatus === 404) {
+    errorCategory = "provider";
+    errorCode = "planner_model_not_found";
+  } else if (httpStatus === 429) {
+    errorCategory = "rate_limit";
+    errorCode = "planner_rate_limit";
+  } else if (httpStatus >= 500 && httpStatus <= 599) {
+    errorCategory = "provider";
+    errorCode = "planner_provider_error";
+  } else if (errorCategory === "parse" || error && error.name === "SyntaxError") {
+    errorCategory = "parse";
+    errorCode = "planner_parse_error";
+  } else if (errorCategory === "empty_response") {
+    errorCode = "planner_empty_response";
+  } else if (errorCategory === "configuration") {
+    errorCode = "planner_configuration_error";
+  } else if (errorCategory === "provider") {
+    errorCode = "planner_http_error";
+  }
+  return {
+    errorName: PLANNER_ERROR_NAMES.has(error && error.name) ? error.name : "Error",
+    errorCode,
+    httpStatus,
+    timeout,
+    errorCategory,
+    model: configured ? String(error && error.plannerModel || planner.model || "").slice(0, 120) : "",
+    provider: configured ? String(error && error.plannerProvider || planner.provider || "unknown").slice(0, 40) : "unknown"
+  };
+}
 
 class ConversationEngineV2 {
   constructor({ planner, composer, persistence, getProperty, availabilityResolver, availableDatesResolver, listPriceOverrides, now = () => new Date(), onDiagnostic, diagnosticDetail = false, diagnosticMetadata = {} }) {
     this.planner = planner; this.composer = composer; this.persistence = persistence; this.getProperty = getProperty; this.availabilityResolver = availabilityResolver; this.availableDatesResolver = availableDatesResolver; this.listPriceOverrides = listPriceOverrides || (() => []); this.now = now; this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null; this.diagnosticDetail = Boolean(diagnosticDetail); this.diagnosticMetadata = diagnosticMetadata || {}; this.traceContexts = new Map();
   }
 
-  trace(traceId, stage, details) { if (this.onDiagnostic) this.onDiagnostic({ ...(this.traceContexts.get(traceId) || {}), traceId, stage, ...details }); }
+  trace(traceId, stage, details) {
+    if (!this.onDiagnostic) return;
+    try { this.onDiagnostic({ ...(this.traceContexts.get(traceId) || {}), traceId, stage, ...details }); }
+    catch { /* diagnostics must never affect conversation fallback or delivery */ }
+  }
 
   async process(input) {
     const traceId = crypto.randomUUID();
@@ -184,7 +237,10 @@ class ConversationEngineV2 {
     try {
       plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], sourceEvents, eventTimestamp: input.eventTimestamp, catalog, contextSnapshot });
       parserSucceeded = true;
-    } catch { plannerOutput = null; }
+    } catch (error) {
+      plannerOutput = null;
+      this.trace(traceId, "planner_error", safePlannerErrorDiagnostic(error, this.planner));
+    }
     this.trace(traceId, "planner", {
       parserSucceeded,
       taskCount: plannerOutput && Array.isArray(plannerOutput.tasks) ? plannerOutput.tasks.length : 0,
