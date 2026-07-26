@@ -75,3 +75,7 @@ For OpenAI strict Structured Outputs, `additionalProperties: false` is not suffi
 ## 2026-07-26 — Evidence diagnostics should report outcomes, not evidence
 
 When diagnosing context-relation rejection, emit only controlled structural paths, counts, relation kinds, and source-match booleans. Never copy evidence quotes, guest text, event/message identifiers, property data, or credentials into an operational trace. Derive the diagnostic booleans with the existing validator predicate so observability does not create a second relation rule.
+
+## 2026-07-26 — Canonicalize coordinates only from unique exact source text
+
+Model-generated evidence coordinates are not trustworthy merely because the task meaning is valid. Before context validation, coordinates may be rebuilt only when one task maps to one candidate and its unchanged `sourceText` has exactly one occurrence in one uniquely identifiable source event. Otherwise preserve the Planner evidence and let the unchanged validator reject it; never use fuzzy matching or relax event, offset, or quote checks.

@@ -86,4 +86,12 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - Test-only traces now expose allowlisted `context_validation` rejection paths and candidate summaries: index, relation kind, request-cycle reference count, evidence count, and per-evidence source-match booleans.
 - Integration coverage includes accepted evidence, real validator rejection, hostile sensitive payload exclusion, and unchanged `context_relation_invalid` handoff behavior.
 - Relation/evidence, Planner-failure, Phase 6/7 transport, runtime uniqueness, and one complete `npm.cmd test` pass with exit 0 and empty stderr.
-- Changes remain local and uncommitted for review; no push, deployment, Render operation, LINE operation, or credential change occurred.
+- The safe diagnostic checkpoint `35acec8d070726df1029d324028f665d76e8493f` is pushed; no deployment, Render operation, LINE operation, or credential change occurred.
+
+## 2026-07-26 Canonical Planner evidence coordinates
+
+- A production-equivalent replay of `8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？` reproduced three source mismatches and `context_relation_invalid` before the fix.
+- Deterministic normalization now replaces Planner coordinates only for a unique exact task `sourceText` occurrence in a uniquely identifiable source event, immediately before the unchanged context validator.
+- The replay now produces three successful evidence source matches and continues through temporal, FormalRequest, QueryPlan, and executor without a parking classification change.
+- Exact-match edge cases, relation/evidence defenses, Planner semantics/fallback, Phase 6/7, runtime uniqueness, and one complete `npm.cmd test` pass with exit 0 and empty stderr.
+- The fix remains local pending review; no push, deployment, Render operation, LINE operation, model, credential, or environment change occurred.

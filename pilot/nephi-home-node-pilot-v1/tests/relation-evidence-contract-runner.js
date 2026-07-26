@@ -6,6 +6,7 @@ const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine")
 const { ConversationEngineV2Coordinator } = require("../lib/conversation-engine-v2/coordinator");
 const { emptyStateV2 } = require("../lib/conversation-engine-v2/state-reducer");
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
+const { normalizePlannerEvidenceCoordinates } = require("../lib/conversation-engine-v2/evidence-normalizer");
 
 const scope = {
   propertyId: "relation-evidence-property",
@@ -120,6 +121,75 @@ async function main() {
   const legacyOnly = validateUnderstandingContext(plannerOutput(), snapshot(), { sourceEvents });
   assert.equal(legacyOnly.ok, false, "legacy discourse.relation must not create a formal relation candidate");
 
+  const badEvidence = { eventId: "planner-event", messageRef: "", startOffset: 99, endOffset: 100, quote: "wrong" };
+  const exactSourceTask = { ...task(), sourceText: "availability" };
+  const exactSourcePlan = plannerOutput({ tasks: [exactSourceTask], contextRelationCandidates: [relation({ evidenceRefs: [badEvidence] })] });
+  const exactSourcePlanBefore = clone(exactSourcePlan);
+  const canonicalized = normalizePlannerEvidenceCoordinates(exactSourcePlan, sourceEvents);
+  assert.deepEqual(canonicalized.contextRelationCandidates[0].evidenceRefs, [{
+    eventId: "event-a",
+    messageRef: "message-a",
+    startOffset: 5,
+    endOffset: 17,
+    quote: "availability"
+  }], "a unique exact sourceText occurrence must become canonical source coordinates");
+  assert.deepEqual(exactSourcePlan, exactSourcePlanBefore, "evidence normalization must not mutate Planner output");
+  assert.equal(canonicalized.contextRelationCandidates[0].kind, exactSourcePlan.contextRelationCandidates[0].kind, "normalization must not change relation kind");
+  assert.deepEqual(canonicalized.contextRelationCandidates[0].candidateRequestCycleRefs, exactSourcePlan.contextRelationCandidates[0].candidateRequestCycleRefs, "normalization must not change request-cycle references");
+  assert.equal(validateUnderstandingContext(canonicalized, snapshot(), { sourceEvents }).ok, true, "canonical evidence must still pass the unchanged validator");
+
+  const eventIdOnlyEvents = [{ eventId: "event-only", messageRef: "", messageText: "availability" }];
+  const eventIdOnly = normalizePlannerEvidenceCoordinates(exactSourcePlan, eventIdOnlyEvents);
+  assert.deepEqual(eventIdOnly.contextRelationCandidates[0].evidenceRefs[0], {
+    eventId: "event-only", messageRef: "", startOffset: 0, endOffset: 12, quote: "availability"
+  });
+  assert.equal(validateUnderstandingContext(eventIdOnly, snapshot(), { sourceEvents: eventIdOnlyEvents }).ok, true);
+
+  const messageRefOnlyEvents = [{ eventId: "", messageRef: "message-only", messageText: "availability" }];
+  const messageRefOnly = normalizePlannerEvidenceCoordinates(exactSourcePlan, messageRefOnlyEvents);
+  assert.deepEqual(messageRefOnly.contextRelationCandidates[0].evidenceRefs[0], {
+    eventId: "", messageRef: "message-only", startOffset: 0, endOffset: 12, quote: "availability"
+  });
+  assert.equal(validateUnderstandingContext(messageRefOnly, snapshot(), { sourceEvents: messageRefOnlyEvents }).ok, true);
+
+  for (const unrepairable of [
+    {
+      name: "sourceText not found",
+      output: plannerOutput({ tasks: [{ ...task(), sourceText: "missing" }], contextRelationCandidates: [relation({ evidenceRefs: [badEvidence] })] }),
+      events: sourceEvents
+    },
+    {
+      name: "sourceText empty",
+      output: plannerOutput({ tasks: [{ ...task(), sourceText: "" }], contextRelationCandidates: [relation({ evidenceRefs: [badEvidence] })] }),
+      events: sourceEvents
+    },
+    {
+      name: "sourceText repeated",
+      output: exactSourcePlan,
+      events: [{ eventId: "repeated", messageRef: "", messageText: "availability availability" }]
+    },
+    {
+      name: "source event not unique",
+      output: exactSourcePlan,
+      events: [{ eventId: "first", messageRef: "", messageText: "availability" }, { eventId: "second", messageRef: "", messageText: "availability" }]
+    },
+    {
+      name: "source event identifier not unique",
+      output: exactSourcePlan,
+      events: [{ eventId: "duplicate", messageRef: "", messageText: "availability" }, { eventId: "duplicate", messageRef: "", messageText: "other" }]
+    },
+    {
+      name: "candidateIndex does not exist",
+      output: plannerOutput({ contextRelationCandidates: [relation({ candidateIndex: 9, evidenceRefs: [badEvidence] })] }),
+      events: sourceEvents
+    }
+  ]) {
+    const before = clone(unrepairable.output);
+    const normalized = normalizePlannerEvidenceCoordinates(unrepairable.output, unrepairable.events);
+    assert.deepEqual(normalized, before, `${unrepairable.name}: normalization must preserve unrepairable evidence`);
+    assert.equal(validateUnderstandingContext(normalized, snapshot(), { sourceEvents: unrepairable.events }).ok, false, `${unrepairable.name}: unchanged validator must reject unrepairable evidence`);
+  }
+
   for (const invalidEvidence of [
     [],
     { eventId: "event-missing", startOffset: 5, endOffset: 17, quote: "availability" },
@@ -152,6 +222,10 @@ async function main() {
   const continuingRelation = (overrides = {}) => plannerOutput({
     contextRelationCandidates: [relation({ kind: "supplement_existing", refs: ["cycle-a"], ...overrides })]
   });
+  const unrepairableContinuingRelation = (overrides = {}) => plannerOutput({
+    tasks: [{ ...task(), sourceText: "not present in source events" }],
+    contextRelationCandidates: [relation({ kind: "supplement_existing", refs: ["cycle-a"], ...overrides })]
+  });
   const burstEvents = [
     { eventId: "burst-a", messageRef: "message-burst-a", messageText: "Need" },
     { eventId: "burst-b", messageRef: "message-burst-b", messageText: "Second" }
@@ -164,11 +238,11 @@ async function main() {
     { name: "property scope mismatch", output: continuingRelation(), priorState: protectedState({ stateScope: { ...scope, propertyId: "other-property" } }) },
     { name: "channel scope mismatch", output: continuingRelation(), priorState: protectedState({ stateScope: { ...scope, channelId: "other-channel" } }) },
     { name: "user scope mismatch", output: continuingRelation(), priorState: protectedState({ stateScope: { ...scope, lineUserId: "other-user" } }) },
-    { name: "wrong eventId", output: continuingRelation({ evidenceRefs: [{ eventId: "event-missing", startOffset: 5, endOffset: 17, quote: "availability" }] }) },
-    { name: "wrong messageRef", output: continuingRelation({ evidenceRefs: [{ messageRef: "message-missing", startOffset: 5, endOffset: 17, quote: "availability" }] }) },
-    { name: "out of bounds offset", output: continuingRelation({ evidenceRefs: [{ eventId: "event-a", startOffset: 5, endOffset: 99, quote: "availability" }] }) },
-    { name: "inverted offset", output: continuingRelation({ evidenceRefs: [{ eventId: "event-a", startOffset: 17, endOffset: 5, quote: "" }] }) },
-    { name: "quote mismatch", output: continuingRelation({ evidenceRefs: [{ eventId: "event-a", startOffset: 5, endOffset: 17, quote: "different" }] }) },
+    { name: "wrong eventId", output: unrepairableContinuingRelation({ evidenceRefs: [{ eventId: "event-missing", startOffset: 5, endOffset: 17, quote: "availability" }] }) },
+    { name: "wrong messageRef", output: unrepairableContinuingRelation({ evidenceRefs: [{ messageRef: "message-missing", startOffset: 5, endOffset: 17, quote: "availability" }] }) },
+    { name: "out of bounds offset", output: unrepairableContinuingRelation({ evidenceRefs: [{ eventId: "event-a", startOffset: 5, endOffset: 99, quote: "availability" }] }) },
+    { name: "inverted offset", output: unrepairableContinuingRelation({ evidenceRefs: [{ eventId: "event-a", startOffset: 17, endOffset: 5, quote: "" }] }) },
+    { name: "quote mismatch", output: unrepairableContinuingRelation({ evidenceRefs: [{ eventId: "event-a", startOffset: 5, endOffset: 17, quote: "different" }] }) },
     { name: "unknown candidateIndex", output: plannerOutput({ contextRelationCandidates: [relation({ candidateIndex: 1, kind: "supplement_existing", refs: ["cycle-a"] })] }) },
     { name: "duplicate candidateIndex", output: plannerOutput({ tasks: [task(0), task(1)], contextRelationCandidates: [relation({ candidateIndex: 0, kind: "supplement_existing", refs: ["cycle-a"] }), relation({ candidateIndex: 0, kind: "supplement_existing", refs: ["cycle-a"] })] }) },
     { name: "burst wrong source", output: continuingRelation({ evidenceRefs: [{ eventId: "burst-a", startOffset: 0, endOffset: 6, quote: "Second" }] }), events: burstEvents }

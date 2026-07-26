@@ -273,9 +273,34 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
       { taskId: "bbq", type: "policy", sourceText: "可以烤肉嗎？", requestedOutputs: ["policy"], dependsOnStayContext: false, entity: { category: "policy", rawText: "烤肉", canonicalCandidate: "bbq", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }
     ], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "multi_task"
   }) };
-  const multiTaskEngine = new ConversationEngineV2({ planner: explicitPlanner(multiTaskPlanner), persistence, getProperty: () => multiRoomProperty,
-    availabilityResolver: (query) => ({ ...query, availabilityReliable: true, rooms: multiRoomProperty.rooms.filter((room) => room.id !== "r3"), lineUrl: "" }), listPriceOverrides: () => [], now: () => new Date("2026-07-17T02:00:00.000Z") });
+  const mismatchedEvidencePlanner = {
+    classify: async (input) => {
+      const output = await multiTaskPlanner.classify(input);
+      const tasks = output.tasks.map((task, candidateIndex) => ({ ...task, candidateIndex }));
+      return {
+        ...output,
+        tasks,
+        contextRelationCandidates: tasks.map((task) => ({
+          candidateIndex: task.candidateIndex,
+          kind: "new_request",
+          candidateRequestCycleRefs: [],
+          evidenceRefs: [{ eventId: "planner-invented-event", messageRef: "", startOffset: 999, endOffset: 1000, quote: "planner mismatch" }]
+        }))
+      };
+    }
+  };
+  const multiTaskDiagnostics = [];
+  const multiTaskEngine = new ConversationEngineV2({ planner: mismatchedEvidencePlanner, persistence, getProperty: () => multiRoomProperty,
+    availabilityResolver: (query) => ({ ...query, availabilityReliable: true, rooms: multiRoomProperty.rooms.filter((room) => room.id !== "r3"), lineUrl: "" }), listPriceOverrides: () => [], now: () => new Date("2026-07-17T02:00:00.000Z"),
+    onDiagnostic: (item) => multiTaskDiagnostics.push(item) });
   const multiTask = await multiTaskEngine.process({ customerId: "p1", channelId: "c1", lineUserId: "multi", eventId: "multi-1", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？" });
+  assert.notEqual(multiTask.finalDecision.reasonCode, "context_relation_invalid", "unique exact task sourceText must prevent the real three-question evidence mismatch fallback");
+  const multiTaskContextValidation = multiTaskDiagnostics.find((item) => item.stage === "context_validation");
+  assert.deepEqual(multiTaskContextValidation.candidates.map((candidate) => candidate.evidenceSourceMatches), [[true], [true], [true]]);
+  assert.equal(multiTaskDiagnostics.some((item) => item.stage === "fallback" && item.reasonCode === "context_relation_invalid"), false);
+  for (const stage of ["temporal", "formal_request", "query_plan", "executor"]) {
+    assert.ok(multiTaskDiagnostics.some((item) => item.stage === stage), `canonical evidence must continue through ${stage}`);
+  }
   const availabilityResult = multiTask.taskResults.find((item) => item.taskId === "availability");
   assert.equal(availabilityResult.status, "answered");
   assert.deepEqual(availabilityResult.facts.availableInventory.map((item) => item.canonicalId), ["r1", "r2"]);

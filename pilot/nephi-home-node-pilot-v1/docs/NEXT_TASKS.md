@@ -48,6 +48,12 @@
 
 ## 2026-07-26 Safe context-validation diagnostics
 
-- Review the local test-only safe formatter change and its integration evidence; no additional behavior work is required in this task.
+- The safe formatter checkpoint `35acec8d070726df1029d324028f665d76e8493f` is pushed; no additional behavior work is required in that task.
 - Preserve Planner, validator, relation rules, and fallback unchanged.
-- Do not commit, push, deploy, operate Render or LINE, or change credentials without explicit authorization.
+- Do not deploy, operate Render or LINE, or change credentials without explicit authorization.
+
+## 2026-07-26 Canonical Planner evidence coordinates
+
+- Review the local deterministic evidence-normalization fix and its RED/GREEN production-equivalent replay.
+- Preserve exact-only matching and the unchanged context validator; do not add fuzzy matching or repair ambiguous evidence.
+- Do not push, deploy, operate Render or LINE, or change model, credentials, or environment variables without explicit authorization.

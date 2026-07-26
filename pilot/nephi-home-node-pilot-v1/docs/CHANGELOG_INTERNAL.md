@@ -77,3 +77,8 @@
 
 - Added a test-only `context_validation` trace projection with allowlisted rejection paths, candidate index, relation kind, cycle/evidence counts, and per-evidence source-match booleans.
 - Raw quotes, guest text, evidence identifiers, property data, and credentials remain excluded; Planner, validator, relation, and fallback behavior are unchanged.
+
+## 2026-07-26 — Canonical Planner evidence coordinates
+
+- Added deterministic exact-match normalization between semantic validation and context validation so a uniquely present task `sourceText` receives canonical event/message identifiers, offsets, and quote without weakening the evidence validator.
+- Missing, empty, repeated, ambiguous, or unidentifiable sources remain unchanged and continue to the existing safe rejection path.

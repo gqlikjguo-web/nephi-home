@@ -17,6 +17,7 @@ const { availabilityTraceSummary } = require("./resolver-adapter");
 const { pendingFromResults } = require("./pending-request");
 const { buildContextSnapshot } = require("./contracts");
 const { validateUnderstandingContext, evidenceMatchesSource } = require("./understanding-validator");
+const { normalizePlannerEvidenceCoordinates } = require("./evidence-normalizer");
 const { buildFormalRequest, buildQueryPlan, resultForNotReady } = require("./formal-request");
 const { buildFinalDecision } = require("./final-decision");
 const { SAFE_HANDOFF_TEXT, buildFinalResponse } = require("./final-response-renderer");
@@ -349,6 +350,7 @@ class ConversationEngineV2 {
       this.traceContexts.delete(traceId);
       return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
+    plannerOutput = normalizePlannerEvidenceCoordinates(plannerOutput, sourceEvents);
     const contextValidation = validateUnderstandingContext(plannerOutput, contextSnapshot, { sourceEvents, scope });
     this.trace(traceId, "context_validation", {
       snapshotCycleIds: contextSnapshot.cycles.map((item) => item.requestCycleId),
