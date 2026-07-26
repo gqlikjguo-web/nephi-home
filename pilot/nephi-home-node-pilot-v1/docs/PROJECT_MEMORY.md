@@ -95,3 +95,10 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - The replay now produces three successful evidence source matches and continues through temporal, FormalRequest, QueryPlan, and executor without a parking classification change.
 - Exact-match edge cases, relation/evidence defenses, Planner semantics/fallback, Phase 6/7, runtime uniqueness, and one complete `npm.cmd test` pass with exit 0 and empty stderr.
 - The fix remains local pending review; no push, deployment, Render operation, LINE operation, model, credential, or environment change occurred.
+
+## 2026-07-27 Parking routing and mixed results
+
+- A real test-only replay proved that canonical `parking` was structurally valid but incorrectly retained the `availability` capability, so it requested stay dates instead of reading the property-scoped parking fact.
+- The local fix deterministically maps canonical `parking` to the shared property-catalog amenity capability and prevents the availability Resolver from running for parking questions.
+- Mixed answer plus clarification/review plans now preserve deterministic per-task sections; a scoped unknown no longer converts safe answered sections into `claim_validation_failed`, while high-risk tasks still require handoff.
+- The real three-question regression, single parking variants, Phase 6/7 regressions, runtime uniqueness, and one complete `npm.cmd test` pass with exit 0. No push, deployment, Render operation, LINE operation, or credential change is authorized here.

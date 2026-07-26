@@ -1,6 +1,7 @@
 "use strict";
 const assert = require("node:assert/strict");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
+const { composeSection } = require("../lib/conversation-engine-v2/controlled-composer");
 const { formatSafeTestOnlyConversationTrace } = require("../server");
 
 const states = new Map(), logs = [];
@@ -259,6 +260,106 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
   assert.equal(groundedReply.replyText, "有一個停車位");
   assert.equal(groundedDiagnostics.find((item) => item.stage === "composer").composerSource, "openai");
   assert.equal(groundedDiagnostics.find((item) => item.stage === "composer").fallbackOccurred, false);
+  for (const [index, question] of ["有車位嗎？", "停車方便嗎？", "需要預約車位嗎？"].entries()) {
+    let parkingAvailabilityCalls = 0;
+    const parkingPlanner = { classify: async () => ({
+      schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
+      stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
+      tasks: [{ taskId: "parking", type: "availability", sourceText: question, requestedOutputs: ["availability", "policy"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "停車", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }],
+      ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "parking_question"
+    }) };
+    const parkingEngine = new ConversationEngineV2({
+      planner: explicitPlanner(parkingPlanner), persistence, getProperty: () => property,
+      availabilityResolver: () => { parkingAvailabilityCalls += 1; throw new Error("parking_must_not_call_availability"); },
+      listPriceOverrides: () => []
+    });
+    const parkingReply = await parkingEngine.process({ customerId: "p1", channelId: "parking", lineUserId: `parking-${index}`, eventId: `parking-${index}`, eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: question });
+    assert.equal(parkingReply.taskResults[0].status, "answered");
+    assert.equal(parkingReply.taskResults[0].type, "amenity");
+    assert.equal(parkingReply.taskResults[0].facts.source, "property_catalog");
+    assert.equal(parkingReply.taskResults[0].facts.answer, "有一個停車位");
+    assert.equal(parkingAvailabilityCalls, 0);
+    assert.equal(parkingReply.finalDecision.action, "reply");
+    assert.equal(parkingReply.replyText, "有一個停車位");
+  }
+  const parkingUnknownPlanner = { classify: async () => ({
+    schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
+    stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
+    tasks: [{ taskId: "parking", type: "availability", sourceText: "有車位嗎？", requestedOutputs: ["availability"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }],
+    ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "parking_unknown"
+  }) };
+  const propertyWithoutParkingFact = { ...property, commonAnswers: {}, semanticCatalog: { aliases: { parking: ["車位"] }, amenities: [] } };
+  let parkingUnknownAvailabilityCalls = 0;
+  const parkingUnknownEngine = new ConversationEngineV2({
+    planner: explicitPlanner(parkingUnknownPlanner), persistence, getProperty: () => propertyWithoutParkingFact,
+    availabilityResolver: () => { parkingUnknownAvailabilityCalls += 1; throw new Error("parking_must_not_call_availability"); },
+    listPriceOverrides: () => []
+  });
+  const parkingUnknown = await parkingUnknownEngine.process({ customerId: "p1", channelId: "parking", lineUserId: "parking-unknown", eventId: "parking-unknown", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "有車位嗎？" });
+  assert.equal(parkingUnknown.taskResults[0].status, "needs_human");
+  assert.equal(parkingUnknown.taskResults[0].reason, "property_fact_unknown");
+  assert.equal(parkingUnknownAvailabilityCalls, 0);
+  assert.equal(parkingUnknown.finalDecision.action, "handoff");
+  assert.ok(parkingUnknown.replyText.includes("需要請業者確認"));
+  assert.ok(!parkingUnknown.replyText.includes("停車場"));
+
+  async function runMixedResult({ id, messageText, tasks }) {
+    let composerCalls = 0;
+    const mixedPlanner = { classify: async () => ({
+      schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
+      stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
+      tasks, ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "mixed_result"
+    }) };
+    const diagnostics = [];
+    const mixedEngine = new ConversationEngineV2({
+      planner: explicitPlanner(mixedPlanner), persistence, getProperty: () => property,
+      availabilityResolver, listPriceOverrides: () => [],
+      composer: { compose: async () => { composerCalls += 1; throw new Error("mixed_plan_must_remain_deterministic"); } },
+      onDiagnostic: (item) => diagnostics.push(item)
+    });
+    const result = await mixedEngine.process({ customerId: "p1", channelId: "mixed", lineUserId: id, eventId: id, eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText });
+    return { result, diagnostics, composerCalls };
+  }
+
+  const parkingTask = { taskId: "parking", type: "availability", sourceText: "有車位嗎？", requestedOutputs: ["availability"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 };
+  const mixedUnknown = await runMixedResult({
+    id: "mixed-unknown", messageText: "有車位嗎？未知問題",
+    tasks: [parkingTask, { taskId: "unknown", type: "unknown", sourceText: "未知問題", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "other", rawText: "未知問題", canonicalCandidate: null, confidence: 0.9 }, stayCandidate: null, confidence: 0.9 }]
+  });
+  assert.deepEqual(mixedUnknown.result.taskResults.map((item) => item.status), ["answered", "needs_human"]);
+  assert.equal(mixedUnknown.composerCalls, 0);
+  assert.equal(mixedUnknown.diagnostics.find((item) => item.stage === "composer").validationResult, "accepted");
+  assert.equal(mixedUnknown.result.claimValidation.ok, true);
+  assert.equal(mixedUnknown.result.finalDecision.action, "reply");
+  assert.equal(mixedUnknown.result.finalDecision.reviewRequired, true);
+  assert.ok(mixedUnknown.result.replyText.includes("有一個停車位"));
+  assert.ok(mixedUnknown.result.replyText.includes("需要請業者確認"));
+
+  const mixedClarification = await runMixedResult({
+    id: "mixed-clarification", messageText: "有車位嗎？有雙人房嗎？",
+    tasks: [parkingTask, { taskId: "room", type: "availability", sourceText: "有雙人房嗎？", requestedOutputs: ["availability"], dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: "r1", confidence: 0.99 }, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, confidence: 0.99 }]
+  });
+  assert.equal(mixedClarification.result.taskResults.find((item) => item.taskId === "parking").status, "answered");
+  assert.equal(mixedClarification.result.taskResults.find((item) => item.taskId === "room").status, "needs_clarification");
+  assert.equal(mixedClarification.composerCalls, 0);
+  assert.equal(mixedClarification.diagnostics.find((item) => item.stage === "composer").validationResult, "accepted");
+  assert.equal(mixedClarification.result.claimValidation.ok, true);
+  assert.equal(mixedClarification.result.finalDecision.action, "clarification");
+  assert.ok(mixedClarification.result.replyText.includes("有一個停車位"));
+  assert.ok(mixedClarification.result.replyText.includes("請補充入住日期。"));
+
+  const mixedHighRisk = await runMixedResult({
+    id: "mixed-high-risk", messageText: "有車位嗎？高風險問題",
+    tasks: [parkingTask, { taskId: "risk", type: "high_risk", sourceText: "高風險問題", requestedOutputs: ["handoff"], dependsOnStayContext: false, entity: { category: "other", rawText: "高風險問題", canonicalCandidate: null, confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }]
+  });
+  assert.deepEqual(mixedHighRisk.result.taskResults.map((item) => item.status), ["answered", "needs_human"]);
+  assert.equal(mixedHighRisk.composerCalls, 0);
+  assert.equal(mixedHighRisk.result.claimValidation.ok, true);
+  assert.equal(mixedHighRisk.result.finalDecision.action, "handoff");
+  assert.equal(mixedHighRisk.result.finalDecision.reasonCode, "unsupported_capability");
+  assert.ok(mixedHighRisk.result.replyText.includes("有一個停車位"));
+  assert.ok(mixedHighRisk.result.replyText.includes("需要請業者確認"));
+
   const multiRoomProperty = { ...property, rooms: [
     { id: "r1", name: "A 雙人房", type: "雙人房", capacity: 2, enabled: true },
     { id: "r2", name: "B 雙人房", type: "雙人房", capacity: 2, enabled: true },
@@ -269,7 +370,7 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
     stay: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: 1, guestCountCandidate: null },
     tasks: [
       { taskId: "availability", type: "availability", sourceText: "8/6 有雙人房嗎？", requestedOutputs: ["room_options", "availability"], dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: null, confidence: 0.95 }, stayCandidate: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: 1, guestCountCandidate: null }, confidence: 0.95 },
-      { taskId: "parking", type: "amenity", sourceText: "有車位嗎？", requestedOutputs: ["availability", "policy"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 },
+      { taskId: "parking", type: "availability", sourceText: "有車位嗎？", requestedOutputs: ["availability", "policy"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 },
       { taskId: "bbq", type: "policy", sourceText: "可以烤肉嗎？", requestedOutputs: ["policy"], dependsOnStayContext: false, entity: { category: "policy", rawText: "烤肉", canonicalCandidate: "bbq", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }
     ], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "multi_task"
   }) };
@@ -290,8 +391,11 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
     }
   };
   const multiTaskDiagnostics = [];
+  let multiTaskAvailabilityCalls = 0;
   const multiTaskEngine = new ConversationEngineV2({ planner: mismatchedEvidencePlanner, persistence, getProperty: () => multiRoomProperty,
-    availabilityResolver: (query) => ({ ...query, availabilityReliable: true, rooms: multiRoomProperty.rooms.filter((room) => room.id !== "r3"), lineUrl: "" }), listPriceOverrides: () => [], now: () => new Date("2026-07-17T02:00:00.000Z"),
+    availabilityResolver: (query) => { multiTaskAvailabilityCalls += 1; return { ...query, availabilityReliable: true, rooms: multiRoomProperty.rooms.filter((room) => room.id !== "r3"), lineUrl: "" }; },
+    composer: { compose: async (plan) => ({ sections: plan.sections.map((section) => ({ taskId: section.taskId, responseMode: section.responseMode, text: section.responseMode === "clarification" ? "使用限制目前沒有正式資料" : composeSection(section) })) }) },
+    listPriceOverrides: () => [], now: () => new Date("2026-07-17T02:00:00.000Z"),
     onDiagnostic: (item) => multiTaskDiagnostics.push(item) });
   const multiTask = await multiTaskEngine.process({ customerId: "p1", channelId: "c1", lineUserId: "multi", eventId: "multi-1", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？" });
   assert.notEqual(multiTask.finalDecision.reasonCode, "context_relation_invalid", "unique exact task sourceText must prevent the real three-question evidence mismatch fallback");
@@ -302,11 +406,36 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
     assert.ok(multiTaskDiagnostics.some((item) => item.stage === stage), `canonical evidence must continue through ${stage}`);
   }
   const availabilityResult = multiTask.taskResults.find((item) => item.taskId === "availability");
+  const parkingResult = multiTask.taskResults.find((item) => item.taskId === "parking");
+  const bbqResult = multiTask.taskResults.find((item) => item.taskId === "bbq");
+  const multiTaskComposerTrace = multiTaskDiagnostics.find((item) => item.stage === "composer");
+  assert.deepEqual({
+    parkingStatus: parkingResult.status,
+    composerValidationResult: multiTaskComposerTrace.validationResult,
+    finalAction: multiTask.finalDecision.action,
+    finalReasonCode: multiTask.finalDecision.reasonCode
+  }, {
+    parkingStatus: "answered",
+    composerValidationResult: "accepted",
+    finalAction: "reply",
+    finalReasonCode: "execution_answered"
+  });
   assert.equal(availabilityResult.status, "answered");
+  assert.equal(availabilityResult.facts.source, "availability_resolver");
+  assert.equal(parkingResult.facts.source, "property_catalog");
+  assert.equal(parkingResult.facts.answer, "有停車位");
+  assert.equal(bbqResult.status, "answered");
+  assert.equal(bbqResult.facts.source, "property_catalog");
+  assert.equal(multiTaskAvailabilityCalls, 1);
+  assert.equal(multiTask.taskResults.length, 3);
   assert.deepEqual(availabilityResult.facts.availableInventory.map((item) => item.canonicalId), ["r1", "r2"]);
   assert.ok(multiTask.replyText.includes("A 雙人房"));
   assert.ok(multiTask.replyText.includes("B 雙人房"));
+  assert.ok(multiTask.replyText.includes("有停車位"));
+  assert.ok(multiTask.replyText.includes("可依規則烤肉"));
   assert.ok(!multiTask.replyText.includes("哪一個"));
+  assert.ok(!multiTask.replyText.includes("使用限制目前沒有正式資料"));
+  assert.equal(multiTask.claimValidation.ok, true);
   assert.deepEqual(multiTask.claimValidation.missingTaskIds, []);
 
   function temporalPlanner({ message, operations = [], tasks, nightsCandidate = null, guestCountCandidate = null }) {

@@ -57,7 +57,20 @@ async function main() {
     ]));
     assert.equal(baseQuestion.tasks[0].detailIntent, "general", `${canonicalCandidate} base question must use general`);
     assert.deepEqual(baseQuestion.tasks[0].requestedOutputs, ["answer"]);
-    assert.equal(baseQuestion.semanticValidation.repairedTasks[0].reason, "eligibility_evidence_missing");
+    assert.equal(baseQuestion.semanticValidation.repairedTasks[0].reason, canonicalCandidate === "parking" ? "parking_contract_mismatch" : "eligibility_evidence_missing");
+  }
+
+  for (const sourceText of ["有車位嗎", "停車方便嗎", "需要預約車位嗎"]) {
+    const parking = applyPlannerSemanticContract(plan([
+      task({ taskId: "parking", type: "availability", category: "amenity", canonicalCandidate: "parking", requestedOutputs: ["availability", "policy"], sourceText })
+    ]));
+    assert.equal(parking.tasks[0].type, "amenity");
+    assert.equal(parking.tasks[0].entity.category, "amenity");
+    assert.equal(parking.tasks[0].entity.canonicalCandidate, "parking");
+    assert.equal(parking.tasks[0].dependsOnStayContext, false);
+    assert.equal(parking.tasks[0].stayCandidate, null);
+    assert.deepEqual(parking.tasks[0].requestedOutputs, ["answer"]);
+    assert.deepEqual(parking.semanticValidation.repairedTasks.map((item) => item.reason), ["parking_contract_mismatch"]);
   }
 
   for (const trueEligibility of [

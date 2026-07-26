@@ -110,7 +110,12 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
       }
     }
 
-    if (task.entity.canonicalCandidate === "location") {
+    if (task.entity.canonicalCandidate === "parking") {
+      const changed = task.type !== "amenity" || entity.category !== "amenity" || task.detailIntent !== "general"
+        || task.dependsOnStayContext !== false || task.stayCandidate !== null;
+      task = { ...task, type: "amenity", detailIntent: "general", requestedOutputs: ["answer"], dependsOnStayContext: false, stayCandidate: null, entity: { ...task.entity, category: "amenity", canonicalCandidate: "parking" } };
+      if (changed) repairedTasks.push({ taskId: task.taskId, index, reason: "parking_contract_mismatch" });
+    } else if (task.entity.canonicalCandidate === "location") {
       const changed = task.type !== "property_fact" || entity.category !== "transport" || task.detailIntent !== "general";
       task = { ...task, type: "property_fact", detailIntent: "general", requestedOutputs: ["map_url"], entity: { ...task.entity, category: "transport", canonicalCandidate: "location" } };
       if (changed) repairedTasks.push({ taskId: task.taskId, index, reason: "location_contract_mismatch" });

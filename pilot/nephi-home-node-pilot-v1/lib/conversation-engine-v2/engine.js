@@ -484,7 +484,10 @@ class ConversationEngineV2 {
     const deterministicReply = composeControlledReply(responsePlan);
     let replyText = deterministicReply, claimedTaskIds = null, composedSections = null;
     let composerSource = "deterministic", fallbackOccurred = false, rejectionReasonCodes = [];
-    if (this.composer && typeof this.composer.compose === "function") {
+    const hasAnswerSection = responsePlan.sections.some((section) => section.responseMode === "answer");
+    const hasIncompleteSection = responsePlan.sections.some((section) => section.responseMode !== "answer");
+    const composerEligible = !(hasAnswerSection && hasIncompleteSection);
+    if (composerEligible && this.composer && typeof this.composer.compose === "function") {
       try {
         const composed = mergeComposedSections(responsePlan, await this.composer.compose(responsePlan));
         if (composed.ok) {

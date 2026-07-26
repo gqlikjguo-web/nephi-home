@@ -57,3 +57,9 @@
 - Review the local deterministic evidence-normalization fix and its RED/GREEN production-equivalent replay.
 - Preserve exact-only matching and the unchanged context validator; do not add fuzzy matching or repair ambiguous evidence.
 - Do not push, deploy, operate Render or LINE, or change model, credentials, or environment variables without explicit authorization.
+
+## 2026-07-27 Parking routing and mixed results
+
+- Review the local canonical parking route and mixed-result partial-answer regression before any deployment.
+- After separate authorization, deploy only to test-only and repeat `8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？`; confirm room availability, official parking fact, and official BBQ fact are all present.
+- Preserve scoped safe clarification/review text and mandatory high-risk handoff. Do not push, deploy, operate Render or LINE, or change credentials in the implementation task.

@@ -79,3 +79,9 @@ When diagnosing context-relation rejection, emit only controlled structural path
 ## 2026-07-26 — Canonicalize coordinates only from unique exact source text
 
 Model-generated evidence coordinates are not trustworthy merely because the task meaning is valid. Before context validation, coordinates may be rebuilt only when one task maps to one candidate and its unchanged `sourceText` has exactly one occurrence in one uniquely identifiable source event. Otherwise preserve the Planner evidence and let the unchanged validator reject it; never use fuzzy matching or relax event, offset, or quote checks.
+
+## 2026-07-27 — Route canonical facts before readiness and isolate mixed sections
+
+A canonical property fact can pass Planner schema validation while carrying the wrong capability. Correct the controlled canonical tuple before FormalRequest readiness so parking never inherits stay-date requirements or invokes the availability Resolver.
+
+For mixed execution results, validate and render each deterministic section from its own outcome. Do not ask a free-form Composer to reconcile answered sections with clarification or review sections, because rejection of one incomplete section can incorrectly poison grounded answers. Keep mandatory high-risk handoff in FinalDecision and retain scoped review records for ordinary unknown facts.

@@ -82,3 +82,7 @@
 
 - Added deterministic exact-match normalization between semantic validation and context validation so a uniquely present task `sourceText` receives canonical event/message identifiers, offsets, and quote without weakening the evidence validator.
 - Missing, empty, repeated, ambiguous, or unidentifiable sources remain unchanged and continue to the existing safe rejection path.
+
+## 2026-07-27 — Canonical parking route and scoped mixed results
+
+- Canonical parking questions now use the property-scoped fact catalog without stay dates or availability resolution, and mixed answer plus incomplete sections preserve safe per-task output without weakening Claim Validator or mandatory high-risk handoff.

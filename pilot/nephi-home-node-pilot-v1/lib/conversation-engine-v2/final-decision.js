@@ -2,6 +2,7 @@
 
 const HANDOFF_OUTCOMES = new Set(["unknown", "property_data_missing", "technical_error", "invalid_query_plan"]);
 const REPLY_OUTCOMES = new Set(["answered", "no_availability"]);
+const MANDATORY_HANDOFF_TYPES = new Set(["booking_request", "human_help", "high_risk"]);
 
 function unique(values) { return [...new Set(values.filter(Boolean))]; }
 
@@ -33,11 +34,17 @@ function buildFinalDecision({ executionOutcomes = [], plannerFailure = "", claim
   if (plannerFailure) return { action: "handoff", reasonCode: String(plannerFailure), taskIds, missingFields, reviewRequired: true, executionSummary: summary };
   if (claimValidation && claimValidation.ok === false) return { action: "handoff", reasonCode: "claim_validation_failed", taskIds, missingFields, reviewRequired: true, executionSummary: summary };
   if (!outcomes.length) return { action: "no_reply", reasonCode: noReplyReason || "no_actionable_requests", taskIds, missingFields, reviewRequired: false, executionSummary: summary };
+  const answered = outcomes.some((item) => item && REPLY_OUTCOMES.has(item.outcome));
+  const mandatoryHandoff = outcomes.find((item) => item && HANDOFF_OUTCOMES.has(item.outcome)
+    && (MANDATORY_HANDOFF_TYPES.has(item.type) || MANDATORY_HANDOFF_TYPES.has(item.reason)));
+  if (mandatoryHandoff) return { action: "handoff", reasonCode: mandatoryHandoff.reason || mandatoryHandoff.outcome, taskIds, missingFields, reviewRequired: true, executionSummary: summary };
+  const scopedReview = outcomes.some((item) => item && HANDOFF_OUTCOMES.has(item.outcome));
+  if (answered && scopedReview) return { action: "reply", reasonCode: "execution_answered", taskIds, missingFields, reviewRequired: true, executionSummary: summary };
   const handoff = outcomes.find((item) => item && HANDOFF_OUTCOMES.has(item.outcome));
   if (handoff) return { action: "handoff", reasonCode: handoff.reason || handoff.outcome, taskIds, missingFields, reviewRequired: true, executionSummary: summary };
   const clarification = outcomes.find((item) => item && item.outcome === "not_ready");
   if (clarification) return { action: "clarification", reasonCode: clarification.readinessStatus || "not_ready", taskIds, missingFields, clarificationCandidates, reviewRequired: false, executionSummary: summary };
-  if (outcomes.some((item) => item && REPLY_OUTCOMES.has(item.outcome))) return { action: "reply", reasonCode: "execution_answered", taskIds, missingFields, reviewRequired: false, executionSummary: summary };
+  if (answered) return { action: "reply", reasonCode: "execution_answered", taskIds, missingFields, reviewRequired: false, executionSummary: summary };
   return { action: "handoff", reasonCode: "unsupported_execution_outcome", taskIds, missingFields, reviewRequired: true, executionSummary: summary };
 }
 
