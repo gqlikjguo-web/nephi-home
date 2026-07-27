@@ -11,6 +11,7 @@ function toProperty(homestay) {
     displayName: homestay.name,
     rooms: (homestay.rooms || []).map(normalizeRoomRecord),
     commonAnswers: homestay.safeFacts || {},
+    propertyFacts: homestay.propertyFacts || [],
     pricing: homestay.pricing || {},
     faqs: homestay.faqs || [],
     humanHandoffSituations: homestay.humanHandoffSituations || [],
@@ -45,6 +46,17 @@ class JsonCustomerSettingsProvider extends CustomerSettingsProvider {
       safeFacts: input.commonAnswers,
       businessProfile: input.businessProfile,
       lineUrl: input.contactLink
+    });
+    return toProperty(updated);
+  }
+  updatePropertyFacts(propertyId, propertyFacts) {
+    const current = this.repository.getHomestay(propertyId);
+    if (!current) return null;
+    const updated = this.repository.updateHomestay(propertyId, {
+      name: current.name,
+      rooms: current.rooms || [],
+      safeFacts: current.safeFacts || {},
+      propertyFacts
     });
     return toProperty(updated);
   }

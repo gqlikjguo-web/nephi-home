@@ -13,6 +13,7 @@
   <section id="propertyChooser" class="card login" hidden><h2>選擇要管理的旅宿</h2><p class="hint">此 Email 可管理多家旅宿，請選擇本次要進入的後台。</p><div id="propertyChoices" class="property-choices"></div><p id="propertyChoiceMessage" class="message" role="alert"></p></section>
   <div id="workspace" hidden>
     <section class="card profile-card"><h2>基本資料</h2><form id="profileForm"><label>民宿名稱<input id="profileName" required maxlength="80"></label><label>Google Maps 網址<input id="profileGoogleMapsUrl" type="url" inputmode="url"></label><label>LINE 官方帳號連結<input id="profileLineUrl" type="url" inputmode="url"></label><label>聯絡方式<input id="profileContactInfo" maxlength="300"></label><div class="two"><label>入住時間<input id="profileCheckInTime" type="time" required></label><label>退房時間<input id="profileCheckOutTime" type="time" required></label></div><button>儲存基本資料</button><p id="profileStatus" class="message" role="status" aria-live="polite"></p></form></section>
+    <section class="card property-facts-card"><h2>正式設施與規則資料</h2><p class="hint">每筆資料皆限目前旅宿使用。狀態、適用範圍、費用、條件與時段會存入正式資料，再由 AI 依資料回答。</p><form id="propertyFactsForm"><div id="propertyFactsList"></div><div class="actions"><button id="propertyFactAdd" type="button" class="secondary">新增正式資料</button><button type="submit">儲存正式資料</button></div><p id="propertyFactsStatus" class="message" role="status" aria-live="polite"></p></form></section>
     <section class="card availability-card">
       <div class="toolbar availability-toolbar"><div><p class="eyebrow" id="propertyLabel"></p><h2>房況管理</h2></div><label>月份<input id="month" type="month"></label></div>
       <div class="availability-view-tabs" role="group" aria-label="房況檢視模式"><button type="button" data-view="daily" aria-pressed="true">每日房況</button><button type="button" data-view="calendar" aria-pressed="false">月曆</button></div>
@@ -34,6 +35,7 @@
   </div>
   <footer><small>© {{PUBLIC_BRAND_NAME}}</small></footer>
 </main>
+<script src="/assets/property-facts-form.js" defer></script>
 <script src="/assets/admin.js" defer></script>
 </body>
 </html>

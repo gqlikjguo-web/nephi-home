@@ -4,6 +4,7 @@ const { ROOM_COLUMNS } = require("./domain");
 const { createServiceDataAccess } = require("./providers/service-data-access");
 const { roomMatchesType } = require("./conversation-coordinator");
 const { normalizeGoogleMapsUrl } = require("./google-maps-url");
+const { normalizePropertyFacts } = require("./property-facts");
 
 const ALLOWED_STATUSES = new Set(["available", "closed"]);
 const ALLOWED_ACTIONS = new Set(["correct", "needs_fix", "should_handoff"]);
@@ -435,6 +436,26 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       checkInTime: String(updated.commonAnswers && updated.commonAnswers.checkInTime || ""),
       checkOutTime: String(updated.commonAnswers && updated.commonAnswers.checkOutTime || "")
     };
+  }
+
+  function getPropertyFacts(customerId) {
+    const property = providers.customerSettings.getProperty(String(customerId || "").trim());
+    if (!property) throw new AppError(404, "UNKNOWN_CUSTOMER_ID", "Unknown propertyId");
+    return { propertyId: property.propertyId, facts: property.propertyFacts || [] };
+  }
+
+  function updatePropertyFacts(input) {
+    const propertyId = String(input.customerId || input.propertyId || "").trim();
+    const property = providers.customerSettings.getProperty(propertyId);
+    if (!property) throw new AppError(404, "UNKNOWN_CUSTOMER_ID", "Unknown propertyId");
+    let facts;
+    try {
+      facts = normalizePropertyFacts(input.facts);
+    } catch {
+      throw new AppError(400, "INVALID_PROPERTY_FACT", "Property facts are invalid");
+    }
+    const updated = providers.customerSettings.updatePropertyFacts(propertyId, facts);
+    return { propertyId: updated.propertyId, facts: updated.propertyFacts || [] };
   }
 
   function searchAvailableDates(query) {
@@ -1018,6 +1039,8 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     getBootstrap,
     getPropertyProfile,
     updatePropertyProfile,
+    getPropertyFacts,
+    updatePropertyFacts,
     updateSettings,
     searchAvailability,
     searchAvailableDates,

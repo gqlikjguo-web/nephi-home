@@ -157,7 +157,7 @@ function cookieValue(request, name) {
 }
 
 function isAdminDataRoute(pathname) {
-  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname === "/api/property-profile" || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
+  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname === "/api/property-profile" || pathname === "/api/property-facts" || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
 }
 
 function sendData(response, data, status = 200) {
@@ -531,6 +531,8 @@ function createRequestHandler(service, options = {}) {
       }
       if (request.method === "GET" && pathname === "/api/property-profile") return sendData(response, service.getPropertyProfile(url.searchParams.get("propertyId") || url.searchParams.get("customerId")));
       if (request.method === "PUT" && pathname === "/api/property-profile") { const body = request.adminBody || await readJsonBody(request); return sendData(response, service.updatePropertyProfile({ ...body, customerId: body.propertyId || body.customerId })); }
+      if (request.method === "GET" && pathname === "/api/property-facts") return sendData(response, service.getPropertyFacts(url.searchParams.get("propertyId") || url.searchParams.get("customerId")));
+      if (request.method === "PUT" && pathname === "/api/property-facts") { const body = request.adminBody || await readJsonBody(request); return sendData(response, service.updatePropertyFacts({ ...body, customerId: body.propertyId || body.customerId })); }
       if (request.method === "PUT" && pathname === "/api/settings") {
         return sendData(response, { settings: service.updateSettings(request.adminBody || await readJsonBody(request)) });
       }

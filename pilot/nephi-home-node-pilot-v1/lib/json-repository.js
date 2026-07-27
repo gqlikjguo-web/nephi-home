@@ -191,6 +191,7 @@ class JsonFileRepository {
       homestay.name = input.name;
       homestay.rooms = input.rooms.map((room) => ({ ...room }));
       homestay.safeFacts = { ...input.safeFacts };
+      if (Object.hasOwn(input, "propertyFacts")) homestay.propertyFacts = JSON.parse(JSON.stringify(input.propertyFacts || []));
       if (input.businessProfile) homestay.businessProfile = { ...input.businessProfile };
       if (Object.hasOwn(input, "lineUrl")) homestay.lineUrl = input.lineUrl;
       homestay.updatedAt = this.now().toISOString();
