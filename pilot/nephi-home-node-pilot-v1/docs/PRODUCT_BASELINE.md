@@ -71,3 +71,10 @@
 - Relative days, relative weekdays, weekends, absolute dates, ranges, and night counts share one deterministic grammar with an injectable clock and property timezone.
 - A current unresolved date intent clears stale stay dates. Prior dates may be reused only through an explicit approved context-reuse path.
 - State, FormalRequest, QueryPlan, pending logic, and Executor must not parse, repair, infer, or replace canonical temporal meaning.
+
+## Persistent Planner provider diagnostic boundary
+
+- Test-only `planner_error` records persist only trace ID plus bounded provider attempt/status values, timeout, sanitized provider type/code/param, a fixed safe category, retryability, response-body presence, and parsed-output presence.
+- Safe categories are limited to `timeout`, `rate_limit`, `provider_5xx`, `invalid_request`, `empty_response`, `json_parse`, `structured_output`, `network`, and `unknown`.
+- The diagnostic boundary does not retry or change the existing `planner_parse_failed` handoff, safe fallback, or LINE delivery behavior.
+- Raw provider bodies and messages, prompts, guest content, source identifiers, property data, headers, stacks, API keys, tokens, and credentials never enter the persisted trace.

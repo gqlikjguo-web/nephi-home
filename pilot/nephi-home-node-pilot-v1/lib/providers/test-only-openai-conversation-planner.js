@@ -9,21 +9,41 @@ function safeProviderErrorField(value, maxLength) {
   return /^[A-Za-z0-9._:-]+$/.test(text) ? text.slice(0, maxLength) : "";
 }
 
-async function readSafeProviderError(response) {
+async function readProviderPayload(response) {
+  if (response && typeof response.text === "function") {
+    let text = "";
+    try { text = String(await response.text() || ""); }
+    catch { return { payload: null, responseBodyPresent: false, jsonParseFailed: true }; }
+    if (!text) return { payload: null, responseBodyPresent: false, jsonParseFailed: false };
+    try { return { payload: JSON.parse(text), responseBodyPresent: true, jsonParseFailed: false }; }
+    catch { return { payload: null, responseBodyPresent: true, jsonParseFailed: true }; }
+  }
   try {
     const payload = await response.json();
-    const providerError = payload && payload.error && typeof payload.error === "object" ? payload.error : {};
-    return {
-      providerErrorType: safeProviderErrorField(providerError.type, 120),
-      providerErrorCode: safeProviderErrorField(providerError.code, 120),
-      providerErrorParam: safeProviderErrorField(providerError.param, 200)
-    };
+    return { payload, responseBodyPresent: payload !== undefined && payload !== null, jsonParseFailed: false };
   } catch {
-    return { providerErrorType: "", providerErrorCode: "", providerErrorParam: "" };
+    return { payload: null, responseBodyPresent: true, jsonParseFailed: true };
   }
 }
 
-function plannerFailure({ code, category, status = 0, timeout = false, model = "", name = "Error", providerErrorType = "", providerErrorCode = "", providerErrorParam = "" }) {
+function safeProviderError(payload) {
+  const providerError = payload && payload.error && typeof payload.error === "object" ? payload.error : {};
+  return {
+    providerErrorType: safeProviderErrorField(providerError.type, 120),
+    providerErrorCode: safeProviderErrorField(providerError.code, 120),
+    providerErrorParam: safeProviderErrorField(providerError.param, 200)
+  };
+}
+
+function structuredOutputFailed(payload) {
+  if (!payload || typeof payload !== "object") return false;
+  if (payload.status === "incomplete" || payload.status === "failed") return true;
+  return (Array.isArray(payload.output) ? payload.output : []).some((item) =>
+    (Array.isArray(item && item.content) ? item.content : []).some((part) => part && part.type === "refusal")
+  );
+}
+
+function plannerFailure({ code, category, status = 0, timeout = false, model = "", name = "Error", providerErrorType = "", providerErrorCode = "", providerErrorParam = "", providerAttemptCount = 1, retryable = false, responseBodyPresent = false, parsedOutputPresent = false }) {
   const error = new Error(code);
   error.name = name;
   error.code = code;
@@ -35,15 +55,20 @@ function plannerFailure({ code, category, status = 0, timeout = false, model = "
   error.providerErrorType = safeProviderErrorField(providerErrorType, 120);
   error.providerErrorCode = safeProviderErrorField(providerErrorCode, 120);
   error.providerErrorParam = safeProviderErrorField(providerErrorParam, 200);
+  error.providerAttemptCount = Number.isInteger(providerAttemptCount) && providerAttemptCount >= 0 ? providerAttemptCount : 1;
+  error.retryable = Boolean(retryable);
+  error.responseBodyPresent = Boolean(responseBodyPresent);
+  error.parsedOutputPresent = Boolean(parsedOutputPresent);
   error.safePlannerFailure = true;
   return error;
 }
 
-function httpFailure(status, model, providerError) {
-  if (status === 401 || status === 403) return plannerFailure({ code: "planner_authentication_error", category: "authentication", status, model, ...providerError });
-  if (status === 404) return plannerFailure({ code: "planner_model_not_found", category: "provider", status, model, ...providerError });
-  if (status === 429) return plannerFailure({ code: "planner_rate_limit", category: "rate_limit", status, model, ...providerError });
-  return plannerFailure({ code: status >= 500 && status <= 599 ? "planner_provider_error" : "planner_http_error", category: "provider", status, model, ...providerError });
+function httpFailure(status, model, providerError, responseBodyPresent) {
+  if (status === 401 || status === 403) return plannerFailure({ code: "planner_authentication_error", category: "invalid_request", status, model, responseBodyPresent, ...providerError });
+  if (status === 404) return plannerFailure({ code: "planner_model_not_found", category: "invalid_request", status, model, responseBodyPresent, ...providerError });
+  if (status === 429) return plannerFailure({ code: "planner_rate_limit", category: "rate_limit", status, model, retryable: true, responseBodyPresent, ...providerError });
+  if (status >= 500 && status <= 599) return plannerFailure({ code: "planner_provider_error", category: "provider_5xx", status, model, retryable: true, responseBodyPresent, ...providerError });
+  return plannerFailure({ code: "planner_http_error", category: "invalid_request", status, model, responseBodyPresent, ...providerError });
 }
 
 function instructions() {
@@ -73,7 +98,7 @@ function outputText(payload) { if (payload && typeof payload.output_text === "st
 
 class TestOnlyOpenAiConversationPlanner {
   constructor({ apiKey, model, fetchImpl = globalThis.fetch, timeoutMs = 15000 }) {
-    if (!apiKey || !model) throw plannerFailure({ code: "planner_configuration_error", category: "configuration", model });
+    if (!apiKey || !model) throw plannerFailure({ code: "planner_configuration_error", category: "unknown", model, providerAttemptCount: 0 });
     this.apiKey = apiKey;
     this.model = model;
     this.provider = PLANNER_PROVIDER;
@@ -84,21 +109,27 @@ class TestOnlyOpenAiConversationPlanner {
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` }, signal: controller.signal, body: JSON.stringify({ model: this.model, input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] } }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerJsonSchema() } } }) });
-      if (!response.ok) {
-        const providerError = await readSafeProviderError(response);
-        throw httpFailure(Number(response.status || response.statusCode || 0), this.model, providerError);
+      const status = Number(response.status || response.statusCode || 0);
+      const providerPayload = await readProviderPayload(response);
+      if (!response.ok) throw httpFailure(status, this.model, safeProviderError(providerPayload.payload), providerPayload.responseBodyPresent);
+      if (!providerPayload.responseBodyPresent) {
+        throw plannerFailure({ code: "planner_empty_response", category: "empty_response", status, model: this.model });
       }
-      let payload;
-      try { payload = await response.json(); }
-      catch { throw plannerFailure({ code: "planner_parse_error", category: "parse", model: this.model, name: "SyntaxError" }); }
+      if (providerPayload.jsonParseFailed) {
+        throw plannerFailure({ code: "planner_parse_error", category: "json_parse", status, model: this.model, name: "SyntaxError", responseBodyPresent: true });
+      }
+      const payload = providerPayload.payload;
       const text = outputText(payload);
-      if (!text) throw plannerFailure({ code: "planner_empty_response", category: "empty_response", model: this.model });
+      if (!text && structuredOutputFailed(payload)) {
+        throw plannerFailure({ code: "planner_structured_output_error", category: "structured_output", status, model: this.model, responseBodyPresent: true });
+      }
+      if (!text) throw plannerFailure({ code: "planner_empty_response", category: "empty_response", status, model: this.model, responseBodyPresent: true });
       try { return JSON.parse(text); }
-      catch { throw plannerFailure({ code: "planner_parse_error", category: "parse", model: this.model, name: "SyntaxError" }); }
+      catch { throw plannerFailure({ code: "planner_parse_error", category: "json_parse", status, model: this.model, name: "SyntaxError", responseBodyPresent: true, parsedOutputPresent: true }); }
     } catch (error) {
       if (error && error.safePlannerFailure) throw error;
-      if (error && error.name === "AbortError") throw plannerFailure({ code: "planner_timeout", category: "timeout", timeout: true, model: this.model, name: "AbortError" });
-      throw plannerFailure({ code: "planner_unknown_error", category: "unknown", model: this.model });
+      if (error && error.name === "AbortError") throw plannerFailure({ code: "planner_timeout", category: "timeout", timeout: true, model: this.model, name: "AbortError", retryable: true });
+      throw plannerFailure({ code: "planner_network_error", category: "network", model: this.model, retryable: true });
     } finally { clearTimeout(timer); }
   }
 }

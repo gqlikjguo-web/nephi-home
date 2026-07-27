@@ -104,3 +104,11 @@
 **Reason:** Planner labels and candidate dates can be inconsistent, while State and FormalRequest previously had fallback paths that could preserve or reintroduce stale executable dates. This allowed identical relative-date requests to diverge after planning.
 
 **Constraint:** State may persist but not reinterpret the canonical result. FormalRequest, QueryPlan, pending-state logic, and Executor may only consume it. An unresolved current temporal intent expires prior stay dates. Relative days, relative weekdays, weekends, absolute dates, ranges, and night counts use the same property-timezone-aware grammar and injectable clock.
+
+## D-014 — Planner provider failure diagnostics are persistent and allowlisted
+
+**Decision:** Test-only application logs may persist a `planner_error` record keyed by trace ID with only the approved provider-attempt, HTTP, timeout, sanitized provider error, category, retryability, response-body-presence, and parsed-output-presence fields.
+
+**Reason:** A generic `planner_parse_failed` outcome did not distinguish transient provider failures from invalid requests, empty responses, parse failures, structured-output failures, or network failures after the original exception boundary completed.
+
+**Constraint:** The diagnostic boundary performs no retry and changes no Planner request or fallback behavior. Raw bodies, provider messages, prompts, guest text, source identifiers, headers, secrets, credentials, property data, and stacks must not enter the error object or persisted trace.

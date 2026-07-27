@@ -30,6 +30,12 @@
 - The Bot User ID is a non-secret identifier obtained from the same Messaging API Channel's LINE Developers Basic settings page. Never copy it from another Channel or guess it.
 - Channel Secret and Access Token remain sensitive and must never be written to documentation, Git, or conversation logs.
 
+## Test-only Planner provider diagnostics
+
+- Persisted `planner_error` records are keyed by trace ID and use a closed allowlist. They may contain bounded attempt/status values, booleans, fixed categories, model/provider identifiers, and sanitized provider error type/code/param only.
+- Raw response bodies are inspected only long enough to derive allowlisted booleans and fields, then discarded. Provider messages, refusal text, prompts, guest content, source identifiers, property data, headers, stacks, tokens, API keys, credentials, and raw JSON must never be attached to errors or logs.
+- Diagnostic callbacks and application logging remain isolated from the conversation fallback. A logging failure cannot prevent `planner_parse_failed` from reaching the safe handoff and existing LINE delivery path.
+
 ## Property-scoped LINE binding
 
 - 共用多業者 route 使用 `/api/line/webhooks/<webhookKey>`；`webhookKey` 只用來選出唯一候選 binding，不直接授權 property。

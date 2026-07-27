@@ -23,8 +23,8 @@ const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const TEST_LINE_WEBHOOK_ROUTE = "/api/test-line/webhook";
 const SAFE_PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
-const SAFE_PLANNER_ERROR_CODES = new Set(["planner_authentication_error", "planner_model_not_found", "planner_rate_limit", "planner_provider_error", "planner_http_error", "planner_timeout", "planner_parse_error", "planner_empty_response", "planner_configuration_error", "planner_unknown_error"]);
-const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["authentication", "rate_limit", "provider", "timeout", "parse", "empty_response", "configuration", "unknown"]);
+const SAFE_PLANNER_ERROR_CODES = new Set(["planner_authentication_error", "planner_model_not_found", "planner_rate_limit", "planner_provider_error", "planner_http_error", "planner_timeout", "planner_parse_error", "planner_empty_response", "planner_structured_output_error", "planner_network_error", "planner_configuration_error", "planner_unknown_error"]);
+const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "unknown"]);
 const SAFE_CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
 
 function safeDiagnosticLabel(value, fallback, maxLength) {
@@ -79,7 +79,11 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       provider: safeDiagnosticLabel(details.provider, "unknown", 40),
       providerErrorType: safeDiagnosticLabel(details.providerErrorType, "", 120),
       providerErrorCode: safeDiagnosticLabel(details.providerErrorCode, "", 120),
-      providerErrorParam: safeDiagnosticLabel(details.providerErrorParam, "", 200)
+      providerErrorParam: safeDiagnosticLabel(details.providerErrorParam, "", 200),
+      providerAttemptCount: Math.min(safeDiagnosticCount(details.providerAttemptCount), 10),
+      retryable: Boolean(details.retryable),
+      responseBodyPresent: Boolean(details.responseBodyPresent),
+      parsedOutputPresent: Boolean(details.parsedOutputPresent)
     };
   }
   if (details.stage === "validation") return {

@@ -76,3 +76,9 @@
 - Preserve the runtime-uniqueness mutation guard: Engine invokes one canonical resolver, while State, FormalRequest, QueryPlan, pending logic, and Executor remain non-authoritative consumers.
 - If separately authorized in an environment with the existing test-only OpenAI settings, run the 20-times-per-phrase real-provider stability gate before deployment.
 - Do not push, deploy, operate Render or LINE, or change credentials or environment variables without separate authorization.
+
+## 2026-07-27 Persistent safe Planner provider diagnostics
+
+- Review the local allowlisted provider-failure projection and its timeout, HTTP, empty-response, parse, structured-output, network, log-persistence, no-retry, and sensitive-data-exclusion tests.
+- Preserve the existing Planner request, single-attempt behavior, `planner_parse_failed` handoff, final response, and LINE transport.
+- Do not push, deploy, operate Render or LINE, or read/change credentials or environment variables without separate authorization.

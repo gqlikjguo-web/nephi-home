@@ -117,3 +117,11 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - Fixed-clock signed-webhook regressions cover availability plus parking, BBQ, and pool, with Composer acceptance, Claim Validator pass, FinalDecision reply, and one LINE mock call.
 - Targeted gates and one complete `npm.cmd test` pass with OS exit 0 and empty stderr. The real-provider 20-run stability matrix was not rerun because this local environment has no test OpenAI key or model setting.
 - The fix remains local; no push, deployment, Render operation, LINE operation, credential change, or environment change occurred.
+
+## 2026-07-27 Persistent safe Planner provider diagnostics
+
+- Test-only `planner_error` application logs now persist the trace ID plus attempt count, normalized HTTP status, timeout, sanitized provider type/code/param, safe category, retryability, response-body presence, and parsed-output presence.
+- Failure categories distinguish timeout, rate limit, provider 5xx, invalid request, empty response, JSON parse, structured output, network, and unknown without retaining raw provider content.
+- The provider still performs exactly one request. Planner failure still follows `planner_parse_failed` to the existing safe handoff and LINE delivery path.
+- Targeted Planner, Phase 6/7, runtime-uniqueness tests and one complete `npm.cmd test` pass with exit 0 and empty stderr.
+- The diagnostics remain local pending review; no push, deployment, Render operation, LINE operation, credential read, or environment change occurred.

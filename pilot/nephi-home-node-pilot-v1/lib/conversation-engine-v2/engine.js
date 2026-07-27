@@ -201,7 +201,7 @@ function confirmedInventoryFromTask(catalog, candidate) {
 }
 
 const SAFE_FALLBACK = SAFE_HANDOFF_TEXT;
-const PLANNER_ERROR_CATEGORIES = new Set(["authentication", "rate_limit", "provider", "timeout", "parse", "empty_response", "configuration", "unknown"]);
+const PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "unknown"]);
 const PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
 
 function safePlannerProviderErrorField(value, maxLength) {
@@ -214,37 +214,43 @@ function safePlannerErrorDiagnostic(error, planner) {
   const status = Number(error && (error.status || error.statusCode));
   const httpStatus = Number.isInteger(status) && status >= 100 && status <= 599 ? status : 0;
   const timeout = Boolean(error && (error.timeout === true || error.name === "AbortError"));
-  let errorCategory = configured && PLANNER_ERROR_CATEGORIES.has(error && error.errorCategory)
+  const suppliedCategory = configured && PLANNER_ERROR_CATEGORIES.has(error && error.errorCategory)
     ? error.errorCategory
-    : configured ? "unknown" : "configuration";
+    : "unknown";
+  let errorCategory = suppliedCategory;
   let errorCode = "planner_unknown_error";
   if (!configured) {
+    errorCategory = "unknown";
     errorCode = "planner_configuration_error";
   } else if (timeout) {
     errorCategory = "timeout";
     errorCode = "planner_timeout";
   } else if (httpStatus === 401 || httpStatus === 403) {
-    errorCategory = "authentication";
+    errorCategory = "invalid_request";
     errorCode = "planner_authentication_error";
   } else if (httpStatus === 404) {
-    errorCategory = "provider";
+    errorCategory = "invalid_request";
     errorCode = "planner_model_not_found";
   } else if (httpStatus === 429) {
     errorCategory = "rate_limit";
     errorCode = "planner_rate_limit";
   } else if (httpStatus >= 500 && httpStatus <= 599) {
-    errorCategory = "provider";
+    errorCategory = "provider_5xx";
     errorCode = "planner_provider_error";
-  } else if (errorCategory === "parse" || error && error.name === "SyntaxError") {
-    errorCategory = "parse";
+  } else if (httpStatus >= 400 && httpStatus <= 499) {
+    errorCategory = "invalid_request";
+    errorCode = "planner_http_error";
+  } else if (errorCategory === "structured_output") {
+    errorCode = "planner_structured_output_error";
+  } else if (errorCategory === "json_parse" || error && error.name === "SyntaxError") {
+    errorCategory = "json_parse";
     errorCode = "planner_parse_error";
   } else if (errorCategory === "empty_response") {
     errorCode = "planner_empty_response";
-  } else if (errorCategory === "configuration") {
-    errorCode = "planner_configuration_error";
-  } else if (errorCategory === "provider") {
-    errorCode = "planner_http_error";
+  } else if (errorCategory === "network") {
+    errorCode = "planner_network_error";
   }
+  const attemptCount = Number(error && error.providerAttemptCount);
   return {
     errorName: PLANNER_ERROR_NAMES.has(error && error.name) ? error.name : "Error",
     errorCode,
@@ -255,7 +261,11 @@ function safePlannerErrorDiagnostic(error, planner) {
     provider: configured ? String(error && error.plannerProvider || planner.provider || "unknown").slice(0, 40) : "unknown",
     providerErrorType: safePlannerProviderErrorField(error && error.providerErrorType, 120),
     providerErrorCode: safePlannerProviderErrorField(error && error.providerErrorCode, 120),
-    providerErrorParam: safePlannerProviderErrorField(error && error.providerErrorParam, 200)
+    providerErrorParam: safePlannerProviderErrorField(error && error.providerErrorParam, 200),
+    providerAttemptCount: configured && Number.isInteger(attemptCount) && attemptCount >= 0 ? Math.min(attemptCount, 10) : 0,
+    retryable: Boolean(error && error.retryable),
+    responseBodyPresent: Boolean(error && error.responseBodyPresent),
+    parsedOutputPresent: Boolean(error && error.parsedOutputPresent)
   };
 }
 

@@ -95,3 +95,8 @@
 
 - Added one deterministic temporal authority for relative days, weekdays, weekends, absolute dates, ranges, and night counts, using the property timezone and an injectable clock.
 - State and FormalRequest now consume the canonical result without restoring stale dates; fixed-clock unit, state, signed-webhook, mixed-capability, and runtime-uniqueness gates prevent a second active temporal writer.
+
+## 2026-07-27 — Persistent safe Planner provider diagnostics
+
+- Test-only application logs now retain an allowlisted, trace-ID-addressable Planner provider failure record covering attempt count, HTTP/timeout state, sanitized provider fields, safe category, retryability, and response/output presence.
+- Added timeout, 400/429/5xx, empty-response, JSON-parse, structured-output, network, no-retry, fallback-isolation, and sensitive-data-exclusion coverage without changing Planner requests or business behavior.

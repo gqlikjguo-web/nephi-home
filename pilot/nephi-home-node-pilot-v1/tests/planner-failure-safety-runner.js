@@ -111,11 +111,15 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
     "errorName",
     "httpStatus",
     "model",
+    "parsedOutputPresent",
     "propertyId",
     "provider",
+    "providerAttemptCount",
     "providerErrorCode",
     "providerErrorParam",
     "providerErrorType",
+    "responseBodyPresent",
+    "retryable",
     "scope",
     "stage",
     "timeout",
@@ -131,6 +135,10 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
   assert.equal(diagnostic.providerErrorType, expected.providerErrorType || "");
   assert.equal(diagnostic.providerErrorCode, expected.providerErrorCode || "");
   assert.equal(diagnostic.providerErrorParam, expected.providerErrorParam || "");
+  assert.equal(diagnostic.providerAttemptCount, expected.providerAttemptCount === undefined ? 1 : expected.providerAttemptCount);
+  assert.equal(diagnostic.retryable, Boolean(expected.retryable));
+  assert.equal(diagnostic.responseBodyPresent, Boolean(expected.responseBodyPresent));
+  assert.equal(diagnostic.parsedOutputPresent, Boolean(expected.parsedOutputPresent));
   const serialized = JSON.stringify(diagnostic);
   for (const forbidden of Object.values(sensitive)) {
     assert.equal(serialized.includes(forbidden), false, `${name} diagnostic leaked ${forbidden}`);
@@ -146,6 +154,16 @@ function openAiPlanner(fetchImpl) {
   });
 }
 
+function providerResponse(status, body) {
+  const text = String(body || "");
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => text,
+    json: async () => JSON.parse(text)
+  };
+}
+
 async function main() {
   for (const output of [null, undefined, "not-an-object", { schemaVersion: 2 }]) await engineResult(output);
 
@@ -159,38 +177,55 @@ async function main() {
   const normalized = normalizePlannerOutput({ ...valid, tasks: [{ ...valid.tasks[0], detailIntent: "general" }, { ...valid.tasks[0], taskId: "t2", detailIntent: "free_text" }] });
   assert.equal(normalized.tasks.length, 2);
   assert.equal(normalized.tasks[1].detailIntent, "general");
+  const successfulPlannerTrace = formatSafeTestOnlyConversationTrace({
+    traceId: "successful-planner-trace",
+    propertyId: property.propertyId,
+    stage: "planner",
+    parserSucceeded: true,
+    taskCount: 1,
+    tasks: valid.tasks,
+    messageText: sensitive.guestMessage,
+    prompt: sensitive.prompt,
+    responseBody: sensitive.responseBody,
+    apiKey: sensitive.apiKey
+  });
+  assert.equal(successfulPlannerTrace.parserSucceeded, true);
+  assert.equal(successfulPlannerTrace.providerAttemptCount, undefined, "successful Planner traces must not add failure metadata");
+  for (const forbidden of Object.values(sensitive)) {
+    assert.equal(JSON.stringify(successfulPlannerTrace).includes(forbidden), false, `successful Planner trace leaked ${forbidden}`);
+  }
 
-  const httpFailure = (status) => openAiPlanner(async () => ({
-    ok: false,
-    status,
-    json: async () => ({ output_text: sensitive.responseBody })
-  }));
+  const httpFailure = (status) => openAiPlanner(async () => providerResponse(status, JSON.stringify({
+    raw: sensitive.responseBody
+  })));
   await plannerFailureDiagnostic({
     name: "http-401",
     planner: httpFailure(401),
-    expected: { errorName: "Error", errorCode: "planner_authentication_error", httpStatus: 401, timeout: false, errorCategory: "authentication", model, provider: "openai" }
+    expected: { errorName: "Error", errorCode: "planner_authentication_error", httpStatus: 401, timeout: false, errorCategory: "invalid_request", model, provider: "openai", responseBodyPresent: true }
   });
   await plannerFailureDiagnostic({
     name: "http-404",
     planner: httpFailure(404),
-    expected: { errorName: "Error", errorCode: "planner_model_not_found", httpStatus: 404, timeout: false, errorCategory: "provider", model, provider: "openai" }
+    expected: { errorName: "Error", errorCode: "planner_model_not_found", httpStatus: 404, timeout: false, errorCategory: "invalid_request", model, provider: "openai", responseBodyPresent: true }
   });
   await plannerFailureDiagnostic({
     name: "http-429",
     planner: httpFailure(429),
-    expected: { errorName: "Error", errorCode: "planner_rate_limit", httpStatus: 429, timeout: false, errorCategory: "rate_limit", model, provider: "openai" }
+    expected: { errorName: "Error", errorCode: "planner_rate_limit", httpStatus: 429, timeout: false, errorCategory: "rate_limit", model, provider: "openai", retryable: true, responseBodyPresent: true }
   });
+  let provider5xxAttemptCount = 0;
   await plannerFailureDiagnostic({
     name: "http-503",
-    planner: httpFailure(503),
-    expected: { errorName: "Error", errorCode: "planner_provider_error", httpStatus: 503, timeout: false, errorCategory: "provider", model, provider: "openai" }
+    planner: openAiPlanner(async () => {
+      provider5xxAttemptCount += 1;
+      return providerResponse(503, JSON.stringify({ raw: sensitive.responseBody }));
+    }),
+    expected: { errorName: "Error", errorCode: "planner_provider_error", httpStatus: 503, timeout: false, errorCategory: "provider_5xx", model, provider: "openai", retryable: true, responseBodyPresent: true }
   });
+  assert.equal(provider5xxAttemptCount, 1, "provider failure diagnostics must not add retry");
   await plannerFailureDiagnostic({
     name: "http-400-invalid-schema",
-    planner: openAiPlanner(async () => ({
-      ok: false,
-      status: 400,
-      json: async () => ({
+    planner: openAiPlanner(async () => providerResponse(400, JSON.stringify({
         error: {
           message: sensitive.providerMessage,
           type: "invalid_request_error",
@@ -198,56 +233,49 @@ async function main() {
           param: "text.format.schema"
         },
         raw: sensitive.responseBody
-      })
-    })),
+      }))),
     expected: {
       errorName: "Error",
       errorCode: "planner_http_error",
       httpStatus: 400,
       timeout: false,
-      errorCategory: "provider",
+      errorCategory: "invalid_request",
       model,
       provider: "openai",
       providerErrorType: "invalid_request_error",
       providerErrorCode: "invalid_json_schema",
-      providerErrorParam: "text.format.schema"
+      providerErrorParam: "text.format.schema",
+      responseBodyPresent: true
     }
   });
   await plannerFailureDiagnostic({
     name: "http-400-non-json",
-    planner: openAiPlanner(async () => ({
-      ok: false,
-      status: 400,
-      json: async () => { throw new SyntaxError(sensitive.responseBody); }
-    })),
-    expected: { errorName: "Error", errorCode: "planner_http_error", httpStatus: 400, timeout: false, errorCategory: "provider", model, provider: "openai" }
+    planner: openAiPlanner(async () => providerResponse(400, sensitive.responseBody)),
+    expected: { errorName: "Error", errorCode: "planner_http_error", httpStatus: 400, timeout: false, errorCategory: "invalid_request", model, provider: "openai", responseBodyPresent: true }
   });
   const longProviderType = "a".repeat(160);
   const longProviderParam = "text.format.schema.".repeat(20);
   await plannerFailureDiagnostic({
     name: "http-400-provider-field-sanitization",
-    planner: openAiPlanner(async () => ({
-      ok: false,
-      status: 400,
-      json: async () => ({
+    planner: openAiPlanner(async () => providerResponse(400, JSON.stringify({
         error: {
           type: longProviderType,
           code: "invalid json schema!",
           param: longProviderParam
         }
-      })
-    })),
+      }))),
     expected: {
       errorName: "Error",
       errorCode: "planner_http_error",
       httpStatus: 400,
       timeout: false,
-      errorCategory: "provider",
+      errorCategory: "invalid_request",
       model,
       provider: "openai",
       providerErrorType: longProviderType.slice(0, 120),
       providerErrorCode: "",
-      providerErrorParam: longProviderParam.slice(0, 200)
+      providerErrorParam: longProviderParam.slice(0, 200),
+      responseBodyPresent: true
     }
   });
   await plannerFailureDiagnostic({
@@ -257,27 +285,40 @@ async function main() {
       error.name = "AbortError";
       throw error;
     }),
-    expected: { errorName: "AbortError", errorCode: "planner_timeout", httpStatus: 0, timeout: true, errorCategory: "timeout", model, provider: "openai" }
+    expected: { errorName: "AbortError", errorCode: "planner_timeout", httpStatus: 0, timeout: true, errorCategory: "timeout", model, provider: "openai", retryable: true }
   });
   await plannerFailureDiagnostic({
     name: "empty-response",
-    planner: openAiPlanner(async () => ({ ok: true, status: 200, json: async () => ({ output_text: "" }) })),
-    expected: { errorName: "Error", errorCode: "planner_empty_response", httpStatus: 0, timeout: false, errorCategory: "empty_response", model, provider: "openai" }
+    planner: openAiPlanner(async () => providerResponse(200, "")),
+    expected: { errorName: "Error", errorCode: "planner_empty_response", httpStatus: 200, timeout: false, errorCategory: "empty_response", model, provider: "openai" }
   });
   await plannerFailureDiagnostic({
-    name: "parse",
-    planner: openAiPlanner(async () => ({ ok: true, status: 200, json: async () => ({ output_text: `{${sensitive.responseBody}` }) })),
-    expected: { errorName: "SyntaxError", errorCode: "planner_parse_error", httpStatus: 0, timeout: false, errorCategory: "parse", model, provider: "openai" }
+    name: "response-json-parse",
+    planner: openAiPlanner(async () => providerResponse(200, sensitive.responseBody)),
+    expected: { errorName: "SyntaxError", errorCode: "planner_parse_error", httpStatus: 200, timeout: false, errorCategory: "json_parse", model, provider: "openai", responseBodyPresent: true }
   });
   await plannerFailureDiagnostic({
-    name: "generic",
+    name: "output-json-parse",
+    planner: openAiPlanner(async () => providerResponse(200, JSON.stringify({ output_text: `{${sensitive.responseBody}` }))),
+    expected: { errorName: "SyntaxError", errorCode: "planner_parse_error", httpStatus: 200, timeout: false, errorCategory: "json_parse", model, provider: "openai", responseBodyPresent: true, parsedOutputPresent: true }
+  });
+  await plannerFailureDiagnostic({
+    name: "structured-output-refusal",
+    planner: openAiPlanner(async () => providerResponse(200, JSON.stringify({
+      status: "incomplete",
+      output: [{ type: "message", content: [{ type: "refusal", refusal: sensitive.providerMessage }] }]
+    }))),
+    expected: { errorName: "Error", errorCode: "planner_structured_output_error", httpStatus: 200, timeout: false, errorCategory: "structured_output", model, provider: "openai", responseBodyPresent: true }
+  });
+  await plannerFailureDiagnostic({
+    name: "network",
     planner: openAiPlanner(async () => { throw new Error(`${sensitive.responseBody} ${sensitive.guestMessage}`); }),
-    expected: { errorName: "Error", errorCode: "planner_unknown_error", httpStatus: 0, timeout: false, errorCategory: "unknown", model, provider: "openai" }
+    expected: { errorName: "Error", errorCode: "planner_network_error", httpStatus: 0, timeout: false, errorCategory: "network", model, provider: "openai", retryable: true }
   });
   await plannerFailureDiagnostic({
     name: "configuration",
     planner: null,
-    expected: { errorName: "TypeError", errorCode: "planner_configuration_error", httpStatus: 0, timeout: false, errorCategory: "configuration", model: "", provider: "unknown" }
+    expected: { errorName: "TypeError", errorCode: "planner_configuration_error", httpStatus: 0, timeout: false, errorCategory: "unknown", model: "", provider: "unknown", providerAttemptCount: 0 }
   });
 
   const throwingDiagnosticEngine = new ConversationEngineV2({
@@ -301,6 +342,59 @@ async function main() {
   assert.equal(callbackFailureResult.finalDecision.action, "handoff");
   assert.equal(callbackFailureResult.finalDecision.reasonCode, "planner_parse_failed");
   assert.equal(callbackFailureResult.replyText, SAFE_HANDOFF_TEXT);
+
+  const logTemp = fs.mkdtempSync(path.join(os.tmpdir(), "planner-provider-log-"));
+  const logSecret = "planner-provider-log-secret";
+  const applicationLogs = [];
+  const originalConsoleLog = console.log;
+  const logApp = createApp({
+    dataFile: path.join(logTemp, "store.json"),
+    seedFile: path.resolve(__dirname, "../fixtures/seed.json"),
+    lineChannelSecret: logSecret,
+    lineChannelAccessToken: "token",
+    conversationDebounceMs: 1,
+    lineChannelIdentityGuardRequired: false,
+    conversationPlannerV2: openAiPlanner(async () => providerResponse(429, JSON.stringify({
+      error: {
+        message: sensitive.providerMessage,
+        type: "rate_limit_error",
+        code: "rate_limit_exceeded",
+        param: "requests"
+      },
+      raw: sensitive.responseBody
+    }))),
+    lineReplyClientFactory: () => ({ replyMessageWithHttpInfo: async () => ({ httpResponse: { status: 200 } }) })
+  });
+  const logRunning = await logApp.start(0, "127.0.0.1");
+  try {
+    console.log = (...args) => applicationLogs.push(args.map(String).join(" "));
+    await sendWebhook(logRunning.url, logSecret, "planner-provider-log-event", "test");
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  } finally {
+    console.log = originalConsoleLog;
+    await logApp.stop();
+    fs.rmSync(logTemp, { recursive: true, force: true });
+  }
+  const persistedPlannerLog = applicationLogs
+    .map((line) => {
+      try { return JSON.parse(line); }
+      catch { return null; }
+    })
+    .find((entry) => entry && entry.stage === "planner_error");
+  assert.ok(persistedPlannerLog, "test-only application logs must persist planner_error");
+  assert.ok(persistedPlannerLog.traceId, "persisted planner_error must be searchable by traceId");
+  assert.equal(persistedPlannerLog.providerAttemptCount, 1);
+  assert.equal(persistedPlannerLog.errorCategory, "rate_limit");
+  assert.equal(persistedPlannerLog.retryable, true);
+  assert.equal(persistedPlannerLog.responseBodyPresent, true);
+  assert.equal(persistedPlannerLog.parsedOutputPresent, false);
+  assert.equal(persistedPlannerLog.providerErrorType, "rate_limit_error");
+  assert.equal(persistedPlannerLog.providerErrorCode, "rate_limit_exceeded");
+  assert.equal(persistedPlannerLog.providerErrorParam, "requests");
+  const persistedSerialized = JSON.stringify(persistedPlannerLog);
+  for (const forbidden of Object.values(sensitive)) {
+    assert.equal(persistedSerialized.includes(forbidden), false, `application log leaked ${forbidden}`);
+  }
 
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "planner-failure-safety-"));
   const dataFile = path.join(temp, "store.json");
