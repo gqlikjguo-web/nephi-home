@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const {
   resolveCanonicalTemporal
 } = require("../lib/conversation-engine-v2/temporal-resolver");
-const { buildFormalRequest } = require("../lib/conversation-engine-v2/formal-request");
+const { buildFormalRequest, buildQueryPlan } = require("../lib/conversation-engine-v2/formal-request");
 const { reduceConversationState } = require("../lib/conversation-engine-v2/state-reducer");
 
 const EVENT_TIMESTAMP = Date.parse("2026-07-27T10:00:00+08:00");
@@ -230,6 +230,95 @@ const staleState = {
   transition: { set: [], replaced: [], cleared: [], kept: [], sourceEventId: "" },
   updatedAt: "2026-07-27T02:00:00.000Z"
 };
+
+const completeGrammarCases = [
+  { name: "big day after tomorrow", rawText: "大後天", kind: "relative", checkIn: "2026-07-30", checkOut: "2026-07-31" },
+  { name: "five days later", rawText: "五天後", kind: "relative", checkIn: "2026-08-01", checkOut: "2026-08-02" },
+  { name: "one week later", rawText: "一週後", kind: "relative", checkIn: "2026-08-03", checkOut: "2026-08-04" },
+  { name: "two weeks later", rawText: "兩週後", kind: "relative", checkIn: "2026-08-10", checkOut: "2026-08-11" },
+  { name: "Thursday two weeks out", rawText: "下下週四", kind: "weekday", checkIn: "2026-08-13", checkOut: "2026-08-14" },
+  { name: "this weekend", rawText: "這週末", kind: "weekend", checkIn: "2026-08-01", checkOut: "2026-08-02" },
+  { name: "month-name absolute date", rawText: "8月6日", kind: "absolute", checkIn: "2026-08-06", checkOut: "2026-08-07" },
+  { name: "full absolute date", rawText: "2026年8月6日", kind: "absolute", checkIn: "2026-08-06", checkOut: "2026-08-07" }
+];
+
+for (const testCase of completeGrammarCases) {
+  const wrongPlannerCheckIn = "2030-01-01";
+  const wrongPlannerCheckOut = "2030-01-02";
+  const temporalResult = resolve(
+    testCase.rawText,
+    candidate(testCase.rawText, testCase.kind, wrongPlannerCheckIn, wrongPlannerCheckOut)
+  );
+  assert.equal(temporalResult.resolutionStatus, "resolved", `${testCase.name}: canonical temporal must resolve`);
+  assert.equal(temporalResult.checkIn, testCase.checkIn, `${testCase.name}: canonical check-in`);
+  assert.equal(temporalResult.checkOut, testCase.checkOut, `${testCase.name}: canonical check-out`);
+  assert.equal(temporalResult.repairReasonCode, "planner_candidate_rejected", `${testCase.name}: wrong Planner dates must be rejected`);
+  assert.notEqual(temporalResult.checkIn, wrongPlannerCheckIn, `${testCase.name}: Planner check-in cannot become canonical`);
+  assert.notEqual(temporalResult.checkOut, wrongPlannerCheckOut, `${testCase.name}: Planner check-out cannot become canonical`);
+
+  const task = {
+    taskId: `grammar-${testCase.name.replace(/\s+/g, "-")}`,
+    candidateIndex: 0,
+    type: "availability",
+    detailIntent: "general",
+    requestedOutputs: ["availability"],
+    entity: { category: "other", rawText: "", canonicalCandidate: null }
+  };
+  const staleStateForCase = JSON.parse(JSON.stringify(staleState));
+  staleStateForCase.requestCycles[0].confirmedInputs.stay.checkIn = "2026-09-20";
+  staleStateForCase.requestCycles[0].confirmedInputs.stay.checkOut = "2026-09-21";
+  const stateAfterResolved = reduceConversationState(staleStateForCase, {
+    tasks: [task],
+    contextDecisions: [{
+      candidateIndex: 0,
+      action: "continue",
+      requestCycleId: "cycle-stale",
+      referencedRequestCycleId: "cycle-stale"
+    }],
+    candidateInputsByCandidateIndex: {
+      0: {
+        confirmedFields: {},
+        temporalResult,
+        hasNewDateExpression: true,
+        sourceEvidenceRefs: []
+      }
+    }
+  }, {
+    propertyId: "nephi_home",
+    channelId: "test-line",
+    lineUserId: "stale-user",
+    eventId: `event-${testCase.name.replace(/\s+/g, "-")}`,
+    now: "2026-07-27T03:00:00.000Z"
+  });
+  const resolvedCycle = stateAfterResolved.requestCycles[0];
+  assert.equal(resolvedCycle.confirmedInputs.stay.checkIn, testCase.checkIn, `${testCase.name}: State must replace stale check-in`);
+  assert.equal(resolvedCycle.confirmedInputs.stay.checkOut, testCase.checkOut, `${testCase.name}: State must replace stale check-out`);
+  assert.notEqual(resolvedCycle.confirmedInputs.stay.checkIn, staleStateForCase.requestCycles[0].confirmedInputs.stay.checkIn, `${testCase.name}: State must not retain stale check-in`);
+
+  const formalRequest = buildFormalRequest({
+    property: { propertyId: "nephi_home" },
+    task,
+    requestCycleId: "cycle-stale",
+    temporalResult,
+    confirmedInputs: resolvedCycle.confirmedInputs,
+    resolvedEntity: null
+  });
+  assert.equal(formalRequest.readiness.status, "ready", `${testCase.name}: FormalRequest must be ready`);
+  assert.deepEqual(
+    { checkIn: formalRequest.stay.checkIn, checkOut: formalRequest.stay.checkOut },
+    { checkIn: testCase.checkIn, checkOut: testCase.checkOut },
+    `${testCase.name}: FormalRequest must use canonical dates`
+  );
+
+  const queryPlan = buildQueryPlan(formalRequest);
+  assert.ok(queryPlan, `${testCase.name}: ready FormalRequest must create a QueryPlan`);
+  assert.deepEqual(
+    { checkIn: queryPlan.conditions.stay.checkIn, checkOut: queryPlan.conditions.stay.checkOut },
+    { checkIn: testCase.checkIn, checkOut: testCase.checkOut },
+    `${testCase.name}: QueryPlan must preserve the canonical date range`
+  );
+}
+
 const stateAfterUnresolved = reduceConversationState(staleState, {
   tasks: [{
     candidateIndex: 0,
