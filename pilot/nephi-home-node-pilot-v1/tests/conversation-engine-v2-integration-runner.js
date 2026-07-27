@@ -53,7 +53,7 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
     schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
     stay: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2026-08-06", checkOutCandidate: "2026-08-08", nightsCandidate: 2, guestCountCandidate: 2 },
     tasks: [{
-      taskId: "active-engine-price", type: "price", sourceText: "price request", detailIntent: "general", requestedOutputs: ["price"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true,
+      taskId: "active-engine-price", type: "price", sourceText: "8/6 price request", detailIntent: "general", requestedOutputs: ["price"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true,
       entity: { category: "room", rawText: "Price room", canonicalCandidate: "r1", confidence: 0.99 },
       stayCandidate: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2026-08-06", checkOutCandidate: "2026-08-08", nightsCandidate: 2, guestCountCandidate: 2 }, confidence: 0.99
     }], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "active_engine_pricing"
@@ -64,7 +64,7 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
     availableDatesResolver: () => { pricingAvailableDatesCalls += 1; return { status: "answered", dates: [] }; },
     listPriceOverrides: () => [{ roomId: "r1", date: "2026-08-07", price: 2500 }], now: () => new Date("2026-07-17T02:00:00.000Z")
   });
-  const pricingResult = await pricingEngine.process({ customerId: "p1", channelId: "pricing", lineUserId: "pricing-user", eventId: "pricing-event", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "price request" });
+  const pricingResult = await pricingEngine.process({ customerId: "p1", channelId: "pricing", lineUserId: "pricing-user", eventId: "pricing-event", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6 price request" });
   assert.equal(pricingResult.taskResults[0].status, "answered", "active Engine pricing runtime must execute QueryPlan pricing");
   assert.equal(pricingCalls.length, 1, "active Engine pricing runtime must execute QueryPlan pricing through availability Resolver once");
   assert.equal(pricingAvailableDatesCalls, 0, "active Engine pricing runtime must not call available-dates Resolver for price");
@@ -88,7 +88,7 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
     availabilityResolver: (query) => ({ ...query, availabilityReliable: true, rooms: property.rooms, lineUrl: "" }),
     availableDatesResolver: () => ({ status: "answered", dates: [] }), listPriceOverrides: () => [], now: () => new Date("2026-07-17T02:00:00.000Z")
   });
-  const rejectedPricing = await rejectedPricingEngine.process({ customerId: "p1", channelId: "pricing-rejected", lineUserId: "pricing-rejected-user", eventId: "pricing-rejected-event", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "price request" });
+  const rejectedPricing = await rejectedPricingEngine.process({ customerId: "p1", channelId: "pricing-rejected", lineUserId: "pricing-rejected-user", eventId: "pricing-rejected-event", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6 price request" });
   assert.equal(rejectedPricing.finalDecision.action, "handoff", "claim validator rejection must be recorded by FinalDecision even after the safe fallback reply is validated");
   assert.equal(rejectedPricing.finalDecision.reasonCode, "claim_validation_failed");
   assert.equal(rejectedPricing.finalDecision.reviewRequired, true);

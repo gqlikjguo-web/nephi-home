@@ -10,18 +10,16 @@ function stableFormalRequestId({ requestCycleId, task }) {
 function plainStay(temporalResult = {}, confirmedInputs = {}) {
   const confirmed = confirmedInputs.stay || {};
   return {
-    checkIn: temporalResult.checkIn || confirmed.checkIn || null,
-    checkOut: temporalResult.checkOut || confirmed.checkOut || null,
-    nights: Number.isInteger(temporalResult.nights) ? temporalResult.nights : (Number.isInteger(confirmed.nights) ? confirmed.nights : null),
+    checkIn: temporalResult.checkIn || null,
+    checkOut: temporalResult.checkOut || null,
+    nights: Number.isInteger(temporalResult.nights) ? temporalResult.nights : null,
     guests: Number.isInteger(confirmed.guests) ? confirmed.guests : null,
-    searchRange: temporalResult.searchRange || confirmed.searchRange || null
+    searchRange: temporalResult.searchRange || null
   };
 }
 
 function readinessFor({ task, temporalResult = {}, stay, resolvedEntity }) {
   if (!SUPPORTED_CAPABILITIES.has(task.type)) return { status: "unsupported", missingFields: [], invalidFields: [], conflictingFields: [] };
-  if (temporalResult.resolutionStatus === "invalid") return { status: "invalid", missingFields: [], invalidFields: ["stay"], conflictingFields: [] };
-  if (temporalResult.resolutionStatus === "conflicting") return { status: "conflicting", missingFields: [], invalidFields: [], conflictingFields: ["stay"] };
   if (temporalResult.resolutionStatus === "unresolved") return { status: "missing_information", missingFields: ["stay.checkIn"], invalidFields: [], conflictingFields: [] };
   const generic = task.entity && task.entity.category === "other" && task.entity.canonicalCandidate === null;
   if ([...INVENTORY_CAPABILITIES, "available_dates"].includes(task.type) && task.entity && task.entity.rawText && !generic && (!resolvedEntity || !["resolved", "matched_set"].includes(resolvedEntity.status))) return { status: "entity_unresolved", missingFields: [], invalidFields: [], conflictingFields: [] };

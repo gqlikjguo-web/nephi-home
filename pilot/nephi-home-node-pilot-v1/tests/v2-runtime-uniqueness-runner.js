@@ -12,7 +12,9 @@ let engine = read("../lib/conversation-engine-v2/engine.js");
 const executor = read("../lib/conversation-engine-v2/capability-executor.js");
 const finalDecision = read("../lib/conversation-engine-v2/final-decision.js");
 const finalResponseRenderer = read("../lib/conversation-engine-v2/final-response-renderer.js");
-const formalRequest = read("../lib/conversation-engine-v2/formal-request.js");
+let formalRequest = read("../lib/conversation-engine-v2/formal-request.js");
+const stateReducer = read("../lib/conversation-engine-v2/state-reducer.js");
+const temporalAuthority = read("../lib/conversation-engine-v2/temporal-resolver.js");
 const composer = read("../lib/conversation-engine-v2/controlled-composer.js");
 const claimValidator = read("../lib/conversation-engine-v2/claim-validator.js");
 const finalResponseRendererFiles = fs.readdirSync(path.resolve(__dirname, "../lib/conversation-engine-v2"))
@@ -21,6 +23,7 @@ const finalResponseRendererFiles = fs.readdirSync(path.resolve(__dirname, "../li
 if (mutation === "second_runtime") server = server.replace("/* legacy runtime", "const secondRoot = createV2CompositionRoot({});\n  /* legacy runtime");
 if (mutation === "resolver_bypass") engine += "\nfunction forbidden() { return availability.getRows(); }";
 if (mutation === "second_final_renderer") engine += "\nfunction buildFinalResponse() { return { action: 'reply', replyText: '', shouldReply: false }; }";
+if (mutation === "second_temporal_writer") formalRequest += "\nfunction forbiddenTemporalWriter() { return resolveCanonicalTemporal({}); }";
 
 const runtimeEnd = server.indexOf("/* legacy runtime");
 assert.notEqual(runtimeEnd, -1, "runtime boundary marker must exist for the active source audit");
@@ -51,6 +54,11 @@ assert.match(engine, /buildFormalRequest\(/, "V2 must establish a formal request
 assert.match(engine, /buildQueryPlan/, "V2 must establish a query plan before execution");
 assert.match(engine, /executeQueryPlans\(/, "V2 must execute only resolver-backed query plans");
 assert.doesNotMatch(engine, /executeTasks\(/, "V2 must not send Planner tasks directly to the executor");
+assert.match(temporalAuthority, /function resolveCanonicalTemporal/, "the Temporal Resolver module must own the canonical temporal authority");
+assert.equal((engine.match(/resolveCanonicalTemporal\(/g) || []).length, 1, "Engine must invoke the canonical temporal authority at exactly one adapter location");
+assert.doesNotMatch(formalRequest, /resolveCanonicalTemporal|dateExpression|checkInCandidate|checkOutCandidate/, "FormalRequest must consume canonical temporal state without parsing Planner candidates");
+assert.doesNotMatch(stateReducer, /resolveCanonicalTemporal|dateExpression|checkInCandidate|checkOutCandidate/, "State must persist canonical temporal state without parsing Planner candidates");
+assert.doesNotMatch(executor, /resolveCanonicalTemporal|dateExpression|checkInCandidate|checkOutCandidate/, "Executor must consume QueryPlan dates without parsing Planner candidates");
 assert.equal((engine.match(/buildFinalDecision\(/g) || []).length, 1, "Engine must call the FinalDecision builder at one adapter location");
 assert.match(finalDecision, /function buildFinalDecision/, "FinalDecision module is the sole action authority");
 assert.deepEqual(finalResponseRendererFiles, ["final-response-renderer.js"], "exactly one final response renderer module may exist");

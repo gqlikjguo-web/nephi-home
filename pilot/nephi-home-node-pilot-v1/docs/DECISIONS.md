@@ -96,3 +96,11 @@
 **Reason:** The previous catch converted every exception to `planner_parse_failed` without preserving enough safe evidence to distinguish authentication, rate-limit, provider, timeout, parse, empty-response, configuration, and unknown failures.
 
 **Constraint:** Diagnostics must never include messages, prompts, source events, catalogs, response bodies, headers, stacks, tokens, or credentials. The three provider fields are string-only, character-allowlisted, length-limited, and empty when invalid or unavailable. Diagnostic failures are isolated and must not alter the existing `planner_parse_failed` handoff, final response, persistence, or LINE delivery.
+
+## D-013 — Canonical Temporal Authority owns executable dates
+
+**Decision:** Planner temporal fields are candidates only. One `resolveCanonicalTemporal()` boundary receives the guest message, Planner temporal candidate, event timestamp, property timezone, and applicable task IDs, and emits the only executable temporal result with status `absent`, `resolved`, or `unresolved`.
+
+**Reason:** Planner labels and candidate dates can be inconsistent, while State and FormalRequest previously had fallback paths that could preserve or reintroduce stale executable dates. This allowed identical relative-date requests to diverge after planning.
+
+**Constraint:** State may persist but not reinterpret the canonical result. FormalRequest, QueryPlan, pending-state logic, and Executor may only consume it. An unresolved current temporal intent expires prior stay dates. Relative days, relative weekdays, weekends, absolute dates, ranges, and night counts use the same property-timezone-aware grammar and injectable clock.

@@ -70,8 +70,11 @@ function factTask(id, type, rawText, candidate) {
   return { taskId: id, type, sourceText: rawText, requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: type === "policy" ? "policy" : "amenity", rawText, canonicalCandidate: candidate, confidence: 0.99 }, confidence: 0.99 };
 }
 function casePlan(item) {
+  const defaultDateText = item.request && item.request.checkIn
+    ? item.request.checkIn.slice(5).split("-").map(Number).join("/")
+    : "";
   const stay = item.request && item.request.checkIn ? {
-    dateExpression: { rawText: item.dateText || item.request.checkIn.slice(5).replace("-", "/"), kind: "absolute", anchor: "message_time" },
+    dateExpression: { rawText: item.dateText || defaultDateText, kind: "absolute", anchor: "message_time" },
     checkInCandidate: item.request.checkIn, checkOutCandidate: null, nightsCandidate: item.request.nights || 1, guestCountCandidate: item.request.guests || null
   } : { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null };
   const stateOperations = item.request && item.request.checkIn ? [

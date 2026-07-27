@@ -91,3 +91,9 @@ For mixed execution results, validate and render each deterministic section from
 Do not instruct a Composer to paraphrase when its consumer permits only the exact deterministic section. That producer/consumer contradiction turns grounded answers into `ungrounded_section_text`, and a safe fallback can then be incorrectly treated as a failed claim.
 
 Constrain structured Composer output to the exact per-task text already produced from trusted facts, then keep the existing coverage, source, and exact-text validators active. A deterministic answer is still invalid when its fact source is absent, and fabricated or modified text must still be rejected.
+
+## 2026-07-27 — Temporal candidates must never become executable dates directly
+
+Planner temporal output can contain a useful raw expression while its kind or proposed dates are wrong. Binding normalization to the Planner's classification, or letting downstream state/readiness code fall back to prior dates, creates multiple temporal authorities and makes relative-date behavior nondeterministic.
+
+Resolve the unchanged guest temporal span once with an injectable clock and property timezone, then make every later stage read that canonical result. Test fixtures must obey the same source contract: a claimed temporal span must actually occur in the guest message.

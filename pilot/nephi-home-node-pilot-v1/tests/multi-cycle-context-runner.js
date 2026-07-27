@@ -124,21 +124,21 @@ async function explicitStayCandidateContractCoverage() {
     relations: [{ candidateIndex: 0, kind: "new_request" }, { candidateIndex: 1, kind: "new_request" }],
     dateText: "8/6", checkInCandidate: "2026-08-06", guests: 2
   }));
-  assertSafeRejection(topLevelOnly, await topLevelOnly.process("top-only", "top-only-event", "Room A and Room B"), "top-only");
+  assertSafeRejection(topLevelOnly, await topLevelOnly.process("top-only", "top-only-event", "8/6 Room A and Room B"), "top-only");
 
   const oneNullStayDependent = engineHarness();
   oneNullStayDependent.queue(enginePlan({
     tasks: [engineTask(0, "valid-room-a", "availability", "room-a", availabilityStay), engineTask(1, "null-room-b", "availability", "room-b", null)],
     relations: [{ candidateIndex: 0, kind: "new_request" }, { candidateIndex: 1, kind: "new_request" }]
   }));
-  assertSafeRejection(oneNullStayDependent, await oneNullStayDependent.process("one-null", "one-null-event", "Room A and Room B"), "one-null");
+  assertSafeRejection(oneNullStayDependent, await oneNullStayDependent.process("one-null", "one-null-event", "8/6 Room A and Room B"), "one-null");
 
   const mixed = engineHarness();
   mixed.queue(enginePlan({
     tasks: [engineTask(0, "valid-room", "availability", "room-a", availabilityStay), engineTask(1, "valid-parking", "amenity", "parking", null)],
     relations: [{ candidateIndex: 0, kind: "new_request" }, { candidateIndex: 1, kind: "new_request" }]
   }));
-  const mixedResult = await mixed.process("valid-mixed", "valid-mixed-event", "Room A and parking");
+  const mixedResult = await mixed.process("valid-mixed", "valid-mixed-event", "8/6 Room A and parking");
   assert.ok(mixedResult.replyText.length > 0);
   assert.equal(mixed.resolverCalls.length, 1, "an availability task with an explicit stayCandidate must still execute beside a null amenity candidate");
 
@@ -148,7 +148,7 @@ async function explicitStayCandidateContractCoverage() {
     relations,
     dateText: "8/6", checkInCandidate: "2026-08-06", guests: 2
   }));
-  const legacyResult = await singleLegacy.process("legacy-single", "legacy-single-event", "Room A");
+  const legacyResult = await singleLegacy.process("legacy-single", "legacy-single-event", "8/6 Room A");
   assert.ok(legacyResult.replyText.length > 0);
   assert.deepEqual(singleLegacy.resolverCalls.map((call) => [call.roomType, call.checkIn, call.guests]), [["room-a", "2026-08-06", 2]], "a one-task legacy top-level stay must be mechanically compatible");
 }
@@ -163,7 +163,7 @@ async function perCandidateConditionsCoverage() {
   const relations = [{ candidateIndex: 0, kind: "new_request" }, { candidateIndex: 1, kind: "new_request" }];
   const harness = engineHarness();
   harness.queue(enginePlan({ tasks, relations }));
-  const result = await harness.process("candidate-pair", "candidate-pair-event", "Room A and Room B");
+  const result = await harness.process("candidate-pair", "candidate-pair-event", "8/6 Room A and 8/10 Room B");
   const state = harness.state("candidate-pair");
   const cycleA = cycleByInventory(state, "room-a");
   const cycleB = cycleByInventory(state, "room-b");
@@ -181,7 +181,7 @@ async function perCandidateConditionsCoverage() {
 
   const reordered = engineHarness();
   reordered.queue(enginePlan({ tasks: [tasks[1], tasks[0]], relations: [relations[1], relations[0]] }));
-  await reordered.process("candidate-pair", "candidate-pair-reordered", "Room B and Room A");
+  await reordered.process("candidate-pair", "candidate-pair-reordered", "8/10 Room B and 8/6 Room A");
   const reorderedState = reordered.state("candidate-pair");
   assert.equal(cycleByInventory(reorderedState, "room-a").confirmedInputs.stay.checkIn, "2026-08-06", "candidate alignment must not use task or relation array order");
   assert.equal(cycleByInventory(reorderedState, "room-b").confirmedInputs.stay.checkIn, "2026-08-10", "candidate alignment must not use task or relation array order");
@@ -191,7 +191,7 @@ async function perCandidateConditionsCoverage() {
     tasks: [engineTask(0, "mixed-answer", "availability", "room-a", roomAStay), engineTask(1, "mixed-pending", "availability", "room-b", candidateStay("", null, 4))],
     relations
   }));
-  await mixed.process("mixed", "mixed-event", "Room A and Room B");
+  await mixed.process("mixed", "mixed-event", "8/6 Room A and Room B");
   const mixedState = mixed.state("mixed");
   const mixedA = cycleByInventory(mixedState, "room-a");
   const mixedB = cycleByInventory(mixedState, "room-b");
@@ -220,7 +220,7 @@ async function perCandidateConditionsCoverage() {
     relations,
     dateText: "8/6", checkInCandidate: "2026-08-06", guests: 2
   }));
-  const legacyResult = await ambiguousLegacy.process("ambiguous-legacy", "ambiguous-legacy-event", "Room A and Room B");
+  const legacyResult = await ambiguousLegacy.process("ambiguous-legacy", "ambiguous-legacy-event", "8/6 Room A and Room B");
   assert.ok(legacyResult.replyText.length > 0);
   assert.equal(ambiguousLegacy.resolverCalls.length, 0, "a multi-candidate legacy top-level stay must not be guessed onto either candidate");
   assert.equal(ambiguousLegacy.state("ambiguous-legacy") || null, null, "an ambiguous legacy top-level stay must leave state unchanged");
@@ -231,7 +231,7 @@ async function perCandidateConditionsCoverage() {
     relations: [{ candidateIndex: 0, kind: "new_request" }],
     dateText: "8/6", checkInCandidate: "2026-08-06", guests: 2
   }));
-  await singleLegacy.process("single-legacy", "single-legacy-event", "Room A");
+  await singleLegacy.process("single-legacy", "single-legacy-event", "8/6 Room A");
   assert.deepEqual(singleLegacy.resolverCalls.map((call) => [call.roomType, call.checkIn, call.guests]), [["room-a", "2026-08-06", 2]], "a single candidate may mechanically retain legacy top-level stay compatibility");
 }
 

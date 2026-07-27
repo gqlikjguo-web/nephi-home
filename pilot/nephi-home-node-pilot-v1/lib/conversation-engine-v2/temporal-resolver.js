@@ -1,15 +1,74 @@
 "use strict";
 
-function partsAt(timestamp, timezone) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", weekday: "short" }).formatToParts(new Date(timestamp)).filter((p) => p.type !== "literal").map((p) => [p.type, p.value]));
-  return { key: `${parts.year}-${parts.month}-${parts.day}`, weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday) };
+const TEMPORAL_RESULT_STATUSES = new Set(["absent", "resolved", "unresolved"]);
+const TEMPORAL_PROVENANCE = new Set(["explicit", "context", "defaulted", "derived"]);
+const TEMPORAL_VALUE_STATUSES = new Set(["missing", "uncertain", "confirmed"]);
+const CONTEXTUAL_TEMPORAL_RULE_REF = "temporal:contextual_expression";
+const CANONICAL_TEMPORAL_RULE_REF = "temporal:canonical_grammar";
+
+const RELATIVE_DAY_OFFSETS = new Map([
+  ["今天", 0],
+  ["今晚", 0],
+  ["明天", 1],
+  ["後天", 2],
+  ["大後天", 3]
+]);
+const CHINESE_DIGITS = new Map([
+  ["零", 0], ["〇", 0],
+  ["一", 1], ["二", 2], ["兩", 2], ["三", 3], ["四", 4],
+  ["五", 5], ["六", 6], ["七", 7], ["八", 8], ["九", 9]
+]);
+const WEEKDAY_NUMBERS = new Map([
+  ["日", 0], ["天", 0],
+  ["一", 1], ["1", 1], ["二", 2], ["2", 2], ["三", 3], ["3", 3],
+  ["四", 4], ["4", 4], ["五", 5], ["5", 5], ["六", 6], ["6", 6]
+]);
+
+function normalizeText(value) {
+  return String(value || "").normalize("NFKC").replace(/\s+/g, "");
 }
-function valid(key) { if (!/^\d{4}-\d{2}-\d{2}$/.test(key || "")) return false; const date = new Date(`${key}T00:00:00Z`); return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === key; }
-function addDays(key, days) { const date = new Date(`${key}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
+
+function partsAt(timestamp, timezone) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short"
+  }).formatToParts(new Date(timestamp)).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  return {
+    key: `${parts.year}-${parts.month}-${parts.day}`,
+    weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday)
+  };
+}
+
+function valid(key) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key || "")) return false;
+  const date = new Date(`${key}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === key;
+}
+
+function addDays(key, days) {
+  const date = new Date(`${key}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 function inferExplicitTemporalExpression(text) {
   const match = String(text || "").normalize("NFKC").match(/(?:\b\d{4}\s*[/-]\s*)?\b\d{1,2}\s*[/-]\s*\d{1,2}\b/);
   return match ? { rawText: match[0].replace(/\s+/g, ""), kind: "absolute", anchor: "message_time" } : null;
 }
+
+function chineseInteger(value) {
+  const text = normalizeText(value);
+  if (/^\d+$/.test(text)) return Number(text);
+  if (CHINESE_DIGITS.has(text)) return CHINESE_DIGITS.get(text);
+  if (text === "十") return 10;
+  const tens = text.match(/^([一二兩三四五六七八九])?十([一二兩三四五六七八九])?$/u);
+  if (!tens) return null;
+  return (tens[1] ? CHINESE_DIGITS.get(tens[1]) : 1) * 10 + (tens[2] ? CHINESE_DIGITS.get(tens[2]) : 0);
+}
+
 function absoluteDateFromRaw(raw, base) {
   const explicitYear = raw.match(/^(\d{4})\s*(?:年|[-/])\s*(\d{1,2})\s*(?:月|[-/])\s*(\d{1,2})\s*(?:日|號)?$/u);
   const yearless = explicitYear ? null : raw.match(/^(\d{1,2})\s*(?:月|[-/])\s*(\d{1,2})\s*(?:日|號)?$/u);
@@ -22,91 +81,113 @@ function absoluteDateFromRaw(raw, base) {
   if (!explicitYear && valid(candidate) && candidate < base) {
     const nextYearCandidate = `${year + 1}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     const daysUntilNextYearCandidate = Math.round((Date.parse(`${nextYearCandidate}T00:00:00Z`) - Date.parse(`${base}T00:00:00Z`)) / 86400000);
-    // A yearless date just after a year boundary (for example, 1/5 when it
-    // is 12/20) is naturally an upcoming stay. A date from yesterday is not:
-    // retain it so the caller can safely request a future date rather than
-    // silently converting it into a stay almost a year away.
     if (daysUntilNextYearCandidate <= 183) candidate = nextYearCandidate;
   }
-  return candidate;
+  return valid(candidate) ? candidate : null;
 }
-function weekdayNumber(text) { const digits = { "日": 0, "天": 0, "一": 1, "1": 1, "二": 2, "2": 2, "三": 3, "3": 3, "四": 4, "4": 4, "五": 5, "5": 5, "六": 6, "6": 6 }; const match = String(text).match(/(?:週|星期|禮拜)\s*([日天一二三四五六1-6])/u); return match ? digits[match[1]] : null; }
 
-function resolveLegacyTemporalExpression(expression = {}, context = {}) {
-  const timezone = context.timezone || "Asia/Taipei";
-  const timestamp = Number(context.eventTimestamp) || Date.parse(context.eventTimestamp || "") || Date.now();
-  const base = partsAt(timestamp, timezone).key;
-  const raw = String(expression.rawText || "").normalize("NFKC").replace(/\s+/g, "");
-  const deterministicAbsolute = absoluteDateFromRaw(raw, base);
-  let checkIn = deterministicAbsolute || context.checkInCandidate || null;
-  let searchRange = null;
-  const absolute = raw.match(/^(?:(\d{4})[年\/-])?(\d{1,2})[月\/-](\d{1,2})日?$/u);
-  if (!valid(checkIn) && absolute) {
-    let year = Number(absolute[1] || base.slice(0, 4));
-    const candidate = `${year}-${String(absolute[2]).padStart(2, "0")}-${String(absolute[3]).padStart(2, "0")}`;
-    if (!absolute[1] && valid(candidate) && candidate < base) year += 1;
-    checkIn = `${year}-${String(absolute[2]).padStart(2, "0")}-${String(absolute[3]).padStart(2, "0")}`;
-  } else if (expression.kind === "relative") {
-    const offset = raw.includes("大後天") ? 3 : raw.includes("後天") ? 2 : raw.includes("明") ? 1 : 0;
-    checkIn = addDays(base, offset);
-  } else if (expression.kind === "weekday") {
-    const target = weekdayNumber(raw);
-    if (target === null) return { timezone, resolutionStatus: "ambiguous", ambiguity: "weekday_missing", originalExpression: raw };
-    const baseWeekday = partsAt(timestamp, timezone).weekday;
-    const weeks = raw.includes("下下") ? 2 : raw.includes("下") ? 1 : 0;
-    let delta;
-    if (weeks) {
-      const daysUntilNextMonday = 7 - ((baseWeekday + 6) % 7);
-      const targetOffsetFromMonday = (target + 6) % 7;
-      delta = daysUntilNextMonday + targetOffsetFromMonday + (weeks - 1) * 7;
-    } else {
-      delta = (target - baseWeekday + 7) % 7;
-    }
-    checkIn = addDays(base, delta);
-  } else if (expression.kind === "weekend") {
-    const baseWeekday = partsAt(timestamp, timezone).weekday;
-    let delta = (6 - baseWeekday + 7) % 7;
-    if (raw.includes("下下")) delta += 14; else if (raw.includes("下")) delta += 7;
-    const from = addDays(base, delta), to = addDays(from, 2);
-    searchRange = { from, to };
-  } else if (expression.kind === "absolute") {
-    if (deterministicAbsolute) checkIn = deterministicAbsolute;
-    else if (valid(context.checkInCandidate)) checkIn = context.checkInCandidate;
-    else {
-      const match = raw.match(/(?:(\d{4})[年/-])?(\d{1,2})[月/-](\d{1,2})日?/u);
-      if (match) {
-        let year = Number(match[1] || base.slice(0, 4));
-        const candidate = `${year}-${String(match[2]).padStart(2, "0")}-${String(match[3]).padStart(2, "0")}`;
-        if (!match[1] && valid(candidate) && candidate < base) year += 1;
-        checkIn = `${year}-${String(match[2]).padStart(2, "0")}-${String(match[3]).padStart(2, "0")}`;
-      }
-    }
-  } else if (expression.kind === "contextual") {
-    const anchor = expression.anchor === "previous_check_out" ? context.previousCheckOut : context.previousCheckIn;
-    if (raw.includes("隔天") || raw.includes("明天")) checkIn = valid(anchor) ? addDays(anchor, 1) : null;
-    else checkIn = anchor || null;
+function relativeDay(raw, base) {
+  if (RELATIVE_DAY_OFFSETS.has(raw)) return { checkIn: addDays(base, RELATIVE_DAY_OFFSETS.get(raw)), expressionType: "relative_day" };
+  const match = raw.match(/^([一二兩三四五六七八九十\d]+)(天|週|星期|禮拜)後$/u);
+  if (!match) return null;
+  const count = chineseInteger(match[1]);
+  if (!Number.isInteger(count) || count < 1 || count > 60) return null;
+  const multiplier = match[2] === "天" ? 1 : 7;
+  return { checkIn: addDays(base, count * multiplier), expressionType: "relative_day" };
+}
+
+function weekdayParts(raw) {
+  const match = raw.match(/^(這|本|下下|下個|下)?(?:個)?(?:週|星期|禮拜)([日天一二三四五六1-6])$/u);
+  if (!match) return null;
+  const prefix = match[1] || "";
+  const weekOffset = prefix === "下下" ? 2 : ["下", "下個"].includes(prefix) ? 1 : 0;
+  return { targetWeekday: WEEKDAY_NUMBERS.get(match[2]), weekOffset, explicitlyCurrentWeek: ["這", "本"].includes(prefix) };
+}
+
+function relativeWeekday(raw, base, baseWeekday) {
+  const parts = weekdayParts(raw);
+  if (!parts) return null;
+  const daysSinceMonday = (baseWeekday + 6) % 7;
+  const targetOffsetFromMonday = (parts.targetWeekday + 6) % 7;
+  let delta = parts.weekOffset * 7 - daysSinceMonday + targetOffsetFromMonday;
+  if (!parts.explicitlyCurrentWeek && parts.weekOffset === 0 && delta < 0) delta += 7;
+  if (delta < 0) return null;
+  return { checkIn: addDays(base, delta), expressionType: "relative_weekday" };
+}
+
+function weekend(raw, base, baseWeekday) {
+  const match = raw.match(/^(這|本|下下|下個|下)?(?:個)?週末$/u);
+  if (!match) return null;
+  const prefix = match[1] || "";
+  const weekOffset = prefix === "下下" ? 2 : ["下", "下個"].includes(prefix) ? 1 : 0;
+  const daysSinceMonday = (baseWeekday + 6) % 7;
+  let delta = weekOffset * 7 - daysSinceMonday + 5;
+  if (!["這", "本"].includes(prefix) && weekOffset === 0 && delta < 0) delta += 7;
+  if (delta < 0) return null;
+  const checkIn = addDays(base, delta);
+  return { checkIn, checkOut: addDays(checkIn, 1), nights: 1, expressionType: "weekend" };
+}
+
+function explicitNights(raw) {
+  const match = raw.match(/住([一二兩三四五六七八九十\d]+)晚/u);
+  if (!match) return null;
+  const nights = chineseInteger(match[1]);
+  return Number.isInteger(nights) && nights >= 1 && nights <= 60 ? nights : null;
+}
+
+function expressionBeforeNights(raw) {
+  return raw.replace(/住[一二兩三四五六七八九十\d]+晚.*$/u, "");
+}
+
+function parseSingleExpression(raw, base, baseWeekday) {
+  const relative = relativeDay(raw, base);
+  if (relative) return relative;
+  const weekday = relativeWeekday(raw, base, baseWeekday);
+  if (weekday) return weekday;
+  const weekendResult = weekend(raw, base, baseWeekday);
+  if (weekendResult) return weekendResult;
+  const absolute = absoluteDateFromRaw(raw, base);
+  return absolute ? { checkIn: absolute, expressionType: "absolute_date" } : null;
+}
+
+function parseRange(raw, base, baseWeekday) {
+  const between = raw.match(/^(.+?)(?:到|至)(.+)$/u);
+  if (between) {
+    const left = parseSingleExpression(normalizeText(between[1]), base, baseWeekday);
+    const right = parseSingleExpression(normalizeText(between[2]), base, baseWeekday);
+    if (!left || !right || !left.checkIn || !right.checkIn || right.checkIn <= left.checkIn) return { unresolvedReason: "temporal_range_invalid" };
+    return { checkIn: left.checkIn, checkOut: right.checkIn, nights: Math.round((Date.parse(`${right.checkIn}T00:00:00Z`) - Date.parse(`${left.checkIn}T00:00:00Z`)) / 86400000), expressionType: "date_range" };
   }
-  const nights = Number.isInteger(context.nightsCandidate) ? context.nightsCandidate : Number.isInteger(context.defaultNights) ? context.defaultNights : null;
-  if (checkIn && !valid(checkIn)) return { checkIn, checkOut: null, nights, searchRange, timezone, resolutionStatus: "invalid", ambiguity: "invalid_date", originalExpression: raw };
-  if (checkIn && checkIn < base) return { checkIn, checkOut: null, nights, searchRange, timezone, resolutionStatus: "invalid", ambiguity: "past_date", originalExpression: raw };
-  const checkOut = valid(context.checkOutCandidate) ? context.checkOutCandidate : checkIn && nights ? addDays(checkIn, nights) : null;
-  if (checkIn && checkOut && checkOut <= checkIn) return { checkIn, checkOut, nights, searchRange, timezone, resolutionStatus: "invalid", ambiguity: "checkout_not_after_checkin", originalExpression: raw };
-  return { checkIn, checkOut, nights, searchRange, timezone, resolutionStatus: checkIn || searchRange ? "resolved" : "ambiguous", ambiguity: checkIn || searchRange ? null : "date_missing", originalExpression: raw };
+  const stayRange = raw.match(/^(.+?)入住[、,，]?(.+?)退房$/u);
+  if (stayRange) {
+    const leftRaw = normalizeText(stayRange[1]);
+    const rightRaw = normalizeText(stayRange[2]);
+    const left = parseSingleExpression(leftRaw, base, baseWeekday);
+    let right = parseSingleExpression(rightRaw, base, baseWeekday);
+    if (!left || !left.checkIn || !right || !right.checkIn) return { unresolvedReason: "temporal_range_invalid" };
+    if (right.checkIn <= left.checkIn && weekdayParts(rightRaw)) right = { ...right, checkIn: addDays(right.checkIn, 7) };
+    if (right.checkIn <= left.checkIn) return { unresolvedReason: "temporal_range_invalid" };
+    return { checkIn: left.checkIn, checkOut: right.checkIn, nights: Math.round((Date.parse(`${right.checkIn}T00:00:00Z`) - Date.parse(`${left.checkIn}T00:00:00Z`)) / 86400000), expressionType: "date_range" };
+  }
+  const nights = explicitNights(raw);
+  if (nights) {
+    const start = parseSingleExpression(expressionBeforeNights(raw), base, baseWeekday);
+    if (!start || !start.checkIn) return { unresolvedReason: "temporal_expression_unrecognized" };
+    return { checkIn: start.checkIn, checkOut: addDays(start.checkIn, nights), nights, expressionType: "date_range" };
+  }
+  return null;
 }
 
-const TEMPORAL_RESULT_STATUSES = new Set(["absent", "resolved", "unresolved", "invalid", "conflicting"]);
-const TEMPORAL_PROVENANCE = new Set(["explicit", "context", "defaulted", "derived"]);
-const TEMPORAL_VALUE_STATUSES = new Set(["missing", "uncertain", "invalid", "confirmed"]);
-const CONTEXTUAL_TEMPORAL_RULE_REF = "temporal:contextual_expression";
-
-function emptyFieldMetadata() {
-  return {
-    provenance: { checkIn: null, checkOut: null, nights: null, searchRange: null },
-    ruleRefs: { checkIn: null, checkOut: null, nights: null, searchRange: null },
-    derivedFromFieldRefs: { checkIn: [], checkOut: [], nights: [], searchRange: [] },
-    sourceEvidenceRefs: { checkIn: [], checkOut: [], nights: [], searchRange: [] },
-    valueStatus: { checkIn: "missing", checkOut: "missing", nights: "missing", searchRange: "missing" }
-  };
+function parseTemporalGrammar(raw, eventTimestamp, timezone) {
+  const timestamp = Number(eventTimestamp) || Date.parse(eventTimestamp || "");
+  if (!Number.isFinite(timestamp)) return { unresolvedReason: "temporal_clock_invalid" };
+  const baseParts = partsAt(timestamp, timezone);
+  if (/下次.*有空.*週末/u.test(raw)) return { unresolvedReason: "temporal_expression_ambiguous" };
+  const range = parseRange(raw, baseParts.key, baseParts.weekday);
+  if (range) return range.checkIn && range.checkIn < baseParts.key ? { unresolvedReason: "past_date" } : range;
+  const single = parseSingleExpression(raw, baseParts.key, baseParts.weekday);
+  if (!single) return { unresolvedReason: "temporal_expression_unrecognized" };
+  return single.checkIn < baseParts.key ? { unresolvedReason: "past_date" } : single;
 }
 
 function sourceEvidenceRefs(values) {
@@ -130,44 +211,38 @@ function sourceEvidenceRefs(values) {
   }).filter(Boolean);
 }
 
-function fieldStatus(field, result, value) {
-  const resolutionStatus = result.resolutionStatus;
-  const ambiguity = result.ambiguity;
-  if (field === "checkIn" && resolutionStatus === "unresolved") return "uncertain";
-  if (field === "checkIn" && resolutionStatus === "invalid") return "invalid";
-  if (field === "checkOut" && (ambiguity === "checkout_not_after_checkin" || resolutionStatus === "conflicting")) return "invalid";
-  return value === null || value === undefined ? "missing" : "confirmed";
+function emptyFieldMetadata() {
+  return {
+    provenance: { checkIn: null, checkOut: null, nights: null, searchRange: null },
+    ruleRefs: { checkIn: null, checkOut: null, nights: null, searchRange: null },
+    derivedFromFieldRefs: { checkIn: [], checkOut: [], nights: [], searchRange: [] },
+    sourceEvidenceRefs: { checkIn: [], checkOut: [], nights: [], searchRange: [] }
+  };
 }
 
 function withFieldMetadata(result, metadata = {}) {
-  const fields = emptyFieldMetadata();
-  const provenance = { ...fields.provenance, ...(metadata.provenance || {}) };
-  const ruleRefs = { ...fields.ruleRefs, ...(metadata.ruleRefs || {}) };
-  const derivedFromFieldRefs = { ...fields.derivedFromFieldRefs, ...(metadata.derivedFromFieldRefs || {}) };
-  const commonSourceEvidenceRefs = sourceEvidenceRefs(metadata.sourceEvidenceRefs || result.sourceEvidenceRefs);
-  const sourceByField = { ...fields.sourceEvidenceRefs, ...(metadata.sourceEvidenceRefsByField || {}) };
-  const resolutionStatus = TEMPORAL_RESULT_STATUSES.has(result.resolutionStatus) ? result.resolutionStatus : "unresolved";
+  const empty = emptyFieldMetadata();
+  const provenance = { ...empty.provenance, ...(metadata.provenance || {}) };
+  const ruleRefs = { ...empty.ruleRefs, ...(metadata.ruleRefs || {}) };
+  const derivedFromFieldRefs = { ...empty.derivedFromFieldRefs, ...(metadata.derivedFromFieldRefs || {}) };
+  const commonSourceEvidenceRefs = sourceEvidenceRefs(metadata.sourceEvidenceRefs);
   const values = {
     checkIn: result.checkIn || null,
     checkOut: result.checkOut || null,
     nights: Number.isInteger(result.nights) ? result.nights : null,
     searchRange: result.searchRange || null
   };
-  const valueStatus = Object.fromEntries(Object.entries(values).map(([field, value]) => {
-    const requested = metadata.valueStatus && metadata.valueStatus[field];
-    return [field, TEMPORAL_VALUE_STATUSES.has(requested) ? requested : fieldStatus(field, { ...result, resolutionStatus }, value)];
-  }));
   const field = (name) => ({
     value: values[name],
-    valueStatus: valueStatus[name],
+    valueStatus: values[name] === null ? (name === "checkIn" && result.resolutionStatus === "unresolved" ? "uncertain" : "missing") : "confirmed",
     provenance: provenance[name],
-    sourceEvidenceRefs: sourceEvidenceRefs(sourceByField[name] && sourceByField[name].length ? sourceByField[name] : commonSourceEvidenceRefs),
+    sourceEvidenceRefs: commonSourceEvidenceRefs,
     ruleRef: ruleRefs[name],
     derivedFromFieldRefs: derivedFromFieldRefs[name]
   });
   return {
     ...result,
-    resolutionStatus,
+    resolutionStatus: TEMPORAL_RESULT_STATUSES.has(result.resolutionStatus) ? result.resolutionStatus : "unresolved",
     provenance,
     ruleRefs,
     derivedFromFieldRefs,
@@ -180,77 +255,258 @@ function withFieldMetadata(result, metadata = {}) {
   };
 }
 
-function hasDateExpression(expression = {}) {
-  return Boolean(String(expression.rawText || "").trim()) && expression.kind !== "none";
+function plannerKindForExpressionType(expressionType) {
+  if (expressionType === "relative_day") return "relative";
+  if (expressionType === "relative_weekday") return "weekday";
+  if (expressionType === "weekend") return "weekend";
+  if (expressionType === "absolute_date") return "absolute";
+  if (expressionType === "date_range") return "range";
+  return "none";
 }
 
-function contextTemporalResult(expression, context, timezone) {
-  const approved = context.approvedContext || {};
-  const checkIn = valid(approved.checkIn) ? approved.checkIn : null;
-  const checkOut = valid(approved.checkOut) ? approved.checkOut : null;
-  const nights = Number.isInteger(approved.nights) ? approved.nights : null;
-  if (!checkIn && !checkOut) return null;
-  return withFieldMetadata({ checkIn, checkOut, nights, searchRange: null, timezone, resolutionStatus: "resolved", ambiguity: null, originalExpression: "" }, {
-    provenance: { checkIn: checkIn ? "context" : null, checkOut: checkOut ? "context" : null, nights: nights ? "context" : null },
-    sourceEvidenceRefs: approved.sourceEvidenceRefs
+function repairReason(plannerCandidate, parsed) {
+  const expression = plannerCandidate && plannerCandidate.dateExpression || {};
+  const expectedKind = plannerKindForExpressionType(parsed.expressionType);
+  if (expectedKind !== "none" && expression.kind !== expectedKind) return "planner_kind_repaired";
+  const candidateCheckIn = String(plannerCandidate && plannerCandidate.checkInCandidate || "");
+  const candidateCheckOut = String(plannerCandidate && plannerCandidate.checkOutCandidate || "");
+  const candidateNights = plannerCandidate && plannerCandidate.nightsCandidate;
+  if (candidateCheckIn && candidateCheckIn !== parsed.checkIn) return "planner_candidate_rejected";
+  if (candidateCheckOut && candidateCheckOut !== parsed.checkOut) return "planner_candidate_rejected";
+  if (Number.isInteger(candidateNights) && Number.isInteger(parsed.nights) && candidateNights !== parsed.nights) return "planner_candidate_rejected";
+  return "";
+}
+
+function resolvedContext({ rawText, timezone, applicableTaskIds, approvedContext, sourceEvidenceRefs: evidence }) {
+  const checkIn = valid(approvedContext && approvedContext.checkIn) ? approvedContext.checkIn : null;
+  const checkOut = valid(approvedContext && approvedContext.checkOut) ? approvedContext.checkOut : null;
+  const nights = Number.isInteger(approvedContext && approvedContext.nights) ? approvedContext.nights : null;
+  if (!checkIn || !checkOut) return null;
+  return withFieldMetadata({
+    rawText,
+    expressionType: "context",
+    checkIn,
+    checkOut,
+    nights,
+    searchRange: null,
+    timezone,
+    resolutionStatus: "resolved",
+    resolutionSource: "approved_context",
+    repairReasonCode: "",
+    applicableTaskIds,
+    ambiguity: null,
+    originalExpression: rawText
+  }, {
+    provenance: { checkIn: "context", checkOut: "context", nights: nights ? "context" : null },
+    ruleRefs: { checkIn: CONTEXTUAL_TEMPORAL_RULE_REF, checkOut: CONTEXTUAL_TEMPORAL_RULE_REF, nights: nights ? CONTEXTUAL_TEMPORAL_RULE_REF : null },
+    sourceEvidenceRefs: evidence
+  });
+}
+
+function resolveCanonicalTemporal({
+  guestMessage = "",
+  plannerCandidate = {},
+  eventTimestamp,
+  timezone = "Asia/Taipei",
+  defaultNights = null,
+  defaultNightsRuleRef = null,
+  defaultSearchRangeDays = null,
+  defaultSearchRangeRuleRef = null,
+  sourceEvidenceRefs: evidence = [],
+  approvedContext = null,
+  allowContextReuse = false,
+  applicableTaskIds = []
+} = {}) {
+  const expression = plannerCandidate && plannerCandidate.dateExpression || {};
+  const rawText = normalizeText(expression.rawText);
+  const taskIds = [...new Set((Array.isArray(applicableTaskIds) ? applicableTaskIds : []).map(String).filter(Boolean))];
+
+  if (!rawText) {
+    if (allowContextReuse && approvedContext) {
+      const reused = resolvedContext({ rawText, timezone, applicableTaskIds: taskIds, approvedContext, sourceEvidenceRefs: approvedContext.sourceEvidenceRefs || evidence });
+      if (reused) return reused;
+    }
+    if (Number.isInteger(defaultSearchRangeDays) && defaultSearchRangeDays > 0) {
+      const timestamp = Number(eventTimestamp) || Date.parse(eventTimestamp || "");
+      const from = Number.isFinite(timestamp) ? partsAt(timestamp, timezone).key : null;
+      if (from) {
+        const searchRange = { from, to: addDays(from, defaultSearchRangeDays) };
+        return withFieldMetadata({
+          rawText,
+          expressionType: "default_search_range",
+          checkIn: null,
+          checkOut: null,
+          nights: null,
+          searchRange,
+          timezone,
+          resolutionStatus: "resolved",
+          resolutionSource: "product_default",
+          repairReasonCode: "",
+          applicableTaskIds: taskIds,
+          ambiguity: null,
+          originalExpression: rawText
+        }, {
+          provenance: { searchRange: "defaulted" },
+          ruleRefs: { searchRange: defaultSearchRangeRuleRef || null },
+          derivedFromFieldRefs: { searchRange: ["eventTimestamp"] },
+          sourceEvidenceRefs: evidence
+        });
+      }
+    }
+    return withFieldMetadata({
+      rawText,
+      expressionType: "none",
+      checkIn: null,
+      checkOut: null,
+      nights: null,
+      searchRange: null,
+      timezone,
+      resolutionStatus: "absent",
+      resolutionSource: "canonical_temporal_grammar",
+      repairReasonCode: "",
+      applicableTaskIds: taskIds,
+      ambiguity: null,
+      originalExpression: rawText
+    }, { sourceEvidenceRefs: evidence });
+  }
+
+  const normalizedMessage = normalizeText(guestMessage);
+  if (normalizedMessage && !normalizedMessage.includes(rawText)) {
+    return withFieldMetadata({
+      rawText,
+      expressionType: "ambiguous",
+      checkIn: null,
+      checkOut: null,
+      nights: null,
+      searchRange: null,
+      timezone,
+      resolutionStatus: "unresolved",
+      resolutionSource: "canonical_temporal_grammar",
+      repairReasonCode: "planner_temporal_span_invalid",
+      applicableTaskIds: taskIds,
+      ambiguity: "planner_temporal_span_invalid",
+      originalExpression: rawText
+    }, { sourceEvidenceRefs: evidence });
+  }
+
+  const parsed = parseTemporalGrammar(rawText, eventTimestamp, timezone);
+  if (parsed.unresolvedReason) {
+    return withFieldMetadata({
+      rawText,
+      expressionType: "ambiguous",
+      checkIn: null,
+      checkOut: null,
+      nights: null,
+      searchRange: null,
+      timezone,
+      resolutionStatus: "unresolved",
+      resolutionSource: "canonical_temporal_grammar",
+      repairReasonCode: parsed.unresolvedReason,
+      applicableTaskIds: taskIds,
+      ambiguity: parsed.unresolvedReason,
+      originalExpression: rawText
+    }, { sourceEvidenceRefs: evidence });
+  }
+
+  const parsedNights = Number.isInteger(parsed.nights)
+    ? parsed.nights
+    : Number.isInteger(plannerCandidate.nightsCandidate)
+      ? plannerCandidate.nightsCandidate
+      : Number.isInteger(defaultNights) ? defaultNights : null;
+  const checkIn = parsed.checkIn || null;
+  const checkOut = parsed.checkOut || (checkIn && parsedNights ? addDays(checkIn, parsedNights) : null);
+  if (!valid(checkIn) || (checkOut && (!valid(checkOut) || checkOut <= checkIn))) {
+    return withFieldMetadata({
+      rawText,
+      expressionType: parsed.expressionType || "ambiguous",
+      checkIn: null,
+      checkOut: null,
+      nights: parsedNights,
+      searchRange: null,
+      timezone,
+      resolutionStatus: "unresolved",
+      resolutionSource: "canonical_temporal_grammar",
+      repairReasonCode: "temporal_range_invalid",
+      applicableTaskIds: taskIds,
+      ambiguity: "temporal_range_invalid",
+      originalExpression: rawText
+    }, { sourceEvidenceRefs: evidence });
+  }
+
+  const canonical = {
+    ...parsed,
+    checkIn,
+    checkOut,
+    nights: parsedNights,
+    searchRange: parsed.searchRange || null
+  };
+  const repaired = repairReason(plannerCandidate, canonical);
+  return withFieldMetadata({
+    rawText,
+    expressionType: canonical.expressionType,
+    checkIn,
+    checkOut,
+    nights: parsedNights,
+    searchRange: canonical.searchRange,
+    timezone,
+    resolutionStatus: "resolved",
+    resolutionSource: "canonical_temporal_grammar",
+    repairReasonCode: repaired,
+    applicableTaskIds: taskIds,
+    ambiguity: null,
+    originalExpression: rawText
+  }, {
+    provenance: {
+      checkIn: "explicit",
+      checkOut: canonical.checkOut ? (parsed.checkOut ? "explicit" : "derived") : null,
+      nights: Number.isInteger(parsed.nights) ? "explicit" : Number.isInteger(plannerCandidate.nightsCandidate) ? "explicit" : Number.isInteger(defaultNights) ? "defaulted" : null,
+      searchRange: canonical.searchRange ? "explicit" : null
+    },
+    ruleRefs: {
+      checkIn: CANONICAL_TEMPORAL_RULE_REF,
+      checkOut: parsed.checkOut ? CANONICAL_TEMPORAL_RULE_REF : canonical.checkOut ? (Number.isInteger(defaultNights) ? defaultNightsRuleRef : "temporal:checkout_from_checkin_and_nights") : null,
+      nights: Number.isInteger(defaultNights) && !Number.isInteger(plannerCandidate.nightsCandidate) && !Number.isInteger(parsed.nights) ? defaultNightsRuleRef : null,
+      searchRange: canonical.searchRange ? CANONICAL_TEMPORAL_RULE_REF : null
+    },
+    derivedFromFieldRefs: {
+      checkOut: parsed.checkOut ? [] : canonical.checkOut ? ["stay.checkIn", "stay.nights"] : []
+    },
+    sourceEvidenceRefs: evidence
   });
 }
 
 function resolveTemporalExpression(expression = {}, context = {}) {
-  const timezone = context.timezone || "Asia/Taipei";
-  const hasExpression = hasDateExpression(expression);
-  const approved = context.approvedContext || null;
-  if (!hasExpression && context.allowContextReuse === true && approved) {
-    const reused = contextTemporalResult(expression, context, timezone);
-    if (reused) return reused;
-  }
-  if (!hasExpression && Number.isInteger(context.defaultSearchRangeDays) && context.defaultSearchRangeDays > 0) {
-    const from = partsAt(Number(context.eventTimestamp) || Date.parse(context.eventTimestamp || "") || Date.now(), timezone).key;
-    const searchRange = { from, to: addDays(from, context.defaultSearchRangeDays) };
-    return withFieldMetadata({ checkIn: null, checkOut: null, nights: null, searchRange, timezone, resolutionStatus: "resolved", ambiguity: null, originalExpression: "" }, {
-      provenance: { searchRange: "defaulted" },
-      ruleRefs: { searchRange: context.defaultSearchRangeRuleRef || null },
-      derivedFromFieldRefs: { searchRange: ["eventTimestamp"] },
-      sourceEvidenceRefs: context.sourceEvidenceRefs
-    });
-  }
-
-  const legacyContext = {
-    ...context,
-    previousCheckIn: approved && approved.checkIn || context.previousCheckIn,
-    previousCheckOut: approved && approved.checkOut || context.previousCheckOut
-  };
-  const result = resolveLegacyTemporalExpression(expression, legacyContext);
-  const status = result.resolutionStatus === "ambiguous"
-    ? hasExpression ? "unresolved" : "absent"
-    : result.resolutionStatus;
-  const invalidCheckOut = result.ambiguity === "checkout_not_after_checkin";
-  const finalStatus = invalidCheckOut ? "conflicting" : status;
-  const rawIsContextual = expression.kind === "contextual";
-  const explicitCheckIn = result.checkIn && !rawIsContextual ? "explicit" : result.checkIn && rawIsContextual ? "derived" : null;
-  const explicitNights = Number.isInteger(context.nightsCandidate);
-  const defaultedNights = !explicitNights && Number.isInteger(context.defaultNights);
-  const explicitCheckOut = valid(context.checkOutCandidate);
-  const ruleRef = context.defaultNightsRuleRef || null;
-  const provenance = {
-    checkIn: explicitCheckIn,
-    checkOut: explicitCheckOut ? "explicit" : result.checkOut && result.checkIn && result.nights ? "derived" : null,
-    nights: explicitNights ? "explicit" : defaultedNights ? "defaulted" : null,
-    searchRange: result.searchRange ? "explicit" : null
-  };
-  const ruleRefs = {
-    checkIn: rawIsContextual && result.checkIn ? CONTEXTUAL_TEMPORAL_RULE_REF : null,
-    checkOut: !explicitCheckOut && result.checkOut && result.checkIn && result.nights ? (defaultedNights ? ruleRef : "temporal:checkout_from_checkin_and_nights") : null,
-    nights: defaultedNights ? ruleRef : null,
-    searchRange: null
-  };
-  const derivedFromFieldRefs = {
-    checkIn: rawIsContextual && result.checkIn ? ["approvedTemporalContext"] : [],
-    checkOut: !explicitCheckOut && result.checkOut && result.checkIn && result.nights ? ["stay.checkIn", "stay.nights"] : [],
-    nights: [],
-    searchRange: []
-  };
-  return withFieldMetadata({ ...result, resolutionStatus: finalStatus }, { provenance, ruleRefs, derivedFromFieldRefs, sourceEvidenceRefs: context.sourceEvidenceRefs });
+  return resolveCanonicalTemporal({
+    guestMessage: expression.rawText || "",
+    plannerCandidate: {
+      dateExpression: expression,
+      checkInCandidate: context.checkInCandidate || null,
+      checkOutCandidate: context.checkOutCandidate || null,
+      nightsCandidate: Number.isInteger(context.nightsCandidate) ? context.nightsCandidate : null,
+      guestCountCandidate: null
+    },
+    eventTimestamp: context.eventTimestamp,
+    timezone: context.timezone,
+    defaultNights: context.defaultNights,
+    defaultNightsRuleRef: context.defaultNightsRuleRef,
+    defaultSearchRangeDays: context.defaultSearchRangeDays,
+    defaultSearchRangeRuleRef: context.defaultSearchRangeRuleRef,
+    sourceEvidenceRefs: context.sourceEvidenceRefs,
+    approvedContext: context.approvedContext,
+    allowContextReuse: context.allowContextReuse,
+    applicableTaskIds: context.applicableTaskIds || []
+  });
 }
 
-module.exports = { resolveTemporalExpression, inferExplicitTemporalExpression, addDays, valid, TEMPORAL_RESULT_STATUSES, TEMPORAL_PROVENANCE, TEMPORAL_VALUE_STATUSES, CONTEXTUAL_TEMPORAL_RULE_REF };
+module.exports = {
+  resolveCanonicalTemporal,
+  resolveTemporalExpression,
+  inferExplicitTemporalExpression,
+  addDays,
+  valid,
+  TEMPORAL_RESULT_STATUSES,
+  TEMPORAL_PROVENANCE,
+  TEMPORAL_VALUE_STATUSES,
+  CONTEXTUAL_TEMPORAL_RULE_REF,
+  CANONICAL_TEMPORAL_RULE_REF
+};

@@ -63,3 +63,11 @@
 - Test-only diagnostics may emit `planner_error` only through an allowlisted schema: error name, fixed code, normalized HTTP status, timeout, safe category, model, provider, and sanitized OpenAI `error.type`, `error.code`, and `error.param`.
 - Diagnostic callbacks and loggers are non-authoritative; their exceptions cannot change conversation fallback or delivery.
 - Secrets, authorization data, guest content, prompts, source events, property catalogs, provider error messages, raw provider bodies, stacks, request headers, and credentials never enter the safe trace.
+
+## Canonical Temporal Authority
+
+- Planner temporal fields are non-authoritative candidates. Only `resolveCanonicalTemporal()` may produce executable stay dates.
+- Canonical temporal status is exactly `absent`, `resolved`, or `unresolved`; a resolved result records the raw expression, expression type, check-in/check-out, property timezone, resolution source, repair reason, and applicable task IDs.
+- Relative days, relative weekdays, weekends, absolute dates, ranges, and night counts share one deterministic grammar with an injectable clock and property timezone.
+- A current unresolved date intent clears stale stay dates. Prior dates may be reused only through an explicit approved context-reuse path.
+- State, FormalRequest, QueryPlan, pending logic, and Executor must not parse, repair, infer, or replace canonical temporal meaning.

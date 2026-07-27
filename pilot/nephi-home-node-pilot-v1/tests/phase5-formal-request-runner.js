@@ -53,16 +53,16 @@ assert.deepEqual(resultForNotReady(missing), {
   outcome: "not_ready", readinessStatus: "missing_information", missingFields: ["stay.checkIn"], invalidFields: [], conflictingFields: [], facts: {}, resolverAttempted: false
 });
 
-const invalid = formal({ temporalResult: { resolutionStatus: "invalid", checkIn: "2026-02-30", checkOut: null, nights: null, searchRange: null, fields: {} }, confirmedInputs: { ...conditions, stay: { ...conditions.stay, checkIn: null, checkOut: null } } });
-assert.equal(invalid.readiness.status, "invalid");
-assert.equal(buildQueryPlan(invalid), null);
-assert.equal(resultForNotReady(invalid).outcome, "not_ready");
-assert.equal(resultForNotReady(invalid).readinessStatus, "invalid");
+const invalidInput = formal({ temporalResult: { resolutionStatus: "unresolved", checkIn: null, checkOut: null, nights: null, searchRange: null, fields: {}, repairReasonCode: "temporal_expression_unrecognized" }, confirmedInputs: { ...conditions, stay: { ...conditions.stay, checkIn: null, checkOut: null } } });
+assert.equal(invalidInput.readiness.status, "missing_information");
+assert.equal(buildQueryPlan(invalidInput), null);
+assert.equal(resultForNotReady(invalidInput).outcome, "not_ready");
+assert.equal(resultForNotReady(invalidInput).readinessStatus, "missing_information");
 
-const conflicting = formal({ temporalResult: { resolutionStatus: "conflicting", checkIn: "2026-08-07", checkOut: "2026-08-06", nights: null, searchRange: null, fields: {} } });
-assert.equal(conflicting.readiness.status, "conflicting");
-assert.equal(buildQueryPlan(conflicting), null);
-assert.equal(resultForNotReady(conflicting).readinessStatus, "conflicting");
+const conflictingInput = formal({ temporalResult: { resolutionStatus: "unresolved", checkIn: null, checkOut: null, nights: null, searchRange: null, fields: {}, repairReasonCode: "temporal_range_invalid" } });
+assert.equal(conflictingInput.readiness.status, "missing_information");
+assert.equal(buildQueryPlan(conflictingInput), null);
+assert.equal(resultForNotReady(conflictingInput).readinessStatus, "missing_information");
 
 const unresolvedEntity = formal({ resolvedEntity: { status: "ambiguous", candidates: [] } });
 assert.equal(unresolvedEntity.readiness.status, "entity_unresolved");

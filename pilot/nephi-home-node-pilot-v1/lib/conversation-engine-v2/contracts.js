@@ -7,9 +7,9 @@ const CONTEXT_RELATION_KINDS = new Set([
   "end_existing",
   "relation_uncertain"
 ]);
-const TEMPORAL_RESULT_STATUSES = new Set(["absent", "resolved", "unresolved", "invalid", "conflicting"]);
+const TEMPORAL_RESULT_STATUSES = new Set(["absent", "resolved", "unresolved"]);
 const TEMPORAL_PROVENANCE = new Set(["explicit", "context", "defaulted", "derived"]);
-const TEMPORAL_VALUE_STATUSES = new Set(["missing", "uncertain", "invalid", "confirmed"]);
+const TEMPORAL_VALUE_STATUSES = new Set(["missing", "uncertain", "confirmed"]);
 
 function sameScope(stateScope = {}, scope = {}) {
   return stateScope.propertyId === scope.propertyId

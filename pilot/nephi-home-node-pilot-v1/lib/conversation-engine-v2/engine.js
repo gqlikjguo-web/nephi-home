@@ -5,7 +5,7 @@ const crypto = require("node:crypto");
 const { validatePlannerOutput, applyPlannerSemanticContract, normalizeEligibilityEvidence, discardLegacyPlannerStateControls } = require("./planner-schema");
 const { normalizeDetailIntent } = require("./detail-intent");
 const { buildPropertyCatalog } = require("./property-catalog");
-const { resolveTemporalExpression } = require("./temporal-resolver");
+const { resolveCanonicalTemporal } = require("./temporal-resolver");
 const { migrateStateV2, reduceConversationState, reducePendingRequests, decideContextExecution, conditionsForCycle } = require("./state-reducer");
 const { executeQueryPlans, isGenericAvailabilityEntity } = require("./capability-executor");
 const { buildResponsePlan } = require("./response-planner");
@@ -25,7 +25,7 @@ const { SAFE_HANDOFF_TEXT, buildFinalResponse } = require("./final-response-rend
 const DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS = 31;
 const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
 const INVENTORY_TASK_TYPES = new Set(["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"]);
-const TEMPORAL_FAILURE_STATUSES = new Set(["unresolved", "invalid", "conflicting"]);
+const TEMPORAL_FAILURE_STATUSES = new Set(["unresolved"]);
 const SINGLE_DATE_DEFAULT_NIGHT_RULE_REF = "PRODUCT_BASELINE:single_date_availability_default_one_night";
 const AVAILABLE_DATES_LOOKAHEAD_RULE_REF = "temporal:available_dates_default_lookahead";
 function decideFinal(input) { return buildFinalDecision(input); }
@@ -148,6 +148,7 @@ function approvedTemporalContext(snapshot, relation, plannerStay) {
   if (!relation || relation.stateAction !== "continue" || !relation.requestCycleId) return null;
   if (plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none") return null;
   const cycle = (snapshot && snapshot.cycles || []).find((item) => item.requestCycleId === relation.requestCycleId);
+  if (!cycle || !cycle.temporalResult || cycle.temporalResult.resolutionStatus !== "resolved") return null;
   const stay = cycle && cycle.confirmedInputs && cycle.confirmedInputs.stay;
   if (!stay) return null;
   const temporalFields = cycle && cycle.temporalResult && cycle.temporalResult.fields || {};
@@ -404,17 +405,19 @@ class ConversationEngineV2 {
       const plannerStay = normalizedTaskStay(item.task);
       const relation = relationsByCandidateIndex.get(item.candidateIndex);
       const approvedContext = approvedTemporalContext(contextSnapshot, relation, plannerStay);
-      const temporal = resolveTemporalExpression(plannerStay.dateExpression, {
-        eventTimestamp: input.eventTimestamp, timezone: catalog.timezone,
-        checkInCandidate: plannerStay.checkInCandidate, checkOutCandidate: plannerStay.checkOutCandidate,
-        nightsCandidate: plannerStay.nightsCandidate,
+      const temporal = resolveCanonicalTemporal({
+        guestMessage: input.messageText,
+        plannerCandidate: plannerStay,
+        eventTimestamp: input.eventTimestamp,
+        timezone: catalog.timezone,
         defaultNights: ["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(item.task.type) ? 1 : null,
         defaultNightsRuleRef: SINGLE_DATE_DEFAULT_NIGHT_RULE_REF,
         defaultSearchRangeDays: item.task.type === "available_dates" ? DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS : null,
         defaultSearchRangeRuleRef: item.task.type === "available_dates" ? AVAILABLE_DATES_LOOKAHEAD_RULE_REF : null,
         sourceEvidenceRefs: sourceEvidenceRefsForRelation(relation),
         approvedContext,
-        allowContextReuse: Boolean(approvedContext)
+        allowContextReuse: Boolean(approvedContext),
+        applicableTaskIds: [item.task.taskId]
       });
       candidateInputsByCandidateIndex[item.candidateIndex] = {
         confirmedFields: { guests: plannerStay.guestCountCandidate, nights: plannerStay.nightsCandidate, inventory: confirmedInventoryFromTask(catalog, item.task) },
@@ -424,7 +427,7 @@ class ConversationEngineV2 {
       };
       item.temporal = temporal;
     }
-    this.trace(traceId, "temporal", { contextAction: contextExecution.contextDecision.action, items: executionItems.map((item) => ({ candidateIndex: item.candidateIndex, requestCycleId: item.requestCycleId, dateExpressionPresent: Boolean(normalizedTaskStay(item.task).dateExpression.rawText && normalizedTaskStay(item.task).dateExpression.kind !== "none"), resolutionStatus: item.temporal.resolutionStatus, provenance: item.temporal.provenance, ruleRefs: item.temporal.ruleRefs, fields: item.temporal.fields, produced: { checkIn: Boolean(item.temporal.checkIn), checkOut: Boolean(item.temporal.checkOut), nights: Boolean(item.temporal.nights) } })) });
+    this.trace(traceId, "temporal", { contextAction: contextExecution.contextDecision.action, items: executionItems.map((item) => ({ candidateIndex: item.candidateIndex, requestCycleId: item.requestCycleId, taskIds: item.temporal.applicableTaskIds, dateExpressionPresent: Boolean(normalizedTaskStay(item.task).dateExpression.rawText && normalizedTaskStay(item.task).dateExpression.kind !== "none"), expressionType: item.temporal.expressionType, resolutionStatus: item.temporal.resolutionStatus, resolutionSource: item.temporal.resolutionSource, repairReasonCode: item.temporal.repairReasonCode, timezone: item.temporal.timezone, provenance: item.temporal.provenance, ruleRefs: item.temporal.ruleRefs, fields: item.temporal.fields, produced: { checkIn: Boolean(item.temporal.checkIn), checkOut: Boolean(item.temporal.checkOut), nights: Boolean(item.temporal.nights) } })) });
     let state = reduceConversationState(previous, {
       tasks: executionTasks,
       contextDecisions: contextExecution.contextDecisions,

@@ -90,3 +90,8 @@
 ## 2026-07-27 — Deterministic Composer claim contract
 
 - The test-only OpenAI Composer now returns only strict-schema-enumerated deterministic task sections, while Claim Validator additionally rejects answered sections with no fact source; coverage and fabricated-claim defenses remain unchanged.
+
+## 2026-07-27 — Canonical Temporal Authority
+
+- Added one deterministic temporal authority for relative days, weekdays, weekends, absolute dates, ranges, and night counts, using the property timezone and an injectable clock.
+- State and FormalRequest now consume the canonical result without restoring stale dates; fixed-clock unit, state, signed-webhook, mixed-capability, and runtime-uniqueness gates prevent a second active temporal writer.

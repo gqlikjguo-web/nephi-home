@@ -69,3 +69,10 @@
 - Review the local exact-output Composer contract and signed-webhook RED/GREEN evidence before any external operation.
 - Preserve Claim Validator coverage, fact-source, and fabricated-text rejection; do not replace them with a general deterministic-reply bypass.
 - Do not push, deploy, operate Render or LINE, or change credentials without separate authorization.
+
+## 2026-07-27 Canonical Temporal Authority
+
+- Review the local single-authority temporal diff and fixed-clock signed-webhook evidence before any external operation.
+- Preserve the runtime-uniqueness mutation guard: Engine invokes one canonical resolver, while State, FormalRequest, QueryPlan, pending logic, and Executor remain non-authoritative consumers.
+- If separately authorized in an environment with the existing test-only OpenAI settings, run the 20-times-per-phrase real-provider stability gate before deployment.
+- Do not push, deploy, operate Render or LINE, or change credentials or environment variables without separate authorization.

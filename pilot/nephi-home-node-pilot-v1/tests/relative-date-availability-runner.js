@@ -11,7 +11,7 @@ const { createProviders } = require("../lib/providers/provider-factory");
 
 const PROPERTY_ID = "nephi_home";
 const TIMEZONE = "Asia/Taipei";
-const FIXED_NOW = "2026-07-17T10:00:00+08:00";
+const FIXED_NOW = "2026-07-27T10:00:00+08:00";
 const EVENT_TIMESTAMP = Date.parse(FIXED_NOW);
 const LINE_SECRET = "relative-date-test-secret";
 const EMPTY_STAY = Object.freeze({
@@ -23,10 +23,14 @@ const EMPTY_STAY = Object.freeze({
 });
 
 const CASES = Object.freeze([
-  { id: "today", message: "今天有房嗎？", rawText: "今天", kind: "relative", expectedCheckIn: "2026-07-17" },
-  { id: "tomorrow", message: "明天有房嗎？", rawText: "明天", kind: "relative", expectedCheckIn: "2026-07-18" },
-  { id: "day-after-tomorrow", message: "後天有房嗎？", rawText: "後天", kind: "relative", expectedCheckIn: "2026-07-19" },
-  { id: "absolute", message: "8/6 有房嗎？", rawText: "8/6", kind: "absolute", expectedCheckIn: "2026-08-06" }
+  { id: "today", message: "今天有房嗎？", availabilityText: "今天有房嗎？", rawText: "今天", kind: "absolute", expectedCheckIn: "2026-07-27", extras: [] },
+  { id: "tomorrow", message: "明天有房嗎？", availabilityText: "明天有房嗎？", rawText: "明天", kind: "absolute", expectedCheckIn: "2026-07-28", extras: [] },
+  { id: "day-after-tomorrow", message: "後天有房嗎？", availabilityText: "後天有房嗎？", rawText: "後天", kind: "absolute", expectedCheckIn: "2026-07-29", extras: [] },
+  { id: "absolute", message: "8/6 有房嗎？", availabilityText: "8/6 有房嗎？", rawText: "8/6", kind: "absolute", expectedCheckIn: "2026-08-06", extras: [] },
+  { id: "today-parking", message: "今天有房嗎？有車位嗎？", availabilityText: "今天有房嗎？", rawText: "今天", kind: "absolute", expectedCheckIn: "2026-07-27", extras: ["parking"] },
+  { id: "next-thursday-bbq", message: "下週四有房嗎？可以烤肉嗎？", availabilityText: "下週四有房嗎？", rawText: "下週四", kind: "absolute", expectedCheckIn: "2026-08-06", extras: ["bbq"] },
+  { id: "this-saturday-pool", message: "這週六有房嗎？有戲水池嗎？", availabilityText: "這週六有房嗎？", rawText: "這週六", kind: "absolute", expectedCheckIn: "2026-08-01", extras: ["pool"] },
+  { id: "absolute-mixed", message: "8/6 有房嗎？有車位嗎？可以烤肉嗎？", availabilityText: "8/6 有房嗎？", rawText: "8/6", kind: "absolute", expectedCheckIn: "2026-08-06", extras: ["parking", "bbq"] }
 ]);
 
 function clone(value) {
@@ -40,39 +44,63 @@ function plannerOutputFor(testCase, sourceEvent) {
       kind: testCase.kind,
       anchor: "message_time"
     },
-    checkInCandidate: testCase.kind === "absolute" ? testCase.expectedCheckIn : null,
+    checkInCandidate: "2030-01-01",
     checkOutCandidate: null,
     nightsCandidate: null,
     guestCountCandidate: null
   };
-  const taskStayCandidate = testCase.kind === "absolute"
-    ? clone(temporalCandidate)
-    : clone(EMPTY_STAY);
+  const taskStayCandidate = clone(temporalCandidate);
+  const factDefinitions = {
+    parking: { type: "amenity", sourceText: "有車位嗎？", requestedOutputs: ["amenity"], category: "amenity", rawText: "車位" },
+    bbq: { type: "policy", sourceText: "可以烤肉嗎？", requestedOutputs: ["policy"], category: "policy", rawText: "烤肉" },
+    pool: { type: "amenity", sourceText: "有戲水池嗎？", requestedOutputs: ["amenity"], category: "amenity", rawText: "戲水池" }
+  };
+  const tasks = [{
+    candidateIndex: 0,
+    taskId: `availability-${testCase.id}`,
+    type: "availability",
+    sourceText: testCase.availabilityText,
+    detailIntent: "general",
+    requestedOutputs: ["availability"],
+    eligibilityEvidence: { kind: "none", sourceText: "" },
+    dependsOnStayContext: true,
+    entity: {
+      category: "other",
+      rawText: "",
+      canonicalCandidate: null,
+      confidence: 0.99
+    },
+    stayCandidate: taskStayCandidate,
+    confidence: 0.99
+  }, ...testCase.extras.map((fact, index) => {
+    const definition = factDefinitions[fact];
+    return {
+      candidateIndex: index + 1,
+      taskId: `${fact}-${testCase.id}`,
+      type: definition.type,
+      sourceText: definition.sourceText,
+      detailIntent: "general",
+      requestedOutputs: definition.requestedOutputs,
+      eligibilityEvidence: { kind: "none", sourceText: "" },
+      dependsOnStayContext: false,
+      entity: {
+        category: definition.category,
+        rawText: definition.rawText,
+        canonicalCandidate: fact,
+        confidence: 0.99
+      },
+      stayCandidate: null,
+      confidence: 0.99
+    };
+  })];
   return {
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
     stay: temporalCandidate,
-    tasks: [{
-      candidateIndex: 0,
-      taskId: `availability-${testCase.id}`,
-      type: "availability",
-      sourceText: testCase.message,
-      detailIntent: "general",
-      requestedOutputs: ["availability"],
-      eligibilityEvidence: { kind: "none", sourceText: "" },
-      dependsOnStayContext: true,
-      entity: {
-        category: "other",
-        rawText: "",
-        canonicalCandidate: null,
-        confidence: 0.99
-      },
-      stayCandidate: taskStayCandidate,
-      confidence: 0.99
-    }],
-    contextRelationCandidates: [{
-      candidateIndex: 0,
+    tasks,
+    contextRelationCandidates: tasks.map((task) => ({
+      candidateIndex: task.candidateIndex,
       kind: "new_request",
       candidateRequestCycleRefs: [],
       evidenceRefs: [{
@@ -82,7 +110,7 @@ function plannerOutputFor(testCase, sourceEvent) {
         endOffset: sourceEvent.messageText.length,
         quote: sourceEvent.messageText
       }]
-    }],
+    })),
     ambiguities: [],
     missingInformation: [],
     needsHuman: false,
@@ -105,6 +133,11 @@ function seed() {
         parkingRule: "民宿旁空地可停車。",
         bbqRule: "可依正式規則使用烤肉區。"
       },
+      faqs: [{
+        knowledgeKey: "pool",
+        question: "戲水池",
+        answer: "設有戲水池，請依現場安全規範使用。"
+      }],
       rooms: [
         { id: "room301", name: "301 雙人房", type: "double", capacity: 2, enabled: true, mondayThursdayPrice: 1500 },
         { id: "room302", name: "302 四人房", type: "quad", capacity: 4, enabled: true, mondayThursdayPrice: 2200 },
@@ -231,6 +264,9 @@ async function runCase(testCase) {
         checkOut: call.checkOut
       })),
       executor: stage("executor"),
+      composer: stage("composer"),
+      taskResults: clone(completed.result.taskResults),
+      claimValidation: clone(completed.result.claimValidation),
       finalDecision: completed.result.finalDecision,
       lineCallCount: lineCalls.length
     };
@@ -260,8 +296,14 @@ function traceSummary(trace) {
     queryDateRanges: trace.queryDateRanges,
     executorOutcomes: trace.executor.results.map((result) => ({
       taskId: result.taskId,
-      status: result.status
+      status: result.status,
+      factSource: result.facts && result.facts.source || ""
     })),
+    composerValidation: trace.composer && trace.composer.validationResult,
+    claimValidation: {
+      ok: trace.claimValidation.ok,
+      errors: trace.claimValidation.errors
+    },
     finalDecision: {
       action: trace.finalDecision.action,
       reasonCode: trace.finalDecision.reasonCode
@@ -296,10 +338,21 @@ function traceSummary(trace) {
     );
     assert.equal(trace.formalRequest.items[0].readiness, "ready", `${trace.message}: FormalRequest must be ready`);
     assert.ok(trace.executor.results[0], `${trace.message}: Executor must produce a task result`);
+    assert.ok(trace.taskResults.every((item) => item.status === "answered"), `${trace.message}: every task must be independently answered`);
+    for (const fact of CASES.find((item) => item.id === trace.id).extras) {
+      assert.equal(
+        trace.taskResults.find((item) => item.taskId.startsWith(`${fact}-`)).facts.source,
+        "property_catalog",
+        `${trace.message}: ${fact} must use the property catalog`
+      );
+    }
+    assert.equal(trace.composer.validationResult, "accepted", `${trace.message}: Composer must accept the grounded sections`);
+    assert.equal(trace.claimValidation.ok, true, `${trace.message}: Claim Validator must pass`);
+    assert.deepEqual(trace.claimValidation.errors, [], `${trace.message}: Claim Validator errors must be empty`);
     assert.equal(trace.finalDecision.action, "reply", `${trace.message}: FinalDecision must reply`);
     assert.equal(trace.lineCallCount, 1, `${trace.message}: signed webhook must reach the existing LINE mock once`);
   }
-  console.log("relative date availability: PASS (today/tomorrow/day-after/absolute)");
+  console.log("relative date availability: PASS (relative/weekday/absolute + mixed property facts)");
 })().catch((error) => {
   console.error(error.stack || error.message);
   process.exitCode = 1;

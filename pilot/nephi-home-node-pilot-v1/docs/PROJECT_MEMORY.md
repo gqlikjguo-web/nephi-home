@@ -109,3 +109,11 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - The local fix supplies exact per-task text to the Composer and constrains strict structured output to those values. Claim Validator remains active and now explicitly rejects answered sections lacking a fact source.
 - The four single-answer cases and the room/parking/BBQ mixed case now produce accepted composition, complete coverage, `claimValidation.ok=true`, and `FinalDecision=reply`.
 - Safety gates, Phase 6/7, runtime uniqueness, and one complete `npm.cmd test` pass with exit 0 and empty stderr. The fix remains local; no push, deployment, Render, LINE, or credential operation is authorized.
+
+## 2026-07-27 Canonical Temporal Authority
+
+- One local `resolveCanonicalTemporal()` boundary now converts Planner candidates into the only executable temporal result, with `absent`, `resolved`, and `unresolved` as the complete status set.
+- Relative days, weekdays, weekends, absolute dates, ranges, and night counts use a fixed property timezone and injectable clock. State clears stale stay dates on unresolved current intent, and FormalRequest no longer restores dates from state.
+- Fixed-clock signed-webhook regressions cover availability plus parking, BBQ, and pool, with Composer acceptance, Claim Validator pass, FinalDecision reply, and one LINE mock call.
+- Targeted gates and one complete `npm.cmd test` pass with OS exit 0 and empty stderr. The real-provider 20-run stability matrix was not rerun because this local environment has no test OpenAI key or model setting.
+- The fix remains local; no push, deployment, Render operation, LINE operation, credential change, or environment change occurred.

@@ -6,7 +6,7 @@ const { legacyCycleId } = require("./contracts");
 
 const PATHS = new Set(["stay.checkIn", "stay.checkOut", "stay.nights", "stay.guests", "stay.searchRange", "inventory.mode", "inventory.entityId", "inventory.features"]);
 const TOPIC_TASK_TYPES = new Set(["amenity", "policy", "property_fact"]);
-const FAILED_TEMPORAL_STATUSES = new Set(["invalid", "unresolved", "conflicting"]);
+const FAILED_TEMPORAL_STATUSES = new Set(["unresolved"]);
 function blankTopic() { return { capabilityType: null, canonicalId: null, category: null, detailIntent: "general", detailFields: [] }; }
 function blankConditions() { return { stay: { checkIn: null, checkOut: null, nights: null, guests: null, searchRange: null }, inventory: { mode: "any", entityId: null, features: [] }, topic: blankTopic() }; }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
@@ -137,6 +137,15 @@ function applyReducerPatch(conditions, patch, transition) {
     else if (item.operation === "set" || item.operation === "replace") { setPath(conditions, item.field, clone(item.value)); transition[item.operation === "replace" ? "replaced" : "set"].push(item.field); }
   }
 }
+function clearStaleTemporalConditions(conditions, transition) {
+  for (const field of ["stay.checkIn", "stay.checkOut", "stay.searchRange"]) {
+    const [group, key] = field.split(".");
+    if (conditions[group] && conditions[group][key] !== null) {
+      setPath(conditions, field, null);
+      transition.cleared.push(field);
+    }
+  }
+}
 function conditionsForDecision(state, contextInput, decision, isPrimary, transition) {
   const byCandidate = contextInput && contextInput.cycleInputsByCandidateIndex || {};
   if (Object.hasOwn(byCandidate, decision.candidateIndex)) return clone(byCandidate[decision.candidateIndex]);
@@ -151,7 +160,8 @@ function conditionsForDecision(state, contextInput, decision, isPrimary, transit
     && candidateInput.temporalResult
     && FAILED_TEMPORAL_STATUSES.has(candidateInput.temporalResult.resolutionStatus));
   if (Object.hasOwn(proposedInputs, decision.candidateIndex)) {
-    if (!failedTemporalAttempt) contextOperationsFromInputs(conditions, candidateInput, transition);
+    if (failedTemporalAttempt) clearStaleTemporalConditions(conditions, transition);
+    else contextOperationsFromInputs(conditions, candidateInput, transition);
   } else if (isPrimary) { contextOperationsFromInputs(conditions, contextInput, transition); applyReducerPatch(conditions, contextInput && contextInput.contextPatch, transition); }
   return conditions;
 }
@@ -188,10 +198,8 @@ function reduceConversationState(previous, contextInput, scope = {}) {
       && candidateInput.hasNewDateExpression
       && candidateInput.temporalResult
       && FAILED_TEMPORAL_STATUSES.has(candidateInput.temporalResult.resolutionStatus));
-    const temporalResult = failedTemporalAttempt
-      ? existing.temporalResult
-      : candidateInput && candidateInput.temporalResult || existing && existing.temporalResult || null;
-    const sourceEvidenceRefs = normalizeEvidenceRefs(existing && (failedTemporalAttempt || !candidateInput || !candidateInput.hasNewDateExpression)
+    const temporalResult = candidateInput && candidateInput.temporalResult || existing && existing.temporalResult || null;
+    const sourceEvidenceRefs = normalizeEvidenceRefs(existing && (!candidateInput || !candidateInput.hasNewDateExpression)
       ? existing.sourceEvidenceRefs
       : [
         ...(existing && existing.sourceEvidenceRefs || []),
@@ -203,7 +211,9 @@ function reduceConversationState(previous, contextInput, scope = {}) {
       && candidateInput.temporalResult
       && candidateInput.temporalResult.resolutionStatus === "resolved"
     );
-    const contextReuseExpiresAt = canRefreshContextReuse
+    const contextReuseExpiresAt = failedTemporalAttempt
+      ? scope.now || new Date().toISOString()
+      : canRefreshContextReuse
       ? new Date(new Date(scope.now || Date.now()).getTime() + 24 * 60 * 60 * 1000).toISOString()
       : existing.contextReuseExpiresAt || null;
     const cycle = { requestCycleId, requestKind: conditions.topic && conditions.topic.capabilityType || existing && existing.requestKind || "", status: "active", confirmedInputs: conditions, temporalResult, sourceEvidenceRefs, contextReuseExpiresAt, createdAt: existing && existing.createdAt || scope.now || new Date().toISOString(), updatedAt: scope.now || new Date().toISOString() };

@@ -177,8 +177,13 @@ async function main() {
       task({ taskId: eventId, type: "availability", sourceText, category: "room", rawText: "unresolved generic inventory" })
     ], { dateText: eventId === "tonight" ? "今晚" : "7/23", dateKind: eventId === "tonight" ? "relative" : "absolute" }), counters);
     const result = await process(runtime.engine, eventId, sourceText);
-    assert.equal(counters.availability, 1);
-    assert.equal(result.taskResults[0].status, "answered");
+    if (eventId === "empty") {
+      assert.equal(counters.availability || 0, 0, "a Planner temporal span absent from the guest message must not reach availability");
+      assert.equal(result.taskResults[0].status, "needs_clarification");
+    } else {
+      assert.equal(counters.availability, 1);
+      assert.equal(result.taskResults[0].status, "answered");
+    }
   }
 
   const ignoreCounters = {};

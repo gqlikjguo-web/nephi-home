@@ -126,7 +126,7 @@ assert.equal(resolveTemporalExpression(
   { eventTimestamp: yearEnd, timezone: "Asia/Taipei", checkInCandidate: "2026-01-05", defaultNights: 1 }
 ).checkIn, "2027-01-05");
 assert.deepEqual(resolveTemporalExpression({ rawText: "下週三", kind: "weekday", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei", nightsCandidate: 1 }).checkIn, "2026-07-22");
-assert.equal(resolveTemporalExpression({ rawText: "2/30", kind: "absolute", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei" }).resolutionStatus, "invalid");
+assert.equal(resolveTemporalExpression({ rawText: "2/30", kind: "absolute", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei" }).resolutionStatus, "unresolved");
 
 let state = emptyStateV2({ propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", now: "2026-07-17T02:00:00.000Z" });
 state = reduceConversationState(state, { contextDecision: { action: "start", requestCycleId: "state-test" }, contextPatch: [
