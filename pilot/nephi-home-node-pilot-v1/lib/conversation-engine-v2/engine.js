@@ -108,7 +108,17 @@ function normalizePlannerOutput(plannerOutput, { eventTimestamp, timezone } = {}
     return normalized;
   }) };
   const topLevelStayPresent = Boolean(stay.dateExpression && stay.dateExpression.rawText || stay.checkInCandidate || stay.checkOutCandidate || stay.nightsCandidate || stay.guestCountCandidate);
-  if (output.tasks.length === 1 && !Object.hasOwn(output.tasks[0], "stayCandidate")) output.tasks[0] = { ...output.tasks[0], stayCandidate: stay };
+  const singleTask = output.tasks.length === 1 && output.tasks[0];
+  const taskDateExpressionPresent = Boolean(singleTask && singleTask.stayCandidate
+    && singleTask.stayCandidate.dateExpression
+    && singleTask.stayCandidate.dateExpression.rawText);
+  const topLevelDateExpressionPresent = Boolean(stay.dateExpression && stay.dateExpression.rawText);
+  if (singleTask && (
+    !Object.hasOwn(singleTask, "stayCandidate")
+    || topLevelDateExpressionPresent && !taskDateExpressionPresent
+  )) {
+    output.tasks[0] = { ...output.tasks[0], stayCandidate: stay };
+  }
   output.ambiguousTopLevelStay = output.tasks.length > 1 && topLevelStayPresent && output.tasks.some((task) => task.dependsOnStayContext && (!Object.hasOwn(task, "stayCandidate") || task.stayCandidate === null));
   const availableDatesRequested = output.tasks.some((task) => task.type === "available_dates");
   const genericAvailability = output.tasks.some((task) => isGenericAvailabilityEntity(task));
