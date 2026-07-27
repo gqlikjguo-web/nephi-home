@@ -89,3 +89,9 @@
 - Preserve the hard two-attempt maximum and do not add retries for invalid request, parse, structured-output, empty-response, configuration, unknown, or local contract failures.
 - After separate authorization, push and deploy only to test-only before repeating the real-provider stability gate.
 - Do not push, deploy, operate Render or LINE, or read/change credentials or environment variables in this implementation task.
+
+## 2026-07-27 Canonical Request core convergence
+
+- Review the five local gate commits and their Golden, operator-roundtrip, temporal-range, mixed-request, Phase 6/7, signed-webhook, and duplicate-writer mutation evidence.
+- Preserve the single Canonicalizer and immutable CanonicalRequest boundary; future capabilities must enter through the property-neutral registry and property-scoped facts.
+- Do not push, deploy, operate Render or LINE, or read/change credentials or environment variables without separate authorization.

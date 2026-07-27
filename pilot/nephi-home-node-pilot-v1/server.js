@@ -127,6 +127,36 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       evidenceSourceMatches: (candidate && Array.isArray(candidate.evidenceSourceMatches) ? candidate.evidenceSourceMatches : []).map(Boolean)
     }))
   };
+  if (details.stage === "canonical_request") return {
+    ...base,
+    items: (details.items || []).map((item) => ({
+      taskId: String(item && item.taskId || ""),
+      capability: String(item && item.capability || ""),
+      canonicalEntity: {
+        category: String(item && item.canonicalEntity && item.canonicalEntity.category || ""),
+        canonicalId: String(item && item.canonicalEntity && item.canonicalEntity.canonicalId || ""),
+        status: String(item && item.canonicalEntity && item.canonicalEntity.status || "")
+      },
+      detailIntent: String(item && item.detailIntent || ""),
+      temporalState: {
+        resolutionStatus: String(item && item.temporalState && item.temporalState.resolutionStatus || ""),
+        checkIn: String(item && item.temporalState && item.temporalState.checkIn || ""),
+        checkOut: String(item && item.temporalState && item.temporalState.checkOut || ""),
+        nights: Number.isInteger(item && item.temporalState && item.temporalState.nights)
+          ? item.temporalState.nights
+          : null,
+        timezone: String(item && item.temporalState && item.temporalState.timezone || "")
+      },
+      stayDependency: item && item.stayDependency === false
+        ? false
+        : String(item && item.stayDependency || ""),
+      requiredFields: (item && Array.isArray(item.requiredFields) ? item.requiredFields : []).map(String),
+      resolverId: String(item && item.resolverId || ""),
+      riskLevel: String(item && item.riskLevel || ""),
+      responseMode: String(item && item.responseMode || ""),
+      evidenceRefCount: safeDiagnosticCount(item && item.evidenceRefs && item.evidenceRefs.length)
+    }))
+  };
   if (details.stage === "executor") return { ...base, results: (details.results || []).map((item) => ({ taskId: item.taskId || "", status: item.status || "", reason: item.reason || "", locationFactProvided: Boolean(item.locationFactProvided), factSource: item.factSource || "" })) };
   if (details.stage === "semantic_contract") return { ...base, inputTasks: (details.inputTasks || []).map(safePlannerTraceTask), outputTasks: (details.outputTasks || []).map(safePlannerTraceTask), shouldIgnore: Boolean(details.shouldIgnore), validationPassed: Boolean(details.validationPassed), semanticValidation: details.semanticValidation || null };
   if (details.stage === "no_reply_gate") return { ...base, shouldIgnore: Boolean(details.shouldIgnore), actionableTaskCount: Number(details.actionableTaskCount || 0), unknownTaskCount: Number(details.unknownTaskCount || 0), gateHit: Boolean(details.gateHit), reasonCode: String(details.reasonCode || "") };

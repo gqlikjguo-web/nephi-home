@@ -103,3 +103,9 @@ Resolve the unchanged guest temporal span once with an injectable clock and prop
 A single timeout among otherwise healthy stability replays is evidence for a narrow provider-boundary retry, not for changing Planner semantics or downstream fallback rules. Retry only error classes known to be transient, cap the complete classification at two attempts, and add a bounded delay so the second request does not immediately repeat the same transient condition.
 
 Never retry invalid requests, parsing or structured-output failures, empty responses, unknown failures, or local contract validation. Those failures contain no evidence that sending the same request again is safe or useful. When the second transient attempt also fails, retain the original `planner_parse_failed` handoff and record only allowlisted categories and booleans.
+
+## 2026-07-27 — Candidate validation is not executable authority
+
+Validating or repairing a Planner candidate does not make it safe for State, FormalRequest, QueryPlan, or Executor to interpret that candidate independently. Multiple individually reasonable fallbacks can still disagree on capability, entity, temporal meaning, or resolver and produce cross-stage regressions.
+
+Create one immutable canonical object before executable state and make each downstream layer fail when that authority is missing or rewritten. Mutation tests must inject duplicate writers, not merely count files, because a second writer can hide inside an otherwise legitimate consumer module.

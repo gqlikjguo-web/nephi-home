@@ -133,3 +133,9 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - Invalid requests, non-429 4xx responses, empty responses, JSON parse failures, structured-output failures, unknown/configuration failures, and local Planner contract failures remain single-attempt failures.
 - Retry success resumes the unchanged validation and conversation pipeline. A second failure retains `planner_parse_failed`, the existing safe handoff, and existing LINE delivery behavior.
 - Targeted regressions and one complete `npm.cmd test` pass locally. The change remains local pending review; no push, deployment, Render, LINE, credential, or environment operation occurred.
+
+## 2026-07-27 Canonical Request core convergence
+
+- Five local stop gates established the permanent golden suite, property data roundtrip contract, immutable CanonicalRequest/capability registry, compact date-range grammar, and sole semantic-writer cutover.
+- The active Engine now invokes one `canonicalizeExecutionItem()` boundary. CanonicalRequest-backed consumers preserve mixed availability/property-fact routing, stale-date protection, claim validation, FinalDecision safety, and signed-webhook transport behavior.
+- The change remains local pending review. The three draft Canonical Request planning files and all historical verification artifacts remain untracked and excluded.

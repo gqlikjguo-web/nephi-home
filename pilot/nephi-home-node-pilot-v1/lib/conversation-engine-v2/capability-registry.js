@@ -23,7 +23,7 @@ const STAY_DEPENDENCIES = new Set(["required", false]);
 const REGISTRY_BLUEPRINT = {
   availability: {
     capability: "availability",
-    acceptedCandidateTypes: ["availability"],
+    acceptedCandidateTypes: ["availability", "available_dates"],
     acceptedEntityCategories: ["room", "other"],
     stayDependency: "required",
     requiredFields: ["stay.checkIn", "stay.checkOut"],

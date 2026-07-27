@@ -105,3 +105,8 @@
 
 - Added one category-gated retry at the OpenAI Planner request boundary for timeout, network, rate-limit, and provider-5xx failures, with a hard two-attempt cap and bounded delay.
 - Added allowlisted retry outcome diagnostics plus retry/no-retry, exhausted fallback, callback isolation, local-contract, and sensitive-data-exclusion coverage.
+
+## 2026-07-27 — Canonical Request semantic authority
+
+- Added one property-neutral Canonicalizer that freezes capability, entity, canonical temporal, dependency, required fields, resolver, risk, response mode, and evidence binding.
+- Cut the active State → FormalRequest → QueryPlan → Executor → ResponsePlan path over to immutable `CanonicalRequest`, with safe canonical diagnostics and mutation guards against duplicate writers.

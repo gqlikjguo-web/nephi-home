@@ -24,8 +24,27 @@ function collectAllowedFacts(value, key = "") {
   return [];
 }
 
-function buildResponsePlan({ propertyId, taskResults, inputTaskIds, reviewActions = [] }) {
-  const sections = (taskResults || []).map((result, inputOrder) => ({ taskId: result.taskId, type: result.type, status: result.status, responseMode: responseMode(result.status), priority: taskPriority(result.type), inputOrder, facts: result.facts || {}, question: result.question || "", missingInputs: result.missingInputs || [], needsReview: Boolean(result.review) }));
+function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalRequests = [], reviewActions = [] }) {
+  const canonicalByTaskId = new Map((canonicalRequests || []).map((request) => [request.taskId, request]));
+  const sections = (taskResults || []).map((result, inputOrder) => {
+    const canonicalRequest = canonicalByTaskId.get(result.taskId) || null;
+    const type = canonicalRequest ? canonicalRequest.capability : result.type;
+    return {
+      taskId: result.taskId,
+      type,
+      status: result.status,
+      responseMode: responseMode(result.status),
+      canonicalResponseMode: canonicalRequest && canonicalRequest.responseMode || "",
+      resolverId: canonicalRequest && canonicalRequest.resolverId || "",
+      riskLevel: canonicalRequest && canonicalRequest.riskLevel || "",
+      priority: taskPriority(type),
+      inputOrder,
+      facts: result.facts || {},
+      question: result.question || "",
+      missingInputs: result.missingInputs || [],
+      needsReview: Boolean(result.review)
+    };
+  });
   const expected = inputTaskIds || sections.map((section) => section.taskId);
   const coverage = coverageByStatus(sections);
   const coverageValidation = assertTaskCoverage(expected, coverage);

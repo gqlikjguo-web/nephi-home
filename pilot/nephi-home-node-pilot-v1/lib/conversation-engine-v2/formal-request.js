@@ -1,5 +1,7 @@
 "use strict";
 
+const { assertCanonicalRequest } = require("./canonical-request");
+
 const INVENTORY_CAPABILITIES = new Set(["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"]);
 const SUPPORTED_CAPABILITIES = new Set([...INVENTORY_CAPABILITIES, "available_dates", "amenity", "policy", "property_fact", "amenity_list", "booking_request", "human_help", "high_risk", "unknown"]);
 
@@ -83,4 +85,140 @@ function resultForNotReady(formalRequest) {
   };
 }
 
-module.exports = { buildFormalRequest, buildQueryPlan, resultForNotReady, stableFormalRequestId };
+function canonicalStay(canonicalRequest, confirmedInputs = {}) {
+  const temporal = canonicalRequest.temporalState;
+  const confirmed = confirmedInputs.stay || {};
+  return {
+    checkIn: temporal.checkIn || null,
+    checkOut: temporal.checkOut || null,
+    nights: Number.isInteger(temporal.nights) ? temporal.nights : null,
+    guests: Number.isInteger(confirmed.guests) ? confirmed.guests : null,
+    searchRange: temporal.searchRange || null
+  };
+}
+
+function valueAtPath({ stay }, field) {
+  if (field === "stay.checkIn") return stay.checkIn;
+  if (field === "stay.checkOut") return stay.checkOut;
+  if (field === "stay.searchRange") return stay.searchRange;
+  return null;
+}
+
+function canonicalReadiness(canonicalRequest, stay) {
+  if (canonicalRequest.temporalState.resolutionStatus === "unresolved") {
+    return {
+      status: "missing_information",
+      missingFields: canonicalRequest.requiredFields.length
+        ? canonicalRequest.requiredFields.slice(0, 1)
+        : ["stay.checkIn"],
+      invalidFields: [],
+      conflictingFields: []
+    };
+  }
+  const missingFields = canonicalRequest.requiredFields
+    .filter((field) => !valueAtPath({ stay }, field));
+  if (missingFields.length) {
+    return {
+      status: "missing_information",
+      missingFields: missingFields.slice(0, 1),
+      invalidFields: [],
+      conflictingFields: []
+    };
+  }
+  if (canonicalRequest.resolverId === "availability_resolver"
+    && ["not_found", "ambiguous"].includes(canonicalRequest.canonicalEntity.status)
+    && canonicalRequest.canonicalEntity.category !== "other") {
+    return {
+      status: "entity_unresolved",
+      missingFields: [],
+      invalidFields: [],
+      conflictingFields: []
+    };
+  }
+  return {
+    status: "ready",
+    missingFields: [],
+    invalidFields: [],
+    conflictingFields: []
+  };
+}
+
+function buildCanonicalFormalRequest({
+  property,
+  canonicalRequest,
+  candidateIndex = null,
+  requestCycleId,
+  confirmedInputs = {}
+}) {
+  const request = assertCanonicalRequest(canonicalRequest);
+  const stay = canonicalStay(request, confirmedInputs);
+  const inventory = confirmedInputs.inventory || {};
+  return {
+    formalRequestId: `${String(requestCycleId || "none")}:${request.taskId}`,
+    taskId: request.taskId,
+    candidateIndex,
+    requestCycleId,
+    propertyId: property.propertyId,
+    canonicalRequest: request,
+    capability: request.capability,
+    resolverId: request.resolverId,
+    riskLevel: request.riskLevel,
+    responseMode: request.responseMode,
+    detailIntent: request.detailIntent,
+    entity: request.canonicalEntity,
+    stay,
+    inventory: {
+      mode: inventory.mode || "any",
+      entityId: inventory.entityId || request.canonicalEntity.canonicalId || null,
+      entityIds: Array.isArray(inventory.entityIds) ? inventory.entityIds : [],
+      features: Array.isArray(inventory.features) ? inventory.features : []
+    },
+    topic: {
+      ...(confirmedInputs.topic || {}),
+      capabilityType: request.capability,
+      canonicalId: request.canonicalEntity.canonicalId,
+      category: request.canonicalEntity.category,
+      detailIntent: request.detailIntent
+    },
+    evidence: {
+      sourceEvidenceRefs: request.evidenceRefs,
+      temporalFieldRefs: request.temporalState.fields || {}
+    },
+    readiness: canonicalReadiness(request, stay)
+  };
+}
+
+function buildCanonicalQueryPlan(formalRequest) {
+  if (!formalRequest || !formalRequest.readiness
+    || formalRequest.readiness.status !== "ready") return null;
+  const canonicalRequest = assertCanonicalRequest(formalRequest.canonicalRequest);
+  return {
+    formalRequestId: formalRequest.formalRequestId,
+    taskId: canonicalRequest.taskId,
+    candidateIndex: formalRequest.candidateIndex,
+    requestCycleId: formalRequest.requestCycleId,
+    propertyId: formalRequest.propertyId,
+    canonicalRequest,
+    capability: canonicalRequest.capability,
+    resolverId: canonicalRequest.resolverId,
+    riskLevel: canonicalRequest.riskLevel,
+    responseMode: canonicalRequest.responseMode,
+    detailIntent: canonicalRequest.detailIntent,
+    operation: canonicalRequest.resolverId,
+    conditions: {
+      stay: formalRequest.stay,
+      inventory: formalRequest.inventory,
+      topic: formalRequest.topic
+    },
+    entity: canonicalRequest.canonicalEntity
+  };
+}
+
+module.exports = {
+  buildFormalRequest,
+  buildQueryPlan,
+  buildCanonicalFormalRequest,
+  buildCanonicalQueryPlan,
+  resultForNotReady,
+  stableFormalRequestId
+};

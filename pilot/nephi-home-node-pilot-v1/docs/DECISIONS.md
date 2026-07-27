@@ -120,3 +120,11 @@
 **Reason:** A real stability replay showed one isolated retryable timeout while the other 139 executions and every downstream contract remained healthy. Treating that transient provider failure as immediately final caused an avoidable safe handoff.
 
 **Constraint:** Invalid requests, non-429 4xx responses, empty responses, JSON parse failures, structured-output failures, configuration/unknown failures, and local schema or contract failures are never retried. A successful second attempt uses only its valid output. A failed second attempt preserves `planner_parse_failed`, safe handoff, and existing delivery. Diagnostics remain allowlisted and must not retain prompts, guest content, raw provider responses, headers, secrets, property data, or stacks.
+
+## D-016 — Canonicalizer is the sole executable semantic writer
+
+**Decision:** Planner output remains candidate input. One `canonicalizeExecutionItem()` boundary creates an immutable `CanonicalRequest` whose capability, entity, temporal state, stay dependency, required fields, resolver, risk, response mode, and evidence binding are authoritative for execution.
+
+**Reason:** State, readiness, query construction, and dispatch previously retained independent semantic repairs or routing choices. Those duplicates allowed a Planner type, stale state, or consumer fallback to disagree with the accepted temporal, entity, or capability.
+
+**Constraint:** State may persist canonical values but may not rewrite them. FormalRequest and QueryPlan derive readiness and operations only from `CanonicalRequest`. The canonical executor rejects resolver mismatches. ResponsePlan, Claim Validator, and FinalDecision consume canonical outcomes without reclassifying Planner semantics. Capability policy remains property-neutral; property-specific facts come only from the scoped catalog and resolver.

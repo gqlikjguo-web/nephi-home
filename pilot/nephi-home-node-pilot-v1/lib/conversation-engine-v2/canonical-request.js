@@ -17,7 +17,7 @@ const CANONICAL_REQUEST_FIELDS = Object.freeze([
 ]);
 
 const TEMPORAL_STATUSES = new Set(["absent", "resolved", "unresolved"]);
-const ENTITY_FIELDS = new Set(["category", "canonicalId", "canonicalSet", "status"]);
+const ENTITY_FIELDS = new Set(["category", "canonicalId", "canonicalSet", "status", "rawText"]);
 const TEMPORAL_FIELDS = new Set([
   "rawText",
   "expressionType",
@@ -80,6 +80,7 @@ function validateCanonicalEntity(entity) {
     || typeof entity.category !== "string"
     || !entity.category
     || !(entity.canonicalId === null || typeof entity.canonicalId === "string")
+    || (entity.rawText !== undefined && typeof entity.rawText !== "string")
     || (entity.canonicalSet !== undefined && (!Array.isArray(entity.canonicalSet)
       || entity.canonicalSet.some((item) => typeof item !== "string" || !item)))
     || (entity.status !== undefined && typeof entity.status !== "string")) return false;

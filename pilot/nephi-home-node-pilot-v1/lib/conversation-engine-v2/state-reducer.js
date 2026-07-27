@@ -5,7 +5,6 @@ const { migratePendingRequest } = require("./pending-request");
 const { legacyCycleId } = require("./contracts");
 
 const PATHS = new Set(["stay.checkIn", "stay.checkOut", "stay.nights", "stay.guests", "stay.searchRange", "inventory.mode", "inventory.entityId", "inventory.features"]);
-const TOPIC_TASK_TYPES = new Set(["amenity", "policy", "property_fact"]);
 const FAILED_TEMPORAL_STATUSES = new Set(["unresolved"]);
 function blankTopic() { return { capabilityType: null, canonicalId: null, category: null, detailIntent: "general", detailFields: [] }; }
 function blankConditions() { return { stay: { checkIn: null, checkOut: null, nights: null, guests: null, searchRange: null }, inventory: { mode: "any", entityId: null, features: [] }, topic: blankTopic() }; }
@@ -78,9 +77,17 @@ function migrateStateV2(state, scope = {}) {
   return migrated;
 }
 function topicFromTasks(tasks) {
-  const task = [...(tasks || [])].reverse().find((item) => TOPIC_TASK_TYPES.has(item && item.type) && item.entity && item.entity.canonicalCandidate);
-  if (!task) return null;
-  return { capabilityType: task.type, canonicalId: String(task.entity.canonicalCandidate), category: String(task.entity.category || "other"), detailIntent: String(task.detailIntent || "general"), detailFields: [...new Set((task.requestedOutputs || []).map(String).filter(Boolean))].slice(0, 12) };
+  const canonicalRequest = [...(tasks || [])].reverse()
+    .map((item) => item && (item.canonicalRequest || item))
+    .find((request) => request && request.canonicalEntity && request.canonicalEntity.canonicalId);
+  if (!canonicalRequest) return null;
+  return {
+    capabilityType: canonicalRequest.capability,
+    canonicalId: String(canonicalRequest.canonicalEntity.canonicalId),
+    category: String(canonicalRequest.canonicalEntity.category || "other"),
+    detailIntent: String(canonicalRequest.detailIntent || "general"),
+    detailFields: []
+  };
 }
 function conditionsForCycle(state, requestCycleId) {
   const cycle = (state && state.requestCycles || []).find((item) => item.requestCycleId === requestCycleId);
@@ -105,10 +112,7 @@ function decideContextExecution(previous, relations, plannerTasks) {
     if (!relation || relation.stateAction !== "continue") return [{ candidateIndex: task.candidateIndex, requestCycleId: decision && decision.requestCycleId || null, task }];
     const pending = pendings.get(relation.requestCycleId);
     if (pending && Array.isArray(pending.tasks)) { resumedPending = true; return pending.tasks.map((pendingTask) => ({ candidateIndex: task.candidateIndex, requestCycleId: decision && decision.requestCycleId || null, task: { ...pendingTask, candidateIndex: task.candidateIndex, stayCandidate: task.stayCandidate } })); }
-    const cycle = cycles.get(relation.requestCycleId);
-    const topic = cycle && cycle.confirmedInputs && cycle.confirmedInputs.topic;
-    if (!topic || !topic.canonicalId || task.entity && task.entity.canonicalCandidate !== null && task.entity.canonicalCandidate !== undefined || task.type !== topic.capabilityType) return [{ candidateIndex: task.candidateIndex, requestCycleId: decision && decision.requestCycleId || null, task }];
-    return [{ candidateIndex: task.candidateIndex, requestCycleId: decision && decision.requestCycleId || null, task: { ...task, entity: { ...task.entity, category: topic.category, canonicalCandidate: topic.canonicalId } } }];
+    return [{ candidateIndex: task.candidateIndex, requestCycleId: decision && decision.requestCycleId || null, task }];
   });
   const executionTasks = executionItems.map((item) => item.task);
   const primaryDecision = contextDecisions.find((item) => item.action !== "none") || { action: "none", requestCycleId: null, candidateIndex: null };

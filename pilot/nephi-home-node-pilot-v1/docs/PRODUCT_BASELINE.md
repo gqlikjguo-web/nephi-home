@@ -79,3 +79,12 @@
 - Transient provider failures are retried only for `timeout`, `network`, `rate_limit`, and `provider_5xx`, at most once after a short bounded delay. All other failure categories and local contract failures are not retried.
 - A successful retry resumes the same Planner validation and runtime pipeline. An exhausted retry does not change the existing `planner_parse_failed` handoff, safe fallback, or LINE delivery behavior.
 - Raw provider bodies and messages, prompts, guest content, source identifiers, property data, headers, stacks, API keys, tokens, and credentials never enter the persisted trace.
+
+## Canonical Request authority
+
+- Planner capability, entity, temporal, dependency, and output fields are candidates only.
+- `canonicalizeExecutionItem()` is the single active boundary that creates an immutable `CanonicalRequest`.
+- The capability registry supplies property-neutral stay dependency, required fields, resolver, risk, and response-mode policy.
+- State, FormalRequest, QueryPlan, Executor, ResponsePlan, Claim Validator, and FinalDecision consume canonical values or canonical execution outcomes without selecting a second capability, entity, date, or resolver.
+- Property facts remain scoped by `propertyId`; canonical routing never embeds a property name, property ID, price, rule, room number, date, or fixed guest answer.
+- Runtime mutation gates reject a second Canonicalizer or a second temporal, capability, entity, or resolver writer.

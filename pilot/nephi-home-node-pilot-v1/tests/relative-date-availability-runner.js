@@ -273,6 +273,7 @@ async function runCase(testCase) {
         topLevel: clone(plannerCandidate.stay),
         task: clone(plannerCandidate.tasks[0].stayCandidate)
       },
+      canonicalRequest: stage("canonical_request"),
       temporal: stage("temporal"),
       stateBefore: completed.stateBefore,
       stateAfter: completed.result.state || null,
@@ -340,6 +341,23 @@ function traceSummary(trace) {
 
   for (const trace of traces) {
     assert.equal(trace.stateBefore, null, `${trace.message}: conversation must start fresh`);
+    assert.ok(trace.canonicalRequest, `${trace.message}: Engine must emit the canonical request boundary`);
+    const canonicalItems = trace.canonicalRequest.items;
+    const availabilityRequest = canonicalItems.find((item) => item.capability === "availability");
+    assert.ok(availabilityRequest, `${trace.message}: availability must be canonicalized`);
+    assert.equal(availabilityRequest.resolverId, "availability_resolver");
+    assert.equal(availabilityRequest.stayDependency, "required");
+    assert.deepEqual(availabilityRequest.requiredFields, ["stay.checkIn", "stay.checkOut"]);
+    assert.equal(availabilityRequest.temporalState.resolutionStatus, "resolved");
+    assert.equal(availabilityRequest.temporalState.checkIn, trace.expectedCheckIn);
+    assert.equal(availabilityRequest.temporalState.checkOut, trace.expectedCheckOut);
+    for (const fact of CASES.find((item) => item.id === trace.id).extras) {
+      const factRequest = canonicalItems.find((item) => item.capability === fact);
+      assert.ok(factRequest, `${trace.message}: ${fact} must be canonicalized independently`);
+      assert.equal(factRequest.resolverId, "property_catalog");
+      assert.equal(factRequest.stayDependency, false);
+      assert.equal(factRequest.temporalState.resolutionStatus, "absent");
+    }
     assert.equal(
       trace.temporal.items[0].resolutionStatus,
       "resolved",

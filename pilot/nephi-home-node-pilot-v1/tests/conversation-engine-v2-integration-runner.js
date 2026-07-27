@@ -114,7 +114,7 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
   assert.ok(guarded.replyText.includes("停車位"));
   assert.ok(guarded.replyText.includes("麻將"));
   assert.deepEqual(guarded.claimValidation.coveredTaskIds.sort(), ["a", "b", "c"]);
-  assert.deepEqual(diagnostics.map((item) => item.stage), ["property_catalog", "planner", "validation", "semantic_contract", "context_validation", "pending_request", "no_reply_gate", "temporal", "state", "entity_resolution", "formal_request", "query_plan", "pending_request", "executor", "response_plan", "composer", "claim_validator", "line_ready", "final_decision"]);
+  assert.deepEqual(diagnostics.map((item) => item.stage), ["property_catalog", "planner", "validation", "semantic_contract", "context_validation", "pending_request", "no_reply_gate", "canonical_request", "temporal", "state", "entity_resolution", "formal_request", "query_plan", "pending_request", "executor", "response_plan", "composer", "claim_validator", "line_ready", "final_decision"]);
   assert.equal(new Set(diagnostics.map((item) => item.traceId)).size, 1);
   assert.equal(guarded.replyText, result.replyText);
   const safeDiagnostics = diagnostics.map(formatSafeTestOnlyConversationTrace).filter(Boolean);
@@ -137,6 +137,14 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
     { candidateIndex: 0, relationKind: "new_request", candidateRequestCycleRefCount: 0, evidenceRefCount: 1, evidenceSourceMatches: [true] },
     { candidateIndex: 1, relationKind: "new_request", candidateRequestCycleRefCount: 0, evidenceRefCount: 1, evidenceSourceMatches: [true] },
     { candidateIndex: 2, relationKind: "new_request", candidateRequestCycleRefCount: 0, evidenceRefCount: 1, evidenceSourceMatches: [true] }
+  ]);
+  const safeCanonicalRequest = safeDiagnostics.find((item) => item.stage === "canonical_request");
+  assert.deepEqual(safeCanonicalRequest.items.map(({ taskId, capability, stayDependency, resolverId, evidenceRefCount }) => ({
+    taskId, capability, stayDependency, resolverId, evidenceRefCount
+  })), [
+    { taskId: "a", capability: "availability", stayDependency: "required", resolverId: "availability_resolver", evidenceRefCount: 1 },
+    { taskId: "b", capability: "parking", stayDependency: false, resolverId: "property_catalog", evidenceRefCount: 1 },
+    { taskId: "c", capability: "amenity", stayDependency: false, resolverId: "property_catalog", evidenceRefCount: 1 }
   ]);
   const rejectedTrace = formatSafeTestOnlyConversationTrace({
     traceId: "rejected-trace", propertyId: "p1", stage: "validation", acceptedTasks: [],
@@ -178,7 +186,26 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
     apiKey: "PRIVATE API KEY", accessToken: "PRIVATE LINE TOKEN", signature: "PRIVATE SIGNATURE",
     googleMapsUrl: "https://maps.example.invalid/private"
   });
-  const safeSerialized = JSON.stringify([...safeDiagnostics, rejectedTrace, hostileContextTrace, hostileTrace]);
+  const hostileCanonicalTrace = formatSafeTestOnlyConversationTrace({
+    traceId: "hostile-canonical-trace",
+    propertyId: "p1",
+    stage: "canonical_request",
+    items: [{
+      taskId: "a",
+      capability: "availability",
+      canonicalEntity: { category: "room", canonicalId: "r1", status: "resolved", rawText: "PRIVATE GUEST MESSAGE" },
+      detailIntent: "general",
+      temporalState: { resolutionStatus: "resolved", checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, timezone: "Asia/Taipei", rawText: "PRIVATE GUEST MESSAGE" },
+      stayDependency: "required",
+      requiredFields: ["checkIn", "checkOut"],
+      resolverId: "availability_resolver",
+      riskLevel: "standard",
+      responseMode: "answer",
+      evidenceRefs: [{ eventId: "PRIVATE EVENT ID", messageRef: "PRIVATE MESSAGE REF", quote: "PRIVATE EVIDENCE QUOTE" }],
+      propertyData: { rooms: "PRIVATE PROPERTY DATA" }
+    }]
+  });
+  const safeSerialized = JSON.stringify([...safeDiagnostics, rejectedTrace, hostileContextTrace, hostileTrace, hostileCanonicalTrace]);
   for (const forbidden of ["PRIVATE EVIDENCE QUOTE", "PRIVATE GUEST MESSAGE", "PRIVATE EVENT ID", "PRIVATE MESSAGE REF", "PRIVATE PROPERTY DATA", "PRIVATE USER ID", "PRIVATE API KEY", "PRIVATE LINE TOKEN", "PRIVATE SIGNATURE", "maps.example.invalid"]) {
     assert.equal(safeSerialized.includes(forbidden), false, `safe trace leaked ${forbidden}`);
   }
@@ -275,7 +302,7 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
     });
     const parkingReply = await parkingEngine.process({ customerId: "p1", channelId: "parking", lineUserId: `parking-${index}`, eventId: `parking-${index}`, eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: question });
     assert.equal(parkingReply.taskResults[0].status, "answered");
-    assert.equal(parkingReply.taskResults[0].type, "amenity");
+    assert.equal(parkingReply.taskResults[0].type, "parking");
     assert.equal(parkingReply.taskResults[0].facts.source, "property_catalog");
     assert.equal(parkingReply.taskResults[0].facts.answer, "有一個停車位");
     assert.equal(parkingAvailabilityCalls, 0);
@@ -356,7 +383,7 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
   assert.equal(mixedHighRisk.composerCalls, 0);
   assert.equal(mixedHighRisk.result.claimValidation.ok, true);
   assert.equal(mixedHighRisk.result.finalDecision.action, "handoff");
-  assert.equal(mixedHighRisk.result.finalDecision.reasonCode, "unsupported_capability");
+  assert.equal(mixedHighRisk.result.finalDecision.reasonCode, "high_risk");
   assert.ok(mixedHighRisk.result.replyText.includes("有一個停車位"));
   assert.ok(mixedHighRisk.result.replyText.includes("需要請業者確認"));
 
