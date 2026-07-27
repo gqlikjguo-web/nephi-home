@@ -9,7 +9,7 @@ const { createApp } = require("../server");
 const { createMvpService } = require("../lib/mvp-service");
 const { createProviders } = require("../lib/providers/provider-factory");
 
-const PROPERTY_ID = "nephi_home";
+const PROPERTY_ID = "golden_property_alpha";
 const TIMEZONE = "Asia/Taipei";
 const FIXED_NOW = "2026-07-27T10:00:00+08:00";
 const EVENT_TIMESTAMP = Date.parse(FIXED_NOW);
@@ -23,16 +23,32 @@ const EMPTY_STAY = Object.freeze({
 });
 
 const CASES = Object.freeze([
-  { id: "today", message: "今天有房嗎？", availabilityText: "今天有房嗎？", rawText: "今天", kind: "absolute", expectedCheckIn: "2026-07-27", extras: [] },
-  { id: "tomorrow", message: "明天有房嗎？", availabilityText: "明天有房嗎？", rawText: "明天", kind: "absolute", expectedCheckIn: "2026-07-28", extras: [] },
-  { id: "day-after-tomorrow", message: "後天有房嗎？", availabilityText: "後天有房嗎？", rawText: "後天", kind: "absolute", expectedCheckIn: "2026-07-29", extras: [] },
-  { id: "absolute", message: "8/6 有房嗎？", availabilityText: "8/6 有房嗎？", rawText: "8/6", kind: "absolute", expectedCheckIn: "2026-08-06", extras: [] },
-  { id: "today-parking", message: "今天有房嗎？有車位嗎？", availabilityText: "今天有房嗎？", rawText: "今天", kind: "absolute", expectedCheckIn: "2026-07-27", extras: ["parking"] },
-  { id: "next-thursday-bbq", message: "下週四有房嗎？可以烤肉嗎？", availabilityText: "下週四有房嗎？", rawText: "下週四", kind: "absolute", expectedCheckIn: "2026-08-06", extras: ["bbq"] },
-  { id: "this-saturday-pool", message: "這週六有房嗎？有戲水池嗎？", availabilityText: "這週六有房嗎？", rawText: "這週六", kind: "absolute", expectedCheckIn: "2026-08-01", extras: ["pool"] },
-  { id: "absolute-mixed", message: "8/6 有房嗎？有車位嗎？可以烤肉嗎？", availabilityText: "8/6 有房嗎？", rawText: "8/6", kind: "absolute", expectedCheckIn: "2026-08-06", extras: ["parking", "bbq"] },
-  { id: "planner-omits-day-after-tomorrow-span", message: "後天有房嗎？", availabilityText: "後天有房嗎？", rawText: "", kind: "none", expectedCheckIn: "2026-07-29", extras: [] },
-  { id: "planner-misroutes-explicit-weekend", message: "下週末有房嗎？", availabilityText: "下週末有房嗎？", rawText: "下週末", kind: "weekend", expectedCheckIn: "2026-08-08", extras: [], plannerTaskType: "available_dates" }
+  { id: "today", message: "今天有房嗎？", availabilityText: "今天有房嗎？", rawText: "今天", kind: "absolute", expectedCheckIn: "2026-07-27", expectedCheckOut: "2026-07-28", extras: [] },
+  { id: "tomorrow", message: "明天有房嗎？", availabilityText: "明天有房嗎？", rawText: "明天", kind: "absolute", expectedCheckIn: "2026-07-28", expectedCheckOut: "2026-07-29", extras: [] },
+  { id: "day-after-tomorrow", message: "後天有房嗎？", availabilityText: "後天有房嗎？", rawText: "後天", kind: "absolute", expectedCheckIn: "2026-07-29", expectedCheckOut: "2026-07-30", extras: [] },
+  { id: "big-day-after-tomorrow", message: "大後天有房嗎？", availabilityText: "大後天有房嗎？", rawText: "大後天", kind: "relative", expectedCheckIn: "2026-07-30", expectedCheckOut: "2026-07-31", extras: [] },
+  { id: "three-days-later", message: "三天後有房嗎？", availabilityText: "三天後有房嗎？", rawText: "三天後", kind: "relative", expectedCheckIn: "2026-07-30", expectedCheckOut: "2026-07-31", extras: [] },
+  { id: "five-days-later", message: "五天後有房嗎？", availabilityText: "五天後有房嗎？", rawText: "五天後", kind: "relative", expectedCheckIn: "2026-08-01", expectedCheckOut: "2026-08-02", extras: [] },
+  { id: "one-week-later", message: "一週後有房嗎？", availabilityText: "一週後有房嗎？", rawText: "一週後", kind: "relative", expectedCheckIn: "2026-08-03", expectedCheckOut: "2026-08-04", extras: [] },
+  { id: "two-weeks-later", message: "兩週後有房嗎？", availabilityText: "兩週後有房嗎？", rawText: "兩週後", kind: "relative", expectedCheckIn: "2026-08-10", expectedCheckOut: "2026-08-11", extras: [] },
+  { id: "this-saturday", message: "這星期六有房嗎？", availabilityText: "這星期六有房嗎？", rawText: "這星期六", kind: "weekday", expectedCheckIn: "2026-08-01", expectedCheckOut: "2026-08-02", extras: [] },
+  { id: "next-wednesday", message: "下禮拜三有房嗎？", availabilityText: "下禮拜三有房嗎？", rawText: "下禮拜三", kind: "weekday", expectedCheckIn: "2026-08-05", expectedCheckOut: "2026-08-06", extras: [] },
+  { id: "next-thursday", message: "下禮拜四有房嗎？", availabilityText: "下禮拜四有房嗎？", rawText: "下禮拜四", kind: "weekday", expectedCheckIn: "2026-08-06", expectedCheckOut: "2026-08-07", extras: [] },
+  { id: "following-thursday", message: "下下週四有房嗎？", availabilityText: "下下週四有房嗎？", rawText: "下下週四", kind: "weekday", expectedCheckIn: "2026-08-13", expectedCheckOut: "2026-08-14", extras: [] },
+  { id: "this-weekend", message: "這週末有房嗎？", availabilityText: "這週末有房嗎？", rawText: "這週末", kind: "weekend", expectedCheckIn: "2026-08-01", expectedCheckOut: "2026-08-02", extras: [] },
+  { id: "next-weekend", message: "下週末有房嗎？", availabilityText: "下週末有房嗎？", rawText: "下週末", kind: "weekend", expectedCheckIn: "2026-08-08", expectedCheckOut: "2026-08-09", extras: [] },
+  { id: "near-absolute", message: "7/28 有房嗎？", availabilityText: "7/28 有房嗎？", rawText: "7/28", kind: "absolute", expectedCheckIn: "2026-07-28", expectedCheckOut: "2026-07-29", extras: [] },
+  { id: "absolute", message: "8/6 有房嗎？", availabilityText: "8/6 有房嗎？", rawText: "8/6", kind: "absolute", expectedCheckIn: "2026-08-06", expectedCheckOut: "2026-08-07", extras: [] },
+  { id: "month-name-absolute", message: "8月6日有房嗎？", availabilityText: "8月6日有房嗎？", rawText: "8月6日", kind: "absolute", expectedCheckIn: "2026-08-06", expectedCheckOut: "2026-08-07", extras: [] },
+  { id: "full-absolute", message: "2026年8月6日有房嗎？", availabilityText: "2026年8月6日有房嗎？", rawText: "2026年8月6日", kind: "absolute", expectedCheckIn: "2026-08-06", expectedCheckOut: "2026-08-07", extras: [] },
+  { id: "two-nights", message: "下週四住兩晚有房嗎？", availabilityText: "下週四住兩晚有房嗎？", rawText: "下週四住兩晚", kind: "range", expectedCheckIn: "2026-08-06", expectedCheckOut: "2026-08-08", extras: [] },
+  { id: "explicit-checkout", message: "這星期六入住、星期日退房", availabilityText: "這星期六入住、星期日退房", rawText: "這星期六入住、星期日退房", kind: "range", expectedCheckIn: "2026-08-01", expectedCheckOut: "2026-08-02", extras: [] },
+  { id: "today-parking", message: "今天有房嗎？有車位嗎？", availabilityText: "今天有房嗎？", rawText: "今天", kind: "absolute", expectedCheckIn: "2026-07-27", expectedCheckOut: "2026-07-28", extras: ["parking"] },
+  { id: "next-thursday-bbq", message: "下禮拜四有房嗎？可以烤肉嗎？", availabilityText: "下禮拜四有房嗎？", rawText: "下禮拜四", kind: "absolute", expectedCheckIn: "2026-08-06", expectedCheckOut: "2026-08-07", extras: ["bbq"] },
+  { id: "this-saturday-pool", message: "這星期六有雙人房嗎？有戲水池嗎？", availabilityText: "這星期六有雙人房嗎？", rawText: "這星期六", kind: "absolute", expectedCheckIn: "2026-08-01", expectedCheckOut: "2026-08-02", extras: ["pool"] },
+  { id: "absolute-mixed", message: "8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？", availabilityText: "8/6 有雙人房嗎？", rawText: "8/6", kind: "absolute", expectedCheckIn: "2026-08-06", expectedCheckOut: "2026-08-07", extras: ["parking", "bbq"] },
+  { id: "planner-omits-day-after-tomorrow-span", message: "後天有房嗎？", availabilityText: "後天有房嗎？", rawText: "", kind: "none", expectedCheckIn: "2026-07-29", expectedCheckOut: "2026-07-30", extras: [] },
+  { id: "planner-misroutes-explicit-weekend", message: "下週末有房嗎？", availabilityText: "下週末有房嗎？", rawText: "下週末", kind: "weekend", expectedCheckIn: "2026-08-08", expectedCheckOut: "2026-08-09", extras: [], plannerTaskType: "available_dates" }
 ]);
 
 function clone(value) {
@@ -127,7 +143,7 @@ function seed() {
     seedDays: 240,
     homestays: [{
       customerId: PROPERTY_ID,
-      name: "尼腓的家",
+      name: "Golden Property Alpha",
       lineUrl: "https://lin.ee/test-only",
       safeFacts: {
         checkInTime: "15:00",
@@ -252,6 +268,7 @@ async function runCase(testCase) {
       id: testCase.id,
       message: testCase.message,
       expectedCheckIn: testCase.expectedCheckIn,
+      expectedCheckOut: testCase.expectedCheckOut,
       plannerTemporalCandidate: {
         topLevel: clone(plannerCandidate.stay),
         task: clone(plannerCandidate.tasks[0].stayCandidate)
@@ -335,8 +352,8 @@ function traceSummary(trace) {
     );
     assert.deepEqual(
       trace.queryDateRanges,
-      [{ checkIn: trace.expectedCheckIn, checkOut: new Date(Date.parse(`${trace.expectedCheckIn}T00:00:00Z`) + 86400000).toISOString().slice(0, 10) }],
-      `${trace.message}: QueryPlan must reach the real availability service with a one-night range`
+      [{ checkIn: trace.expectedCheckIn, checkOut: trace.expectedCheckOut }],
+      `${trace.message}: QueryPlan must reach the real availability service with the canonical range`
     );
     assert.equal(trace.formalRequest.items[0].readiness, "ready", `${trace.message}: FormalRequest must be ready`);
     assert.ok(trace.executor.results[0], `${trace.message}: Executor must produce a task result`);
