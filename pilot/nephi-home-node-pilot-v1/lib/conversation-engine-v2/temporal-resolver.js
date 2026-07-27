@@ -150,13 +150,74 @@ function parseSingleExpression(raw, base, baseWeekday) {
   return absolute ? { checkIn: absolute, expressionType: "absolute_date" } : null;
 }
 
+function daysBetween(start, end) {
+  return Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86400000);
+}
+
+function compactRangeParts(raw) {
+  const slash = raw.match(/^(?:(\d{4})[/-])?(\d{1,2})[/-](\d{1,2})(?:日|號)?(?:-|~|～|到|至)(?:(\d{1,2})[/-])?(\d{1,2})(?:日|號)?$/u);
+  if (slash) {
+    return {
+      year: slash[1] ? Number(slash[1]) : null,
+      startMonth: Number(slash[2]),
+      startDay: Number(slash[3]),
+      endMonth: slash[4] ? Number(slash[4]) : null,
+      endDay: Number(slash[5])
+    };
+  }
+  const chinese = raw.match(/^(?:(\d{4})年)?(\d{1,2})月(\d{1,2})(?:日|號)?(?:-|~|～|到|至)(?:(\d{1,2})月)?(\d{1,2})(?:日|號)?$/u);
+  if (!chinese) return null;
+  return {
+    year: chinese[1] ? Number(chinese[1]) : null,
+    startMonth: Number(chinese[2]),
+    startDay: Number(chinese[3]),
+    endMonth: chinese[4] ? Number(chinese[4]) : null,
+    endDay: Number(chinese[5])
+  };
+}
+
+function compactDateRange(raw, base) {
+  const parts = compactRangeParts(raw);
+  if (!parts) return null;
+  const startRaw = parts.year
+    ? `${parts.year}/${parts.startMonth}/${parts.startDay}`
+    : `${parts.startMonth}/${parts.startDay}`;
+  const checkIn = absoluteDateFromRaw(startRaw, base);
+  if (!checkIn) return { unresolvedReason: "temporal_range_invalid" };
+
+  const startYear = Number(checkIn.slice(0, 4));
+  const startMonth = Number(checkIn.slice(5, 7));
+  const startDay = Number(checkIn.slice(8, 10));
+  let endYear = startYear;
+  let endMonth = parts.endMonth || startMonth;
+  if (parts.endMonth && endMonth < startMonth) endYear += 1;
+  if (!parts.endMonth && parts.endDay <= startDay) {
+    endMonth += 1;
+    if (endMonth > 12) {
+      endMonth = 1;
+      endYear += 1;
+    }
+  }
+  if (parts.endMonth && endMonth === startMonth && parts.endDay <= startDay) {
+    return { unresolvedReason: "temporal_range_invalid" };
+  }
+  const checkOut = `${endYear}-${String(endMonth).padStart(2, "0")}-${String(parts.endDay).padStart(2, "0")}`;
+  const nights = valid(checkOut) ? daysBetween(checkIn, checkOut) : 0;
+  if (!valid(checkOut) || nights < 1 || nights > 60) {
+    return { unresolvedReason: "temporal_range_invalid" };
+  }
+  return { checkIn, checkOut, nights, expressionType: "date_range" };
+}
+
 function parseRange(raw, base, baseWeekday) {
+  const compact = compactDateRange(raw, base);
+  if (compact) return compact;
   const between = raw.match(/^(.+?)(?:到|至)(.+)$/u);
   if (between) {
     const left = parseSingleExpression(normalizeText(between[1]), base, baseWeekday);
     const right = parseSingleExpression(normalizeText(between[2]), base, baseWeekday);
     if (!left || !right || !left.checkIn || !right.checkIn || right.checkIn <= left.checkIn) return { unresolvedReason: "temporal_range_invalid" };
-    return { checkIn: left.checkIn, checkOut: right.checkIn, nights: Math.round((Date.parse(`${right.checkIn}T00:00:00Z`) - Date.parse(`${left.checkIn}T00:00:00Z`)) / 86400000), expressionType: "date_range" };
+    return { checkIn: left.checkIn, checkOut: right.checkIn, nights: daysBetween(left.checkIn, right.checkIn), expressionType: "date_range" };
   }
   const stayRange = raw.match(/^(.+?)入住[、,，]?(.+?)退房$/u);
   if (stayRange) {
@@ -167,7 +228,7 @@ function parseRange(raw, base, baseWeekday) {
     if (!left || !left.checkIn || !right || !right.checkIn) return { unresolvedReason: "temporal_range_invalid" };
     if (right.checkIn <= left.checkIn && weekdayParts(rightRaw)) right = { ...right, checkIn: addDays(right.checkIn, 7) };
     if (right.checkIn <= left.checkIn) return { unresolvedReason: "temporal_range_invalid" };
-    return { checkIn: left.checkIn, checkOut: right.checkIn, nights: Math.round((Date.parse(`${right.checkIn}T00:00:00Z`) - Date.parse(`${left.checkIn}T00:00:00Z`)) / 86400000), expressionType: "date_range" };
+    return { checkIn: left.checkIn, checkOut: right.checkIn, nights: daysBetween(left.checkIn, right.checkIn), expressionType: "date_range" };
   }
   const nights = explicitNights(raw);
   if (nights) {
