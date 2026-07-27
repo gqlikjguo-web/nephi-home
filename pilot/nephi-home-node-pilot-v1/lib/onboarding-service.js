@@ -20,6 +20,14 @@ function cleanInput(input={}){
 }
 const LABELS={propertyName:"民宿正式名稱",contactName:"聯絡人姓名",phone:"聯絡電話",email:"Email",address:"地址",checkInTime:"入住時間",checkOutTime:"退房時間",rooms:"至少一個房型"};
 function completeness(app){const required=["propertyName","contactName","phone","email","address","checkInTime","checkOutTime"],missing=required.filter(k=>!app[k]);if(!app.rooms||!app.rooms.length)missing.push("rooms");return{percent:Math.round((required.length+1-missing.length)/(required.length+1)*100),missing,missingLabels:missing.map(x=>LABELS[x]||x),contradictions:[]};}
+function authorizedPropertyIds(session){
+ const ids=[];
+ for(const property of Array.isArray(session&&session.properties)?session.properties:[]){
+  const propertyId=text(property&&property.propertyId,48);if(propertyId&&!ids.includes(propertyId))ids.push(propertyId);
+ }
+ const selected=text(session&&session.propertyId,48);if(selected&&!ids.includes(selected))ids.push(selected);
+ return ids;
+}
 function createOnboardingService(provider,{emailNotifier}={}){
  if(!provider)return null;
  async function authorized(id,token){if(!token||!provider.verifyOnboardingToken(id,sessionTokenHash(token)))throw new AppError(401,"INVALID_DRAFT_TOKEN","草稿驗證失敗");}
@@ -37,7 +45,7 @@ function createOnboardingService(provider,{emailNotifier}={}){
  async submit(id,token){const item=await this.preview(id,token);if(["submitted","resubmitted","approved"].includes(item.status))return item;if(item.status==="rejected")throw new AppError(409,"APPLICATION_REJECTED","已拒絕案件必須先由平台管理者重新開放補件");if(item.completeness.missing.length)throw new AppError(400,"APPLICATION_INCOMPLETE",`尚缺少：${item.completeness.missingLabels.join("、")}`);return provider.submitOnboarding(id);},
  resolveResume(token){const raw=text(token,500),resolved=raw&&provider.resolveOnboardingResumeToken(sessionTokenHash(raw));if(!resolved)throw new AppError(400,"INVALID_RESUME_TOKEN","續填連結無效或已過期");return{applicationId:resolved.applicationId,draftToken:raw};},
  issueResumeLink(id){const item=provider.getOnboardingForReview(id);if(!item)throw new AppError(404,"APPLICATION_NOT_FOUND","找不到申請案件");if(item.status!=="changes_requested")throw new AppError(409,"APPLICATION_NOT_AWAITING_CHANGES","案件目前不是待補件狀態");const resumeToken=crypto.randomBytes(32).toString("base64url"),expiresAt=new Date(Date.now()+30*86400000).toISOString();try{provider.rotateOnboardingResumeToken(id,sessionTokenHash(resumeToken),expiresAt);}catch(error){if(/not awaiting changes/.test(String(error&&error.message)))throw new AppError(409,"APPLICATION_NOT_AWAITING_CHANGES","案件目前不是待補件狀態");throw error;}return{resumeToken,expiresAt};},
- listProperties(){return provider.listOnboardingProperties("nephi_home");},
+ listProperties(session){return provider.listOnboardingProperties({all:Boolean(session&&provider.isPlatformAdmin(session.propertyId,session.username,session.userId)),propertyIds:authorizedPropertyIds(session)});},
  isPlatformAdmin(s){return Boolean(s&&provider.isPlatformAdmin(s.propertyId,s.username,s.userId));},
  list(){return provider.listOnboarding();},
  get(id){const x=provider.getOnboardingForReview(id);if(!x)throw new AppError(404,"APPLICATION_NOT_FOUND","找不到申請案件");return{...x,completeness:completeness(x)};},
@@ -63,8 +71,9 @@ function createOnboardingService(provider,{emailNotifier}={}){
   if(!["submitted","resubmitted"].includes(application.status))throw new AppError(409,"APPLICATION_ALREADY_REVIEWED","案件已完成退回或核准，不能重複操作");
   const mode=text(input.mode,20),propertyId=text(input.propertyId,48);if(!["new","existing"].includes(mode))throw new AppError(400,"INVALID_APPROVAL_MODE","請選擇核准模式");if(!PROPERTY_ID.test(propertyId))throw new AppError(400,"INVALID_PROPERTY_ID","propertyId 格式錯誤");
   if(mode==="existing"){
+   const platformAdmin=Boolean(s&&provider.isPlatformAdmin(s.propertyId,s.username,s.userId));
+   if(!platformAdmin&&!authorizedPropertyIds(s).includes(propertyId))throw new AppError(403,"PROPERTY_ACCESS_DENIED","無權核准至此旅宿");
    if(!provider.onboardingPropertyExists(propertyId))throw new AppError(404,"PROPERTY_NOT_FOUND","找不到指定旅宿");
-   if(propertyId!=="nephi_home")throw new AppError(409,"EXISTING_PROPERTY_TARGET_NOT_ALLOWED","本次既有旅宿套用僅允許 nephi_home");
    if(text(input.confirmPropertyId,48)!==propertyId)throw new AppError(400,"PROPERTY_CONFIRMATION_MISMATCH","請再次輸入完全相同的 propertyId");
    const readMappings=(value,sourceField,targetField)=>Array.isArray(value)?value.map(item=>({[sourceField]:text(item&&item[sourceField],80),[targetField]:text(item&&item[targetField],80)})):[];
    const roomMappings=readMappings(input.roomMappings,"sourceKey","targetRoomId"),bundleMappings=readMappings(input.bundleMappings,"sourceKey","targetBundleId");
@@ -76,4 +85,4 @@ function createOnboardingService(provider,{emailNotifier}={}){
  getInvitation(token){const invitation=provider.getAdminInvitation(sessionTokenHash(text(token,500)));if(!invitation)throw new AppError(400,"INVALID_ADMIN_INVITATION","邀請碼無效或已使用");return invitation;},
  async redeemInvitation(token,password){const tokenHash=sessionTokenHash(text(token,500)),invitation=provider.getAdminInvitation(tokenHash);if(!invitation)throw new AppError(400,"INVALID_ADMIN_INVITATION","邀請碼無效或已使用");let passwordHash="";if(!invitation.existingIdentity){try{passwordHash=await hashPassword(password);}catch{throw new AppError(400,"INVALID_ADMIN_PASSWORD","新密碼至少需要 12 個字元");}}try{return provider.redeemAdminInvitation(tokenHash,passwordHash);}catch{throw new AppError(400,"INVALID_ADMIN_INVITATION","邀請碼無效或已使用");}}
 };}
-module.exports={createOnboardingService,cleanInput,completeness};
+module.exports={createOnboardingService,cleanInput,completeness,authorizedPropertyIds};

@@ -2,7 +2,8 @@
 
 const { JsonFileRepository } = require("./json-repository");
 
-const ROOM_SLOTS = ["room301", "room302", "room401", "room402"];
+const MAX_ROOM_COUNT = 100;
+const INVENTORY_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const PROPERTY_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{2,63}$/;
 const FAQ_KNOWLEDGE_SAFE_FACTS = Object.freeze({
@@ -26,6 +27,17 @@ function requiredText(value, field, maxLength = 1000) {
   return text;
 }
 
+function roomIdFor(room, index) {
+  const explicitId = String(room && room.id || "").trim();
+  if (explicitId) {
+    if (!INVENTORY_ID_PATTERN.test(explicitId)) throw new Error(`rooms[${index}].id is invalid`);
+    return explicitId;
+  }
+  const name = requiredText(room && room.name, `rooms[${index}].name`, 80);
+  const leadingCode = name.match(/^[a-zA-Z0-9][a-zA-Z0-9_-]*/)?.[0] || "";
+  return leadingCode ? `room${leadingCode}` : `room_${index + 1}`;
+}
+
 function validateFriendlyProperty(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("property JSON object is required");
   const propertyId = requiredText(input.propertyId, "propertyId", 64);
@@ -36,20 +48,21 @@ function validateFriendlyProperty(input) {
   if (!TIME_PATTERN.test(checkInTime)) throw new Error("checkInTime must use HH:MM");
   if (!TIME_PATTERN.test(checkOutTime)) throw new Error("checkOutTime must use HH:MM");
 
-  if (!Array.isArray(input.rooms) || input.rooms.length < 1 || input.rooms.length > ROOM_SLOTS.length) {
-    throw new Error(`rooms must contain 1 to ${ROOM_SLOTS.length} room types`);
+  if (!Array.isArray(input.rooms) || input.rooms.length < 1 || input.rooms.length > MAX_ROOM_COUNT) {
+    throw new Error(`rooms must contain 1 to ${MAX_ROOM_COUNT} room types`);
   }
   const rooms = input.rooms.map((room, index) => {
     const capacity = Number(room && room.capacity);
     if (!Number.isInteger(capacity) || capacity < 1 || capacity > 50) throw new Error(`rooms[${index}].capacity must be an integer from 1 to 50`);
     return {
-      id: ROOM_SLOTS[index],
+      id: roomIdFor(room, index),
       name: requiredText(room && room.name, `rooms[${index}].name`, 80),
       capacity,
       type: "custom",
       description: ""
     };
   });
+  if (new Set(rooms.map((room) => room.id)).size !== rooms.length) throw new Error("rooms.id must be unique");
 
   if (!input.pricing || typeof input.pricing !== "object" || Array.isArray(input.pricing)) throw new Error("pricing is required");
   const pricing = {
@@ -130,6 +143,6 @@ function importFriendlyProperty(input, { dataFile, seedFile, now = () => new Dat
 module.exports = {
   importFriendlyProperty,
   validateFriendlyProperty,
-  ROOM_SLOTS,
+  MAX_ROOM_COUNT,
   FAQ_KNOWLEDGE_SAFE_FACTS
 };

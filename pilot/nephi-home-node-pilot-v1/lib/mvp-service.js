@@ -1,6 +1,5 @@
 "use strict";
 
-const { ROOM_COLUMNS } = require("./domain");
 const { createServiceDataAccess } = require("./providers/service-data-access");
 const { roomMatchesType } = require("./conversation-coordinator");
 const { normalizeGoogleMapsUrl } = require("./google-maps-url");
@@ -290,7 +289,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       const id = String(raw && raw.id || "").trim();
       const roomName = cleanText(raw && raw.name, 80);
       const capacity = Number(raw && raw.capacity);
-      if (!ROOM_COLUMNS.includes(id) || seenRoomIds.has(id) || !roomName || !Number.isInteger(capacity) || capacity < 1 || capacity > 50) {
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(id) || seenRoomIds.has(id) || !roomName || !Number.isInteger(capacity) || capacity < 1 || capacity > 50) {
         throw new AppError(400, "INVALID_ROOM", "Room name, slot and capacity are required");
       }
       seenRoomIds.add(id);
@@ -298,7 +297,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
         id,
         name: roomName,
         capacity,
-        type: cleanText(raw.type || (id === "wholeHouse" ? "wholeHouse" : "custom"), 40),
+        type: cleanText(raw.type || "custom", 40),
         description: cleanText(raw.description, 500)
       };
     });
@@ -507,7 +506,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     const homestay = requireCustomerId(input.customerId);
     const year = Number(input.year);
     const month = Number(input.month);
-    const roomId = String(input.roomId || "wholeHouse");
+    const roomId = String(input.roomId || "");
     const status = String(input.status || "");
     if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
       throw new AppError(400, "INVALID_MONTH", "Invalid year or month");
@@ -523,7 +522,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     return { customerId: homestay.customerId, year, month, roomId, status, updated: dates.length };
   }
 
-  function parseBatchText(text, year, month) {
+  function parseBatchText(text, year, month, rooms = []) {
     const rows = [];
     const invalidLines = [];
     String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).forEach((line) => {
@@ -533,12 +532,12 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       const rowMonth = full ? Number(full[1]) : month;
       const day = full ? Number(full[2]) : short ? Number(short[1]) : 0;
       const roomText = full ? full[3] : short ? short[2] : "";
-      const roomIds = [];
-      if (/301/.test(roomText)) roomIds.push("room301");
-      if (/302/.test(roomText)) roomIds.push("room302");
-      if (/401/.test(roomText)) roomIds.push("room401");
-      if (/402/.test(roomText)) roomIds.push("room402");
-      if (/whole|house|包棟|整棟/i.test(roomText)) roomIds.push("wholeHouse");
+      const roomIds = (rooms || []).filter((room) => {
+        const aliases = [room.id, room.roomCode, room.displayName, room.name]
+          .map((value) => String(value || "").trim())
+          .filter(Boolean);
+        return aliases.some((alias) => roomText.toLowerCase().includes(alias.toLowerCase()));
+      }).map((room) => room.id);
       const date = `${year}-${String(rowMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       try {
         parseDateKey(date, "batch date");
@@ -558,11 +557,15 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     if (!Number.isInteger(year) || !Number.isInteger(month)) {
       throw new AppError(400, "INVALID_MONTH", "Invalid batch year or month");
     }
-    const parsed = parseBatchText(input.text, year, month);
+    const parsed = parseBatchText(input.text, year, month, homestay.rooms || []);
     if (parsed.invalidLines.length || !parsed.rows.length) {
       throw new AppError(400, "INVALID_BATCH", "Batch text contains invalid lines");
     }
-    if (input.resetMonth) setMonth({ customerId: homestay.customerId, year, month, roomId: "wholeHouse", status: "available" });
+    if (input.resetMonth) {
+      for (const room of homestay.rooms || []) {
+        setMonth({ customerId: homestay.customerId, year, month, roomId: room.id, status: "available" });
+      }
+    }
     let updated = 0;
     parsed.rows.forEach((row) => row.roomIds.forEach((roomId) => {
       repository.setAvailabilityDay(homestay.customerId, row.date, roomId, "closed");

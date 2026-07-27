@@ -83,6 +83,12 @@
 - Preserve the existing Planner request, `planner_parse_failed` handoff, final response, and LINE transport.
 - Do not push, deploy, operate Render or LINE, or read/change credentials or environment variables without separate authorization.
 
+## 2026-07-28 Property-neutral runtime cleanup
+
+- Review the local authenticated-scope onboarding, formal bundle-member mapping, generic availability import, and explicit seed-input diff together with its RED/GREEN evidence.
+- Preserve property-specific values only in fixtures or historical migrations; do not restore a runtime property whitelist or implicit room/bundle mapping.
+- Do not push, deploy, operate Render or LINE, read/change credentials or environment variables, run a production seed, or modify formal data without separate authorization.
+
 ## 2026-07-27 Bounded Planner provider retry
 
 - Review the local two-attempt provider boundary, category allowlist, bounded delay, retry diagnostics, and no-retry matrix.

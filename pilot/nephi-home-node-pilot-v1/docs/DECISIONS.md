@@ -128,3 +128,11 @@
 **Reason:** State, readiness, query construction, and dispatch previously retained independent semantic repairs or routing choices. Those duplicates allowed a Planner type, stale state, or consumer fallback to disagree with the accepted temporal, entity, or capability.
 
 **Constraint:** State may persist canonical values but may not rewrite them. FormalRequest and QueryPlan derive readiness and operations only from `CanonicalRequest`. The canonical executor rejects resolver mismatches. ResponsePlan, Claim Validator, and FinalDecision consume canonical outcomes without reclassifying Planner semantics. Capability policy remains property-neutral; property-specific facts come only from the scoped catalog and resolver.
+
+## 2026-07-28 — Property-neutral runtime data authority
+
+**Decision:** Authenticated account/session scope, together with the existing platform-admin grant provider, is the only authority for which properties onboarding may list or update. Room and bundle availability are keyed only by property-scoped inventory records and formal bundle-member relations.
+
+**Reason:** Base-era onboarding, JSON fallback, availability import, PostgreSQL compatibility, and seed helpers still embedded one property and a fixed room set even though the active conversation Engine was property-neutral.
+
+**Constraint:** Missing authorization or bundle relations are rejected rather than inferred. Shared seed code accepts an explicit property graph; property-specific initialization values may exist only in explicitly selected fixtures or historical migrations, never as runtime branches.

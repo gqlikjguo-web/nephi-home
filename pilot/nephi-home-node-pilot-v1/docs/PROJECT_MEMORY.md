@@ -139,3 +139,10 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - Five local stop gates established the permanent golden suite, property data roundtrip contract, immutable CanonicalRequest/capability registry, compact date-range grammar, and sole semantic-writer cutover.
 - The active Engine now invokes one `canonicalizeExecutionItem()` boundary. CanonicalRequest-backed consumers preserve mixed availability/property-fact routing, stale-date protection, claim validation, FinalDecision safety, and signed-webhook transport behavior.
 - The change remains local pending review. The three draft Canonical Request planning files and all historical verification artifacts remain untracked and excluded.
+
+## 2026-07-28 Property-neutral runtime cleanup
+
+- Onboarding authorization now comes from authenticated account/session membership or the existing platform-admin grant, with no runtime property allowlist.
+- JSON/PostgreSQL availability and bundle updates now derive inventory and members from property-scoped records. Shared import and seed code no longer assumes a room count, room number, bundle ID, or property ID.
+- Historical Nephi initialization identifiers remain only in explicit fixtures/migrations; they are not imported as routing rules.
+- The implementation remains local pending final verification and review. The three draft Canonical Request documents and historical verification artifacts remain untracked and excluded.

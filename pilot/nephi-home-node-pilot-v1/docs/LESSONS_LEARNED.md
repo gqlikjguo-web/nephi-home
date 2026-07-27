@@ -109,3 +109,9 @@ Never retry invalid requests, parsing or structured-output failures, empty respo
 Validating or repairing a Planner candidate does not make it safe for State, FormalRequest, QueryPlan, or Executor to interpret that candidate independently. Multiple individually reasonable fallbacks can still disagree on capability, entity, temporal meaning, or resolver and produce cross-stage regressions.
 
 Create one immutable canonical object before executable state and make each downstream layer fail when that authority is missing or rewritten. Mutation tests must inject duplicate writers, not merely count files, because a second writer can hide inside an otherwise legitimate consumer module.
+
+## 2026-07-28 — Property-neutral behavior must cover support paths
+
+Removing property-specific routing from the active conversation Engine is insufficient when onboarding, import, JSON fallback, PostgreSQL compatibility, or seed utilities still assume one property or a fixed room list. Those support paths can silently reintroduce the same coupling.
+
+Test both source neutrality and behavior with two properties that use different room and bundle IDs. Keep historical values in explicit fixtures or migrations, and make production code derive authorization and inventory only from authenticated scope and formal property data.

@@ -68,10 +68,13 @@ async function operation(name, args) {
   if (name === "getRows") {
     const [propertyId, from, to] = args;
     const normalized = await client.query("SELECT stay_date::text date,inventory_id,status FROM inventory_availability_days WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date,inventory_id",[propertyId,from||null,to||null]);
-    if(normalized.rows.length){const by={};for(const x of normalized.rows){const date=x.date.slice(0,10);by[date]=by[date]||{date};by[date][x.inventory_id]=x.status;}const bundles=await operation("listBundles",[propertyId]);for(const row of Object.values(by))for(const bundle of bundles){const own=row[bundle.id]||"closed";row[bundle.id]=bundle.enabled&&own==="available"&&bundle.memberRoomIds.every(id=>row[id]==="available")?"available":"closed";}return Object.values(by);}
-    const result = await client.query("SELECT stay_date::text date,room301,room302,room401,room402,whole_house FROM availability_days WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date", [propertyId, from || null, to || null]);
-    const rows=result.rows.map((r) => ({ date: r.date.slice(0,10), room301:r.room301, room302:r.room302, room401:r.room401, room402:r.room402, wholeHouse:r.whole_house }));
-    const bundles=await operation("listBundles",[propertyId]);for(const row of rows){for(const bundle of bundles){const own=await client.query("SELECT status FROM bundle_availability_days WHERE property_id=$1 AND bundle_id=$2 AND stay_date=$3",[propertyId,bundle.id,row.date]);const ownStatus=own.rows[0]?own.rows[0].status:"available";row[bundle.id]=bundle.enabled&&ownStatus==="available"&&bundle.memberRoomIds.every(id=>row[id]==="available")?"available":"closed";}}return rows;
+    const legacy = await client.query("SELECT stay_date::text date,to_jsonb(a)-'property_id'-'stay_date' inventory FROM availability_days a WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date",[propertyId,from||null,to||null]);
+    const roomRecords=await client.query("SELECT room_id FROM room_types WHERE property_id=$1",[propertyId]),roomIds=new Set(roomRecords.rows.map(row=>row.room_id)),by={},legacyDates=new Set();
+    for(const item of legacy.rows){const date=item.date.slice(0,10),inventory=typeof item.inventory==="string"?JSON.parse(item.inventory):item.inventory||{};by[date]=by[date]||{date};legacyDates.add(date);for(const [inventoryId,status] of Object.entries(inventory))if(roomIds.has(inventoryId)&&["available","closed"].includes(status))by[date][inventoryId]=status;}
+    for(const item of normalized.rows){const date=item.date.slice(0,10);by[date]=by[date]||{date};by[date][item.inventory_id]=item.status;}
+    const bundleAvailability=await client.query("SELECT bundle_id,stay_date::text date,status FROM bundle_availability_days WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date)",[propertyId,from||null,to||null]),bundleStatus=new Map(bundleAvailability.rows.map(item=>[`${item.date.slice(0,10)}\u0000${item.bundle_id}`,item.status])),bundles=await operation("listBundles",[propertyId]);
+    for(const row of Object.values(by))for(const bundle of bundles){const own=row[bundle.id]||bundleStatus.get(`${row.date}\u0000${bundle.id}`)||(legacyDates.has(row.date)?"available":"closed");row[bundle.id]=bundle.enabled&&bundle.memberRoomIds.length>0&&own==="available"&&bundle.memberRoomIds.every(id=>row[id]==="available")?"available":"closed";}
+    return Object.values(by).sort((left,right)=>left.date.localeCompare(right.date));
   }
   if (name === "getDayNotes") {
     const [propertyId,from,to]=args;
@@ -102,14 +105,10 @@ async function operation(name, args) {
   }
   if (name === "setDay") {
     const [propertyId,date,roomId,status] = args;
-    const normalized=await client.query("SELECT 1 FROM inventory_availability_days WHERE property_id=$1 LIMIT 1",[propertyId]);
-    if(normalized.rows.length){await client.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES($1,$2,$3,$4,$5) ON CONFLICT(property_id,inventory_id,stay_date) DO UPDATE SET status=excluded.status,remaining=excluded.remaining,updated_at=now()",[propertyId,roomId,date,status,status==="available"?1:0]);return (await operation("getRows",[propertyId,date,new Date(Date.parse(date)+86400000).toISOString().slice(0,10)]))[0];}
-    const bundle=(await operation("listBundles",[propertyId])).find(x=>x.id===roomId);if(bundle){await client.query("INSERT INTO bundle_availability_days(property_id,bundle_id,stay_date,status) VALUES($1,$2,$3,$4) ON CONFLICT(property_id,bundle_id,stay_date) DO UPDATE SET status=excluded.status,updated_at=now()",[propertyId,roomId,date,status]);return (await operation("getRows",[propertyId,date,new Date(Date.parse(date)+86400000).toISOString().slice(0,10)]))[0];}
-    const column = {room301:"room301",room302:"room302",room401:"room401",room402:"room402",wholeHouse:"whole_house"}[roomId];
-    if (!column) throw new Error("invalid roomId");
-    await client.query("INSERT INTO availability_days(property_id,stay_date,room301,room302,room401,room402,whole_house) VALUES($1,$2,'available','available','available','available','available') ON CONFLICT DO NOTHING", [propertyId,date]);
-    if (roomId === "wholeHouse") await client.query("UPDATE availability_days SET room301=$3,room302=$3,room401=$3,room402=$3,whole_house=$3 WHERE property_id=$1 AND stay_date=$2", [propertyId,date,status]);
-    else { await client.query(`UPDATE availability_days SET ${column}=$3 WHERE property_id=$1 AND stay_date=$2`, [propertyId,date,status]); await client.query("UPDATE availability_days SET whole_house=CASE WHEN room301='available' AND room302='available' AND room401='available' AND room402='available' THEN 'available' ELSE 'closed' END WHERE property_id=$1 AND stay_date=$2",[propertyId,date]); }
+    const room=await client.query("SELECT 1 FROM room_types WHERE property_id=$1 AND room_id=$2",[propertyId,roomId]),bundle=(await operation("listBundles",[propertyId])).find(item=>item.id===roomId);
+    if(!room.rows.length&&!bundle)throw new Error("invalid inventory");
+    const inventoryIds=bundle?[bundle.id,...bundle.memberRoomIds]:[roomId];
+    for(const inventoryId of inventoryIds)await client.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES($1,$2,$3,$4,$5) ON CONFLICT(property_id,inventory_id,stay_date) DO UPDATE SET status=excluded.status,remaining=excluded.remaining,updated_at=now()",[propertyId,inventoryId,date,status,status==="available"?1:0]);
     return (await operation("getRows", [propertyId,date,new Date(Date.parse(date)+86400000).toISOString().slice(0,10)]))[0];
   }
   if (name === "updatePropertyProfile") {
@@ -150,8 +149,11 @@ async function operation(name, args) {
   if(name==="isPlatformAdmin"){const [propertyId,username,userId]=args;if(userId){const r=await client.query("SELECT 1 FROM platform_admin_grants g JOIN admin_user_properties m ON m.property_id=g.property_id AND m.username=g.username WHERE m.user_id=$1 LIMIT 1",[userId]);return Boolean(r.rows.length);}const r=await client.query("SELECT 1 FROM platform_admin_grants WHERE property_id=$1 AND username=$2",[propertyId,username]);return Boolean(r.rows.length);}
   if(name==="listOnboarding"){const r=await client.query("SELECT application_id FROM onboarding_applications ORDER BY updated_at DESC");const out=[];for(const x of r.rows)out.push(await loadOnboardingForReview(x.application_id));return out;}
   if(name==="listOnboardingProperties"){
-    const allowedPropertyId=String(args[0]||"");
-    const properties=await client.query("SELECT property_id,display_name FROM properties WHERE property_id=$1 ORDER BY display_name,property_id",[allowedPropertyId]),items=[];
+    const scope=args[0]&&typeof args[0]==="object"?args[0]:{},allowedPropertyIds=[...new Set((Array.isArray(scope.propertyIds)?scope.propertyIds:[]).map(value=>String(value||"")).filter(Boolean))];
+    if(!scope.all&&!allowedPropertyIds.length)return[];
+    const properties=scope.all
+      ?await client.query("SELECT property_id,display_name FROM properties ORDER BY display_name,property_id")
+      :await client.query("SELECT property_id,display_name FROM properties WHERE property_id=ANY($1::text[]) ORDER BY display_name,property_id",[allowedPropertyIds]),items=[];
     for(const property of properties.rows){
       const rooms=await client.query("SELECT room_id,name FROM room_types WHERE property_id=$1 ORDER BY position,room_id",[property.property_id]);
       const bundles=await operation("listBundles",[property.property_id]);

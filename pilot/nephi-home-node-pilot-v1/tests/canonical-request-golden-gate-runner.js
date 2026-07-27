@@ -6,6 +6,7 @@ const { spawnSync } = require("node:child_process");
 
 const ROOT = path.resolve(__dirname, "..");
 const RUNNERS = Object.freeze([
+  ["property-neutral-runtime-runner.js", "property neutral runtime: PASS"],
   ["canonical-temporal-authority-runner.js", "canonical temporal authority: PASS"],
   ["relative-date-availability-runner.js", "relative date availability: PASS"],
   ["conversation-engine-v2-integration-runner.js", "conversation engine v2 integration: PASS"],

@@ -425,7 +425,7 @@ function createRequestHandler(service, options = {}) {
       if(pathname.startsWith("/api/admin/onboarding/")){
         const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");
         if(pathname==="/api/admin/onboarding/applications"&&request.method==="GET")return sendData(response,{items:onboarding.list().map(x=>({...x,completeness:require("./lib/onboarding-service").completeness(x)}))});
-        if(pathname==="/api/admin/onboarding/properties"&&request.method==="GET")return sendData(response,{items:onboarding.listProperties()});
+        if(pathname==="/api/admin/onboarding/properties"&&request.method==="GET")return sendData(response,{items:onboarding.listProperties(session)});
         const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reopen-for-changes|reject|approve|resume-link))?$/.exec(pathname);
         if(review&&request.method==="GET"&&!review[2])return sendData(response,onboarding.get(review[1]));
         if(review&&request.method==="POST"){

@@ -110,3 +110,8 @@
 
 - Added one property-neutral Canonicalizer that freezes capability, entity, canonical temporal, dependency, required fields, resolver, risk, response mode, and evidence binding.
 - Cut the active State → FormalRequest → QueryPlan → Executor → ResponsePlan path over to immutable `CanonicalRequest`, with safe canonical diagnostics and mutation guards against duplicate writers.
+
+## 2026-07-28 — Property-neutral support runtime
+
+- Replaced hardcoded onboarding property scope, room slots, bundle membership, availability imports, and PostgreSQL seed guards with authenticated scope and property-scoped inventory relations.
+- Added a permanent property-neutral runtime regression covering two-property authorization, distinct bundle members, missing mappings, explicit idempotent seed input, and forbidden runtime identifiers.

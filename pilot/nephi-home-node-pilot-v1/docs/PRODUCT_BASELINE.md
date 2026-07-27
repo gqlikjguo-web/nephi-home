@@ -88,3 +88,10 @@
 - State, FormalRequest, QueryPlan, Executor, ResponsePlan, Claim Validator, and FinalDecision consume canonical values or canonical execution outcomes without selecting a second capability, entity, date, or resolver.
 - Property facts remain scoped by `propertyId`; canonical routing never embeds a property name, property ID, price, rule, room number, date, or fixed guest answer.
 - Runtime mutation gates reject a second Canonicalizer or a second temporal, capability, entity, or resolver writer.
+
+## Property-neutral onboarding and inventory
+
+- Onboarding property lists and existing-property approvals are restricted by authenticated property membership unless the existing platform-admin grant authorizes platform-wide review.
+- Shared JSON and PostgreSQL availability paths accept property-scoped room IDs and formal bundle IDs without assuming a property name, room count, room number, or bundle identifier.
+- Updating a formal bundle applies only to its stored member-room relation. A missing bundle relation is rejected rather than inferred.
+- Shared PostgreSQL seed logic is explicit, idempotent, and property-parameterized; representative operator fixtures may retain real identifiers but are not runtime routing rules.

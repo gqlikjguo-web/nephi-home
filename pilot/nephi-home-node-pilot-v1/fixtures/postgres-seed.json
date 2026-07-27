@@ -1,0 +1,52 @@
+{
+  "propertyFile": "nephi-home-property.json",
+  "availabilityFile": "nephi-home-availability-2026-07-14-to-2026-08-31.json",
+  "availabilityStorage": "legacy",
+  "legacyColumns": {
+    "inventory": {
+      "room301": "room301",
+      "room302": "room302",
+      "room401": "room401",
+      "room402": "room402"
+    },
+    "aggregateColumn": "whole_house",
+    "aggregateInventoryId": "bundle_four_room_whole_house"
+  },
+  "roomMappings": [
+    {
+      "sourceIndex": 0,
+      "sourceAvailabilityKey": "301",
+      "roomId": "room301"
+    },
+    {
+      "sourceIndex": 1,
+      "sourceAvailabilityKey": "302",
+      "roomId": "room302"
+    },
+    {
+      "sourceIndex": 2,
+      "sourceAvailabilityKey": "401",
+      "roomId": "room401"
+    },
+    {
+      "sourceIndex": 3,
+      "sourceAvailabilityKey": "402",
+      "roomId": "room402"
+    }
+  ],
+  "bundles": [
+    {
+      "id": "bundle_four_room_whole_house",
+      "name": "四房包棟",
+      "capacity": 10,
+      "basePrice": 0,
+      "enabled": true,
+      "memberRoomIds": [
+        "room301",
+        "room302",
+        "room401",
+        "room402"
+      ]
+    }
+  ]
+}
