@@ -178,16 +178,50 @@ function parseRange(raw, base, baseWeekday) {
   return null;
 }
 
-function parseTemporalGrammar(raw, eventTimestamp, timezone) {
-  const timestamp = Number(eventTimestamp) || Date.parse(eventTimestamp || "");
-  if (!Number.isFinite(timestamp)) return { unresolvedReason: "temporal_clock_invalid" };
-  const baseParts = partsAt(timestamp, timezone);
+function parseTemporalGrammarAtBase(raw, baseParts) {
   if (/下次.*有空.*週末/u.test(raw)) return { unresolvedReason: "temporal_expression_ambiguous" };
   const range = parseRange(raw, baseParts.key, baseParts.weekday);
   if (range) return range.checkIn && range.checkIn < baseParts.key ? { unresolvedReason: "past_date" } : range;
   const single = parseSingleExpression(raw, baseParts.key, baseParts.weekday);
   if (!single) return { unresolvedReason: "temporal_expression_unrecognized" };
   return single.checkIn < baseParts.key ? { unresolvedReason: "past_date" } : single;
+}
+
+function parseTemporalGrammar(raw, eventTimestamp, timezone) {
+  const timestamp = Number(eventTimestamp) || Date.parse(eventTimestamp || "");
+  if (!Number.isFinite(timestamp)) return { unresolvedReason: "temporal_clock_invalid" };
+  return parseTemporalGrammarAtBase(raw, partsAt(timestamp, timezone));
+}
+
+function inferTemporalSpanFromMessage(text, eventTimestamp, timezone) {
+  const message = normalizeText(text);
+  const timestamp = Number(eventTimestamp) || Date.parse(eventTimestamp || "");
+  if (!message || !Number.isFinite(timestamp)) return null;
+  const baseParts = partsAt(timestamp, timezone);
+  const wholeMessage = parseTemporalGrammarAtBase(message, baseParts);
+  if (wholeMessage.unresolvedReason === "temporal_expression_ambiguous") {
+    return { ambiguity: wholeMessage.unresolvedReason };
+  }
+  const candidates = [];
+  for (let start = 0; start < message.length; start += 1) {
+    const maxEnd = Math.min(message.length, start + 200);
+    for (let end = start + 1; end <= maxEnd; end += 1) {
+      const rawText = message.slice(start, end);
+      const parsed = parseTemporalGrammarAtBase(rawText, baseParts);
+      if (!parsed.unresolvedReason && parsed.checkIn) candidates.push({ rawText, parsed });
+    }
+  }
+  if (!candidates.length) return null;
+  const maxLength = Math.max(...candidates.map((candidate) => candidate.rawText.length));
+  const longest = candidates.filter((candidate) => candidate.rawText.length === maxLength);
+  const semanticKeys = new Set(longest.map((candidate) => JSON.stringify({
+    checkIn: candidate.parsed.checkIn,
+    checkOut: candidate.parsed.checkOut || null,
+    nights: candidate.parsed.nights || null,
+    expressionType: candidate.parsed.expressionType
+  })));
+  if (semanticKeys.size !== 1) return { ambiguity: "temporal_expression_ambiguous" };
+  return longest[0];
 }
 
 function sourceEvidenceRefs(values) {
@@ -305,6 +339,7 @@ function resolvedContext({ rawText, timezone, applicableTaskIds, approvedContext
 
 function resolveCanonicalTemporal({
   guestMessage = "",
+  candidateSourceText = "",
   plannerCandidate = {},
   eventTimestamp,
   timezone = "Asia/Taipei",
@@ -318,8 +353,39 @@ function resolveCanonicalTemporal({
   applicableTaskIds = []
 } = {}) {
   const expression = plannerCandidate && plannerCandidate.dateExpression || {};
-  const rawText = normalizeText(expression.rawText);
+  let rawText = normalizeText(expression.rawText);
+  let recoveredPlannerSpan = false;
   const taskIds = [...new Set((Array.isArray(applicableTaskIds) ? applicableTaskIds : []).map(String).filter(Boolean))];
+
+  if (!rawText) {
+    const normalizedMessage = normalizeText(guestMessage);
+    const normalizedCandidateSource = normalizeText(candidateSourceText);
+    const inferenceSource = normalizedCandidateSource && normalizedMessage.includes(normalizedCandidateSource)
+      ? candidateSourceText
+      : "";
+    const inferred = inferTemporalSpanFromMessage(inferenceSource, eventTimestamp, timezone);
+    if (inferred && inferred.ambiguity) {
+      return withFieldMetadata({
+        rawText: "",
+        expressionType: "ambiguous",
+        checkIn: null,
+        checkOut: null,
+        nights: null,
+        searchRange: null,
+        timezone,
+        resolutionStatus: "unresolved",
+        resolutionSource: "canonical_temporal_grammar",
+        repairReasonCode: inferred.ambiguity,
+        applicableTaskIds: taskIds,
+        ambiguity: inferred.ambiguity,
+        originalExpression: ""
+      }, { sourceEvidenceRefs: evidence });
+    }
+    if (inferred && inferred.rawText) {
+      rawText = inferred.rawText;
+      recoveredPlannerSpan = true;
+    }
+  }
 
   if (!rawText) {
     if (allowContextReuse && approvedContext) {
@@ -440,7 +506,7 @@ function resolveCanonicalTemporal({
     nights: parsedNights,
     searchRange: parsed.searchRange || null
   };
-  const repaired = repairReason(plannerCandidate, canonical);
+  const repaired = recoveredPlannerSpan ? "planner_temporal_span_recovered" : repairReason(plannerCandidate, canonical);
   return withFieldMetadata({
     rawText,
     expressionType: canonical.expressionType,
@@ -478,6 +544,7 @@ function resolveCanonicalTemporal({
 function resolveTemporalExpression(expression = {}, context = {}) {
   return resolveCanonicalTemporal({
     guestMessage: expression.rawText || "",
+    candidateSourceText: expression.rawText || "",
     plannerCandidate: {
       dateExpression: expression,
       checkInCandidate: context.checkInCandidate || null,

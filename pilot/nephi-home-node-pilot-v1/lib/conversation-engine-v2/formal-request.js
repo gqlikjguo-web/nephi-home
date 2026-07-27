@@ -18,6 +18,15 @@ function plainStay(temporalResult = {}, confirmedInputs = {}) {
   };
 }
 
+function capabilityForTemporal(task, temporalResult = {}) {
+  if (task.type === "available_dates"
+    && temporalResult.resolutionStatus === "resolved"
+    && temporalResult.checkIn
+    && temporalResult.checkOut
+    && !temporalResult.searchRange) return "availability";
+  return task.type;
+}
+
 function readinessFor({ task, temporalResult = {}, stay, resolvedEntity }) {
   if (!SUPPORTED_CAPABILITIES.has(task.type)) return { status: "unsupported", missingFields: [], invalidFields: [], conflictingFields: [] };
   if (temporalResult.resolutionStatus === "unresolved") return { status: "missing_information", missingFields: ["stay.checkIn"], invalidFields: [], conflictingFields: [] };
@@ -32,11 +41,12 @@ function buildFormalRequest({ property, task, requestCycleId, temporalResult, co
   const stay = plainStay(temporalResult, confirmedInputs);
   const inventory = confirmedInputs.inventory || {};
   const entity = resolvedEntity && (resolvedEntity.entity || (resolvedEntity.entities && resolvedEntity.entities[0])) || null;
-  const readiness = readinessFor({ task, temporalResult, stay, resolvedEntity });
+  const capability = capabilityForTemporal(task, temporalResult);
+  const readiness = readinessFor({ task: { ...task, type: capability }, temporalResult, stay, resolvedEntity });
   return {
     formalRequestId: stableFormalRequestId({ requestCycleId, task }), taskId: task.taskId,
     candidateIndex: task.candidateIndex, requestCycleId, propertyId: property.propertyId,
-    capability: task.type,
+    capability,
     detailIntent: task.detailIntent || (confirmedInputs.topic && confirmedInputs.topic.detailIntent) || "general",
     requestedOutputs: Array.isArray(task.requestedOutputs) ? task.requestedOutputs : [],
     entity: { status: resolvedEntity && resolvedEntity.status || "not_requested", category: entity && entity.category || task.entity && task.entity.category || "other", rawText: task.entity && task.entity.rawText || "", canonicalId: entity && entity.canonicalId || null, canonicalSet: resolvedEntity && resolvedEntity.entities ? resolvedEntity.entities.map((item) => item.canonicalId).filter(Boolean) : (entity && entity.canonicalSet || []) },

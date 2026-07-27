@@ -30,7 +30,9 @@ const CASES = Object.freeze([
   { id: "today-parking", message: "今天有房嗎？有車位嗎？", availabilityText: "今天有房嗎？", rawText: "今天", kind: "absolute", expectedCheckIn: "2026-07-27", extras: ["parking"] },
   { id: "next-thursday-bbq", message: "下週四有房嗎？可以烤肉嗎？", availabilityText: "下週四有房嗎？", rawText: "下週四", kind: "absolute", expectedCheckIn: "2026-08-06", extras: ["bbq"] },
   { id: "this-saturday-pool", message: "這週六有房嗎？有戲水池嗎？", availabilityText: "這週六有房嗎？", rawText: "這週六", kind: "absolute", expectedCheckIn: "2026-08-01", extras: ["pool"] },
-  { id: "absolute-mixed", message: "8/6 有房嗎？有車位嗎？可以烤肉嗎？", availabilityText: "8/6 有房嗎？", rawText: "8/6", kind: "absolute", expectedCheckIn: "2026-08-06", extras: ["parking", "bbq"] }
+  { id: "absolute-mixed", message: "8/6 有房嗎？有車位嗎？可以烤肉嗎？", availabilityText: "8/6 有房嗎？", rawText: "8/6", kind: "absolute", expectedCheckIn: "2026-08-06", extras: ["parking", "bbq"] },
+  { id: "planner-omits-day-after-tomorrow-span", message: "後天有房嗎？", availabilityText: "後天有房嗎？", rawText: "", kind: "none", expectedCheckIn: "2026-07-29", extras: [] },
+  { id: "planner-misroutes-explicit-weekend", message: "下週末有房嗎？", availabilityText: "下週末有房嗎？", rawText: "下週末", kind: "weekend", expectedCheckIn: "2026-08-08", extras: [], plannerTaskType: "available_dates" }
 ]);
 
 function clone(value) {
@@ -58,7 +60,7 @@ function plannerOutputFor(testCase, sourceEvent) {
   const tasks = [{
     candidateIndex: 0,
     taskId: `availability-${testCase.id}`,
-    type: "availability",
+    type: testCase.plannerTaskType || "availability",
     sourceText: testCase.availabilityText,
     detailIntent: "general",
     requestedOutputs: ["availability"],

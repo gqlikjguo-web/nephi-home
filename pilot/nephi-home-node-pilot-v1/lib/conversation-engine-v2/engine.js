@@ -407,6 +407,7 @@ class ConversationEngineV2 {
       const approvedContext = approvedTemporalContext(contextSnapshot, relation, plannerStay);
       const temporal = resolveCanonicalTemporal({
         guestMessage: input.messageText,
+        candidateSourceText: item.task.sourceText,
         plannerCandidate: plannerStay,
         eventTimestamp: input.eventTimestamp,
         timezone: catalog.timezone,
