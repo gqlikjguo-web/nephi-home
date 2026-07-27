@@ -203,10 +203,27 @@ function confirmedInventoryFromTask(catalog, candidate) {
 const SAFE_FALLBACK = SAFE_HANDOFF_TEXT;
 const PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "unknown"]);
 const PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
+const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic");
 
 function safePlannerProviderErrorField(value, maxLength) {
   const text = String(value || "");
   return /^[A-Za-z0-9._:-]+$/.test(text) ? text.slice(0, maxLength) : "";
+}
+
+function safePlannerErrorCategory(value, fallback = "unknown") {
+  return PLANNER_ERROR_CATEGORIES.has(value) ? value : fallback;
+}
+
+function safePlannerRetrySuccessDiagnostic(plannerOutput) {
+  const diagnostic = plannerOutput && plannerOutput[PLANNER_PROVIDER_DIAGNOSTIC];
+  if (!diagnostic || diagnostic.retryPerformed !== true || diagnostic.retrySucceeded !== true) return {};
+  return {
+    providerAttemptCount: Math.min(Math.max(Number(diagnostic.providerAttemptCount) || 0, 0), 2),
+    firstAttemptErrorCategory: safePlannerErrorCategory(diagnostic.firstAttemptErrorCategory),
+    finalErrorCategory: "",
+    retryPerformed: true,
+    retrySucceeded: true
+  };
 }
 
 function safePlannerErrorDiagnostic(error, planner) {
@@ -262,7 +279,11 @@ function safePlannerErrorDiagnostic(error, planner) {
     providerErrorType: safePlannerProviderErrorField(error && error.providerErrorType, 120),
     providerErrorCode: safePlannerProviderErrorField(error && error.providerErrorCode, 120),
     providerErrorParam: safePlannerProviderErrorField(error && error.providerErrorParam, 200),
-    providerAttemptCount: configured && Number.isInteger(attemptCount) && attemptCount >= 0 ? Math.min(attemptCount, 10) : 0,
+    providerAttemptCount: configured && Number.isInteger(attemptCount) && attemptCount >= 0 ? Math.min(attemptCount, 2) : 0,
+    firstAttemptErrorCategory: safePlannerErrorCategory(error && error.firstAttemptErrorCategory, errorCategory),
+    finalErrorCategory: safePlannerErrorCategory(error && error.finalErrorCategory, errorCategory),
+    retryPerformed: Boolean(error && error.retryPerformed),
+    retrySucceeded: Boolean(error && error.retrySucceeded),
     retryable: Boolean(error && error.retryable),
     responseBodyPresent: Boolean(error && error.responseBodyPresent),
     parsedOutputPresent: Boolean(error && error.parsedOutputPresent)
@@ -308,7 +329,8 @@ class ConversationEngineV2 {
       missingInformation: plannerOutput && Array.isArray(plannerOutput.missingInformation) ? plannerOutput.missingInformation.map(String).slice(0, 20) : [],
       tasks: plannerOutput && Array.isArray(plannerOutput.tasks)
         ? (this.diagnosticDetail ? plannerOutput.tasks : plannerOutput.tasks.map(plannerTaskTrace))
-        : []
+        : [],
+      ...safePlannerRetrySuccessDiagnostic(plannerOutput)
     });
     if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) {
       this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: [parserSucceeded ? "planner_output_unusable" : "planner_parse_failed"], finalTasks: [] });

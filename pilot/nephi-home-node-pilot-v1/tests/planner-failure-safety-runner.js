@@ -109,6 +109,8 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
     "errorCategory",
     "errorCode",
     "errorName",
+    "finalErrorCategory",
+    "firstAttemptErrorCategory",
     "httpStatus",
     "model",
     "parsedOutputPresent",
@@ -119,6 +121,8 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
     "providerErrorParam",
     "providerErrorType",
     "responseBodyPresent",
+    "retryPerformed",
+    "retrySucceeded",
     "retryable",
     "scope",
     "stage",
@@ -136,6 +140,10 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
   assert.equal(diagnostic.providerErrorCode, expected.providerErrorCode || "");
   assert.equal(diagnostic.providerErrorParam, expected.providerErrorParam || "");
   assert.equal(diagnostic.providerAttemptCount, expected.providerAttemptCount === undefined ? 1 : expected.providerAttemptCount);
+  assert.equal(diagnostic.firstAttemptErrorCategory, expected.firstAttemptErrorCategory || expected.errorCategory);
+  assert.equal(diagnostic.finalErrorCategory, expected.finalErrorCategory || expected.errorCategory);
+  assert.equal(diagnostic.retryPerformed, Boolean(expected.retryPerformed));
+  assert.equal(diagnostic.retrySucceeded, false);
   assert.equal(diagnostic.retryable, Boolean(expected.retryable));
   assert.equal(diagnostic.responseBodyPresent, Boolean(expected.responseBodyPresent));
   assert.equal(diagnostic.parsedOutputPresent, Boolean(expected.parsedOutputPresent));
@@ -145,12 +153,13 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
   }
 }
 
-function openAiPlanner(fetchImpl) {
+function openAiPlanner(fetchImpl, options = {}) {
   return new TestOnlyOpenAiConversationPlanner({
     apiKey: sensitive.apiKey,
     model,
     fetchImpl,
-    timeoutMs: 10
+    timeoutMs: 10,
+    retryDelayMs: options.retryDelayMs === undefined ? 0 : options.retryDelayMs
   });
 }
 
@@ -162,6 +171,89 @@ function providerResponse(status, body) {
     text: async () => text,
     json: async () => JSON.parse(text)
   };
+}
+
+function successfulProviderResponse() {
+  const output = validPlannerOutput();
+  output.tasks[0] = {
+    ...output.tasks[0],
+    sourceText: "test",
+    entity: { ...output.tasks[0].entity, rawText: "test" }
+  };
+  return providerResponse(200, JSON.stringify({
+    output_text: JSON.stringify(output)
+  }));
+}
+
+async function plannerRetrySuccess({ name, firstFailure, expectedCategory }) {
+  let fetchCount = 0;
+  const diagnostics = [];
+  const planner = openAiPlanner(async () => {
+    fetchCount += 1;
+    if (fetchCount === 1) return firstFailure();
+    return successfulProviderResponse();
+  });
+  const engine = new ConversationEngineV2({
+    planner,
+    persistence: plannerPersistence(),
+    getProperty: () => property,
+    availabilityResolver: () => ({ availabilityReliable: true, rooms: [] }),
+    listPriceOverrides: () => [],
+    onDiagnostic: (entry) => diagnostics.push(entry)
+  });
+  const result = await engine.process({
+    customerId: property.propertyId,
+    channelId: "test",
+    lineUserId: "guest",
+    eventId: `planner-retry-${name}`,
+    eventTimestamp: 1,
+    messageText: "test",
+    sourceEvents: [{ eventId: "test-event", messageText: "test" }]
+  });
+  assert.equal(fetchCount, 2, `${name} must make exactly one retry`);
+  assert.equal(result.finalDecision.action, "reply", `${name} retry success must continue to a reply`);
+  assert.notEqual(result.finalDecision.reasonCode, "planner_parse_failed", `${name} retry success must not use Planner fallback`);
+  const plannerDiagnostic = diagnostics.find((entry) => entry.stage === "planner");
+  assert.ok(plannerDiagnostic, `${name} must emit the successful Planner diagnostic`);
+  const safeDiagnostic = formatSafeTestOnlyConversationTrace(plannerDiagnostic);
+  assert.equal(safeDiagnostic.providerAttemptCount, 2);
+  assert.equal(safeDiagnostic.firstAttemptErrorCategory, expectedCategory);
+  assert.equal(safeDiagnostic.finalErrorCategory, "");
+  assert.equal(safeDiagnostic.retryPerformed, true);
+  assert.equal(safeDiagnostic.retrySucceeded, true);
+  const serialized = JSON.stringify(safeDiagnostic);
+  for (const forbidden of Object.values(sensitive)) {
+    assert.equal(serialized.includes(forbidden), false, `${name} diagnostic leaked ${forbidden}`);
+  }
+}
+
+async function plannerContractFailureDoesNotRetry() {
+  let fetchCount = 0;
+  const planner = openAiPlanner(async () => {
+    fetchCount += 1;
+    return providerResponse(200, JSON.stringify({
+      output_text: JSON.stringify({ schemaVersion: 2 })
+    }));
+  });
+  const engine = new ConversationEngineV2({
+    planner,
+    persistence: plannerPersistence(),
+    getProperty: () => property,
+    availabilityResolver: () => ({ availabilityReliable: true, rooms: [] }),
+    listPriceOverrides: () => []
+  });
+  const result = await engine.process({
+    customerId: property.propertyId,
+    channelId: "test",
+    lineUserId: "guest",
+    eventId: "planner-local-contract-failure",
+    eventTimestamp: 1,
+    messageText: "test",
+    sourceEvents: [{ eventId: "planner-local-contract-failure", messageText: "test" }]
+  });
+  assert.equal(fetchCount, 1, "a local Planner output contract failure must not retry the provider request");
+  assert.equal(result.finalDecision.action, "handoff");
+  assert.equal(result.finalDecision.reasonCode, "planner_output_unusable");
 }
 
 async function main() {
@@ -195,6 +287,40 @@ async function main() {
     assert.equal(JSON.stringify(successfulPlannerTrace).includes(forbidden), false, `successful Planner trace leaked ${forbidden}`);
   }
 
+  await plannerRetrySuccess({
+    name: "timeout-then-success",
+    firstFailure: () => {
+      const error = new Error("transient timeout");
+      error.name = "AbortError";
+      throw error;
+    },
+    expectedCategory: "timeout"
+  });
+  await plannerRetrySuccess({
+    name: "network-then-success",
+    firstFailure: () => { throw new Error("temporary network failure"); },
+    expectedCategory: "network"
+  });
+  await plannerRetrySuccess({
+    name: "rate-limit-then-success",
+    firstFailure: () => providerResponse(429, JSON.stringify({ error: { type: "rate_limit_error", code: "rate_limit_exceeded", param: "requests" } })),
+    expectedCategory: "rate_limit"
+  });
+  await plannerRetrySuccess({
+    name: "provider-5xx-then-success",
+    firstFailure: () => providerResponse(500, JSON.stringify({ error: { type: "server_error", code: "internal_error", param: "" } })),
+    expectedCategory: "provider_5xx"
+  });
+  let firstSuccessAttemptCount = 0;
+  const firstSuccessOutput = await openAiPlanner(async () => {
+    firstSuccessAttemptCount += 1;
+    return successfulProviderResponse();
+  }).classify({ currentMessage: "test", sourceEvents: [], catalog: {}, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(firstSuccessAttemptCount, 1, "a successful first attempt must not issue a second request");
+  assert.equal(firstSuccessOutput.schemaVersion, 2);
+  assert.equal(openAiPlanner(async () => successfulProviderResponse(), { retryDelayMs: 999999 }).retryDelayMs, 1000, "retry delay must be bounded");
+  await plannerContractFailureDoesNotRetry();
+
   const httpFailure = (status) => openAiPlanner(async () => providerResponse(status, JSON.stringify({
     raw: sensitive.responseBody
   })));
@@ -211,7 +337,7 @@ async function main() {
   await plannerFailureDiagnostic({
     name: "http-429",
     planner: httpFailure(429),
-    expected: { errorName: "Error", errorCode: "planner_rate_limit", httpStatus: 429, timeout: false, errorCategory: "rate_limit", model, provider: "openai", retryable: true, responseBodyPresent: true }
+    expected: { errorName: "Error", errorCode: "planner_rate_limit", httpStatus: 429, timeout: false, errorCategory: "rate_limit", model, provider: "openai", providerAttemptCount: 2, retryPerformed: true, retryable: true, responseBodyPresent: true }
   });
   let provider5xxAttemptCount = 0;
   await plannerFailureDiagnostic({
@@ -220,12 +346,15 @@ async function main() {
       provider5xxAttemptCount += 1;
       return providerResponse(503, JSON.stringify({ raw: sensitive.responseBody }));
     }),
-    expected: { errorName: "Error", errorCode: "planner_provider_error", httpStatus: 503, timeout: false, errorCategory: "provider_5xx", model, provider: "openai", retryable: true, responseBodyPresent: true }
+    expected: { errorName: "Error", errorCode: "planner_provider_error", httpStatus: 503, timeout: false, errorCategory: "provider_5xx", model, provider: "openai", providerAttemptCount: 2, retryPerformed: true, retryable: true, responseBodyPresent: true }
   });
-  assert.equal(provider5xxAttemptCount, 1, "provider failure diagnostics must not add retry");
+  assert.equal(provider5xxAttemptCount, 2, "a persistent provider 5xx must stop after the one allowed retry");
+  let http400AttemptCount = 0;
   await plannerFailureDiagnostic({
     name: "http-400-invalid-schema",
-    planner: openAiPlanner(async () => providerResponse(400, JSON.stringify({
+    planner: openAiPlanner(async () => {
+      http400AttemptCount += 1;
+      return providerResponse(400, JSON.stringify({
         error: {
           message: sensitive.providerMessage,
           type: "invalid_request_error",
@@ -233,7 +362,8 @@ async function main() {
           param: "text.format.schema"
         },
         raw: sensitive.responseBody
-      }))),
+      }));
+    }),
     expected: {
       errorName: "Error",
       errorCode: "planner_http_error",
@@ -248,6 +378,7 @@ async function main() {
       responseBodyPresent: true
     }
   });
+  assert.equal(http400AttemptCount, 1, "HTTP 400 must not be retried");
   await plannerFailureDiagnostic({
     name: "http-400-non-json",
     planner: openAiPlanner(async () => providerResponse(400, sensitive.responseBody)),
@@ -278,43 +409,66 @@ async function main() {
       responseBodyPresent: true
     }
   });
+  let timeoutAttemptCount = 0;
   await plannerFailureDiagnostic({
     name: "timeout",
     planner: openAiPlanner(async () => {
+      timeoutAttemptCount += 1;
       const error = new Error(`${sensitive.apiKey} ${sensitive.prompt}`);
       error.name = "AbortError";
       throw error;
     }),
-    expected: { errorName: "AbortError", errorCode: "planner_timeout", httpStatus: 0, timeout: true, errorCategory: "timeout", model, provider: "openai", retryable: true }
+    expected: { errorName: "AbortError", errorCode: "planner_timeout", httpStatus: 0, timeout: true, errorCategory: "timeout", model, provider: "openai", providerAttemptCount: 2, retryPerformed: true, retryable: true }
   });
+  assert.equal(timeoutAttemptCount, 2, "a persistent timeout must stop after attempt 2");
+  let emptyAttemptCount = 0;
   await plannerFailureDiagnostic({
     name: "empty-response",
-    planner: openAiPlanner(async () => providerResponse(200, "")),
+    planner: openAiPlanner(async () => {
+      emptyAttemptCount += 1;
+      return providerResponse(200, "");
+    }),
     expected: { errorName: "Error", errorCode: "planner_empty_response", httpStatus: 200, timeout: false, errorCategory: "empty_response", model, provider: "openai" }
   });
+  assert.equal(emptyAttemptCount, 1, "empty responses must not be retried");
+  let jsonParseAttemptCount = 0;
   await plannerFailureDiagnostic({
     name: "response-json-parse",
-    planner: openAiPlanner(async () => providerResponse(200, sensitive.responseBody)),
+    planner: openAiPlanner(async () => {
+      jsonParseAttemptCount += 1;
+      return providerResponse(200, sensitive.responseBody);
+    }),
     expected: { errorName: "SyntaxError", errorCode: "planner_parse_error", httpStatus: 200, timeout: false, errorCategory: "json_parse", model, provider: "openai", responseBodyPresent: true }
   });
+  assert.equal(jsonParseAttemptCount, 1, "JSON parse failures must not be retried");
   await plannerFailureDiagnostic({
     name: "output-json-parse",
     planner: openAiPlanner(async () => providerResponse(200, JSON.stringify({ output_text: `{${sensitive.responseBody}` }))),
     expected: { errorName: "SyntaxError", errorCode: "planner_parse_error", httpStatus: 200, timeout: false, errorCategory: "json_parse", model, provider: "openai", responseBodyPresent: true, parsedOutputPresent: true }
   });
+  let structuredOutputAttemptCount = 0;
   await plannerFailureDiagnostic({
     name: "structured-output-refusal",
-    planner: openAiPlanner(async () => providerResponse(200, JSON.stringify({
-      status: "incomplete",
-      output: [{ type: "message", content: [{ type: "refusal", refusal: sensitive.providerMessage }] }]
-    }))),
+    planner: openAiPlanner(async () => {
+      structuredOutputAttemptCount += 1;
+      return providerResponse(200, JSON.stringify({
+        status: "incomplete",
+        output: [{ type: "message", content: [{ type: "refusal", refusal: sensitive.providerMessage }] }]
+      }));
+    }),
     expected: { errorName: "Error", errorCode: "planner_structured_output_error", httpStatus: 200, timeout: false, errorCategory: "structured_output", model, provider: "openai", responseBodyPresent: true }
   });
+  assert.equal(structuredOutputAttemptCount, 1, "structured output failures must not be retried");
+  let networkAttemptCount = 0;
   await plannerFailureDiagnostic({
     name: "network",
-    planner: openAiPlanner(async () => { throw new Error(`${sensitive.responseBody} ${sensitive.guestMessage}`); }),
-    expected: { errorName: "Error", errorCode: "planner_network_error", httpStatus: 0, timeout: false, errorCategory: "network", model, provider: "openai", retryable: true }
+    planner: openAiPlanner(async () => {
+      networkAttemptCount += 1;
+      throw new Error(`${sensitive.responseBody} ${sensitive.guestMessage}`);
+    }),
+    expected: { errorName: "Error", errorCode: "planner_network_error", httpStatus: 0, timeout: false, errorCategory: "network", model, provider: "openai", providerAttemptCount: 2, retryPerformed: true, retryable: true }
   });
+  assert.equal(networkAttemptCount, 2, "a persistent network failure must stop after attempt 2");
   await plannerFailureDiagnostic({
     name: "configuration",
     planner: null,
@@ -383,7 +537,11 @@ async function main() {
     .find((entry) => entry && entry.stage === "planner_error");
   assert.ok(persistedPlannerLog, "test-only application logs must persist planner_error");
   assert.ok(persistedPlannerLog.traceId, "persisted planner_error must be searchable by traceId");
-  assert.equal(persistedPlannerLog.providerAttemptCount, 1);
+  assert.equal(persistedPlannerLog.providerAttemptCount, 2);
+  assert.equal(persistedPlannerLog.firstAttemptErrorCategory, "rate_limit");
+  assert.equal(persistedPlannerLog.finalErrorCategory, "rate_limit");
+  assert.equal(persistedPlannerLog.retryPerformed, true);
+  assert.equal(persistedPlannerLog.retrySucceeded, false);
   assert.equal(persistedPlannerLog.errorCategory, "rate_limit");
   assert.equal(persistedPlannerLog.retryable, true);
   assert.equal(persistedPlannerLog.responseBodyPresent, true);

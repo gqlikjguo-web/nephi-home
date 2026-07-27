@@ -100,3 +100,8 @@
 
 - Test-only application logs now retain an allowlisted, trace-ID-addressable Planner provider failure record covering attempt count, HTTP/timeout state, sanitized provider fields, safe category, retryability, and response/output presence.
 - Added timeout, 400/429/5xx, empty-response, JSON-parse, structured-output, network, no-retry, fallback-isolation, and sensitive-data-exclusion coverage without changing Planner requests or business behavior.
+
+## 2026-07-27 — Bounded transient Planner retry
+
+- Added one category-gated retry at the OpenAI Planner request boundary for timeout, network, rate-limit, and provider-5xx failures, with a hard two-attempt cap and bounded delay.
+- Added allowlisted retry outcome diagnostics plus retry/no-retry, exhausted fallback, callback isolation, local-contract, and sensitive-data-exclusion coverage.

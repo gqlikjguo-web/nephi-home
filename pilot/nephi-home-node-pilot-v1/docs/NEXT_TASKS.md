@@ -80,5 +80,12 @@
 ## 2026-07-27 Persistent safe Planner provider diagnostics
 
 - Review the local allowlisted provider-failure projection and its timeout, HTTP, empty-response, parse, structured-output, network, log-persistence, no-retry, and sensitive-data-exclusion tests.
-- Preserve the existing Planner request, single-attempt behavior, `planner_parse_failed` handoff, final response, and LINE transport.
+- Preserve the existing Planner request, `planner_parse_failed` handoff, final response, and LINE transport.
 - Do not push, deploy, operate Render or LINE, or read/change credentials or environment variables without separate authorization.
+
+## 2026-07-27 Bounded Planner provider retry
+
+- Review the local two-attempt provider boundary, category allowlist, bounded delay, retry diagnostics, and no-retry matrix.
+- Preserve the hard two-attempt maximum and do not add retries for invalid request, parse, structured-output, empty-response, configuration, unknown, or local contract failures.
+- After separate authorization, push and deploy only to test-only before repeating the real-provider stability gate.
+- Do not push, deploy, operate Render or LINE, or read/change credentials or environment variables in this implementation task.

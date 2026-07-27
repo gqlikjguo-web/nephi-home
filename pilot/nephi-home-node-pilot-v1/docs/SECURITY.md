@@ -35,6 +35,8 @@
 - Persisted `planner_error` records are keyed by trace ID and use a closed allowlist. They may contain bounded attempt/status values, booleans, fixed categories, model/provider identifiers, and sanitized provider error type/code/param only.
 - Raw response bodies are inspected only long enough to derive allowlisted booleans and fields, then discarded. Provider messages, refusal text, prompts, guest content, source identifiers, property data, headers, stacks, tokens, API keys, credentials, and raw JSON must never be attached to errors or logs.
 - Diagnostic callbacks and application logging remain isolated from the conversation fallback. A logging failure cannot prevent `planner_parse_failed` from reaching the safe handoff and existing LINE delivery path.
+- Retry diagnostics add only bounded attempt count, the first and final safe error categories, and `retryPerformed`/`retrySucceeded` booleans. Retry never stores either request or response content.
+- Only `timeout`, `network`, `rate_limit`, and `provider_5xx` may trigger the single retry. Invalid or unclassified content cannot expand the retry boundary.
 
 ## Property-scoped LINE binding
 

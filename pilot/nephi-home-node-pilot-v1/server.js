@@ -54,6 +54,10 @@ function safeDiagnosticCount(value) {
   return Number.isInteger(count) && count >= 0 ? count : 0;
 }
 
+function safePlannerErrorCategory(value, fallback = "unknown") {
+  return SAFE_PLANNER_ERROR_CATEGORIES.has(value) ? value : fallback;
+}
+
 function formatSafeTestOnlyConversationTrace(details = {}) {
   const base = { scope: "conversation-engine-v2", traceId: String(details.traceId || ""), propertyId: String(details.propertyId || ""), stage: String(details.stage || "") };
   if (details.stage === "property_catalog") {
@@ -65,7 +69,22 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       urlValidation: String(location.urlValidation || "fail")
     } };
   }
-  if (details.stage === "planner") return { ...base, parserSucceeded: Boolean(details.parserSucceeded), taskCount: Number(details.taskCount || 0), discourse: details.discourse || null, shouldIgnore: Boolean(details.shouldIgnore), missingInformation: (details.missingInformation || []).map(String), tasks: (details.tasks || []).map(safePlannerTraceTask) };
+  if (details.stage === "planner") return {
+    ...base,
+    parserSucceeded: Boolean(details.parserSucceeded),
+    taskCount: Number(details.taskCount || 0),
+    discourse: details.discourse || null,
+    shouldIgnore: Boolean(details.shouldIgnore),
+    missingInformation: (details.missingInformation || []).map(String),
+    tasks: (details.tasks || []).map(safePlannerTraceTask),
+    ...(details.retryPerformed === true ? {
+      providerAttemptCount: Math.min(safeDiagnosticCount(details.providerAttemptCount), 2),
+      firstAttemptErrorCategory: safePlannerErrorCategory(details.firstAttemptErrorCategory),
+      finalErrorCategory: details.retrySucceeded === true ? "" : safePlannerErrorCategory(details.finalErrorCategory),
+      retryPerformed: true,
+      retrySucceeded: Boolean(details.retrySucceeded)
+    } : {})
+  };
   if (details.stage === "planner_error") {
     const status = Number(details.httpStatus);
     return {
@@ -80,7 +99,11 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       providerErrorType: safeDiagnosticLabel(details.providerErrorType, "", 120),
       providerErrorCode: safeDiagnosticLabel(details.providerErrorCode, "", 120),
       providerErrorParam: safeDiagnosticLabel(details.providerErrorParam, "", 200),
-      providerAttemptCount: Math.min(safeDiagnosticCount(details.providerAttemptCount), 10),
+      providerAttemptCount: Math.min(safeDiagnosticCount(details.providerAttemptCount), 2),
+      firstAttemptErrorCategory: safePlannerErrorCategory(details.firstAttemptErrorCategory, safePlannerErrorCategory(details.errorCategory)),
+      finalErrorCategory: safePlannerErrorCategory(details.finalErrorCategory, safePlannerErrorCategory(details.errorCategory)),
+      retryPerformed: Boolean(details.retryPerformed),
+      retrySucceeded: Boolean(details.retrySucceeded),
       retryable: Boolean(details.retryable),
       responseBodyPresent: Boolean(details.responseBodyPresent),
       parsedOutputPresent: Boolean(details.parsedOutputPresent)

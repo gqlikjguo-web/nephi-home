@@ -3,6 +3,11 @@
 const { plannerJsonSchema } = require("../conversation-engine-v2/planner-schema");
 const RESPONSES_URL = "https://api.openai.com/v1/responses";
 const PLANNER_PROVIDER = "openai";
+const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic");
+const RETRYABLE_ERROR_CATEGORIES = new Set(["timeout", "network", "rate_limit", "provider_5xx"]);
+const MAX_PROVIDER_ATTEMPTS = 2;
+const DEFAULT_RETRY_DELAY_MS = 100;
+const MAX_RETRY_DELAY_MS = 1000;
 
 function safeProviderErrorField(value, maxLength) {
   const text = String(value || "");
@@ -43,7 +48,7 @@ function structuredOutputFailed(payload) {
   );
 }
 
-function plannerFailure({ code, category, status = 0, timeout = false, model = "", name = "Error", providerErrorType = "", providerErrorCode = "", providerErrorParam = "", providerAttemptCount = 1, retryable = false, responseBodyPresent = false, parsedOutputPresent = false }) {
+function plannerFailure({ code, category, status = 0, timeout = false, model = "", name = "Error", providerErrorType = "", providerErrorCode = "", providerErrorParam = "", providerAttemptCount = 1, firstAttemptErrorCategory = category, finalErrorCategory = category, retryPerformed = false, retrySucceeded = false, retryable = false, responseBodyPresent = false, parsedOutputPresent = false }) {
   const error = new Error(code);
   error.name = name;
   error.code = code;
@@ -56,6 +61,10 @@ function plannerFailure({ code, category, status = 0, timeout = false, model = "
   error.providerErrorCode = safeProviderErrorField(providerErrorCode, 120);
   error.providerErrorParam = safeProviderErrorField(providerErrorParam, 200);
   error.providerAttemptCount = Number.isInteger(providerAttemptCount) && providerAttemptCount >= 0 ? providerAttemptCount : 1;
+  error.firstAttemptErrorCategory = String(firstAttemptErrorCategory || "unknown");
+  error.finalErrorCategory = String(finalErrorCategory || "unknown");
+  error.retryPerformed = Boolean(retryPerformed);
+  error.retrySucceeded = Boolean(retrySucceeded);
   error.retryable = Boolean(retryable);
   error.responseBodyPresent = Boolean(responseBodyPresent);
   error.parsedOutputPresent = Boolean(parsedOutputPresent);
@@ -96,16 +105,54 @@ function instructions() {
 }
 function outputText(payload) { if (payload && typeof payload.output_text === "string") return payload.output_text; for (const item of payload && payload.output || []) for (const part of item.content || []) if (part.type === "output_text") return part.text || ""; return ""; }
 
+function boundedRetryDelay(value) {
+  const delay = Number(value);
+  return Number.isFinite(delay) && delay >= 0
+    ? Math.min(Math.floor(delay), MAX_RETRY_DELAY_MS)
+    : DEFAULT_RETRY_DELAY_MS;
+}
+
+function waitForRetry(delayMs) {
+  return delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve();
+}
+
+function annotateFailure(error, { providerAttemptCount, firstAttemptErrorCategory, retryPerformed }) {
+  error.providerAttemptCount = providerAttemptCount;
+  error.firstAttemptErrorCategory = firstAttemptErrorCategory || "unknown";
+  error.finalErrorCategory = String(error.errorCategory || "unknown");
+  error.retryPerformed = Boolean(retryPerformed);
+  error.retrySucceeded = false;
+  return error;
+}
+
+function annotateRetrySuccess(output, firstAttemptErrorCategory) {
+  if (!output || typeof output !== "object") return output;
+  Object.defineProperty(output, PLANNER_PROVIDER_DIAGNOSTIC, {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: {
+      providerAttemptCount: MAX_PROVIDER_ATTEMPTS,
+      firstAttemptErrorCategory,
+      finalErrorCategory: "",
+      retryPerformed: true,
+      retrySucceeded: true
+    }
+  });
+  return output;
+}
+
 class TestOnlyOpenAiConversationPlanner {
-  constructor({ apiKey, model, fetchImpl = globalThis.fetch, timeoutMs = 15000 }) {
+  constructor({ apiKey, model, fetchImpl = globalThis.fetch, timeoutMs = 15000, retryDelayMs = DEFAULT_RETRY_DELAY_MS }) {
     if (!apiKey || !model) throw plannerFailure({ code: "planner_configuration_error", category: "unknown", model, providerAttemptCount: 0 });
     this.apiKey = apiKey;
     this.model = model;
     this.provider = PLANNER_PROVIDER;
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
+    this.retryDelayMs = boundedRetryDelay(retryDelayMs);
   }
-  async classify(input) {
+  async requestOnce(input) {
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` }, signal: controller.signal, body: JSON.stringify({ model: this.model, input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] } }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerJsonSchema() } } }) });
@@ -131,6 +178,31 @@ class TestOnlyOpenAiConversationPlanner {
       if (error && error.name === "AbortError") throw plannerFailure({ code: "planner_timeout", category: "timeout", timeout: true, model: this.model, name: "AbortError", retryable: true });
       throw plannerFailure({ code: "planner_network_error", category: "network", model: this.model, retryable: true });
     } finally { clearTimeout(timer); }
+  }
+  async classify(input) {
+    let firstAttemptErrorCategory = "";
+    for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
+      try {
+        const output = await this.requestOnce(input);
+        return attempt === 1 ? output : annotateRetrySuccess(output, firstAttemptErrorCategory);
+      } catch (error) {
+        const errorCategory = String(error && error.errorCategory || "unknown");
+        if (attempt === 1) firstAttemptErrorCategory = errorCategory;
+        const shouldRetry = attempt === 1
+          && Boolean(error && error.retryable)
+          && RETRYABLE_ERROR_CATEGORIES.has(errorCategory);
+        if (shouldRetry) {
+          await waitForRetry(this.retryDelayMs);
+          continue;
+        }
+        throw annotateFailure(error, {
+          providerAttemptCount: attempt,
+          firstAttemptErrorCategory,
+          retryPerformed: attempt > 1
+        });
+      }
+    }
+    throw plannerFailure({ code: "planner_unknown_error", category: "unknown", model: this.model });
   }
 }
 function createTestOnlyOpenAiConversationPlannerFromEnv({ env = process.env, fetchImpl = globalThis.fetch, timeoutMs = 15000 } = {}) { const apiKey = String(env.OPENAI_TEST_API_KEY || "").trim(), model = String(env.OPENAI_TEST_MODEL || "").trim(); return apiKey && model ? new TestOnlyOpenAiConversationPlanner({ apiKey, model, fetchImpl, timeoutMs }) : null; }

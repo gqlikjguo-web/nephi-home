@@ -97,3 +97,9 @@ Constrain structured Composer output to the exact per-task text already produced
 Planner temporal output can contain a useful raw expression while its kind or proposed dates are wrong. Binding normalization to the Planner's classification, or letting downstream state/readiness code fall back to prior dates, creates multiple temporal authorities and makes relative-date behavior nondeterministic.
 
 Resolve the unchanged guest temporal span once with an injectable clock and property timezone, then make every later stage read that canonical result. Test fixtures must obey the same source contract: a claimed temporal span must actually occur in the guest message.
+
+## 2026-07-27 — Retry provider transport failures, not invalid Planner content
+
+A single timeout among otherwise healthy stability replays is evidence for a narrow provider-boundary retry, not for changing Planner semantics or downstream fallback rules. Retry only error classes known to be transient, cap the complete classification at two attempts, and add a bounded delay so the second request does not immediately repeat the same transient condition.
+
+Never retry invalid requests, parsing or structured-output failures, empty responses, unknown failures, or local contract validation. Those failures contain no evidence that sending the same request again is safe or useful. When the second transient attempt also fails, retain the original `planner_parse_failed` handoff and record only allowlisted categories and booleans.

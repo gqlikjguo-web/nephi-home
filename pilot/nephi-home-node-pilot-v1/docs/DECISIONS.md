@@ -112,3 +112,11 @@
 **Reason:** A generic `planner_parse_failed` outcome did not distinguish transient provider failures from invalid requests, empty responses, parse failures, structured-output failures, or network failures after the original exception boundary completed.
 
 **Constraint:** The diagnostic boundary performs no retry and changes no Planner request or fallback behavior. Raw bodies, provider messages, prompts, guest text, source identifiers, headers, secrets, credentials, property data, and stacks must not enter the error object or persisted trace.
+
+## D-015 — Planner provider retry is finite and category-gated
+
+**Decision:** One Planner classification may make at most two provider requests. Attempt two is allowed only when attempt one is safely classified as `timeout`, `network`, `rate_limit`, or `provider_5xx`, and follows a short bounded delay.
+
+**Reason:** A real stability replay showed one isolated retryable timeout while the other 139 executions and every downstream contract remained healthy. Treating that transient provider failure as immediately final caused an avoidable safe handoff.
+
+**Constraint:** Invalid requests, non-429 4xx responses, empty responses, JSON parse failures, structured-output failures, configuration/unknown failures, and local schema or contract failures are never retried. A successful second attempt uses only its valid output. A failed second attempt preserves `planner_parse_failed`, safe handoff, and existing delivery. Diagnostics remain allowlisted and must not retain prompts, guest content, raw provider responses, headers, secrets, property data, or stacks.

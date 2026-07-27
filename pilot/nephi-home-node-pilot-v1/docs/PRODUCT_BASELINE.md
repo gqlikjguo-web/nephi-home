@@ -76,5 +76,6 @@
 
 - Test-only `planner_error` records persist only trace ID plus bounded provider attempt/status values, timeout, sanitized provider type/code/param, a fixed safe category, retryability, response-body presence, and parsed-output presence.
 - Safe categories are limited to `timeout`, `rate_limit`, `provider_5xx`, `invalid_request`, `empty_response`, `json_parse`, `structured_output`, `network`, and `unknown`.
-- The diagnostic boundary does not retry or change the existing `planner_parse_failed` handoff, safe fallback, or LINE delivery behavior.
+- Transient provider failures are retried only for `timeout`, `network`, `rate_limit`, and `provider_5xx`, at most once after a short bounded delay. All other failure categories and local contract failures are not retried.
+- A successful retry resumes the same Planner validation and runtime pipeline. An exhausted retry does not change the existing `planner_parse_failed` handoff, safe fallback, or LINE delivery behavior.
 - Raw provider bodies and messages, prompts, guest content, source identifiers, property data, headers, stacks, API keys, tokens, and credentials never enter the persisted trace.

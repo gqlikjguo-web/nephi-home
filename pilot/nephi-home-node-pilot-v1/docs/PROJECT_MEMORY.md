@@ -122,6 +122,14 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 
 - Test-only `planner_error` application logs now persist the trace ID plus attempt count, normalized HTTP status, timeout, sanitized provider type/code/param, safe category, retryability, response-body presence, and parsed-output presence.
 - Failure categories distinguish timeout, rate limit, provider 5xx, invalid request, empty response, JSON parse, structured output, network, and unknown without retaining raw provider content.
-- The provider still performs exactly one request. Planner failure still follows `planner_parse_failed` to the existing safe handoff and LINE delivery path.
+- At this diagnostic checkpoint the provider still performed exactly one request. Planner failure still followed `planner_parse_failed` to the existing safe handoff and LINE delivery path.
 - Targeted Planner, Phase 6/7, runtime-uniqueness tests and one complete `npm.cmd test` pass with exit 0 and empty stderr.
 - The diagnostics remain local pending review; no push, deployment, Render operation, LINE operation, credential read, or environment change occurred.
+
+## 2026-07-27 Bounded Planner provider retry
+
+- A real test-only stability replay completed 139/140 requests; the only failure was a first-attempt OpenAI Planner timeout classified as retryable before downstream processing began.
+- The OpenAI Planner provider now retries exactly once after `timeout`, `network`, `rate_limit`, or `provider_5xx`, with a 100 ms default delay bounded to at most 1000 ms and a hard total limit of two attempts.
+- Invalid requests, non-429 4xx responses, empty responses, JSON parse failures, structured-output failures, unknown/configuration failures, and local Planner contract failures remain single-attempt failures.
+- Retry success resumes the unchanged validation and conversation pipeline. A second failure retains `planner_parse_failed`, the existing safe handoff, and existing LINE delivery behavior.
+- Targeted regressions and one complete `npm.cmd test` pass locally. The change remains local pending review; no push, deployment, Render, LINE, credential, or environment operation occurred.
