@@ -19,6 +19,11 @@ function validateClaims(reply, plan, claimedTaskIds, composedSections = null) {
   const claimCoverage = assertTaskCoverage(expected, { answeredTaskIds: Array.isArray(claimed) ? claimed : [], clarificationTaskIds: [], humanTaskIds: [], failedTaskIds: [] });
   if (!Array.isArray(claimed) || claimCoverage.unexpectedTaskIds.length) errors.push("unknown_fact_reference");
   if (claimCoverage.missingTaskIds.length) errors.push("incomplete_task_coverage");
+  const missingFactSource = (plan.sections || []).some((section) => (
+    section.status === "answered"
+    && !String(section.facts && section.facts.source || "").trim()
+  ));
+  if (missingFactSource) errors.push("missing_fact_source");
   if (Array.isArray(composedSections)) {
     const sectionsByTaskId = new Map((plan.sections || []).map((section) => [section.taskId, section]));
     for (const item of composedSections) {

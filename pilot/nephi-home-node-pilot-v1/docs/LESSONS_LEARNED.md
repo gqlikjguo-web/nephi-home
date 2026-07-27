@@ -85,3 +85,9 @@ Model-generated evidence coordinates are not trustworthy merely because the task
 A canonical property fact can pass Planner schema validation while carrying the wrong capability. Correct the controlled canonical tuple before FormalRequest readiness so parking never inherits stay-date requirements or invokes the availability Resolver.
 
 For mixed execution results, validate and render each deterministic section from its own outcome. Do not ask a free-form Composer to reconcile answered sections with clarification or review sections, because rejection of one incomplete section can incorrectly poison grounded answers. Keep mandatory high-risk handoff in FinalDecision and retain scoped review records for ordinary unknown facts.
+
+## 2026-07-27 — Composer producers must match the validation contract
+
+Do not instruct a Composer to paraphrase when its consumer permits only the exact deterministic section. That producer/consumer contradiction turns grounded answers into `ungrounded_section_text`, and a safe fallback can then be incorrectly treated as a failed claim.
+
+Constrain structured Composer output to the exact per-task text already produced from trusted facts, then keep the existing coverage, source, and exact-text validators active. A deterministic answer is still invalid when its fact source is absent, and fabricated or modified text must still be rejected.

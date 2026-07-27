@@ -86,3 +86,7 @@
 ## 2026-07-27 — Canonical parking route and scoped mixed results
 
 - Canonical parking questions now use the property-scoped fact catalog without stay dates or availability resolution, and mixed answer plus incomplete sections preserve safe per-task output without weakening Claim Validator or mandatory high-risk handoff.
+
+## 2026-07-27 — Deterministic Composer claim contract
+
+- The test-only OpenAI Composer now returns only strict-schema-enumerated deterministic task sections, while Claim Validator additionally rejects answered sections with no fact source; coverage and fabricated-claim defenses remain unchanged.

@@ -29,6 +29,11 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.deepEqual(composed, composerOutput);
   assert.equal(composerRequest.text.format.name, "junzan_controlled_reply_v2");
   assert.deepEqual(composerRequest.text.format.schema.properties.sections.items.properties.responseMode.enum, ["answer", "clarification", "handoff"]);
+  assert.deepEqual(JSON.parse(composerRequest.input[1].content[0].text), {
+    sections: [{ taskId: "1", responseMode: "answer", exactText: "已確認住宿資訊。" }]
+  });
+  assert.deepEqual(composerRequest.text.format.schema.properties.sections.items.properties.text.enum, ["已確認住宿資訊。"]);
+  assert.match(composerRequest.input[0].content[0].text, /copy taskId, responseMode, and exactText without changing/i);
   assert.equal(JSON.stringify(composerRequest).includes("test-key"), false);
   console.log("conversation planner v2 adapter: PASS");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

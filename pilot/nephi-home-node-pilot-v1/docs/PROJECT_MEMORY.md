@@ -102,3 +102,10 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - The local fix deterministically maps canonical `parking` to the shared property-catalog amenity capability and prevents the availability Resolver from running for parking questions.
 - Mixed answer plus clarification/review plans now preserve deterministic per-task sections; a scoped unknown no longer converts safe answered sections into `claim_validation_failed`, while high-risk tasks still require handoff.
 - The real three-question regression, single parking variants, Phase 6/7 regressions, runtime uniqueness, and one complete `npm.cmd test` pass with exit 0. No push, deployment, Render operation, LINE operation, or credential change is authorized here.
+
+## 2026-07-27 Deterministic Composer claim contract
+
+- Production-equivalent signed-webhook RED replay proved that availability, parking, BBQ, and pool all reached `answered` with correct sources, but the Composer was asked to paraphrase while the validator required the exact deterministic section. Every case failed first at `ungrounded_section_text` and ended in `claim_validation_failed`.
+- The local fix supplies exact per-task text to the Composer and constrains strict structured output to those values. Claim Validator remains active and now explicitly rejects answered sections lacking a fact source.
+- The four single-answer cases and the room/parking/BBQ mixed case now produce accepted composition, complete coverage, `claimValidation.ok=true`, and `FinalDecision=reply`.
+- Safety gates, Phase 6/7, runtime uniqueness, and one complete `npm.cmd test` pass with exit 0 and empty stderr. The fix remains local; no push, deployment, Render, LINE, or credential operation is authorized.

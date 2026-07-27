@@ -54,7 +54,7 @@ const groundedPlan = {
   maxLength: 1200,
   forbiddenClaims: [],
   allowedFacts: ["民宿旁空地可停車。"],
-  sections: [{ taskId: "F1", type: "amenity", status: "answered", responseMode: "answer", facts: { answer: "民宿旁空地可停車。" }, allowedFacts: ["民宿旁空地可停車。"] }]
+  sections: [{ taskId: "F1", type: "amenity", status: "answered", responseMode: "answer", facts: { answer: "民宿旁空地可停車。", source: "property_catalog" }, allowedFacts: ["民宿旁空地可停車。"] }]
 };
 assert.equal(validateClaims("民宿旁空地可停車。", groundedPlan, ["F1"], [{ taskId: "F1", responseMode: "answer", text: "民宿旁空地可停車。" }]).ok, true);
 const ungrounded = validateClaims("民宿旁空地可停車，並由外部工程師管理。", groundedPlan, ["F1"], [{ taskId: "F1", responseMode: "answer", text: "民宿旁空地可停車，並由外部工程師管理。" }]);
