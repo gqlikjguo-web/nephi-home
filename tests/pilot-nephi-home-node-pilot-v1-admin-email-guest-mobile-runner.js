@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const root = path.resolve(__dirname, "../pilot/nephi-home-node-pilot-v1");
 const { migratePostgres } = require(path.join(root, "lib/providers/postgres-migrate"));
-const { seedPostgres } = require(path.join(root, "lib/providers/postgres-seed"));
+const { seedNephiPostgres } = require(path.join(root, "tests/helpers/nephi-postgres-seed"));
 const { openPostgres } = require(path.join(root, "lib/providers/postgres-client"));
 const { createPostgresProviders } = require(path.join(root, "lib/providers/postgres-providers"));
 const { upsertAdminUser, bindAdminEmail } = require(path.join(root, "lib/admin-auth"));
@@ -21,7 +21,7 @@ async function json(url, options = {}) { const response = await fetch(url, optio
   const connection = { kind: "pglite", dataDir };
   await migratePostgres(connection);
   await migratePostgres(connection);
-  await seedPostgres(connection);
+  await seedNephiPostgres(connection);
   const db = await openPostgres(connection);
   await db.query("INSERT INTO properties(property_id,display_name) VALUES($1,$2)", ["other_home", "另一間旅宿"]);
   await db.query("INSERT INTO property_settings(property_id,settings) VALUES($1,$2::jsonb)", ["other_home", JSON.stringify({ onboarding: { isReady: true }, contactLink: "https://lin.ee/other-safe" })]);

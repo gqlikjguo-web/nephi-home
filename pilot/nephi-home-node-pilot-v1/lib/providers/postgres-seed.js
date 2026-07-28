@@ -22,16 +22,18 @@ function integer(value, field, minimum = 0) {
   return number;
 }
 
-function readFixture(fileName) {
-  const fixtures = path.resolve(__dirname, "../../fixtures");
-  const baseName = path.basename(String(fileName || ""));
-  if (!baseName || baseName !== fileName) throw new Error("seed fixture path is invalid");
-  return JSON.parse(fs.readFileSync(path.join(fixtures, baseName), "utf8"));
+function readManifestFile(fileName, baseDirectory) {
+  const relative = String(fileName || "").trim();
+  if (!relative) throw new Error("seed manifest reference is required");
+  const resolved = path.resolve(baseDirectory, relative);
+  const withinBase = path.relative(baseDirectory, resolved);
+  if (withinBase.startsWith("..") || path.isAbsolute(withinBase)) throw new Error("seed manifest reference is invalid");
+  return JSON.parse(fs.readFileSync(resolved, "utf8"));
 }
 
-function expandSeedManifest(manifest) {
-  const sourceProperty = validateFriendlyProperty(readFixture(manifest.propertyFile));
-  const sourceAvailability = readFixture(manifest.availabilityFile);
+function expandSeedManifest(manifest, baseDirectory) {
+  const sourceProperty = validateFriendlyProperty(readManifestFile(manifest.propertyFile, baseDirectory));
+  const sourceAvailability = readManifestFile(manifest.availabilityFile, baseDirectory);
   if (!sourceAvailability || !Array.isArray(sourceAvailability.days)) throw new Error("seed availability fixture is invalid");
   if (sourceProperty.propertyId !== sourceAvailability.propertyId) throw new Error("seed property scope mismatch");
   const mappings = Array.isArray(manifest.roomMappings) ? manifest.roomMappings : [];
@@ -79,12 +81,17 @@ function expandSeedManifest(manifest) {
   };
 }
 
-function defaultSeedInput() {
-  return expandSeedManifest(readFixture("postgres-seed.json"));
+function loadSeedManifest(manifestPath) {
+  const source = String(manifestPath || "").trim();
+  if (!source) throw new Error("seed manifest path is required");
+  const resolved = path.resolve(source);
+  const manifest = JSON.parse(fs.readFileSync(resolved, "utf8"));
+  return expandSeedManifest(manifest, path.dirname(resolved));
 }
 
 function normalizeSeedInput(value) {
-  const input = value || defaultSeedInput();
+  if (!value) throw new Error("explicit seed input is required");
+  const input = value;
   const property = input.property || {};
   const propertyId = requiredText(property.propertyId, "property.propertyId", 64);
   if (!PROPERTY_ID.test(propertyId)) throw new Error("property.propertyId is invalid");
@@ -279,6 +286,7 @@ async function materializeCanonicalKnowledgeKeys(client, property) {
 
 module.exports = {
   seedPostgres,
+  loadSeedManifest,
   materializeCanonicalKnowledgeKeys,
   normalizeSeedInput
 };

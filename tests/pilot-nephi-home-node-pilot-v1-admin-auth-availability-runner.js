@@ -2,13 +2,13 @@
 const assert=require("node:assert/strict"),fs=require("node:fs"),os=require("node:os"),path=require("node:path");
 const root=path.resolve(__dirname,"../pilot/nephi-home-node-pilot-v1");
 const {migratePostgres}=require(path.join(root,"lib/providers/postgres-migrate"));
-const {seedPostgres}=require(path.join(root,"lib/providers/postgres-seed"));
+const {seedNephiPostgres}=require(path.join(root,"tests/helpers/nephi-postgres-seed"));
 const {createPostgresProviders}=require(path.join(root,"lib/providers/postgres-providers"));
 const {upsertAdminUser}=require(path.join(root,"lib/admin-auth"));
 const {createApp}=require(path.join(root,"server"));
 const checks=[];function check(name,value){assert.ok(value,name);checks.push(name)}
 async function json(url,options={}){const response=await fetch(url,options);return{response,body:await response.json()};}
-(async()=>{const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"nephi-admin-")),connection={kind:"pglite",dataDir};await migratePostgres(connection);await migratePostgres(connection);check("migration 可重複執行",true);await seedPostgres(connection);await upsertAdminUser(connection,{propertyId:"nephi_home",username:"owner",password:"correct horse battery"});
+(async()=>{const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"nephi-admin-")),connection={kind:"pglite",dataDir};await migratePostgres(connection);await migratePostgres(connection);check("migration 可重複執行",true);await seedNephiPostgres(connection);await upsertAdminUser(connection,{propertyId:"nephi_home",username:"owner",password:"correct horse battery"});
 let app=createApp({providers:createPostgresProviders(connection),structuredClassifier:null});let started=await app.start(0,"127.0.0.1"),base=started.url;
 let result=await json(`${base}/api/availability/month?customerId=nephi_home&year=2026&month=7`);check("未登入不能讀房況",result.response.status===401);
 result=await json(`${base}/api/availability/day`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({customerId:"nephi_home",date:"2026-07-20",roomId:"room301",status:"available"})});check("未登入不能修改房況",result.response.status===401);

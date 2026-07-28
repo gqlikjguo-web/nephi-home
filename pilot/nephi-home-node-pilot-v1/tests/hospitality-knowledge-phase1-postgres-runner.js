@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { migratePostgres } = require("../lib/providers/postgres-migrate");
-const { seedPostgres } = require("../lib/providers/postgres-seed");
+const { seedNephiPostgres } = require("./helpers/nephi-postgres-seed");
 const { createProviders } = require("../lib/providers/provider-factory");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 
@@ -15,7 +15,7 @@ const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property
   const connection = { kind: "pglite", dataDir: path.join(temp, "database") };
   try {
     await migratePostgres(connection);
-    await seedPostgres(connection);
+    await seedNephiPostgres(connection);
     const rawClient = require("../lib/providers/postgres-client");
     const client = await rawClient.openPostgres(connection);
     const mapUrl = "https://maps.app.goo.gl/PostgresLocation";
@@ -35,7 +35,7 @@ const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property
     await rematerializeClient.close();
     const mapCatalog = buildPropertyCatalog(providers.customerSettings.getProperty("nephi_home"));
     assert.equal(mapCatalog.policies.find((item) => item.canonicalId === "location").answer, mapUrl, "a legacy PostgreSQL transport map URL must materialize as the property-scoped Google Maps fact");
-    await seedPostgres(connection);
+    await seedNephiPostgres(connection);
     const rematerialized = providers.customerSettings.getProperty("nephi_home").faqs.find((item) => item.question === singing.question);
     assert.equal(rematerialized.knowledgeKey, "singing", "existing property facts must receive their property-provided canonical key");
     providers.close();

@@ -25,8 +25,7 @@ function authorizedPropertyIds(session){
  for(const property of Array.isArray(session&&session.properties)?session.properties:[]){
   const propertyId=text(property&&property.propertyId,48);if(propertyId&&!ids.includes(propertyId))ids.push(propertyId);
  }
- const selected=text(session&&session.propertyId,48);if(selected&&!ids.includes(selected))ids.push(selected);
- return ids;
+ return ids.filter(propertyId=>PROPERTY_ID.test(propertyId));
 }
 function createOnboardingService(provider,{emailNotifier}={}){
  if(!provider)return null;

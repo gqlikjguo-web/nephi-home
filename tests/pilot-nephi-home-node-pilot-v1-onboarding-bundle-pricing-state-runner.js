@@ -7,7 +7,7 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "../pilot/nephi-home-node-pilot-v1");
 const { migratePostgres } = require(path.join(root, "lib/providers/postgres-migrate"));
-const { seedPostgres } = require(path.join(root, "lib/providers/postgres-seed"));
+const { seedNephiPostgres } = require(path.join(root, "tests/helpers/nephi-postgres-seed"));
 const { openPostgres } = require(path.join(root, "lib/providers/postgres-client"));
 const { createPostgresProviders } = require(path.join(root, "lib/providers/postgres-providers"));
 const { upsertAdminUser } = require(path.join(root, "lib/admin-auth"));
@@ -40,7 +40,7 @@ async function request(url, options = {}) {
   const connection = { kind: "pglite", dataDir: temp };
   await migratePostgres(connection);
   await migratePostgres(connection);
-  await seedPostgres(connection);
+  await seedNephiPostgres(connection);
   await upsertAdminUser(connection, { propertyId: "nephi_home", username: "platform", password: "platform-password-123" });
   let db = await openPostgres(connection);
   await db.query("INSERT INTO platform_admin_grants(property_id,username) VALUES($1,$2)", ["nephi_home", "platform"]);

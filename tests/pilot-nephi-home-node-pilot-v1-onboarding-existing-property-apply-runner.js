@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const ROOT = path.resolve(__dirname, "../pilot/nephi-home-node-pilot-v1");
 const { migratePostgres } = require(path.join(ROOT, "lib/providers/postgres-migrate"));
-const { seedPostgres } = require(path.join(ROOT, "lib/providers/postgres-seed"));
+const { seedNephiPostgres } = require(path.join(ROOT, "tests/helpers/nephi-postgres-seed"));
 const { openPostgres } = require(path.join(ROOT, "lib/providers/postgres-client"));
 const { createPostgresProviders } = require(path.join(ROOT, "lib/providers/postgres-providers"));
 const { upsertAdminUser, sessionTokenHash } = require(path.join(ROOT, "lib/admin-auth"));
@@ -45,7 +45,7 @@ async function protectedSnapshot(db) {
   }
   async function stopRuntime() { if (app) { await app.stop(); app = null; } if (providers) { await providers.close(); providers = null; } }
   try {
-    await migratePostgres(connection); await seedPostgres(connection);
+    await migratePostgres(connection); await seedNephiPostgres(connection);
     let db = await openPostgres(connection);
     try {
       await db.query("INSERT INTO properties(property_id,display_name) VALUES('platform_review','Platform Review'),('other_property','Other Property')");

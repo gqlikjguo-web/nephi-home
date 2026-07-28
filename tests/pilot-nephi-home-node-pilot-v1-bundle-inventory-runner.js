@@ -2,11 +2,11 @@
 const assert=require("node:assert/strict"),fs=require("node:fs"),os=require("node:os"),path=require("node:path");
 const root=path.resolve(__dirname,"../pilot/nephi-home-node-pilot-v1");
 const {migratePostgres}=require(path.join(root,"lib/providers/postgres-migrate"));
-const {seedPostgres}=require(path.join(root,"lib/providers/postgres-seed"));
+const {seedNephiPostgres}=require(path.join(root,"tests/helpers/nephi-postgres-seed"));
 const {createPostgresProviders}=require(path.join(root,"lib/providers/postgres-providers"));
 const {createApp}=require(path.join(root,"server"));
 const checks=[];function check(name,value){assert.ok(value,name);checks.push(name)}
-(async()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),"nephi-bundle-")),connection={kind:"pglite",dataDir:dir};await migratePostgres(connection);await seedPostgres(connection);const providers=createPostgresProviders(connection);const settings=providers.customerSettings,availability=providers.availability;
+(async()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),"nephi-bundle-")),connection={kind:"pglite",dataDir:dir};await migratePostgres(connection);await seedNephiPostgres(connection);const providers=createPostgresProviders(connection);const settings=providers.customerSettings,availability=providers.availability;
 try{let bundles=settings.listBundles("nephi_home");check("seed 四房包棟",bundles.length===1&&bundles[0].memberRoomIds.join(",")==="room301,room302,room401,room402");const bundleId=bundles[0].id;
 for(const date of ["2026-07-20","2026-07-21"])for(const room of ["room301","room302","room401","room402"])availability.setDay("nephi_home",date,room,"available");availability.setDay("nephi_home","2026-07-20",bundleId,"closed");let row=availability.getRows("nephi_home","2026-07-20","2026-07-21")[0];check("關包棟同步關成員",[bundleId,"room301","room302","room401","room402"].every(id=>row[id]==="closed"));
 availability.setDay("nephi_home","2026-07-20",bundleId,"available");row=availability.getRows("nephi_home","2026-07-20","2026-07-21")[0];check("開包棟同步開成員",[bundleId,"room301","room302","room401","room402"].every(id=>row[id]==="available"));availability.setDay("nephi_home","2026-07-20","room301","closed");row=availability.getRows("nephi_home","2026-07-20","2026-07-21")[0];check("關成員使包棟不可售",row[bundleId]==="closed");check("不誤關其他散房",["room302","room401","room402"].every(id=>row[id]==="available"));

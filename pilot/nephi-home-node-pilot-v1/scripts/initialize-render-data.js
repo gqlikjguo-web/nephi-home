@@ -17,6 +17,7 @@ function readFixture(fileName) {
 }
 
 function initialize(options = {}) {
+  if (!options.manifest && !options.manifestFile) throw new Error("initialization manifest is required");
   const config = runtimeConfig(options.env || process.env);
   const dataFile = path.resolve(options.dataFile || config.dataFile);
   if (fs.existsSync(dataFile)) return { initialized: false, dataFile };
@@ -28,7 +29,7 @@ function initialize(options = {}) {
   const sanitizedSeedFile = path.join(workDirectory, "seed.json");
 
   try {
-    const manifest = options.manifest || readFixture(options.manifestFile || "postgres-seed.json");
+    const manifest = options.manifest || readFixture(options.manifestFile);
     const seed = JSON.parse(fs.readFileSync(config.seedFile, "utf8"));
     fs.writeFileSync(sanitizedSeedFile, `${JSON.stringify({ ...seed, messageLogs: {} }, null, 2)}\n`, "utf8");
 
@@ -64,7 +65,7 @@ function initialize(options = {}) {
 
 if (require.main === module) {
   try {
-    const result = initialize();
+    const result = initialize({ manifestFile: String(process.argv[2] || "").trim() });
     console.log(result.initialized
       ? `RENDER_DATA_INITIALIZED days=${result.importedDays}`
       : "RENDER_DATA_ALREADY_EXISTS");

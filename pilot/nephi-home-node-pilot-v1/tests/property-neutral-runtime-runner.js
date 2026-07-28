@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 const { createOnboardingService } = require("../lib/onboarding-service");
 const { migratePostgres } = require("../lib/providers/postgres-migrate");
 const { openPostgres } = require("../lib/providers/postgres-client");
@@ -186,6 +187,25 @@ async function run() {
   const authorized = reviewerSession(["property_alpha", "property_beta"]);
 
   assert.deepEqual(
+    onboarding.listProperties({ propertyId: "property_alpha", username: "reviewer" }),
+    [],
+    "a selected property without server-provided memberships must fail closed"
+  );
+  assert.deepEqual(
+    onboarding.listProperties({ propertyId: "property_alpha", username: "reviewer", properties: [] }),
+    [],
+    "an empty membership scope must fail closed"
+  );
+  assert.throws(
+    () => onboarding.approve(
+      "approve-alpha",
+      approvalPayload("property_alpha", "source_room", "alpha_room"),
+      { propertyId: "property_alpha", username: "reviewer", properties: [] }
+    ),
+    (error) => error && error.status === 403 && error.code === "PROPERTY_ACCESS_DENIED",
+    "session.propertyId alone must not authorize an existing-property approval"
+  );
+  assert.deepEqual(
     onboarding.listProperties(authorized).map((property) => property.propertyId),
     ["property_alpha", "property_beta"],
     "the authenticated account scope must drive the property list"
@@ -256,6 +276,11 @@ async function run() {
     await migratePostgres(seedConnection);
     const alphaSeed = explicitSeed("seed_alpha", ["alpha_seed_room"], "alpha_seed_bundle");
     const betaSeed = explicitSeed("seed_beta", ["beta_seed_room"], "beta_seed_bundle");
+    await assert.rejects(
+      seedPostgres(seedConnection),
+      /explicit seed input is required/,
+      "shared seed code must reject a missing property graph"
+    );
     assert.equal((await seedPostgres(seedConnection, alphaSeed)).propertyId, "seed_alpha");
     assert.equal((await seedPostgres(seedConnection, betaSeed)).propertyId, "seed_beta");
     assert.equal((await seedPostgres(seedConnection, alphaSeed)).seeded, false, "explicit seed must be idempotent");
@@ -276,8 +301,36 @@ async function run() {
   const initializationTemp = fs.mkdtempSync(path.join(os.tmpdir(), "property-neutral-initialize-"));
   try {
     const dataFile = path.join(initializationTemp, "store.json");
+    const initializerEnvironment = {
+      ...process.env,
+      NEPHI_PILOT_DATA_FILE: dataFile,
+      NEPHI_PILOT_SEED_FILE: path.join(ROOT, "fixtures", "seed.json")
+    };
+    const missingManifest = spawnSync(process.execPath, ["scripts/initialize-render-data.js"], {
+      cwd: ROOT,
+      env: initializerEnvironment,
+      encoding: "utf8"
+    });
+    assert.equal(missingManifest.status, 1, "initializer CLI must fail when the manifest argument is absent");
+    assert.match(
+      `${missingManifest.stdout}\n${missingManifest.stderr}`,
+      /initialization manifest is required/,
+      "initializer CLI must emit a safe explicit-manifest error"
+    );
+    assert.throws(
+      () => initialize({
+        dataFile,
+        env: {
+          NEPHI_PILOT_DATA_FILE: dataFile,
+          NEPHI_PILOT_SEED_FILE: path.join(ROOT, "fixtures", "seed.json")
+        }
+      }),
+      /initialization manifest is required/,
+      "initializer must reject a missing explicit manifest"
+    );
     const initialized = initialize({
       dataFile,
+      manifestFile: "postgres-seed.json",
       env: {
         NEPHI_PILOT_DATA_FILE: dataFile,
         NEPHI_PILOT_SEED_FILE: path.join(ROOT, "fixtures", "seed.json")
@@ -289,7 +342,20 @@ async function run() {
     const importedPropertyId = JSON.parse(fs.readFileSync(path.join(ROOT, "fixtures", "nephi-home-property.json"), "utf8")).propertyId;
     assert.ok(state.homestays.some((property) => property.customerId === importedPropertyId));
     assert.ok(Object.keys(state.availability[importedPropertyId] || {}).length > 0);
-    assert.equal(initialize({ dataFile, env: { NEPHI_PILOT_DATA_FILE: dataFile } }).initialized, false, "initialization must remain idempotent");
+    assert.equal(initialize({ dataFile, manifestFile: "postgres-seed.json", env: { NEPHI_PILOT_DATA_FILE: dataFile } }).initialized, false, "initialization must remain idempotent");
+
+    const cliDataFile = path.join(initializationTemp, "cli-store.json");
+    const explicitManifest = spawnSync(
+      process.execPath,
+      ["scripts/initialize-render-data.js", "postgres-seed.json"],
+      {
+        cwd: ROOT,
+        env: { ...initializerEnvironment, NEPHI_PILOT_DATA_FILE: cliDataFile },
+        encoding: "utf8"
+      }
+    );
+    assert.equal(explicitManifest.status, 0, explicitManifest.stderr);
+    assert.match(explicitManifest.stdout, /RENDER_DATA_INITIALIZED/);
   } finally {
     fs.rmSync(initializationTemp, { recursive: true, force: true });
   }
