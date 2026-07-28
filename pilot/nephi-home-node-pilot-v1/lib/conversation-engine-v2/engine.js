@@ -149,8 +149,10 @@ function legacyTaskResult(execution) {
 
 const SAFE_FALLBACK = SAFE_HANDOFF_TEXT;
 const PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "unknown"]);
+const PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
 const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic");
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function safePlannerProviderErrorField(value, maxLength) {
   const text = String(value || "");
@@ -161,15 +163,47 @@ function safePlannerErrorCategory(value, fallback = "unknown") {
   return PLANNER_ERROR_CATEGORIES.has(value) ? value : fallback;
 }
 
+function safePlannerAttemptDiagnostic(attempt = {}) {
+  const attemptNumber = Number(attempt.attemptNumber);
+  const durationMs = Number(attempt.durationMs);
+  const timeoutMs = Number(attempt.timeoutMs);
+  const httpStatus = Number(attempt.httpStatus);
+  const startedAt = new Date(String(attempt.startedAt || ""));
+  const completedAt = new Date(String(attempt.completedAt || ""));
+  const errorCategory = String(attempt.errorCategory || "");
+  const clientRequestId = String(attempt.clientRequestId || "");
+  return {
+    attemptNumber: Number.isInteger(attemptNumber) && attemptNumber >= 1 ? Math.min(attemptNumber, 2) : 1,
+    startedAt: Number.isFinite(startedAt.getTime()) ? startedAt.toISOString() : "",
+    completedAt: Number.isFinite(completedAt.getTime()) ? completedAt.toISOString() : "",
+    durationMs: Number.isFinite(durationMs) && durationMs >= 0 ? Math.round(durationMs) : 0,
+    timeoutMs: Number.isFinite(timeoutMs) && timeoutMs >= 0 ? Math.min(Math.round(timeoutMs), 120000) : 0,
+    clientRequestId: UUID_PATTERN.test(clientRequestId) ? clientRequestId : "",
+    providerRequestId: safePlannerProviderErrorField(attempt.providerRequestId, 200),
+    timeout: Boolean(attempt.timeout),
+    retryable: Boolean(attempt.retryable),
+    errorCategory: PLANNER_ATTEMPT_ERROR_CATEGORIES.has(errorCategory) ? errorCategory : "unknown",
+    httpStatus: Number.isInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599 ? httpStatus : 0,
+    responseBodyPresent: Boolean(attempt.responseBodyPresent),
+    parsedOutputPresent: Boolean(attempt.parsedOutputPresent)
+  };
+}
+
 function safePlannerRetrySuccessDiagnostic(plannerOutput) {
   const diagnostic = plannerOutput && plannerOutput[PLANNER_PROVIDER_DIAGNOSTIC];
-  if (!diagnostic || diagnostic.retryPerformed !== true || diagnostic.retrySucceeded !== true) return {};
+  if (!diagnostic) return {};
+  const providerAttempts = (Array.isArray(diagnostic.providerAttempts) ? diagnostic.providerAttempts : [])
+    .slice(0, 2)
+    .map(safePlannerAttemptDiagnostic);
+  if (!providerAttempts.length) return {};
+  const retried = diagnostic.retryPerformed === true;
   return {
-    providerAttemptCount: Math.min(Math.max(Number(diagnostic.providerAttemptCount) || 0, 0), 2),
-    firstAttemptErrorCategory: safePlannerErrorCategory(diagnostic.firstAttemptErrorCategory),
+    providerAttemptCount: providerAttempts.length,
+    firstAttemptErrorCategory: retried ? safePlannerErrorCategory(diagnostic.firstAttemptErrorCategory) : "",
     finalErrorCategory: "",
-    retryPerformed: true,
-    retrySucceeded: true
+    retryPerformed: retried,
+    retrySucceeded: retried && diagnostic.retrySucceeded === true,
+    providerAttempts
   };
 }
 
@@ -215,6 +249,9 @@ function safePlannerErrorDiagnostic(error, planner) {
     errorCode = "planner_network_error";
   }
   const attemptCount = Number(error && error.providerAttemptCount);
+  const providerAttempts = (Array.isArray(error && error.providerAttempts) ? error.providerAttempts : [])
+    .slice(0, 2)
+    .map(safePlannerAttemptDiagnostic);
   return {
     errorName: PLANNER_ERROR_NAMES.has(error && error.name) ? error.name : "Error",
     errorCode,
@@ -233,7 +270,8 @@ function safePlannerErrorDiagnostic(error, planner) {
     retrySucceeded: Boolean(error && error.retrySucceeded),
     retryable: Boolean(error && error.retryable),
     responseBodyPresent: Boolean(error && error.responseBodyPresent),
-    parsedOutputPresent: Boolean(error && error.parsedOutputPresent)
+    parsedOutputPresent: Boolean(error && error.parsedOutputPresent),
+    providerAttempts
   };
 }
 
@@ -280,7 +318,7 @@ class ConversationEngineV2 {
       ...safePlannerRetrySuccessDiagnostic(plannerOutput)
     });
     if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) {
-      this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: [parserSucceeded ? "planner_output_unusable" : "planner_parse_failed"], finalTasks: [] });
+      this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: [parserSucceeded ? "planner_output_unusable" : "planner_parse_failed"], finalTasks: [], ...(parserSucceeded ? { errorCategory: "local_contract_failure" } : {}) });
       this.trace(traceId, "fallback", { reasonCode: parserSucceeded ? "planner_output_unusable" : "planner_parse_failed", branch: "planner_input_guard" });
       const finalDecision = decideFinal({ plannerFailure: parserSucceeded ? "planner_output_unusable" : "planner_parse_failed" });
       this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
@@ -293,7 +331,7 @@ class ConversationEngineV2 {
     plannerOutput = discardLegacyPlannerStateControls(plannerOutput);
     plannerOutput = normalizePlannerOutput(plannerOutput, { eventTimestamp: input.eventTimestamp, timezone: catalog.timezone });
     if (!plannerOutput) {
-      this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: ["planner_normalization_failed"], finalTasks: [] });
+      this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: ["planner_normalization_failed"], finalTasks: [], errorCategory: "local_contract_failure" });
       this.trace(traceId, "fallback", { reasonCode: "planner_normalization_failed", branch: "planner_normalization_guard" });
       const finalDecision = decideFinal({ plannerFailure: "planner_normalization_failed" });
       this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
@@ -305,7 +343,7 @@ class ConversationEngineV2 {
     }
     const structuralValidation = validatePlannerOutput(plannerOutput);
     if (!structuralValidation.ok) {
-      this.trace(traceId, "validation", plannerValidationTrace(plannerOutput, structuralValidation));
+      this.trace(traceId, "validation", { ...plannerValidationTrace(plannerOutput, structuralValidation), errorCategory: "local_contract_failure" });
       this.trace(traceId, "fallback", { reasonCode: "planner_schema_invalid", branch: "structural_validation" });
       const finalDecision = decideFinal({ plannerFailure: "planner_schema_invalid" });
       this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
@@ -318,7 +356,7 @@ class ConversationEngineV2 {
     const semanticInputTasks = plannerOutput.tasks.map(plannerTaskTrace);
     plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog });
     const validation = validatePlannerOutput(plannerOutput);
-    this.trace(traceId, "validation", { ...plannerValidationTrace(plannerOutput, validation), semanticValidation: plannerOutput.semanticValidation });
+    this.trace(traceId, "validation", { ...plannerValidationTrace(plannerOutput, validation), semanticValidation: plannerOutput.semanticValidation, ...(!validation.ok ? { errorCategory: "local_contract_failure" } : {}) });
     this.trace(traceId, "semantic_contract", { inputTasks: semanticInputTasks, outputTasks: plannerOutput.tasks.map(plannerTaskTrace), shouldIgnore: plannerOutput.shouldIgnore, validationPassed: validation.ok, semanticValidation: plannerOutput.semanticValidation });
     if (!validation.ok) {
       this.trace(traceId, "fallback", { reasonCode: "planner_semantic_validation_failed", branch: "semantic_validation" });

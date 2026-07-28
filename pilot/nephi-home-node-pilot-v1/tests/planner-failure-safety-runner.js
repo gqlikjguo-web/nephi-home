@@ -117,6 +117,7 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
     "propertyId",
     "provider",
     "providerAttemptCount",
+    "providerAttempts",
     "providerErrorCode",
     "providerErrorParam",
     "providerErrorType",
@@ -147,6 +148,14 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
   assert.equal(diagnostic.retryable, Boolean(expected.retryable));
   assert.equal(diagnostic.responseBodyPresent, Boolean(expected.responseBodyPresent));
   assert.equal(diagnostic.parsedOutputPresent, Boolean(expected.parsedOutputPresent));
+  assert.equal(diagnostic.providerAttempts.length, diagnostic.providerAttemptCount);
+  diagnostic.providerAttempts.forEach((attempt, index) => {
+    assert.equal(attempt.attemptNumber, index + 1);
+    assert.equal(Number.isInteger(attempt.durationMs), true);
+    assert.equal(attempt.durationMs >= 0, true);
+    assert.equal(attempt.timeoutMs, 10);
+    assert.match(attempt.clientRequestId, /^[0-9a-f-]{36}$/i);
+  });
   const serialized = JSON.stringify(diagnostic);
   for (const forbidden of Object.values(sensitive)) {
     assert.equal(serialized.includes(forbidden), false, `${name} diagnostic leaked ${forbidden}`);
@@ -163,17 +172,20 @@ function openAiPlanner(fetchImpl, options = {}) {
   });
 }
 
-function providerResponse(status, body) {
+function providerResponse(status, body, providerRequestId = "") {
   const text = String(body || "");
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: {
+      get: (name) => String(name || "").toLowerCase() === "x-request-id" ? providerRequestId : null
+    },
     text: async () => text,
     json: async () => JSON.parse(text)
   };
 }
 
-function successfulProviderResponse() {
+function successfulProviderResponse(providerRequestId = "") {
   const output = validPlannerOutput();
   output.tasks[0] = {
     ...output.tasks[0],
@@ -182,7 +194,7 @@ function successfulProviderResponse() {
   };
   return providerResponse(200, JSON.stringify({
     output_text: JSON.stringify(output)
-  }));
+  }), providerRequestId);
 }
 
 async function plannerRetrySuccess({ name, firstFailure, expectedCategory }) {
@@ -191,7 +203,7 @@ async function plannerRetrySuccess({ name, firstFailure, expectedCategory }) {
   const planner = openAiPlanner(async () => {
     fetchCount += 1;
     if (fetchCount === 1) return firstFailure();
-    return successfulProviderResponse();
+    return successfulProviderResponse(`req_retry_${name}`);
   });
   const engine = new ConversationEngineV2({
     planner,
@@ -221,6 +233,9 @@ async function plannerRetrySuccess({ name, firstFailure, expectedCategory }) {
   assert.equal(safeDiagnostic.finalErrorCategory, "");
   assert.equal(safeDiagnostic.retryPerformed, true);
   assert.equal(safeDiagnostic.retrySucceeded, true);
+  assert.equal(safeDiagnostic.providerAttempts.length, 2);
+  assert.notEqual(safeDiagnostic.providerAttempts[0].clientRequestId, safeDiagnostic.providerAttempts[1].clientRequestId);
+  assert.equal(safeDiagnostic.providerAttempts[1].providerRequestId, `req_retry_${name}`);
   const serialized = JSON.stringify(safeDiagnostic);
   for (const forbidden of Object.values(sensitive)) {
     assert.equal(serialized.includes(forbidden), false, `${name} diagnostic leaked ${forbidden}`);
@@ -229,6 +244,7 @@ async function plannerRetrySuccess({ name, firstFailure, expectedCategory }) {
 
 async function plannerContractFailureDoesNotRetry() {
   let fetchCount = 0;
+  const diagnostics = [];
   const planner = openAiPlanner(async () => {
     fetchCount += 1;
     return providerResponse(200, JSON.stringify({
@@ -240,7 +256,8 @@ async function plannerContractFailureDoesNotRetry() {
     persistence: plannerPersistence(),
     getProperty: () => property,
     availabilityResolver: () => ({ availabilityReliable: true, rooms: [] }),
-    listPriceOverrides: () => []
+    listPriceOverrides: () => [],
+    onDiagnostic: (entry) => diagnostics.push(entry)
   });
   const result = await engine.process({
     customerId: property.propertyId,
@@ -254,6 +271,8 @@ async function plannerContractFailureDoesNotRetry() {
   assert.equal(fetchCount, 1, "a local Planner output contract failure must not retry the provider request");
   assert.equal(result.finalDecision.action, "handoff");
   assert.equal(result.finalDecision.reasonCode, "planner_output_unusable");
+  const validationDiagnostic = diagnostics.find((entry) => entry.stage === "validation");
+  assert.equal(validationDiagnostic.errorCategory, "local_contract_failure");
 }
 
 async function main() {
@@ -538,6 +557,7 @@ async function main() {
   assert.ok(persistedPlannerLog, "test-only application logs must persist planner_error");
   assert.ok(persistedPlannerLog.traceId, "persisted planner_error must be searchable by traceId");
   assert.equal(persistedPlannerLog.providerAttemptCount, 2);
+  assert.equal(persistedPlannerLog.providerAttempts.length, 2);
   assert.equal(persistedPlannerLog.firstAttemptErrorCategory, "rate_limit");
   assert.equal(persistedPlannerLog.finalErrorCategory, "rate_limit");
   assert.equal(persistedPlannerLog.retryPerformed, true);

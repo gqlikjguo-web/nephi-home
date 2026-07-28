@@ -25,7 +25,9 @@ const TEST_LINE_WEBHOOK_ROUTE = "/api/test-line/webhook";
 const SAFE_PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
 const SAFE_PLANNER_ERROR_CODES = new Set(["planner_authentication_error", "planner_model_not_found", "planner_rate_limit", "planner_provider_error", "planner_http_error", "planner_timeout", "planner_parse_error", "planner_empty_response", "planner_structured_output_error", "planner_network_error", "planner_configuration_error", "planner_unknown_error"]);
 const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "unknown"]);
+const SAFE_PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const SAFE_CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
+const SAFE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function safeDiagnosticLabel(value, fallback, maxLength) {
   const text = String(value || "");
@@ -58,6 +60,36 @@ function safePlannerErrorCategory(value, fallback = "unknown") {
   return SAFE_PLANNER_ERROR_CATEGORIES.has(value) ? value : fallback;
 }
 
+function safePlannerAttemptTrace(attempt = {}) {
+  const attemptNumber = Number(attempt.attemptNumber);
+  const durationMs = Number(attempt.durationMs);
+  const timeoutMs = Number(attempt.timeoutMs);
+  const httpStatus = Number(attempt.httpStatus);
+  const startedAt = new Date(String(attempt.startedAt || ""));
+  const completedAt = new Date(String(attempt.completedAt || ""));
+  const clientRequestId = String(attempt.clientRequestId || "");
+  const errorCategory = String(attempt.errorCategory || "");
+  return {
+    attemptNumber: Number.isInteger(attemptNumber) && attemptNumber >= 1 ? Math.min(attemptNumber, 2) : 1,
+    startedAt: Number.isFinite(startedAt.getTime()) ? startedAt.toISOString() : "",
+    completedAt: Number.isFinite(completedAt.getTime()) ? completedAt.toISOString() : "",
+    durationMs: Number.isFinite(durationMs) && durationMs >= 0 ? Math.round(durationMs) : 0,
+    timeoutMs: Number.isFinite(timeoutMs) && timeoutMs >= 0 ? Math.min(Math.round(timeoutMs), 120000) : 0,
+    clientRequestId: SAFE_UUID_PATTERN.test(clientRequestId) ? clientRequestId : "",
+    providerRequestId: safeDiagnosticLabel(attempt.providerRequestId, "", 200),
+    timeout: Boolean(attempt.timeout),
+    retryable: Boolean(attempt.retryable),
+    errorCategory: SAFE_PLANNER_ATTEMPT_ERROR_CATEGORIES.has(errorCategory) ? errorCategory : "unknown",
+    httpStatus: Number.isInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599 ? httpStatus : 0,
+    responseBodyPresent: Boolean(attempt.responseBodyPresent),
+    parsedOutputPresent: Boolean(attempt.parsedOutputPresent)
+  };
+}
+
+function safePlannerAttempts(value) {
+  return (Array.isArray(value) ? value : []).slice(0, 2).map(safePlannerAttemptTrace);
+}
+
 function formatSafeTestOnlyConversationTrace(details = {}) {
   const base = { scope: "conversation-engine-v2", traceId: String(details.traceId || ""), propertyId: String(details.propertyId || ""), stage: String(details.stage || "") };
   if (details.stage === "property_catalog") {
@@ -69,22 +101,26 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       urlValidation: String(location.urlValidation || "fail")
     } };
   }
-  if (details.stage === "planner") return {
-    ...base,
-    parserSucceeded: Boolean(details.parserSucceeded),
-    taskCount: Number(details.taskCount || 0),
-    discourse: details.discourse || null,
-    shouldIgnore: Boolean(details.shouldIgnore),
-    missingInformation: (details.missingInformation || []).map(String),
-    tasks: (details.tasks || []).map(safePlannerTraceTask),
-    ...(details.retryPerformed === true ? {
-      providerAttemptCount: Math.min(safeDiagnosticCount(details.providerAttemptCount), 2),
-      firstAttemptErrorCategory: safePlannerErrorCategory(details.firstAttemptErrorCategory),
-      finalErrorCategory: details.retrySucceeded === true ? "" : safePlannerErrorCategory(details.finalErrorCategory),
-      retryPerformed: true,
-      retrySucceeded: Boolean(details.retrySucceeded)
-    } : {})
-  };
+  if (details.stage === "planner") {
+    const providerAttempts = safePlannerAttempts(details.providerAttempts);
+    return {
+      ...base,
+      parserSucceeded: Boolean(details.parserSucceeded),
+      taskCount: Number(details.taskCount || 0),
+      discourse: details.discourse || null,
+      shouldIgnore: Boolean(details.shouldIgnore),
+      missingInformation: (details.missingInformation || []).map(String),
+      tasks: (details.tasks || []).map(safePlannerTraceTask),
+      ...(providerAttempts.length ? {
+        providerAttemptCount: providerAttempts.length,
+        firstAttemptErrorCategory: details.retryPerformed === true ? safePlannerErrorCategory(details.firstAttemptErrorCategory) : "",
+        finalErrorCategory: details.retrySucceeded === true || details.retryPerformed !== true ? "" : safePlannerErrorCategory(details.finalErrorCategory),
+        retryPerformed: Boolean(details.retryPerformed),
+        retrySucceeded: Boolean(details.retrySucceeded),
+        providerAttempts
+      } : {})
+    };
+  }
   if (details.stage === "planner_error") {
     const status = Number(details.httpStatus);
     return {
@@ -106,7 +142,8 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       retrySucceeded: Boolean(details.retrySucceeded),
       retryable: Boolean(details.retryable),
       responseBodyPresent: Boolean(details.responseBodyPresent),
-      parsedOutputPresent: Boolean(details.parsedOutputPresent)
+      parsedOutputPresent: Boolean(details.parsedOutputPresent),
+      providerAttempts: safePlannerAttempts(details.providerAttempts)
     };
   }
   if (details.stage === "validation") return {
@@ -114,7 +151,8 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
     acceptedTasks: (details.acceptedTasks || []).map(safePlannerTraceTask),
     rejectedTasks: (details.rejectedTasks || []).map((task) => ({ ...safePlannerTraceTask(task), reasons: (task.reasons || []).map(String) })),
     rejectionReasons: (details.rejectionReasons || []).map(String),
-    finalTasks: (details.finalTasks || []).map(safePlannerTraceTask)
+    finalTasks: (details.finalTasks || []).map(safePlannerTraceTask),
+    ...(details.errorCategory === "local_contract_failure" ? { errorCategory: "local_contract_failure" } : {})
   };
   if (details.stage === "context_validation") return {
     ...base,

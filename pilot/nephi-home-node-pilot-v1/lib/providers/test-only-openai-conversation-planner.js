@@ -1,13 +1,16 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const { plannerJsonSchema } = require("../conversation-engine-v2/planner-schema");
 const RESPONSES_URL = "https://api.openai.com/v1/responses";
 const PLANNER_PROVIDER = "openai";
 const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic");
 const RETRYABLE_ERROR_CATEGORIES = new Set(["timeout", "network", "rate_limit", "provider_5xx"]);
+const ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const MAX_PROVIDER_ATTEMPTS = 2;
-const DEFAULT_RETRY_DELAY_MS = 100;
+const DEFAULT_RETRY_DELAY_MS = 750;
 const MAX_RETRY_DELAY_MS = 1000;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function safeProviderErrorField(value, maxLength) {
   const text = String(value || "");
@@ -38,6 +41,49 @@ function safeProviderError(payload) {
     providerErrorCode: safeProviderErrorField(providerError.code, 120),
     providerErrorParam: safeProviderErrorField(providerError.param, 200)
   };
+}
+
+function safeResponseRequestId(response) {
+  if (!response || !response.headers || typeof response.headers.get !== "function") return "";
+  try { return safeProviderErrorField(response.headers.get("x-request-id"), 200); }
+  catch { return ""; }
+}
+
+function safeAttemptErrorCategory(error) {
+  const category = String(error && error.errorCategory || "unknown");
+  if (category === "invalid_request") return "provider_4xx";
+  if (category === "json_parse") return "parse_failure";
+  if (category === "structured_output") return "structured_output_failure";
+  return ATTEMPT_ERROR_CATEGORIES.has(category) ? category : "unknown";
+}
+
+function safeTimestamp(value) {
+  const milliseconds = typeof value === "string" ? Date.parse(value) : Number(value);
+  return new Date(Number.isFinite(milliseconds) ? milliseconds : Date.now()).toISOString();
+}
+
+function safeAttemptDiagnostic(details = {}) {
+  const status = Number(details.httpStatus);
+  const duration = Number(details.durationMs);
+  const timeoutMs = Number(details.timeoutMs);
+  const category = String(details.errorCategory || "");
+  return Object.freeze({
+    attemptNumber: Number.isInteger(details.attemptNumber) && details.attemptNumber >= 1
+      ? Math.min(details.attemptNumber, MAX_PROVIDER_ATTEMPTS)
+      : 1,
+    startedAt: safeTimestamp(details.startedAtMs === undefined ? details.startedAt : details.startedAtMs),
+    completedAt: safeTimestamp(details.completedAtMs === undefined ? details.completedAt : details.completedAtMs),
+    durationMs: Number.isFinite(duration) && duration >= 0 ? Math.round(duration) : 0,
+    timeoutMs: Number.isFinite(timeoutMs) && timeoutMs >= 0 ? Math.round(timeoutMs) : 0,
+    clientRequestId: UUID_PATTERN.test(String(details.clientRequestId || "")) ? String(details.clientRequestId) : "",
+    providerRequestId: safeProviderErrorField(details.providerRequestId, 200),
+    timeout: Boolean(details.timeout),
+    retryable: Boolean(details.retryable),
+    errorCategory: ATTEMPT_ERROR_CATEGORIES.has(category) ? category : "unknown",
+    httpStatus: Number.isInteger(status) && status >= 100 && status <= 599 ? status : 0,
+    responseBodyPresent: Boolean(details.responseBodyPresent),
+    parsedOutputPresent: Boolean(details.parsedOutputPresent)
+  });
 }
 
 function structuredOutputFailed(payload) {
@@ -116,34 +162,38 @@ function waitForRetry(delayMs) {
   return delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve();
 }
 
-function annotateFailure(error, { providerAttemptCount, firstAttemptErrorCategory, retryPerformed }) {
+function annotateFailure(error, { providerAttemptCount, firstAttemptErrorCategory, retryPerformed, providerAttempts }) {
   error.providerAttemptCount = providerAttemptCount;
   error.firstAttemptErrorCategory = firstAttemptErrorCategory || "unknown";
   error.finalErrorCategory = String(error.errorCategory || "unknown");
   error.retryPerformed = Boolean(retryPerformed);
   error.retrySucceeded = false;
+  error.providerAttempts = Object.freeze((providerAttempts || []).slice(0, MAX_PROVIDER_ATTEMPTS).map(safeAttemptDiagnostic));
   return error;
 }
 
-function annotateRetrySuccess(output, firstAttemptErrorCategory) {
+function annotateProviderSuccess(output, firstAttemptErrorCategory, providerAttempts) {
   if (!output || typeof output !== "object") return output;
+  const attempts = Object.freeze((providerAttempts || []).slice(0, MAX_PROVIDER_ATTEMPTS).map(safeAttemptDiagnostic));
+  const retried = attempts.length > 1;
   Object.defineProperty(output, PLANNER_PROVIDER_DIAGNOSTIC, {
     configurable: false,
     enumerable: false,
     writable: false,
     value: {
-      providerAttemptCount: MAX_PROVIDER_ATTEMPTS,
-      firstAttemptErrorCategory,
+      providerAttemptCount: attempts.length,
+      firstAttemptErrorCategory: retried ? firstAttemptErrorCategory : "",
       finalErrorCategory: "",
-      retryPerformed: true,
-      retrySucceeded: true
+      retryPerformed: retried,
+      retrySucceeded: retried,
+      providerAttempts: attempts
     }
   });
   return output;
 }
 
 class TestOnlyOpenAiConversationPlanner {
-  constructor({ apiKey, model, fetchImpl = globalThis.fetch, timeoutMs = 15000, retryDelayMs = DEFAULT_RETRY_DELAY_MS }) {
+  constructor({ apiKey, model, fetchImpl = globalThis.fetch, timeoutMs = 15000, retryDelayMs = DEFAULT_RETRY_DELAY_MS, waitImpl = waitForRetry, nowMs = Date.now, requestIdFactory = crypto.randomUUID }) {
     if (!apiKey || !model) throw plannerFailure({ code: "planner_configuration_error", category: "unknown", model, providerAttemptCount: 0 });
     this.apiKey = apiKey;
     this.model = model;
@@ -151,13 +201,28 @@ class TestOnlyOpenAiConversationPlanner {
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
     this.retryDelayMs = boundedRetryDelay(retryDelayMs);
+    this.waitImpl = typeof waitImpl === "function" ? waitImpl : waitForRetry;
+    this.nowMs = typeof nowMs === "function" ? nowMs : Date.now;
+    this.requestIdFactory = typeof requestIdFactory === "function" ? requestIdFactory : crypto.randomUUID;
   }
-  async requestOnce(input) {
+  async requestOnce(input, attemptNumber) {
+    const generatedRequestId = String(this.requestIdFactory() || "");
+    const clientRequestId = UUID_PATTERN.test(generatedRequestId) ? generatedRequestId : crypto.randomUUID();
+    const startedAtMs = Number(this.nowMs());
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let httpStatus = 0;
+    let providerRequestId = "";
+    let responseBodyPresent = false;
+    let parsedOutputPresent = false;
+    let output;
+    let failure;
     try {
-      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` }, signal: controller.signal, body: JSON.stringify({ model: this.model, input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] } }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerJsonSchema() } } }) });
+      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] } }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerJsonSchema() } } }) });
       const status = Number(response.status || response.statusCode || 0);
+      httpStatus = Number.isInteger(status) ? status : 0;
+      providerRequestId = safeResponseRequestId(response);
       const providerPayload = await readProviderPayload(response);
+      responseBodyPresent = providerPayload.responseBodyPresent;
       if (!response.ok) throw httpFailure(status, this.model, safeProviderError(providerPayload.payload), providerPayload.responseBodyPresent);
       if (!providerPayload.responseBodyPresent) {
         throw plannerFailure({ code: "planner_empty_response", category: "empty_response", status, model: this.model });
@@ -171,34 +236,62 @@ class TestOnlyOpenAiConversationPlanner {
         throw plannerFailure({ code: "planner_structured_output_error", category: "structured_output", status, model: this.model, responseBodyPresent: true });
       }
       if (!text) throw plannerFailure({ code: "planner_empty_response", category: "empty_response", status, model: this.model, responseBodyPresent: true });
-      try { return JSON.parse(text); }
+      try {
+        output = JSON.parse(text);
+        parsedOutputPresent = true;
+      }
       catch { throw plannerFailure({ code: "planner_parse_error", category: "json_parse", status, model: this.model, name: "SyntaxError", responseBodyPresent: true, parsedOutputPresent: true }); }
     } catch (error) {
-      if (error && error.safePlannerFailure) throw error;
-      if (error && error.name === "AbortError") throw plannerFailure({ code: "planner_timeout", category: "timeout", timeout: true, model: this.model, name: "AbortError", retryable: true });
-      throw plannerFailure({ code: "planner_network_error", category: "network", model: this.model, retryable: true });
+      if (error && error.safePlannerFailure) failure = error;
+      else if (error && error.name === "AbortError") failure = plannerFailure({ code: "planner_timeout", category: "timeout", timeout: true, model: this.model, name: "AbortError", retryable: true });
+      else failure = plannerFailure({ code: "planner_network_error", category: "network", model: this.model, retryable: true });
     } finally { clearTimeout(timer); }
+    const completedAtMs = Number(this.nowMs());
+    const attemptDiagnostic = safeAttemptDiagnostic({
+      attemptNumber,
+      startedAtMs,
+      completedAtMs,
+      durationMs: Math.max(0, completedAtMs - startedAtMs),
+      timeoutMs: this.timeoutMs,
+      clientRequestId,
+      providerRequestId,
+      timeout: Boolean(failure && failure.timeout),
+      retryable: Boolean(failure && failure.retryable),
+      errorCategory: failure ? safeAttemptErrorCategory(failure) : "",
+      httpStatus,
+      responseBodyPresent: failure ? failure.responseBodyPresent : responseBodyPresent,
+      parsedOutputPresent: failure ? failure.parsedOutputPresent : parsedOutputPresent
+    });
+    if (failure) {
+      failure.providerAttempts = Object.freeze([attemptDiagnostic]);
+      throw failure;
+    }
+    return { output, attemptDiagnostic };
   }
   async classify(input) {
     let firstAttemptErrorCategory = "";
+    const providerAttempts = [];
     for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
       try {
-        const output = await this.requestOnce(input);
-        return attempt === 1 ? output : annotateRetrySuccess(output, firstAttemptErrorCategory);
+        const result = await this.requestOnce(input, attempt);
+        providerAttempts.push(result.attemptDiagnostic);
+        return annotateProviderSuccess(result.output, firstAttemptErrorCategory, providerAttempts);
       } catch (error) {
+        providerAttempts.push(...(Array.isArray(error && error.providerAttempts) ? error.providerAttempts : []));
         const errorCategory = String(error && error.errorCategory || "unknown");
         if (attempt === 1) firstAttemptErrorCategory = errorCategory;
         const shouldRetry = attempt === 1
           && Boolean(error && error.retryable)
           && RETRYABLE_ERROR_CATEGORIES.has(errorCategory);
         if (shouldRetry) {
-          await waitForRetry(this.retryDelayMs);
+          await this.waitImpl(this.retryDelayMs);
           continue;
         }
         throw annotateFailure(error, {
           providerAttemptCount: attempt,
           firstAttemptErrorCategory,
-          retryPerformed: attempt > 1
+          retryPerformed: attempt > 1,
+          providerAttempts
         });
       }
     }

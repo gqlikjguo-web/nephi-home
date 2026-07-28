@@ -105,16 +105,6 @@ function valueAtPath({ stay }, field) {
 }
 
 function canonicalReadiness(canonicalRequest, stay) {
-  if (canonicalRequest.temporalState.resolutionStatus === "unresolved") {
-    return {
-      status: "missing_information",
-      missingFields: canonicalRequest.requiredFields.length
-        ? canonicalRequest.requiredFields.slice(0, 1)
-        : ["stay.checkIn"],
-      invalidFields: [],
-      conflictingFields: []
-    };
-  }
   const missingFields = canonicalRequest.requiredFields
     .filter((field) => !valueAtPath({ stay }, field));
   if (missingFields.length) {
