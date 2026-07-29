@@ -152,3 +152,5 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - The unrestricted public draft-creation boundary was replaced with platform-admin-issued, expiring, revocable invitation links.
 - Existing onboarding staging tables remain authoritative for drafts and submissions; formal property data is unchanged until the existing approval workflow runs.
 - The targeted gate covers partial draft save, refresh/read-back, idempotent submit, invalid/expired/revoked tokens, Alpha/Beta isolation, transaction rollback, admin visibility, frontend preservation, and formal-data non-pollution.
+- The permanent test-only Blueprint now uses migration-only startup and the dedicated Render host for invite, resume, and admin-setup URLs.
+- One wrong-host fake Alpha application was uniquely identified by its original invitation authority and removed as a single staging-only transaction after proving it was submitted, unapproved, and unrelated to any formal property, LINE binding, or formal fact.

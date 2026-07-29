@@ -15,7 +15,7 @@ services:
     plan: starter
     rootDir: pilot/nephi-home-node-pilot-v1
     buildCommand: npm install --omit=dev
-    startCommand: npm run migrate:postgres && npm run seed:postgres && npm start
+    startCommand: npm run migrate:postgres && npm start
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
@@ -29,7 +29,7 @@ services:
       - key: NEPHI_PILOT_CLASSIFIER_TIMEOUT_MS
         value: "15000"
       - key: PUBLIC_BASE_URL
-        value: https://app.junzanai.com
+        value: https://nephi-home-node-pilot-test-only-btye.onrender.com
       - key: ONBOARDING_EMAIL_FROM
         value: JunZan AI <noreply@junzanai.com>
       - key: RESEND_API_KEY

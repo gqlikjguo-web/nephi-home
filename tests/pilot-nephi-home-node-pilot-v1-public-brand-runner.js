@@ -42,6 +42,6 @@ const adminOnboardingSource = fs.readFileSync(path.join(root, "public/assets/adm
 check("對外邀請網址不使用瀏覽器來源硬編碼", !adminOnboardingSource.includes("location.origin"));
 
 const renderYaml = fs.readFileSync(path.resolve(root, "../../render.yaml"), "utf8");
-check("Render 設定正式公開基底網址", /key:\s*PUBLIC_BASE_URL\s+[\s\S]*?value:\s*https:\/\/app\.junzanai\.com/.test(renderYaml));
+check("Render test-only 設定使用專屬公開基底網址", /name:\s*nephi-home-node-pilot-test-only[\s\S]*?key:\s*PUBLIC_BASE_URL\s+[\s\S]*?value:\s*https:\/\/nephi-home-node-pilot-test-only-btye\.onrender\.com/.test(renderYaml));
 
 console.log(`${checks.length}/${checks.length} PASS`);

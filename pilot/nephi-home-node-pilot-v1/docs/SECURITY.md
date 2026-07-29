@@ -54,3 +54,6 @@
 - Application IDs or frontend-supplied property IDs are never authorization. A token from one application cannot read or write another application.
 - Unapproved onboarding data remains in staging and must not create formal property facts, LINE bindings, availability, or automatic replies.
 - Invitation tokens, draft tokens, cookies, contact details, credentials, and raw request bodies must not be written to application logs.
+- Test-only invitation, resume, and admin-setup links must use the dedicated test-only host. They must never use `app.junzanai.com`.
+- Test-only startup may run migrations but must not seed data automatically.
+- Deploy Hooks are credentials: use them only for the intended test-only service, rotate them after exposure, and never read back, log, or commit the replacement value.

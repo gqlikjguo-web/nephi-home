@@ -120,3 +120,9 @@
 
 - Added platform-admin-issued onboarding invitations with expiry and revocation, partial draft persistence, safe read-back, idempotent submission, and admin review visibility on the existing staging workflow.
 - Rejected unauthenticated draft creation and added permanent isolation, rollback, invalid-field, frontend-preservation, and formal-data non-pollution coverage.
+
+## 2026-07-29 — Test-only onboarding deployment contract
+
+- Removed automatic PostgreSQL seeding from the test-only Blueprint start command and bound test-only onboarding URLs to the dedicated Render host.
+- Added a permanent deployment contract gate for start command, public base URL, and invite/resume/admin-setup URL generation.
+- Made the runtime uniqueness source scanner portable across LF and CRLF worktrees without changing any uniqueness assertion.

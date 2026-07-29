@@ -91,8 +91,9 @@
 
 ## 2026-07-29 Friendly operator onboarding intake
 
-- Review the invitation-scoped intake diff and targeted RED/GREEN evidence.
-- After all local gates pass, deploy only the dedicated test-only branch and verify Alpha/Beta draft isolation, read-back, submission, admin visibility, and unchanged formal property data.
+- Deploy only the reviewed `test-only/friendly-onboarding-intake` commit to `nephi-home-node-pilot-test-only`.
+- Verify one new invitation uses the dedicated test-only host, then complete draft save, read-back, submission, admin visibility, and formal-data non-pollution.
+- Rotate any exposed test-only Deploy Hook after the final verification and never read back the replacement value.
 - Do not reuse an invitation across applications or restore unauthenticated public draft creation.
 
 ## 2026-07-27 Bounded Planner provider retry

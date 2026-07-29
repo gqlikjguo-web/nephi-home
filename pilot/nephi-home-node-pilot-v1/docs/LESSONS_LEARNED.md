@@ -121,3 +121,9 @@ Test both source neutrality and behavior with two properties that use different 
 A fresh browser could save and submit the existing onboarding form, but that success bypassed the required invitation authority because the page silently created an unrestricted draft. Reproducing only the happy path would have hidden expiry, revocation, cross-operator isolation, and stale-link behavior.
 
 Treat invitation resolution and draft persistence as separate contracts: issue one unguessable token from authenticated platform scope, store only its hash, bind it to one staging application, and test invalid, expired, revoked, and cross-application use before testing field persistence.
+
+## 2026-07-29 — Blueprint configuration must match the running test-only service
+
+A manual Render setting can make one deployment healthy while the repository Blueprint still contains an unsafe start command or wrong public URL. The next Blueprint sync can silently restore the obsolete behavior.
+
+Keep a repository-level deployment contract that selects the exact test-only service and asserts both the migration-only start command and the dedicated public host. Exercise every externally returned onboarding URL field through the same environment-derived base URL.
