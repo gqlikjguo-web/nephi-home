@@ -122,3 +122,9 @@
 - Preserve rejection for ambiguous and unregistered aliases, non-empty conflicting Planner entity text, and every capability outside the current property's catalog.
 - After review and separate authorization, deploy only the reviewed test-only commit and rerun the complete 90-case real-provider matrix from the beginning.
 - Do not deploy, rerun the 90-case matrix, operate Render or LINE, or modify credentials, onboarding, LINE setup, formal data, or production in this implementation task.
+
+## 2026-07-29 Final parking recovery and shared location contract
+
+- Complete local verification and review of the non-empty/unresolvable parking provider shapes, conflict/ambiguity guards, broad location map-only behavior, two-property isolation, missing-map fallback, and location-plus-parking mixed reply.
+- After separate deployment authorization, deploy only the reviewed `test-only/core-90-fixes` commit and rerun the complete 90-case real-provider matrix from the beginning.
+- Do not infer true-provider stability from deterministic regressions. Do not deploy, run the 90-case matrix, operate Render or LINE, or modify credentials, onboarding, LINE setup, formal data, or production in this implementation task.

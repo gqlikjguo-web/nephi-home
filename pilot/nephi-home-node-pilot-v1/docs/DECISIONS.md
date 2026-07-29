@@ -176,3 +176,11 @@
 **Reason:** The real pool record is a policy. Rejecting that category caused Canonicalizer to select another policy-compatible capability such as `bbq`, while an amenity-shaped test fixture concealed the mismatch. Separately, a missing Planner candidate could discard a uniquely named catalog fact before canonicalization.
 
 **Constraint:** Source-text grounding is allowed only when Planner leaves entity text empty and exactly one registered low-risk property-catalog entity resolves through an exact alias in the current property's catalog. Non-empty conflicting entity text, ambiguous aliases, and unregistered aliases remain unresolved; generic candidate matching cannot manufacture an entity-specific capability.
+
+## D-019 — Broad location requests resolve only to the current property's approved map
+
+**Decision:** Direct property location, address, map, and navigation requests, together with every property-to-external-place proximity, nearby, distance, duration, or directions request, use the existing `location` capability and `property_catalog` resolver. The only answerable location fact is the current property's approved Google Maps URL.
+
+**Reason:** Nearby shops, transit, attractions, routes, distances, and travel times are open-ended external facts. Searching for or estimating them would bypass operator approval, while the existing property-scoped map gives the guest a safe way to inspect both the property and its surroundings.
+
+**Constraint:** Planner must express the semantic relation as `location`; deterministic code must not add per-question keyword rules. Runtime must not search, recommend, identify, invent, or estimate an external place, distance, or duration. Missing or invalid map data remains Unknown. Mixed requests retain every other valid task. A missing canonical candidate may recover a catalog entity from complete task `sourceText` only after an unresolvable raw entity and one unique exact current-property alias; the capability must be registered, low-risk, non-stay-dependent, answer-mode, and resolved by `property_catalog`. A resolved conflicting entity, ambiguous source, unregistered alias, or unregistered capability remains unresolved.

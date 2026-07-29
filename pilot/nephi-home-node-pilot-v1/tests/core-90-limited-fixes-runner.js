@@ -389,6 +389,145 @@ async function poolRoutingUsesGroundedPropertyCatalog() {
   assert.equal(unregistered.result.replyText.includes("Pool Unregistered parking fact."), false);
 }
 
+async function parkingUnresolvablePlannerEntityUsesUniqueSourceAlias() {
+  const providerShapes = [
+    {
+      propertyId: "property_parking_room_feature",
+      label: "Parking Room Feature",
+      category: "room_feature",
+      rawText: "有車位嗎？"
+    },
+    {
+      propertyId: "property_parking_amenity",
+      label: "Parking Amenity",
+      category: "amenity",
+      rawText: "有停車位嗎？"
+    }
+  ];
+
+  for (const shape of providerShapes) {
+    const currentProperty = property(shape.propertyId, shape.label);
+    const trace = await execute({
+      currentProperty,
+      message: shape.rawText,
+      task: plannerTask({
+        taskId: `parking-${shape.category}`,
+        type: "availability",
+        sourceText: shape.rawText,
+        rawText: shape.rawText,
+        category: shape.category,
+        canonicalCandidate: null
+      })
+    });
+    const canonicalStage = trace.stage("canonical_request");
+    assert.ok(
+      canonicalStage,
+      `${shape.category} provider shape must reach canonical_request; stages=${trace.diagnostics.map((item) => item.stage).join(",")}`
+    );
+    const canonical = canonicalStage.items[0];
+    assert.equal(canonical.capability, "parking");
+    assert.equal(canonical.canonicalEntity.canonicalId, "parking");
+    assert.equal(canonical.canonicalEntity.category, "amenity");
+    assert.equal(canonical.resolverId, "property_catalog");
+    assert.equal(canonical.riskLevel, "low");
+    assert.equal(canonical.stayDependency, false);
+    assert.equal(trace.result.replyText, `${shape.label} parking fact.`);
+  }
+
+  const conflictingEntity = await execute({
+    currentProperty: property("property_parking_conflict", "Parking Conflict"),
+    message: "有車位嗎？",
+    task: plannerTask({
+      taskId: "parking-conflicting-registered-entity",
+      type: "availability",
+      sourceText: "有車位嗎？",
+      rawText: "烤肉",
+      category: "amenity",
+      canonicalCandidate: null
+    })
+  });
+  const conflictingSemantic = conflictingEntity.stage("semantic_contract").outputTasks[0];
+  assert.equal(conflictingSemantic.type, "unknown");
+  assert.equal(conflictingSemantic.canonicalCandidate, null);
+  assert.equal(
+    conflictingEntity.stage("semantic_contract").semanticValidation.rejectedTasks[0].reason,
+    "property_catalog_entity_conflict"
+  );
+  assert.equal(conflictingEntity.result.finalDecision.action, "handoff");
+  assert.equal(conflictingEntity.result.replyText.includes("parking fact."), false);
+  assert.equal(conflictingEntity.result.replyText.includes("barbecue fact."), false);
+
+  const ambiguousProperty = property("property_parking_ambiguous_source", "Parking Ambiguous Source");
+  ambiguousProperty.semanticCatalog.aliases.parking = ["共用設施"];
+  ambiguousProperty.semanticCatalog.aliases.pool = ["共用設施"];
+  const ambiguousSource = await execute({
+    currentProperty: ambiguousProperty,
+    message: "共用設施可以使用嗎？",
+    task: plannerTask({
+      taskId: "parking-ambiguous-source",
+      type: "availability",
+      sourceText: "共用設施可以使用嗎？",
+      rawText: "共用設施可以使用嗎？",
+      category: "amenity",
+      canonicalCandidate: null
+    })
+  });
+  const ambiguousSemantic = ambiguousSource.stage("semantic_contract").outputTasks[0];
+  assert.equal(ambiguousSemantic.canonicalCandidate, null);
+  assert.notEqual(ambiguousSemantic.type, "parking");
+  assert.equal(ambiguousSource.result.replyText.includes("parking fact."), false);
+  assert.equal(ambiguousSource.result.replyText.includes("pool fact."), false);
+
+  const unregisteredAlias = await execute({
+    currentProperty: property("property_parking_unregistered_source", "Parking Unregistered Source"),
+    message: "有代客泊車服務嗎？",
+    task: plannerTask({
+      taskId: "parking-unregistered-source",
+      type: "availability",
+      sourceText: "有代客泊車服務嗎？",
+      rawText: "有代客泊車服務嗎？",
+      category: "amenity",
+      canonicalCandidate: null
+    })
+  });
+  const unregisteredSemantic = unregisteredAlias.stage("semantic_contract").outputTasks[0];
+  assert.equal(unregisteredSemantic.canonicalCandidate, null);
+  assert.equal(unregisteredAlias.result.replyText.includes("parking fact."), false);
+
+  const unregisteredCapabilityProperty = property(
+    "property_parking_unregistered_capability",
+    "Parking Unregistered Capability"
+  );
+  unregisteredCapabilityProperty.propertyFacts.push({
+    canonicalId: "valet_service",
+    category: "amenity",
+    status: "provided",
+    publicText: "Valet service fixture.",
+    aliases: ["代客泊車"]
+  });
+  unregisteredCapabilityProperty.semanticCatalog.aliases.valet_service = ["代客泊車"];
+  const unregisteredCapability = await execute({
+    currentProperty: unregisteredCapabilityProperty,
+    message: "有代客泊車嗎？",
+    task: plannerTask({
+      taskId: "parking-unregistered-capability",
+      type: "availability",
+      sourceText: "有代客泊車嗎？",
+      rawText: "有代客泊車嗎？",
+      category: "amenity",
+      canonicalCandidate: null
+    })
+  });
+  const unregisteredCapabilitySemantic =
+    unregisteredCapability.stage("semantic_contract").outputTasks[0];
+  assert.equal(unregisteredCapabilitySemantic.canonicalCandidate, null);
+  assert.equal(
+    unregisteredCapability.result.replyText.includes("Valet service fixture."),
+    false,
+    "a unique catalog alias without a registered capability must remain unresolved"
+  );
+}
+
 async function locationFailureStageIsComposerFallbackState() {
   const currentProperty = property("property_location", "Location Lodge");
   const trace = await execute({
@@ -428,6 +567,7 @@ async function locationFailureStageIsComposerFallbackState() {
 const cases = [
   ["deterministic fallback clears rejected Composer state", deterministicFallbackClearsRejectedComposerState],
   ["pool routing uses grounded property catalog", poolRoutingUsesGroundedPropertyCatalog],
+  ["parking unresolvable Planner entity uses unique source alias", parkingUnresolvablePlannerEntityUsesUniqueSourceAlias],
   ["location failure stage is Composer fallback state", locationFailureStageIsComposerFallbackState]
 ];
 

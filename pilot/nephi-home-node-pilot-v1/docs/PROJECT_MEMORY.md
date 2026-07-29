@@ -180,3 +180,10 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - When Planner omits entity text, grounding may recover pool or parking only from one unique exact alias in the current property's catalog. Conflicting non-empty text, ambiguous aliases, and unregistered aliases remain on the safe unresolved path.
 - Two-property fixtures verify distinct answers and category fidelity. Targeted and related canonical/property-routing/Planner contracts plus one complete `npm.cmd test` pass locally with exit 0 and empty stderr.
 - No date, availability, Temporal, Composer, Claim Validator, FinalDecision, onboarding, LINE setup, credential, formal-data, Render, or production behavior was changed. The real-provider 90-run matrix was not rerun.
+
+## 2026-07-29 Final parking recovery and shared location contract
+
+- The remaining 90-run parking shape was reproduced with `type=availability`, `canonicalCandidate=null`, non-empty unresolvable raw entity text, and both `room_feature` and `amenity` categories.
+- Complete task source grounding now runs only after raw resolution returns not-found and finds one exact alias in the current property catalog. Registered low-risk `property_catalog` policy remains mandatory; conflicting resolved entities, ambiguous sources, unregistered aliases, and unregistered capabilities stay unresolved.
+- Direct location/address/map/navigation and every property-to-place nearby, distance, duration, or directions request share the existing location capability. The runtime returns only the current property's approved Google Maps URL, never searches or estimates external facts, and keeps other valid mixed tasks.
+- Targeted and related canonical/property-routing/location/Planner/runtime gates pass locally. One complete `npm.cmd test` passed with exit 0 and empty stderr; this change has not been deployed and the 90-run real-provider matrix has not been rerun.

@@ -57,7 +57,7 @@ function controlledRequestedOutputs(task) {
 
 function uniquelyResolvedCatalogEntityFromSource(catalog, sourceText) {
   const source = normalizedText(sourceText);
-  if (!catalog || !source) return null;
+  if (!catalog || !source) return { status: "not_found", match: null };
   const entities = [
     ...(catalog.rooms || []),
     ...(catalog.amenities || []),
@@ -87,7 +87,13 @@ function uniquelyResolvedCatalogEntityFromSource(catalog, sourceText) {
       }
     }
   }
-  return matches.size === 1 ? [...matches.values()][0] : null;
+  if (matches.size === 1) {
+    return { status: "resolved", match: [...matches.values()][0] };
+  }
+  return {
+    status: matches.size > 1 ? "ambiguous" : "not_found",
+    match: null
+  };
 }
 
 function groundedPropertyFactTask(task, catalog) {
@@ -100,11 +106,44 @@ function groundedPropertyFactTask(task, catalog) {
       canonicalCandidate: null
     })
     : null;
-  const sourceGrounded = entity.rawText
-    ? null
-    : uniquelyResolvedCatalogEntityFromSource(catalog, task.sourceText);
-  const resolved = grounded && grounded.status === "resolved" && grounded.entity
-    || sourceGrounded && sourceGrounded.entity;
+  const sourceResolution = uniquelyResolvedCatalogEntityFromSource(
+    catalog,
+    task.sourceText
+  );
+  const sourceGrounded = sourceResolution.status === "resolved"
+    ? sourceResolution.match
+    : null;
+  const groundedEntity = grounded
+    && grounded.status === "resolved"
+    && grounded.entity;
+  const sourceEntity = sourceGrounded && sourceGrounded.entity;
+  const sameCatalogEntity = groundedEntity && sourceEntity
+    && groundedEntity.category === sourceEntity.category
+    && groundedEntity.canonicalId === sourceEntity.canonicalId;
+  if (entity.canonicalCandidate === null
+    && groundedEntity
+    && !sameCatalogEntity) {
+    return {
+      ...task,
+      type: "unknown",
+      detailIntent: "general",
+      requestedOutputs: ["answer"],
+      dependsOnStayContext: false,
+      stayCandidate: null,
+      entity: {
+        ...entity,
+        category: "other",
+        rawText: entity.rawText,
+        canonicalCandidate: null
+      }
+    };
+  }
+  const recoverFromSource = entity.canonicalCandidate === null
+    && (!grounded || grounded.status === "not_found")
+    && sourceEntity;
+  const resolved = sameCatalogEntity
+    ? groundedEntity
+    : recoverFromSource || null;
   const definition = resolved && getCapabilityDefinition(resolved.canonicalId);
   if (!resolved || !definition
     || definition.resolverId !== "property_catalog"
@@ -189,10 +228,17 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
 
     const groundedTask = groundedPropertyFactTask(task, catalog);
     if (groundedTask
-      && task.entity.canonicalCandidate !== groundedTask.entity.canonicalCandidate) {
+      && (task.type !== groundedTask.type
+        || task.entity.category !== groundedTask.entity.category
+        || task.entity.rawText !== groundedTask.entity.rawText
+        || task.entity.canonicalCandidate !== groundedTask.entity.canonicalCandidate)) {
       task = groundedTask;
       entity = task.entity;
-      repairedTasks.push({ taskId: task.taskId, index, reason: "property_catalog_entity_grounding" });
+      if (task.type === "unknown") {
+        rejectedTasks.push({ taskId: task.taskId, index, reason: "property_catalog_entity_conflict" });
+      } else {
+        repairedTasks.push({ taskId: task.taskId, index, reason: "property_catalog_entity_grounding" });
+      }
     }
 
     if (task.type === "availability" && entity.category === "room" && entity.canonicalCandidate === null && catalog) {

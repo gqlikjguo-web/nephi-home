@@ -141,3 +141,8 @@
 
 - Accepted provider `policy` records for the registered pool capability and constrained entity-specific canonical routing to one catalog-backed capability definition.
 - Added unique exact catalog grounding for missing pool/parking Planner entities, with two-property isolation plus ambiguous, unregistered-alias, detail-intent, and real-category fixture regressions.
+
+## 2026-07-29 — Exact parking recovery and broad property-map contract
+
+- Extended safe catalog grounding to real provider tasks whose non-empty raw entity is unresolvable, while rejecting conflicting registered entities, ambiguous sources, unregistered aliases, and unregistered capabilities.
+- Unified direct and property-to-place location semantics on the existing property-scoped `location` capability, returning only the current property's approved Google Maps URL and preserving other mixed tasks.

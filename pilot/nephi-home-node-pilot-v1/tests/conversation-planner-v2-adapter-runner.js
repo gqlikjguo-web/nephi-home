@@ -16,9 +16,10 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(requestBody.text.format.schema.properties.tasks.minItems, 1);
   assert.match(requestBody.input[0].content[0].text, /preserve every stated nights, guest count, and feature even when a date is missing/i);
   assert.match(requestBody.input[0].content[0].text, /explicit calendar expression/i);
-  assert.match(requestBody.input[0].content[0].text, /relationship between the property and any external place/i, "planner must recognize location relationships as one shared semantic concept");
-  assert.match(requestBody.input[0].content[0].text, /proximity, near, far, distance, duration, directions, or nearby existence/i, "planner must cover proximity semantics rather than a fixed list of place names");
-  assert.match(requestBody.input[0].content[0].text, /takes precedence over a general FAQ or place topic/i, "location relationships must win when a place topic would otherwise compete");
+  assert.match(requestBody.input[0].content[0].text, /direct requests for the property's location, address, map, or navigation/i, "planner must recognize direct property location requests");
+  assert.match(requestBody.input[0].content[0].text, /relationship between the property and (?:an|any) external place/i, "planner must recognize location relationships as one shared semantic concept");
+  assert.match(requestBody.input[0].content[0].text, /proximity, near, far, distance, duration, directions, navigation, or nearby existence/i, "planner must cover proximity semantics rather than a fixed list of place names");
+  assert.match(requestBody.input[0].content[0].text, /never search for, recommend, invent, or identify a nearby place/i, "planner must not create unapproved nearby-place facts");
   assert.equal(JSON.stringify(requestBody).includes("test-key"), false);
   assert.equal(runtimeConfig({ TEST_ONLY_CONVERSATION_ENGINE_V2: "true" }).testOnlyConversationEngineV2, true);
   assert.equal(runtimeConfig({}).testOnlyConversationEngineV2, false);

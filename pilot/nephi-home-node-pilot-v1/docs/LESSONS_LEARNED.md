@@ -139,3 +139,11 @@ When repairing a Planner entity, do not infer from a property ID or a hardcoded 
 A fixture that labels a real provider policy as an amenity can make capability acceptance look correct while production canonicalization rejects the entity and chooses an unrelated policy-compatible capability. Regression fixtures must pass through the same catalog builder and assert the resulting provider category before asserting routing.
 
 For entity-specific routing, derive capability, entity, resolver, and answer from one registered definition. Recover a missing Planner entity only from a unique exact alias in the current property catalog; conflicting, ambiguous, or unregistered text must not trigger a source-wide guess.
+
+## 2026-07-29 — Non-empty Planner entity text is not necessarily resolvable
+
+The real provider can emit a non-empty entity containing the whole question while leaving `canonicalCandidate` null. Treating non-empty as equivalent to grounded skipped the only exact parking alias in the task `sourceText` and produced an avoidable Unknown.
+
+Recovery must distinguish resolved, ambiguous, and not-found states. Only not-found text may fall back to one exact current-property source match; a resolved entity that conflicts with the source must be rejected, and ambiguity or missing capability registration must never be guessed. Provider-shaped fixtures must include both the Planner's category and its complete raw entity text.
+
+Broad location behavior belongs in the Planner's semantic contract and the existing property-scoped location resolver, not in deterministic phrase lists. The runtime may return only the current property's approved map and must preserve non-location tasks in the same message.

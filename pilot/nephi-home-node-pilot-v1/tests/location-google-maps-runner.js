@@ -17,7 +17,22 @@ function withExplicitRelation(output, sourceEvents, contextSnapshot) {
   const source = sourceEvents[0];
   const kind = output.discourse.relation === "continue" ? "supplement_existing" : "new_request";
   const cycle = contextSnapshot.cycles[0] && contextSnapshot.cycles[0].requestCycleId;
-  return { ...output, contextRelationCandidates: output.tasks.map((task) => ({ candidateIndex: task.candidateIndex, kind, candidateRequestCycleRefs: kind === "new_request" ? [] : cycle ? [cycle] : [], evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }] })) };
+  return { ...output, contextRelationCandidates: output.tasks.map((task) => {
+    const taskStart = source.messageText.indexOf(task.sourceText);
+    const startOffset = taskStart >= 0 ? taskStart : 0;
+    const quote = taskStart >= 0 ? task.sourceText : source.messageText;
+    return {
+      candidateIndex: task.candidateIndex,
+      kind,
+      candidateRequestCycleRefs: kind === "new_request" ? [] : cycle ? [cycle] : [],
+      evidenceRefs: [{
+        eventId: source.eventId,
+        startOffset,
+        endOffset: startOffset + quote.length,
+        quote
+      }]
+    };
+  }) };
 }
 
 function memory() {
@@ -38,7 +53,7 @@ async function runEngine(property, messages, diagnostics = []) {
   assert.match(instructions(), /canonicalCandidate location/, "planner must use the shared location canonical fact rather than question-specific routing");
   const alphaUrl = "https://maps.app.goo.gl/AlphaLocation";
   const betaUrl = "https://maps.app.goo.gl/BetaLocation";
-  const alpha = { propertyId: "location_alpha", displayName: "Alpha", businessProfile: { googleMapsUrl: alphaUrl }, rooms: [], commonAnswers: {} };
+  const alpha = { propertyId: "location_alpha", displayName: "Alpha", businessProfile: { googleMapsUrl: alphaUrl }, rooms: [], commonAnswers: { parkingRule: "Alpha parking fact." } };
   const beta = { propertyId: "location_beta", displayName: "Beta", businessProfile: { googleMapsUrl: betaUrl }, rooms: [], commonAnswers: {} };
   const legacy = { propertyId: "location_legacy", displayName: "Legacy", businessProfile: {}, rooms: [], commonAnswers: { transport: `交通與導航請參考 Google 地圖：\n${alphaUrl}` } };
   const legacyDiagnostics = [];
@@ -50,7 +65,25 @@ async function runEngine(property, messages, diagnostics = []) {
   assert.equal(executorTrace.results[0].locationFactProvided, true, "trace must confirm that the executor received the location fact without logging its raw value");
   const [transportProse] = await runEngine({ propertyId: "location_transport_prose", displayName: "Transport prose", businessProfile: {}, rooms: [], commonAnswers: { transport: "可詢問業者交通方式" } }, new Map([["我要導航", plan()]]));
   assert.equal(transportProse.taskResults[0].status, "needs_human", "ordinary transport prose must not become a location URL");
-  for (const message of ["民宿在哪裡？", "地址可以給我嗎？", "有 Google 地圖嗎？", "可以傳定位給我嗎？", "我要怎麼導航過去？", "附近有夜市嗎？", "最近的超商是哪一家？", "離車站遠嗎？", "附近有什麼景點？", "到羅東夜市要多久？"]) {
+  for (const message of [
+    "民宿在哪裡？",
+    "民宿地址在哪？",
+    "可以給我 Google Maps 嗎？",
+    "地圖連結給我。",
+    "怎麼導航到民宿？",
+    "夜市在哪裡？",
+    "附近有夜市嗎？",
+    "車站在哪裡？",
+    "附近有便利商店嗎？",
+    "最近的便利商店在哪？",
+    "附近有早餐店嗎？",
+    "附近有餐廳嗎？",
+    "附近有加油站嗎？",
+    "附近有景點嗎？",
+    "離某個地點多遠？",
+    "從某個地點怎麼到民宿？",
+    "開車或走路要多久？"
+  ]) {
     const [result] = await runEngine(alpha, new Map([[message, plan()]]));
     assert.ok(result.replyText.includes(alphaUrl), `${message} must use the current property's map URL`);
     assert.equal(/\b\d+\s*(km|公里|分鐘|min)/i.test(result.replyText), false, `${message} must not estimate distance or time`);
@@ -70,6 +103,46 @@ async function runEngine(property, messages, diagnostics = []) {
   assert.equal(invalid.taskResults[0].status, "needs_human");
   assert.equal(/https:\/\//.test(invalid.replyText), false);
 
+  const mixedPlan = plan();
+  mixedPlan.tasks = [
+    {
+      ...mixedPlan.tasks[0],
+      candidateIndex: 0,
+      sourceText: "民宿在哪裡？",
+      eligibilityEvidence: { kind: "none", sourceText: "" },
+      stayCandidate: null
+    },
+    {
+      ...mixedPlan.tasks[0],
+      candidateIndex: 1,
+      taskId: "parking",
+      type: "amenity",
+      sourceText: "有車位嗎？",
+      requestedOutputs: ["answer"],
+      eligibilityEvidence: { kind: "none", sourceText: "" },
+      stayCandidate: null,
+      entity: {
+        category: "amenity",
+        rawText: "車位",
+        canonicalCandidate: "parking",
+        confidence: 1
+      }
+    }
+  ];
+  const mixedDiagnostics = [];
+  const [mixed] = await runEngine(
+    alpha,
+    new Map([["民宿在哪裡？有車位嗎？", mixedPlan]]),
+    mixedDiagnostics
+  );
+  assert.deepEqual(
+    mixed.taskResults.map((item) => item.status),
+    ["answered", "answered"],
+    `location must not suppress another valid property-scoped task; stages=${mixedDiagnostics.map((item) => `${item.stage}:${JSON.stringify(item.rejectionReasons || item.errors || [])}`).join(",")}`
+  );
+  assert.ok(mixed.replyText.includes(alphaUrl));
+  assert.ok(mixed.replyText.includes("Alpha parking fact."));
+
   const locationRelationCases = [
     "\u6c11\u5bbf\u96e2\u591c\u5e02\u8fd1\u55ce", "\u96e2\u8d85\u5e02\u9060\u4e0d\u9060", "\u8eca\u7ad9\u5728\u9644\u8fd1\u55ce", "\u6d77\u908a\u96e2\u4f60\u5011\u8fd1\u55ce", "\u5e02\u5340\u6703\u5f88\u9060\u55ce",
     "\u53bb\u8eca\u7ad9\u8981\u5e7e\u5206\u9418", "\u96e2\u67d0\u666f\u9ede\u591a\u9060", "\u958b\u8eca\u904e\u53bb\u8981\u591a\u4e45", "\u5468\u908a\u6709\u9910\u5ef3\u55ce", "\u9644\u8fd1\u6709\u91ab\u9662\u55ce", "\u6709\u6c92\u6709\u591c\u5e02\u5728\u9644\u8fd1",
@@ -81,7 +154,7 @@ async function runEngine(property, messages, diagnostics = []) {
     assert.ok(result.replyText.includes(alphaUrl), `${message} must retain the property-scoped map URL`);
   }
   for (const message of ["\u591c\u5e02\u53ef\u4ee5\u70e4\u8089\u55ce", "\u8d85\u5e02\u53ef\u4ee5\u5237\u5361\u55ce", "\u8eca\u7ad9\u6709\u7f6e\u7269\u6ac3\u55ce", "\u6211\u559c\u6b61\u901b\u591c\u5e02"]) {
-    const notLocation = { ...plan(), tasks: [{ ...plan().tasks[0], taskId: "not-location", entity: { category: "other", rawText: message, canonicalCandidate: null, confidence: 1 } }] };
+    const notLocation = { ...plan(), tasks: [{ ...plan().tasks[0], taskId: "not-location", sourceText: message, entity: { category: "other", rawText: message, canonicalCandidate: null, confidence: 1 } }] };
     const [result] = await runEngine(alpha, new Map([[message, notLocation]]));
     assert.equal(result.replyText.includes(alphaUrl), false, `${message} must not become location merely because it names a place`);
   }
