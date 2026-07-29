@@ -126,3 +126,7 @@
 - Removed automatic PostgreSQL seeding from the test-only Blueprint start command and bound test-only onboarding URLs to the dedicated Render host.
 - Added a permanent deployment contract gate for start command, public base URL, and invite/resume/admin-setup URL generation.
 - Made the runtime uniqueness source scanner portable across LF and CRLF worktrees without changing any uniqueness assertion.
+
+## 2026-07-29 — Property-scoped LINE connection setup
+
+- Added platform-admin-issued one-time LINE setup links, fragment-only token delivery, atomic encrypted credential redemption, safe status APIs, mobile Chinese management/operator pages, best-effort webhook-observed status, and permanent isolation/duplicate-request/lock-contract/post-upsert rollback/non-disclosure tests without changing the conversation core or legacy test-only LINE binding.

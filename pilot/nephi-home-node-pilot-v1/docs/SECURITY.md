@@ -57,3 +57,13 @@
 - Test-only invitation, resume, and admin-setup links must use the dedicated test-only host. They must never use `app.junzanai.com`.
 - Test-only startup may run migrations but must not seed data automatically.
 - Deploy Hooks are credentials: use them only for the intended test-only service, rotate them after exposure, and never read back, log, or commit the replacement value.
+
+## One-time LINE setup links
+
+- Only an authenticated platform administrator may create, list, or revoke setup links. A link is bound to one existing formal property, expires, may be revoked, and may be consumed once.
+- The database stores only a SHA-256 token hash. The raw token appears only in the one-time URL returned at creation and must not enter logs, errors, analytics, localStorage, repository files, or later API responses.
+- The one-time URL carries the raw token only after `#`. The setup page removes the fragment with `history.replaceState` before resolving it by POST, sends `Referrer-Policy: no-referrer`, and rejects the former query-string resolve route.
+- Redemption derives property scope only from the locked token row. A frontend `propertyId` is ignored and cannot redirect credentials to another property.
+- Token validation, encrypted binding upsert, and `used_at` are one PostgreSQL transaction. Any encryption, constraint, storage, or commit failure leaves the token unused and no partial binding.
+- Channel Secret and Channel Access Token use the existing AES-256-GCM envelope and `JUNZAN_LINE_CREDENTIAL_ENCRYPTION_KEY`. Missing or invalid encryption configuration fails closed; the key and credential plaintext are never read back.
+- Webhook-observed time is non-authoritative telemetry. A failure to record it is logged only with a hashed webhook identifier and must not reject an otherwise valid signed LINE webhook.

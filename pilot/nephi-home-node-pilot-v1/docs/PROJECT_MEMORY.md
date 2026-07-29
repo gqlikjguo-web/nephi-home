@@ -154,3 +154,13 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - The targeted gate covers partial draft save, refresh/read-back, idempotent submit, invalid/expired/revoked tokens, Alpha/Beta isolation, transaction rollback, admin visibility, frontend preservation, and formal-data non-pollution.
 - The permanent test-only Blueprint now uses migration-only startup and the dedicated Render host for invite, resume, and admin-setup URLs.
 - One wrong-host fake Alpha application was uniquely identified by its original invitation authority and removed as a single staging-only transaction after proving it was submitted, unapproved, and unrelated to any formal property, LINE binding, or formal fact.
+
+## 2026-07-29 Property-scoped LINE connection setup
+
+- Platform administrators can create and revoke expiring, one-time setup links for an existing formal property. Only the token hash is stored; API lists never return either the raw token or its hash.
+- The public setup token is the sole property authority. Credential submission ignores any frontend property ID and atomically revalidates the locked token, upserts the existing AES-256-GCM property binding, and marks the token used.
+- Invalid, expired, revoked, and used links are rejected distinctly. Missing encryption configuration or any binding transaction failure leaves the token unused and no partial binding.
+- Raw setup authority stays in the URL fragment, is removed from history before the first request, and reaches resolve/redeem only in a POST body under a no-referrer policy. Query-string resolution is rejected.
+- The platform page exposes safe binding status and the property webhook URL. The operator page accepts only Channel Secret and Channel Access Token, clears them after success, never persists them in browser storage, and never reads them back.
+- Webhook-observed status is best-effort telemetry: its storage failure cannot turn a valid signed webhook into a failed delivery.
+- The targeted setup runner, existing LINE binding runners, authorization/onboarding gates, runtime uniqueness, and one complete `npm.cmd test` pass locally. The branch is pending review and was not deployed; no Render, LINE, database, credential, or formal-environment operation occurred.

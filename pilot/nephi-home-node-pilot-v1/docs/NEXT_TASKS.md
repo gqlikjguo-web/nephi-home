@@ -4,8 +4,8 @@
 
 ## 目前順序
 
-1. 建立 platform-admin LINE binding 管理 UI：安全輸入／輪替 credential、顯示 webhook URL、設定狀態與啟用／停用；不得提供 credential 或密文讀回。
-2. 經另行授權後部署 property-scoped LINE binding migration 與 runtime，再以兩個 test-only Channel 驗收隔離；本次不得部署。
+1. 審查 `test-only/property-line-connection-page` 的一次性 setup-link、原子 credential 儲存、平台管理 UI 與業者設定頁；本輪不得部署。
+2. 經使用者另行明確授權後，僅部署至 `nephi-home-node-pilot-test-only`，確認 encryption key 存在但不得讀回，再以兩個假 test-only property／Channel 驗收隔離、用兩個獨立 PostgreSQL connection/process 驗證同一 setup token 真並行兌換只有一次成功，最後精確清理。
 3. 部署目前通用 V2 語意修正至 test-only，並以真實 LINE 驗收最近可住、指定日期、房型類別與多問題回覆。
 4. 由使用者在後台切換 7/18 的 301：
    - 可售後，下一次 LINE 查詢立即回答有房。

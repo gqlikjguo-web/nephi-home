@@ -152,3 +152,11 @@
 **Reason:** The repository Blueprint still contained an obsolete seed command and production-looking public base URL even after the running test-only service had been corrected manually. That mismatch could be restored by the next Blueprint deploy and sent fake staging traffic to a different test-only service.
 
 **Constraint:** URL generation continues through the existing `publicBrand.publicBaseUrl` boundary. No route, token format, onboarding workflow, formal property data, or LINE behavior changes.
+
+## 2026-07-29 — One-time property-scoped LINE setup authority
+
+**Decision:** A platform administrator may issue an expiring, revocable, one-time LINE setup link for one existing property. The raw token is returned only in the newly created URL; PostgreSQL stores its SHA-256 hash. The public setup token, not any browser-supplied property ID, is the sole property authority.
+
+**Reason:** The existing property-scoped binding and webhook runtime safely encrypted and routed credentials, but credential entry still required a platform-admin API and had no operator-safe handoff boundary.
+
+**Constraint:** The raw token is carried only in the URL fragment, removed from browser history before any network request, and submitted to resolve/redeem endpoints in a POST body under `Referrer-Policy: no-referrer`. Redemption locks and revalidates the token, encrypts both credentials through the existing AES-256-GCM binding service, preserves the property's webhook key, upserts the binding, and sets `used_at` in one transaction. Failure rolls back both binding and token state. Raw credentials, raw token, token hash, and encryption key never enter request URLs, Referer headers, logs, status APIs, HTML, persistent browser storage, or read-back responses.

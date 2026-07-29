@@ -49,6 +49,12 @@ function safeStatus(row) {
 function requiredCredential(value, code) {
   const normalized = String(value || "").trim();
   if (!normalized) throw new AppError(400, code, "Both LINE Channel Secret and Channel Access Token are required");
+  if (normalized.length < 16 || normalized.length > 4096 || /\s/.test(normalized)) {
+    const invalidCode = code === "LINE_CHANNEL_SECRET_REQUIRED"
+      ? "LINE_CHANNEL_SECRET_INVALID"
+      : "LINE_CHANNEL_ACCESS_TOKEN_INVALID";
+    throw new AppError(400, invalidCode, "LINE credential format is invalid");
+  }
   return normalized;
 }
 
@@ -59,8 +65,7 @@ function createLineBindingService({ provider, env = process.env } = {}) {
     if (!key) throw new AppError(503, "LINE_BINDING_ENCRYPTION_KEY_MISSING", "LINE binding encryption key is not configured");
     return key;
   };
-  return {
-    upsert(propertyId, input = {}) {
+  const prepare = (propertyId, input = {}) => {
       const id = String(propertyId || "").trim();
       if (!id) throw new AppError(400, "PROPERTY_ID_REQUIRED", "propertyId is required");
       const current = provider.getLineBindingByPropertyId(id);
@@ -76,12 +81,21 @@ function createLineBindingService({ provider, env = process.env } = {}) {
         channelAccessTokenEncrypted: channelAccessToken ? seal(encryption, id, "channel-access-token", channelAccessToken) : current.channelAccessTokenEncrypted,
         enabled: Object.hasOwn(input, "enabled") ? Boolean(input.enabled) : current ? Boolean(current.enabled) : false
       };
-      return safeStatus(provider.upsertLineBinding(row));
+      return row;
+  };
+  return {
+    prepare,
+    upsert(propertyId, input = {}) {
+      return safeStatus(provider.upsertLineBinding(prepare(propertyId, input)));
     },
     status(propertyId) { return safeStatus(provider.getLineBindingByPropertyId(String(propertyId || "").trim())); },
     setEnabled(propertyId, enabled) {
       requireKey();
       return safeStatus(provider.setLineBindingEnabled(String(propertyId || "").trim(), Boolean(enabled)));
+    },
+    markWebhookObserved(webhookKey, observedAt = new Date().toISOString()) {
+      if (typeof provider.markLineBindingWebhookObserved !== "function") return null;
+      return safeStatus(provider.markLineBindingWebhookObserved(String(webhookKey || "").trim(), observedAt));
     },
     resolve(webhookKey) {
       const row = provider.getLineBindingByWebhookKey(String(webhookKey || "").trim());

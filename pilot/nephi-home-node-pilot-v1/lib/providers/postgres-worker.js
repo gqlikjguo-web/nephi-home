@@ -9,6 +9,32 @@ const ADMIN_INVITATION_EMAIL_SQL = "COALESCE(NULLIF(trim(i.email),''),NULLIF(tri
 function payload(row) { return row ? (typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload) : null; }
 function dataValue(row) { return row ? (typeof row.data === "string" ? JSON.parse(row.data) : row.data) : null; }
 function iso(value) { return value ? new Date(value).toISOString() : new Date().toISOString(); }
+function lineBindingRow(row) {
+  return row ? {
+    propertyId: row.property_id,
+    webhookKey: row.webhook_key,
+    channelSecretEncrypted: payload({ payload: row.channel_secret_encrypted }),
+    channelAccessTokenEncrypted: payload({ payload: row.channel_access_token_encrypted }),
+    enabled: Boolean(row.enabled),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastWebhookObservedAt: row.last_webhook_observed_at || null
+  } : null;
+}
+function lineSetupRow(row) {
+  return row ? {
+    setupId: row.setup_id,
+    tokenHash: row.token_hash,
+    propertyId: row.property_id,
+    expiresAt: row.expires_at,
+    revokedAt: row.revoked_at || null,
+    usedAt: row.used_at || null,
+    createdByPropertyId: row.created_by_property_id,
+    createdByUsername: row.created_by_username,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  } : null;
+}
 async function loadOnboarding(id){const a=await client.query("SELECT * FROM onboarding_applications WHERE application_id=$1",[id]);if(!a.rows[0])return null;const row=a.rows[0],core=typeof row.core_data==="string"?JSON.parse(row.core_data):row.core_data||{};const rooms=await client.query("SELECT data FROM onboarding_room_types WHERE application_id=$1 ORDER BY position",[id]),bundles=await client.query("SELECT data FROM onboarding_bundle_offers WHERE application_id=$1 ORDER BY position",[id]),knowledge=await client.query("SELECT data FROM onboarding_knowledge_items WHERE application_id=$1 ORDER BY position",[id]),attachments=await client.query("SELECT attachment_id,file_name,content_type,byte_size,sha256,review_status,created_at FROM onboarding_attachments WHERE application_id=$1 ORDER BY created_at",[id]),notes=await client.query("SELECT action,note,reviewer_property_id,reviewer_username,created_at FROM onboarding_review_notes WHERE application_id=$1 ORDER BY created_at",[id]);return{...core,applicationId:id,status:row.status,propertyIdSuggestion:row.property_id_suggestion,inviteExpiresAt:iso(row.invite_expires_at),inviteRevoked:Boolean(row.invite_revoked_at),approvalMode:row.approval_mode||"",approvedPropertyId:row.approved_property_id||"",approvedAt:row.approved_at?iso(row.approved_at):"",approvedBy:row.approved_by_property_id||row.approved_by_username?{propertyId:row.approved_by_property_id||"",username:row.approved_by_username||""}:null,submittedAt:iso(row.submitted_at),updatedAt:iso(row.updated_at),rooms:rooms.rows.map(dataValue),bundles:bundles.rows.map(dataValue),knowledge:knowledge.rows.map(dataValue),attachments:attachments.rows.map(x=>({attachmentId:x.attachment_id,fileName:x.file_name,contentType:x.content_type,byteSize:x.byte_size,sha256:x.sha256,reviewStatus:x.review_status,createdAt:iso(x.created_at)})),reviewNotes:notes.rows.map(x=>({action:x.action,note:x.note,reviewerPropertyId:x.reviewer_property_id||"",reviewerUsername:x.reviewer_username||"",createdAt:iso(x.created_at)}))};}
 function onboardingSnapshot(app){return{propertyName:String(app.propertyName||""),contactName:String(app.contactName||""),phone:String(app.phone||""),email:String(app.email||""),address:String(app.address||""),googleMapsUrl:String(app.googleMapsUrl||""),checkInTime:String(app.checkInTime||""),checkOutTime:String(app.checkOutTime||""),line:{hasOfficialAccount:Boolean(app.line&&app.line.hasOfficialAccount),contactLink:String(app.line&&app.line.contactLink||"")},propertyIdSuggestion:String(app.propertyIdSuggestion||""),rooms:(app.rooms||[]).map(x=>({key:String(x.key||""),roomCode:String(x.roomCode||"").trim(),displayName:String(x.displayName||x.name||"").trim(),name:String(x.displayName||x.name||"").trim(),highlights:Array.isArray(x.highlights)?x.highlights.map(v=>String(v||"").trim()).filter(Boolean):[],type:String(x.type||""),capacity:Number.isFinite(Number(x.capacity))?Number(x.capacity):null,mondayThursdayPrice:Number.isFinite(Number(x.mondayThursdayPrice))?Number(x.mondayThursdayPrice):null,fridayPrice:Number.isFinite(Number(x.fridayPrice))?Number(x.fridayPrice):null,saturdayHolidayPrice:Number.isFinite(Number(x.saturdayHolidayPrice))?Number(x.saturdayHolidayPrice):null,sundayPrice:Number.isFinite(Number(x.sundayPrice))?Number(x.sundayPrice):null,enabled:x.enabled!==false})),bundles:(app.bundles||[]).map(x=>({key:String(x.key||""),name:String(x.name||""),memberRoomKeys:(x.memberRoomKeys||[]).map(String),capacity:Number.isFinite(Number(x.capacity))?Number(x.capacity):null,mondayThursdayPrice:Number.isFinite(Number(x.mondayThursdayPrice))?Number(x.mondayThursdayPrice):null,fridayPrice:Number.isFinite(Number(x.fridayPrice))?Number(x.fridayPrice):null,saturdayHolidayPrice:Number.isFinite(Number(x.saturdayHolidayPrice))?Number(x.saturdayHolidayPrice):null,sundayPrice:Number.isFinite(Number(x.sundayPrice))?Number(x.sundayPrice):null,enabled:x.enabled!==false,entertainmentAmenities:normalizeEntertainmentAmenities(x.entertainmentAmenities)})),knowledge:(app.knowledge||[]).map(x=>({key:String(x.key||""),label:String(x.label||""),status:String(x.status||"undecided"),answer:String(x.answer||"")}))};}
 async function addChangeRequestState(app){if(!app)return app;const result=await client.query("SELECT n.note,n.created_at,d.status FROM onboarding_review_notes n LEFT JOIN onboarding_email_deliveries d ON d.review_note_id=n.note_id WHERE n.application_id=$1 AND n.action IN ('changes_requested','reopened_changes_requested') ORDER BY n.created_at DESC LIMIT 1",[app.applicationId]);const row=result.rows[0];return{...app,latestChangeRequest:row?{reason:row.note,createdAt:iso(row.created_at)}:null,emailDelivery:row?{status:row.status||"pending"}:null};}
@@ -338,16 +364,52 @@ async function operation(name, args) {
   if (name === "deleteAdminSession") { await client.query("DELETE FROM admin_sessions WHERE token_hash=$1",args); return true; }
   if(name==="getLineBindingByPropertyId"||name==="getLineBindingByWebhookKey"){
     const column=name==="getLineBindingByPropertyId"?"property_id":"webhook_key";
-    const r=await client.query(`SELECT property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at FROM property_line_bindings WHERE ${column}=$1`,args),row=r.rows[0];
-    return row?{propertyId:row.property_id,webhookKey:row.webhook_key,channelSecretEncrypted:payload({payload:row.channel_secret_encrypted}),channelAccessTokenEncrypted:payload({payload:row.channel_access_token_encrypted}),enabled:Boolean(row.enabled),createdAt:row.created_at,updatedAt:row.updated_at}:null;
+    const r=await client.query(`SELECT property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at,last_webhook_observed_at FROM property_line_bindings WHERE ${column}=$1`,args);
+    return lineBindingRow(r.rows[0]);
   }
   if(name==="upsertLineBinding"){
-    const row=args[0],r=await client.query("INSERT INTO property_line_bindings(property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled) VALUES($1,$2,$3::jsonb,$4::jsonb,$5) ON CONFLICT(property_id) DO UPDATE SET webhook_key=excluded.webhook_key,channel_secret_encrypted=excluded.channel_secret_encrypted,channel_access_token_encrypted=excluded.channel_access_token_encrypted,enabled=excluded.enabled,updated_at=now() RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at",[row.propertyId,row.webhookKey,JSON.stringify(row.channelSecretEncrypted),JSON.stringify(row.channelAccessTokenEncrypted),Boolean(row.enabled)]),saved=r.rows[0];
-    return{propertyId:saved.property_id,webhookKey:saved.webhook_key,channelSecretEncrypted:payload({payload:saved.channel_secret_encrypted}),channelAccessTokenEncrypted:payload({payload:saved.channel_access_token_encrypted}),enabled:Boolean(saved.enabled),createdAt:saved.created_at,updatedAt:saved.updated_at};
+    const row=args[0],r=await client.query("INSERT INTO property_line_bindings(property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled) VALUES($1,$2,$3::jsonb,$4::jsonb,$5) ON CONFLICT(property_id) DO UPDATE SET webhook_key=excluded.webhook_key,channel_secret_encrypted=excluded.channel_secret_encrypted,channel_access_token_encrypted=excluded.channel_access_token_encrypted,enabled=excluded.enabled,updated_at=now() RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at,last_webhook_observed_at",[row.propertyId,row.webhookKey,JSON.stringify(row.channelSecretEncrypted),JSON.stringify(row.channelAccessTokenEncrypted),Boolean(row.enabled)]);
+    return lineBindingRow(r.rows[0]);
   }
   if(name==="setLineBindingEnabled"){
-    const r=await client.query("UPDATE property_line_bindings SET enabled=$2,updated_at=now() WHERE property_id=$1 RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at",args),saved=r.rows[0];
-    return saved?{propertyId:saved.property_id,webhookKey:saved.webhook_key,channelSecretEncrypted:payload({payload:saved.channel_secret_encrypted}),channelAccessTokenEncrypted:payload({payload:saved.channel_access_token_encrypted}),enabled:Boolean(saved.enabled),createdAt:saved.created_at,updatedAt:saved.updated_at}:null;
+    const r=await client.query("UPDATE property_line_bindings SET enabled=$2,updated_at=now() WHERE property_id=$1 RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at,last_webhook_observed_at",args);
+    return lineBindingRow(r.rows[0]);
+  }
+  if(name==="markLineBindingWebhookObserved"){
+    const r=await client.query("UPDATE property_line_bindings SET last_webhook_observed_at=$2,updated_at=now() WHERE webhook_key=$1 RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at,last_webhook_observed_at",args);
+    return lineBindingRow(r.rows[0]);
+  }
+  if(name==="createLineSetupToken"){
+    const row=args[0],r=await client.query("INSERT INTO property_line_setup_tokens(setup_id,token_hash,property_id,expires_at,created_by_property_id,created_by_username) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",[row.setupId,row.tokenHash,row.propertyId,row.expiresAt,row.createdByPropertyId,row.createdByUsername]);
+    return lineSetupRow(r.rows[0]);
+  }
+  if(name==="listLineSetupTokens"){
+    const propertyId=String(args[0]||"").trim(),r=await client.query(`SELECT * FROM property_line_setup_tokens ${propertyId?"WHERE property_id=$1":""} ORDER BY created_at DESC`,propertyId?[propertyId]:[]);
+    return r.rows.map(lineSetupRow);
+  }
+  if(name==="getLineSetupTokenByHash"){
+    const r=await client.query("SELECT * FROM property_line_setup_tokens WHERE token_hash=$1",args);
+    return lineSetupRow(r.rows[0]);
+  }
+  if(name==="revokeLineSetupToken"){
+    const r=await client.query("UPDATE property_line_setup_tokens SET revoked_at=$2,updated_at=now() WHERE setup_id=$1 AND revoked_at IS NULL AND used_at IS NULL RETURNING *",args);
+    return lineSetupRow(r.rows[0]);
+  }
+  if(name==="redeemLineSetupToken"){
+    const [tokenHash,binding,usedAt]=args;
+    await client.query("BEGIN");
+    try{
+      const tokenResult=await client.query("SELECT * FROM property_line_setup_tokens WHERE token_hash=$1 FOR UPDATE",[tokenHash]),token=tokenResult.rows[0];
+      if(!token){await client.query("ROLLBACK");return{ok:false,state:"invalid"};}
+      if(token.used_at){await client.query("ROLLBACK");return{ok:false,state:"used"};}
+      if(token.revoked_at){await client.query("ROLLBACK");return{ok:false,state:"revoked"};}
+      if(new Date(token.expires_at).getTime()<=new Date(usedAt).getTime()){await client.query("ROLLBACK");return{ok:false,state:"expired"};}
+      if(token.property_id!==binding.propertyId){await client.query("ROLLBACK");return{ok:false,state:"invalid"};}
+      const saved=await client.query("INSERT INTO property_line_bindings(property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled) VALUES($1,$2,$3::jsonb,$4::jsonb,$5) ON CONFLICT(property_id) DO UPDATE SET webhook_key=property_line_bindings.webhook_key,channel_secret_encrypted=excluded.channel_secret_encrypted,channel_access_token_encrypted=excluded.channel_access_token_encrypted,enabled=excluded.enabled,updated_at=now() RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at,last_webhook_observed_at",[binding.propertyId,binding.webhookKey,JSON.stringify(binding.channelSecretEncrypted),JSON.stringify(binding.channelAccessTokenEncrypted),Boolean(binding.enabled)]);
+      await client.query("UPDATE property_line_setup_tokens SET used_at=$2,updated_at=now() WHERE token_hash=$1",[tokenHash,usedAt]);
+      await client.query("COMMIT");
+      return{ok:true,binding:lineBindingRow(saved.rows[0])};
+    }catch(error){await client.query("ROLLBACK");throw error;}
   }
   if (name === "getConversationState") {
     const r=await client.query("SELECT state FROM conversation_states WHERE property_id=$1 AND channel_id=$2 AND line_user_id=$3",args); return r.rows[0] ? (typeof r.rows[0].state === "string" ? JSON.parse(r.rows[0].state) : r.rows[0].state) : null;

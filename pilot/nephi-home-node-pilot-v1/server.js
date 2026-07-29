@@ -18,6 +18,7 @@ const { renderPublicHtml } = require("./lib/public-brand-html");
 const { normalizeRoomRecord, normalizeRoomHighlights, characterCount } = require("./lib/room-data");
 const { providedAmenities } = require("./lib/bundle-entertainment");
 const { createLineBindingService } = require("./lib/line-binding-service");
+const { createLineSetupService } = require("./lib/line-setup-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -304,7 +305,11 @@ function sendStatic(response, relativePath, publicBrand) {
     sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
     return;
   }
-  response.writeHead(200, { "content-type": contentType(filePath), "cache-control": "no-store" });
+  response.writeHead(200, {
+    "content-type": contentType(filePath),
+    "cache-control": "no-store",
+    "referrer-policy": "no-referrer"
+  });
   if (path.extname(filePath).toLowerCase() === ".html") {
     response.end(renderPublicHtml(fs.readFileSync(filePath, "utf8"), publicBrand));
     return;
@@ -404,6 +409,7 @@ function createRequestHandler(service, options = {}) {
   const lineWebhookHandler = options.lineWebhookHandler;
   const sharedLineWebhookHandler = options.sharedLineWebhookHandler;
   const lineBindingService = options.lineBindingService;
+  const lineSetupService = options.lineSetupService;
   const persistence = options.persistence;
   const customerSettings = options.customerSettings;
   const onboarding = options.onboarding;
@@ -440,8 +446,15 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "GET" && pathname === "/") return sendStatic(response, "home.html", publicBrand);
       if (request.method === "GET" && pathname === "/guest") return sendStatic(response, "guest.html", publicBrand);
       if (request.method === "GET" && pathname === "/onboarding") return sendStatic(response, "onboarding.html", publicBrand);
+      if (request.method === "GET" && pathname === "/line/setup") return sendStatic(response, "line-setup.html", publicBrand);
       if (request.method === "GET" && pathname === "/admin/setup") return sendStatic(response, "admin-setup.html", publicBrand);
       if (request.method === "GET" && pathname === "/admin/onboarding") {const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");return sendStatic(response,"admin-onboarding.html",publicBrand);}
+      if (request.method === "GET" && pathname === "/admin/line-connections") {
+        const token = cookieValue(request, "nephi_admin_session");
+        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        if (!session || !onboarding || !onboarding.isPlatformAdmin(session)) throw new AppError(401, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
+        return sendStatic(response, "admin-line-connections.html", publicBrand);
+      }
       if (request.method === "GET" && pathname === "/admin") return sendStatic(response, "admin.html", publicBrand);
       if (request.method === "GET" && pathname.startsWith("/assets/")) return sendStatic(response, pathname.slice(1), publicBrand);
 
@@ -458,6 +471,35 @@ function createRequestHandler(service, options = {}) {
       if(draftMatch&&request.method==="PATCH")return sendData(response,await onboarding.saveDraft(draftMatch[1],draftToken,await readJsonBody(request)));
       if(previewMatch&&request.method==="GET")return sendData(response,await onboarding.preview(previewMatch[1],draftToken));
       if(submitMatch&&request.method==="POST")return sendData(response,await onboarding.submit(submitMatch[1],draftToken));
+      if (pathname === "/api/public/line-setup/resolve" && request.method === "POST") {
+        if (!lineSetupService) throw new AppError(503, "LINE_SETUP_NOT_CONFIGURED", "LINE setup is not configured");
+        return sendData(response, lineSetupService.resolve((await readJsonBody(request)).token));
+      }
+      if (pathname === "/api/public/line-setup/redeem" && request.method === "POST") {
+        if (!lineSetupService) throw new AppError(503, "LINE_SETUP_NOT_CONFIGURED", "LINE setup is not configured");
+        return sendData(response, lineSetupService.redeem(await readJsonBody(request)));
+      }
+
+      if (pathname === "/api/admin/line-connections" || pathname === "/api/admin/line-setup-links" || pathname.startsWith("/api/admin/line-setup-links/")) {
+        const token = cookieValue(request, "nephi_admin_session");
+        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        if (!session || !onboarding || !onboarding.isPlatformAdmin(session)) throw new AppError(401, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
+        if (!lineSetupService) throw new AppError(503, "LINE_SETUP_NOT_CONFIGURED", "LINE setup is not configured");
+        if (pathname === "/api/admin/line-connections" && request.method === "GET") {
+          return sendData(response, { items: lineSetupService.propertyStatuses() });
+        }
+        if (pathname === "/api/admin/line-setup-links" && request.method === "GET") {
+          return sendData(response, { items: lineSetupService.list(url.searchParams.get("propertyId")) });
+        }
+        if (pathname === "/api/admin/line-setup-links" && request.method === "POST") {
+          return sendData(response, lineSetupService.create(await readJsonBody(request), session), 201);
+        }
+        const revokeMatch = /^\/api\/admin\/line-setup-links\/([^/]+)\/revoke$/.exec(pathname);
+        if (revokeMatch && request.method === "POST") {
+          return sendData(response, lineSetupService.revoke(decodeURIComponent(revokeMatch[1])));
+        }
+      }
+
       if(pathname==="/api/admin/setup-invitation"&&request.method==="GET")return sendData(response,onboarding.getInvitation(url.searchParams.get("token")));
       if(pathname==="/api/admin/setup"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.redeemInvitation(body.token,body.password));}
 
@@ -754,6 +796,13 @@ function createApp(options = {}) {
   const onboardingEmailNotifier=createOnboardingEmailNotifier({env:options.onboardingEmailEnv||process.env,fetchImpl:options.onboardingEmailFetch||globalThis.fetch,publicBaseUrl:publicBrand.publicBaseUrl});
   const onboarding = createOnboardingService(providers.onboarding,{emailNotifier:onboardingEmailNotifier});
   const lineBindingService = createLineBindingService({ provider: providers.lineBindings, env: options.lineBindingEnv || process.env });
+  const lineSetupService = createLineSetupService({
+    provider: providers.lineBindings,
+    lineBindingService,
+    customerSettings: providers.customerSettings,
+    publicBaseUrl: publicBrand.publicBaseUrl,
+    now
+  });
   const replyClient = options.lineReplyClientFactory || (options.lineReplyFetch && (({ channelAccessToken }) => ({ replyMessageWithHttpInfo: async (body) => { const response = await options.lineReplyFetch("https://api.line.me/v2/bot/message/reply", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${channelAccessToken}` }, body: JSON.stringify(body) }); if (!response.ok) { const error = new Error("line_reply_failed"); error.status = response.status; throw error; } return { httpResponse: { status: response.status } }; } })));
   const testOnlyTransportDiagnostic = typeof options.testOnlyTransportDiagnostic === "function" ? options.testOnlyTransportDiagnostic : null;
   const emitTransportDiagnostic = (entry) => {
@@ -792,6 +841,14 @@ function createApp(options = {}) {
     if (!binding) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE webhook is unavailable");
     if (!validateSignature(rawBody, binding.channelSecret, String(signature || ""))) throw new AppError(401, "INVALID_LINE_SIGNATURE", "Invalid LINE signature");
     let payload; try { payload = JSON.parse(rawBody.toString("utf8")); } catch { throw new AppError(400, "INVALID_JSON", "Request body must be valid JSON"); }
+    try {
+      lineBindingService.markWebhookObserved(webhookKey, now().toISOString());
+    } catch (error) {
+      console.error("LINE webhook observation update failed", {
+        code: String(error && error.code || "LINE_WEBHOOK_OBSERVATION_FAILED"),
+        webhookKeyHash: crypto.createHash("sha256").update(webhookKey).digest("hex").slice(0, 16)
+      });
+    }
     const id = binding.propertyId;
     if (!providers.customerSettings.getProperty(id)) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE webhook is unavailable");
     const channelId = `line-binding:${crypto.createHash("sha256").update(binding.webhookKey).digest("hex").slice(0, 24)}`;
@@ -811,7 +868,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
+  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, lineSetupService, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host })); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
   /* legacy runtime kept below temporarily unreachable during source migration */ {
   const structuredClassifier = Object.hasOwn(options, "structuredClassifier")
