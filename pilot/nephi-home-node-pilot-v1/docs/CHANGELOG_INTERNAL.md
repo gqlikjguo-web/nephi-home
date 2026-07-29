@@ -130,3 +130,9 @@
 ## 2026-07-29 — Property-scoped LINE connection setup
 
 - Added platform-admin-issued one-time LINE setup links, fragment-only token delivery, atomic encrypted credential redemption, safe status APIs, mobile Chinese management/operator pages, best-effort webhook-observed status, and permanent isolation/duplicate-request/lock-contract/post-upsert rollback/non-disclosure tests without changing the conversation core or legacy test-only LINE binding.
+
+## 2026-07-29 — Limited core fixes from the 90-run validation
+
+- FinalDecision now uses the Claim Validator result for the final deterministic fallback instead of stale rejection state from a discarded Composer candidate.
+- Added unique exact property-catalog grounding for missing/conflicting low-risk canonical candidates and normalized canonical pool requests to the property-catalog amenity route.
+- Added permanent fallback, pool isolation/routing, and location-stage regressions while preserving real claim rejection and mandatory safety handoff.

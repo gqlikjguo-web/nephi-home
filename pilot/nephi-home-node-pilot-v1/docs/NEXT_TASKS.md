@@ -108,3 +108,10 @@
 - Review the five local gate commits and their Golden, operator-roundtrip, temporal-range, mixed-request, Phase 6/7, signed-webhook, and duplicate-writer mutation evidence.
 - Preserve the single Canonicalizer and immutable CanonicalRequest boundary; future capabilities must enter through the property-neutral registry and property-scoped facts.
 - Do not push, deploy, operate Render or LINE, or read/change credentials or environment variables without separate authorization.
+
+## 2026-07-29 Limited core fixes from the 90-run validation
+
+- Review `test-only/core-90-fixes`, especially final-candidate Claim Validation and exact property-catalog grounding for pool.
+- Preserve real Claim Validator rejection, mandatory high-risk handoff, Canonical Temporal rejection, property isolation, and the single Canonicalizer boundary.
+- After review and separate test-only deployment authorization, rerun the complete 90-case real-provider matrix from the latest integrated commit. Do not infer 90/90 from local deterministic regressions.
+- Do not deploy, operate Render or LINE, change credentials, or modify onboarding/LINE setup/formal data in this implementation task.

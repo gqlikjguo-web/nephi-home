@@ -160,3 +160,11 @@
 **Reason:** The existing property-scoped binding and webhook runtime safely encrypted and routed credentials, but credential entry still required a platform-admin API and had no operator-safe handoff boundary.
 
 **Constraint:** The raw token is carried only in the URL fragment, removed from browser history before any network request, and submitted to resolve/redeem endpoints in a POST body under `Referrer-Policy: no-referrer`. Redemption locks and revalidates the token, encrypts both credentials through the existing AES-256-GCM binding service, preserves the property's webhook key, upserts the binding, and sets `used_at` in one transaction. Failure rolls back both binding and token state. Raw credentials, raw token, token hash, and encryption key never enter request URLs, Referer headers, logs, status APIs, HTML, persistent browser storage, or read-back responses.
+
+## D-017 — Final-candidate validation is the only Composer claim state
+
+**Decision:** A rejected or failed Composer attempt is diagnostic history, not FinalDecision input. When the Engine replaces it with the deterministic response and that final candidate passes the unchanged Claim Validator, FinalDecision receives the successful final validation.
+
+**Reason:** Retaining rejection state from a discarded Composer candidate converted valid property-backed deterministic answers into `claim_validation_failed` handoffs, including location replies that had already passed every earlier stage.
+
+**Constraint:** Every final candidate still passes Claim Validator. If deterministic fallback validation fails, the existing `claim_validation_failed` handoff remains mandatory. Composer text rejection, exception details, and fallback selection cannot weaken Claim Validator, Resolver authority, high-risk handoff, or property isolation.

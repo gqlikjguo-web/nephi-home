@@ -127,3 +127,9 @@ Treat invitation resolution and draft persistence as separate contracts: issue o
 A manual Render setting can make one deployment healthy while the repository Blueprint still contains an unsafe start command or wrong public URL. The next Blueprint sync can silently restore the obsolete behavior.
 
 Keep a repository-level deployment contract that selects the exact test-only service and asserts both the migration-only start command and the dedicated public host. Exercise every externally returned onboarding URL field through the same environment-derived base URL.
+
+## 2026-07-29 — Rejection belongs to the discarded candidate
+
+A Composer rejection proves only that one proposed candidate is unusable. If a deterministic fallback replaces it, validate that replacement independently and pass only the final validation result to FinalDecision. Carrying the discarded candidate's rejection flag forward creates false handoffs while making trace output disagree with the actual text being sent.
+
+When repairing a Planner entity, do not infer from a property ID or a hardcoded answer. Use only a unique exact match in the current property's catalog, require a registered low-risk property-catalog capability, and leave ambiguous or ungrounded input on the existing safe path.

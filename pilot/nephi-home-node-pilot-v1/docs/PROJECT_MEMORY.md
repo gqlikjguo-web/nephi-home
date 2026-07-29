@@ -164,3 +164,11 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - The platform page exposes safe binding status and the property webhook URL. The operator page accepts only Channel Secret and Channel Access Token, clears them after success, never persists them in browser storage, and never reads them back.
 - Webhook-observed status is best-effort telemetry: its storage failure cannot turn a valid signed webhook into a failed delivery.
 - The targeted setup runner, existing LINE binding runners, authorization/onboarding gates, runtime uniqueness, and one complete `npm.cmd test` pass locally. The branch is pending review and was not deployed; no Render, LINE, database, credential, or formal-environment operation occurred.
+
+## 2026-07-29 Limited core fixes from the 90-run validation
+
+- The 90-run evidence exposed a stale Composer-rejection flag: a rejected OpenAI candidate was replaced by a valid deterministic reply, but FinalDecision still received `claimValidation.ok=false`. FinalDecision now consumes only the Claim Validator result for the final candidate.
+- Pool routing now repairs a missing or conflicting Planner canonical candidate only when the entity raw text resolves uniquely to an existing low-risk property-catalog capability. Canonical `pool` is normalized to the property-catalog amenity route without stay-date readiness.
+- The minimal `民宿在哪裡？` replay passes Planner, semantic/context validation, CanonicalRequest, FormalRequest, and the property-catalog executor. Its prior final handoff is reproduced only when the Composer candidate is rejected, proving it shares the stale fallback-state defect rather than an independent location defect.
+- The new three-case regression, related property-fact/location/Planner/Claim/FinalDecision/signed-webhook/runtime gates, Canonical Request golden gate, and one complete `npm.cmd test` pass with exit 0.
+- The branch remains pending review. The 90-run real-provider matrix was not rerun, and no deployment, Render, LINE, database, credential, onboarding, or formal-data operation occurred.

@@ -89,9 +89,10 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
     availableDatesResolver: () => ({ status: "answered", dates: [] }), listPriceOverrides: () => [], now: () => new Date("2026-07-17T02:00:00.000Z")
   });
   const rejectedPricing = await rejectedPricingEngine.process({ customerId: "p1", channelId: "pricing-rejected", lineUserId: "pricing-rejected-user", eventId: "pricing-rejected-event", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6 price request" });
-  assert.equal(rejectedPricing.finalDecision.action, "handoff", "claim validator rejection must be recorded by FinalDecision even after the safe fallback reply is validated");
-  assert.equal(rejectedPricing.finalDecision.reasonCode, "claim_validation_failed");
-  assert.equal(rejectedPricing.finalDecision.reviewRequired, true);
+  assert.equal(rejectedPricing.finalDecision.action, "reply", "a rejected Composer candidate must not override a subsequently validated safe fallback");
+  assert.equal(rejectedPricing.finalDecision.reasonCode, "execution_answered");
+  assert.equal(rejectedPricing.finalDecision.reviewRequired, false);
+  assert.equal(rejectedPricing.claimValidation.ok, true);
   assert.equal(rejectedPricing.replyText.includes("unverified"), false, "claim-validator-rejected text must not reach the reply");
 
   const result = await engine.process({ customerId: "p1", channelId: "c1", lineUserId: "u1", eventId: "e1", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6雙人房有空嗎 有車位嗎 有麻將嗎" });

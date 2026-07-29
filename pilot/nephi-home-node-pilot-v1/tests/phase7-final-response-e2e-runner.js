@@ -261,8 +261,8 @@ async function run(kind) {
     clarification: "clarification",
     handoff: "handoff",
     no_reply: "no_reply",
-    claim_rejection: "handoff",
-    composer_exception: "handoff"
+    claim_rejection: "reply",
+    composer_exception: "reply"
   };
   for (const [kind, expectedAction] of Object.entries(expectedActions)) {
     const { calls, composerCalls, result, mainRecord } = await run(kind);
@@ -289,16 +289,17 @@ async function run(kind) {
       assert.ok(result.replyText.includes("需要請業者確認"));
     }
     if (kind === "claim_rejection") {
-      assert.equal(result.finalDecision.reasonCode, "claim_validation_failed");
+      assert.equal(result.finalDecision.reasonCode, "execution_answered");
       assert.equal(result.replyText.includes("已通知業者"), false);
       assert.equal(result.replyText.includes("保證"), false);
-      assert.ok(result.replyText.includes("請業者協助"));
+      assert.equal(result.replyText, "民宿旁空地可停車。");
+      assert.equal(result.finalDecision.reviewRequired, false);
     }
     if (kind === "composer_exception") {
       assert.equal(composerCalls.length, 1);
-      assert.equal(result.finalDecision.reasonCode, "claim_validation_failed");
-      assert.ok(result.replyText.includes("民宿旁空地可停車"));
-      assert.ok(result.replyText.includes("請業者協助"));
+      assert.equal(result.finalDecision.reasonCode, "execution_answered");
+      assert.equal(result.replyText, "民宿旁空地可停車。");
+      assert.equal(result.finalDecision.reviewRequired, false);
     }
   }
   console.log("phase7 signed webhook final response e2e: PASS (6 paths)");

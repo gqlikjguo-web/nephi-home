@@ -10,6 +10,7 @@ const ELIGIBILITY_EVIDENCE_KINDS = new Set(["none", "person", "room", "plan", "b
 const CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
 const { DETAIL_INTENTS } = require("./detail-intent");
 const { resolveEntity } = require("./entity-resolver");
+const { getCapabilityDefinition } = require("./capability-registry");
 const PLANNER_OPERATION_PATHS = new Set([
   "*",
   "stay.dateExpression.rawText",
@@ -52,6 +53,48 @@ function controlledRequestedOutputs(task) {
   if (task.entity && task.entity.canonicalCandidate === "location") return ["map_url"];
   if (["amenity", "policy", "property_fact"].includes(task.type)) return [task.detailIntent === "general" ? "answer" : task.detailIntent];
   return task.requestedOutputs;
+}
+
+function groundedPropertyFactTask(task, catalog) {
+  const entity = task && task.entity;
+  if (!catalog || !entity || !entity.rawText) return null;
+  const grounded = resolveEntity(catalog, {
+    category: "other",
+    rawText: entity.rawText,
+    canonicalCandidate: null
+  });
+  const resolved = grounded && grounded.status === "resolved" && grounded.entity;
+  const definition = resolved && getCapabilityDefinition(resolved.canonicalId);
+  if (!resolved || !definition
+    || definition.resolverId !== "property_catalog"
+    || definition.stayDependency !== false
+    || definition.riskLevel !== "low"
+    || definition.responseMode !== "answer"
+    || !definition.acceptedEntityCategories.includes(resolved.category)) return null;
+  const preferredType = resolved.category === "transport"
+    ? "property_fact"
+    : resolved.category === "policy"
+      ? "policy"
+      : "amenity";
+  const type = definition.acceptedCandidateTypes.includes(preferredType)
+    ? preferredType
+    : definition.acceptedCandidateTypes[0];
+  const detailIntent = task.detailIntent || "general";
+  return {
+    ...task,
+    type,
+    detailIntent,
+    requestedOutputs: resolved.canonicalId === "location"
+      ? ["map_url"]
+      : [detailIntent === "general" ? "answer" : detailIntent],
+    dependsOnStayContext: false,
+    stayCandidate: null,
+    entity: {
+      ...entity,
+      category: resolved.category,
+      canonicalCandidate: resolved.canonicalId
+    }
+  };
 }
 
 // Legacy planner state controls are accepted only for wire compatibility with
@@ -99,8 +142,16 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
   const acceptedTasks = [], repairedTasks = [], rejectedTasks = [];
   const tasks = value.tasks.map((original, index) => {
     let task = { ...original, eligibilityEvidence: normalizeEligibilityEvidence(original && original.eligibilityEvidence), entity: original && original.entity ? { ...original.entity } : original && original.entity };
-    const entity = task && task.entity;
+    let entity = task && task.entity;
     if (!entity) return task;
+
+    const groundedTask = groundedPropertyFactTask(task, catalog);
+    if (groundedTask
+      && task.entity.canonicalCandidate !== groundedTask.entity.canonicalCandidate) {
+      task = groundedTask;
+      entity = task.entity;
+      repairedTasks.push({ taskId: task.taskId, index, reason: "property_catalog_entity_grounding" });
+    }
 
     if (task.type === "availability" && entity.category === "room" && entity.canonicalCandidate === null && catalog) {
       const inventoryEntity = resolveEntity(catalog, entity);
@@ -115,6 +166,13 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
         || task.dependsOnStayContext !== false || task.stayCandidate !== null;
       task = { ...task, type: "amenity", detailIntent: "general", requestedOutputs: ["answer"], dependsOnStayContext: false, stayCandidate: null, entity: { ...task.entity, category: "amenity", canonicalCandidate: "parking" } };
       if (changed) repairedTasks.push({ taskId: task.taskId, index, reason: "parking_contract_mismatch" });
+    } else if (task.entity.canonicalCandidate === "pool") {
+      const invalidEligibility = task.detailIntent === "eligibility"
+        && !hasExplicitEligibilityEvidence(task);
+      const changed = task.type !== "amenity" || entity.category !== "amenity"
+        || task.dependsOnStayContext !== false || task.stayCandidate !== null;
+      task = { ...task, type: "amenity", dependsOnStayContext: false, stayCandidate: null, entity: { ...task.entity, category: "amenity", canonicalCandidate: "pool" } };
+      if (changed && !invalidEligibility) repairedTasks.push({ taskId: task.taskId, index, reason: "pool_contract_mismatch" });
     } else if (task.entity.canonicalCandidate === "location") {
       const changed = task.type !== "property_fact" || entity.category !== "transport" || task.detailIntent !== "general";
       task = { ...task, type: "property_fact", detailIntent: "general", requestedOutputs: ["map_url"], entity: { ...task.entity, category: "transport", canonicalCandidate: "location" } };

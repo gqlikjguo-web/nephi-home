@@ -562,7 +562,6 @@ class ConversationEngineV2 {
       fallbackOccurred = composerSource !== "openai";
     }
     let claimValidation = validateClaims(replyText, responsePlan, claimedTaskIds, composedSections);
-    const claimValidationRejected = !claimValidation.ok || rejectionReasonCodes.length > 0;
     this.trace(traceId, "composer", { outputLength: replyText.length, coveredTaskIds: claimedTaskIds || inputTaskIds, missingTaskIds: claimValidation.missingTaskIds, composerSource, validationResult: rejectionReasonCodes.length ? "rejected" : "accepted", rejectionReasonCodes, fallbackOccurred, ...(this.diagnosticDetail ? { composerInput: responsePlan, finalOutput: replyText } : {}), sections: responsePlan.sections.map((section) => ({ taskId: section.taskId, responseMode: section.responseMode, type: section.type })) });
     if (!claimValidation.ok) {
       const reason = claimValidation.errors.includes("incomplete_task_coverage") ? "composer_incomplete_coverage" : "claim_validation_failed";
@@ -572,7 +571,7 @@ class ConversationEngineV2 {
       claimValidation = validateClaims(replyText, responsePlan, inputTaskIds);
     }
     this.trace(traceId, "claim_validator", { errors: claimValidation.errors, coveredTaskIds: claimValidation.coveredTaskIds, missingTaskIds: claimValidation.missingTaskIds });
-    const finalDecision = decideFinal({ executionOutcomes, claimValidation: claimValidationRejected ? { ok: false } : claimValidation });
+    const finalDecision = decideFinal({ executionOutcomes, claimValidation });
     const finalResponse = renderFinal({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation });
     const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "multi_task_v2", replyType: `${finalResponse.action}_v2`, replyText: finalResponse.replyText, route: `final_decision_${finalResponse.action}`, shouldReply: finalResponse.shouldReply, noReply: !finalResponse.shouldReply, needsReview: finalDecision.reviewRequired, humanHandoff: finalDecision.action === "handoff", status: finalDecision.reviewRequired ? "pending" : "resolved", processingStatus: "decided", decisionReason: finalDecision.reasonCode };
     if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
