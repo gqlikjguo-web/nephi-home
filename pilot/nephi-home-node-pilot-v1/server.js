@@ -19,6 +19,7 @@ const { normalizeRoomRecord, normalizeRoomHighlights, characterCount } = require
 const { providedAmenities } = require("./lib/bundle-entertainment");
 const { createLineBindingService } = require("./lib/line-binding-service");
 const { createLineSetupService } = require("./lib/line-setup-service");
+const { CustomReplyError, createCustomReplyService } = require("./lib/custom-reply-rules");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -226,7 +227,7 @@ function cookieValue(request, name) {
 }
 
 function isAdminDataRoute(pathname) {
-  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname === "/api/property-profile" || pathname === "/api/property-facts" || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
+  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname === "/api/property-profile" || pathname === "/api/property-facts" || pathname.startsWith("/api/custom-replies") || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
 }
 
 function sendData(response, data, status = 200) {
@@ -413,6 +414,7 @@ function createRequestHandler(service, options = {}) {
   const persistence = options.persistence;
   const customerSettings = options.customerSettings;
   const onboarding = options.onboarding;
+  const customReplyService = options.customReplyService;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
   const publicBrand = options.publicBrand || createPublicBrand();
   return async function handleRequest(request, response) {
@@ -646,6 +648,27 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "PUT" && pathname === "/api/property-profile") { const body = request.adminBody || await readJsonBody(request); return sendData(response, service.updatePropertyProfile({ ...body, customerId: body.propertyId || body.customerId })); }
       if (request.method === "GET" && pathname === "/api/property-facts") return sendData(response, service.getPropertyFacts(url.searchParams.get("propertyId") || url.searchParams.get("customerId")));
       if (request.method === "PUT" && pathname === "/api/property-facts") { const body = request.adminBody || await readJsonBody(request); return sendData(response, service.updatePropertyFacts({ ...body, customerId: body.propertyId || body.customerId })); }
+      if (request.method === "GET" && pathname === "/api/custom-replies") {
+        return sendData(response, customReplyService.list(url.searchParams.get("propertyId") || url.searchParams.get("customerId")));
+      }
+      if (request.method === "POST" && pathname === "/api/custom-replies") {
+        const body = request.adminBody || await readJsonBody(request);
+        return sendData(response, { rule: customReplyService.create(body.propertyId || body.customerId, body) }, 201);
+      }
+      const customReplyMatch = /^\/api\/custom-replies\/([^/]+)(?:\/(enabled))?$/.exec(pathname);
+      if (customReplyMatch && request.method === "PUT" && !customReplyMatch[2]) {
+        const body = request.adminBody || await readJsonBody(request);
+        return sendData(response, { rule: customReplyService.update(body.propertyId || body.customerId, decodeURIComponent(customReplyMatch[1]), body) });
+      }
+      if (customReplyMatch && request.method === "PATCH" && customReplyMatch[2] === "enabled") {
+        const body = request.adminBody || await readJsonBody(request);
+        if (typeof body.enabled !== "boolean") throw new AppError(400, "CUSTOM_REPLY_ENABLED_REQUIRED", "enabled must be boolean");
+        return sendData(response, { rule: customReplyService.setEnabled(body.propertyId || body.customerId, decodeURIComponent(customReplyMatch[1]), body.enabled) });
+      }
+      if (customReplyMatch && request.method === "DELETE" && !customReplyMatch[2]) {
+        const body = request.adminBody || await readJsonBody(request);
+        return sendData(response, { deleted: customReplyService.remove(body.propertyId || body.customerId, decodeURIComponent(customReplyMatch[1])) });
+      }
       if (request.method === "PUT" && pathname === "/api/settings") {
         return sendData(response, { settings: service.updateSettings(request.adminBody || await readJsonBody(request)) });
       }
@@ -803,6 +826,19 @@ function createApp(options = {}) {
     publicBaseUrl: publicBrand.publicBaseUrl,
     now
   });
+  const unsupportedCustomReplyMutation = () => {
+    throw new CustomReplyError(503, "CUSTOM_REPLY_PROVIDER_UNAVAILABLE", "Custom reply storage is unavailable");
+  };
+  const customReplyService = createCustomReplyService({
+    provider: providers.customReplies || {
+      list: () => [],
+      create: unsupportedCustomReplyMutation,
+      update: unsupportedCustomReplyMutation,
+      remove: unsupportedCustomReplyMutation
+    },
+    customerSettings: providers.customerSettings,
+    now
+  });
   const replyClient = options.lineReplyClientFactory || (options.lineReplyFetch && (({ channelAccessToken }) => ({ replyMessageWithHttpInfo: async (body) => { const response = await options.lineReplyFetch("https://api.line.me/v2/bot/message/reply", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${channelAccessToken}` }, body: JSON.stringify(body) }); if (!response.ok) { const error = new Error("line_reply_failed"); error.status = response.status; throw error; } return { httpResponse: { status: response.status } }; } })));
   const testOnlyTransportDiagnostic = typeof options.testOnlyTransportDiagnostic === "function" ? options.testOnlyTransportDiagnostic : null;
   const emitTransportDiagnostic = (entry) => {
@@ -868,7 +904,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, lineSetupService, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
+  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host })); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
   /* legacy runtime kept below temporarily unreachable during source migration */ {
   const structuredClassifier = Object.hasOwn(options, "structuredClassifier")

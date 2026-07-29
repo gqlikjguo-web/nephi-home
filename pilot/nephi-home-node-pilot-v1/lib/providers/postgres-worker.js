@@ -9,6 +9,7 @@ const ADMIN_INVITATION_EMAIL_SQL = "COALESCE(NULLIF(trim(i.email),''),NULLIF(tri
 function payload(row) { return row ? (typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload) : null; }
 function dataValue(row) { return row ? (typeof row.data === "string" ? JSON.parse(row.data) : row.data) : null; }
 function iso(value) { return value ? new Date(value).toISOString() : new Date().toISOString(); }
+function sqlDate(value) { return value ? (value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10)) : ""; }
 function lineBindingRow(row) {
   return row ? {
     propertyId: row.property_id,
@@ -35,6 +36,24 @@ function lineSetupRow(row) {
     updatedAt: row.updated_at
   } : null;
 }
+function customReplyRow(row) {
+  return row ? {
+    ruleId: row.rule_id,
+    propertyId: row.property_id,
+    name: row.name,
+    topic: row.topic,
+    scope: row.scope,
+    roomTypeId: row.room_type_id || "",
+    stayStartDate: sqlDate(row.stay_start_date),
+    stayEndDate: sqlDate(row.stay_end_date),
+    effectiveStartDate: sqlDate(row.effective_start_date),
+    effectiveEndDate: sqlDate(row.effective_end_date),
+    approvedReply: row.approved_reply,
+    enabled: Boolean(row.enabled),
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at)
+  } : null;
+}
 async function loadOnboarding(id){const a=await client.query("SELECT * FROM onboarding_applications WHERE application_id=$1",[id]);if(!a.rows[0])return null;const row=a.rows[0],core=typeof row.core_data==="string"?JSON.parse(row.core_data):row.core_data||{};const rooms=await client.query("SELECT data FROM onboarding_room_types WHERE application_id=$1 ORDER BY position",[id]),bundles=await client.query("SELECT data FROM onboarding_bundle_offers WHERE application_id=$1 ORDER BY position",[id]),knowledge=await client.query("SELECT data FROM onboarding_knowledge_items WHERE application_id=$1 ORDER BY position",[id]),attachments=await client.query("SELECT attachment_id,file_name,content_type,byte_size,sha256,review_status,created_at FROM onboarding_attachments WHERE application_id=$1 ORDER BY created_at",[id]),notes=await client.query("SELECT action,note,reviewer_property_id,reviewer_username,created_at FROM onboarding_review_notes WHERE application_id=$1 ORDER BY created_at",[id]);return{...core,applicationId:id,status:row.status,propertyIdSuggestion:row.property_id_suggestion,inviteExpiresAt:iso(row.invite_expires_at),inviteRevoked:Boolean(row.invite_revoked_at),approvalMode:row.approval_mode||"",approvedPropertyId:row.approved_property_id||"",approvedAt:row.approved_at?iso(row.approved_at):"",approvedBy:row.approved_by_property_id||row.approved_by_username?{propertyId:row.approved_by_property_id||"",username:row.approved_by_username||""}:null,submittedAt:iso(row.submitted_at),updatedAt:iso(row.updated_at),rooms:rooms.rows.map(dataValue),bundles:bundles.rows.map(dataValue),knowledge:knowledge.rows.map(dataValue),attachments:attachments.rows.map(x=>({attachmentId:x.attachment_id,fileName:x.file_name,contentType:x.content_type,byteSize:x.byte_size,sha256:x.sha256,reviewStatus:x.review_status,createdAt:iso(x.created_at)})),reviewNotes:notes.rows.map(x=>({action:x.action,note:x.note,reviewerPropertyId:x.reviewer_property_id||"",reviewerUsername:x.reviewer_username||"",createdAt:iso(x.created_at)}))};}
 function onboardingSnapshot(app){return{propertyName:String(app.propertyName||""),contactName:String(app.contactName||""),phone:String(app.phone||""),email:String(app.email||""),address:String(app.address||""),googleMapsUrl:String(app.googleMapsUrl||""),checkInTime:String(app.checkInTime||""),checkOutTime:String(app.checkOutTime||""),line:{hasOfficialAccount:Boolean(app.line&&app.line.hasOfficialAccount),contactLink:String(app.line&&app.line.contactLink||"")},propertyIdSuggestion:String(app.propertyIdSuggestion||""),rooms:(app.rooms||[]).map(x=>({key:String(x.key||""),roomCode:String(x.roomCode||"").trim(),displayName:String(x.displayName||x.name||"").trim(),name:String(x.displayName||x.name||"").trim(),highlights:Array.isArray(x.highlights)?x.highlights.map(v=>String(v||"").trim()).filter(Boolean):[],type:String(x.type||""),capacity:Number.isFinite(Number(x.capacity))?Number(x.capacity):null,mondayThursdayPrice:Number.isFinite(Number(x.mondayThursdayPrice))?Number(x.mondayThursdayPrice):null,fridayPrice:Number.isFinite(Number(x.fridayPrice))?Number(x.fridayPrice):null,saturdayHolidayPrice:Number.isFinite(Number(x.saturdayHolidayPrice))?Number(x.saturdayHolidayPrice):null,sundayPrice:Number.isFinite(Number(x.sundayPrice))?Number(x.sundayPrice):null,enabled:x.enabled!==false})),bundles:(app.bundles||[]).map(x=>({key:String(x.key||""),name:String(x.name||""),memberRoomKeys:(x.memberRoomKeys||[]).map(String),capacity:Number.isFinite(Number(x.capacity))?Number(x.capacity):null,mondayThursdayPrice:Number.isFinite(Number(x.mondayThursdayPrice))?Number(x.mondayThursdayPrice):null,fridayPrice:Number.isFinite(Number(x.fridayPrice))?Number(x.fridayPrice):null,saturdayHolidayPrice:Number.isFinite(Number(x.saturdayHolidayPrice))?Number(x.saturdayHolidayPrice):null,sundayPrice:Number.isFinite(Number(x.sundayPrice))?Number(x.sundayPrice):null,enabled:x.enabled!==false,entertainmentAmenities:normalizeEntertainmentAmenities(x.entertainmentAmenities)})),knowledge:(app.knowledge||[]).map(x=>({key:String(x.key||""),label:String(x.label||""),status:String(x.status||"undecided"),answer:String(x.answer||"")}))};}
 async function addChangeRequestState(app){if(!app)return app;const result=await client.query("SELECT n.note,n.created_at,d.status FROM onboarding_review_notes n LEFT JOIN onboarding_email_deliveries d ON d.review_note_id=n.note_id WHERE n.application_id=$1 AND n.action IN ('changes_requested','reopened_changes_requested') ORDER BY n.created_at DESC LIMIT 1",[app.applicationId]);const row=result.rows[0];return{...app,latestChangeRequest:row?{reason:row.note,createdAt:iso(row.created_at)}:null,emailDelivery:row?{status:row.status||"pending"}:null};}
@@ -45,6 +64,22 @@ async function loadAdminSession(tokenHash){const r=await client.query("SELECT to
 
 async function operation(name, args) {
   if (name === "ready") return true;
+  if(name==="customReplies_list"){
+    const r=await client.query("SELECT * FROM property_custom_replies WHERE property_id=$1 ORDER BY created_at,rule_id",[args[0]]);
+    return r.rows.map(customReplyRow);
+  }
+  if(name==="customReplies_create"){
+    const x=args[0],r=await client.query("INSERT INTO property_custom_replies(rule_id,property_id,name,topic,scope,room_type_id,stay_start_date,stay_end_date,effective_start_date,effective_end_date,approved_reply,enabled,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *",[x.ruleId,x.propertyId,x.name,x.topic,x.scope,x.roomTypeId||null,x.stayStartDate||null,x.stayEndDate||null,x.effectiveStartDate,x.effectiveEndDate,x.approvedReply,Boolean(x.enabled),x.createdAt,x.updatedAt]);
+    return customReplyRow(r.rows[0]);
+  }
+  if(name==="customReplies_update"){
+    const [propertyId,ruleId,x]=args,r=await client.query("UPDATE property_custom_replies SET name=$3,topic=$4,scope=$5,room_type_id=$6,stay_start_date=$7,stay_end_date=$8,effective_start_date=$9,effective_end_date=$10,approved_reply=$11,enabled=$12,updated_at=$13 WHERE property_id=$1 AND rule_id=$2 RETURNING *",[propertyId,ruleId,x.name,x.topic,x.scope,x.roomTypeId||null,x.stayStartDate||null,x.stayEndDate||null,x.effectiveStartDate,x.effectiveEndDate,x.approvedReply,Boolean(x.enabled),x.updatedAt]);
+    return customReplyRow(r.rows[0]);
+  }
+  if(name==="customReplies_remove"){
+    const r=await client.query("DELETE FROM property_custom_replies WHERE property_id=$1 AND rule_id=$2 RETURNING rule_id",args);
+    return Boolean(r.rows.length);
+  }
   if (name === "getProperty" || name === "listProperties") {
     const filter = name === "getProperty" ? "WHERE p.property_id=$1" : "";
     const result = await client.query(`SELECT p.property_id,p.display_name,s.settings,

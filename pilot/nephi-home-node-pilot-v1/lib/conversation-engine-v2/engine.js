@@ -26,6 +26,7 @@ const { normalizePlannerEvidenceCoordinates } = require("./evidence-normalizer")
 const { buildCanonicalFormalRequest, buildCanonicalQueryPlan, resultForNotReady } = require("./formal-request");
 const { buildFinalDecision } = require("./final-decision");
 const { SAFE_HANDOFF_TEXT, buildFinalResponse } = require("./final-response-renderer");
+const { applyControlledReplyRules } = require("../custom-reply-rules");
 
 const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
 const TEMPORAL_FAILURE_STATUSES = new Set(["unresolved"]);
@@ -276,8 +277,8 @@ function safePlannerErrorDiagnostic(error, planner) {
 }
 
 class ConversationEngineV2 {
-  constructor({ planner, composer, persistence, getProperty, availabilityResolver, availableDatesResolver, listPriceOverrides, now = () => new Date(), onDiagnostic, diagnosticDetail = false, diagnosticMetadata = {} }) {
-    this.planner = planner; this.composer = composer; this.persistence = persistence; this.getProperty = getProperty; this.availabilityResolver = availabilityResolver; this.availableDatesResolver = availableDatesResolver; this.listPriceOverrides = listPriceOverrides || (() => []); this.now = now; this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null; this.diagnosticDetail = Boolean(diagnosticDetail); this.diagnosticMetadata = diagnosticMetadata || {}; this.traceContexts = new Map();
+  constructor({ planner, composer, persistence, getProperty, availabilityResolver, availableDatesResolver, listPriceOverrides, listCustomReplies, now = () => new Date(), onDiagnostic, diagnosticDetail = false, diagnosticMetadata = {} }) {
+    this.planner = planner; this.composer = composer; this.persistence = persistence; this.getProperty = getProperty; this.availabilityResolver = availabilityResolver; this.availableDatesResolver = availableDatesResolver; this.listPriceOverrides = listPriceOverrides || (() => []); this.listCustomReplies = listCustomReplies || (() => []); this.now = now; this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null; this.diagnosticDetail = Boolean(diagnosticDetail); this.diagnosticMetadata = diagnosticMetadata || {}; this.traceContexts = new Map();
   }
 
   trace(traceId, stage, details) {
@@ -492,10 +493,17 @@ class ConversationEngineV2 {
     const resolverCalls = [];
     const tracedAvailabilityResolver = (request) => { const result = this.availabilityResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
     const tracedAvailableDatesResolver = (request) => { const result = this.availableDatesResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
-    const executionOutcomes = [
+    let executionOutcomes = [
       ...formalRequests.filter((request) => request.readiness.status !== "ready").map(resultForNotReady),
       ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) })
     ];
+    executionOutcomes = applyControlledReplyRules({
+      rules: this.listCustomReplies(input.customerId),
+      property,
+      canonicalItems,
+      executionOutcomes,
+      now: this.now()
+    });
     let taskResults = executionOutcomes.map(legacyTaskResult);
     const inputTaskIds = canonicalItems.map((item) => item.canonicalRequest.taskId);
     let executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));

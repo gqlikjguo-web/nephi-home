@@ -15,7 +15,7 @@ const TASK_PRIORITY = Object.freeze({
 
 function taskPriority(type) { return TASK_PRIORITY[type] || TASK_PRIORITY.unknown; }
 function responseMode(status) { return status === "answered" ? "answer" : status === "needs_clarification" ? "clarification" : "handoff"; }
-const NON_PUBLIC_FACT_KEYS = new Set(["source", "propertyId", "canonicalId", "id"]);
+const NON_PUBLIC_FACT_KEYS = new Set(["source", "propertyId", "canonicalId", "id", "customReplyRuleId", "customReplySource"]);
 function collectAllowedFacts(value, key = "") {
   if (NON_PUBLIC_FACT_KEYS.has(key) || value === null || value === undefined) return [];
   if (["string", "number"].includes(typeof value)) return [String(value)].filter(Boolean);

@@ -184,3 +184,11 @@
 **Reason:** Nearby shops, transit, attractions, routes, distances, and travel times are open-ended external facts. Searching for or estimating them would bypass operator approval, while the existing property-scoped map gives the guest a safe way to inspect both the property and its surroundings.
 
 **Constraint:** Planner must express the semantic relation as `location`; deterministic code must not add per-question keyword rules. Runtime must not search, recommend, identify, invent, or estimate an external place, distance, or duration. Missing or invalid map data remains Unknown. Mixed requests retain every other valid task. A missing canonical candidate may recover a catalog entity from complete task `sourceText` only after an unresolvable raw entity and one unique exact current-property alias; the capability must be registered, low-risk, non-stay-dependent, answer-mode, and resolved by `property_catalog`. A resolved conflicting entity, ambiguous source, unregistered alias, or unregistered capability remains unresolved.
+
+## D-020 — Controlled replies are post-Resolver, property-scoped supplements
+
+**Decision:** Operator-approved custom replies are selected only after Planner interpretation, CanonicalRequest construction, and formal Resolver execution. Deterministic matching may use only the current property, canonical capability/entity, resolved stay dates, room/bundle scope, rule state, and one unique match.
+
+**Reason:** Temporary operating notices must follow the guest's understood task and property authority without turning into keyword FAQ routing, exposing all rule text to Planner, or allowing AI to choose among competing facts.
+
+**Constraint:** Each property may store at most five rules. Disabled, pending, expired, overlapping enabled, ambiguous, cross-property, invalid-date, blank-reply, and nonexistent-room definitions cannot produce an answer. Approved text may supplement only the matching task; other mixed tasks retain formal Resolver outcomes. A rule never asserts availability, price, reservation completion, or another formal fact, and a structural conflict with formal pricing becomes Unknown/review. Composer may only connect allowed facts, while Claim Validator and FinalDecision remain unchanged.

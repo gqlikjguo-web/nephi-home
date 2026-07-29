@@ -187,3 +187,13 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - Complete task source grounding now runs only after raw resolution returns not-found and finds one exact alias in the current property catalog. Registered low-risk `property_catalog` policy remains mandatory; conflicting resolved entities, ambiguous sources, unregistered aliases, and unregistered capabilities stay unresolved.
 - Direct location/address/map/navigation and every property-to-place nearby, distance, duration, or directions request share the existing location capability. The runtime returns only the current property's approved Google Maps URL, never searches or estimates external facts, and keeps other valid mixed tasks.
 - Targeted and related canonical/property-routing/location/Planner/runtime gates pass locally. One complete `npm.cmd test` passed with exit 0 and empty stderr; this change has not been deployed and the 90-run real-provider matrix has not been rerun.
+
+## 2026-07-30 Operator console convergence and controlled custom replies
+
+- The operator console now leads with availability, room/pricing, bundle offers, and custom replies. Profile and formal property-fact settings remain intact under a collapsed `其他必要設定` section.
+- Availability defaults to 15 consecutive local dates starting today and loads every involved month, while the existing monthly calendar and all room/bundle status and note operations remain available.
+- Room highlights are used by the guest availability page but are not consumed by the conversation runtime. The operator label is now `房型特色（選填，最多3項）`; blank entries continue to be normalized out.
+- Each property may keep at most five controlled custom replies. Rules are property-scoped, date/status/scope validated, reject overlapping enabled definitions, and are stored in JSON or PostgreSQL through the same provider boundary.
+- Planner and CanonicalRequest still determine each task first. Only after formal Resolver execution may one unique active rule match the understood topic, stay date, and room/bundle scope. The approved text is additive to that task; all unmatched mixed tasks retain their original Resolver outcomes.
+- Formal pricing facts cannot be replaced by a `價格尚未公告` rule. A structural conflict or multiple matches safely becomes Unknown/review rather than asking AI to choose.
+- No public unauthenticated test API, property-specific branch, deployment, Render operation, LINE operation, credential access, or formal-data mutation was introduced.

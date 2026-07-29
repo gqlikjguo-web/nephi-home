@@ -102,6 +102,7 @@ class JsonFileRepository {
     if (fs.existsSync(this.dataFile)) {
       const state = this.read();
       state.conversationStates = state.conversationStates || {};
+      state.customReplies = state.customReplies || {};
       migrateDailyRoomNotes(state);
       const existingById = Object.fromEntries((state.homestays || []).map((item) => [item.customerId, item]));
       const seedIds = new Set((seed.homestays || []).map((item) => item.customerId));
@@ -146,7 +147,8 @@ class JsonFileRepository {
       notes,
       dailyRoomNotes,
       messageLogs: seed.messageLogs || {},
-      conversationStates: {}
+      conversationStates: {},
+      customReplies: {}
     };
     fs.mkdirSync(path.dirname(this.dataFile), { recursive: true });
     this.write(state);
@@ -208,6 +210,39 @@ class JsonFileRepository {
       if (Object.hasOwn(input, "lineUrl")) homestay.lineUrl = input.lineUrl;
       homestay.updatedAt = this.now().toISOString();
       return JSON.parse(JSON.stringify(homestay));
+    });
+  }
+
+  listCustomReplies(customerId) {
+    return JSON.parse(JSON.stringify((this.read().customReplies || {})[customerId] || []));
+  }
+
+  createCustomReply(input) {
+    return this.mutate((state) => {
+      state.customReplies = state.customReplies || {};
+      state.customReplies[input.propertyId] = state.customReplies[input.propertyId] || [];
+      state.customReplies[input.propertyId].push(JSON.parse(JSON.stringify(input)));
+      return JSON.parse(JSON.stringify(input));
+    });
+  }
+
+  updateCustomReply(propertyId, ruleId, input) {
+    return this.mutate((state) => {
+      const items = (state.customReplies || {})[propertyId] || [];
+      const index = items.findIndex((item) => item.ruleId === ruleId);
+      if (index < 0) return null;
+      items[index] = JSON.parse(JSON.stringify(input));
+      return JSON.parse(JSON.stringify(items[index]));
+    });
+  }
+
+  removeCustomReply(propertyId, ruleId) {
+    return this.mutate((state) => {
+      const items = (state.customReplies || {})[propertyId] || [];
+      const index = items.findIndex((item) => item.ruleId === ruleId);
+      if (index < 0) return false;
+      items.splice(index, 1);
+      return true;
     });
   }
 

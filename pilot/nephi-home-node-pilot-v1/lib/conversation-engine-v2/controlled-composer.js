@@ -5,6 +5,14 @@ const { detailLabel } = require("./detail-intent");
 function money(value) { return new Intl.NumberFormat("zh-TW").format(value); }
 function composeSection(section) {
   const facts = section.facts || {};
+  if (facts.customReply) {
+    const officialFacts = { ...facts };
+    delete officialFacts.customReply;
+    delete officialFacts.customReplyRuleId;
+    delete officialFacts.customReplySource;
+    const official = composeSection({ ...section, facts: officialFacts });
+    return [facts.customReply, official].filter(Boolean).join("\n");
+  }
   if (facts.detailNeedsConfirmation) {
     const known = facts.answer ? `${facts.answer}\n` : "";
     return `${known}${detailLabel(facts.detailIntent)}目前沒有正式資料，需由業者依當日狀況確認。`;

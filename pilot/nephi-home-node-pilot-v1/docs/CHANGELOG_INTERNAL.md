@@ -146,3 +146,11 @@
 
 - Extended safe catalog grounding to real provider tasks whose non-empty raw entity is unresolvable, while rejecting conflicting registered entities, ambiguous sources, unregistered aliases, and unregistered capabilities.
 - Unified direct and property-to-place location semantics on the existing property-scoped `location` capability, returning only the current property's approved Google Maps URL and preserving other mixed tasks.
+
+## 2026-07-30 — Operator console and property-scoped controlled replies
+
+- Reordered the operator console around availability, room/pricing, bundles, and custom replies; moved existing profile and formal fact controls into collapsed other settings.
+- Added a cross-month recent-15-day availability view while preserving the existing monthly calendar and inventory operations.
+- Retained guest-facing room highlights as optional room features, documented that they are not AI facts, and kept blank-value normalization.
+- Added a five-rule property-scoped custom-reply store, authenticated CRUD UI/API, PostgreSQL migration, overlap and data validation, active-state calculation, and two-property isolation.
+- Added a post-Resolver unique-match boundary that consumes Planner/CanonicalRequest semantics without keyword FAQ matching, preserves mixed Resolver tasks, and safely rejects ambiguity or formal pricing conflict.

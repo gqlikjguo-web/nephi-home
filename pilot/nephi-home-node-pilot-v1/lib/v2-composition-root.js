@@ -15,6 +15,7 @@ function createV2CompositionRoot({ providers, service, env = process.env, now = 
     availabilityResolver: overrides.availabilityResolver || ((query) => service.searchAvailability(query)),
     availableDatesResolver: overrides.availableDatesResolver || ((query) => service.searchAvailableDates(query)),
     listPriceOverrides: (propertyId) => providers.customerSettings.listRoomPriceOverrides(propertyId),
+    listCustomReplies: (propertyId) => providers.customReplies ? providers.customReplies.list(propertyId) : [],
     now,
     onDiagnostic: overrides.onDiagnostic || onDiagnostic,
     diagnosticDetail,
