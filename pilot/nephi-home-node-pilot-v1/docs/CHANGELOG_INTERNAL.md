@@ -136,3 +136,8 @@
 - FinalDecision now uses the Claim Validator result for the final deterministic fallback instead of stale rejection state from a discarded Composer candidate.
 - Added unique exact property-catalog grounding for missing/conflicting low-risk canonical candidates and normalized canonical pool requests to the property-catalog amenity route.
 - Added permanent fallback, pool isolation/routing, and location-stage regressions while preserving real claim rejection and mandatory safety handoff.
+
+## 2026-07-29 — Provider-shaped pool and parking routing guard
+
+- Accepted provider `policy` records for the registered pool capability and constrained entity-specific canonical routing to one catalog-backed capability definition.
+- Added unique exact catalog grounding for missing pool/parking Planner entities, with two-property isolation plus ambiguous, unregistered-alias, detail-intent, and real-category fixture regressions.

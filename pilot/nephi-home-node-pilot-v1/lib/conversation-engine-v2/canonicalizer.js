@@ -157,8 +157,10 @@ function selectCapabilityDefinition(task, entity, temporalState) {
     || resolvedStandalonePropertyFactMatches(entitySpecific, task, entity)
   )) return entitySpecific;
   const matches = Object.values(CAPABILITY_REGISTRY)
+    .filter((definition) => definition.acceptedCandidateTypes.includes(definition.capability))
     .filter((definition) => definitionMatches(definition, task, entity));
-  const ready = matches.find((definition) => definition.requiredFields.every((field) => fieldAvailable(field, temporalState)));
+  const ready = matches.find((definition) =>
+    definition.requiredFields.every((field) => fieldAvailable(field, temporalState)));
   if (ready) return ready;
   const exact = getCapabilityDefinition(task.type);
   if (exact && definitionMatches(exact, task, entity)) return exact;

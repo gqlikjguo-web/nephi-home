@@ -104,7 +104,7 @@ const REGISTRY_BLUEPRINT = {
   pool: {
     capability: "pool",
     acceptedCandidateTypes: ["amenity", "property_fact"],
-    acceptedEntityCategories: ["amenity", "activity"],
+    acceptedEntityCategories: ["amenity", "activity", "policy"],
     stayDependency: false,
     requiredFields: [],
     resolverId: "property_catalog",

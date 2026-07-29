@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
+const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 
 const EVENT_TIMESTAMP = Date.parse("2026-07-29T10:00:00+08:00");
 const NOW = () => new Date("2026-07-29T02:00:00.000Z");
@@ -36,9 +37,15 @@ function property(propertyId, label) {
     propertyFacts: [
       {
         canonicalId: "pool",
-        category: "amenity",
+        category: "policy",
         status: "provided",
         publicText: `${label} pool fact.`
+      },
+      {
+        canonicalId: "parking",
+        category: "amenity",
+        status: "provided",
+        publicText: `${label} parking fact.`
       },
       {
         canonicalId: "bbq",
@@ -50,6 +57,7 @@ function property(propertyId, label) {
     semanticCatalog: {
       aliases: {
         pool: ["戲水池", "游泳池", "pool"],
+        parking: ["車位", "停車位", "parking"],
         bbq: ["烤肉", "bbq"],
         location: ["民宿位置", "民宿在哪裡", "location"]
       },
@@ -215,6 +223,16 @@ async function poolRoutingUsesGroundedPropertyCatalog() {
     ["property_pool_beta", "Pool Beta", "游泳池"]
   ]) {
     const currentProperty = property(propertyId, label);
+    const catalog = buildPropertyCatalog(currentProperty);
+    const policyPool = catalog.policies.find((item) => item.canonicalId === "pool");
+    assert.ok(policyPool, "the provider-shaped pool fixture must enter the policy catalog");
+    assert.equal(policyPool.category, "policy");
+    assert.equal(
+      catalog.amenities.some((item) => item.canonicalId === "pool"),
+      false,
+      "the regression fixture must not silently turn the real policy-shaped pool into an amenity"
+    );
+
     const wrongCandidate = await execute({
       currentProperty,
       message: `有${rawText}嗎？`,
@@ -230,6 +248,8 @@ async function poolRoutingUsesGroundedPropertyCatalog() {
     const wrongCanonical = wrongCandidate.stage("canonical_request").items[0];
     assert.equal(wrongCanonical.capability, "pool");
     assert.equal(wrongCanonical.canonicalEntity.canonicalId, "pool");
+    assert.equal(wrongCanonical.canonicalEntity.category, "policy");
+    assert.equal(wrongCanonical.resolverId, "property_catalog");
     assert.equal(wrongCandidate.result.replyText, `${label} pool fact.`);
     assert.equal(wrongCandidate.result.replyText.includes("barbecue"), false);
 
@@ -240,15 +260,46 @@ async function poolRoutingUsesGroundedPropertyCatalog() {
         taskId: "pool-missing-candidate",
         type: "availability",
         sourceText: `有${rawText}嗎？`,
-        rawText,
-        category: "room",
+        rawText: "",
+        category: "amenity",
         canonicalCandidate: null
       })
     });
-    const missingCanonical = missingCandidate.stage("canonical_request").items[0];
+    const missingCanonicalStage = missingCandidate.stage("canonical_request");
+    assert.ok(
+      missingCanonicalStage,
+      `missing-candidate pool must reach canonical_request; stages=${missingCandidate.diagnostics.map((item) => item.stage).join(",")}`
+    );
+    const missingCanonical = missingCanonicalStage.items[0];
     assert.equal(missingCanonical.capability, "pool");
     assert.equal(missingCanonical.canonicalEntity.canonicalId, "pool");
+    assert.equal(missingCanonical.canonicalEntity.category, "policy");
+    assert.equal(missingCanonical.resolverId, "property_catalog");
     assert.equal(missingCandidate.result.replyText, `${label} pool fact.`);
+  }
+
+  for (const [propertyId, label] of [
+    ["property_parking_alpha", "Parking Alpha"],
+    ["property_parking_beta", "Parking Beta"]
+  ]) {
+    const currentProperty = property(propertyId, label);
+    const missingCandidate = await execute({
+      currentProperty,
+      message: "有車位嗎？",
+      task: plannerTask({
+        taskId: "parking-missing-candidate",
+        type: "availability",
+        sourceText: "有車位嗎？",
+        rawText: "",
+        category: "amenity",
+        canonicalCandidate: null
+      })
+    });
+    const canonical = missingCandidate.stage("canonical_request").items[0];
+    assert.equal(canonical.capability, "parking");
+    assert.equal(canonical.canonicalEntity.canonicalId, "parking");
+    assert.equal(canonical.resolverId, "property_catalog");
+    assert.equal(missingCandidate.result.replyText, `${label} parking fact.`);
   }
 
   const detailedProperty = property("property_pool_details", "Pool Details");
@@ -287,7 +338,12 @@ async function poolRoutingUsesGroundedPropertyCatalog() {
       detailIntent,
       "catalog grounding must not erase a valid detail-specific request"
     );
-    assert.equal(detailed.stage("canonical_request").items[0].detailIntent, detailIntent);
+    const detailedCanonical = detailed.stage("canonical_request").items[0];
+    assert.equal(detailedCanonical.capability, "pool");
+    assert.equal(detailedCanonical.canonicalEntity.canonicalId, "pool");
+    assert.equal(detailedCanonical.canonicalEntity.category, "policy");
+    assert.equal(detailedCanonical.resolverId, "property_catalog");
+    assert.equal(detailedCanonical.detailIntent, detailIntent);
   }
 
   const ambiguousProperty = property("property_pool_ambiguous", "Pool Ambiguous");
@@ -300,16 +356,37 @@ async function poolRoutingUsesGroundedPropertyCatalog() {
       taskId: "pool-ambiguous",
       type: "availability",
       sourceText: "共同設施可以使用嗎？",
-      rawText: "共同設施",
-      category: "room",
+      rawText: "",
+      category: "amenity",
       canonicalCandidate: null
     })
   });
   const ambiguousCanonical = ambiguous.stage("canonical_request").items[0];
   assert.notEqual(ambiguousCanonical.capability, "pool");
+  assert.notEqual(ambiguousCanonical.capability, "parking");
+  assert.notEqual(ambiguousCanonical.capability, "bbq");
   assert.equal(ambiguousCanonical.canonicalEntity.canonicalId, null);
   assert.equal(ambiguous.result.replyText.includes("Pool Ambiguous pool fact."), false);
   assert.equal(ambiguous.result.replyText.includes("Pool Ambiguous barbecue fact."), false);
+
+  const unregistered = await execute({
+    currentProperty: property("property_pool_unregistered", "Pool Unregistered"),
+    message: "有滑水道嗎？",
+    task: plannerTask({
+      taskId: "pool-unregistered",
+      type: "availability",
+      sourceText: "有滑水道嗎？",
+      rawText: "",
+      category: "amenity",
+      canonicalCandidate: null
+    })
+  });
+  const unregisteredCanonical = unregistered.stage("canonical_request").items[0];
+  assert.notEqual(unregisteredCanonical.capability, "pool");
+  assert.notEqual(unregisteredCanonical.capability, "parking");
+  assert.equal(unregisteredCanonical.canonicalEntity.canonicalId, null);
+  assert.equal(unregistered.result.replyText.includes("Pool Unregistered pool fact."), false);
+  assert.equal(unregistered.result.replyText.includes("Pool Unregistered parking fact."), false);
 }
 
 async function locationFailureStageIsComposerFallbackState() {

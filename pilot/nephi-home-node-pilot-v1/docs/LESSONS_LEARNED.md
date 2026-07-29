@@ -133,3 +133,9 @@ Keep a repository-level deployment contract that selects the exact test-only ser
 A Composer rejection proves only that one proposed candidate is unusable. If a deterministic fallback replaces it, validate that replacement independently and pass only the final validation result to FinalDecision. Carrying the discarded candidate's rejection flag forward creates false handoffs while making trace output disagree with the actual text being sent.
 
 When repairing a Planner entity, do not infer from a property ID or a hardcoded answer. Use only a unique exact match in the current property's catalog, require a registered low-risk property-catalog capability, and leave ambiguous or ungrounded input on the existing safe path.
+
+## 2026-07-29 — Routing fixtures must preserve provider category shape
+
+A fixture that labels a real provider policy as an amenity can make capability acceptance look correct while production canonicalization rejects the entity and chooses an unrelated policy-compatible capability. Regression fixtures must pass through the same catalog builder and assert the resulting provider category before asserting routing.
+
+For entity-specific routing, derive capability, entity, resolver, and answer from one registered definition. Recover a missing Planner entity only from a unique exact alias in the current property catalog; conflicting, ambiguous, or unregistered text must not trigger a source-wide guess.

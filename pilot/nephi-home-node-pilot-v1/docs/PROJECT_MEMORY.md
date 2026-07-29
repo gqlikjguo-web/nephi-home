@@ -172,3 +172,11 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - The minimal `民宿在哪裡？` replay passes Planner, semantic/context validation, CanonicalRequest, FormalRequest, and the property-catalog executor. Its prior final handoff is reproduced only when the Composer candidate is rejected, proving it shares the stale fallback-state defect rather than an independent location defect.
 - The new three-case regression, related property-fact/location/Planner/Claim/FinalDecision/signed-webhook/runtime gates, Canonical Request golden gate, and one complete `npm.cmd test` pass with exit 0.
 - The branch remains pending review. The 90-run real-provider matrix was not rerun, and no deployment, Render, LINE, database, credential, onboarding, or formal-data operation occurred.
+
+## 2026-07-29 Provider-shaped pool and parking routing follow-up
+
+- The remaining pool failure was reproduced with the real provider shape: canonical `pool` is stored under catalog `policies` with `category=policy`. The previous amenity fixture did not exercise that contract.
+- The pool capability now accepts the provider policy category. Entity-specific canonical routes require their own registered candidate type, preventing a resolved or generic policy from falling through to `bbq`, `parking`, or another capability.
+- When Planner omits entity text, grounding may recover pool or parking only from one unique exact alias in the current property's catalog. Conflicting non-empty text, ambiguous aliases, and unregistered aliases remain on the safe unresolved path.
+- Two-property fixtures verify distinct answers and category fidelity. Targeted and related canonical/property-routing/Planner contracts plus one complete `npm.cmd test` pass locally with exit 0 and empty stderr.
+- No date, availability, Temporal, Composer, Claim Validator, FinalDecision, onboarding, LINE setup, credential, formal-data, Render, or production behavior was changed. The real-provider 90-run matrix was not rerun.

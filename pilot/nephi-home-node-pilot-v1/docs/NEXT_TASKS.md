@@ -115,3 +115,10 @@
 - Preserve real Claim Validator rejection, mandatory high-risk handoff, Canonical Temporal rejection, property isolation, and the single Canonicalizer boundary.
 - After review and separate test-only deployment authorization, rerun the complete 90-case real-provider matrix from the latest integrated commit. Do not infer 90/90 from local deterministic regressions.
 - Do not deploy, operate Render or LINE, change credentials, or modify onboarding/LINE setup/formal data in this implementation task.
+
+## 2026-07-29 Provider-shaped pool and parking routing follow-up
+
+- Review the `policy`-shaped pool fixture, single-definition canonical route, and unique exact source-grounding guard on `test-only/core-90-fixes`.
+- Preserve rejection for ambiguous and unregistered aliases, non-empty conflicting Planner entity text, and every capability outside the current property's catalog.
+- After review and separate authorization, deploy only the reviewed test-only commit and rerun the complete 90-case real-provider matrix from the beginning.
+- Do not deploy, rerun the 90-case matrix, operate Render or LINE, or modify credentials, onboarding, LINE setup, formal data, or production in this implementation task.

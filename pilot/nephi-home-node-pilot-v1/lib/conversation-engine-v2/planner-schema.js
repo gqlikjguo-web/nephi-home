@@ -55,15 +55,56 @@ function controlledRequestedOutputs(task) {
   return task.requestedOutputs;
 }
 
+function uniquelyResolvedCatalogEntityFromSource(catalog, sourceText) {
+  const source = normalizedText(sourceText);
+  if (!catalog || !source) return null;
+  const entities = [
+    ...(catalog.rooms || []),
+    ...(catalog.amenities || []),
+    ...(catalog.policies || []),
+    ...(catalog.faqs || [])
+  ];
+  const matches = new Map();
+  for (const entity of entities) {
+    const terms = [
+      entity.publicName,
+      entity.type,
+      ...(entity.aliases || []),
+      ...(entity.features || [])
+    ];
+    for (const term of terms) {
+      const normalizedTerm = normalizedText(term);
+      if (normalizedTerm.length < 2 || !source.includes(normalizedTerm)) continue;
+      const resolved = resolveEntity(catalog, {
+        category: "other",
+        rawText: term,
+        canonicalCandidate: null
+      });
+      if (resolved.status !== "resolved" || !resolved.entity) continue;
+      const matchKey = `${resolved.entity.category}\u0000${resolved.entity.canonicalId}`;
+      if (!matches.has(matchKey)) {
+        matches.set(matchKey, { entity: resolved.entity, rawText: String(term) });
+      }
+    }
+  }
+  return matches.size === 1 ? [...matches.values()][0] : null;
+}
+
 function groundedPropertyFactTask(task, catalog) {
   const entity = task && task.entity;
-  if (!catalog || !entity || !entity.rawText) return null;
-  const grounded = resolveEntity(catalog, {
-    category: "other",
-    rawText: entity.rawText,
-    canonicalCandidate: null
-  });
-  const resolved = grounded && grounded.status === "resolved" && grounded.entity;
+  if (!catalog || !entity) return null;
+  const grounded = entity.rawText
+    ? resolveEntity(catalog, {
+      category: "other",
+      rawText: entity.rawText,
+      canonicalCandidate: null
+    })
+    : null;
+  const sourceGrounded = entity.rawText
+    ? null
+    : uniquelyResolvedCatalogEntityFromSource(catalog, task.sourceText);
+  const resolved = grounded && grounded.status === "resolved" && grounded.entity
+    || sourceGrounded && sourceGrounded.entity;
   const definition = resolved && getCapabilityDefinition(resolved.canonicalId);
   if (!resolved || !definition
     || definition.resolverId !== "property_catalog"
@@ -91,6 +132,7 @@ function groundedPropertyFactTask(task, catalog) {
     stayCandidate: null,
     entity: {
       ...entity,
+      rawText: entity.rawText || sourceGrounded && sourceGrounded.rawText || "",
       category: resolved.category,
       canonicalCandidate: resolved.canonicalId
     }

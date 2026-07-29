@@ -168,3 +168,11 @@
 **Reason:** Retaining rejection state from a discarded Composer candidate converted valid property-backed deterministic answers into `claim_validation_failed` handoffs, including location replies that had already passed every earlier stage.
 
 **Constraint:** Every final candidate still passes Claim Validator. If deterministic fallback validation fails, the existing `claim_validation_failed` handoff remains mandatory. Composer text rejection, exception details, and fallback selection cannot weaken Claim Validator, Resolver authority, high-risk handoff, or property isolation.
+
+## D-018 — Entity-specific property capabilities require one catalog-backed definition
+
+**Decision:** When a property catalog uniquely resolves an entity such as `pool` or `parking`, capability, canonical entity, accepted category, resolver, and answer must all come from that entity's single capability definition. The pool definition accepts the provider's real `policy` category in addition to its existing categories.
+
+**Reason:** The real pool record is a policy. Rejecting that category caused Canonicalizer to select another policy-compatible capability such as `bbq`, while an amenity-shaped test fixture concealed the mismatch. Separately, a missing Planner candidate could discard a uniquely named catalog fact before canonicalization.
+
+**Constraint:** Source-text grounding is allowed only when Planner leaves entity text empty and exactly one registered low-risk property-catalog entity resolves through an exact alias in the current property's catalog. Non-empty conflicting entity text, ambiguous aliases, and unregistered aliases remain unresolved; generic candidate matching cannot manufacture an entity-specific capability.
