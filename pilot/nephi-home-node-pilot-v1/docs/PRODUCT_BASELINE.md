@@ -95,3 +95,5 @@
 - Shared JSON and PostgreSQL availability paths accept property-scoped room IDs and formal bundle IDs without assuming a property name, room count, room number, or bundle identifier.
 - Updating a formal bundle applies only to its stored member-room relation. A missing bundle relation is rejected rather than inferred.
 - Shared PostgreSQL seed logic is explicit, idempotent, and property-parameterized; representative operator fixtures may retain real identifiers but are not runtime routing rules.
+- New friendly-operator intake starts only from a platform-admin-issued, expiring and revocable invitation. One token authorizes one staging application; invalid, expired, revoked, or cross-application tokens are rejected.
+- Draft save/read-back, idempotent submit, and admin review continue to use the existing onboarding staging and review workflow. No unapproved submission becomes a formal property, guest-facing fact, LINE binding, or automatic-reply source.

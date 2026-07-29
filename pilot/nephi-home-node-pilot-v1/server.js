@@ -450,7 +450,8 @@ function createRequestHandler(service, options = {}) {
         return sendStatic(response, slugRoute[2] ? "admin.html" : "guest.html", publicBrand);
       }
 
-      if(pathname==="/api/public/onboarding/drafts"&&request.method==="POST"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");return sendData(response,onboarding.createDraft(),201);}
+      if(pathname==="/api/public/onboarding/drafts"&&request.method==="POST"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");throw new AppError(401,"ONBOARDING_INVITE_REQUIRED","請使用平台提供的有效邀請連結");}
+      if(pathname==="/api/public/onboarding/invite"&&request.method==="GET"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");return sendData(response,onboarding.resolveInvitation(url.searchParams.get("token")));}
       if(pathname==="/api/public/onboarding/resume"&&request.method==="GET"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");return sendData(response,onboarding.resolveResume(url.searchParams.get("token")));}
       const draftMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)$/.exec(pathname),previewMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/preview$/.exec(pathname),submitMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/submit$/.exec(pathname);const draftToken=request.headers["x-onboarding-draft-token"];
       if(draftMatch&&request.method==="GET")return sendData(response,await onboarding.getDraft(draftMatch[1],draftToken));
@@ -462,11 +463,13 @@ function createRequestHandler(service, options = {}) {
 
       if(pathname.startsWith("/api/admin/onboarding/")){
         const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");
+        if(pathname==="/api/admin/onboarding/invitations"&&request.method==="POST"){const body=await readJsonBody(request),created=onboarding.createInvitation(body,session),{inviteToken,...safeCreated}=created;return sendData(response,{...safeCreated,inviteUrl:`${publicBrand.publicBaseUrl}/onboarding?invite=${encodeURIComponent(inviteToken)}`},201);}
         if(pathname==="/api/admin/onboarding/applications"&&request.method==="GET")return sendData(response,{items:onboarding.list().map(x=>({...x,completeness:require("./lib/onboarding-service").completeness(x)}))});
         if(pathname==="/api/admin/onboarding/properties"&&request.method==="GET")return sendData(response,{items:onboarding.listProperties(session)});
-        const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reopen-for-changes|reject|approve|resume-link))?$/.exec(pathname);
+        const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reopen-for-changes|reject|approve|resume-link|revoke-invite))?$/.exec(pathname);
         if(review&&request.method==="GET"&&!review[2])return sendData(response,onboarding.get(review[1]));
         if(review&&request.method==="POST"){
+          if(review[2]==="revoke-invite")return sendData(response,onboarding.revokeInvitation(review[1]));
           if(review[2]==="resume-link"){const issued=onboarding.issueResumeLink(review[1]);return sendData(response,{resumeUrl:`${publicBrand.publicBaseUrl}/onboarding?resume=${encodeURIComponent(issued.resumeToken)}`,expiresAt:issued.expiresAt});}
           const body=await readJsonBody(request);
           if(review[2]==="approve"){const approved=onboarding.approve(review[1],body,session);if(approved.approvalMode==="existing")return sendData(response,approved);return sendData(response,{...approved,adminSetupUrl:`${publicBrand.publicBaseUrl}/admin/setup?token=${encodeURIComponent(approved.adminSetupToken)}`});}

@@ -14,6 +14,20 @@
       <h1>業者導入審核</h1>
       <p>此頁沿用已登入的業者後台 session，且需要平台管理者授權。</p>
     </header>
+    <section class="invite-panel">
+      <h2>建立友好業者邀請</h2>
+      <p>邀請只建立 onboarding 草稿，不會建立正式旅宿、啟用自動回覆或綁定 LINE。</p>
+      <label>有效天數
+        <select id="inviteDays">
+          <option value="3">3 天</option>
+          <option value="7" selected>7 天</option>
+          <option value="14">14 天</option>
+          <option value="30">30 天</option>
+        </select>
+      </label>
+      <button id="createInvite" type="button">建立並複製邀請連結</button>
+      <p id="inviteResult" role="status"></p>
+    </section>
     <section>
       <button id="refresh" type="button">重新整理</button>
       <div id="applications"></div>

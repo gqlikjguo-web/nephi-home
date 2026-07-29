@@ -46,3 +46,11 @@
 - Channel Secret 與 Access Token 以 AES-256-GCM 加密保存；加密金鑰只來自 `JUNZAN_LINE_CREDENTIAL_ENCRYPTION_KEY`，不得保存至資料庫、Repository、log 或 API response。
 - 缺少加密金鑰時，新 binding 的建立、credential 更新與 runtime 使用必須拒絕；既有 legacy test-only env webhook 不受影響。
 - 管理 API 僅限 platform admin，且只能回傳是否已設定、webhook key 與 enabled 狀態。
+
+## Onboarding intake invitations
+
+- Initial onboarding access is issued only by an authenticated platform administrator. A public request without an invitation cannot create a staging draft.
+- The database stores only the invitation token hash. Each token is bound to one onboarding application and has an explicit expiry and revocation state.
+- Application IDs or frontend-supplied property IDs are never authorization. A token from one application cannot read or write another application.
+- Unapproved onboarding data remains in staging and must not create formal property facts, LINE bindings, availability, or automatic replies.
+- Invitation tokens, draft tokens, cookies, contact details, credentials, and raw request bodies must not be written to application logs.

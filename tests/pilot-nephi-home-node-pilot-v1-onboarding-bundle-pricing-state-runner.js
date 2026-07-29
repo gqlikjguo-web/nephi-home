@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -10,7 +11,7 @@ const { migratePostgres } = require(path.join(root, "lib/providers/postgres-migr
 const { seedNephiPostgres } = require(path.join(root, "tests/helpers/nephi-postgres-seed"));
 const { openPostgres } = require(path.join(root, "lib/providers/postgres-client"));
 const { createPostgresProviders } = require(path.join(root, "lib/providers/postgres-providers"));
-const { upsertAdminUser } = require(path.join(root, "lib/admin-auth"));
+const { upsertAdminUser, sessionTokenHash } = require(path.join(root, "lib/admin-auth"));
 const { createApp } = require(path.join(root, "server"));
 
 const rooms = Array.from({ length: 5 }, (_, index) => ({
@@ -50,8 +51,16 @@ async function request(url, options = {}) {
   const running = await app.start(0, "127.0.0.1");
   const base = running.url;
   try {
-    let result = await request(`${base}/api/public/onboarding/drafts`, { method: "POST" });
-    const { applicationId, draftToken } = result.body.data;
+    const applicationId = crypto.randomUUID();
+    const draftToken = crypto.randomBytes(32).toString("base64url");
+    providers.onboarding.createOnboardingInvitation(
+      applicationId,
+      sessionTokenHash(draftToken),
+      new Date(Date.now() + 86400000).toISOString(),
+      "nephi_home",
+      "platform"
+    );
+    let result;
     const draftHeaders = { "content-type": "application/json", "x-onboarding-draft-token": draftToken };
     result = await request(`${base}/api/public/onboarding/drafts/${applicationId}`, { method: "PATCH", headers: draftHeaders, body: JSON.stringify(payload) });
     assert.equal(result.response.status, 200);

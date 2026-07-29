@@ -136,3 +136,11 @@
 **Reason:** Base-era onboarding, JSON fallback, availability import, PostgreSQL compatibility, and seed helpers still embedded one property and a fixed room set even though the active conversation Engine was property-neutral.
 
 **Constraint:** Missing authorization or bundle relations are rejected rather than inferred. Shared seed code accepts an explicit property graph; property-specific initialization values may exist only in explicitly selected fixtures or historical migrations, never as runtime branches.
+
+## 2026-07-29 — Onboarding intake starts from a scoped invitation
+
+**Decision:** A new operator onboarding submission may be created only by a platform administrator issuing an expiring, revocable invitation. The invitation token hash is attached to one staging application and is the only authority for that application's draft read/write operations.
+
+**Reason:** The former public form created an unrestricted draft on first save. Although fresh save and submit worked, that path could not prove invite expiry, revocation, or operator-to-operator isolation and therefore was not a safe friendly-operator intake boundary.
+
+**Constraint:** The browser-supplied property ID is never authorization. Drafts, rooms, bundles, pricing, rules, location, and contact details remain in existing onboarding staging tables until an existing admin approval transaction promotes them. Tokens, cookies, personal data, and credentials must not enter logs.

@@ -115,3 +115,9 @@ Create one immutable canonical object before executable state and make each down
 Removing property-specific routing from the active conversation Engine is insufficient when onboarding, import, JSON fallback, PostgreSQL compatibility, or seed utilities still assume one property or a fixed room list. Those support paths can silently reintroduce the same coupling.
 
 Test both source neutrality and behavior with two properties that use different room and bundle IDs. Keep historical values in explicit fixtures or migrations, and make production code derive authorization and inventory only from authenticated scope and formal property data.
+
+## 2026-07-29 — A working fresh form is not proof of a safe intake boundary
+
+A fresh browser could save and submit the existing onboarding form, but that success bypassed the required invitation authority because the page silently created an unrestricted draft. Reproducing only the happy path would have hidden expiry, revocation, cross-operator isolation, and stale-link behavior.
+
+Treat invitation resolution and draft persistence as separate contracts: issue one unguessable token from authenticated platform scope, store only its hash, bind it to one staging application, and test invalid, expired, revoked, and cross-application use before testing field persistence.

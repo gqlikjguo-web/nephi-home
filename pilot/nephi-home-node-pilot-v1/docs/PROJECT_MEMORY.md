@@ -146,3 +146,9 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - JSON/PostgreSQL availability and bundle updates now derive inventory and members from property-scoped records. Shared import and seed code no longer assumes a room count, room number, bundle ID, or property ID.
 - Historical Nephi initialization identifiers remain only in explicit fixtures/migrations; they are not imported as routing rules.
 - The implementation remains local pending final verification and review. The three draft Canonical Request documents and historical verification artifacts remain untracked and excluded.
+
+## 2026-07-29 Friendly operator onboarding intake
+
+- The unrestricted public draft-creation boundary was replaced with platform-admin-issued, expiring, revocable invitation links.
+- Existing onboarding staging tables remain authoritative for drafts and submissions; formal property data is unchanged until the existing approval workflow runs.
+- The targeted gate covers partial draft save, refresh/read-back, idempotent submit, invalid/expired/revoked tokens, Alpha/Beta isolation, transaction rollback, admin visibility, frontend preservation, and formal-data non-pollution.

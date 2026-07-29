@@ -89,6 +89,12 @@
 - Preserve property-specific values only in fixtures or historical migrations; do not restore a runtime property whitelist or implicit room/bundle mapping.
 - Do not push, deploy, operate Render or LINE, read/change credentials or environment variables, run a production seed, or modify formal data without separate authorization.
 
+## 2026-07-29 Friendly operator onboarding intake
+
+- Review the invitation-scoped intake diff and targeted RED/GREEN evidence.
+- After all local gates pass, deploy only the dedicated test-only branch and verify Alpha/Beta draft isolation, read-back, submission, admin visibility, and unchanged formal property data.
+- Do not reuse an invitation across applications or restore unauthenticated public draft creation.
+
 ## 2026-07-27 Bounded Planner provider retry
 
 - Review the local two-attempt provider boundary, category allowlist, bounded delay, retry diagnostics, and no-retry matrix.

@@ -115,3 +115,8 @@
 
 - Replaced hardcoded onboarding property scope, room slots, bundle membership, availability imports, and PostgreSQL seed guards with authenticated scope and property-scoped inventory relations.
 - Added a permanent property-neutral runtime regression covering two-property authorization, distinct bundle members, missing mappings, explicit idempotent seed input, and forbidden runtime identifiers.
+
+## 2026-07-29 — Invitation-scoped onboarding submissions
+
+- Added platform-admin-issued onboarding invitations with expiry and revocation, partial draft persistence, safe read-back, idempotent submission, and admin review visibility on the existing staging workflow.
+- Rejected unauthenticated draft creation and added permanent isolation, rollback, invalid-field, frontend-preservation, and formal-data non-pollution coverage.
