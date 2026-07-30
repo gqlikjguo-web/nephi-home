@@ -135,3 +135,8 @@
 - Preserve automatic recovery only for one unexpired pending task and a structurally isolated missing slot. Explicit new questions, multiple pending tasks, ambiguity, and expired state must not be guessed.
 - After separate authorization, deploy only the reviewed test-only commit and run bounded real-provider multi-turn smoke sequences before any broader validation.
 - Do not deploy, operate Render or LINE, read or change credentials, or modify formal property data in the implementation task.
+
+## 2026-07-31 Unique core convergence
+
+- Complete final local verification with `npm.cmd test`, review the exact diff for secrets and contract bypasses, then commit and push only `codex/unique-core-convergence`.
+- No deployment, merge, Render/LINE operation, credential access, or production/formal-data mutation is authorized.

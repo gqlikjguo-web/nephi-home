@@ -207,3 +207,9 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - Same-turn duplicate task IDs fail at the Planner schema boundary. Accepted end relations persist `cancelled` on only the referenced task, including silent no-reply turns; unresolved lodging products persist `needs_human` instead of failing the V3 write.
 - Event replay coverage uses the real Engine plus the persisted atomic event claim: a concurrent duplicate and a replay after coordinator restart do not perform a second state write.
 - Phase 1 contracts, provider-shaped two-property fixtures, runtime incident regressions, event replay, existing core/LINE/onboarding/admin gates, and the complete repository test suite pass locally. The branch is pending review and was not deployed.
+
+## 2026-07-31 Unique core convergence
+
+- Local convergence is in final verification: V3 reducer owns task/product/context transitions, new products require exact property-catalog resolution, and Canonicalizer consumes only the approved transition result.
+- Planner entities that are empty, ambiguous, unregistered, or forged remain unresolved; no full-source alias scan or capability-ID-specific repair is allowed.
+- Before release review, require the complete `npm.cmd test` result from the final worktree state. Do not deploy, merge, operate Render/LINE, or access credentials/formal data.

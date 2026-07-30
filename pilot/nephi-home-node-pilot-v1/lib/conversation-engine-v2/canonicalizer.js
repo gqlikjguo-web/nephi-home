@@ -48,43 +48,6 @@ function sourceEvidenceRefsForRelation(relation) {
   }));
 }
 
-function approvedTemporalContext(snapshot, relation, plannerStay) {
-  if (!relation || relation.stateAction !== "continue" || !relation.requestCycleId) return null;
-  if (plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none") return null;
-  const cycle = (snapshot && snapshot.cycles || []).find((item) => item.requestCycleId === relation.requestCycleId);
-  if (!cycle || !cycle.temporalResult || cycle.temporalResult.resolutionStatus !== "resolved") return null;
-  const stay = cycle && cycle.confirmedInputs && cycle.confirmedInputs.stay;
-  if (!stay) return null;
-  const temporalFields = cycle && cycle.temporalResult && cycle.temporalResult.fields || {};
-  return {
-    checkIn: stay.checkIn || null,
-    checkOut: stay.checkOut || null,
-    nights: Number.isInteger(stay.nights) ? stay.nights : null,
-    sourceEvidenceRefs: [
-      ...(temporalFields.checkIn && temporalFields.checkIn.sourceEvidenceRefs || []),
-      ...(temporalFields.checkOut && temporalFields.checkOut.sourceEvidenceRefs || []),
-      ...(temporalFields.nights && temporalFields.nights.sourceEvidenceRefs || []),
-      ...(cycle && cycle.sourceEvidenceRefs || [])
-    ]
-  };
-}
-
-function approvedTopicCandidate(snapshot, relation, task) {
-  const entity = task && task.entity || {};
-  if (entity.canonicalCandidate !== null && entity.canonicalCandidate !== undefined) return entity;
-  if (!relation || relation.stateAction !== "continue" || !relation.requestCycleId) return entity;
-  const cycle = (snapshot && snapshot.cycles || []).find((item) => item.requestCycleId === relation.requestCycleId);
-  const topic = cycle && cycle.confirmedInputs && cycle.confirmedInputs.topic;
-  const topicDefinition = topic && getCapabilityDefinition(topic.capabilityType);
-  if (!topic || !topic.canonicalId || !topicDefinition
-    || !topicDefinition.acceptedCandidateTypes.includes(task.type)) return entity;
-  return {
-    ...entity,
-    category: topic.category || entity.category || "other",
-    canonicalCandidate: topic.canonicalId
-  };
-}
-
 function canonicalEntity(catalog, candidate, taskType) {
   const genericInventory = [...INVENTORY_CANDIDATE_TYPES, "available_dates"].includes(taskType)
     && candidate.category === "other"
@@ -167,27 +130,6 @@ function confirmedInventory(entity) {
   };
 }
 
-function lodgingProductForEntity(entity) {
-  if (!entity || entity.status !== "resolved" || !entity.canonicalId) {
-    return createLodgingProduct({ productType: "any" });
-  }
-  if (entity.category === "bundle") {
-    return createLodgingProduct({
-      productType: "bundle",
-      productId: entity.canonicalId,
-      bundleId: entity.canonicalId
-    });
-  }
-  if (entity.category === "room") {
-    return createLodgingProduct({
-      productType: "room_type",
-      productId: entity.canonicalId,
-      roomTypeId: entity.canonicalId
-    });
-  }
-  return createLodgingProduct({ productType: "any" });
-}
-
 function canonicalizeExecutionItem({
   item,
   relation,
@@ -199,7 +141,10 @@ function canonicalizeExecutionItem({
   const plannerTask = item.task;
   const plannerStay = normalizedTaskStay(plannerTask);
   const evidenceRefs = sourceEvidenceRefsForRelation(relation);
-  const approvedContext = approvedTemporalContext(contextSnapshot, relation, plannerStay);
+  const reducerContext = item.transition && item.transition.contextTask || null;
+  const approvedContext = reducerContext && !plannerStay.dateExpression.rawText
+    ? { checkIn: reducerContext.checkIn, checkOut: reducerContext.checkOut, nights: null, sourceEvidenceRefs: [] }
+    : null;
   const temporalState = resolveCanonicalTemporal({
     guestMessage,
     candidateSourceText: plannerTask.sourceText,
@@ -219,14 +164,15 @@ function canonicalizeExecutionItem({
     allowContextReuse: Boolean(approvedContext),
     applicableTaskIds: [plannerTask.taskId]
   });
-  const candidateEntity = approvedTopicCandidate(contextSnapshot, relation, plannerTask);
+  const candidateEntity = plannerTask.entity;
   const entity = canonicalEntity(catalog, candidateEntity, plannerTask.type);
   const definition = selectCapabilityDefinition(plannerTask, entity);
+  const reducerProduct = item.transition && item.transition.approvedProduct;
   const canonicalRequest = createCanonicalRequest({
     taskId: plannerTask.taskId,
     capability: definition.capability,
     canonicalEntity: entity,
-    lodgingProduct: lodgingProductForEntity(entity),
+    lodgingProduct: createLodgingProduct(reducerProduct || { productType: "any" }),
     detailIntent: plannerTask.detailIntent || "general",
     temporalState,
     stayDependency: definition.stayDependency,

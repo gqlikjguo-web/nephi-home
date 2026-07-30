@@ -271,11 +271,10 @@ async function poolRoutingUsesGroundedPropertyCatalog() {
       `missing-candidate pool must reach canonical_request; stages=${missingCandidate.diagnostics.map((item) => item.stage).join(",")}`
     );
     const missingCanonical = missingCanonicalStage.items[0];
-    assert.equal(missingCanonical.capability, "pool");
-    assert.equal(missingCanonical.canonicalEntity.canonicalId, "pool");
-    assert.equal(missingCanonical.canonicalEntity.category, "policy");
-    assert.equal(missingCanonical.resolverId, "property_catalog");
-    assert.equal(missingCandidate.result.replyText, `${label} pool fact.`);
+    assert.notEqual(missingCanonical.capability, "pool", "an empty Planner entity must not be recovered by scanning the complete source text");
+    assert.equal(missingCanonical.canonicalEntity.canonicalId, null);
+    assert.equal(missingCandidate.result.finalDecision.action, "handoff");
+    assert.equal(missingCandidate.result.replyText.includes(`${label} pool fact.`), false);
   }
 
   for (const [propertyId, label] of [
@@ -296,10 +295,10 @@ async function poolRoutingUsesGroundedPropertyCatalog() {
       })
     });
     const canonical = missingCandidate.stage("canonical_request").items[0];
-    assert.equal(canonical.capability, "parking");
-    assert.equal(canonical.canonicalEntity.canonicalId, "parking");
-    assert.equal(canonical.resolverId, "property_catalog");
-    assert.equal(missingCandidate.result.replyText, `${label} parking fact.`);
+    assert.notEqual(canonical.capability, "parking", "an empty Planner entity must not be recovered by scanning the complete source text");
+    assert.equal(canonical.canonicalEntity.canonicalId, null);
+    assert.equal(missingCandidate.result.finalDecision.action, "handoff");
+    assert.equal(missingCandidate.result.replyText.includes(`${label} parking fact.`), false);
   }
 
   const detailedProperty = property("property_pool_details", "Pool Details");
@@ -425,13 +424,10 @@ async function parkingUnresolvablePlannerEntityUsesUniqueSourceAlias() {
       `${shape.category} provider shape must reach canonical_request; stages=${trace.diagnostics.map((item) => item.stage).join(",")}`
     );
     const canonical = canonicalStage.items[0];
-    assert.equal(canonical.capability, "parking");
-    assert.equal(canonical.canonicalEntity.canonicalId, "parking");
-    assert.equal(canonical.canonicalEntity.category, "amenity");
-    assert.equal(canonical.resolverId, "property_catalog");
-    assert.equal(canonical.riskLevel, "low");
-    assert.equal(canonical.stayDependency, false);
-    assert.equal(trace.result.replyText, `${shape.label} parking fact.`);
+    assert.notEqual(canonical.capability, "parking", "a non-exact Planner entity must not be recovered by scanning the complete source text");
+    assert.equal(canonical.canonicalEntity.canonicalId, null);
+    assert.equal(trace.result.finalDecision.action, "handoff");
+    assert.equal(trace.result.replyText.includes(`${shape.label} parking fact.`), false);
   }
 
   const conflictingEntity = await execute({
@@ -447,15 +443,12 @@ async function parkingUnresolvablePlannerEntityUsesUniqueSourceAlias() {
     })
   });
   const conflictingSemantic = conflictingEntity.stage("semantic_contract").outputTasks[0];
-  assert.equal(conflictingSemantic.type, "unknown");
-  assert.equal(conflictingSemantic.canonicalCandidate, null);
-  assert.equal(
-    conflictingEntity.stage("semantic_contract").semanticValidation.rejectedTasks[0].reason,
-    "property_catalog_entity_conflict"
-  );
-  assert.equal(conflictingEntity.result.finalDecision.action, "handoff");
+  assert.equal(conflictingSemantic.type, "amenity");
+  assert.equal(conflictingSemantic.canonicalCandidate, "bbq");
+  assert.equal(conflictingEntity.stage("semantic_contract").semanticValidation.repairedTasks[0].reason, "property_catalog_entity_grounding");
+  assert.equal(conflictingEntity.result.finalDecision.action, "reply");
   assert.equal(conflictingEntity.result.replyText.includes("parking fact."), false);
-  assert.equal(conflictingEntity.result.replyText.includes("barbecue fact."), false);
+  assert.equal(conflictingEntity.result.replyText.includes("barbecue fact."), true, "a uniquely grounded entity must use its registered capability even when the Planner type is inaccurate");
 
   const ambiguousProperty = property("property_parking_ambiguous_source", "Parking Ambiguous Source");
   ambiguousProperty.semanticCatalog.aliases.parking = ["共用設施"];

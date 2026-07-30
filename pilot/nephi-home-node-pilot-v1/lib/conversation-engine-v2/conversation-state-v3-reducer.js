@@ -10,6 +10,7 @@ const {
 const {
   getCapabilityDefinition
 } = require("./capability-registry");
+const { resolveEntity } = require("./entity-resolver");
 
 const PENDING_STATUSES = new Set(["pending", "needs_clarification"]);
 const CONTEXT_EXCLUDED_STATUSES = new Set(["expired", "cancelled"]);
@@ -77,6 +78,15 @@ function temporalForTask(task) {
       : null,
     fields: {}
   };
+}
+
+function approvedProductForTask(task, catalog) {
+  const entity = task && task.entity || {};
+  const resolved = catalog && resolveEntity(catalog, entity);
+  const approved = resolved && resolved.status === "resolved" && resolved.entity;
+  if (approved && approved.category === "bundle") return { productType: "bundle", productId: approved.canonicalId, roomTypeId: null, bundleId: approved.canonicalId };
+  if (approved && approved.category === "room") return { productType: "room_type", productId: approved.canonicalId, roomTypeId: approved.canonicalId, bundleId: null };
+  return { productType: "any", productId: null, roomTypeId: null, bundleId: null };
 }
 
 function buildContextSnapshotV3(state, scope = {}) {
@@ -148,11 +158,6 @@ function requestedOutputsForTask(task) {
 }
 
 function plannerTaskFromState(stateTask, currentPlannerTask) {
-  const currentEntity = currentPlannerTask && currentPlannerTask.entity || {};
-  const hasCurrentEntity = Boolean(
-    currentEntity.canonicalCandidate
-    || String(currentEntity.rawText || "").trim()
-  );
   return {
     ...clone(currentPlannerTask),
     candidateIndex: currentPlannerTask.candidateIndex,
@@ -170,22 +175,23 @@ function plannerTaskFromState(stateTask, currentPlannerTask) {
       "room_options",
       "capacity"
     ].includes(stateTask.taskType),
-    entity: hasCurrentEntity
-      ? clone(currentEntity)
-      : {
-        category: stateTask.entityCategory || (
-          stateTask.productType === "bundle"
-            ? "bundle"
-            : stateTask.productType === "room_type"
-              ? "room"
-              : "other"
-        ),
-        rawText: "",
-        canonicalCandidate: stateTask.entityId
-          || stateTask.productId
-          || null,
-        confidence: 1
-      }
+    // The reducer has approved this as a continuation.  Its persisted task,
+    // rather than the untrusted Planner entity text, is therefore the sole
+    // authority for the resumed task's topic and product.
+    entity: {
+      category: stateTask.entityCategory || (
+        stateTask.productType === "bundle"
+          ? "bundle"
+          : stateTask.productType === "room_type"
+            ? "room"
+            : "other"
+      ),
+      rawText: "",
+      canonicalCandidate: stateTask.entityId
+        || stateTask.productId
+        || null,
+      confidence: 1
+    }
   };
 }
 
@@ -307,6 +313,7 @@ function decideContextExecutionV3({
   state,
   relations = [],
   plannerTasks = [],
+  catalog,
   now
 }) {
   const autoRelation = automaticPendingRelation(
@@ -350,7 +357,17 @@ function decideContextExecutionV3({
         return [{
           candidateIndex: task.candidateIndex,
           requestCycleId: target.taskId,
-          task: plannerTaskFromState(target, task)
+          task: plannerTaskFromState(target, task),
+          transition: {
+            reasonCode: relation.reasonCode || "continue_existing_task",
+            contextTask: target,
+            approvedProduct: inventoryForTask(target).mode === "bundle_only" ? { productType: "bundle", productId: target.productId, roomTypeId: null, bundleId: target.bundleId } : inventoryForTask(target).mode === "room_only" ? { productType: "room_type", productId: target.productId, roomTypeId: target.roomTypeId, bundleId: null } : { productType: "any", productId: null, roomTypeId: null, bundleId: null },
+            slotSources: {
+              checkIn: task.stayCandidate && task.stayCandidate.checkInCandidate ? "current_turn" : target.checkIn ? "completed_or_pending_context" : "absent",
+              checkOut: task.stayCandidate && (task.stayCandidate.checkOutCandidate || Number.isInteger(task.stayCandidate.nightsCandidate)) ? "current_turn" : target.checkOut ? "completed_or_pending_context" : "absent",
+              product: task.entity && task.entity.canonicalCandidate ? "current_turn" : target.productId ? "completed_or_pending_context" : "absent"
+            }
+          }
         }];
       }
     }
@@ -364,7 +381,8 @@ function decideContextExecutionV3({
       candidateIndex: task.candidateIndex,
       requestCycleId: relation && relation.requestCycleId
         || newRequestCycleId,
-      task
+      task,
+      transition: { reasonCode: "new_task", contextTask: null, approvedProduct: approvedProductForTask(task, catalog), slotSources: { checkIn: task.stayCandidate && task.stayCandidate.checkInCandidate ? "current_turn" : "absent", checkOut: task.stayCandidate && (task.stayCandidate.checkOutCandidate || Number.isInteger(task.stayCandidate.nightsCandidate)) ? "current_turn" : "absent", product: task.entity && task.entity.canonicalCandidate ? "current_turn" : "absent" } }
     }];
   });
   const primary = autoRelation || effectiveRelations.find(

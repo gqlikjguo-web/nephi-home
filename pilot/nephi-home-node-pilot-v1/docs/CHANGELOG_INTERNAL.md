@@ -162,3 +162,9 @@
 - Standardized lodging products and Resolver inputs, including pending and executable bundle availability.
 - Unified active and legacy FormalRequest readiness on the Phase 1 readiness contract.
 - Added explicit end-state cancellation, same-turn duplicate task-ID rejection, unresolved-product safe state, and persisted event-replay coverage across coordinator restart.
+
+## 2026-07-31 — Unique core convergence
+
+- Removed legacy full-source alias recovery and canonical-ID-specific parking, pool, and location task repairs.
+- Made V3 reducer transitions authoritative for continuation topic/product and catalog-validated for new room/bundle products; Canonicalizer now consumes that approved result.
+- Replaced stale semantic expectations with data-driven resolved/unresolved, property isolation, mixed-result, follow-up, and forged-product regressions.

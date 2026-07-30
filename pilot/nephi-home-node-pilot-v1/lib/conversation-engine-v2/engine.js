@@ -439,6 +439,7 @@ class ConversationEngineV2 {
       state: previous,
       relations: contextValidation.relations,
       plannerTasks: plannerOutput.tasks,
+      catalog,
       now: scope.now
     });
     this.trace(traceId, "pending_request", { action: contextExecution.resumedPending ? "resumed" : "unchanged", reasonCode: contextExecution.contextDecision.reasonCode, capability: "", missingFields: [] });

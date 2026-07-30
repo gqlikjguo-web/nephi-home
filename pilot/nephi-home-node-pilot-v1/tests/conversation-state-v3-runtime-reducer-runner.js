@@ -224,7 +224,13 @@ const bundleFollowup = decideContextExecutionV3({
 assert.equal(bundleFollowup.executionItems[0].requestCycleId, "availability-task");
 assert.equal(
   bundleFollowup.executionItems[0].task.entity.canonicalCandidate,
-  "alpha-whole-house"
+  null,
+  "a continue relation must preserve the reducer-selected task topic instead of using the Planner candidate to transition products"
+);
+assert.deepEqual(
+  bundleFollowup.executionItems[0].transition.approvedProduct,
+  { productType: "any", productId: null, roomTypeId: null, bundleId: null },
+  "a continue relation must keep the reducer-approved product"
 );
 
 const executionConditions = executionConditionsV3(previous, {

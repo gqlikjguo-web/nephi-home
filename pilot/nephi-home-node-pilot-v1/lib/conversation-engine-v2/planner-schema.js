@@ -50,50 +50,9 @@ function validStayCandidate(value) {
     && (value.guestCountCandidate === null || Number.isInteger(value.guestCountCandidate) && value.guestCountCandidate >= 1 && value.guestCountCandidate <= 100));
 }
 function controlledRequestedOutputs(task) {
-  if (task.entity && task.entity.canonicalCandidate === "location") return ["map_url"];
+  if (task.entity && task.entity.category === "transport") return ["map_url"];
   if (["amenity", "policy", "property_fact"].includes(task.type)) return [task.detailIntent === "general" ? "answer" : task.detailIntent];
   return task.requestedOutputs;
-}
-
-function uniquelyResolvedCatalogEntityFromSource(catalog, sourceText) {
-  const source = normalizedText(sourceText);
-  if (!catalog || !source) return { status: "not_found", match: null };
-  const entities = [
-    ...(catalog.rooms || []),
-    ...(catalog.amenities || []),
-    ...(catalog.policies || []),
-    ...(catalog.faqs || [])
-  ];
-  const matches = new Map();
-  for (const entity of entities) {
-    const terms = [
-      entity.publicName,
-      entity.type,
-      ...(entity.aliases || []),
-      ...(entity.features || [])
-    ];
-    for (const term of terms) {
-      const normalizedTerm = normalizedText(term);
-      if (normalizedTerm.length < 2 || !source.includes(normalizedTerm)) continue;
-      const resolved = resolveEntity(catalog, {
-        category: "other",
-        rawText: term,
-        canonicalCandidate: null
-      });
-      if (resolved.status !== "resolved" || !resolved.entity) continue;
-      const matchKey = `${resolved.entity.category}\u0000${resolved.entity.canonicalId}`;
-      if (!matches.has(matchKey)) {
-        matches.set(matchKey, { entity: resolved.entity, rawText: String(term) });
-      }
-    }
-  }
-  if (matches.size === 1) {
-    return { status: "resolved", match: [...matches.values()][0] };
-  }
-  return {
-    status: matches.size > 1 ? "ambiguous" : "not_found",
-    match: null
-  };
 }
 
 function groundedPropertyFactTask(task, catalog) {
@@ -106,44 +65,10 @@ function groundedPropertyFactTask(task, catalog) {
       canonicalCandidate: null
     })
     : null;
-  const sourceResolution = uniquelyResolvedCatalogEntityFromSource(
-    catalog,
-    task.sourceText
-  );
-  const sourceGrounded = sourceResolution.status === "resolved"
-    ? sourceResolution.match
-    : null;
   const groundedEntity = grounded
     && grounded.status === "resolved"
     && grounded.entity;
-  const sourceEntity = sourceGrounded && sourceGrounded.entity;
-  const sameCatalogEntity = groundedEntity && sourceEntity
-    && groundedEntity.category === sourceEntity.category
-    && groundedEntity.canonicalId === sourceEntity.canonicalId;
-  if (entity.canonicalCandidate === null
-    && groundedEntity
-    && !sameCatalogEntity) {
-    return {
-      ...task,
-      type: "unknown",
-      detailIntent: "general",
-      requestedOutputs: ["answer"],
-      dependsOnStayContext: false,
-      stayCandidate: null,
-      entity: {
-        ...entity,
-        category: "other",
-        rawText: entity.rawText,
-        canonicalCandidate: null
-      }
-    };
-  }
-  const recoverFromSource = entity.canonicalCandidate === null
-    && (!grounded || grounded.status === "not_found")
-    && sourceEntity;
-  const resolved = sameCatalogEntity
-    ? groundedEntity
-    : recoverFromSource || null;
+  const resolved = groundedEntity || null;
   const definition = resolved && getCapabilityDefinition(resolved.canonicalId);
   if (!resolved || !definition
     || definition.resolverId !== "property_catalog"
@@ -164,14 +89,12 @@ function groundedPropertyFactTask(task, catalog) {
     ...task,
     type,
     detailIntent,
-    requestedOutputs: resolved.canonicalId === "location"
-      ? ["map_url"]
-      : [detailIntent === "general" ? "answer" : detailIntent],
+    requestedOutputs: resolved.category === "transport" ? ["map_url"] : [detailIntent === "general" ? "answer" : detailIntent],
     dependsOnStayContext: false,
     stayCandidate: null,
     entity: {
       ...entity,
-      rawText: entity.rawText || sourceGrounded && sourceGrounded.rawText || "",
+      rawText: entity.rawText,
       category: resolved.category,
       canonicalCandidate: resolved.canonicalId
     }
@@ -256,26 +179,7 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
       }
     }
 
-    if (task.entity.canonicalCandidate === "parking") {
-      const changed = task.type !== "amenity" || entity.category !== "amenity" || task.detailIntent !== "general"
-        || task.dependsOnStayContext !== false || task.stayCandidate !== null;
-      task = { ...task, type: "amenity", detailIntent: "general", requestedOutputs: ["answer"], dependsOnStayContext: false, stayCandidate: null, entity: { ...task.entity, category: "amenity", canonicalCandidate: "parking" } };
-      if (changed) repairedTasks.push({ taskId: task.taskId, index, reason: "parking_contract_mismatch" });
-    } else if (task.entity.canonicalCandidate === "pool") {
-      const invalidEligibility = task.detailIntent === "eligibility"
-        && !hasExplicitEligibilityEvidence(task);
-      const changed = task.type !== "amenity" || entity.category !== "amenity"
-        || task.dependsOnStayContext !== false || task.stayCandidate !== null;
-      task = { ...task, type: "amenity", dependsOnStayContext: false, stayCandidate: null, entity: { ...task.entity, category: "amenity", canonicalCandidate: "pool" } };
-      if (changed && !invalidEligibility) repairedTasks.push({ taskId: task.taskId, index, reason: "pool_contract_mismatch" });
-    } else if (task.entity.canonicalCandidate === "location") {
-      const changed = task.type !== "property_fact" || entity.category !== "transport" || task.detailIntent !== "general";
-      task = { ...task, type: "property_fact", detailIntent: "general", requestedOutputs: ["map_url"], entity: { ...task.entity, category: "transport", canonicalCandidate: "location" } };
-      if (changed) repairedTasks.push({ taskId: task.taskId, index, reason: "location_contract_mismatch" });
-    } else if (task.type === "property_fact" && task.entity.category === "transport" && task.entity.canonicalCandidate === null) {
-      task = { ...task, detailIntent: "general", requestedOutputs: ["map_url"], entity: { ...task.entity, canonicalCandidate: "location" } };
-      repairedTasks.push({ taskId: task.taskId, index, reason: "transport_location_candidate_missing" });
-    } else if (task.type === "property_fact" && task.entity.category === "other" && task.entity.canonicalCandidate === null) {
+    if (task.type === "property_fact" && task.entity.category === "other" && task.entity.canonicalCandidate === null) {
       rejectedTasks.push({ taskId: task.taskId, index, reason: "unresolved_property_fact" });
       task = { ...task, type: "unknown", detailIntent: "general", requestedOutputs: ["answer"], entity: { ...task.entity, category: "other", canonicalCandidate: null } };
     }

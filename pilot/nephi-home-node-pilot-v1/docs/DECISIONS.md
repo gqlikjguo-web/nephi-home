@@ -200,3 +200,11 @@
 **Reason:** Planner relation output, V2 cycle mutation, pending-request mutation, and readiness checks previously made separate decisions. That allowed a date-only answer to lose its pricing task and allowed missing bundle dates to influence capability selection before clarification could occur.
 
 **Constraint:** Planner remains the semantic interpreter, but a structurally isolated date or guest-count slot may continue exactly one unexpired pending lodging task. A guest-count recovery must contain only the normalized count expression; additional semantics disable automatic recovery. Every lodging request uses `any`, `room_type`, or `bundle`; active Resolver calls receive only the normalized property/task/product/date/guest contract. Capability selection cannot depend on readiness. Same-turn duplicate task IDs are rejected, an accepted `end_existing` relation cancels only its referenced V3 task, unresolved products remain safe state rather than causing a write failure, new or ambiguous work must not inherit stale state, mixed tasks remain independent, Unknown is never converted to No, and Claim Validator and FinalDecision remain unchanged.
+
+## D-022 — Reducer-approved transitions and catalog-validated products
+
+**Decision:** The V3 reducer is the sole authority for whether an execution item starts a task or continues an existing task, and for the product attached to that transition. New room or bundle products are approved only after exact resolution against the current property catalog; Canonicalizer consumes the reducer-approved product and does not promote raw Planner candidates.
+
+**Reason:** Directly copying a Planner `canonicalCandidate` into a product admitted forged IDs even when the catalog resolved a different room. Conversely, allowing a continuation to reuse its raw Planner entity could lose the persisted topic for a controlled detail follow-up.
+
+**Constraint:** A `continue` transition preserves the V3 task topic and product. A new task may use only a catalog-resolved room or bundle; unknown, ambiguous, or forged candidates become `any` rather than a product selection. Exact catalog grounding remains data-driven; no full-source alias scan or parking/pool/location-specific transition is permitted.
