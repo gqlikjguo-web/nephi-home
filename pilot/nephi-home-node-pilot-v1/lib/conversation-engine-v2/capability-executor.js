@@ -140,13 +140,15 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
     }
     if (resolverId === "availability_resolver" && queryPlan.capability === "available_dates") {
       if (!stay.searchRange || !stay.searchRange.from || !stay.searchRange.to) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "missing_search_range" });
-      const result = resolveAvailableDates({ availableDatesResolver, propertyId: property.propertyId, request, resolved });
+      if (!queryPlan.resolverTask) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "resolver_task_required" });
+      const result = resolveAvailableDates({ availableDatesResolver, resolverTask: queryPlan.resolverTask });
       if (result.status === "answered") return queryOutcome(queryPlan, "answered", { facts: { availableDates: result.dates.filter((item) => item.available).map((item) => item.checkIn), range: stay.searchRange, source: result.source, propertyId: property.propertyId }, resolverAttempted: true });
       return queryOutcome(queryPlan, result.status === "unknown" ? "unknown" : "technical_error", { reason: `available_dates_${result.status}`, resolverAttempted: true });
     }
     if (resolverId === "availability_resolver") {
       if (!stay.checkIn || !stay.checkOut) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "missing_stay" });
-      const adapted = resolveAvailability({ availabilityResolver, propertyId: property.propertyId, request, resolved });
+      if (!queryPlan.resolverTask) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "resolver_task_required" });
+      const adapted = resolveAvailability({ availabilityResolver, resolverTask: queryPlan.resolverTask });
       if (!adapted.result.availabilityReliable) return queryOutcome(queryPlan, "technical_error", { reason: "availability_unreliable", resolverAttempted: true });
       if (["availability", "bundle_availability", "room_options", "capacity"].includes(queryPlan.capability)) return queryOutcome(queryPlan, adapted.facts.availableInventory.length ? "answered" : "no_availability", { facts: adapted.facts, resolverAttempted: true });
       if (!adapted.facts.availableInventory.length) return queryOutcome(queryPlan, "no_availability", { facts: { availability: "full", checkIn: stay.checkIn, checkOut: stay.checkOut, prices: [], source: "availability_provider", propertyId: property.propertyId }, resolverAttempted: true });

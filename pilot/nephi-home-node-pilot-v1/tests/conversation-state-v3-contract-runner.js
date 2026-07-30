@@ -113,6 +113,30 @@ assert.equal(
   "available_dates"
 );
 
+const propertyFactContextTask = createConversationTaskV3({
+  taskId: "task-singing",
+  taskType: "amenity",
+  productType: "any",
+  productId: null,
+  roomTypeId: null,
+  bundleId: null,
+  checkIn: null,
+  checkOut: null,
+  guestCount: null,
+  entityId: "singing",
+  entityCategory: "amenity",
+  detailIntent: "fee",
+  knownFields: ["productType"],
+  missingFields: [],
+  status: "answered",
+  createdAt: NOW,
+  updatedAt: NOW,
+  expiresAt: FUTURE
+});
+assert.equal(propertyFactContextTask.entityId, "singing");
+assert.equal(propertyFactContextTask.entityCategory, "amenity");
+assert.equal(propertyFactContextTask.detailIntent, "fee");
+
 const dualAuthorityState = {
   ...JSON.parse(JSON.stringify(state)),
   pendingRequests: []
@@ -220,6 +244,21 @@ assert.equal(compatible.tasks[0].guestCount, 2);
 assert.deepEqual(compatible.tasks[0].missingFields, ["checkIn", "checkOut"]);
 assert.equal(Object.hasOwn(compatible, "pendingRequests"), false);
 assert.equal(Object.hasOwn(compatible, "requestCycles"), false);
+
+const legacyAnsweredOnly = JSON.parse(JSON.stringify(legacyV2));
+legacyAnsweredOnly.pendingRequests = [];
+legacyAnsweredOnly.requestCycles[0].status = "answered";
+legacyAnsweredOnly.requestCycles[0].confirmedInputs.stay.checkIn = "2026-07-30";
+legacyAnsweredOnly.requestCycles[0].confirmedInputs.stay.checkOut = "2026-07-31";
+const compatibleAnswered = readConversationStateV3(
+  legacyAnsweredOnly,
+  scope,
+  NOW
+);
+assert.equal(compatibleAnswered.tasks.length, 1);
+assert.equal(compatibleAnswered.tasks[0].taskId, "legacy-cycle");
+assert.equal(compatibleAnswered.tasks[0].status, "answered");
+assert.equal(compatibleAnswered.tasks[0].productType, "room_type");
 
 const legacyPriceOnlyCheckIn = JSON.parse(JSON.stringify(legacyV2));
 legacyPriceOnlyCheckIn.pendingRequests[0].missingFields = ["stay.checkIn"];
@@ -339,7 +378,7 @@ assert.throws(
 
 console.log(JSON.stringify({
   suite: "conversation-state-v3-contract",
-  caseCount: 18,
-  passCount: 18,
+  caseCount: 19,
+  passCount: 19,
   failCount: 0
 }));

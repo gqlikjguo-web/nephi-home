@@ -13,6 +13,9 @@ const {
   getCapabilityDefinition,
   validateCapabilityRegistry
 } = require("../lib/conversation-engine-v2/capability-registry");
+const {
+  buildCanonicalFormalRequest
+} = require("../lib/conversation-engine-v2/formal-request");
 
 const REQUIRED_CAPABILITIES = [
   "availability",
@@ -60,6 +63,12 @@ function validCanonicalRequest() {
       category: "other",
       canonicalId: null
     },
+    lodgingProduct: {
+      productType: "any",
+      productId: null,
+      roomTypeId: null,
+      bundleId: null
+    },
     detailIntent: "general",
     temporalState: temporalState(),
     stayDependency: definition.stayDependency,
@@ -76,6 +85,7 @@ function run() {
     "taskId",
     "capability",
     "canonicalEntity",
+    "lodgingProduct",
     "detailIntent",
     "temporalState",
     "stayDependency",
@@ -101,6 +111,7 @@ function run() {
   assert.equal(isCanonicalRequest(request), true);
   assert.equal(Object.isFrozen(request), true);
   assert.equal(Object.isFrozen(request.canonicalEntity), true);
+  assert.equal(Object.isFrozen(request.lodgingProduct), true);
   assert.equal(Object.isFrozen(request.temporalState), true);
   assert.equal(Object.isFrozen(request.requiredFields), true);
   assert.equal(Object.isFrozen(request.evidenceRefs), true);
@@ -115,6 +126,7 @@ function run() {
   [
     "capability",
     "canonicalEntity",
+    "lodgingProduct",
     "temporalState",
     "stayDependency",
     "requiredFields",
@@ -150,6 +162,57 @@ function run() {
   const changedValidation = validateCanonicalRequest(changedCanonicalField);
   assert.equal(changedValidation.ok, false);
   assert.ok(changedValidation.errors.includes("resolverId_registry_mismatch"));
+
+  const capacityDefinition = getCapabilityDefinition("capacity");
+  const capacityRequest = createCanonicalRequest({
+    taskId: "capacity-0",
+    capability: "capacity",
+    canonicalEntity: {
+      category: "other",
+      canonicalId: null
+    },
+    lodgingProduct: {
+      productType: "any",
+      productId: null,
+      roomTypeId: null,
+      bundleId: null
+    },
+    detailIntent: "general",
+    temporalState: {
+      ...temporalState(),
+      applicableTaskIds: ["capacity-0"]
+    },
+    stayDependency: capacityDefinition.stayDependency,
+    requiredFields: capacityDefinition.requiredFields,
+    resolverId: capacityDefinition.resolverId,
+    riskLevel: capacityDefinition.riskLevel,
+    responseMode: capacityDefinition.responseMode,
+    evidenceRefs: evidenceRefs()
+  });
+  const capacityFormal = buildCanonicalFormalRequest({
+    property: { propertyId: "property-alpha" },
+    canonicalRequest: capacityRequest,
+    requestCycleId: "capacity-cycle",
+    confirmedInputs: {
+      stay: {
+        checkIn: "2026-08-06",
+        checkOut: "2026-08-07",
+        guests: null
+      },
+      inventory: { mode: "any", entityId: null, features: [] }
+    }
+  });
+  assert.equal(capacityFormal.readiness.status, "missing_information");
+  assert.deepEqual(capacityFormal.readiness.missingFields, ["guestCount"]);
+  assert.deepEqual(capacityFormal.resolverTask, {
+    propertyId: "property-alpha",
+    taskType: "capacity",
+    productType: "any",
+    productId: null,
+    checkIn: "2026-08-06",
+    checkOut: "2026-08-07",
+    guestCount: null
+  });
 
   console.log("canonical request contract: PASS");
 }

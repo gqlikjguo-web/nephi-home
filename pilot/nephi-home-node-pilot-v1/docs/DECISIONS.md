@@ -192,3 +192,11 @@
 **Reason:** Temporary operating notices must follow the guest's understood task and property authority without turning into keyword FAQ routing, exposing all rule text to Planner, or allowing AI to choose among competing facts.
 
 **Constraint:** Each property may store at most five rules. Disabled, pending, expired, overlapping enabled, ambiguous, cross-property, invalid-date, blank-reply, and nonexistent-room definitions cannot produce an answer. Approved text may supplement only the matching task; other mixed tasks retain formal Resolver outcomes. A rule never asserts availability, price, reservation completion, or another formal fact, and a structural conflict with formal pricing becomes Unknown/review. Composer may only connect allowed facts, while Claim Validator and FinalDecision remain unchanged.
+
+## D-021 — Conversation State V3 is the sole runtime state writer
+
+**Decision:** ConversationEngineV2 persists only Conversation State V3 through one reducer invocation per processed message. V2 request cycles and pending requests may be projected into V3 on read, but no active runtime path writes or independently resumes V2 state.
+
+**Reason:** Planner relation output, V2 cycle mutation, pending-request mutation, and readiness checks previously made separate decisions. That allowed a date-only answer to lose its pricing task and allowed missing bundle dates to influence capability selection before clarification could occur.
+
+**Constraint:** Planner remains the semantic interpreter, but a structurally isolated date or guest-count slot may continue exactly one unexpired pending lodging task. A guest-count recovery must contain only the normalized count expression; additional semantics disable automatic recovery. Every lodging request uses `any`, `room_type`, or `bundle`; active Resolver calls receive only the normalized property/task/product/date/guest contract. Capability selection cannot depend on readiness. Same-turn duplicate task IDs are rejected, an accepted `end_existing` relation cancels only its referenced V3 task, unresolved products remain safe state rather than causing a write failure, new or ambiguous work must not inherit stale state, mixed tasks remain independent, Unknown is never converted to No, and Claim Validator and FinalDecision remain unchanged.

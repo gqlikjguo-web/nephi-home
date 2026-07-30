@@ -17,7 +17,12 @@ const TASK_READINESS_REQUIREMENTS = Object.freeze({
   pool: Object.freeze([]),
   property_fact: Object.freeze([]),
   amenity: Object.freeze([]),
-  policy: Object.freeze([])
+  policy: Object.freeze([]),
+  amenity_list: Object.freeze([]),
+  booking_request: Object.freeze([]),
+  human_help: Object.freeze([]),
+  high_risk: Object.freeze([]),
+  unknown: Object.freeze([])
 });
 
 const KNOWN_FIELD_ORDER = Object.freeze([

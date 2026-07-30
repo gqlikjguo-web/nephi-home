@@ -197,3 +197,13 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - Planner and CanonicalRequest still determine each task first. Only after formal Resolver execution may one unique active rule match the understood topic, stay date, and room/bundle scope. The approved text is additive to that task; all unmatched mixed tasks retain their original Resolver outcomes.
 - Formal pricing facts cannot be replaced by a `價格尚未公告` rule. A structural conflict or multiple matches safely becomes Unknown/review rather than asking AI to choose.
 - No public unauthenticated test API, property-specific branch, deployment, Render operation, LINE operation, credential access, or formal-data mutation was introduced.
+
+## 2026-07-30 Conversation State V3 runtime cutover
+
+- ConversationEngineV2 now reads and writes the Phase 1 Conversation State V3 contract. Property, channel, and user remain the persistence scope; V2 cycles and pending requests are compatibility-read inputs only.
+- One V3 reducer performs the only state write after CanonicalRequest, unified readiness, QueryPlan, and execution outcomes are available. A unique pending lodging task may consume a date or guest-count-only turn even when Planner labels it as a new request.
+- Lodging queries now carry `any`, `room_type`, or `bundle` through CanonicalRequest and a normalized Resolver task. Bundle capability selection is independent of readiness, so an undated bundle question remains pending instead of becoming Unknown.
+- Repeated Planner task IDs start isolated V3 tasks unless an accepted context relation explicitly continues an existing task. Mixed tasks remain independently stored and expired tasks are excluded from context reuse.
+- Same-turn duplicate task IDs fail at the Planner schema boundary. Accepted end relations persist `cancelled` on only the referenced task, including silent no-reply turns; unresolved lodging products persist `needs_human` instead of failing the V3 write.
+- Event replay coverage uses the real Engine plus the persisted atomic event claim: a concurrent duplicate and a replay after coordinator restart do not perform a second state write.
+- Phase 1 contracts, provider-shaped two-property fixtures, runtime incident regressions, event replay, existing core/LINE/onboarding/admin gates, and the complete repository test suite pass locally. The branch is pending review and was not deployed.

@@ -35,6 +35,9 @@ const CONVERSATION_TASK_FIELDS = Object.freeze([
   "guestCount",
   "searchFrom",
   "searchTo",
+  "entityId",
+  "entityCategory",
+  "detailIntent",
   "knownFields",
   "missingFields",
   "status",
@@ -44,7 +47,13 @@ const CONVERSATION_TASK_FIELDS = Object.freeze([
 ]);
 const CONVERSATION_TASK_REQUIRED_INPUT_FIELDS = Object.freeze(
   CONVERSATION_TASK_FIELDS.filter(
-    (field) => !["searchFrom", "searchTo"].includes(field)
+    (field) => ![
+      "searchFrom",
+      "searchTo",
+      "entityId",
+      "entityCategory",
+      "detailIntent"
+    ].includes(field)
   )
 );
 const TASK_STATUSES = new Set([
@@ -150,6 +159,9 @@ function normalizedTask(value = {}) {
       : Number(value.guestCount),
     searchFrom: textOrNull(value.searchFrom),
     searchTo: textOrNull(value.searchTo),
+    entityId: textOrNull(value.entityId),
+    entityCategory: textOrNull(value.entityCategory),
+    detailIntent: String(value.detailIntent || "general").trim(),
     knownFields: uniqueStrings(value.knownFields),
     missingFields: uniqueStrings(value.missingFields),
     status: String(value.status || "").trim(),
@@ -165,6 +177,10 @@ function validateConversationTaskV3(value) {
   if (!taskInputKeys(value)) errors.push("keys");
   if (!task.taskId) errors.push("taskId");
   if (!task.taskType) errors.push("taskType");
+  if (!task.detailIntent) errors.push("detailIntent");
+  if (Boolean(task.entityId) !== Boolean(task.entityCategory)) {
+    errors.push("entity");
+  }
   if (!validateLodgingProduct(task).ok) errors.push("product");
   if (task.guestCount !== null
     && (!Number.isInteger(task.guestCount) || task.guestCount < 1)) {
@@ -389,6 +405,7 @@ function legacyPendingTasks(state, now) {
         searchTo: searchRange.to || null
       };
       const readiness = evaluateTaskReadiness(readinessInput);
+      const legacyEntity = task && task.entity || {};
       const status = readiness.status === "ready"
         ? "ready"
         : readiness.status === "missing"
@@ -396,11 +413,18 @@ function legacyPendingTasks(state, now) {
           : "needs_human";
       return createConversationTaskV3({
         taskId: String(
-          task.taskId
+          pending.requestCycleId && tasks.length === 1
+            ? pending.requestCycleId
+            : task.taskId
             || pending.pendingRequestId
             || `legacy-${pendingIndex}-${taskIndex}`
         ),
         ...readinessInput,
+        entityId: legacyEntity.canonicalCandidate || null,
+        entityCategory: legacyEntity.canonicalCandidate
+          ? legacyEntity.category || "other"
+          : null,
+        detailIntent: task && task.detailIntent || "general",
         knownFields: readiness.knownFields,
         missingFields: readiness.missingFields,
         status,
@@ -414,6 +438,63 @@ function legacyPendingTasks(state, now) {
       });
     });
   });
+}
+
+function legacyCycleTasks(state, now) {
+  return (Array.isArray(state.requestCycles) ? state.requestCycles : [])
+    .filter((cycle) => cycle && cycle.requestCycleId)
+    .map((cycle) => {
+      const conditions = cycle.confirmedInputs || {};
+      const product = legacyProduct(conditions);
+      const stay = conditions.stay || {};
+      const searchRange = stay.searchRange || {};
+      const taskType = LEGACY_TASK_TYPES[
+        String(cycle.requestKind || "property_fact")
+      ] || String(cycle.requestKind || "property_fact");
+      const readinessInput = {
+        taskType,
+        ...product,
+        checkIn: stay.checkIn || null,
+        checkOut: stay.checkOut || null,
+        guestCount: Number.isInteger(stay.guests) ? stay.guests : null,
+        searchFrom: searchRange.from || null,
+        searchTo: searchRange.to || null
+      };
+      const readiness = evaluateTaskReadiness(readinessInput);
+      const topic = conditions.topic || {};
+      const legacyStatus = String(cycle.status || "");
+      let status = readiness.status === "missing"
+        ? "pending"
+        : readiness.status === "ready"
+          ? "ready"
+          : "needs_human";
+      if (["answered", "resolved"].includes(legacyStatus)
+        && readiness.status === "ready") status = "answered";
+      if (["ended", "cancelled"].includes(legacyStatus)) status = "cancelled";
+      if (legacyStatus === "expired") status = "expired";
+      if (["failed", "needs_human"].includes(legacyStatus)) {
+        status = "needs_human";
+      }
+      return createConversationTaskV3({
+        taskId: String(cycle.requestCycleId),
+        ...readinessInput,
+        entityId: topic.canonicalId || product.productId || null,
+        entityCategory: topic.category || (
+          product.productType === "bundle"
+            ? "bundle"
+            : product.productType === "room_type"
+              ? "room"
+              : null
+        ),
+        detailIntent: topic.detailIntent || "general",
+        knownFields: readiness.knownFields,
+        missingFields: readiness.missingFields,
+        status,
+        createdAt: cycle.createdAt || now,
+        updatedAt: cycle.updatedAt || now,
+        expiresAt: cycle.contextReuseExpiresAt || now
+      });
+    });
 }
 
 function readConversationStateV3(value, scopeValue, now) {
@@ -443,7 +524,13 @@ function readConversationStateV3(value, scopeValue, now) {
   if (value.schemaVersion !== 2 || !sameScope(legacyScope(value), scope)) {
     return emptyConversationStateV3(scope, now);
   }
-  const tasks = legacyPendingTasks(value, now);
+  const tasksById = new Map(
+    legacyCycleTasks(value, now).map((task) => [task.taskId, task])
+  );
+  legacyPendingTasks(value, now).forEach((task) => {
+    tasksById.set(task.taskId, task);
+  });
+  const tasks = [...tasksById.values()];
   const timestamps = tasks.map((task) => task.createdAt);
   const expiries = tasks.map((task) => task.expiresAt);
   return createConversationStateV3({

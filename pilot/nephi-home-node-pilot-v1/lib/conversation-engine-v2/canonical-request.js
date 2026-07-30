@@ -1,11 +1,15 @@
 "use strict";
 
 const { getCapabilityDefinition } = require("./capability-registry");
+const {
+  validateLodgingProduct
+} = require("../conversation-contracts/lodging-product");
 
 const CANONICAL_REQUEST_FIELDS = Object.freeze([
   "taskId",
   "capability",
   "canonicalEntity",
+  "lodgingProduct",
   "detailIntent",
   "temporalState",
   "stayDependency",
@@ -134,6 +138,9 @@ function validateCanonicalRequest(value) {
   const definition = getCapabilityDefinition(value.capability);
   if (!definition) errors.push("capability");
   if (!validateCanonicalEntity(value.canonicalEntity)) errors.push("canonicalEntity");
+  if (!validateLodgingProduct(value.lodgingProduct).ok) {
+    errors.push("lodgingProduct");
+  }
   if (typeof value.detailIntent !== "string" || !value.detailIntent) errors.push("detailIntent");
   if (!validateTemporalState(value.temporalState, value.taskId)) errors.push("temporalState");
   if (!Array.isArray(value.requiredFields)

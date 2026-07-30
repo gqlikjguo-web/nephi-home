@@ -44,7 +44,36 @@ const planner = { classify: async () => ({
   ], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "multi_task"
 }) };
 const engine = new ConversationEngineV2({ planner: explicitPlanner(planner), persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [] });
-function latestConditions(result) { return result.state.requestCycles.at(-1).confirmedInputs; }
+function latestConditions(result) {
+  const task = result.state.tasks.at(-1);
+  const nights = task.checkIn && task.checkOut
+    ? Math.round(
+      (Date.parse(`${task.checkOut}T00:00:00.000Z`)
+        - Date.parse(`${task.checkIn}T00:00:00.000Z`))
+      / (24 * 60 * 60 * 1000)
+    )
+    : null;
+  return {
+    stay: {
+      checkIn: task.checkIn,
+      checkOut: task.checkOut,
+      nights,
+      guests: task.guestCount,
+      searchRange: task.searchFrom && task.searchTo
+        ? { from: task.searchFrom, to: task.searchTo }
+        : null
+    },
+    inventory: {
+      mode: task.productType === "bundle"
+        ? "bundle_only"
+        : task.productType === "room_type"
+          ? "room_only"
+          : "any",
+      entityId: task.productId,
+      features: []
+    }
+  };
+}
 
 (async () => {
   const pricingCalls = [];
@@ -104,7 +133,7 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
   assert.equal(result.reviewCount, 1);
   assert.equal(logs.filter((x) => x.needsReview && String(x.eventId).startsWith("e1:review:")).length, 1);
   assert.equal(logs.find((x) => x.eventId === "e1").needsReview, true, "handoff FinalDecision must mark its primary message record for review");
-  assert.equal(states.get("p1:c1:u1").schemaVersion, 2);
+  assert.equal(states.get("p1:c1:u1").schemaVersion, 3);
   assert.equal(result.claimValidation.ok, true);
 
   const incompleteComposer = { compose: async () => ({ replyText: "8/6 有湖景雙人房。", factTaskIds: ["a"] }) };
@@ -115,7 +144,7 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
   assert.ok(guarded.replyText.includes("停車位"));
   assert.ok(guarded.replyText.includes("麻將"));
   assert.deepEqual(guarded.claimValidation.coveredTaskIds.sort(), ["a", "b", "c"]);
-  assert.deepEqual(diagnostics.map((item) => item.stage), ["property_catalog", "planner", "validation", "semantic_contract", "context_validation", "pending_request", "no_reply_gate", "canonical_request", "temporal", "state", "entity_resolution", "formal_request", "query_plan", "pending_request", "executor", "response_plan", "composer", "claim_validator", "line_ready", "final_decision"]);
+  assert.deepEqual(diagnostics.map((item) => item.stage), ["property_catalog", "planner", "validation", "semantic_contract", "context_validation", "pending_request", "no_reply_gate", "canonical_request", "temporal", "entity_resolution", "formal_request", "query_plan", "state", "pending_request", "executor", "response_plan", "composer", "claim_validator", "line_ready", "final_decision"]);
   assert.equal(new Set(diagnostics.map((item) => item.traceId)).size, 1);
   assert.equal(guarded.replyText, result.replyText);
   const safeDiagnostics = diagnostics.map(formatSafeTestOnlyConversationTrace).filter(Boolean);
@@ -542,7 +571,7 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
 
   const missingDate = await runTemporal("有雙人房嗎？", temporalPlanner({ message: "有雙人房嗎？" }), "date-missing");
   assert.equal(missingDate.taskResults[0].status, "needs_clarification");
-  assert.ok(missingDate.taskResults[0].missingInputs.includes("stay.checkIn"));
+  assert.deepEqual(missingDate.taskResults[0].missingInputs, ["checkIn", "checkOut"]);
 
   const nightsWithoutDate = await runTemporal("two guests for two nights with bathtub", temporalPlanner({
     message: "two guests for two nights with bathtub",
@@ -554,10 +583,10 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
     nightsCandidate: 2,
     guestCountCandidate: 2
   }), "nights-without-date");
-  assert.equal(latestConditions(nightsWithoutDate).stay.nights, 2);
+  assert.equal(latestConditions(nightsWithoutDate).stay.nights, null);
   assert.equal(latestConditions(nightsWithoutDate).stay.guests, 2);
   assert.equal(nightsWithoutDate.taskResults[0].status, "needs_clarification");
-  assert.deepEqual(nightsWithoutDate.taskResults[0].missingInputs, ["stay.checkIn"]);
+  assert.deepEqual(nightsWithoutDate.taskResults[0].missingInputs, ["checkIn", "checkOut"]);
 
   const staleStateUser = "explicit-date-replaces-state";
   await runTemporal("8/6 availability", temporalPlanner({ message: "8/6 availability", operations: dateOperations("8/6", "absolute", { checkInCandidate: "2026-08-06" }) }), staleStateUser);
@@ -575,7 +604,7 @@ function latestConditions(result) { return result.state.requestCycles.at(-1).con
       { field: "inventory.features", operation: "set", value: ["bathtub"], sourceText: "bathtub" }
     ], nightsCandidate: 2, guestCountCandidate: 2
   }), conditionStateUser);
-  assert.deepEqual(latestConditions(initialConditions).stay, { checkIn: null, checkOut: null, nights: 2, guests: 2, searchRange: null });
+  assert.deepEqual(latestConditions(initialConditions).stay, { checkIn: null, checkOut: null, nights: null, guests: 2, searchRange: null });
   const replacedGuests = await runTemporal("change to four guests", temporalPlanner({
     message: "change to four guests", operations: [{ field: "stay.guestCountCandidate", operation: "replace", value: 4, sourceText: "four guests" }], guestCountCandidate: 4
   }), conditionStateUser);

@@ -1,6 +1,9 @@
 "use strict";
 
 const { assertCanonicalRequest } = require("./canonical-request");
+const {
+  evaluateTaskReadiness
+} = require("../conversation-contracts/task-readiness");
 
 const INVENTORY_CAPABILITIES = new Set(["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"]);
 const SUPPORTED_CAPABILITIES = new Set([...INVENTORY_CAPABILITIES, "available_dates", "amenity", "policy", "property_fact", "amenity_list", "booking_request", "human_help", "high_risk", "unknown"]);
@@ -29,14 +32,46 @@ function capabilityForTemporal(task, temporalResult = {}) {
   return task.type;
 }
 
-function readinessFor({ task, temporalResult = {}, stay, resolvedEntity }) {
+function legacyProductForReadiness(inventory, entity) {
+  const entityId = inventory.entityId || entity && entity.canonicalId || null;
+  if (inventory.mode === "bundle_only" && entityId) return {
+    productType: "bundle",
+    productId: entityId,
+    bundleId: entityId
+  };
+  if (inventory.mode === "room_only" && entityId) return {
+    productType: "room_type",
+    productId: entityId,
+    roomTypeId: entityId
+  };
+  return { productType: "any", productId: null };
+}
+
+function readinessFor({ task, stay, resolvedEntity, inventory = {} }) {
   if (!SUPPORTED_CAPABILITIES.has(task.type)) return { status: "unsupported", missingFields: [], invalidFields: [], conflictingFields: [] };
-  if (temporalResult.resolutionStatus === "unresolved") return { status: "missing_information", missingFields: ["stay.checkIn"], invalidFields: [], conflictingFields: [] };
   const generic = task.entity && task.entity.category === "other" && task.entity.canonicalCandidate === null;
   if ([...INVENTORY_CAPABILITIES, "available_dates"].includes(task.type) && task.entity && task.entity.rawText && !generic && (!resolvedEntity || !["resolved", "matched_set"].includes(resolvedEntity.status))) return { status: "entity_unresolved", missingFields: [], invalidFields: [], conflictingFields: [] };
-  if (task.type === "available_dates" && (!stay.searchRange || !stay.searchRange.from || !stay.searchRange.to)) return { status: "missing_information", missingFields: ["stay.searchRange"], invalidFields: [], conflictingFields: [] };
-  if (INVENTORY_CAPABILITIES.has(task.type) && (!stay.checkIn || !stay.checkOut)) return { status: "missing_information", missingFields: [!stay.checkIn ? "stay.checkIn" : "stay.checkOut"], invalidFields: [], conflictingFields: [] };
-  return { status: "ready", missingFields: [], invalidFields: [], conflictingFields: [] };
+  const entity = resolvedEntity && (
+    resolvedEntity.entity
+    || resolvedEntity.entities && resolvedEntity.entities[0]
+  ) || null;
+  const readiness = evaluateTaskReadiness({
+    taskType: readinessTaskType(task.type),
+    ...legacyProductForReadiness(inventory, entity),
+    checkIn: stay.checkIn,
+    checkOut: stay.checkOut,
+    guestCount: stay.guests,
+    searchFrom: stay.searchRange && stay.searchRange.from,
+    searchTo: stay.searchRange && stay.searchRange.to
+  });
+  return {
+    status: readiness.status === "missing"
+      ? "missing_information"
+      : readiness.status,
+    missingFields: readiness.missingFields,
+    invalidFields: readiness.invalidFields,
+    conflictingFields: []
+  };
 }
 
 function buildFormalRequest({ property, task, requestCycleId, temporalResult, confirmedInputs, resolvedEntity, sourceEvidenceRefs = [] }) {
@@ -44,7 +79,12 @@ function buildFormalRequest({ property, task, requestCycleId, temporalResult, co
   const inventory = confirmedInputs.inventory || {};
   const entity = resolvedEntity && (resolvedEntity.entity || (resolvedEntity.entities && resolvedEntity.entities[0])) || null;
   const capability = capabilityForTemporal(task, temporalResult);
-  const readiness = readinessFor({ task: { ...task, type: capability }, temporalResult, stay, resolvedEntity });
+  const readiness = readinessFor({
+    task: { ...task, type: capability },
+    stay,
+    resolvedEntity,
+    inventory
+  });
   return {
     formalRequestId: stableFormalRequestId({ requestCycleId, task }), taskId: task.taskId,
     candidateIndex: task.candidateIndex, requestCycleId, propertyId: property.propertyId,
@@ -97,24 +137,30 @@ function canonicalStay(canonicalRequest, confirmedInputs = {}) {
   };
 }
 
-function valueAtPath({ stay }, field) {
-  if (field === "stay.checkIn") return stay.checkIn;
-  if (field === "stay.checkOut") return stay.checkOut;
-  if (field === "stay.searchRange") return stay.searchRange;
-  return null;
+function readinessTaskType(capability) {
+  if (["price", "total_price"].includes(capability)) return "pricing";
+  if (capability === "bundle_availability") return "availability";
+  return capability;
 }
 
 function canonicalReadiness(canonicalRequest, stay) {
-  const missingFields = canonicalRequest.requiredFields
-    .filter((field) => !valueAtPath({ stay }, field));
-  if (missingFields.length) {
-    return {
-      status: "missing_information",
-      missingFields: missingFields.slice(0, 1),
-      invalidFields: [],
-      conflictingFields: []
-    };
-  }
+  const readiness = evaluateTaskReadiness({
+    taskType: readinessTaskType(canonicalRequest.capability),
+    ...canonicalRequest.lodgingProduct,
+    checkIn: stay.checkIn,
+    checkOut: stay.checkOut,
+    guestCount: stay.guests,
+    searchFrom: stay.searchRange && stay.searchRange.from,
+    searchTo: stay.searchRange && stay.searchRange.to
+  });
+  if (readiness.status !== "ready") return {
+    status: readiness.status === "missing"
+      ? "missing_information"
+      : readiness.status,
+    missingFields: readiness.missingFields,
+    invalidFields: readiness.invalidFields,
+    conflictingFields: []
+  };
   if (canonicalRequest.resolverId === "availability_resolver"
     && ["not_found", "ambiguous"].includes(canonicalRequest.canonicalEntity.status)
     && canonicalRequest.canonicalEntity.category !== "other") {
@@ -143,6 +189,20 @@ function buildCanonicalFormalRequest({
   const request = assertCanonicalRequest(canonicalRequest);
   const stay = canonicalStay(request, confirmedInputs);
   const inventory = confirmedInputs.inventory || {};
+  const resolverTask = {
+    propertyId: property.propertyId,
+    taskType: readinessTaskType(request.capability),
+    productType: request.lodgingProduct.productType,
+    productId: request.lodgingProduct.productId,
+    checkIn: stay.checkIn,
+    checkOut: stay.checkOut,
+    guestCount: stay.guests,
+    ...(request.capability === "available_dates" ? {
+      searchFrom: stay.searchRange && stay.searchRange.from || null,
+      searchTo: stay.searchRange && stay.searchRange.to || null,
+      nights: stay.nights || 1
+    } : {})
+  };
   return {
     formalRequestId: `${String(requestCycleId || "none")}:${request.taskId}`,
     taskId: request.taskId,
@@ -150,6 +210,7 @@ function buildCanonicalFormalRequest({
     requestCycleId,
     propertyId: property.propertyId,
     canonicalRequest: request,
+    resolverTask,
     capability: request.capability,
     resolverId: request.resolverId,
     riskLevel: request.riskLevel,
@@ -189,6 +250,7 @@ function buildCanonicalQueryPlan(formalRequest) {
     requestCycleId: formalRequest.requestCycleId,
     propertyId: formalRequest.propertyId,
     canonicalRequest,
+    resolverTask: formalRequest.resolverTask,
     capability: canonicalRequest.capability,
     resolverId: canonicalRequest.resolverId,
     riskLevel: canonicalRequest.riskLevel,

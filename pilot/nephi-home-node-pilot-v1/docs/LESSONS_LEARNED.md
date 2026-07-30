@@ -147,3 +147,9 @@ The real provider can emit a non-empty entity containing the whole question whil
 Recovery must distinguish resolved, ambiguous, and not-found states. Only not-found text may fall back to one exact current-property source match; a resolved entity that conflicts with the source must be rejected, and ambiguity or missing capability registration must never be guessed. Provider-shaped fixtures must include both the Planner's category and its complete raw entity text.
 
 Broad location behavior belongs in the Planner's semantic contract and the existing property-scoped location resolver, not in deterministic phrase lists. The runtime may return only the current property's approved map and must preserve non-location tasks in the same message.
+
+## 2026-07-30 — Readiness must not select capability or own context
+
+A missing date is not evidence that a bundle task is Unknown. Selecting a capability only after its required fields are present prevents the system from storing the real pending task and makes the next date-only turn impossible to recover.
+
+Choose capability and lodging product from the canonical entity first, merge trusted context in one reducer, then evaluate readiness through one contract. Use accepted Planner relations for semantic follow-ups, but permit a narrow structural recovery when exactly one pending task is missing exactly the supplied slot. The supplied slot must occupy the whole turn; a guest count plus another question is not structural recovery. Repeated task labels must not become state identity, same-turn duplicate IDs must be rejected before maps can collapse them, end relations must persist cancellation even on a no-reply turn, and entity-resolution failure must produce a contract-valid safe state rather than throwing during persistence.

@@ -128,3 +128,10 @@
 - Complete local verification and review of the non-empty/unresolvable parking provider shapes, conflict/ambiguity guards, broad location map-only behavior, two-property isolation, missing-map fallback, and location-plus-parking mixed reply.
 - After separate deployment authorization, deploy only the reviewed `test-only/core-90-fixes` commit and rerun the complete 90-case real-provider matrix from the beginning.
 - Do not infer true-provider stability from deterministic regressions. Do not deploy, run the 90-case matrix, operate Render or LINE, or modify credentials, onboarding, LINE setup, formal data, or production in this implementation task.
+
+## 2026-07-30 Conversation State V3 runtime review
+
+- Review the V3 single-writer reducer, compatibility-read projection, unified readiness calls, normalized lodging Resolver task, and bundle-before-readiness routing.
+- Preserve automatic recovery only for one unexpired pending task and a structurally isolated missing slot. Explicit new questions, multiple pending tasks, ambiguity, and expired state must not be guessed.
+- After separate authorization, deploy only the reviewed test-only commit and run bounded real-provider multi-turn smoke sequences before any broader validation.
+- Do not deploy, operate Render or LINE, read or change credentials, or modify formal property data in the implementation task.

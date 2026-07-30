@@ -15,6 +15,7 @@ const finalDecision = read("../lib/conversation-engine-v2/final-decision.js");
 const finalResponseRenderer = read("../lib/conversation-engine-v2/final-response-renderer.js");
 let formalRequest = read("../lib/conversation-engine-v2/formal-request.js");
 const stateReducer = read("../lib/conversation-engine-v2/state-reducer.js");
+const stateReducerV3 = read("../lib/conversation-engine-v2/conversation-state-v3-reducer.js");
 const temporalAuthority = read("../lib/conversation-engine-v2/temporal-resolver.js");
 let canonicalizer = read("../lib/conversation-engine-v2/canonicalizer.js");
 const canonicalRequest = read("../lib/conversation-engine-v2/canonical-request.js");
@@ -57,7 +58,8 @@ assert.equal((root.match(/createTestOnlyOpenAiControlledComposerFromEnv/g) || []
 assert.match(root, /availabilityResolver: overrides\.availabilityResolver \|\| \(\(query\) => service\.searchAvailability\(query\)\)/);
 assert.match(root, /availableDatesResolver: overrides\.availableDatesResolver \|\| \(\(query\) => service\.searchAvailableDates\(query\)\)/);
 assert.doesNotMatch(engine, /availability\.getRows\s*\(/, "V2 must not bypass the property-scoped resolver");
-assert.match(engine, /reduceConversationState\(/, "V2 must use the single state reducer");
+assert.equal((engine.match(/reduceConversationStateV3\(/g) || []).length, 1, "V2 must perform exactly one authoritative V3 state reduction");
+assert.doesNotMatch(engine, /\breduceConversationState\(/, "active V2 must not write through the legacy state reducer");
 assert.match(engine, /buildCanonicalFormalRequest\(/, "V2 must build FormalRequest from CanonicalRequest");
 assert.match(engine, /formalRequests\.map\(buildCanonicalQueryPlan\)/, "V2 must build QueryPlan from CanonicalRequest");
 assert.match(engine, /executeCanonicalQueryPlans\(/, "V2 must execute only CanonicalRequest-backed query plans");
@@ -82,7 +84,7 @@ const canonicalFormalBlock = formalRequest.match(/function buildCanonicalFormalR
 assert.doesNotMatch(canonicalFormalBlock, /resolveCanonicalTemporal|resolveEntity|getCapabilityDefinition|dateExpression|checkInCandidate|checkOutCandidate|task\.type/, "FormalRequest and QueryPlan must only read CanonicalRequest authority");
 assert.match(canonicalFormalBlock, /capability:\s*request\.capability/);
 assert.match(canonicalFormalBlock, /resolverId:\s*canonicalRequest\.resolverId/);
-assert.doesNotMatch(stateReducer, /resolveCanonicalTemporal|dateExpression|checkInCandidate|checkOutCandidate/, "State must persist canonical temporal state without parsing Planner candidates");
+assert.doesNotMatch(stateReducerV3, /resolveCanonicalTemporal|require\(["']\.\/temporal-resolver["']\)/, "V3 state must persist canonical temporal state without invoking Temporal");
 assert.doesNotMatch(executor, /resolveCanonicalTemporal|dateExpression|checkInCandidate|checkOutCandidate/, "Executor must consume QueryPlan dates without parsing Planner candidates");
 const canonicalExecutorBlock = executor.match(/function executeCanonicalQueryPlans\([\s\S]*?\r?\n}\r?\n\r?\nmodule\.exports/)[0];
 assert.match(canonicalExecutorBlock, /assertCanonicalRequest\(queryPlan && queryPlan\.canonicalRequest\)/, "canonical executor must reject plans without a CanonicalRequest");

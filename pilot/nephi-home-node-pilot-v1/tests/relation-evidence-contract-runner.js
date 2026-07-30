@@ -289,8 +289,9 @@ async function main() {
   assert.equal(burstResult.shouldReply, true, "valid multi-event evidence must continue through the Engine");
   assert.equal(burstResolverCalls, 0, "policy facts in a burst must not cause unrelated Resolver queries");
   assert.equal(burstStateBefore.requestCycles.length, 0);
-  assert.equal(burstState.requestCycles.length, 2, "each explicitly related burst candidate must receive an isolated cycle");
-  assert.notEqual(burstState.requestCycles[0].requestCycleId, burstState.requestCycles[1].requestCycleId, "burst candidates must not overwrite one another");
+  assert.equal(burstState.schemaVersion, 3);
+  assert.equal(burstState.tasks.length, 2, "each explicitly related burst candidate must receive an isolated V3 task");
+  assert.notEqual(burstState.tasks[0].taskId, burstState.tasks[1].taskId, "burst candidates must not overwrite one another");
   const acceptedBurst = burstDiagnostics.find((item) => item.stage === "context_validation");
   assert.deepEqual(acceptedBurst.acceptedRelations.map((item) => item.evidenceRefs[0].eventId), ["burst-a", "burst-b"], "each burst relation must retain its own source event");
   assert.equal(burstDiagnostics.some((item) => item.stage === "fallback"), false, "valid burst evidence must not enter the safety fallback");

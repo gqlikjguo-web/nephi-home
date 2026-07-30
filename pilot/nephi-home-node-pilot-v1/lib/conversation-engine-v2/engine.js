@@ -12,15 +12,21 @@ const {
   SINGLE_DATE_DEFAULT_NIGHT_RULE_REF,
   AVAILABLE_DATES_LOOKAHEAD_RULE_REF
 } = require("./canonicalizer");
-const { migrateStateV2, reduceConversationState, reducePendingRequests, decideContextExecution, conditionsForCycle } = require("./state-reducer");
+const {
+  readConversationStateV3
+} = require("../conversation-contracts/conversation-state-v3");
+const {
+  buildContextSnapshotV3,
+  decideContextExecutionV3,
+  executionConditionsV3,
+  reduceConversationStateV3
+} = require("./conversation-state-v3-reducer");
 const { executeCanonicalQueryPlans, isGenericAvailabilityEntity } = require("./capability-executor");
 const { buildResponsePlan } = require("./response-planner");
 const { composeControlledReply, mergeComposedSections } = require("./controlled-composer");
 const { validateClaims } = require("./claim-validator");
 const { coverageByStatus, assertTaskCoverage } = require("./task-coverage");
 const { availabilityTraceSummary } = require("./resolver-adapter");
-const { pendingFromResults } = require("./pending-request");
-const { buildContextSnapshot } = require("./contracts");
 const { validateUnderstandingContext, evidenceMatchesSource } = require("./understanding-validator");
 const { normalizePlannerEvidenceCoordinates } = require("./evidence-normalizer");
 const { buildCanonicalFormalRequest, buildCanonicalQueryPlan, resultForNotReady } = require("./formal-request");
@@ -30,6 +36,7 @@ const { applyControlledReplyRules } = require("../custom-reply-rules");
 
 const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
 const TEMPORAL_FAILURE_STATUSES = new Set(["unresolved"]);
+const PENDING_STATUSES = new Set(["pending", "needs_clarification"]);
 function decideFinal(input) { return buildFinalDecision(input); }
 function renderFinal(input) { return buildFinalResponse(input); }
 function sourceEventsForInput(input = {}) {
@@ -42,7 +49,14 @@ function sourceEventsForInput(input = {}) {
   if (normalized.length) return normalized;
   return [{ eventId: String(input.eventId || "").trim(), messageRef: String(input.messageRef || "").trim(), messageText: String(input.messageText || "") }];
 }
-function traceState(state) { const copy = JSON.parse(JSON.stringify(state || {})); if (copy.scope) delete copy.scope.lineUserId; return copy; }
+function traceState(state) {
+  const copy = JSON.parse(JSON.stringify(state || {}));
+  if (copy.scope) {
+    delete copy.scope.lineUserId;
+    delete copy.scope.userId;
+  }
+  return copy;
+}
 function plannerTaskTrace(task) {
   const entity = task && task.entity || {};
   return {
@@ -287,14 +301,38 @@ class ConversationEngineV2 {
     catch { /* diagnostics must never affect conversation fallback or delivery */ }
   }
 
+  persistConversationStateV3(input, reduction) {
+    const state = reduceConversationStateV3(reduction);
+    this.persistence.setConversationState(
+      input.customerId,
+      input.channelId,
+      input.lineUserId,
+      state
+    );
+    return state;
+  }
+
   async process(input) {
     const traceId = crypto.randomUUID();
     const sourceEvents = sourceEventsForInput(input);
     const property = this.getProperty(input.customerId);
     if (!property || property.propertyId !== input.customerId) throw new Error("property_not_found");
     const scope = { propertyId: input.customerId, channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, now: this.now().toISOString() };
-    const previous = migrateStateV2(this.persistence.getConversationState(input.customerId, input.channelId, input.lineUserId), scope);
-    const contextSnapshot = buildContextSnapshot(previous, scope);
+    const stateScope = {
+      propertyId: scope.propertyId,
+      channel: scope.channelId,
+      userId: scope.lineUserId
+    };
+    const previous = readConversationStateV3(
+      this.persistence.getConversationState(
+        input.customerId,
+        input.channelId,
+        input.lineUserId
+      ),
+      stateScope,
+      scope.now
+    );
+    const contextSnapshot = buildContextSnapshotV3(previous, scope);
     this.traceContexts.set(traceId, { timestamp: new Date().toISOString(), correlationId: traceId, eventId: input.eventId, sourceEventIds: sourceEvents.map((event) => event.eventId).filter(Boolean), propertyId: input.customerId, ...(this.diagnosticDetail ? { userKeyHash: crypto.createHash("sha256").update(String(input.lineUserId || "")).digest("hex").slice(0, 16), messageText: input.messageText, sourceEvents } : {}) });
     const catalog = buildPropertyCatalog(property);
     this.trace(traceId, "property_catalog", { providerType: this.diagnosticMetadata.providerType || "unknown", location: catalog.locationDiagnostics || { source: "none", profileValuePresent: false, transportValuePresent: false, urlValidation: "fail" } });
@@ -397,13 +435,35 @@ class ConversationEngineV2 {
       this.traceContexts.delete(traceId);
       return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
-    const contextExecution = decideContextExecution(previous, contextValidation.relations, plannerOutput.tasks);
-    this.trace(traceId, "pending_request", { action: contextExecution.resumedPending ? "resumed" : "unchanged", reasonCode: contextExecution.contextDecision.action, capability: "", missingFields: [] });
+    const contextExecution = decideContextExecutionV3({
+      state: previous,
+      relations: contextValidation.relations,
+      plannerTasks: plannerOutput.tasks,
+      now: scope.now
+    });
+    this.trace(traceId, "pending_request", { action: contextExecution.resumedPending ? "resumed" : "unchanged", reasonCode: contextExecution.contextDecision.reasonCode, capability: "", missingFields: [] });
     const hasActionableTask = plannerOutput.tasks.some((task) => !NON_ACTIONABLE_TASK_TYPES.has(task.type));
     const unknownTaskCount = plannerOutput.tasks.filter((task) => NON_ACTIONABLE_TASK_TYPES.has(task.type)).length;
     const noReplyGateHit = Boolean(plannerOutput.shouldIgnore && !hasActionableTask);
     this.trace(traceId, "no_reply_gate", { shouldIgnore: plannerOutput.shouldIgnore, actionableTaskCount: plannerOutput.tasks.length - unknownTaskCount, unknownTaskCount, gateHit: noReplyGateHit, reasonCode: noReplyGateHit ? "no_reply_gate_hit" : plannerOutput.shouldIgnore ? "actionable_task_present" : "should_ignore_false" });
     if (plannerOutput.shouldIgnore && !hasActionableTask) {
+      if (contextExecution.endedTaskIds.length) {
+        const state = this.persistConversationStateV3(input, {
+          previous,
+          endedTaskIds: contextExecution.endedTaskIds,
+          scope
+        });
+        this.trace(traceId, "state", {
+          contextAction: contextExecution.contextDecision.action,
+          revision: state.revision,
+          tasks: state.tasks.map((task) => ({
+            taskId: task.taskId,
+            taskType: task.taskType,
+            status: task.status,
+            missingFields: task.missingFields
+          }))
+        });
+      }
       const finalDecision = decideFinal({ noReplyReason: "no_reply_gate_hit" });
       const claimValidation = { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [] };
       const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: "", claimValidation });
@@ -417,7 +477,7 @@ class ConversationEngineV2 {
     }
     const executionTasks = contextExecution.executionTasks;
     const executionItems = contextExecution.executionItems;
-    const relationsByCandidateIndex = new Map(contextValidation.relations.map((relation) => [relation.candidateIndex, relation]));
+    const relationsByCandidateIndex = new Map(contextExecution.relations.map((relation) => [relation.candidateIndex, relation]));
     const candidateInputsByCandidateIndex = {};
     const canonicalItems = executionItems.map((item) => canonicalizeExecutionItem({
       item,
@@ -462,13 +522,8 @@ class ConversationEngineV2 {
         };
       })
     });
-    let state = reduceConversationState(previous, {
-      tasks: canonicalItems,
-      contextDecisions: contextExecution.contextDecisions,
-      candidateInputsByCandidateIndex
-    }, scope);
     const executableItems = canonicalItems.map((item) => {
-      const conditions = conditionsForCycle(state, item.requestCycleId);
+      const conditions = executionConditionsV3(previous, item);
       return {
         ...item,
         executionConditions: TEMPORAL_FAILURE_STATUSES.has(
@@ -478,7 +533,6 @@ class ConversationEngineV2 {
           : conditions
       };
     });
-    this.trace(traceId, "state", { contextAction: contextExecution.contextDecision.action, operations: state.transition, requestCycles: state.requestCycles.map((cycle) => ({ requestCycleId: cycle.requestCycleId, status: cycle.status })), ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {}) });
     const formalRequests = executableItems.map((item) => buildCanonicalFormalRequest({
       property,
       canonicalRequest: item.canonicalRequest,
@@ -511,30 +565,34 @@ class ConversationEngineV2 {
       taskResults = [...taskResults, ...executorCoverage.missingTaskIds.map((taskId) => ({ taskId, type: "unknown", status: "failed", reason: "executor_missing_task", facts: { subject: "這個問題" }, review: true }))];
       executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     }
-    const pendingRequests = [];
-    for (const item of executableItems) {
-      if (!item.requestCycleId) continue;
-      const previousPending = (previous.pendingRequests || []).find((pending) => pending.requestCycleId === item.requestCycleId) || null;
-      const itemResults = taskResults.filter((result) => result.taskId === item.task.taskId);
-      const pendingRequest = pendingFromResults({
-        plannerOutput: { ...plannerOutput, tasks: [item.task], missingInformation: executableItems.length === 1 ? plannerOutput.missingInformation : [] },
-        taskResults: itemResults,
-        conditions: item.executionConditions,
-        scope: {
-          eventId: input.eventId,
-          now: scope.now,
-          createdAt: previousPending && previousPending.metadata && previousPending.metadata.createdAt,
-          pendingRequestId: previousPending && previousPending.pendingRequestId || crypto.randomUUID(),
-          requestCycleId: item.requestCycleId,
-          expiresAt: new Date(new Date(scope.now).getTime() + 24 * 60 * 60 * 1000).toISOString()
-        }
-      });
-      state = reducePendingRequests(state, { requestCycleId: item.requestCycleId, pendingRequest }, scope);
-      pendingRequests.push({ requestCycleId: item.requestCycleId, pendingRequest });
-    }
-    this.persistence.setConversationState(input.customerId, input.channelId, input.lineUserId, state);
+    const state = this.persistConversationStateV3(input, {
+      previous,
+      canonicalItems,
+      formalRequests,
+      executionOutcomes,
+      endedTaskIds: contextExecution.endedTaskIds,
+      scope
+    });
+    this.trace(traceId, "state", {
+      contextAction: contextExecution.contextDecision.action,
+      revision: state.revision,
+      tasks: state.tasks.map((task) => ({
+        taskId: task.taskId,
+        taskType: task.taskType,
+        status: task.status,
+        missingFields: task.missingFields
+      })),
+      ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {})
+    });
     this.trace(traceId, "pending_request", {
-      items: pendingRequests.map((item) => ({ requestCycleId: item.requestCycleId, action: item.pendingRequest ? "stored" : "cleared", capability: item.pendingRequest && item.pendingRequest.capability || "", missingFields: item.pendingRequest && item.pendingRequest.missingFields || [] }))
+      items: state.tasks.filter((task) => PENDING_STATUSES.has(task.status)).map(
+        (task) => ({
+          requestCycleId: task.taskId,
+          action: "stored",
+          capability: task.taskType,
+          missingFields: task.missingFields
+        })
+      )
     });
     this.trace(traceId, "executor", { results: this.diagnosticDetail ? taskResults : taskResults.map((item) => ({ taskId: item.taskId, status: item.status, reason: item.reason || "", locationFactProvided: Boolean(item.facts && item.facts.locationMapUrl), factSource: item.facts && item.facts.source || "" })), resolverCalls: this.diagnosticDetail ? resolverCalls : undefined, coverage: executorCoverage });
     const reviewIds = [];

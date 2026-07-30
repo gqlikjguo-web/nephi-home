@@ -154,3 +154,11 @@
 - Retained guest-facing room highlights as optional room features, documented that they are not AI facts, and kept blank-value normalization.
 - Added a five-rule property-scoped custom-reply store, authenticated CRUD UI/API, PostgreSQL migration, overlap and data validation, active-state calculation, and two-property isolation.
 - Added a post-Resolver unique-match boundary that consumes Planner/CanonicalRequest semantics without keyword FAQ matching, preserves mixed Resolver tasks, and safely rejects ambiguity or formal pricing conflict.
+
+## 2026-07-30 — Conversation State V3 runtime authority
+
+- Cut ConversationEngineV2 over to one V3 reducer and compatibility-only V2 reads.
+- Added deterministic single-pending slot recovery, isolated repeated task IDs, and mixed-task preservation.
+- Standardized lodging products and Resolver inputs, including pending and executable bundle availability.
+- Unified active and legacy FormalRequest readiness on the Phase 1 readiness contract.
+- Added explicit end-state cancellation, same-turn duplicate task-ID rejection, unresolved-product safe state, and persisted event-replay coverage across coordinator restart.

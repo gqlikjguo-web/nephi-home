@@ -7,6 +7,9 @@ const {
 const { createCanonicalRequest } = require("./canonical-request");
 const { resolveEntity } = require("./entity-resolver");
 const { resolveCanonicalTemporal } = require("./temporal-resolver");
+const {
+  createLodgingProduct
+} = require("../conversation-contracts/lodging-product");
 
 const DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS = 31;
 const SINGLE_DATE_DEFAULT_NIGHT_RULE_REF = "PRODUCT_BASELINE:single_date_availability_default_one_night";
@@ -124,17 +127,6 @@ function canonicalEntity(catalog, candidate, taskType) {
   };
 }
 
-function fieldAvailable(field, temporalState) {
-  if (field === "stay.checkIn") return Boolean(temporalState.checkIn);
-  if (field === "stay.checkOut") return Boolean(temporalState.checkOut);
-  if (field === "stay.searchRange") {
-    return Boolean(temporalState.searchRange
-      && temporalState.searchRange.from
-      && temporalState.searchRange.to);
-  }
-  return false;
-}
-
 function definitionMatches(definition, task, entity) {
   return definition.acceptedCandidateTypes.includes(task.type)
     && definition.acceptedEntityCategories.includes(entity.category);
@@ -150,7 +142,7 @@ function resolvedStandalonePropertyFactMatches(definition, task, entity) {
     && definition.acceptedEntityCategories.includes(entity.category);
 }
 
-function selectCapabilityDefinition(task, entity, temporalState) {
+function selectCapabilityDefinition(task, entity) {
   const entitySpecific = entity.canonicalId && getCapabilityDefinition(entity.canonicalId);
   if (entitySpecific && (
     definitionMatches(entitySpecific, task, entity)
@@ -159,9 +151,7 @@ function selectCapabilityDefinition(task, entity, temporalState) {
   const matches = Object.values(CAPABILITY_REGISTRY)
     .filter((definition) => definition.acceptedCandidateTypes.includes(definition.capability))
     .filter((definition) => definitionMatches(definition, task, entity));
-  const ready = matches.find((definition) =>
-    definition.requiredFields.every((field) => fieldAvailable(field, temporalState)));
-  if (ready) return ready;
+  if (matches.length) return matches[0];
   const exact = getCapabilityDefinition(task.type);
   if (exact && definitionMatches(exact, task, entity)) return exact;
   return getCapabilityDefinition("unknown");
@@ -175,6 +165,27 @@ function confirmedInventory(entity) {
     mode: entity.category === "bundle" ? "bundle_only" : "room_only",
     entityId: entity.canonicalId
   };
+}
+
+function lodgingProductForEntity(entity) {
+  if (!entity || entity.status !== "resolved" || !entity.canonicalId) {
+    return createLodgingProduct({ productType: "any" });
+  }
+  if (entity.category === "bundle") {
+    return createLodgingProduct({
+      productType: "bundle",
+      productId: entity.canonicalId,
+      bundleId: entity.canonicalId
+    });
+  }
+  if (entity.category === "room") {
+    return createLodgingProduct({
+      productType: "room_type",
+      productId: entity.canonicalId,
+      roomTypeId: entity.canonicalId
+    });
+  }
+  return createLodgingProduct({ productType: "any" });
 }
 
 function canonicalizeExecutionItem({
@@ -210,11 +221,12 @@ function canonicalizeExecutionItem({
   });
   const candidateEntity = approvedTopicCandidate(contextSnapshot, relation, plannerTask);
   const entity = canonicalEntity(catalog, candidateEntity, plannerTask.type);
-  const definition = selectCapabilityDefinition(plannerTask, entity, temporalState);
+  const definition = selectCapabilityDefinition(plannerTask, entity);
   const canonicalRequest = createCanonicalRequest({
     taskId: plannerTask.taskId,
     capability: definition.capability,
     canonicalEntity: entity,
+    lodgingProduct: lodgingProductForEntity(entity),
     detailIntent: plannerTask.detailIntent || "general",
     temporalState,
     stayDependency: definition.stayDependency,

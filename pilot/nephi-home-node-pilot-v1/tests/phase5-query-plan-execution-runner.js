@@ -8,6 +8,7 @@ const catalog = { amenities: [], policies: [], faqs: [] };
 const plan = {
   formalRequestId: "cycle-a:availability", taskId: "availability", candidateIndex: 0, requestCycleId: "cycle-a",
   propertyId: "property-a", capability: "availability", operation: "availability", expectedOutputs: ["answer"],
+  resolverTask: { propertyId: "property-a", taskType: "availability", productType: "room_type", productId: "room-a", checkIn: "2026-08-06", checkOut: "2026-08-07", guestCount: 2 },
   entity: { status: "resolved", category: "room", canonicalId: "room-a", canonicalSet: [] },
   conditions: { stay: { checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, guests: 2, searchRange: null }, inventory: { mode: "room_only", entityId: "room-a", entityIds: [], features: [] }, topic: {} }
 };
@@ -65,7 +66,7 @@ assert.deepEqual(twoFacts.map((result) => [result.taskId, result.requestCycleId,
 ]);
 
 const pricingProperty = { propertyId: "pricing-property", currency: "TWD", rooms: [{ id: "room-price", publicDisplayName: "Price room", capacity: 2, enabled: true, mondayThursdayPrice: 1000, fridayPrice: 1200, saturdayHolidayPrice: 1500, sundayPrice: 1100 }] };
-const pricingPlan = { ...plan, formalRequestId: "cycle-price:price", taskId: "price", candidateIndex: 3, requestCycleId: "cycle-price", propertyId: "pricing-property", capability: "price", operation: "price", entity: { status: "resolved", category: "room", canonicalId: "room-price", canonicalSet: [] }, conditions: { ...plan.conditions, stay: { ...plan.conditions.stay, checkOut: "2026-08-08", nights: 2 } } };
+const pricingPlan = { ...plan, formalRequestId: "cycle-price:price", taskId: "price", candidateIndex: 3, requestCycleId: "cycle-price", propertyId: "pricing-property", capability: "price", operation: "price", resolverTask: { propertyId: "pricing-property", taskType: "pricing", productType: "room_type", productId: "room-price", checkIn: "2026-08-06", checkOut: "2026-08-08", guestCount: 2 }, entity: { status: "resolved", category: "room", canonicalId: "room-price", canonicalSet: [] }, conditions: { ...plan.conditions, stay: { ...plan.conditions.stay, checkOut: "2026-08-08", nights: 2 } } };
 const priced = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: pricingPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }), priceOverrides: [{ roomId: "room-price", date: "2026-08-07", price: 1300 }] });
 assert.equal(priced.outcome, "answered");
 assert.deepEqual(priced.facts.prices[0].daily.map((item) => [item.date, item.price, item.source]), [["2026-08-06", 1000, "room_pricing"], ["2026-08-07", 1300, "price_override"]]);
@@ -87,7 +88,7 @@ assert.equal(amenityList.outcome, "answered");
 assert.deepEqual(amenityList.facts.amenities, ["BBQ"]);
 
 for (const [date, checkOut, expected] of [["2026-08-06", "2026-08-07", 1000], ["2026-08-07", "2026-08-08", 1200], ["2026-08-08", "2026-08-09", 1500], ["2026-08-09", "2026-08-10", 1100]]) {
-  const weekday = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...pricingPlan, conditions: { ...pricingPlan.conditions, stay: { ...pricingPlan.conditions.stay, checkIn: date, checkOut } } }, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
+  const weekday = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...pricingPlan, resolverTask: { ...pricingPlan.resolverTask, checkIn: date, checkOut }, conditions: { ...pricingPlan.conditions, stay: { ...pricingPlan.conditions.stay, checkIn: date, checkOut } } }, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
   assert.deepEqual(weekday.facts.prices[0].daily, [{ date, price: expected, source: "room_pricing" }]);
   assert.equal(weekday.facts.prices[0].total, expected);
 }

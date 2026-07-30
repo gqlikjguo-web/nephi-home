@@ -153,7 +153,7 @@ const REGISTRY_BLUEPRINT = {
   },
   bundle_availability: {
     capability: "bundle_availability",
-    acceptedCandidateTypes: ["bundle_availability"],
+    acceptedCandidateTypes: ["bundle_availability", "availability"],
     acceptedEntityCategories: ["bundle", "other"],
     stayDependency: "required",
     requiredFields: ["stay.checkIn", "stay.checkOut"],
@@ -166,7 +166,7 @@ const REGISTRY_BLUEPRINT = {
     acceptedCandidateTypes: ["capacity"],
     acceptedEntityCategories: ["room", "bundle", "other"],
     stayDependency: "required",
-    requiredFields: ["stay.checkIn", "stay.checkOut"],
+    requiredFields: ["stay.checkIn", "stay.checkOut", "stay.guests"],
     resolverId: "availability_resolver",
     riskLevel: "low",
     responseMode: "answer"

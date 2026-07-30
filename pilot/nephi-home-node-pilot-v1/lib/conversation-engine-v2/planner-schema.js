@@ -199,18 +199,25 @@ function validatePlannerOutput(value) {
   const expression = value.stay && value.stay.dateExpression;
   if (!expression || !text(expression.rawText || "", 200) || !DATE_KINDS.has(expression.kind) || !ANCHORS.has(expression.anchor)) errors.push("stay.dateExpression");
   if (!Array.isArray(value.tasks) || value.tasks.length < 1 || value.tasks.length > 12) errors.push("tasks");
-  else value.tasks.forEach((task, index) => {
-    const entity = task && task.entity;
-    const eligibilityEvidence = task && task.eligibilityEvidence;
-    if (!task || !Number.isInteger(task.candidateIndex) || task.candidateIndex < 0 || !text(task.taskId, 80) || !TASK_TYPES.has(task.type) || !text(task.sourceText, 500) || !task.sourceText.trim()
-      || (task.detailIntent !== undefined && !DETAIL_INTENTS.has(task.detailIntent)) || !Array.isArray(task.requestedOutputs) || typeof task.dependsOnStayContext !== "boolean" || !confidence(task.confidence)
-      || !eligibilityEvidence || typeof eligibilityEvidence !== "object" || Array.isArray(eligibilityEvidence) || !ELIGIBILITY_EVIDENCE_KINDS.has(eligibilityEvidence.kind) || !text(eligibilityEvidence.sourceText || "", 200)
-      || !entity || !ENTITY_CATEGORIES.has(entity.category) || !text(entity.rawText || "", 200) || (!entity.rawText && !["availability", "available_dates", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type))
-      || !(entity.canonicalCandidate === null || text(entity.canonicalCandidate, 120)) || !confidence(entity.confidence)
-      || !Object.hasOwn(task, "stayCandidate")
-      || (task.dependsOnStayContext && task.stayCandidate === null)
-      || (task.stayCandidate !== null && !validStayCandidate(task.stayCandidate))) errors.push(`tasks.${index}`);
-  });
+  else {
+    const taskIds = new Set();
+    value.tasks.forEach((task, index) => {
+      const entity = task && task.entity;
+      const eligibilityEvidence = task && task.eligibilityEvidence;
+      if (!task || !Number.isInteger(task.candidateIndex) || task.candidateIndex < 0 || !text(task.taskId, 80) || !TASK_TYPES.has(task.type) || !text(task.sourceText, 500) || !task.sourceText.trim()
+        || (task.detailIntent !== undefined && !DETAIL_INTENTS.has(task.detailIntent)) || !Array.isArray(task.requestedOutputs) || typeof task.dependsOnStayContext !== "boolean" || !confidence(task.confidence)
+        || !eligibilityEvidence || typeof eligibilityEvidence !== "object" || Array.isArray(eligibilityEvidence) || !ELIGIBILITY_EVIDENCE_KINDS.has(eligibilityEvidence.kind) || !text(eligibilityEvidence.sourceText || "", 200)
+        || !entity || !ENTITY_CATEGORIES.has(entity.category) || !text(entity.rawText || "", 200) || (!entity.rawText && !["availability", "available_dates", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type))
+        || !(entity.canonicalCandidate === null || text(entity.canonicalCandidate, 120)) || !confidence(entity.confidence)
+        || !Object.hasOwn(task, "stayCandidate")
+        || (task.dependsOnStayContext && task.stayCandidate === null)
+        || (task.stayCandidate !== null && !validStayCandidate(task.stayCandidate))) errors.push(`tasks.${index}`);
+      if (task && text(task.taskId, 80)) {
+        if (taskIds.has(task.taskId)) errors.push("tasks.taskId.duplicate");
+        taskIds.add(task.taskId);
+      }
+    });
+  }
   if (!Array.isArray(value.ambiguities)) errors.push("ambiguities");
   if (!Array.isArray(value.missingInformation)) errors.push("missingInformation");
   if (!Array.isArray(value.contextRelationCandidates) || value.contextRelationCandidates.some((item) => !item || !Number.isInteger(item.candidateIndex) || item.candidateIndex < 0 || !CONTEXT_RELATION_KINDS.has(item.kind) || !Array.isArray(item.candidateRequestCycleRefs) || !Array.isArray(item.evidenceRefs))) errors.push("contextRelationCandidates");

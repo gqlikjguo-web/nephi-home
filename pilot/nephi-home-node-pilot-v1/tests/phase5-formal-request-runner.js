@@ -50,7 +50,7 @@ assert.equal(missing.readiness.status, "missing_information");
 assert.equal(buildQueryPlan(missing), null);
 assert.deepEqual(resultForNotReady(missing), {
   taskId: "room-a", type: "availability", formalRequestId: missing.formalRequestId, requestCycleId: "cycle-a",
-  outcome: "not_ready", readinessStatus: "missing_information", missingFields: ["stay.checkIn"], invalidFields: [], conflictingFields: [], facts: {}, resolverAttempted: false
+  outcome: "not_ready", readinessStatus: "missing_information", missingFields: ["checkIn", "checkOut"], invalidFields: [], conflictingFields: [], facts: {}, resolverAttempted: false
 });
 
 const invalidInput = formal({ temporalResult: { resolutionStatus: "unresolved", checkIn: null, checkOut: null, nights: null, searchRange: null, fields: {}, repairReasonCode: "temporal_expression_unrecognized" }, confirmedInputs: { ...conditions, stay: { ...conditions.stay, checkIn: null, checkOut: null } } });

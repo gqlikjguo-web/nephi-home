@@ -5,6 +5,14 @@ const { composeSection } = require("./controlled-composer");
 const SAFE_HANDOFF_TEXT = "這次有部分內容無法安全確認，我會請業者協助；您剛才的問題已經記錄。";
 const SAFE_CLARIFICATION_TEXT = "目前提供的資訊無法安全確認。";
 const MISSING_FIELD_QUESTIONS = Object.freeze({
+  checkIn: "請補充入住日期。",
+  checkOut: "請補充退房日期。",
+  guestCount: "請補充入住人數。",
+  searchFrom: "請補充查詢起始日期。",
+  searchTo: "請補充查詢結束日期。",
+  productId: "請補充想查詢的住宿商品。",
+  roomTypeId: "請補充想查詢的房型。",
+  bundleId: "請補充想查詢的包棟方案。",
   "stay.checkIn": "請補充入住日期。",
   "stay.checkOut": "請補充退房日期。",
   "stay.nights": "請補充住宿晚數。",
@@ -30,7 +38,13 @@ function sectionsFor(responsePlan, responseMode) {
 }
 
 function clarificationQuestions(missingFields) {
-  return unique((Array.isArray(missingFields) ? missingFields : []).map((field) => (
+  const fields = Array.isArray(missingFields) ? missingFields : [];
+  const minimalFields = fields.includes("checkIn") && fields.includes("checkOut")
+    ? fields.filter((field) => field !== "checkOut")
+    : fields.includes("stay.checkIn") && fields.includes("stay.checkOut")
+      ? fields.filter((field) => field !== "stay.checkOut")
+      : fields;
+  return unique(minimalFields.map((field) => (
     MISSING_FIELD_QUESTIONS[String(field)] || "請補充尚缺的資訊。"
   )));
 }

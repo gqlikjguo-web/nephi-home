@@ -1,5 +1,9 @@
 "use strict";
 require("./conversation-contract-phase1-green-gate-runner");
+require("./conversation-state-v3-runtime-reducer-runner");
+require("./lodging-resolver-task-contract-runner");
+require("./event-replay-state-contract-runner");
+require("./conversation-contract-runtime-green-runner");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");

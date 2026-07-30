@@ -114,7 +114,14 @@ for (const taskType of [
   "location",
   "bbq",
   "pool",
-  "property_fact"
+  "property_fact",
+  "amenity",
+  "policy",
+  "amenity_list",
+  "booking_request",
+  "human_help",
+  "high_risk",
+  "unknown"
 ]) {
   assert.deepEqual(
     readiness({ taskType, productType: "any" }),
@@ -173,7 +180,7 @@ assert.deepEqual(
 
 console.log(JSON.stringify({
   suite: "task-readiness-contract",
-  caseCount: 14,
-  passCount: 14,
+  caseCount: 15,
+  passCount: 15,
   failCount: 0
 }));

@@ -78,7 +78,11 @@ async function main() {
     priorState: initial,
     plannerOutput: plan({ stateOperations: [{ field: "stay.guestCountCandidate", operation: "replace", value: 4, sourceText: "four guests" }] })
   });
-  assert.equal(legacy.persisted.requestCycles[0].confirmedInputs.stay.guests, 2, "legacy Planner state controls must not change persisted state");
+  assert.equal(
+    legacy.persisted.tasks.find((task) => task.taskId === "existing-cycle").guestCount,
+    2,
+    "legacy Planner state controls must not change the V3 compatibility projection"
+  );
 
   for (const invalidReference of ["outside", "expired", "ended", "scope-mismatch"]) {
     const before = emptyStateV2(scope);

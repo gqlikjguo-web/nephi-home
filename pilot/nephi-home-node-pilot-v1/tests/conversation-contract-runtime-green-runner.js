@@ -129,6 +129,7 @@ function harness(plans) {
   const states = new Map();
   const diagnostics = [];
   const resolverCalls = [];
+  const stateWrites = [];
   const key = (propertyId, channelId, userId) =>
     `${propertyId}:${channelId}:${userId}`;
   const engine = new ConversationEngineV2({
@@ -141,7 +142,16 @@ function harness(plans) {
       getConversationState: (propertyId, channelId, userId) =>
         clone(states.get(key(propertyId, channelId, userId)) || null),
       setConversationState: (propertyId, channelId, userId, value) =>
-        states.set(key(propertyId, channelId, userId), clone(value)),
+        {
+          const stored = clone(value);
+          stateWrites.push({
+            propertyId,
+            channelId,
+            userId,
+            state: stored
+          });
+          states.set(key(propertyId, channelId, userId), stored);
+        },
       appendMessageLog: (_propertyId, value) => ({
         ...value,
         reviewId: value.needsReview ? `review-${value.eventId}` : ""
@@ -176,6 +186,7 @@ function harness(plans) {
     engine,
     diagnostics,
     resolverCalls,
+    stateWrites,
     state: (channelId, userId) =>
       clone(states.get(key(property.propertyId, channelId, userId)) || null)
   };
@@ -254,6 +265,7 @@ function traceSummary(diagnostics, traceId) {
     canonical: (canonical && canonical.items || []).map((item) => ({
       taskId: item.taskId,
       capability: item.capability,
+      lodgingProduct: item.lodgingProduct || null,
       entityStatus: item.canonicalEntity.status,
       entityCategory: item.canonicalEntity.category,
       entityId: item.canonicalEntity.canonicalId,
@@ -321,6 +333,14 @@ async function pricingFollowupGap() {
   const pendingCapabilities = (state && state.pendingRequests || [])
     .map((pending) => pending.capability);
   const trace = traceSummary(runtime.diagnostics, second.traceId);
+  const persisted = runtime.state("line:pricing-gap", "Upricing-gap");
+  const v3IsSoleAuthority = Boolean(
+    persisted
+    && persisted.schemaVersion === 3
+    && Array.isArray(persisted.tasks)
+    && !Object.hasOwn(persisted, "pendingRequests")
+    && !Object.hasOwn(persisted, "requestCycles")
+  );
   const gapReproduced = !pricingAnswered
     && trace.completePipelineObserved
     && pendingCapabilities.includes("price")
@@ -356,6 +376,9 @@ async function pricingFollowupGap() {
       })),
       originalPricingAnswered: pricingAnswered,
       pendingCapabilities,
+      persistedSchemaVersion: persisted && persisted.schemaVersion,
+      v3IsSoleAuthority,
+      stateWriteCount: runtime.stateWrites.length,
       finalDecision: second.finalDecision,
       replyText: second.replyText
     },
@@ -367,6 +390,8 @@ async function pricingFollowupGap() {
         : "unexpected_runtime_or_fixture_shape",
     trace,
     passed: pricingAnswered
+      && v3IsSoleAuthority
+      && runtime.stateWrites.length === 2
   };
 }
 
@@ -406,10 +431,18 @@ async function explicitBundleGap() {
   const answered = result.taskResults.some(
     (taskResult) => taskResult.status === "answered"
   );
+  const providerRequest = runtime.resolverCalls[0] || {};
   const consistent = canonical.capability === "bundle_availability"
+    && canonical.lodgingProduct
+    && canonical.lodgingProduct.productType === "bundle"
+    && canonical.lodgingProduct.productId === "alpha-whole-house"
     && canonical.entityCategory === "bundle"
     && canonical.entityId === "alpha-whole-house"
-    && canonical.resolverId === "availability_resolver";
+    && canonical.resolverId === "availability_resolver"
+    && providerRequest.customerId === "property_alpha"
+    && providerRequest.roomType === "alpha-whole-house"
+    && providerRequest.queryMode === "bundle_only"
+    && !Object.hasOwn(providerRequest, "sourceText");
   const gapReproduced = !answered
     && summary.completePipelineObserved
     && canonical.capability === "unknown"
@@ -430,6 +463,7 @@ async function explicitBundleGap() {
     },
     actual: {
       canonical,
+      providerRequest,
       taskStatuses: result.taskResults.map((taskResult) => ({
         type: taskResult.type,
         status: taskResult.status,
@@ -450,14 +484,215 @@ async function explicitBundleGap() {
   };
 }
 
+async function availabilityThenDate() {
+  const firstMessage = "availability";
+  const secondMessage = "8/2";
+  const runtime = harness([
+    plan({
+      message: firstMessage,
+      taskValue: task({
+        taskId: "availability",
+        type: "availability",
+        sourceText: firstMessage,
+        requestedOutputs: ["availability"],
+        dependsOnStayContext: true
+      }),
+      missingInformation: ["stay.checkIn"]
+    }),
+    plan({
+      message: secondMessage,
+      taskValue: task({
+        taskId: "date-slot",
+        type: "available_dates",
+        sourceText: secondMessage,
+        requestedOutputs: ["availability"],
+        dependsOnStayContext: true
+      }),
+      stayValue: stay({
+        rawText: secondMessage,
+        kind: "absolute",
+        checkInCandidate: "2026-08-02",
+        nightsCandidate: 1
+      })
+    })
+  ]);
+  const first = await runtime.engine.process(input(
+    "line:availability-followup",
+    "Uavailability-followup",
+    "evt-availability-followup-1",
+    firstMessage
+  ));
+  const second = await runtime.engine.process(input(
+    "line:availability-followup",
+    "Uavailability-followup",
+    "evt-availability-followup-2",
+    secondMessage
+  ));
+  const providerRequest = runtime.resolverCalls[0] || {};
+  return {
+    caseId: "availability_then_date",
+    actual: {
+      firstStatus: first.taskResults[0].status,
+      secondStatus: second.taskResults[0].status,
+      secondType: second.taskResults[0].type,
+      providerRequest
+    },
+    passed: first.taskResults[0].status === "needs_clarification"
+      && second.taskResults[0].status === "answered"
+      && second.taskResults[0].type === "availability"
+      && providerRequest.checkIn === "2026-08-02"
+      && providerRequest.checkOut === "2026-08-03"
+  };
+}
+
+async function bundleThenDate() {
+  const firstMessage = "bundle availability";
+  const secondMessage = "8/3";
+  const runtime = harness([
+    plan({
+      message: firstMessage,
+      taskValue: task({
+        taskId: "bundle-availability",
+        type: "availability",
+        sourceText: firstMessage,
+        category: "bundle",
+        rawText: "Alpha Whole House",
+        canonicalCandidate: "alpha-whole-house",
+        requestedOutputs: ["availability"],
+        dependsOnStayContext: true
+      }),
+      missingInformation: ["stay.checkIn"]
+    }),
+    plan({
+      message: secondMessage,
+      taskValue: task({
+        taskId: "date-slot",
+        type: "available_dates",
+        sourceText: secondMessage,
+        requestedOutputs: ["availability"],
+        dependsOnStayContext: true
+      }),
+      stayValue: stay({
+        rawText: secondMessage,
+        kind: "absolute",
+        checkInCandidate: "2026-08-03",
+        nightsCandidate: 1
+      })
+    })
+  ]);
+  const first = await runtime.engine.process(input(
+    "line:bundle-followup",
+    "Ubundle-followup",
+    "evt-bundle-followup-1",
+    firstMessage
+  ));
+  const second = await runtime.engine.process(input(
+    "line:bundle-followup",
+    "Ubundle-followup",
+    "evt-bundle-followup-2",
+    secondMessage
+  ));
+  const providerRequest = runtime.resolverCalls[0] || {};
+  const canonical = traceSummary(
+    runtime.diagnostics,
+    second.traceId
+  ).canonical[0] || {};
+  return {
+    caseId: "bundle_then_date",
+    actual: {
+      firstStatus: first.taskResults[0] && first.taskResults[0].status,
+      stateAfterFirst: first.state,
+      firstCanonical: traceSummary(
+        runtime.diagnostics,
+        first.traceId
+      ).canonical[0],
+      canonical,
+      providerRequest
+    },
+    passed: second.taskResults[0].status === "answered"
+      && canonical.capability === "bundle_availability"
+      && canonical.lodgingProduct.productType === "bundle"
+      && providerRequest.roomType === "alpha-whole-house"
+      && providerRequest.queryMode === "bundle_only"
+  };
+}
+
+async function capacityThenGuestCount() {
+  const firstMessage = "capacity on 8/4";
+  const secondMessage = "4 guests";
+  const runtime = harness([
+    plan({
+      message: firstMessage,
+      taskValue: task({
+        taskId: "capacity",
+        type: "capacity",
+        sourceText: firstMessage,
+        category: "room",
+        rawText: "family",
+        canonicalCandidate: "alpha-family",
+        requestedOutputs: ["capacity"],
+        dependsOnStayContext: true
+      }),
+      stayValue: stay({
+        rawText: "8/4",
+        kind: "absolute",
+        checkInCandidate: "2026-08-04",
+        nightsCandidate: 1
+      }),
+      missingInformation: ["stay.guests"]
+    }),
+    plan({
+      message: secondMessage,
+      taskValue: task({
+        taskId: "guest-slot",
+        type: "capacity",
+        sourceText: secondMessage,
+        requestedOutputs: ["capacity"],
+        dependsOnStayContext: true
+      }),
+      stayValue: stay({ guestCountCandidate: 4 })
+    })
+  ]);
+  const first = await runtime.engine.process(input(
+    "line:capacity-followup",
+    "Ucapacity-followup",
+    "evt-capacity-followup-1",
+    firstMessage
+  ));
+  const second = await runtime.engine.process(input(
+    "line:capacity-followup",
+    "Ucapacity-followup",
+    "evt-capacity-followup-2",
+    secondMessage
+  ));
+  const providerRequest = runtime.resolverCalls[0] || {};
+  return {
+    caseId: "capacity_then_guest_count",
+    actual: {
+      firstMissing: first.taskResults[0].missingInputs,
+      secondStatus: second.taskResults[0].status,
+      providerRequest
+    },
+    passed: first.taskResults[0].status === "needs_clarification"
+      && first.taskResults[0].missingInputs.includes("guestCount")
+      && second.taskResults[0].status === "answered"
+      && providerRequest.guests === 4
+      && providerRequest.roomType === "alpha-family"
+      && providerRequest.checkIn === "2026-08-04"
+  };
+}
+
 (async () => {
   const cases = [
     await pricingFollowupGap(),
-    await explicitBundleGap()
+    await explicitBundleGap(),
+    await availabilityThenDate(),
+    await bundleThenDate(),
+    await capacityThenGuestCount()
   ];
   const report = {
-    suite: "conversation-contract-phase1-runtime-red",
-    expectedStatus: "RED",
+    suite: "conversation-contract-runtime-green",
+    expectedStatus: "GREEN",
     caseCount: cases.length,
     passCount: cases.filter((item) => item.passed).length,
     failCount: cases.filter((item) => !item.passed).length,

@@ -1,5 +1,52 @@
 "use strict";
 
+const { validateLodgingProduct } = require("../conversation-contracts/lodging-product");
+
+function resolverTaskProduct(resolverTask) {
+  const product = validateLodgingProduct({
+    productType: resolverTask.productType,
+    productId: resolverTask.productId,
+    roomTypeId: resolverTask.productType === "room_type" ? resolverTask.productId : null,
+    bundleId: resolverTask.productType === "bundle" ? resolverTask.productId : null
+  });
+  if (!product.ok) throw new Error("resolver_task_product_invalid");
+  if (!resolverTask.propertyId) throw new Error("resolver_task_property_required");
+  return product.value;
+}
+
+function availabilityRequestFromResolverTask(resolverTask = {}) {
+  const product = resolverTaskProduct(resolverTask);
+  return {
+    customerId: resolverTask.propertyId,
+    checkIn: resolverTask.checkIn || null,
+    checkOut: resolverTask.checkOut || null,
+    guests: resolverTask.guestCount || null,
+    roomType: product.productId || "all",
+    queryMode: product.productType === "bundle"
+      ? "bundle_only"
+      : product.productType === "room_type"
+        ? "room_only"
+        : "any"
+  };
+}
+
+function availableDatesRequestFromResolverTask(resolverTask = {}) {
+  const product = resolverTaskProduct(resolverTask);
+  return {
+    customerId: resolverTask.propertyId,
+    dateFrom: resolverTask.searchFrom || null,
+    dateTo: resolverTask.searchTo || null,
+    nights: Number.isInteger(resolverTask.nights) ? resolverTask.nights : 1,
+    guests: resolverTask.guestCount || null,
+    roomType: product.productId || "all",
+    queryMode: product.productType === "bundle"
+      ? "bundle_only"
+      : product.productType === "room_type"
+        ? "room_only"
+        : "any"
+  };
+}
+
 function availabilityRequest(propertyId, request, resolved) {
   const entity = resolved && resolved.status === "resolved" ? resolved.entity : null;
   const roomTypeSet = resolved && resolved.status === "matched_set" ? resolved.entities.map((item) => item.canonicalId).filter(Boolean) : [];
@@ -32,21 +79,38 @@ function availabilityTraceSummary(request, result) {
   };
 }
 
-function resolveAvailability({ availabilityResolver, propertyId, request, resolved }) {
+function resolveAvailability({ availabilityResolver, resolverTask = null, propertyId, request, resolved }) {
   if (typeof availabilityResolver !== "function") throw new Error("availability_resolver_required");
-  const contractRequest = availabilityRequest(propertyId, request, resolved);
+  const contractRequest = resolverTask
+    ? availabilityRequestFromResolverTask(resolverTask)
+    : availabilityRequest(propertyId, request, resolved);
+  const scopedPropertyId = resolverTask ? resolverTask.propertyId : propertyId;
   const result = availabilityResolver(contractRequest);
-  if (!result || result.customerId !== propertyId) throw new Error("availability_resolver_invalid_result");
-  return { result, facts: availabilityFacts(result, propertyId) };
+  if (!result || result.customerId !== scopedPropertyId) throw new Error("availability_resolver_invalid_result");
+  return { result, facts: availabilityFacts(result, scopedPropertyId) };
 }
 
-function resolveAvailableDates({ availableDatesResolver, propertyId, request, resolved }) {
+function resolveAvailableDates({ availableDatesResolver, resolverTask = null, propertyId, request, resolved }) {
   if (typeof availableDatesResolver !== "function") throw new Error("available_dates_resolver_required");
-  const entity = resolved && resolved.status === "resolved" ? resolved.entity : null;
-  const roomTypeSet = resolved && resolved.status === "matched_set" ? resolved.entities.map((item) => item.canonicalId).filter(Boolean) : [];
-  const result = availableDatesResolver({ customerId: propertyId, dateFrom: request.stay.searchRange.from, dateTo: request.stay.searchRange.to, nights: request.stay.nights || 1, guests: request.stay.guests || null, roomType: entity ? entity.canonicalId : "all", ...(roomTypeSet.length ? { roomTypeSet } : {}), queryMode: request.inventory.mode || "any" });
+  let contractRequest;
+  if (resolverTask) {
+    contractRequest = availableDatesRequestFromResolverTask(resolverTask);
+  } else {
+    const entity = resolved && resolved.status === "resolved" ? resolved.entity : null;
+    const roomTypeSet = resolved && resolved.status === "matched_set" ? resolved.entities.map((item) => item.canonicalId).filter(Boolean) : [];
+    contractRequest = { customerId: propertyId, dateFrom: request.stay.searchRange.from, dateTo: request.stay.searchRange.to, nights: request.stay.nights || 1, guests: request.stay.guests || null, roomType: entity ? entity.canonicalId : "all", ...(roomTypeSet.length ? { roomTypeSet } : {}), queryMode: request.inventory.mode || "any" };
+  }
+  const result = availableDatesResolver(contractRequest);
   if (!result || !["answered", "unknown", "unreliable"].includes(result.status)) throw new Error("available_dates_resolver_invalid_result");
   return result;
 }
 
-module.exports = { availabilityRequest, availabilityFacts, availabilityTraceSummary, resolveAvailability, resolveAvailableDates };
+module.exports = {
+  availabilityRequest,
+  availabilityRequestFromResolverTask,
+  availableDatesRequestFromResolverTask,
+  availabilityFacts,
+  availabilityTraceSummary,
+  resolveAvailability,
+  resolveAvailableDates
+};
