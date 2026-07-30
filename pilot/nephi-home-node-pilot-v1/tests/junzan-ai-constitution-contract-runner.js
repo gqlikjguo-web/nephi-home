@@ -1,4 +1,5 @@
 "use strict";
+require("./conversation-contract-phase1-green-gate-runner");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
