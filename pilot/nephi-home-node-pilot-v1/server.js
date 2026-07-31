@@ -443,6 +443,13 @@ function createRequestHandler(service, options = {}) {
         if (!session || !onboarding || !onboarding.isPlatformAdmin(session)) throw new AppError(401, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
         return sendData(response, await testOnlyAcceptanceHandler(await readJsonBody(request), session));
       }
+      if (request.method === "DELETE" && pathname === "/api/admin/test-only/conversation-acceptance") {
+        if (typeof testOnlyAcceptanceHandler !== "function") return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
+        const token = cookieValue(request, "nephi_admin_session");
+        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        if (!session || !onboarding || !onboarding.isPlatformAdmin(session)) throw new AppError(401, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
+        return sendData(response, await testOnlyAcceptanceHandler({ ...(await readJsonBody(request)), clear: true }, session));
+      }
       const sharedLineWebhookMatch = /^\/api\/line\/webhooks\/([A-Za-z0-9_-]{32,128})$/.exec(pathname);
       if (request.method === "POST" && sharedLineWebhookMatch) {
         if (!sharedLineWebhookHandler) throw new AppError(503, "LINE_BINDING_WEBHOOK_NOT_CONFIGURED", "LINE webhook is not configured");
@@ -855,15 +862,27 @@ function createApp(options = {}) {
       try { testOnlyTransportDiagnostic(entry); } catch { /* test-only diagnostics must not affect transport */ }
     }
   };
-  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: false, onDiagnostic: logSafeTestOnlyConversationTrace, testOnlyOverrides: options.testOnlyOverrides || null });
+  const acceptanceTraces = new Map();
+  const captureSafeTrace = (entry) => { const safe = formatSafeTestOnlyConversationTrace(entry); logSafeTestOnlyConversationTrace(entry); if (safe.traceId) { const list = acceptanceTraces.get(safe.traceId) || []; list.push(safe); acceptanceTraces.set(safe.traceId, list.slice(-40)); } };
+  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: false, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null });
   const testOnlyAcceptanceHandler = options.testOnlyAcceptanceEnabled === true && options.testOnlyEnvironment === true
     ? async (body = {}) => {
       const customerId = String(body.customerId || body.propertyId || "").trim();
+      const conversationId = String(body.conversationId || "").trim();
       const messageText = String(body.messageText || "").trim();
-      if (!customerId || !messageText) throw new AppError(400, "ACCEPTANCE_INPUT_REQUIRED", "customerId and messageText are required");
+      if (!customerId || !conversationId || (!body.clear && !messageText)) throw new AppError(400, "ACCEPTANCE_INPUT_REQUIRED", "customerId, conversationId and messageText are required");
       if (!providers.customerSettings.getProperty(customerId)) throw new AppError(404, "UNKNOWN_CUSTOMER_ID", "Unknown test-only customerId");
-      const result = await root.engine.process({ customerId, channelId: `test-acceptance:${customerId}`, lineUserId: `admin-acceptance:${crypto.randomUUID()}`, eventId: `acceptance-${crypto.randomUUID()}`, eventTimestamp: now().toISOString(), messageText });
-      return { traceId: result.traceId, finalDecision: { action: result.finalDecision.action, reasonCode: result.finalDecision.reasonCode }, claimValidation: { ok: Boolean(result.claimValidation.ok), errors: result.claimValidation.errors.map(String) }, taskResults: result.taskResults.map((item) => ({ taskId: String(item.taskId || ""), type: String(item.type || ""), status: String(item.status || ""), reason: String(item.reason || "") })) };
+      const conversationHash = crypto.createHash("sha256").update(conversationId).digest("hex").slice(0, 32);
+      const channelId = `test-acceptance:${customerId}`;
+      const lineUserId = `test-only-conversation:${conversationHash}`;
+      if (body.clear) return { cleared: Boolean(providers.persistence.deleteConversationState(customerId, channelId, lineUserId)) };
+      const eventId = String(body.eventId || `acceptance-${crypto.randomUUID()}`);
+      const claimed = await providers.persistence.claimMessageEvent(customerId, channelId, eventId, { lineUserId, eventTimestamp: now().toISOString(), guestMessage: messageText, replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
+      if (!claimed.claimed) return { duplicate: true, eventId };
+      const result = await root.engine.process({ customerId, channelId, lineUserId, eventId, eventTimestamp: now().toISOString(), messageText });
+      const trace = acceptanceTraces.get(result.traceId) || [];
+      acceptanceTraces.delete(result.traceId);
+      return { traceId: result.traceId, eventId, finalDecision: { action: result.finalDecision.action, reasonCode: result.finalDecision.reasonCode }, claimValidation: { ok: Boolean(result.claimValidation.ok), errors: result.claimValidation.errors.map(String) }, taskResults: result.taskResults.map((item) => ({ taskId: String(item.taskId || ""), type: String(item.type || ""), status: String(item.status || ""), reason: String(item.reason || "") })), trace };
     }
     : null;
   const claimEvent = (input) => providers.persistence.claimMessageEvent(input.customerId, input.channelId, input.eventId, { lineUserId: String(input.lineUserId || ""), eventTimestamp: input.eventTimestamp || "", guestMessage: String(input.messageText || ""), replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
