@@ -15,13 +15,15 @@ const secretB = "postgres-webhook-secret-b";
 const tokenA = "postgres-webhook-token-a";
 const tokenB = "postgres-webhook-token-b";
 
-function planParking() {
+function planParking(sourceEvent = {}) {
+  const sourceText = String(sourceEvent.messageText || "Parking?");
   return {
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-    tasks: [{ taskId: "parking", type: "amenity", sourceText: "parking availability", detailIntent: "general", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: false, entity: { category: "amenity", rawText: "parking", canonicalCandidate: "parking", confidence: 0.99 }, confidence: 0.99 }],
+    tasks: [{ candidateIndex: 0, taskId: "parking", type: "amenity", sourceText, detailIntent: "general", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: false, entity: { category: "amenity", rawText: "parking", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }],
+    contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: String(sourceEvent.eventId || ""), startOffset: 0, endOffset: sourceText.length, quote: sourceText }] }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "postgres_webhook_e2e"
   };
 }
@@ -73,7 +75,7 @@ async function waitFor(predicate, timeoutMs = 1500) {
       providers,
       lineBindingEnv: env,
       conversationDebounceMs: 1,
-      conversationPlannerV2: { classify: async ({ catalog }) => { plannerProperties.push(catalog.propertyId); return planParking(); } },
+      conversationPlannerV2: { classify: async ({ catalog, sourceEvents }) => { plannerProperties.push(catalog.propertyId); return planParking(sourceEvents[0]); } },
       lineReplyClientFactory: ({ channelAccessToken }) => ({ replyMessageWithHttpInfo: async (body) => { replies.push({ channelAccessToken, body }); return { httpResponse: { status: 200 } }; } })
     });
     const running = await app.start(0, "127.0.0.1");
@@ -86,22 +88,27 @@ async function waitFor(predicate, timeoutMs = 1500) {
     assert.deepEqual(replies.map((reply) => reply.channelAccessToken).sort(), [tokenA, tokenB].sort(), "each bound property must reply with its own stored token");
     assert.match(replies.find((reply) => reply.channelAccessToken === tokenA).body.messages[0].text, /Postgres Parking A/);
     assert.match(replies.find((reply) => reply.channelAccessToken === tokenB).body.messages[0].text, /Postgres Parking B/);
+    assert.ok(bindings.status("pg_property_a").lastWebhookObservedAt, "PostgreSQL must persist the admitted webhook receipt time");
+    assert.ok(bindings.status("pg_property_a").lastValidWebhookAt, "PostgreSQL must persist the valid webhook receipt time");
 
     const invocationsBeforeRejectedRequests = plannerProperties.length;
+    const bindingBValidWebhookBeforeRejectedRequests = bindings.status("pg_property_b").lastValidWebhookAt;
     assert.equal((await post(running.url, bindingB.webhookKey, bodyA, signed(secretA, bodyA))).status, 401, "Secret A must not validate Binding B");
     bindings.setEnabled("pg_property_b", false);
     const disabledBody = payload("pg-b-disabled");
     assert.equal((await post(running.url, bindingB.webhookKey, disabledBody, signed(secretB, disabledBody))).status, 404, "disabled bindings must not run the production handler");
     assert.equal(plannerProperties.length, invocationsBeforeRejectedRequests, "signature failures and disabled bindings must not execute AI");
+    assert.equal(bindings.status("pg_property_b").lastValidWebhookAt, bindingBValidWebhookBeforeRejectedRequests, "rejected PostgreSQL webhook requests must not advance the valid receipt time");
 
     await app.stop();
     app = null;
     const inspection = await openPostgres(connection);
-    const stored = await inspection.query("SELECT property_id,channel_secret_encrypted::text AS secret,channel_access_token_encrypted::text AS token FROM property_line_bindings ORDER BY property_id");
+    const stored = await inspection.query("SELECT property_id,channel_secret_encrypted::text AS secret,channel_access_token_encrypted::text AS token,last_webhook_observed_at,last_valid_webhook_at FROM property_line_bindings ORDER BY property_id");
     await inspection.close();
     assert.equal(stored.rows.length, 2);
     assert.doesNotMatch(JSON.stringify(stored.rows), new RegExp([secretA, secretB, tokenA, tokenB].join("|")), "the database must not contain plaintext channel credentials");
     assert.ok(stored.rows.every((row) => /aes-256-gcm/.test(row.secret) && /aes-256-gcm/.test(row.token)), "credentials must use AES-256-GCM envelopes");
+    assert.ok(stored.rows.every((row) => row.last_webhook_observed_at && row.last_valid_webhook_at), "observed and valid webhook timestamps must survive PostgreSQL provider restart");
     console.log("property-scoped LINE binding PostgreSQL production webhook: PASS");
   } finally {
     if (app) await app.stop();
