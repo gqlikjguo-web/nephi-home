@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { createMvpService } = require("../lib/mvp-service");
-const { normalizePlannerOutput, decideTaskResults } = require("../lib/conversation-engine-v2/engine");
+const { normalizePlannerOutput } = require("../lib/conversation-engine-v2/engine");
 const { availabilityRequest } = require("../lib/conversation-engine-v2/resolver-adapter");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { resolveEntity } = require("../lib/conversation-engine-v2/entity-resolver");
@@ -12,7 +12,7 @@ const { executeTasks } = require("../lib/conversation-engine-v2/capability-execu
 const { resolveTemporalExpression } = require("../lib/conversation-engine-v2/temporal-resolver");
 
 function buildApprovedPlan(options) {
-  return buildResponsePlan({ ...options, finalDecision: decideTaskResults(options.taskResults) });
+  return buildResponsePlan(options);
 }
 
 const property = {

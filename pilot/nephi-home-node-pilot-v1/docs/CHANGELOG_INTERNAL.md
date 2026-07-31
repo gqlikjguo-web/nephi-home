@@ -184,3 +184,4 @@
 - Aligned the PostgreSQL valid-webhook RPC with its property-ID contract and enforced existing LINE credential format validation before setup-token redemption.
 - Removed active LINE transport reads of compatibility `result.shouldReply` and `result.replyText`; both registered handlers now consume only the rendered `finalResponse` delivery fields.
 - Restored structural V3 pending arbitration for isolated date, nights, guest-count, and room slots while preserving complete new requests as separate tasks; temporal context now derives check-out from an approved check-in plus current-turn nights inside the sole temporal resolver.
+- Realigned constitution, response-planning, and safe temporal trace fixtures with the unique FinalDecision/Composer/CanonicalRequest boundaries so test-only CI checks active authority instead of obsolete symbols or intentionally redacted fields.

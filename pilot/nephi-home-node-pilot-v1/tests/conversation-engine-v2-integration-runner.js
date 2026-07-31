@@ -150,18 +150,19 @@ function latestConditions(result) {
   const safeDiagnostics = diagnostics.map(formatSafeTestOnlyConversationTrace).filter(Boolean);
   const safePlanner = safeDiagnostics.find((item) => item.stage === "planner");
   assert.equal(safePlanner.parserSucceeded, true);
-  assert.deepEqual(safePlanner.dateExpression, { rawTextPresent: true, kind: "absolute", anchor: "message_time" });
-  assert.equal(safePlanner.dateCandidates.checkIn, "2026-08-06");
+  assert.equal(Object.hasOwn(safePlanner, "dateExpression"), false, "safe Planner traces must not expose guest temporal text");
+  assert.equal(Object.hasOwn(safePlanner, "dateCandidates"), false, "safe Planner traces must not expose raw Planner date candidates");
   assert.deepEqual(safePlanner.tasks.map(({ taskId, type, category, canonicalCandidate, detailIntent }) => ({ taskId, type, category, canonicalCandidate, detailIntent })), [
     { taskId: "a", type: "availability", category: "room", canonicalCandidate: "r1", detailIntent: "" },
     { taskId: "b", type: "amenity", category: "amenity", canonicalCandidate: "parking", detailIntent: "" },
     { taskId: "c", type: "amenity", category: "amenity", canonicalCandidate: "mahjong", detailIntent: "" }
   ]);
   const safeValidation = safeDiagnostics.find((item) => item.stage === "validation");
-  const safeTemporal = safeDiagnostics.find((item) => item.stage === "temporal");
-  assert.equal(safeTemporal.input.dateExpression.kind, "absolute");
-  assert.equal(safeTemporal.output.resolutionStatus, "resolved");
-  assert.equal(safeTemporal.output.checkIn, "2026-08-06");
+  const temporalDiagnostic = diagnostics.find((item) => item.stage === "temporal");
+  assert.equal(temporalDiagnostic.items[0].expressionType, "absolute_date");
+  assert.equal(temporalDiagnostic.items[0].resolutionStatus, "resolved");
+  assert.deepEqual(temporalDiagnostic.items[0].produced, { checkIn: true, checkOut: true, nights: true });
+  assert.equal(safeDiagnostics.some((item) => item.stage === "temporal"), false, "raw temporal provenance must not enter safe traces");
   const normalizedTasks = safePlanner.tasks.map((task) => ({ ...task, detailIntent: "general" }));
   assert.deepEqual(safeValidation.acceptedTasks, normalizedTasks);
   assert.deepEqual(safeValidation.rejectedTasks, []);
@@ -177,6 +178,9 @@ function latestConditions(result) {
     { candidateIndex: 2, relationKind: "new_request", candidateRequestCycleRefCount: 0, evidenceRefCount: 1, evidenceSourceMatches: [true] }
   ]);
   const safeCanonicalRequest = safeDiagnostics.find((item) => item.stage === "canonical_request");
+  assert.deepEqual(safeCanonicalRequest.items[0].temporalState, {
+    resolutionStatus: "resolved", checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, timezone: "Asia/Taipei"
+  });
   assert.deepEqual(safeCanonicalRequest.items.map(({ taskId, capability, stayDependency, resolverId, evidenceRefCount }) => ({
     taskId, capability, stayDependency, resolverId, evidenceRefCount
   })), [
