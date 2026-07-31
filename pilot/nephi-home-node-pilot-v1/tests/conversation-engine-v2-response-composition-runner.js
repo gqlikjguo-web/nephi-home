@@ -3,10 +3,9 @@
 const assert = require("node:assert/strict");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
 const { composeControlledReply, mergeComposedSections } = require("../lib/conversation-engine-v2/controlled-composer");
-const { decideTaskResults } = require("../lib/conversation-engine-v2/engine");
 
 function buildApprovedPlan(options) {
-  return buildResponsePlan({ ...options, finalDecision: decideTaskResults(options.taskResults) });
+  return buildResponsePlan(options);
 }
 
 const taskResults = [

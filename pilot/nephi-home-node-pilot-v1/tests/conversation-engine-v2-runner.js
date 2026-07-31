@@ -10,10 +10,9 @@ const { executeTasks } = require("../lib/conversation-engine-v2/capability-execu
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
 const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
 const { validateClaims } = require("../lib/conversation-engine-v2/claim-validator");
-const { decideTaskResults } = require("../lib/conversation-engine-v2/engine");
 
 function buildApprovedPlan(options) {
-  return buildResponsePlan({ ...options, finalDecision: decideTaskResults(options.taskResults) });
+  return buildResponsePlan(options);
 }
 
 function plan(overrides = {}) {

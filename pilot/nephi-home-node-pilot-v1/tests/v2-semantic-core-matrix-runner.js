@@ -8,10 +8,9 @@ const { executeTasks } = require("../lib/conversation-engine-v2/capability-execu
 const { resolveTemporalExpression, inferExplicitTemporalExpression } = require("../lib/conversation-engine-v2/temporal-resolver");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
 const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
-const { decideTaskResults } = require("../lib/conversation-engine-v2/engine");
 
 function buildApprovedPlan(options) {
-  return buildResponsePlan({ ...options, finalDecision: decideTaskResults(options.taskResults) });
+  return buildResponsePlan(options);
 }
 
 const eventTime = Date.parse("2026-07-17T10:00:00+08:00");
