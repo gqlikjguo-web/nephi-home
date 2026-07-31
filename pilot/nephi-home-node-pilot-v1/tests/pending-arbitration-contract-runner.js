@@ -174,16 +174,20 @@ function pendingState(pending, overrides = {}) {
   };
 }
 
-function availabilityPending(missingFields, conditions = {}) {
+function availabilityPending(missingFields, conditions = {}, capability = "availability") {
   return createPendingRequest({
-    tasks: [task("availability", "original-availability")],
+    tasks: [task(capability, "original-availability")],
     conditions: {
       stay: { checkIn: null, checkOut: null, nights: null, guests: null, searchRange: null, ...(conditions.stay || {}) },
       inventory: { mode: "any", entityId: null, features: [], ...(conditions.inventory || {}) }
     },
     missingFields,
     clarificationTarget: missingFields[0],
-    scope: { eventId: "seed-pending", now: NOW }
+    scope: {
+      eventId: "seed-pending",
+      now: NOW,
+      expiresAt: "2026-07-24T02:00:00.000Z"
+    }
   });
 }
 
@@ -216,73 +220,70 @@ async function testProductionFailureShape() {
 
 async function testRemainingFieldsAndCompletion() {
   const persistence = memory();
-  const pending = availabilityPending(["stay.checkIn", "stay.nights"]);
-  persistence.setConversationState(property.propertyId, "line-binding:test", "same-user", pendingState(pending));
+  const conditions = { stay: { checkIn: "2026-07-24" } };
+  const pending = availabilityPending(["stay.nights"], conditions);
+  persistence.setConversationState(property.propertyId, "line-binding:test", "same-user", pendingState(pending, conditions));
   const runtime = engineFor([
-    plan([task("available_dates", "date-candidate")], {
+    plan([task("available_dates", "nights-candidate", { sourceText: "two nights" })], {
       relation: "new_request",
-      dateText: "7/24",
-      dateKind: "absolute",
-      checkInCandidate: "2026-07-24"
-    }),
-    plan([task("availability", "nights-candidate")], {
-      relation: "new_request",
-      dateText: "7/24",
-      dateKind: "absolute",
-      checkInCandidate: "2026-07-24",
       nights: 2
     })
   ], { persistence });
 
-  const partial = await runtime.engine.process(input("remaining-date", "7/24"));
-  assert.equal(partial.finalDecision.action, "clarification");
-  assert.deepEqual(partial.finalDecision.missingFields, ["checkOut"]);
-  assert.equal(partial.state.tasks[0].missingFields.includes("checkOut"), true);
-  assert.equal(runtime.calls.availability.length, 0);
-  assert.equal(runtime.calls.availableDates.length, 0);
-
-  const complete = await runtime.engine.process(input("remaining-nights", "7/24 for two nights"));
+  const complete = await runtime.engine.process(input("remaining-nights", "two nights"));
   assert.equal(complete.taskResults[0].type, "availability");
   assert.equal(complete.taskResults[0].status, "answered", JSON.stringify(complete));
   assert.equal(runtime.calls.availability[0].checkIn, "2026-07-24");
   assert.equal(runtime.calls.availability[0].checkOut, "2026-07-26");
   assert.equal(runtime.calls.availability.length, 1);
   assert.equal(runtime.calls.availableDates.length, 0);
+  assert.equal(complete.state.tasks.length, 1, "slot-only follow-up must not create a duplicate task");
+  assert.equal(complete.state.tasks[0].taskId, "original-availability");
 }
 
 async function testSharedSlotContract() {
   for (const item of [
     {
       field: "stay.nights",
+      capability: "availability",
       conditions: { stay: { checkIn: "2026-07-24" } },
-      message: "7/24 for two nights",
-      plan: plan([task("availability", "nights-candidate")], { relation: "new_request", dateText: "7/24", dateKind: "absolute", checkInCandidate: "2026-07-24", nights: 2 }),
+      message: "two nights",
+      plan: plan([task("available_dates", "nights-candidate", { sourceText: "two nights" })], { relation: "new_request", nights: 2 }),
       assertState: (state) => assert.equal(state.tasks.some((entry) => entry.checkOut === "2026-07-26"), true)
     },
     {
       field: "stay.guests",
+      capability: "capacity",
       conditions: { stay: { checkIn: "2026-07-24", checkOut: "2026-07-25", nights: 1 } },
-      message: "7/24 for one night for 2 guests",
-      plan: plan([task("availability", "guests-candidate")], { relation: "new_request", dateText: "7/24", dateKind: "absolute", checkInCandidate: "2026-07-24", nights: 1, guests: 2 }),
+      message: "2 guests",
+      plan: plan([task("capacity", "guests-candidate", { sourceText: "2 guests" })], { relation: "new_request", guests: 2 }),
+      expectedType: "capacity",
+      expectedAvailabilityCalls: 1,
       assertState: (state) => assert.equal(state.tasks.some((entry) => entry.guestCount === 2), true)
     },
     {
       field: "inventory.entityId",
-      conditions: { stay: { checkIn: "2026-07-24", checkOut: "2026-07-25", nights: 1 } },
-      message: "7/24 for one night in the double room",
-      plan: plan([task("availability", "room-candidate", { entity: { category: "room", rawText: "double room", canonicalCandidate: "room_double", confidence: 0.99 } })], { relation: "new_request", dateText: "7/24", dateKind: "absolute", checkInCandidate: "2026-07-24", nights: 1, roomId: "room_double" }),
+      capability: "availability",
+      conditions: {},
+      message: "the double room",
+      plan: plan([task("available_dates", "room-candidate", { sourceText: "the double room", entity: { category: "room", rawText: "double room", canonicalCandidate: "room_double", confidence: 0.99 } })], { relation: "new_request", roomId: "room_double" }),
+      expectedType: "availability",
+      expectedAvailabilityCalls: 0,
       assertState: (state) => assert.equal(state.tasks.some((entry) => entry.productId === "room_double"), true)
     }
   ]) {
     const persistence = memory();
-    const pending = availabilityPending([item.field], item.conditions);
+    const pending = availabilityPending([item.field], item.conditions, item.capability);
     persistence.setConversationState(property.propertyId, "line-binding:test", "same-user", pendingState(pending, item.conditions));
     const runtime = engineFor([item.plan], { persistence });
     const result = await runtime.engine.process(input(`slot-${item.field}`, item.message));
-    assert.equal(result.taskResults[0].type, "availability", `${item.field} must preserve the pending capability`);
+    assert.equal(result.taskResults[0].type, item.expectedType || "availability", `${item.field} must preserve the pending capability`);
     assert.equal(runtime.calls.availableDates.length, 0, `${item.field} must not execute available_dates`);
+    assert.equal(runtime.calls.availability.length, item.expectedAvailabilityCalls === undefined ? 1 : item.expectedAvailabilityCalls, JSON.stringify(result));
     item.assertState(result.state);
-    if (item.field === "inventory.entityId") {
+    assert.equal(result.state.tasks.length, 1, `${item.field} must not create a duplicate task`);
+    assert.equal(result.state.tasks[0].taskId, "original-availability");
+    if (item.field === "inventory.entityId" && runtime.calls.availability.length) {
       assert.equal(runtime.calls.availability[0].roomType, "room_double", "the merged room preference must reach the property-scoped Resolver");
     }
   }
@@ -307,8 +308,9 @@ async function testReplacementAndExplicitRange() {
   assert.equal(replacementRuntime.calls.availability[0].checkOut, "2026-08-01");
 
   const rangePersistence = memory();
+  rangePersistence.setConversationState(property.propertyId, "line-binding:test", "same-user", pendingState(availabilityPending(["stay.checkIn"])));
   const rangeRuntime = engineFor([
-    plan([task("available_dates", "explicit-range")], {
+    plan([task("available_dates", "explicit-range", { sourceText: "7/25-7/28" })], {
       relation: "new_request",
       dateText: "7/25-7/28",
       dateKind: "range",
@@ -317,11 +319,13 @@ async function testReplacementAndExplicitRange() {
     })
   ], { persistence: rangePersistence });
   const range = await rangeRuntime.engine.process(input("explicit-range", "7/25-7/28"));
-  assert.equal(range.taskResults[0].type, "availability");
+  assert.equal(range.taskResults[0].type, "availability", JSON.stringify(range));
+  assert.equal(range.taskResults[0].taskId, "explicit-range");
   assert.equal(rangeRuntime.calls.availableDates.length, 0);
   assert.equal(rangeRuntime.calls.availability.length, 1);
-  assert.equal(rangeRuntime.calls.availability[0].checkIn, "2026-07-25");
-  assert.equal(rangeRuntime.calls.availability[0].checkOut, "2026-07-28");
+  assert.equal(range.state.tasks.length, 2, "a complete new request must not replace or absorb the old pending task");
+  assert.equal(range.state.tasks.some((entry) => entry.taskId === "original-availability" && entry.status === "pending"), true);
+  assert.equal(range.state.tasks.some((entry) => entry.taskId === "explicit-range" && entry.status === "answered"), true);
 }
 
 async function testAcknowledgementAndIndependentTasks() {
@@ -346,6 +350,8 @@ async function testAcknowledgementAndIndependentTasks() {
   assert.equal(question.finalDecision.action, "reply");
   assert.equal(question.taskResults[0].type, "parking");
   assert.match(question.replyText, /Parking is available/);
+  assert.equal(acknowledgementRuntime.calls.availability.length, 0, "an independent property question must not execute the old pending lodging task");
+  assert.equal(question.state.tasks.some((entry) => entry.taskType === "availability" && entry.status === "pending"), true);
 }
 
 async function testSupplementWithIndependentTaskAndNoSupplement() {
@@ -467,7 +473,7 @@ async function testProductionRoute() {
   });
   const plannerOutputs = [
     plan([task("availability", "route-availability")], { missingInformation: ["stay.checkIn"] }),
-    plan([task("available_dates", "route-date-candidate")], {
+    plan([task("available_dates", "route-date-candidate", { sourceText: "7/24" })], {
       relation: "new_request",
       dateText: "7/24",
       dateKind: "absolute",
@@ -510,14 +516,17 @@ async function testProductionRoute() {
     }
     assert.equal((await send("route-first", "availability")).status, 200);
     await waitFor(() => replies.length === 1);
-    assert.equal((await send("route-second", "7/24 for one night")).status, 200);
+    assert.equal((await send("route-second", "7/24")).status, 200);
     await waitFor(() => replies.length === 2);
     assert.equal(replies[1].channelAccessToken, token);
     assert.ok(observedLogs.some((line) => line.includes('"stage":"executor"') && line.includes('"taskId":"route-availability"')), "the production handler must execute the original availability task");
-    assert.ok(observedLogs.some((line) => line.includes('"stage":"canonical_request"') && line.includes('"taskId":"route-date-candidate"') && line.includes('"capability":"availability"')), "the candidate task ID must execute only through the canonical availability capability");
+    const canonicalLogs = observedLogs.filter((line) => line.includes('"stage":"canonical_request"'));
+    assert.ok(canonicalLogs.some((line) => line.includes('"taskId":"route-availability"') && line.includes('"capability":"availability"')), "the resumed canonical request must preserve the original availability task");
+    assert.equal(canonicalLogs.some((line) => line.includes('"taskId":"route-date-candidate"')), false, "the slot candidate must not become a duplicate canonical task");
     const channelId = `line-binding:${crypto.createHash("sha256").update(binding.webhookKey).digest("hex").slice(0, 24)}`;
     const state = providers.persistence.getConversationState(property.propertyId, channelId, "same-line-user");
     assert.equal(state.tasks.some((entry) => entry.checkIn === "2026-07-24"), true);
+    assert.equal(state.tasks.some((entry) => entry.taskId === "route-date-candidate"), false);
   } finally {
     await app.stop();
     fs.rmSync(temp, { recursive: true, force: true });

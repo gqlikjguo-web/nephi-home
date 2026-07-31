@@ -372,10 +372,20 @@ function repairReason(plannerCandidate, parsed) {
   return "";
 }
 
-function resolvedContext({ rawText, timezone, applicableTaskIds, approvedContext, sourceEvidenceRefs: evidence }) {
+function resolvedContext({ rawText, timezone, applicableTaskIds, approvedContext, plannerCandidate, sourceEvidenceRefs: evidence }) {
   const checkIn = valid(approvedContext && approvedContext.checkIn) ? approvedContext.checkIn : null;
-  const checkOut = valid(approvedContext && approvedContext.checkOut) ? approvedContext.checkOut : null;
-  const nights = Number.isInteger(approvedContext && approvedContext.nights) ? approvedContext.nights : null;
+  const contextCheckOut = valid(approvedContext && approvedContext.checkOut) ? approvedContext.checkOut : null;
+  const currentNights = Number.isInteger(plannerCandidate && plannerCandidate.nightsCandidate)
+    ? plannerCandidate.nightsCandidate
+    : null;
+  const nights = currentNights || (
+    Number.isInteger(approvedContext && approvedContext.nights)
+      ? approvedContext.nights
+      : null
+  );
+  const checkOut = contextCheckOut || (
+    checkIn && currentNights ? addDays(checkIn, currentNights) : null
+  );
   if (!checkIn || !checkOut) return null;
   return withFieldMetadata({
     rawText,
@@ -392,8 +402,9 @@ function resolvedContext({ rawText, timezone, applicableTaskIds, approvedContext
     ambiguity: null,
     originalExpression: rawText
   }, {
-    provenance: { checkIn: "context", checkOut: "context", nights: nights ? "context" : null },
-    ruleRefs: { checkIn: CONTEXTUAL_TEMPORAL_RULE_REF, checkOut: CONTEXTUAL_TEMPORAL_RULE_REF, nights: nights ? CONTEXTUAL_TEMPORAL_RULE_REF : null },
+    provenance: { checkIn: "context", checkOut: contextCheckOut ? "context" : "derived", nights: currentNights ? "explicit" : nights ? "context" : null },
+    ruleRefs: { checkIn: CONTEXTUAL_TEMPORAL_RULE_REF, checkOut: contextCheckOut ? CONTEXTUAL_TEMPORAL_RULE_REF : "temporal:checkout_from_checkin_and_nights", nights: currentNights ? null : nights ? CONTEXTUAL_TEMPORAL_RULE_REF : null },
+    derivedFromFieldRefs: { checkOut: contextCheckOut ? [] : ["stay.checkIn", "stay.nights"] },
     sourceEvidenceRefs: evidence
   });
 }
@@ -450,7 +461,7 @@ function resolveCanonicalTemporal({
 
   if (!rawText) {
     if (allowContextReuse && approvedContext) {
-      const reused = resolvedContext({ rawText, timezone, applicableTaskIds: taskIds, approvedContext, sourceEvidenceRefs: approvedContext.sourceEvidenceRefs || evidence });
+      const reused = resolvedContext({ rawText, timezone, applicableTaskIds: taskIds, approvedContext, plannerCandidate, sourceEvidenceRefs: approvedContext.sourceEvidenceRefs || evidence });
       if (reused) return reused;
     }
     if (Number.isInteger(defaultSearchRangeDays) && defaultSearchRangeDays > 0) {

@@ -24,7 +24,9 @@ function availabilityTask(overrides = {}) {
     detailIntent: "general",
     requestedOutputs: ["answer"],
     eligibilityEvidence: { kind: "none", sourceText: "" },
-    dependsOnStayContext: true,
+    dependsOnStayContext: overrides.dependsOnStayContext === undefined
+      ? true
+      : Boolean(overrides.dependsOnStayContext),
     entity: overrides.entity || { category: "other", rawText: "", canonicalCandidate: null, confidence: 0.95 },
     confidence: 0.95
   };
@@ -54,10 +56,18 @@ function plan(tasks, options = {}) {
 
 function withExplicitRelations(output, sourceEvents, contextSnapshot) {
   const source = sourceEvents[0];
-  const relationKind = output.discourse.relation === "answer_clarification" ? "supplement_existing" : "new_request";
+  const relationKind = output.discourse.relation === "answer_clarification"
+    ? "supplement_existing"
+    : output.discourse.relation === "acknowledgement"
+      ? "relation_uncertain"
+      : "new_request";
   return {
     ...output,
-    tasks: output.tasks.map((item, candidateIndex) => ({ ...item, candidateIndex })),
+    tasks: output.tasks.map((item, candidateIndex) => ({
+      ...item,
+      candidateIndex,
+      sourceText: source.messageText
+    })),
     contextRelationCandidates: output.tasks.map((_item, candidateIndex) => ({
       candidateIndex,
       kind: relationKind,
@@ -92,6 +102,17 @@ function input(eventId, messageText) {
 async function main() {
   const plannerOutputs = [
     plan([availabilityTask()], { missingInformation: ["stay.checkIn"] }),
+    plan([availabilityTask({
+      taskId: "acknowledgement",
+      type: "unknown",
+      dependsOnStayContext: false,
+      entity: {
+        category: "other",
+        rawText: "thanks",
+        canonicalCandidate: null,
+        confidence: 0.99
+      }
+    })], { relation: "acknowledgement", shouldIgnore: true }),
     plan([availabilityTask({ taskId: "mistaken-search", type: "available_dates" })], {
       relation: "new_request",
       dateText: "今天",
@@ -135,6 +156,20 @@ async function main() {
   assert.equal(Object.hasOwn(first.state, "requestCycles"), false);
   assert.equal(JSON.stringify(firstPending).includes("facts"), false);
 
+  const stateBeforeAcknowledgement = JSON.stringify(
+    persistence.getConversationState(property.propertyId, "test-line", "same-guest")
+  );
+  const acknowledgementResult = await engine.process(input("pending-acknowledgement", "thanks"));
+  assert.equal(acknowledgementResult.finalDecision.action, "no_reply");
+  assert.equal(acknowledgementResult.finalResponse.shouldReply, false);
+  assert.equal(calls.availability, 0);
+  assert.equal(calls.availableDates, 0);
+  assert.equal(
+    JSON.stringify(persistence.getConversationState(property.propertyId, "test-line", "same-guest")),
+    stateBeforeAcknowledgement,
+    "a pending request must not take ownership of an acknowledgement turn"
+  );
+
   const second = await engine.process(input("pending-second", "今天"));
   assert.ok(diagnostics.filter((entry) => entry.stage === "pending_request").some((entry) => entry.action === "resumed"), "the V3 reducer must resume the pending request");
   assert.equal(second.state.tasks.find((item) => item.taskId === firstPending.taskId).checkIn, "2026-07-23", "the validated date must reach V3 state before pending execution");
@@ -167,12 +202,6 @@ async function main() {
   assert.equal(newlyCreatedOnly.pendingRequestId, "new-pending-id");
   assert.equal(newlyCreatedOnly.requestCycleId, "reducer-approved-cycle");
   assert.deepEqual(newlyCreatedOnly.tasks.map((task) => task.taskId), ["new-pending"], "pendingFromResults may create only the supplied task result; it cannot select an older pending request");
-
-  const acknowledgement = plan([], { relation: "continue", shouldIgnore: true });
-  const acknowledgementSnapshot = JSON.parse(JSON.stringify(acknowledgement));
-  const acknowledgementWithPending = resumePendingRequest(acknowledgement, pending);
-  assert.equal(acknowledgementWithPending.resumed, false, "a pending request must not take ownership of an acknowledgement turn");
-  assert.deepEqual(acknowledgementWithPending.plannerOutput, acknowledgementSnapshot, "pending handling must preserve this turn's tasks, discourse, missing information, and shouldIgnore decision");
 
   const gate = diagnostics.find((entry) => entry.stage === "no_reply_gate");
   assert.ok(gate, "every valid planner result must emit a no-reply gate diagnostic");
