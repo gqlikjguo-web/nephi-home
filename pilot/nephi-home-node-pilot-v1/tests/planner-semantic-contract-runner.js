@@ -2,117 +2,71 @@
 
 const assert = require("node:assert/strict");
 const { applyPlannerSemanticContract, plannerJsonSchema } = require("../lib/conversation-engine-v2/planner-schema");
-const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
-const { instructions } = require("../lib/providers/test-only-openai-conversation-planner");
+const { canonicalizeExecutionItem } = require("../lib/conversation-engine-v2/canonicalizer");
+const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 
-function task({ taskId, type = "property_fact", category, canonicalCandidate, detailIntent = "general", requestedOutputs = ["answer"], eligibilityEvidence = { kind: "none", sourceText: "" }, sourceText }) {
-  return { taskId, type, sourceText, detailIntent, requestedOutputs, eligibilityEvidence, dependsOnStayContext: false, entity: { category, rawText: sourceText, canonicalCandidate, confidence: 0.99 }, confidence: 0.99 };
+const eventTimestamp = Date.parse("2026-08-01T10:00:00+08:00");
+
+function task({ taskId, type = "property_fact", category = "other", rawText, canonicalCandidate = null, detailIntent = "general", requestedOutputs = ["answer"] }) {
+  return {
+    candidateIndex: 0, taskId, type, sourceText: rawText, detailIntent,
+    requestedOutputs, eligibilityEvidence: { kind: "none", sourceText: "" },
+    dependsOnStayContext: false,
+    entity: { category, rawText, canonicalCandidate, confidence: 0.99 },
+    stayCandidate: null, confidence: 0.99
+  };
 }
 
 function plan(tasks) {
   return {
-    schemaVersion: 2,
-    discourse: { relation: "new_request", confidence: 0.99 },
+    schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-    tasks,
+    tasks, contextRelationCandidates: tasks.map((item) => ({ candidateIndex: item.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [] })),
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "semantic_contract_test"
   };
 }
 
-function memory() {
-  const states = new Map();
-  return {
-    getConversationState: (propertyId, channelId, userId) => states.get(`${propertyId}:${channelId}:${userId}`) || null,
-    setConversationState: (propertyId, channelId, userId, value) => states.set(`${propertyId}:${channelId}:${userId}`, value),
-    appendMessageLog: () => ({ reviewId: "review" })
-  };
+const property = {
+  propertyId: "property_alpha", displayName: "Alpha", timezone: "Asia/Taipei", rooms: [],
+  businessProfile: { googleMapsUrl: "https://maps.app.goo.gl/AlphaLocation" },
+  commonAnswers: { parkingRule: "Alpha parking policy", bbqRule: "Alpha barbecue policy" },
+  semanticCatalog: { aliases: { location: ["directions"], parking: ["parking"], bbq: ["bbq"], pool: ["pool"] }, amenities: [{ id: "pool", name: "Pool", aliases: ["pool"], status: "confirmed_yes", answer: "Alpha pool hours" }] }
+};
+const catalog = buildPropertyCatalog(property);
+
+function canonical(taskValue) {
+  const semantic = applyPlannerSemanticContract(plan([taskValue]), { catalog });
+  const item = { candidateIndex: 0, requestCycleId: semantic.tasks[0].taskId, task: semantic.tasks[0], transition: { approvedProduct: { productType: "any", productId: null, roomTypeId: null, bundleId: null } } };
+  return { semantic, item: canonicalizeExecutionItem({ item, relation: null, contextSnapshot: { cycles: [] }, catalog, guestMessage: taskValue.sourceText, eventTimestamp }) };
 }
 
-async function main() {
-  const transportNull = applyPlannerSemanticContract(plan([
-    task({ taskId: "location", category: "transport", canonicalCandidate: null, sourceText: "車站在附近嗎" })
-  ]));
-  assert.equal(transportNull.tasks[0].type, "property_fact");
-  assert.equal(transportNull.tasks[0].entity.category, "transport");
-  assert.equal(transportNull.tasks[0].entity.canonicalCandidate, "location");
-  assert.equal(transportNull.tasks[0].detailIntent, "general");
-  assert.deepEqual(transportNull.semanticValidation.repairedTasks.map((item) => item.reason), ["transport_location_candidate_missing"]);
+function main() {
+  const resolvedLocation = canonical(task({ taskId: "map", category: "transport", rawText: "directions" }));
+  assert.equal(resolvedLocation.semantic.tasks[0].entity.canonicalCandidate, "location", "a uniquely property-catalog grounded transport entity must become location");
+  assert.equal(resolvedLocation.item.canonicalRequest.capability, "location");
+  assert.equal(resolvedLocation.item.canonicalRequest.resolverId, "property_catalog");
 
-  const unresolvedOther = applyPlannerSemanticContract(plan([
-    task({ taskId: "nearby", category: "other", canonicalCandidate: null, sourceText: "附近有便利商店嗎" })
-  ]));
-  assert.equal(unresolvedOther.tasks[0].type, "unknown");
-  assert.deepEqual(unresolvedOther.semanticValidation.rejectedTasks.map((item) => item.reason), ["unresolved_property_fact"]);
+  const unresolvedTransport = canonical(task({ taskId: "unknown-transport", category: "transport", rawText: "near a market" }));
+  assert.equal(unresolvedTransport.semantic.tasks[0].entity.canonicalCandidate, null, "unresolved transport must not be promoted to location");
+  assert.notEqual(unresolvedTransport.item.canonicalRequest.capability, "location", "unresolved transport must not invoke the location capability");
+  assert.equal(unresolvedTransport.item.canonicalRequest.canonicalEntity.status, "not_found");
 
-  for (const [canonicalCandidate, sourceText] of [["bbq", "可以烤肉嗎"], ["pool", "有戲水池嗎"], ["parking", "有停車嗎"]]) {
-    const baseQuestion = applyPlannerSemanticContract(plan([
-      task({ taskId: canonicalCandidate, type: "policy", category: "policy", canonicalCandidate, detailIntent: "eligibility", requestedOutputs: ["eligibility"], sourceText })
-    ]));
-    assert.equal(baseQuestion.tasks[0].detailIntent, "general", `${canonicalCandidate} base question must use general`);
-    assert.deepEqual(baseQuestion.tasks[0].requestedOutputs, ["answer"]);
-    assert.equal(baseQuestion.semanticValidation.repairedTasks[0].reason, "eligibility_evidence_missing");
-  }
-
-  for (const trueEligibility of [
-    task({ taskId: "pool-child", type: "amenity", category: "amenity", canonicalCandidate: "pool", detailIntent: "eligibility", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "person", sourceText: "小朋友" }, sourceText: "小朋友可以使用戲水池嗎" }),
-    task({ taskId: "bbq-bundle", type: "policy", category: "policy", canonicalCandidate: "bbq", detailIntent: "eligibility", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "booking_mode", sourceText: "包棟" }, sourceText: "只有包棟才能烤肉嗎" }),
-    task({ taskId: "bbq-room", type: "policy", category: "policy", canonicalCandidate: "bbq", detailIntent: "eligibility", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "room", sourceText: "單訂房間" }, sourceText: "單訂房間也可以烤肉嗎" }),
-    task({ taskId: "facility-room", type: "amenity", category: "amenity", canonicalCandidate: "facility", detailIntent: "eligibility", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "room", sourceText: "哪些房型" }, sourceText: "哪些房型可以使用這項設施" })
+  for (const [id, category, rawText, expectedCapability] of [
+    ["parking", "amenity", "parking", "parking"],
+    ["pool", "amenity", "pool", "pool"],
+    ["bbq", "policy", "bbq", "bbq"]
   ]) {
-    const checked = applyPlannerSemanticContract(plan([trueEligibility]));
-    assert.equal(checked.tasks[0].detailIntent, "eligibility");
-    assert.deepEqual(checked.tasks[0].requestedOutputs, ["eligibility"]);
-    assert.equal(checked.semanticValidation.rejectedTasks.length, 0);
+    const result = canonical(task({ taskId: id, type: "property_fact", category, rawText }));
+    assert.equal(result.semantic.tasks[0].entity.canonicalCandidate, id, `${id} must be grounded from catalog data`);
+    assert.equal(result.item.canonicalRequest.capability, expectedCapability, `${id} must retain its registered capability`);
+    assert.equal(result.item.canonicalRequest.resolverId, "property_catalog");
   }
-
-  const multi = applyPlannerSemanticContract(plan([
-    task({ taskId: "location", category: "transport", canonicalCandidate: null, sourceText: "民宿離夜市近嗎" }),
-    task({ taskId: "bbq", type: "policy", category: "policy", canonicalCandidate: "bbq", detailIntent: "eligibility", requestedOutputs: ["eligibility"], sourceText: "可以烤肉嗎" })
-  ]));
-  assert.equal(multi.tasks.length, 2);
-  assert.deepEqual(multi.tasks.map((item) => [item.entity.canonicalCandidate, item.detailIntent]), [["location", "general"], ["bbq", "general"]]);
-
-  const partiallyRepairable = applyPlannerSemanticContract(plan([
-    task({ taskId: "location-ok", category: "transport", canonicalCandidate: null, sourceText: "property near a place" }),
-    task({ taskId: "unknown-local", category: "other", canonicalCandidate: null, sourceText: "unresolved property question" })
-  ]));
-  assert.equal(partiallyRepairable.tasks.length, 2);
-  assert.equal(partiallyRepairable.tasks[0].entity.canonicalCandidate, "location");
-  assert.equal(partiallyRepairable.tasks[1].type, "unknown");
-  assert.deepEqual(partiallyRepairable.semanticValidation.rejectedTasks.map((item) => item.taskId), ["unknown-local"]);
 
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-
-  const property = {
-    propertyId: "property_alpha", displayName: "Alpha", timezone: "Asia/Taipei", rooms: [],
-    businessProfile: { googleMapsUrl: "https://maps.app.goo.gl/AlphaLocation" },
-    commonAnswers: { bbqRule: "Alpha barbecue policy" },
-    semanticCatalog: { aliases: { bbq: ["barbecue"] }, amenities: [] }
-  };
-  const engine = new ConversationEngineV2({
-    planner: { classify: async () => plan([
-      task({ taskId: "location", category: "transport", canonicalCandidate: null, sourceText: "property near a market" }),
-      task({ taskId: "bbq", type: "policy", category: "policy", canonicalCandidate: "bbq", detailIntent: "eligibility", requestedOutputs: ["eligibility"], sourceText: "barbecue available" })
-    ]) },
-    persistence: memory(), getProperty: () => property,
-    availabilityResolver: () => ({ availabilityReliable: true, rooms: [] }), listPriceOverrides: () => []
-  });
-  const result = await engine.process({ customerId: property.propertyId, channelId: "test", lineUserId: "guest", eventId: "semantic-multi", eventTimestamp: Date.parse("2026-07-22T10:00:00+08:00"), messageText: "property near a market; barbecue available" });
-  assert.equal(result.shouldReply, true);
-  assert.match(result.replyText, /https:\/\/maps\.app\.goo\.gl\/AlphaLocation/);
-  assert.match(result.replyText, /Alpha barbecue policy/);
-  assert.equal(result.taskResults.length, 2);
-
-  const prompt = instructions();
-  assert.match(prompt, /base availability or permission question/i);
-  assert.match(prompt, /requestedOutputs.*eligibility/i);
-  assert.match(prompt, /do not infer eligibility from a generic permission word/i);
-  assert.match(prompt, /every independent clause/i);
-
-  console.log("planner semantic contract: PASS");
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 6, passCount: 6, failCount: 0 }));
 }
 
-main().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
+main();

@@ -2,28 +2,61 @@
 
 const crypto = require("node:crypto");
 
-const { validatePlannerOutput, applyPlannerSemanticContract, normalizeEligibilityEvidence } = require("./planner-schema");
+const { validatePlannerOutput, applyPlannerSemanticContract, normalizeEligibilityEvidence, discardLegacyPlannerStateControls } = require("./planner-schema");
 const { normalizeDetailIntent } = require("./detail-intent");
 const { buildPropertyCatalog } = require("./property-catalog");
-const { resolveTemporalExpression, inferExplicitTemporalExpression, canonicalizeTemporalInput } = require("./temporal-resolver");
-const { migrateStateV2, reduceConversationState } = require("./state-reducer");
-const { executeTasks, isGenericAvailabilityEntity } = require("./capability-executor");
+const {
+  canonicalizeExecutionItem,
+  normalizedTaskStay,
+  DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS,
+  SINGLE_DATE_DEFAULT_NIGHT_RULE_REF,
+  AVAILABLE_DATES_LOOKAHEAD_RULE_REF
+} = require("./canonicalizer");
+const {
+  readConversationStateV3
+} = require("../conversation-contracts/conversation-state-v3");
+const {
+  buildContextSnapshotV3,
+  decideContextExecutionV3,
+  executionConditionsV3,
+  reduceConversationStateV3
+} = require("./conversation-state-v3-reducer");
+const { executeCanonicalQueryPlans, isGenericAvailabilityEntity } = require("./capability-executor");
 const { buildResponsePlan } = require("./response-planner");
 const { composeControlledReply, mergeComposedSections } = require("./controlled-composer");
 const { validateClaims } = require("./claim-validator");
 const { coverageByStatus, assertTaskCoverage } = require("./task-coverage");
-const { resolveEntity } = require("./entity-resolver");
 const { availabilityTraceSummary } = require("./resolver-adapter");
-const { createPendingRequest, pendingFromResults, resumePendingRequest } = require("./pending-request");
+const { validateUnderstandingContext, evidenceMatchesSource } = require("./understanding-validator");
+const { normalizePlannerEvidenceCoordinates } = require("./evidence-normalizer");
+const { buildCanonicalFormalRequest, buildCanonicalQueryPlan, resultForNotReady } = require("./formal-request");
+const { buildFinalDecision } = require("./final-decision");
+const { SAFE_HANDOFF_TEXT, buildFinalResponse } = require("./final-response-renderer");
+const { applyControlledReplyRules } = require("../custom-reply-rules");
 
-const DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS = 31;
 const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
-function dateKeyAt(timestamp, timezone) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(timestamp)).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
-  return `${parts.year}-${parts.month}-${parts.day}`;
+const TEMPORAL_FAILURE_STATUSES = new Set(["unresolved"]);
+const PENDING_STATUSES = new Set(["pending", "needs_clarification"]);
+function decideFinal(input) { return buildFinalDecision(input); }
+function renderFinal(input) { return buildFinalResponse(input); }
+function sourceEventsForInput(input = {}) {
+  const events = Array.isArray(input.sourceEvents) ? input.sourceEvents : [];
+  const normalized = events.map((event) => ({
+    eventId: String(event && event.eventId || "").trim(),
+    messageRef: String(event && event.messageRef || "").trim(),
+    messageText: String(event && event.messageText || "")
+  })).filter((event) => event.eventId || event.messageRef);
+  if (normalized.length) return normalized;
+  return [{ eventId: String(input.eventId || "").trim(), messageRef: String(input.messageRef || "").trim(), messageText: String(input.messageText || "") }];
 }
-function addUtcDays(dateKey, days) { const value = new Date(`${dateKey}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); }
-function traceState(state) { const copy = JSON.parse(JSON.stringify(state || {})); if (copy.scope) delete copy.scope.lineUserId; return copy; }
+function traceState(state) {
+  const copy = JSON.parse(JSON.stringify(state || {}));
+  if (copy.scope) {
+    delete copy.scope.lineUserId;
+    delete copy.scope.userId;
+  }
+  return copy;
+}
 function plannerTaskTrace(task) {
   const entity = task && task.entity || {};
   return {
@@ -53,459 +86,515 @@ function plannerValidationTrace(plannerOutput, validation) {
     finalTasks: []
   };
 }
-function applyAvailableDatesDefaults(plannerOutput, { messageText, eventTimestamp, timezone, allowDefaultSearchRange = true } = {}) {
-  const output = { ...plannerOutput, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, entity: task.entity ? { ...task.entity } : task.entity })) };
+function diagnosticSourceEventMaps(sourceEvents) {
+  const byEventId = new Map();
+  const byMessageRef = new Map();
+  for (const sourceEvent of Array.isArray(sourceEvents) ? sourceEvents : []) {
+    if (!sourceEvent || typeof sourceEvent !== "object") continue;
+    const normalized = {
+      eventId: String(sourceEvent.eventId || "").trim(),
+      messageRef: String(sourceEvent.messageRef || "").trim(),
+      messageText: String(sourceEvent.messageText || "")
+    };
+    if (normalized.eventId) byEventId.set(normalized.eventId, byEventId.has(normalized.eventId) ? null : normalized);
+    if (normalized.messageRef) byMessageRef.set(normalized.messageRef, byMessageRef.has(normalized.messageRef) ? null : normalized);
+  }
+  return { byEventId, byMessageRef };
+}
+function contextValidationCandidateDiagnostics(plannerOutput, sourceEvents) {
+  const sourceMaps = diagnosticSourceEventMaps(sourceEvents);
+  return (Array.isArray(plannerOutput && plannerOutput.contextRelationCandidates) ? plannerOutput.contextRelationCandidates : []).map((candidate) => {
+    const cycleRefs = Array.isArray(candidate && candidate.candidateRequestCycleRefs) ? candidate.candidateRequestCycleRefs : [];
+    const evidenceRefs = Array.isArray(candidate && candidate.evidenceRefs) ? candidate.evidenceRefs : [];
+    return {
+      candidateIndex: Number.isInteger(candidate && candidate.candidateIndex) ? candidate.candidateIndex : -1,
+      relationKind: String(candidate && candidate.kind || ""),
+      candidateRequestCycleRefCount: cycleRefs.length,
+      evidenceRefCount: evidenceRefs.length,
+      evidenceSourceMatches: evidenceRefs.map((evidenceRef) => evidenceMatchesSource(evidenceRef, sourceMaps))
+    };
+  });
+}
+function normalizePlannerOutput(plannerOutput, { eventTimestamp, timezone } = {}) {
+  if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) return null;
+  const stay = { ...(plannerOutput.stay || {}), dateExpression: { ...plannerOutput.stay && plannerOutput.stay.dateExpression } };
+  const output = { ...plannerOutput, stay, tasks: (plannerOutput.tasks || []).map((task) => {
+    const normalized = { ...task, detailIntent: normalizeDetailIntent(task.detailIntent), eligibilityEvidence: normalizeEligibilityEvidence(task.eligibilityEvidence), entity: task.entity ? { ...task.entity } : task.entity };
+    if (Object.hasOwn(task, "stayCandidate")) normalized.stayCandidate = task.stayCandidate === null ? null : { ...task.stayCandidate, dateExpression: { ...task.stayCandidate.dateExpression } };
+    return normalized;
+  }) };
+  const topLevelStayPresent = Boolean(stay.dateExpression && stay.dateExpression.rawText || stay.checkInCandidate || stay.checkOutCandidate || stay.nightsCandidate || stay.guestCountCandidate);
+  const singleTask = output.tasks.length === 1 && output.tasks[0];
+  const taskDateExpressionPresent = Boolean(singleTask && singleTask.stayCandidate
+    && singleTask.stayCandidate.dateExpression
+    && singleTask.stayCandidate.dateExpression.rawText);
+  const topLevelDateExpressionPresent = Boolean(stay.dateExpression && stay.dateExpression.rawText);
+  if (singleTask && (
+    !Object.hasOwn(singleTask, "stayCandidate")
+    || topLevelDateExpressionPresent && !taskDateExpressionPresent
+  )) {
+    output.tasks[0] = { ...output.tasks[0], stayCandidate: stay };
+  }
+  output.ambiguousTopLevelStay = output.tasks.length > 1 && topLevelStayPresent && output.tasks.some((task) => task.dependsOnStayContext && (!Object.hasOwn(task, "stayCandidate") || task.stayCandidate === null));
   const availableDatesRequested = output.tasks.some((task) => task.type === "available_dates");
   const genericAvailability = output.tasks.some((task) => isGenericAvailabilityEntity(task));
   const genericAvailableDates = output.tasks.some((task) => task.type === "available_dates" && isGenericAvailabilityEntity(task));
-  const freshAvailabilityRequest = availableDatesRequested || (genericAvailability && ["new_request", "new_topic"].includes(output.discourse && output.discourse.relation));
-  if (availableDatesRequested && !output.searchRange && allowDefaultSearchRange) {
-    const dateFrom = dateKeyAt(eventTimestamp, timezone || "Asia/Taipei");
+  if (availableDatesRequested) {
     output.tasks = output.tasks.map((task) => {
       if (task.type !== "available_dates" || !isGenericAvailabilityEntity(task)) return task;
       return { ...task, entity: { ...task.entity, rawText: "", canonicalCandidate: null } };
     });
-    output.searchRange = { from: dateFrom, to: addUtcDays(dateFrom, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS) };
   }
-  if (freshAvailabilityRequest && (genericAvailableDates || genericAvailability)) {
-    output.stateOperations = [...(output.stateOperations || []).filter((item) => !["inventory.mode", "inventory.entityId"].includes(item.field)),
-      { field: "inventory.mode", operation: "replace", value: "any", sourceText: String(messageText || "") },
-      { field: "inventory.entityId", operation: "clear", value: null, sourceText: String(messageText || "") }];
-  }
+  if (genericAvailableDates || genericAvailability) output.inventoryCandidates = { mode: "any", entityId: null, features: null };
   return output;
 }
 
-function normalizePlannerOutput(plannerOutput, { messageText, eventTimestamp, timezone, deferAvailableDatesDefaults = false } = {}) {
-  if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) return null;
-  const output = { ...plannerOutput, tasks: (plannerOutput.tasks || []).map((task) => ({ ...task, detailIntent: normalizeDetailIntent(task.detailIntent), eligibilityEvidence: normalizeEligibilityEvidence(task.eligibilityEvidence), entity: task.entity ? { ...task.entity } : task.entity })) };
-  return deferAvailableDatesDefaults
-    ? output
-    : applyAvailableDatesDefaults(output, { messageText, eventTimestamp, timezone });
+function blockedTemporalConditions(conditions) {
+  return { ...conditions, stay: { ...(conditions && conditions.stay || {}), checkIn: null, checkOut: null, searchRange: null } };
 }
 
-function normalizedPlannerStay(plannerOutput, messageText) {
-  const stay = {
-    ...plannerOutput.stay,
-    dateExpression: { ...plannerOutput.stay.dateExpression }
-  };
-  const scalarCandidates = {
-    "stay.checkInCandidate": "checkInCandidate",
-    "stay.checkOutCandidate": "checkOutCandidate",
-    "stay.nightsCandidate": "nightsCandidate",
-    "stay.guestCountCandidate": "guestCountCandidate"
-  };
-  const expressionFields = {
-    "stay.dateExpression.rawText": "rawText",
-    "stay.dateExpression.kind": "kind",
-    "stay.dateExpression.anchor": "anchor"
-  };
-
-  for (const item of plannerOutput.stateOperations || []) {
-    if (!item || !["set", "replace"].includes(item.operation)) continue;
-    const scalarCandidate = scalarCandidates[item.field];
-    if (scalarCandidate && ["set", "replace"].includes(item.operation)) stay[scalarCandidate] = item.value;
-    const expressionField = expressionFields[item.field];
-    if (expressionField && ["set", "replace"].includes(item.operation)) stay.dateExpression[expressionField] = item.value;
-  }
-
-  if ((!stay.dateExpression.rawText || stay.dateExpression.kind === "none") && (plannerOutput.tasks || []).some((task) => task.dependsOnStayContext)) {
-    const inferred = inferExplicitTemporalExpression(messageText);
-    if (inferred) stay.dateExpression = inferred;
-  }
-
-  stay.canonicalTemporal = canonicalizeTemporalInput(stay);
-  return stay;
+function legacyTaskResult(execution) {
+  if (!execution || !execution.outcome) return execution;
+  const base = { taskId: execution.taskId, type: execution.type, facts: execution.facts || {} };
+  if (execution.outcome === "answered" || execution.outcome === "no_availability") return { ...base, status: "answered" };
+  if (execution.outcome === "not_ready") return { ...base, status: "needs_clarification", missingInputs: (execution.missingFields || []).length ? execution.missingFields : ["stay.checkIn"] };
+  if (execution.outcome === "unknown") return { ...base, status: "needs_human", reason: execution.reason || "unknown", review: true };
+  return { ...base, status: "needs_human", reason: execution.reason || execution.outcome, review: true };
 }
 
-function canonicalTurnOperations(plannerOutput, temporal, previousConditions) {
-  const operations = (plannerOutput.stateOperations || []).flatMap((item) => {
-    if (item.field === "*" || item.field.startsWith("inventory.")) return [item];
-    if (item.field === "stay.guestCountCandidate") return [{ ...item, field: "stay.guests" }];
-    if (item.field === "stay.nightsCandidate" && ["set", "replace"].includes(item.operation)) return [{ ...item, field: "stay.nights" }];
-    if (item.operation === "clear" || item.operation === "keep") {
-      const canonicalPath = { "stay.checkInCandidate": "stay.checkIn", "stay.checkOutCandidate": "stay.checkOut", "stay.nightsCandidate": "stay.nights" }[item.field];
-      return canonicalPath ? [{ ...item, field: canonicalPath }] : [];
-    }
-    return [];
-  });
-  if (temporal.resolutionStatus === "resolved") {
-    if (temporal.checkIn) operations.push({ field: "stay.checkIn", operation: previousConditions.stay.checkIn ? "replace" : "set", value: temporal.checkIn, sourceText: temporal.originalExpression });
-    if (temporal.checkOut) operations.push({ field: "stay.checkOut", operation: previousConditions.stay.checkOut ? "replace" : "set", value: temporal.checkOut, sourceText: temporal.originalExpression });
-    if (temporal.nights) operations.push({ field: "stay.nights", operation: previousConditions.stay.nights ? "replace" : "set", value: temporal.nights, sourceText: temporal.originalExpression });
-    if (temporal.searchRange) operations.push({ field: "stay.searchRange", operation: previousConditions.stay.searchRange ? "replace" : "set", value: temporal.searchRange, sourceText: temporal.originalExpression });
-  }
-  if (temporal.resolutionStatus === "invalid" && temporal.originalExpression) {
-    for (const field of ["stay.checkIn", "stay.checkOut", "stay.searchRange"]) {
-      operations.push({ field, operation: "clear", value: null, sourceText: temporal.originalExpression });
-    }
-  }
-  return operations;
+const SAFE_FALLBACK = SAFE_HANDOFF_TEXT;
+const PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "unknown"]);
+const PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
+const PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
+const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic");
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function safePlannerProviderErrorField(value, maxLength) {
+  const text = String(value || "");
+  return /^[A-Za-z0-9._:-]+$/.test(text) ? text.slice(0, maxLength) : "";
 }
 
-function pendingClarificationQuestion(fields) {
-  const labels = {
-    "stay.checkIn": "\u5165\u4f4f\u65e5\u671f",
-    "stay.checkOut": "\u9000\u623f\u65e5\u671f",
-    "stay.nights": "\u4f4f\u5bbf\u665a\u6578",
-    "stay.guests": "\u5165\u4f4f\u4eba\u6578",
-    "stay.searchRange": "\u65e5\u671f\u7bc4\u570d",
-    "inventory.mode": "\u4f4f\u5bbf\u985e\u578b",
-    "inventory.entityId": "\u623f\u578b",
-    "inventory.features": "\u623f\u9593\u9700\u6c42"
-  };
-  const names = (fields || []).map((field) => labels[field]).filter(Boolean);
-  return names.length ? `\u9084\u9700\u8981\u88dc\u5145${names.join("\u3001")}\u3002` : "";
+function safePlannerErrorCategory(value, fallback = "unknown") {
+  return PLANNER_ERROR_CATEGORIES.has(value) ? value : fallback;
 }
 
-function derivedStayOperations(previousConditions, operations) {
-  const stay = { ...(previousConditions.stay || {}) };
-  for (const item of operations) {
-    if (!item || !item.field.startsWith("stay.")) continue;
-    const field = item.field.split(".")[1];
-    if (item.operation === "clear") stay[field] = null;
-    else if (["set", "replace"].includes(item.operation)) stay[field] = item.value;
-  }
-  if (stay.checkIn && Number.isInteger(stay.nights) && stay.nights > 0 && !stay.checkOut) {
-    return [{ field: "stay.checkOut", operation: "set", value: addUtcDays(stay.checkIn, stay.nights), sourceText: "" }];
-  }
-  return [];
-}
-
-function plannerDateTrace(stay = {}) {
-  stay = stay || {};
-  const expression = stay.dateExpression || {};
+function safePlannerAttemptDiagnostic(attempt = {}) {
+  const attemptNumber = Number(attempt.attemptNumber);
+  const durationMs = Number(attempt.durationMs);
+  const timeoutMs = Number(attempt.timeoutMs);
+  const httpStatus = Number(attempt.httpStatus);
+  const startedAt = new Date(String(attempt.startedAt || ""));
+  const completedAt = new Date(String(attempt.completedAt || ""));
+  const errorCategory = String(attempt.errorCategory || "");
+  const clientRequestId = String(attempt.clientRequestId || "");
   return {
-    dateExpression: {
-      rawTextPresent: Boolean(expression.rawText),
-      kind: String(expression.kind || "none").slice(0, 40),
-      anchor: String(expression.anchor || "none").slice(0, 40)
-    },
-    candidates: {
-      checkIn: stay.checkInCandidate ? String(stay.checkInCandidate).slice(0, 10) : null,
-      checkOut: stay.checkOutCandidate ? String(stay.checkOutCandidate).slice(0, 10) : null,
-      nights: Number.isInteger(stay.nightsCandidate) ? stay.nightsCandidate : null,
-      guests: Number.isInteger(stay.guestCountCandidate) ? stay.guestCountCandidate : null
-    }
+    attemptNumber: Number.isInteger(attemptNumber) && attemptNumber >= 1 ? Math.min(attemptNumber, 2) : 1,
+    startedAt: Number.isFinite(startedAt.getTime()) ? startedAt.toISOString() : "",
+    completedAt: Number.isFinite(completedAt.getTime()) ? completedAt.toISOString() : "",
+    durationMs: Number.isFinite(durationMs) && durationMs >= 0 ? Math.round(durationMs) : 0,
+    timeoutMs: Number.isFinite(timeoutMs) && timeoutMs >= 0 ? Math.min(Math.round(timeoutMs), 120000) : 0,
+    clientRequestId: UUID_PATTERN.test(clientRequestId) ? clientRequestId : "",
+    providerRequestId: safePlannerProviderErrorField(attempt.providerRequestId, 200),
+    timeout: Boolean(attempt.timeout),
+    retryable: Boolean(attempt.retryable),
+    errorCategory: PLANNER_ATTEMPT_ERROR_CATEGORIES.has(errorCategory) ? errorCategory : "unknown",
+    httpStatus: Number.isInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599 ? httpStatus : 0,
+    responseBodyPresent: Boolean(attempt.responseBodyPresent),
+    parsedOutputPresent: Boolean(attempt.parsedOutputPresent)
   };
 }
 
-const SAFE_FALLBACK = "這次有部分內容無法安全確認，我會請業者協助；您剛才的問題已經記錄。";
-const FINAL_DECISION_TYPES = new Set(["reply", "clarification", "human_handoff", "no_reply"]);
-
-function createFinalDecision({ type, reasonCode, approvedTaskResults = [], clarificationFields = [], handoffReason = "", handoffReasons = {}, sectionModes = {} }) {
-  if (!FINAL_DECISION_TYPES.has(type)) throw new Error("invalid_final_decision_type");
+function safePlannerRetrySuccessDiagnostic(plannerOutput) {
+  const diagnostic = plannerOutput && plannerOutput[PLANNER_PROVIDER_DIAGNOSTIC];
+  if (!diagnostic) return {};
+  const providerAttempts = (Array.isArray(diagnostic.providerAttempts) ? diagnostic.providerAttempts : [])
+    .slice(0, 2)
+    .map(safePlannerAttemptDiagnostic);
+  if (!providerAttempts.length) return {};
+  const retried = diagnostic.retryPerformed === true;
   return {
-    type,
-    reasonCode: String(reasonCode || "engine_decision"),
-    shouldReply: type !== "no_reply",
-    approvedTaskResults: Array.isArray(approvedTaskResults) ? approvedTaskResults : [],
-    clarificationFields: [...new Set((clarificationFields || []).map(String))],
-    handoffReason: String(handoffReason || ""),
-    handoffReasons: { ...handoffReasons },
-    sectionModes: { ...sectionModes }
+    providerAttemptCount: providerAttempts.length,
+    firstAttemptErrorCategory: retried ? safePlannerErrorCategory(diagnostic.firstAttemptErrorCategory) : "",
+    finalErrorCategory: "",
+    retryPerformed: retried,
+    retrySucceeded: retried && diagnostic.retrySucceeded === true,
+    providerAttempts
   };
 }
 
-function decideTaskResults(taskResults) {
-  const approvedTaskResults = Array.isArray(taskResults) ? taskResults : [];
-  const sectionModes = {};
-  const clarificationFields = [];
-  const handoffReasons = {};
-  let hasAnswer = false;
-  let hasClarification = false;
-  let hasHandoff = false;
-  for (const result of approvedTaskResults) {
-    if (result.status === "answered") {
-      sectionModes[result.taskId] = "answer";
-      hasAnswer = true;
-    } else if (result.status === "needs_clarification") {
-      sectionModes[result.taskId] = "clarification";
-      clarificationFields.push(...(result.missingInputs || []));
-      hasClarification = true;
-    } else {
-      sectionModes[result.taskId] = "handoff";
-      handoffReasons[result.taskId] = String(result.reason || result.status || "property_confirmation_required");
-      hasHandoff = true;
-    }
+function safePlannerErrorDiagnostic(error, planner) {
+  const configured = Boolean(planner && typeof planner.classify === "function");
+  const status = Number(error && (error.status || error.statusCode));
+  const httpStatus = Number.isInteger(status) && status >= 100 && status <= 599 ? status : 0;
+  const timeout = Boolean(error && (error.timeout === true || error.name === "AbortError"));
+  const suppliedCategory = configured && PLANNER_ERROR_CATEGORIES.has(error && error.errorCategory)
+    ? error.errorCategory
+    : "unknown";
+  let errorCategory = suppliedCategory;
+  let errorCode = "planner_unknown_error";
+  if (!configured) {
+    errorCategory = "unknown";
+    errorCode = "planner_configuration_error";
+  } else if (timeout) {
+    errorCategory = "timeout";
+    errorCode = "planner_timeout";
+  } else if (httpStatus === 401 || httpStatus === 403) {
+    errorCategory = "invalid_request";
+    errorCode = "planner_authentication_error";
+  } else if (httpStatus === 404) {
+    errorCategory = "invalid_request";
+    errorCode = "planner_model_not_found";
+  } else if (httpStatus === 429) {
+    errorCategory = "rate_limit";
+    errorCode = "planner_rate_limit";
+  } else if (httpStatus >= 500 && httpStatus <= 599) {
+    errorCategory = "provider_5xx";
+    errorCode = "planner_provider_error";
+  } else if (httpStatus >= 400 && httpStatus <= 499) {
+    errorCategory = "invalid_request";
+    errorCode = "planner_http_error";
+  } else if (errorCategory === "structured_output") {
+    errorCode = "planner_structured_output_error";
+  } else if (errorCategory === "json_parse" || error && error.name === "SyntaxError") {
+    errorCategory = "json_parse";
+    errorCode = "planner_parse_error";
+  } else if (errorCategory === "empty_response") {
+    errorCode = "planner_empty_response";
+  } else if (errorCategory === "network") {
+    errorCode = "planner_network_error";
   }
-  const type = hasAnswer ? "reply" : hasClarification ? "clarification" : "human_handoff";
-  const handoffReason = Object.values(handoffReasons)[0] || (hasHandoff ? "property_confirmation_required" : "");
-  return createFinalDecision({
-    type,
-    reasonCode: `${type}_task_results`,
-    approvedTaskResults,
-    clarificationFields,
-    handoffReason,
-    handoffReasons,
-    sectionModes
-  });
-}
-
-function exceptionDecision(reasonCode, approvedTaskResults = []) {
-  return createFinalDecision({
-    type: "human_handoff",
-    reasonCode,
-    approvedTaskResults,
-    handoffReason: reasonCode
-  });
+  const attemptCount = Number(error && error.providerAttemptCount);
+  const providerAttempts = (Array.isArray(error && error.providerAttempts) ? error.providerAttempts : [])
+    .slice(0, 2)
+    .map(safePlannerAttemptDiagnostic);
+  return {
+    errorName: PLANNER_ERROR_NAMES.has(error && error.name) ? error.name : "Error",
+    errorCode,
+    httpStatus,
+    timeout,
+    errorCategory,
+    model: configured ? String(error && error.plannerModel || planner.model || "").slice(0, 120) : "",
+    provider: configured ? String(error && error.plannerProvider || planner.provider || "unknown").slice(0, 40) : "unknown",
+    providerErrorType: safePlannerProviderErrorField(error && error.providerErrorType, 120),
+    providerErrorCode: safePlannerProviderErrorField(error && error.providerErrorCode, 120),
+    providerErrorParam: safePlannerProviderErrorField(error && error.providerErrorParam, 200),
+    providerAttemptCount: configured && Number.isInteger(attemptCount) && attemptCount >= 0 ? Math.min(attemptCount, 2) : 0,
+    firstAttemptErrorCategory: safePlannerErrorCategory(error && error.firstAttemptErrorCategory, errorCategory),
+    finalErrorCategory: safePlannerErrorCategory(error && error.finalErrorCategory, errorCategory),
+    retryPerformed: Boolean(error && error.retryPerformed),
+    retrySucceeded: Boolean(error && error.retrySucceeded),
+    retryable: Boolean(error && error.retryable),
+    responseBodyPresent: Boolean(error && error.responseBodyPresent),
+    parsedOutputPresent: Boolean(error && error.parsedOutputPresent),
+    providerAttempts
+  };
 }
 
 class ConversationEngineV2 {
-  constructor({ planner, composer, persistence, getProperty, availabilityResolver, availableDatesResolver, listPriceOverrides, now = () => new Date(), onDiagnostic, diagnosticDetail = false, diagnosticMetadata = {} }) {
-    this.planner = planner; this.composer = composer; this.persistence = persistence; this.getProperty = getProperty; this.availabilityResolver = availabilityResolver; this.availableDatesResolver = availableDatesResolver; this.listPriceOverrides = listPriceOverrides || (() => []); this.now = now; this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null; this.diagnosticDetail = Boolean(diagnosticDetail); this.diagnosticMetadata = diagnosticMetadata || {}; this.traceContexts = new Map();
+  constructor({ planner, composer, persistence, getProperty, availabilityResolver, availableDatesResolver, listPriceOverrides, listCustomReplies, now = () => new Date(), onDiagnostic, diagnosticDetail = false, diagnosticMetadata = {} }) {
+    this.planner = planner; this.composer = composer; this.persistence = persistence; this.getProperty = getProperty; this.availabilityResolver = availabilityResolver; this.availableDatesResolver = availableDatesResolver; this.listPriceOverrides = listPriceOverrides || (() => []); this.listCustomReplies = listCustomReplies || (() => []); this.now = now; this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null; this.diagnosticDetail = Boolean(diagnosticDetail); this.diagnosticMetadata = diagnosticMetadata || {}; this.traceContexts = new Map();
   }
 
-  trace(traceId, stage, details) { if (this.onDiagnostic) this.onDiagnostic({ ...(this.traceContexts.get(traceId) || {}), traceId, stage, ...details }); }
+  trace(traceId, stage, details) {
+    if (!this.onDiagnostic) return;
+    try { this.onDiagnostic({ ...(this.traceContexts.get(traceId) || {}), traceId, stage, ...details }); }
+    catch { /* diagnostics must never affect conversation fallback or delivery */ }
+  }
+
+  persistConversationStateV3(input, reduction) {
+    const state = reduceConversationStateV3(reduction);
+    this.persistence.setConversationState(
+      input.customerId,
+      input.channelId,
+      input.lineUserId,
+      state
+    );
+    return state;
+  }
 
   async process(input) {
     const traceId = crypto.randomUUID();
+    const sourceEvents = sourceEventsForInput(input);
     const property = this.getProperty(input.customerId);
     if (!property || property.propertyId !== input.customerId) throw new Error("property_not_found");
     const scope = { propertyId: input.customerId, channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, now: this.now().toISOString() };
-    const previous = migrateStateV2(this.persistence.getConversationState(input.customerId, input.channelId, input.lineUserId), scope);
-    this.traceContexts.set(traceId, { timestamp: new Date().toISOString(), correlationId: traceId, eventId: input.eventId, propertyId: input.customerId, ...(this.diagnosticDetail ? { userKeyHash: crypto.createHash("sha256").update(String(input.lineUserId || "")).digest("hex").slice(0, 16), messageText: input.messageText } : {}) });
+    const stateScope = {
+      propertyId: scope.propertyId,
+      channel: scope.channelId,
+      userId: scope.lineUserId
+    };
+    const previous = readConversationStateV3(
+      this.persistence.getConversationState(
+        input.customerId,
+        input.channelId,
+        input.lineUserId
+      ),
+      stateScope,
+      scope.now
+    );
+    const contextSnapshot = buildContextSnapshotV3(previous, scope);
+    this.traceContexts.set(traceId, { timestamp: new Date().toISOString(), correlationId: traceId, eventId: input.eventId, sourceEventIds: sourceEvents.map((event) => event.eventId).filter(Boolean), propertyId: input.customerId, ...(this.diagnosticDetail ? { userKeyHash: crypto.createHash("sha256").update(String(input.lineUserId || "")).digest("hex").slice(0, 16), messageText: input.messageText, sourceEvents } : {}) });
     const catalog = buildPropertyCatalog(property);
     this.trace(traceId, "property_catalog", { providerType: this.diagnosticMetadata.providerType || "unknown", location: catalog.locationDiagnostics || { source: "none", profileValuePresent: false, transportValuePresent: false, urlValidation: "fail" } });
     if (this.diagnosticDetail) this.trace(traceId, "state_before", { state: traceState(previous) });
     let plannerOutput, parserSucceeded = false;
     try {
-      plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], eventTimestamp: input.eventTimestamp, catalog, conversationState: previous });
+      plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], sourceEvents, eventTimestamp: input.eventTimestamp, catalog, contextSnapshot });
       parserSucceeded = true;
-    } catch { plannerOutput = null; }
+    } catch (error) {
+      plannerOutput = null;
+      this.trace(traceId, "planner_error", safePlannerErrorDiagnostic(error, this.planner));
+    }
     this.trace(traceId, "planner", {
       parserSucceeded,
       taskCount: plannerOutput && Array.isArray(plannerOutput.tasks) ? plannerOutput.tasks.length : 0,
       discourse: plannerOutput && plannerOutput.discourse || null,
       shouldIgnore: Boolean(plannerOutput && plannerOutput.shouldIgnore),
       missingInformation: plannerOutput && Array.isArray(plannerOutput.missingInformation) ? plannerOutput.missingInformation.map(String).slice(0, 20) : [],
-      ...plannerDateTrace(plannerOutput && plannerOutput.stay),
       tasks: plannerOutput && Array.isArray(plannerOutput.tasks)
         ? (this.diagnosticDetail ? plannerOutput.tasks : plannerOutput.tasks.map(plannerTaskTrace))
-        : []
+        : [],
+      ...safePlannerRetrySuccessDiagnostic(plannerOutput)
     });
     if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput) || !Array.isArray(plannerOutput.tasks)) {
-      this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: [parserSucceeded ? "planner_output_unusable" : "planner_parse_failed"], finalTasks: [] });
+      this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: [parserSucceeded ? "planner_output_unusable" : "planner_parse_failed"], finalTasks: [], ...(parserSucceeded ? { errorCategory: "local_contract_failure" } : {}) });
       this.trace(traceId, "fallback", { reasonCode: parserSucceeded ? "planner_output_unusable" : "planner_parse_failed", branch: "planner_input_guard" });
-      const finalDecision = exceptionDecision("planner_empty_output");
-      this.trace(traceId, "final_decision", { decision: finalDecision.type, reasonCode: finalDecision.reasonCode });
+      const finalDecision = decideFinal({ plannerFailure: parserSucceeded ? "planner_output_unusable" : "planner_parse_failed" });
+      this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
       const item = this.persistReview(input, "planner_empty_output", "Planner did not produce a usable task result.", "");
+      const claimValidation = { ok: true, errors: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: SAFE_FALLBACK, claimValidation });
       this.traceContexts.delete(traceId);
-      return { finalDecision, shouldReply: finalDecision.shouldReply, noReply: false, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), traceId };
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
-    plannerOutput = normalizePlannerOutput(plannerOutput, {
-      messageText: input.messageText,
-      eventTimestamp: input.eventTimestamp,
-      timezone: catalog.timezone,
-      deferAvailableDatesDefaults: true
-    });
+    plannerOutput = discardLegacyPlannerStateControls(plannerOutput);
+    plannerOutput = normalizePlannerOutput(plannerOutput, { eventTimestamp: input.eventTimestamp, timezone: catalog.timezone });
     if (!plannerOutput) {
-      this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: ["planner_normalization_failed"], finalTasks: [] });
+      this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: ["planner_normalization_failed"], finalTasks: [], errorCategory: "local_contract_failure" });
       this.trace(traceId, "fallback", { reasonCode: "planner_normalization_failed", branch: "planner_normalization_guard" });
-      const finalDecision = exceptionDecision("planner_normalization_failed");
-      this.trace(traceId, "final_decision", { decision: finalDecision.type, reasonCode: finalDecision.reasonCode });
+      const finalDecision = decideFinal({ plannerFailure: "planner_normalization_failed" });
+      this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
       const item = this.persistReview(input, "planner_normalization_failed", "Planner output could not be normalized safely.", "");
+      const claimValidation = { ok: true, errors: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: SAFE_FALLBACK, claimValidation });
       this.traceContexts.delete(traceId);
-      return { finalDecision, shouldReply: finalDecision.shouldReply, noReply: false, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), traceId };
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
     const structuralValidation = validatePlannerOutput(plannerOutput);
     if (!structuralValidation.ok) {
-      this.trace(traceId, "validation", plannerValidationTrace(plannerOutput, structuralValidation));
+      this.trace(traceId, "validation", { ...plannerValidationTrace(plannerOutput, structuralValidation), errorCategory: "local_contract_failure" });
       this.trace(traceId, "fallback", { reasonCode: "planner_schema_invalid", branch: "structural_validation" });
-      const finalDecision = exceptionDecision("planner_invalid");
-      this.trace(traceId, "final_decision", { decision: finalDecision.type, reasonCode: finalDecision.reasonCode });
+      const finalDecision = decideFinal({ plannerFailure: "planner_schema_invalid" });
+      this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
       const item = this.persistReview(input, "planner_invalid", "整體訊息無法安全理解，請協助確認。", "");
+      const claimValidation = { ok: true, errors: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: SAFE_FALLBACK, claimValidation });
       this.traceContexts.delete(traceId);
-      return { finalDecision, shouldReply: finalDecision.shouldReply, noReply: false, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), traceId };
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
     const semanticInputTasks = plannerOutput.tasks.map(plannerTaskTrace);
     plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog });
     const validation = validatePlannerOutput(plannerOutput);
-    this.trace(traceId, "validation", { ...plannerValidationTrace(plannerOutput, validation), semanticValidation: plannerOutput.semanticValidation });
+    this.trace(traceId, "validation", { ...plannerValidationTrace(plannerOutput, validation), semanticValidation: plannerOutput.semanticValidation, ...(!validation.ok ? { errorCategory: "local_contract_failure" } : {}) });
     this.trace(traceId, "semantic_contract", { inputTasks: semanticInputTasks, outputTasks: plannerOutput.tasks.map(plannerTaskTrace), shouldIgnore: plannerOutput.shouldIgnore, validationPassed: validation.ok, semanticValidation: plannerOutput.semanticValidation });
     if (!validation.ok) {
       this.trace(traceId, "fallback", { reasonCode: "planner_semantic_validation_failed", branch: "semantic_validation" });
-      const finalDecision = exceptionDecision("planner_semantic_repair_invalid");
-      this.trace(traceId, "final_decision", { decision: finalDecision.type, reasonCode: finalDecision.reasonCode });
+      const finalDecision = decideFinal({ plannerFailure: "planner_semantic_validation_failed" });
+      this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
       const item = this.persistReview(input, "planner_semantic_repair_invalid", "Planner task could not be repaired safely.", "");
+      const claimValidation = { ok: true, errors: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: SAFE_FALLBACK, claimValidation });
       this.traceContexts.delete(traceId);
-      return { finalDecision, shouldReply: finalDecision.shouldReply, noReply: false, replyText: SAFE_FALLBACK, taskResults: [], reviewCount: 1, claimValidation: { ok: true, errors: [] }, reviewIds: [item.reviewId].filter(Boolean), traceId };
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
+    if (plannerOutput.ambiguousTopLevelStay) {
+      this.trace(traceId, "fallback", { reasonCode: "multi_candidate_top_level_stay_ambiguous", branch: "candidate_stay_alignment" });
+      const finalDecision = decideFinal({ plannerFailure: "multi_candidate_top_level_stay_ambiguous" });
+      this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
+      const item = this.persistReview(input, "multi_candidate_top_level_stay_ambiguous", "Planner did not bind stay candidates to individual requests.", "");
+      const claimValidation = { ok: true, errors: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: SAFE_FALLBACK, claimValidation });
+      this.traceContexts.delete(traceId);
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
+    }
+    plannerOutput = normalizePlannerEvidenceCoordinates(plannerOutput, sourceEvents);
+    const contextValidation = validateUnderstandingContext(plannerOutput, contextSnapshot, { sourceEvents, scope });
+    this.trace(traceId, "context_validation", {
+      snapshotCycleIds: contextSnapshot.cycles.map((item) => item.requestCycleId),
+      acceptedRelations: contextValidation.relations,
+      rejectionReasons: contextValidation.errors,
+      candidates: contextValidationCandidateDiagnostics(plannerOutput, sourceEvents)
+    });
+    if (!contextValidation.ok) {
+      this.trace(traceId, "fallback", { reasonCode: "context_relation_invalid", branch: "context_validation" });
+      const finalDecision = decideFinal({ plannerFailure: "context_relation_invalid" });
+      this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
+      const item = this.persistReview(input, "context_relation_invalid", "Planner supplied an invalid context reference.", "");
+      const claimValidation = { ok: true, errors: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: SAFE_FALLBACK, claimValidation });
+      this.traceContexts.delete(traceId);
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
+    }
+    const contextExecution = decideContextExecutionV3({
+      state: previous,
+      relations: contextValidation.relations,
+      plannerTasks: plannerOutput.tasks,
+      catalog,
+      now: scope.now
+    });
+    this.trace(traceId, "pending_request", { action: contextExecution.resumedPending ? "resumed" : "unchanged", reasonCode: contextExecution.contextDecision.reasonCode, capability: "", missingFields: [] });
     const hasActionableTask = plannerOutput.tasks.some((task) => !NON_ACTIONABLE_TASK_TYPES.has(task.type));
     const unknownTaskCount = plannerOutput.tasks.filter((task) => NON_ACTIONABLE_TASK_TYPES.has(task.type)).length;
     const noReplyGateHit = Boolean(plannerOutput.shouldIgnore && !hasActionableTask);
-    const plannerStay = normalizedPlannerStay(plannerOutput, input.messageText);
-    const pendingRequiresNights = Boolean(previous.pendingRequest && previous.pendingRequest.missingFields.includes("stay.nights"));
-    const temporal = resolveTemporalExpression(plannerStay.dateExpression, {
-      eventTimestamp: input.eventTimestamp,
-      timezone: catalog.timezone,
-      canonicalTemporal: plannerStay.canonicalTemporal,
-      checkInCandidate: plannerStay.checkInCandidate,
-      checkOutCandidate: plannerStay.checkOutCandidate,
-      nightsCandidate: plannerStay.nightsCandidate,
-      defaultNights: !pendingRequiresNights && [
-        ...(plannerOutput.tasks || []),
-        ...(previous.pendingRequest && previous.pendingRequest.tasks || [])
-      ].some((task) => ["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type)) ? 1 : null,
-      previousCheckIn: previous.conditions.stay.checkIn,
-      previousCheckOut: previous.conditions.stay.checkOut
-    });
-    const explicitSearchRange = plannerStay.dateExpression.kind === "range" && temporal.checkIn && temporal.checkOut
-      ? { from: temporal.checkIn, to: temporal.checkOut }
-      : temporal.searchRange;
-    let operations = canonicalTurnOperations(plannerOutput, temporal, previous.conditions);
-    if (explicitSearchRange && !operations.some((item) => item.field === "stay.searchRange")) {
-      operations.push({ field: "stay.searchRange", operation: previous.conditions.stay.searchRange ? "replace" : "set", value: explicitSearchRange, sourceText: temporal.originalExpression });
-    }
-    this.trace(traceId, "temporal", {
-      operationPaths: plannerOutput.stateOperations.map((item) => item.field),
-      input: {
-        ...plannerDateTrace(plannerStay),
-        previousCheckInPresent: Boolean(previous.conditions.stay.checkIn),
-        previousCheckOutPresent: Boolean(previous.conditions.stay.checkOut)
-      },
-      output: {
-        resolutionStatus: temporal.resolutionStatus,
-        ambiguity: temporal.ambiguity || null,
-        dateIntentStatus: temporal.dateIntentStatus,
-        checkIn: temporal.checkIn || null,
-        checkOut: temporal.checkOut || null,
-        nights: temporal.nights || null,
-        searchRange: explicitSearchRange || null
-      },
-      dateExpressionPresent: Boolean(plannerStay.dateExpression.rawText && plannerStay.dateExpression.kind !== "none"),
-      resolutionStatus: temporal.resolutionStatus,
-      produced: { checkIn: Boolean(temporal.checkIn), checkOut: Boolean(temporal.checkOut), nights: Boolean(temporal.nights), searchRange: Boolean(explicitSearchRange) }
-    });
-    const pendingMerge = resumePendingRequest(plannerOutput, previous.pendingRequest, {
-      canonicalOperations: operations,
-      explicitRangeSearch: Boolean(explicitSearchRange),
-      noReply: noReplyGateHit
-    });
-    this.trace(traceId, "pending_request", {
-      action: pendingMerge.action,
-      reasonCode: pendingMerge.reason,
-      capability: previous.pendingRequest && previous.pendingRequest.capability || "",
-      missingFields: previous.pendingRequest && previous.pendingRequest.missingFields || [],
-      acceptedFields: pendingMerge.matchedFields || [],
-      rejectedFields: (previous.pendingRequest && previous.pendingRequest.missingFields || []).filter((field) => !(pendingMerge.matchedFields || []).includes(field)),
-      remainingMissingFields: pendingMerge.remainingMissingFields || [],
-      candidateTaskTypes: plannerOutput.tasks.map((task) => task.type)
-    });
     this.trace(traceId, "no_reply_gate", { shouldIgnore: plannerOutput.shouldIgnore, actionableTaskCount: plannerOutput.tasks.length - unknownTaskCount, unknownTaskCount, gateHit: noReplyGateHit, reasonCode: noReplyGateHit ? "no_reply_gate_hit" : plannerOutput.shouldIgnore ? "actionable_task_present" : "should_ignore_false" });
-    if (pendingMerge.action === "no_reply") {
-      const finalDecision = createFinalDecision({ type: "no_reply", reasonCode: "no_reply_gate_hit" });
-      const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "acknowledgement", replyType: "no_reply_v2", replyText: "", route: "no_reply_silent_ignore", decisionReason: finalDecision.reasonCode, shouldReply: finalDecision.shouldReply, noReply: true, needsReview: false, status: "resolved", processingStatus: "decided" };
-      if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
-      else this.persistence.appendMessageLog(input.customerId, messageRecord);
-      this.trace(traceId, "controlled_decision", { decision: "no_reply", reason: messageRecord.decisionReason, actionableTaskCount: 0 });
-      this.trace(traceId, "final_decision", { decision: finalDecision.type, reasonCode: finalDecision.reasonCode });
-      this.traceContexts.delete(traceId);
-      return { finalDecision, shouldReply: finalDecision.shouldReply, noReply: true, replyText: "", taskResults: [], reviewCount: 0, reviewIds: [], claimValidation: { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [] }, state: previous, traceId };
-    }
-
-    if (pendingMerge.action === "keep_pending") {
-      const finalDecision = createFinalDecision({ type: "no_reply", reasonCode: "pending_unchanged_no_actionable_request" });
-      const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "pending_unchanged", replyType: "no_reply_v2", replyText: "", route: "pending_unchanged", decisionReason: finalDecision.reasonCode, shouldReply: false, noReply: true, needsReview: false, status: "resolved", processingStatus: "decided" };
-      if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
-      else this.persistence.appendMessageLog(input.customerId, messageRecord);
-      this.trace(traceId, "final_decision", { decision: finalDecision.type, reasonCode: finalDecision.reasonCode });
-      this.traceContexts.delete(traceId);
-      return { finalDecision, shouldReply: false, noReply: true, replyText: "", taskResults: [], reviewCount: 0, reviewIds: [], claimValidation: { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [] }, state: previous, traceId };
-    }
-
-    const executionTasks = pendingMerge.executionTasks;
-    let executionPlannerOutput = {
-      ...plannerOutput,
-      tasks: executionTasks,
-      discourse: pendingMerge.resumed ? { ...plannerOutput.discourse, relation: "continue" } : plannerOutput.discourse,
-      ...(explicitSearchRange ? { searchRange: explicitSearchRange } : {})
-    };
-    executionPlannerOutput = applyAvailableDatesDefaults(executionPlannerOutput, {
-      messageText: input.messageText,
-      eventTimestamp: input.eventTimestamp,
-      timezone: catalog.timezone,
-      allowDefaultSearchRange: temporal.dateIntentStatus !== "unresolved"
-    });
-
-    if (pendingMerge.resumed) {
-      const allowedFields = new Set(pendingMerge.matchedFields);
-      if (allowedFields.has("stay.checkIn")) {
-        allowedFields.add("stay.checkOut");
-        allowedFields.add("stay.nights");
+    if (plannerOutput.shouldIgnore && !hasActionableTask) {
+      if (contextExecution.endedTaskIds.length) {
+        const state = this.persistConversationStateV3(input, {
+          previous,
+          endedTaskIds: contextExecution.endedTaskIds,
+          scope
+        });
+        this.trace(traceId, "state", {
+          contextAction: contextExecution.contextDecision.action,
+          revision: state.revision,
+          tasks: state.tasks.map((task) => ({
+            taskId: task.taskId,
+            taskType: task.taskType,
+            status: task.status,
+            missingFields: task.missingFields
+          }))
+        });
       }
-      if (allowedFields.has("inventory.entityId")) allowedFields.add("inventory.mode");
-      operations = operations.filter((item) => item.field !== "*" && allowedFields.has(item.field));
-    } else {
-      const normalizedInventoryOperations = (executionPlannerOutput.stateOperations || []).filter((item) => item.field.startsWith("inventory."));
-      operations = [...operations.filter((item) => !item.field.startsWith("inventory.")), ...normalizedInventoryOperations];
+      const finalDecision = decideFinal({ noReplyReason: "no_reply_gate_hit" });
+      const claimValidation = { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [] };
+      const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: "", claimValidation });
+      const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "acknowledgement", replyType: "no_reply_v2", replyText: finalResponse.replyText, route: "no_reply_silent_ignore", decisionReason: finalDecision.reasonCode, shouldReply: finalResponse.shouldReply, noReply: !finalResponse.shouldReply, needsReview: false, humanHandoff: false, status: "resolved", processingStatus: "decided" };
+      if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
+      else this.persistence.appendMessageLog(input.customerId, messageRecord);
+      this.trace(traceId, "controlled_decision", { decision: finalDecision.action, reason: messageRecord.decisionReason, actionableTaskCount: 0 });
+      this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
+      this.traceContexts.delete(traceId);
+      return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 0, reviewIds: [], claimValidation, finalDecision, finalResponse, traceId };
     }
-    if (executionPlannerOutput.searchRange && !operations.some((item) => item.field === "stay.searchRange")) {
-      operations.push({ field: "stay.searchRange", operation: previous.conditions.stay.searchRange ? "replace" : "set", value: executionPlannerOutput.searchRange, sourceText: "" });
+    const executionTasks = contextExecution.executionTasks;
+    const executionItems = contextExecution.executionItems;
+    this.trace(traceId, "context_execution", { items: executionItems.map((item) => ({ taskId: item.task.taskId, reasonCode: item.transition && item.transition.reasonCode || "", contextTaskId: item.transition && item.transition.contextTask && item.transition.contextTask.taskId || "", slotSources: item.transition && item.transition.slotSources || {} })) });
+    const relationsByCandidateIndex = new Map(contextExecution.relations.map((relation) => [relation.candidateIndex, relation]));
+    const candidateInputsByCandidateIndex = {};
+    const canonicalItems = executionItems.map((item) => canonicalizeExecutionItem({
+      item,
+      relation: relationsByCandidateIndex.get(item.candidateIndex),
+      contextSnapshot,
+      catalog,
+      guestMessage: input.messageText,
+      eventTimestamp: input.eventTimestamp
+    }));
+    for (const item of canonicalItems) {
+      candidateInputsByCandidateIndex[item.candidateIndex] = item.stateInput;
     }
-    operations.push(...derivedStayOperations(previous.conditions, operations));
-    const state = reduceConversationState(previous, {
-      ...executionPlannerOutput,
-      stateOperations: operations,
-      currentTurnDateIntent: temporal.dateIntentStatus
-    }, scope);
-    this.trace(traceId, "state", { discourse: plannerOutput.discourse, operations: operations.map((item) => ({ field: item.field, operation: item.operation })), conditions: state.conditions, ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {}) });
-    this.trace(traceId, "entity_resolution", { tasks: executionTasks.map((task) => { const resolved = task.entity && task.entity.rawText ? resolveEntity(catalog, task.entity) : { status: "not_requested" }; return this.diagnosticDetail ? { taskId: task.taskId, resolved } : { taskId: task.taskId, status: resolved.status, canonicalId: resolved.entity && resolved.entity.canonicalId || null, candidateCount: resolved.candidates && resolved.candidates.length || 0 }; }) });
+    this.trace(traceId, "canonical_request", {
+      items: canonicalItems.map((item) => item.canonicalRequest)
+    });
+    this.trace(traceId, "temporal", {
+      contextAction: contextExecution.contextDecision.action,
+      items: canonicalItems.map((item) => {
+        const temporal = item.canonicalRequest.temporalState;
+        const plannerStay = normalizedTaskStay(item.task);
+        return {
+          candidateIndex: item.candidateIndex,
+          requestCycleId: item.requestCycleId,
+          taskIds: temporal.applicableTaskIds,
+          dateExpressionPresent: Boolean(
+            plannerStay.dateExpression.rawText
+            && plannerStay.dateExpression.kind !== "none"
+          ),
+          expressionType: temporal.expressionType,
+          resolutionStatus: temporal.resolutionStatus,
+          resolutionSource: temporal.resolutionSource,
+          repairReasonCode: temporal.repairReasonCode,
+          timezone: temporal.timezone,
+          provenance: temporal.provenance,
+          ruleRefs: temporal.ruleRefs,
+          fields: temporal.fields,
+          produced: {
+            checkIn: Boolean(temporal.checkIn),
+            checkOut: Boolean(temporal.checkOut),
+            nights: Boolean(temporal.nights)
+          }
+        };
+      })
+    });
+    const executableItems = canonicalItems.map((item) => {
+      const conditions = executionConditionsV3(previous, item);
+      return {
+        ...item,
+        executionConditions: TEMPORAL_FAILURE_STATUSES.has(
+          item.canonicalRequest.temporalState.resolutionStatus
+        )
+          ? blockedTemporalConditions(conditions)
+          : conditions
+      };
+    });
+    const formalRequests = executableItems.map((item) => buildCanonicalFormalRequest({
+      property,
+      canonicalRequest: item.canonicalRequest,
+      candidateIndex: item.candidateIndex,
+      requestCycleId: item.requestCycleId,
+      confirmedInputs: item.executionConditions
+    }));
+    const queryPlans = formalRequests.map(buildCanonicalQueryPlan).filter(Boolean);
+    this.trace(traceId, "entity_resolution", { tasks: formalRequests.map((request) => this.diagnosticDetail ? { taskId: request.taskId, resolved: request.entity } : { taskId: request.taskId, status: request.entity.status, canonicalId: request.entity.canonicalId, candidateCount: request.entity.canonicalSet.length }) });
+    this.trace(traceId, "formal_request", { items: formalRequests.map((request) => ({ formalRequestId: request.formalRequestId, taskId: request.taskId, candidateIndex: request.candidateIndex, requestCycleId: request.requestCycleId, readiness: request.readiness.status })) });
+    this.trace(traceId, "query_plan", { count: queryPlans.length, items: queryPlans.map((plan) => ({ formalRequestId: plan.formalRequestId, capability: plan.capability, operation: plan.operation, propertyId: plan.propertyId })) });
     const resolverCalls = [];
     const tracedAvailabilityResolver = (request) => { const result = this.availabilityResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
     const tracedAvailableDatesResolver = (request) => { const result = this.availableDatesResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
-    const continuedPendingNeedsMore = Boolean(pendingMerge.resumed && pendingMerge.remainingMissingFields.length);
-    let taskResults;
-    if (continuedPendingNeedsMore) {
-      const pendingTaskIds = new Set(previous.pendingRequest.tasks.map((task) => task.taskId));
-      const independentTasks = executionTasks.filter((task) => !pendingTaskIds.has(task.taskId));
-      const independentResults = executeTasks({ property, catalog, tasks: independentTasks, request: state.conditions, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) });
-      const question = pendingClarificationQuestion(pendingMerge.remainingMissingFields);
-      const clarificationByTaskId = new Map(previous.pendingRequest.tasks.map((task) => [task.taskId, {
-        taskId: task.taskId,
-        type: task.type,
-        status: "needs_clarification",
-        question,
-        facts: {},
-        missingInputs: pendingMerge.remainingMissingFields
-      }]));
-      const independentByTaskId = new Map(independentResults.map((result) => [result.taskId, result]));
-      taskResults = executionTasks.map((task) => clarificationByTaskId.get(task.taskId) || independentByTaskId.get(task.taskId)).filter(Boolean);
-    } else {
-      taskResults = executeTasks({ property, catalog, tasks: executionTasks, request: state.conditions, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) });
-    }
-    const inputTaskIds = executionTasks.map((task) => task.taskId);
+    let executionOutcomes = [
+      ...formalRequests.filter((request) => request.readiness.status !== "ready").map(resultForNotReady),
+      ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId) })
+    ];
+    executionOutcomes = applyControlledReplyRules({
+      rules: this.listCustomReplies(input.customerId),
+      property,
+      canonicalItems,
+      executionOutcomes,
+      now: this.now()
+    });
+    let taskResults = executionOutcomes.map(legacyTaskResult);
+    const inputTaskIds = canonicalItems.map((item) => item.canonicalRequest.taskId);
     let executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     if (!executorCoverage.ok) {
       taskResults = [...taskResults, ...executorCoverage.missingTaskIds.map((taskId) => ({ taskId, type: "unknown", status: "failed", reason: "executor_missing_task", facts: { subject: "這個問題" }, review: true }))];
       executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     }
-    state.pendingRequest = continuedPendingNeedsMore
-      ? createPendingRequest({
-        tasks: previous.pendingRequest.tasks,
-        conditions: state.conditions,
-        missingFields: pendingMerge.remainingMissingFields,
-        clarificationTarget: pendingMerge.remainingMissingFields[0],
-        scope: {
-          eventId: input.eventId,
-          now: scope.now,
-          createdAt: previous.pendingRequest.metadata && previous.pendingRequest.metadata.createdAt
-        }
-      })
-      : pendingFromResults({
-        plannerOutput: executionPlannerOutput,
-        taskResults,
-        conditions: state.conditions,
-        scope: {
-          eventId: input.eventId,
-          now: scope.now,
-          createdAt: previous.pendingRequest && previous.pendingRequest.metadata && previous.pendingRequest.metadata.createdAt
-        }
-      });
-    this.persistence.setConversationState(input.customerId, input.channelId, input.lineUserId, state);
+    const state = this.persistConversationStateV3(input, {
+      previous,
+      canonicalItems,
+      formalRequests,
+      executionOutcomes,
+      endedTaskIds: contextExecution.endedTaskIds,
+      scope
+    });
+    this.trace(traceId, "state", {
+      contextAction: contextExecution.contextDecision.action,
+      revision: state.revision,
+      tasks: state.tasks.map((task) => ({
+        taskId: task.taskId,
+        taskType: task.taskType,
+        status: task.status,
+        missingFields: task.missingFields
+      })),
+      ...(this.diagnosticDetail ? { stateAfter: traceState(state) } : {})
+    });
     this.trace(traceId, "pending_request", {
-      action: state.pendingRequest ? "stored" : previous.pendingRequest ? "cleared" : "none",
-      capability: state.pendingRequest && state.pendingRequest.capability || "",
-      missingFields: state.pendingRequest && state.pendingRequest.missingFields || []
+      items: state.tasks.filter((task) => PENDING_STATUSES.has(task.status)).map(
+        (task) => ({
+          requestCycleId: task.taskId,
+          action: "stored",
+          capability: task.taskType,
+          missingFields: task.missingFields
+        })
+      )
     });
     this.trace(traceId, "executor", { results: this.diagnosticDetail ? taskResults : taskResults.map((item) => ({ taskId: item.taskId, status: item.status, reason: item.reason || "", locationFactProvided: Boolean(item.facts && item.facts.locationMapUrl), factSource: item.facts && item.facts.source || "" })), resolverCalls: this.diagnosticDetail ? resolverCalls : undefined, coverage: executorCoverage });
     const reviewIds = [];
@@ -514,83 +603,50 @@ class ConversationEngineV2 {
       const item = this.persistReview(input, result.reason || result.status, `「${sourceTask && sourceTask.sourceText || "該問題"}」需要業者確認。`, result.taskId);
       if (item.reviewId) reviewIds.push(item.reviewId);
     }
-    let finalDecision = decideTaskResults(taskResults);
     const responsePlan = buildResponsePlan({
       propertyId: input.customerId,
+      taskResults,
       inputTaskIds,
-      reviewActions: reviewIds.map((reviewId) => ({ reviewId, created: true })),
-      finalDecision
+      canonicalRequests: canonicalItems.map((item) => item.canonicalRequest),
+      reviewActions: reviewIds.map((reviewId) => ({ reviewId, created: true }))
     });
-    let replyText = "";
-    let claimedTaskIds = null;
-    let composedSections = null;
-    let composerSource = "not_called";
-    let fallbackOccurred = false;
-    let rejectionReasonCodes = [];
-    let claimValidation = { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [], unexpectedTaskIds: [] };
-
-    if (!responsePlan.ok) {
-      finalDecision = exceptionDecision(`response_plan_${responsePlan.error.code}`, taskResults);
-      replyText = SAFE_FALLBACK;
-      rejectionReasonCodes = [responsePlan.error.code];
-      this.trace(traceId, "response_plan", { sectionCount: 0, sections: [], reviewCount: responsePlan.reviewActions.length, coverage: responsePlan.coverageValidation, errorCode: responsePlan.error.code });
-    } else {
-      this.trace(traceId, "response_plan", { sectionCount: responsePlan.sections.length, sections: this.diagnosticDetail ? responsePlan.sections : responsePlan.sections.map((section) => ({ taskId: section.taskId, status: section.status, responseMode: section.responseMode, factKeys: Object.keys(section.facts || {}) })), reviewCount: responsePlan.reviewActions.length, coverage: responsePlan.coverageValidation });
-      const deterministicReply = composeControlledReply(responsePlan);
-      if (!deterministicReply) {
-        finalDecision = exceptionDecision("approved_reply_empty", taskResults);
-        replyText = SAFE_FALLBACK;
-        rejectionReasonCodes = ["approved_reply_empty"];
-        composerSource = "engine_exception";
-      } else {
-        replyText = deterministicReply;
-        composerSource = "deterministic";
-        if (this.composer && typeof this.composer.compose === "function") {
-          try {
-            const composed = mergeComposedSections(responsePlan, await this.composer.compose(responsePlan));
-            if (composed.ok) {
-              const adoptionValidation = validateClaims(composed.replyText, responsePlan, composed.factTaskIds, composed.sections);
-              if (adoptionValidation.ok) {
-                replyText = composed.replyText;
-                claimedTaskIds = composed.factTaskIds;
-                composedSections = composed.sections;
-                composerSource = "openai";
-              } else {
-                rejectionReasonCodes = adoptionValidation.errors;
-              }
-            } else {
-              rejectionReasonCodes = composed.errors;
-            }
-          } catch {
-            rejectionReasonCodes = ["composer_exception"];
-          }
-          fallbackOccurred = composerSource !== "openai";
-          if (rejectionReasonCodes.length) {
-            finalDecision = {
-              ...finalDecision,
-              reasonCode: rejectionReasonCodes.includes("composer_exception") ? "composer_exception" : "composer_rejected"
-            };
-          }
-        }
-      }
-      claimValidation = validateClaims(replyText, responsePlan, claimedTaskIds, composedSections);
-      this.trace(traceId, "composer", { outputLength: replyText.length, coveredTaskIds: claimedTaskIds || inputTaskIds, missingTaskIds: claimValidation.missingTaskIds, composerSource, validationResult: rejectionReasonCodes.length ? "rejected" : "accepted", rejectionReasonCodes, fallbackOccurred, ...(this.diagnosticDetail ? { composerInput: responsePlan, finalOutput: replyText } : {}), sections: responsePlan.sections.map((section) => ({ taskId: section.taskId, responseMode: section.responseMode, type: section.type })) });
-      if (!claimValidation.ok) {
-        const reason = claimValidation.errors.includes("incomplete_task_coverage") ? "composer_incomplete_coverage" : "claim_validation_failed";
-        const item = this.persistReview(input, reason, "回覆未完整涵蓋所有問題，已由核心改用安全處理。", "");
-        if (item.reviewId) reviewIds.push(item.reviewId);
-        finalDecision = exceptionDecision(reason, taskResults);
-        replyText = SAFE_FALLBACK;
-        claimValidation = validateClaims(replyText, responsePlan, inputTaskIds);
-      }
+    this.trace(traceId, "response_plan", { sectionCount: responsePlan.sections.length, sections: this.diagnosticDetail ? responsePlan.sections : responsePlan.sections.map((section) => ({ taskId: section.taskId, status: section.status, factKeys: Object.keys(section.facts || {}) })), reviewCount: responsePlan.reviewActions.length, coverage: responsePlan.coverageValidation });
+    const deterministicReply = composeControlledReply(responsePlan);
+    let replyText = deterministicReply, claimedTaskIds = null, composedSections = null;
+    let composerSource = "deterministic", fallbackOccurred = false, rejectionReasonCodes = [];
+    const hasAnswerSection = responsePlan.sections.some((section) => section.responseMode === "answer");
+    const hasIncompleteSection = responsePlan.sections.some((section) => section.responseMode !== "answer");
+    const composerEligible = !(hasAnswerSection && hasIncompleteSection);
+    if (composerEligible && this.composer && typeof this.composer.compose === "function") {
+      try {
+        const composed = mergeComposedSections(responsePlan, await this.composer.compose(responsePlan));
+        if (composed.ok) {
+          const adoptionValidation = validateClaims(composed.replyText, responsePlan, composed.factTaskIds, composed.sections);
+          if (adoptionValidation.ok) {
+            replyText = composed.replyText; claimedTaskIds = composed.factTaskIds; composedSections = composed.sections; composerSource = "openai";
+          } else rejectionReasonCodes = adoptionValidation.errors;
+        } else rejectionReasonCodes = composed.errors;
+      } catch { rejectionReasonCodes = ["composer_exception"]; }
+      fallbackOccurred = composerSource !== "openai";
+    }
+    let claimValidation = validateClaims(replyText, responsePlan, claimedTaskIds, composedSections);
+    this.trace(traceId, "composer", { outputLength: replyText.length, coveredTaskIds: claimedTaskIds || inputTaskIds, missingTaskIds: claimValidation.missingTaskIds, composerSource, validationResult: rejectionReasonCodes.length ? "rejected" : "accepted", rejectionReasonCodes, fallbackOccurred, ...(this.diagnosticDetail ? { composerInput: responsePlan, finalOutput: replyText } : {}), sections: responsePlan.sections.map((section) => ({ taskId: section.taskId, responseMode: section.responseMode, type: section.type })) });
+    if (!claimValidation.ok) {
+      const reason = claimValidation.errors.includes("incomplete_task_coverage") ? "composer_incomplete_coverage" : "claim_validation_failed";
+      const item = this.persistReview(input, reason, "回覆未完整涵蓋所有問題，已改用安全完整回覆。", "");
+      if (item.reviewId) reviewIds.push(item.reviewId);
+      replyText = composeControlledReply(responsePlan);
+      claimValidation = validateClaims(replyText, responsePlan, inputTaskIds);
     }
     this.trace(traceId, "claim_validator", { errors: claimValidation.errors, coveredTaskIds: claimValidation.coveredTaskIds, missingTaskIds: claimValidation.missingTaskIds });
-    const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "multi_task_v2", replyType: `${finalDecision.type}_v2`, replyText, route: "planner_v2", decisionReason: finalDecision.reasonCode, shouldReply: finalDecision.shouldReply, noReply: false, humanHandoff: finalDecision.type === "human_handoff", needsReview: finalDecision.type === "human_handoff", status: finalDecision.type === "human_handoff" ? "pending" : "resolved", processingStatus: "decided" };
+    const finalDecision = decideFinal({ executionOutcomes, claimValidation });
+    const finalResponse = renderFinal({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation });
+    const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "multi_task_v2", replyType: `${finalResponse.action}_v2`, replyText: finalResponse.replyText, route: `final_decision_${finalResponse.action}`, shouldReply: finalResponse.shouldReply, noReply: !finalResponse.shouldReply, needsReview: finalDecision.reviewRequired, humanHandoff: finalDecision.action === "handoff", status: finalDecision.reviewRequired ? "pending" : "resolved", processingStatus: "decided", decisionReason: finalDecision.reasonCode };
     if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
     else this.persistence.appendMessageLog(input.customerId, messageRecord);
-    this.trace(traceId, "line_ready", { coveredTaskIds: claimValidation.coveredTaskIds, missingTaskIds: claimValidation.missingTaskIds, replyLength: replyText.length });
-    this.trace(traceId, "final_decision", { decision: finalDecision.type, reasonCode: finalDecision.reasonCode });
-    this.traceContexts.delete(traceId); return { finalDecision, shouldReply: finalDecision.shouldReply, noReply: !finalDecision.shouldReply, replyText, taskResults, reviewCount: reviewIds.length, reviewIds, claimValidation, state, traceId };
+    this.trace(traceId, "line_ready", { coveredTaskIds: claimValidation.coveredTaskIds, missingTaskIds: claimValidation.missingTaskIds, replyLength: finalResponse.replyText.length });
+    this.trace(traceId, "final_decision", { decision: finalDecision.action, reasonCode: finalDecision.reasonCode });
+    this.traceContexts.delete(traceId); return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults, reviewCount: reviewIds.length, reviewIds, claimValidation, finalDecision, finalResponse, state, traceId };
   }
 
   persistReview(input, reason, note, taskId) {
@@ -598,4 +654,4 @@ class ConversationEngineV2 {
   }
 }
 
-module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, createFinalDecision, decideTaskResults, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS };
+module.exports = { ConversationEngineV2, SAFE_FALLBACK, normalizePlannerOutput, DEFAULT_AVAILABLE_DATES_LOOKAHEAD_DAYS, SINGLE_DATE_DEFAULT_NIGHT_RULE_REF, AVAILABLE_DATES_LOOKAHEAD_RULE_REF, sourceEventsForInput };

@@ -105,3 +105,129 @@
 **理由：** 真實 Planner 曾把一般社交訊息同時標成 acknowledgement 與 `unknown`／`property_fact`，也曾把相對日期標為 `absolute` 且不提供 candidate。若 routing 信任任一單欄位，會把社交訊息錯誤轉真人，或在日期解析失敗後沿用舊 state 查詢錯誤日期。
 
 **長期後果：** 純 acknowledgement 由 Engine 形成安全 `no_reply`，同句有效住宿問題仍保留；Temporal 以 LINE event timestamp 與 property timezone 解析受驗證的 canonical input。任何明確日期嘗試若 unresolved，不得取得預設日期範圍、不得承接舊 stay 日期，也不得呼叫房況 Resolver；無日期意圖的合法 follow-up 才能沿用既有住宿日期。
+## D-011：FinalDecision 是最終回覆 action 與內容的共同權威
+
+**決策：** Claim Validator 完成候選文字安全檢查後，所有對客文字必須經唯一的 final response renderer。renderer 只能消費既有 FinalDecision、Response Plan、已驗證候選文字與 Claim Validation 結果，輸出的 action 必須等於 `finalDecision.action`；不得建立第二套 action 判斷。
+
+**理由：** FinalDecision 若只控制 transport action，而 transport 仍直接沿用更早產生的候選文字，claim rejection、handoff、clarification 或 no_reply 可能送出與最終決策不一致的內容。
+
+**長期後果：** reply 只可送出已驗證候選；clarification 只保留安全回答並依 `missingFields` 追問；handoff 只保留安全回答與 deterministic fallback；no_reply 固定空字串且不呼叫 Composer。LINE transport 只消費 Engine 的 final response，不得再次 render 或改寫。
+## D-012 — Planner failure diagnostics are allowlisted and behavior-neutral
+
+**Decision:** A Planner exception may emit one structured `planner_error` diagnostic containing only an allowlisted error name, fixed code, normalized HTTP status, timeout flag, safe category, model, provider, and sanitized OpenAI `error.type`, `error.code`, and `error.param` fields.
+
+**Reason:** The previous catch converted every exception to `planner_parse_failed` without preserving enough safe evidence to distinguish authentication, rate-limit, provider, timeout, parse, empty-response, configuration, and unknown failures.
+
+**Constraint:** Diagnostics must never include messages, prompts, source events, catalogs, response bodies, headers, stacks, tokens, or credentials. The three provider fields are string-only, character-allowlisted, length-limited, and empty when invalid or unavailable. Diagnostic failures are isolated and must not alter the existing `planner_parse_failed` handoff, final response, persistence, or LINE delivery.
+
+## D-013 — Canonical Temporal Authority owns executable dates
+
+**Decision:** Planner temporal fields are candidates only. One `resolveCanonicalTemporal()` boundary receives the guest message, Planner temporal candidate, event timestamp, property timezone, and applicable task IDs, and emits the only executable temporal result with status `absent`, `resolved`, or `unresolved`.
+
+**Reason:** Planner labels and candidate dates can be inconsistent, while State and FormalRequest previously had fallback paths that could preserve or reintroduce stale executable dates. This allowed identical relative-date requests to diverge after planning.
+
+**Constraint:** State may persist but not reinterpret the canonical result. FormalRequest, QueryPlan, pending-state logic, and Executor may only consume it. An unresolved current temporal intent expires prior stay dates. Relative days, relative weekdays, weekends, absolute dates, ranges, and night counts use the same property-timezone-aware grammar and injectable clock.
+
+## D-014 — Planner provider failure diagnostics are persistent and allowlisted
+
+**Decision:** Test-only application logs may persist a `planner_error` record keyed by trace ID with only the approved provider-attempt, HTTP, timeout, sanitized provider error, category, retryability, response-body-presence, and parsed-output-presence fields.
+
+**Reason:** A generic `planner_parse_failed` outcome did not distinguish transient provider failures from invalid requests, empty responses, parse failures, structured-output failures, or network failures after the original exception boundary completed.
+
+**Constraint:** The diagnostic boundary performs no retry and changes no Planner request or fallback behavior. Raw bodies, provider messages, prompts, guest text, source identifiers, headers, secrets, credentials, property data, and stacks must not enter the error object or persisted trace.
+
+## D-015 — Planner provider retry is finite and category-gated
+
+**Decision:** One Planner classification may make at most two provider requests. Attempt two is allowed only when attempt one is safely classified as `timeout`, `network`, `rate_limit`, or `provider_5xx`, and follows a short bounded delay.
+
+**Reason:** A real stability replay showed one isolated retryable timeout while the other 139 executions and every downstream contract remained healthy. Treating that transient provider failure as immediately final caused an avoidable safe handoff.
+
+**Constraint:** Invalid requests, non-429 4xx responses, empty responses, JSON parse failures, structured-output failures, configuration/unknown failures, and local schema or contract failures are never retried. A successful second attempt uses only its valid output. A failed second attempt preserves `planner_parse_failed`, safe handoff, and existing delivery. Diagnostics remain allowlisted and must not retain prompts, guest content, raw provider responses, headers, secrets, property data, or stacks.
+
+## D-016 — Canonicalizer is the sole executable semantic writer
+
+**Decision:** Planner output remains candidate input. One `canonicalizeExecutionItem()` boundary creates an immutable `CanonicalRequest` whose capability, entity, temporal state, stay dependency, required fields, resolver, risk, response mode, and evidence binding are authoritative for execution.
+
+**Reason:** State, readiness, query construction, and dispatch previously retained independent semantic repairs or routing choices. Those duplicates allowed a Planner type, stale state, or consumer fallback to disagree with the accepted temporal, entity, or capability.
+
+**Constraint:** State may persist canonical values but may not rewrite them. FormalRequest and QueryPlan derive readiness and operations only from `CanonicalRequest`. The canonical executor rejects resolver mismatches. ResponsePlan, Claim Validator, and FinalDecision consume canonical outcomes without reclassifying Planner semantics. Capability policy remains property-neutral; property-specific facts come only from the scoped catalog and resolver.
+
+## 2026-07-28 — Property-neutral runtime data authority
+
+**Decision:** Authenticated account/session scope, together with the existing platform-admin grant provider, is the only authority for which properties onboarding may list or update. Room and bundle availability are keyed only by property-scoped inventory records and formal bundle-member relations.
+
+**Reason:** Base-era onboarding, JSON fallback, availability import, PostgreSQL compatibility, and seed helpers still embedded one property and a fixed room set even though the active conversation Engine was property-neutral.
+
+**Constraint:** Missing authorization or bundle relations are rejected rather than inferred. Shared seed code accepts an explicit property graph; property-specific initialization values may exist only in explicitly selected fixtures or historical migrations, never as runtime branches.
+
+## 2026-07-29 — Onboarding intake starts from a scoped invitation
+
+**Decision:** A new operator onboarding submission may be created only by a platform administrator issuing an expiring, revocable invitation. The invitation token hash is attached to one staging application and is the only authority for that application's draft read/write operations.
+
+**Reason:** The former public form created an unrestricted draft on first save. Although fresh save and submit worked, that path could not prove invite expiry, revocation, or operator-to-operator isolation and therefore was not a safe friendly-operator intake boundary.
+
+**Constraint:** The browser-supplied property ID is never authorization. Drafts, rooms, bundles, pricing, rules, location, and contact details remain in existing onboarding staging tables until an existing admin approval transaction promotes them. Tokens, cookies, personal data, and credentials must not enter logs.
+
+## 2026-07-29 — Test-only onboarding URLs are deployment-scoped
+
+**Decision:** The `nephi-home-node-pilot-test-only` service starts with migrations only and uses its explicit `onrender.com` host as `PUBLIC_BASE_URL`. Test-only deploys never run a seed automatically and never generate operator invitation, resume, or admin-setup URLs on `app.junzanai.com`.
+
+**Reason:** The repository Blueprint still contained an obsolete seed command and production-looking public base URL even after the running test-only service had been corrected manually. That mismatch could be restored by the next Blueprint deploy and sent fake staging traffic to a different test-only service.
+
+**Constraint:** URL generation continues through the existing `publicBrand.publicBaseUrl` boundary. No route, token format, onboarding workflow, formal property data, or LINE behavior changes.
+
+## 2026-07-29 — One-time property-scoped LINE setup authority
+
+**Decision:** A platform administrator may issue an expiring, revocable, one-time LINE setup link for one existing property. The raw token is returned only in the newly created URL; PostgreSQL stores its SHA-256 hash. The public setup token, not any browser-supplied property ID, is the sole property authority.
+
+**Reason:** The existing property-scoped binding and webhook runtime safely encrypted and routed credentials, but credential entry still required a platform-admin API and had no operator-safe handoff boundary.
+
+**Constraint:** The raw token is carried only in the URL fragment, removed from browser history before any network request, and submitted to resolve/redeem endpoints in a POST body under `Referrer-Policy: no-referrer`. Redemption locks and revalidates the token, encrypts both credentials through the existing AES-256-GCM binding service, preserves the property's webhook key, upserts the binding, and sets `used_at` in one transaction. Failure rolls back both binding and token state. Raw credentials, raw token, token hash, and encryption key never enter request URLs, Referer headers, logs, status APIs, HTML, persistent browser storage, or read-back responses.
+
+## D-017 — Final-candidate validation is the only Composer claim state
+
+**Decision:** A rejected or failed Composer attempt is diagnostic history, not FinalDecision input. When the Engine replaces it with the deterministic response and that final candidate passes the unchanged Claim Validator, FinalDecision receives the successful final validation.
+
+**Reason:** Retaining rejection state from a discarded Composer candidate converted valid property-backed deterministic answers into `claim_validation_failed` handoffs, including location replies that had already passed every earlier stage.
+
+**Constraint:** Every final candidate still passes Claim Validator. If deterministic fallback validation fails, the existing `claim_validation_failed` handoff remains mandatory. Composer text rejection, exception details, and fallback selection cannot weaken Claim Validator, Resolver authority, high-risk handoff, or property isolation.
+
+## D-018 — Entity-specific property capabilities require one catalog-backed definition
+
+**Decision:** When a property catalog uniquely resolves an entity such as `pool` or `parking`, capability, canonical entity, accepted category, resolver, and answer must all come from that entity's single capability definition. The pool definition accepts the provider's real `policy` category in addition to its existing categories.
+
+**Reason:** The real pool record is a policy. Rejecting that category caused Canonicalizer to select another policy-compatible capability such as `bbq`, while an amenity-shaped test fixture concealed the mismatch. Separately, a missing Planner candidate could discard a uniquely named catalog fact before canonicalization.
+
+**Constraint:** Source-text grounding is allowed only when Planner leaves entity text empty and exactly one registered low-risk property-catalog entity resolves through an exact alias in the current property's catalog. Non-empty conflicting entity text, ambiguous aliases, and unregistered aliases remain unresolved; generic candidate matching cannot manufacture an entity-specific capability.
+
+## D-019 — Broad location requests resolve only to the current property's approved map
+
+**Decision:** Direct property location, address, map, and navigation requests, together with every property-to-external-place proximity, nearby, distance, duration, or directions request, use the existing `location` capability and `property_catalog` resolver. The only answerable location fact is the current property's approved Google Maps URL.
+
+**Reason:** Nearby shops, transit, attractions, routes, distances, and travel times are open-ended external facts. Searching for or estimating them would bypass operator approval, while the existing property-scoped map gives the guest a safe way to inspect both the property and its surroundings.
+
+**Constraint:** Planner must express the semantic relation as `location`; deterministic code must not add per-question keyword rules. Runtime must not search, recommend, identify, invent, or estimate an external place, distance, or duration. Missing or invalid map data remains Unknown. Mixed requests retain every other valid task. A missing canonical candidate may recover a catalog entity from complete task `sourceText` only after an unresolvable raw entity and one unique exact current-property alias; the capability must be registered, low-risk, non-stay-dependent, answer-mode, and resolved by `property_catalog`. A resolved conflicting entity, ambiguous source, unregistered alias, or unregistered capability remains unresolved.
+
+## D-020 — Controlled replies are post-Resolver, property-scoped supplements
+
+**Decision:** Operator-approved custom replies are selected only after Planner interpretation, CanonicalRequest construction, and formal Resolver execution. Deterministic matching may use only the current property, canonical capability/entity, resolved stay dates, room/bundle scope, rule state, and one unique match.
+
+**Reason:** Temporary operating notices must follow the guest's understood task and property authority without turning into keyword FAQ routing, exposing all rule text to Planner, or allowing AI to choose among competing facts.
+
+**Constraint:** Each property may store at most five rules. Disabled, pending, expired, overlapping enabled, ambiguous, cross-property, invalid-date, blank-reply, and nonexistent-room definitions cannot produce an answer. Approved text may supplement only the matching task; other mixed tasks retain formal Resolver outcomes. A rule never asserts availability, price, reservation completion, or another formal fact, and a structural conflict with formal pricing becomes Unknown/review. Composer may only connect allowed facts, while Claim Validator and FinalDecision remain unchanged.
+
+## D-021 — Conversation State V3 is the sole runtime state writer
+
+**Decision:** ConversationEngineV2 persists only Conversation State V3 through one reducer invocation per processed message. V2 request cycles and pending requests may be projected into V3 on read, but no active runtime path writes or independently resumes V2 state.
+
+**Reason:** Planner relation output, V2 cycle mutation, pending-request mutation, and readiness checks previously made separate decisions. That allowed a date-only answer to lose its pricing task and allowed missing bundle dates to influence capability selection before clarification could occur.
+
+**Constraint:** Planner remains the semantic interpreter, but a structurally isolated date or guest-count slot may continue exactly one unexpired pending lodging task. A guest-count recovery must contain only the normalized count expression; additional semantics disable automatic recovery. Every lodging request uses `any`, `room_type`, or `bundle`; active Resolver calls receive only the normalized property/task/product/date/guest contract. Capability selection cannot depend on readiness. Same-turn duplicate task IDs are rejected, an accepted `end_existing` relation cancels only its referenced V3 task, unresolved products remain safe state rather than causing a write failure, new or ambiguous work must not inherit stale state, mixed tasks remain independent, Unknown is never converted to No, and Claim Validator and FinalDecision remain unchanged.
+
+## D-022 — Reducer-approved transitions and catalog-validated products
+
+**Decision:** The V3 reducer is the sole authority for whether an execution item starts a task or continues an existing task, and for the product attached to that transition. New room or bundle products are approved only after exact resolution against the current property catalog; Canonicalizer consumes the reducer-approved product and does not promote raw Planner candidates.
+
+**Reason:** Directly copying a Planner `canonicalCandidate` into a product admitted forged IDs even when the catalog resolved a different room. Conversely, allowing a continuation to reuse its raw Planner entity could lose the persisted topic for a controlled detail follow-up.
+
+**Constraint:** A `continue` transition preserves the V3 task topic and product. A new task may use only a catalog-resolved room or bundle; unknown, ambiguous, or forged candidates become `any` rather than a product selection. Exact catalog grounding remains data-driven; no full-source alias scan or parking/pool/location-specific transition is permitted.

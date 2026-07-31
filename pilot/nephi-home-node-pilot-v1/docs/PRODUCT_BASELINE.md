@@ -37,6 +37,9 @@
 - 本輪有效日期、晚數、人數或房型若可填入 pending missing fields，必須保留原 capability、重算剩餘欄位，並在補齊後重新查詢 property-scoped Resolver。
 - pending `availability` 缺入住日時，單一 canonical 日期不得因候選 task 為 `available_dates` 而啟動預設 31 天搜尋；只有明確日期範圍搜尋才能取代。
 - 無有效補值且無有效新需求時不得重播舊 clarification；acknowledgement 仍由 Engine 決定 `no_reply`。
+- Claim Validator 後只能有一個 final response renderer；其 action 必須與 FinalDecision 完整一致，LINE transport 不得再次決策或改寫內容。
+- reply 只能使用已通過 Claim Validator 的候選回答；clarification 只能保留安全回答並依 FinalDecision `missingFields` 追問；handoff 只能保留安全回答與 deterministic 安全文案。
+- Claim Validator rejection 或 Composer exception 不得讓被拒候選流入最終回覆；no_reply 必須是空字串、不得呼叫 Composer、不得呼叫 LINE。
 
 ## Unknown 與真人轉接
 
@@ -61,3 +64,43 @@
 ## Baseline 變更門檻
 
 只有通過自動回歸與真實驗收的行為才能加入本文件。若產品決策要改變既有基準，必須先 append 一筆重大決策，說明相容性、風險與回退方式。
+## Planner failure diagnostic boundary
+
+- Planner exceptions retain the existing `planner_parse_failed` → FinalDecision handoff → safe fallback → LINE delivery behavior.
+- Test-only diagnostics may emit `planner_error` only through an allowlisted schema: error name, fixed code, normalized HTTP status, timeout, safe category, model, provider, and sanitized OpenAI `error.type`, `error.code`, and `error.param`.
+- Diagnostic callbacks and loggers are non-authoritative; their exceptions cannot change conversation fallback or delivery.
+- Secrets, authorization data, guest content, prompts, source events, property catalogs, provider error messages, raw provider bodies, stacks, request headers, and credentials never enter the safe trace.
+
+## Canonical Temporal Authority
+
+- Planner temporal fields are non-authoritative candidates. Only `resolveCanonicalTemporal()` may produce executable stay dates.
+- Canonical temporal status is exactly `absent`, `resolved`, or `unresolved`; a resolved result records the raw expression, expression type, check-in/check-out, property timezone, resolution source, repair reason, and applicable task IDs.
+- Relative days, relative weekdays, weekends, absolute dates, ranges, and night counts share one deterministic grammar with an injectable clock and property timezone.
+- A current unresolved date intent clears stale stay dates. Prior dates may be reused only through an explicit approved context-reuse path.
+- State, FormalRequest, QueryPlan, pending logic, and Executor must not parse, repair, infer, or replace canonical temporal meaning.
+
+## Persistent Planner provider diagnostic boundary
+
+- Test-only `planner_error` records persist only trace ID plus bounded provider attempt/status values, timeout, sanitized provider type/code/param, a fixed safe category, retryability, response-body presence, and parsed-output presence.
+- Safe categories are limited to `timeout`, `rate_limit`, `provider_5xx`, `invalid_request`, `empty_response`, `json_parse`, `structured_output`, `network`, and `unknown`.
+- Transient provider failures are retried only for `timeout`, `network`, `rate_limit`, and `provider_5xx`, at most once after a short bounded delay. All other failure categories and local contract failures are not retried.
+- A successful retry resumes the same Planner validation and runtime pipeline. An exhausted retry does not change the existing `planner_parse_failed` handoff, safe fallback, or LINE delivery behavior.
+- Raw provider bodies and messages, prompts, guest content, source identifiers, property data, headers, stacks, API keys, tokens, and credentials never enter the persisted trace.
+
+## Canonical Request authority
+
+- Planner capability, entity, temporal, dependency, and output fields are candidates only.
+- `canonicalizeExecutionItem()` is the single active boundary that creates an immutable `CanonicalRequest`.
+- The capability registry supplies property-neutral stay dependency, required fields, resolver, risk, and response-mode policy.
+- State, FormalRequest, QueryPlan, Executor, ResponsePlan, Claim Validator, and FinalDecision consume canonical values or canonical execution outcomes without selecting a second capability, entity, date, or resolver.
+- Property facts remain scoped by `propertyId`; canonical routing never embeds a property name, property ID, price, rule, room number, date, or fixed guest answer.
+- Runtime mutation gates reject a second Canonicalizer or a second temporal, capability, entity, or resolver writer.
+
+## Property-neutral onboarding and inventory
+
+- Onboarding property lists and existing-property approvals are restricted by authenticated property membership unless the existing platform-admin grant authorizes platform-wide review.
+- Shared JSON and PostgreSQL availability paths accept property-scoped room IDs and formal bundle IDs without assuming a property name, room count, room number, or bundle identifier.
+- Updating a formal bundle applies only to its stored member-room relation. A missing bundle relation is rejected rather than inferred.
+- Shared PostgreSQL seed logic is explicit, idempotent, and property-parameterized; representative operator fixtures may retain real identifiers but are not runtime routing rules.
+- New friendly-operator intake starts only from a platform-admin-issued, expiring and revocable invitation. One token authorizes one staging application; invalid, expired, revoked, or cross-application tokens are rejected.
+- Draft save/read-back, idempotent submit, and admin review continue to use the existing onboarding staging and review workflow. No unapproved submission becomes a formal property, guest-facing fact, LINE binding, or automatic-reply source.

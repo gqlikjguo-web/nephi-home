@@ -1,0 +1,149 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+
+const {
+  resolveCanonicalTemporal
+} = require("../lib/conversation-engine-v2/temporal-resolver");
+const {
+  buildFormalRequest,
+  buildQueryPlan
+} = require("../lib/conversation-engine-v2/formal-request");
+
+const EVENT_TIMESTAMP = Date.parse("2026-07-27T10:00:00+08:00");
+const TIMEZONE = "Asia/Taipei";
+
+const CASES = Object.freeze([
+  { rawText: "7/28-29", checkIn: "2026-07-28", checkOut: "2026-07-29", nights: 1 },
+  { rawText: "7/28-30", checkIn: "2026-07-28", checkOut: "2026-07-30", nights: 2 },
+  { rawText: "7/28～30", checkIn: "2026-07-28", checkOut: "2026-07-30", nights: 2 },
+  { rawText: "7/28到30號", checkIn: "2026-07-28", checkOut: "2026-07-30", nights: 2 },
+  { rawText: "7月28日到30日", checkIn: "2026-07-28", checkOut: "2026-07-30", nights: 2 },
+  { rawText: "7/28-7/30", checkIn: "2026-07-28", checkOut: "2026-07-30", nights: 2 },
+  { rawText: "7/28到8/2", checkIn: "2026-07-28", checkOut: "2026-08-02", nights: 5 },
+  { rawText: "2026/7/28-30", checkIn: "2026-07-28", checkOut: "2026-07-30", nights: 2 },
+  { rawText: "2026年7月28日到30日", checkIn: "2026-07-28", checkOut: "2026-07-30", nights: 2 },
+  { rawText: "7/31-2", checkIn: "2026-07-31", checkOut: "2026-08-02", nights: 2 },
+  { rawText: "12/31-2", checkIn: "2026-12-31", checkOut: "2027-01-02", nights: 2 }
+]);
+
+for (const testCase of CASES) {
+  const actual = resolveCanonicalTemporal({
+    guestMessage: `${testCase.rawText} 有房嗎？`,
+    plannerCandidate: {
+      dateExpression: {
+        rawText: testCase.rawText,
+        kind: "range",
+        anchor: "message_time"
+      },
+      checkInCandidate: "2099-01-01",
+      checkOutCandidate: "2099-01-02",
+      nightsCandidate: null,
+      guestCountCandidate: null
+    },
+    eventTimestamp: EVENT_TIMESTAMP,
+    timezone: TIMEZONE,
+    defaultNights: 1,
+    applicableTaskIds: ["availability"]
+  });
+
+  assert.deepEqual(
+    {
+      resolutionStatus: actual.resolutionStatus,
+      checkIn: actual.checkIn,
+      checkOut: actual.checkOut,
+      nights: actual.nights
+    },
+    {
+      resolutionStatus: "resolved",
+      checkIn: testCase.checkIn,
+      checkOut: testCase.checkOut,
+      nights: testCase.nights
+    },
+    `${testCase.rawText} must resolve as an explicit stay range`
+  );
+  assert.equal(actual.repairReasonCode, "planner_candidate_rejected");
+
+  const formalRequest = buildFormalRequest({
+    property: { propertyId: "range_property" },
+    task: {
+      taskId: "availability",
+      candidateIndex: 0,
+      type: "availability",
+      detailIntent: "general",
+      requestedOutputs: ["availability"],
+      entity: { category: "other", rawText: "", canonicalCandidate: null }
+    },
+    requestCycleId: `range-${testCase.rawText}`,
+    temporalResult: actual,
+    confirmedInputs: {
+      stay: {
+        checkIn: "2098-12-01",
+        checkOut: "2098-12-02",
+        nights: 1
+      }
+    },
+    resolvedEntity: null
+  });
+  assert.equal(formalRequest.readiness.status, "ready", testCase.rawText);
+  assert.deepEqual(
+    {
+      checkIn: formalRequest.stay.checkIn,
+      checkOut: formalRequest.stay.checkOut,
+      nights: formalRequest.stay.nights
+    },
+    {
+      checkIn: testCase.checkIn,
+      checkOut: testCase.checkOut,
+      nights: testCase.nights
+    },
+    `${testCase.rawText} must replace stale stay state`
+  );
+  const queryPlan = buildQueryPlan(formalRequest);
+  assert.deepEqual(
+    {
+      checkIn: queryPlan.conditions.stay.checkIn,
+      checkOut: queryPlan.conditions.stay.checkOut,
+      nights: queryPlan.conditions.stay.nights
+    },
+    {
+      checkIn: testCase.checkIn,
+      checkOut: testCase.checkOut,
+      nights: testCase.nights
+    },
+    `${testCase.rawText} QueryPlan must use only canonical dates`
+  );
+}
+
+const UNRESOLVED_CASES = Object.freeze([
+  { rawText: "7/30-7/28", reasonCode: "temporal_range_invalid" },
+  { rawText: "7/28-29和8/1-2", reasonCode: "temporal_expression_unrecognized" },
+  { rawText: "7/28到哪天", reasonCode: "temporal_range_invalid" }
+]);
+
+for (const testCase of UNRESOLVED_CASES) {
+  const actual = resolveCanonicalTemporal({
+    guestMessage: `${testCase.rawText} 有房嗎？`,
+    plannerCandidate: {
+      dateExpression: {
+        rawText: testCase.rawText,
+        kind: "range",
+        anchor: "message_time"
+      },
+      checkInCandidate: "2099-01-01",
+      checkOutCandidate: "2099-01-02",
+      nightsCandidate: 1,
+      guestCountCandidate: null
+    },
+    eventTimestamp: EVENT_TIMESTAMP,
+    timezone: TIMEZONE,
+    defaultNights: 1,
+    applicableTaskIds: ["availability"]
+  });
+  assert.equal(actual.resolutionStatus, "unresolved", testCase.rawText);
+  assert.equal(actual.checkIn, null, testCase.rawText);
+  assert.equal(actual.checkOut, null, testCase.rawText);
+  assert.equal(actual.repairReasonCode, testCase.reasonCode, testCase.rawText);
+}
+
+console.log("canonical temporal range grammar: PASS");

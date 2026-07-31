@@ -22,13 +22,15 @@ function validInput(date = "2026-07-19") {
   };
 }
 
+const LEGACY_INVENTORY_ALIASES = ["301", "302", "401", "402"];
+
 (async () => {
   const schema = JSON.parse(fs.readFileSync(SCHEMA_PATH, "utf8"));
   assert.equal(schema.additionalProperties, false);
   assert.deepEqual(schema.required, ["propertyId", "days"]);
-  assert.deepEqual(schema.properties.days.items.required, ["date", "301", "302", "401", "402"]);
+  assert.deepEqual(schema.properties.days.items.required, ["date"]);
   assert.equal(schema.properties.days.items.additionalProperties, false);
-  assert.deepEqual(schema.properties.days.items.properties["301"].enum, ["open", "closed"]);
+  assert.deepEqual(schema.properties.days.items.patternProperties["^(?!date$)[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"].enum, ["open", "closed"]);
 
   const tempDir = fs.mkdtempSync(path.join(__dirname, ".tmp-availability-import-"));
   const dataFile = path.join(tempDir, "store.json");
@@ -70,8 +72,7 @@ function validInput(date = "2026-07-19") {
       room301: "available",
       room302: "available",
       room401: "available",
-      room402: "available",
-      wholeHouse: "available"
+      room402: "available"
     });
 
     const replacement = validInput();
@@ -84,7 +85,7 @@ function validInput(date = "2026-07-19") {
     assert.equal(row.room302, "available");
     assert.equal(row.room401, "available");
     assert.equal(row.room402, "closed");
-    assert.equal(row.wholeHouse, "closed");
+    assert.equal(Object.hasOwn(row, "wholeHouse"), false);
     assert.equal(providers.availability.getRows("nephi_home", "2026-07-19", "2026-07-20").length, 1);
 
     const after = JSON.parse(fs.readFileSync(dataFile, "utf8"));
@@ -92,11 +93,17 @@ function validInput(date = "2026-07-19") {
     assert.equal(JSON.stringify(after.guests), guestsBefore);
     assert.equal(JSON.stringify(after.messageLogs), logsBefore);
 
-    assert.throws(() => validateAvailabilityDays({ propertyId: "nephi_home", days: [{ date: "2026-07-20", 301: "open" }] }), /days\[0\]\.302/);
+    assert.throws(
+      () => validateAvailabilityDays(
+        { propertyId: "nephi_home", days: [{ date: "2026-07-20", 301: "open" }] },
+        { inventoryAliases: LEGACY_INVENTORY_ALIASES }
+      ),
+      /days\[0\]\.302/
+    );
     assert.throws(() => validateAvailabilityDays({ ...validInput(), unexpected: true }), /additional property/);
     const unknownRoom = validInput();
     unknownRoom.days[0][501] = "open";
-    assert.throws(() => validateAvailabilityDays(unknownRoom), /additional property/);
+    assert.throws(() => validateAvailabilityDays(unknownRoom, { inventoryAliases: LEGACY_INVENTORY_ALIASES }), /additional property/);
     const badStatus = validInput();
     badStatus.days[0][301] = "maybe";
     assert.throws(() => validateAvailabilityDays(badStatus), /open or closed/);
@@ -112,7 +119,7 @@ function validInput(date = "2026-07-19") {
         getProperty: (propertyId) => propertyId === "nephi_home" ? missingRoomProperty : providers.customerSettings.getProperty(propertyId)
       }
     };
-    assert.throws(() => importAvailabilityDays(validInput(), { providers: missingRoomProviders }), /room402/);
+    assert.throws(() => importAvailabilityDays(validInput(), { providers: missingRoomProviders }), /402/);
 
     const cliInputPath = path.join(tempDir, "availability.json");
     fs.writeFileSync(cliInputPath, JSON.stringify(validInput("2026-07-21")), "utf8");

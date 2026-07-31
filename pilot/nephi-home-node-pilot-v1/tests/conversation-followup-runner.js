@@ -11,9 +11,26 @@ function plan({ relation, type, category, sourceText, topic = null, detailIntent
     discourse: { relation, confidence: 1 },
     stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-    tasks: [{ taskId: "question", type, sourceText, detailIntent, requestedOutputs: [detailIntent === "eligibility" ? "eligibility" : "answer"], eligibilityEvidence, dependsOnStayContext: false,
+    tasks: [{ candidateIndex: 0, taskId: "question", type, sourceText, detailIntent, requestedOutputs: [detailIntent === "eligibility" ? "eligibility" : "answer"], eligibilityEvidence, dependsOnStayContext: false,
       entity: { category, rawText: sourceText, canonicalCandidate: topic, confidence: 1 }, confidence: 1 }],
+    contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "fixture", startOffset: 0, endOffset: 1, quote: "x" }] }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: relation
+  };
+}
+
+function withExplicitRelation(output, sourceEvents, contextSnapshot) {
+  const source = sourceEvents[0];
+  const relation = output.discourse.relation;
+  const kind = ["continue", "answer_clarification"].includes(relation) ? "supplement_existing" : relation === "modify" ? "modify_existing" : relation === "end" ? "end_existing" : "new_request";
+  const cycle = contextSnapshot.cycles[0] && contextSnapshot.cycles[0].requestCycleId;
+  return {
+    ...output,
+    contextRelationCandidates: output.tasks.map((task) => ({
+      candidateIndex: task.candidateIndex,
+      kind,
+      candidateRequestCycleRefs: kind === "new_request" ? [] : cycle ? [cycle] : [],
+      evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
+    }))
   };
 }
 
@@ -40,7 +57,7 @@ function property(propertyId, overrides = {}) {
 
 function createEngine({ plans, properties, propertyReads }) {
   const memory = new Map();
-  const planner = { classify: async ({ currentMessage }) => plans.get(currentMessage) };
+  const planner = { classify: async ({ currentMessage, sourceEvents, contextSnapshot }) => withExplicitRelation(plans.get(currentMessage), sourceEvents, contextSnapshot) };
   const engine = new ConversationEngineV2({
     planner,
     persistence: {
@@ -83,9 +100,10 @@ async function runFollowUp({ id, propertyId = "property_alpha", first, followUp,
     assert.equal(result.initial.taskResults[0].status, "answered", `${item.id} initial topic must resolve`);
     assert.equal(result.second.taskResults[0].status, "answered", `${item.id} follow-up must preserve a partial answer instead of global fallback`);
     assert.equal(result.second.taskResults[0].facts.detailIntent, item.followUp.detailIntent, `${item.id} resolver must receive controlled detail intent`);
-    assert.equal(result.memory.get(`property_alpha:${item.id}:guest`).conditions.topic.canonicalId, item.first.topic, `${item.id} must retain the canonical topic`);
-    assert.equal(result.memory.get(`property_alpha:${item.id}:guest`).conditions.topic.detailIntent, item.followUp.detailIntent, `${item.id} state must retain only the controlled detail intent`);
-    assert.equal(result.memory.get(`property_alpha:${item.id}:guest`).conditions.tasks, undefined, `${item.id} must not retain a prior reply as fact`);
+    const persistedTask = result.memory.get(`property_alpha:${item.id}:guest`).tasks[0];
+    assert.equal(persistedTask.entityId, item.first.topic, `${item.id} must retain the canonical topic`);
+    assert.equal(persistedTask.detailIntent, item.followUp.detailIntent, `${item.id} state must retain only the controlled detail intent`);
+    assert.equal(Object.hasOwn(persistedTask, "facts"), false, `${item.id} must not retain a prior reply as fact`);
     assert.deepEqual(result.propertyReads, ["property_alpha", "property_alpha"], `${item.id} must re-read current property data each turn`);
     for (const expected of item.expected) assert.ok(result.second.replyText.includes(expected), `${item.id} must answer the requested detail`);
     for (const forbidden of item.forbidden || []) assert.equal(result.second.replyText.includes(forbidden), false, `${item.id} must not repeat unrelated base fact`);
@@ -97,7 +115,7 @@ async function runFollowUp({ id, propertyId = "property_alpha", first, followUp,
     properties: { property_alpha: () => property("property_alpha", overrides) }
   });
   assert.ok(newTopic.second.replyText.includes("15:00"), "an explicit new topic must not inherit parking detail");
-  assert.equal(newTopic.memory.get("property_alpha:new-topic:guest").conditions.topic.canonicalId, "check_in");
+  assert.equal(newTopic.memory.get("property_alpha:new-topic:guest").tasks.at(-1).entityId, "check_in");
 
   let alphaVersion = 0;
   const fresh = await runFollowUp({
@@ -119,7 +137,8 @@ async function runFollowUp({ id, propertyId = "property_alpha", first, followUp,
   const noContextReads = [];
   const noContext = createEngine({ plans: noContextPlans, properties: { property_alpha: () => property("property_alpha", overrides) }, propertyReads: noContextReads });
   const noContextResult = await noContext.engine.process({ customerId: "property_alpha", channelId: "no-context", lineUserId: "guest", eventId: "one", eventTimestamp: 1, messageText: "can I arrive early?" });
-  assert.equal(noContextResult.taskResults[0].status, "needs_human", "a detail-only question without a safe prior topic must not guess a topic");
+  assert.equal(noContextResult.shouldReply, true, "a detail-only question without a safe prior topic must safely reject instead of guessing a topic");
+  assert.ok(noContextResult.replyText.length > 0);
 
   assert.equal(validatePlannerOutput(plan({ relation: "continue", type: "policy", category: "policy", sourceText: "invalid detail", detailIntent: "free_text_detail" })).ok, false, "planner detail intent must remain a controlled contract");
   assert.match(instructions(), /detailIntent/i, "planner must receive a generic controlled detail-intent instruction");

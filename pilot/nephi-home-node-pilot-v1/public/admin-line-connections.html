@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{PUBLIC_BRAND_NAME}}｜LINE 官方帳號連線</title>
+  <link rel="stylesheet" href="/assets/line-connections.css">
+</head>
+<body>
+<main class="shell">
+  <header>
+    <p class="eyebrow">{{PUBLIC_BRAND_NAME}}</p>
+    <h1>LINE 官方帳號連線</h1>
+    <p>為已核准旅宿建立一次性設定連結；平台管理員不會看到業者的憑證原文。</p>
+  </header>
+  <section class="card">
+    <h2>建立一次性設定連結</h2>
+    <form id="createForm">
+      <label>旅宿<select id="propertyId" required></select></label>
+      <label>連結有效時間
+        <select id="expiresInMinutes">
+          <option value="30">30 分鐘</option>
+          <option value="60">1 小時</option>
+          <option value="1440">24 小時</option>
+        </select>
+      </label>
+      <button id="createButton">建立設定連結</button>
+    </form>
+    <div id="createdLink" class="one-time" hidden>
+      <strong>此連結只在建立當下顯示，請安全交付業者：</strong>
+      <div class="copy-row"><input id="setupUrl" readonly><button id="copyButton" type="button">複製</button></div>
+    </div>
+    <p id="message" role="status"></p>
+  </section>
+  <section class="card">
+    <h2>旅宿連線狀態</h2>
+    <div id="connections" class="connections"></div>
+  </section>
+  <section class="card">
+    <h2>尚未使用的設定連結</h2>
+    <div id="links"></div>
+  </section>
+</main>
+<script src="/assets/admin-line-connections.js" defer></script>
+</body>
+</html>

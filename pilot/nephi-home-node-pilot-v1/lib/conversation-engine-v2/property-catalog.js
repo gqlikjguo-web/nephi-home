@@ -56,6 +56,33 @@ function propertySettingFacts(property, answers) {
   return [...known, ...additional];
 }
 
+function structuredPropertyFacts(property) {
+  return (property.propertyFacts || []).map((fact) => {
+    const category = ["amenity", "room_amenity"].includes(fact.category)
+      ? "amenity"
+      : fact.category === "location"
+        ? "transport"
+        : "policy";
+    const status = fact.status === "unknown"
+      ? "unknown"
+      : fact.status === "not_allowed"
+        ? "confirmed_no"
+        : "confirmed_yes";
+    const answer = fact.canonicalId === "location"
+      ? normalizeGoogleMapsUrl(fact.publicText)
+      : clean(fact.publicText, 1000);
+    return {
+      canonicalId: clean(fact.canonicalId, 120),
+      category,
+      publicName: clean(fact.canonicalId, 120),
+      aliases: mergedAliases(property, fact.canonicalId),
+      status: answer || status === "confirmed_no" ? status : "unknown",
+      answer,
+      propertyFact: fact
+    };
+  }).filter((fact) => fact.canonicalId);
+}
+
 function buildPropertyCatalog(property) {
   if (!property || !property.propertyId) throw new Error("property_required");
   const rooms = (property.rooms || []).filter((room) => room.enabled !== false).map((room) => ({
@@ -65,6 +92,8 @@ function buildPropertyCatalog(property) {
     features: [room.publicShortFeature, room.shortFeature, room.description].map((x) => clean(x, 40)).filter(Boolean).slice(0, 1),
     aliases: aliasesFor(property, room.id), memberRoomIds: room.inventoryType === "bundle" ? (room.memberRoomIds || []).map(String) : []
   }));
+  const structuredFacts = structuredPropertyFacts(property);
+  const structuredIds = new Set(structuredFacts.map((fact) => fact.canonicalId));
   const explicitAmenities = property.semanticCatalog && property.semanticCatalog.amenities;
   const confirmedEquipment = property.commonAnswers && property.commonAnswers.equipment;
   const legacyAmenities = Array.isArray(explicitAmenities) ? explicitAmenities.map((item) => ({
@@ -82,8 +111,12 @@ function buildPropertyCatalog(property) {
   for (const fact of bundleFacts.values()) {
     fact.answer = fact.applicableBundles.map((bundle) => `${bundle.name}${bundle.note ? `：${bundle.note}` : ""}`).join("；");
   }
-  const structuredIds = new Set(bundleFacts.keys());
-  const amenities = [...bundleFacts.values(), ...legacyAmenities.filter((item) => !structuredIds.has(item.canonicalId))];
+  const bundleFactIds = new Set(bundleFacts.keys());
+  const amenities = [
+    ...structuredFacts.filter((fact) => fact.category === "amenity"),
+    ...bundleFacts.values(),
+    ...legacyAmenities.filter((item) => !structuredIds.has(item.canonicalId) && !bundleFactIds.has(item.canonicalId))
+  ];
   const answers = property.commonAnswers || {};
   // `transport` is the existing property-scoped storage key used before the
   // dedicated business profile field was introduced.  It is accepted only
@@ -98,7 +131,12 @@ function buildPropertyCatalog(property) {
     transportValuePresent: Boolean(answers.transport),
     urlValidation: mapUrl ? "pass" : "fail"
   };
-  const policies = [...propertySettingFacts(property, answers), { canonicalId: "location", category: "transport", publicName: "位置與導航", aliases: [...new Set([...LOCATION_ALIASES, ...aliasesFor(property, "location")])], status: mapUrl ? "confirmed_yes" : "unknown", answer: mapUrl }];
+  const structuredLocation = structuredFacts.find((fact) => fact.canonicalId === "location");
+  const policies = [
+    ...structuredFacts.filter((fact) => fact.category !== "amenity"),
+    ...propertySettingFacts(property, answers).filter((fact) => !structuredIds.has(fact.canonicalId)),
+    ...(structuredLocation ? [] : [{ canonicalId: "location", category: "transport", publicName: "位置與導航", aliases: [...new Set([...LOCATION_ALIASES, ...aliasesFor(property, "location")])], status: mapUrl ? "confirmed_yes" : "unknown", answer: mapUrl }])
+  ];
   const faqs = (property.faqs || []).filter((item) => item && item.question && item.answer).map((item) => { const canonicalId = clean(item.knowledgeKey || item.knowledgeId || item.id, 120); return { canonicalId, category: "amenity", publicName: clean(item.question, 200), aliases: mergedAliases(property, canonicalId), status: "confirmed_yes", answer: clean(item.answer, 800) }; }).slice(0, 50);
   return { propertyId: clean(property.propertyId), displayName: clean(property.displayName, 100), timezone: clean(property.timezone || "Asia/Taipei", 80), currency: clean(property.currency || "TWD", 10), rooms, amenities, policies, faqs, locationDiagnostics };
 }

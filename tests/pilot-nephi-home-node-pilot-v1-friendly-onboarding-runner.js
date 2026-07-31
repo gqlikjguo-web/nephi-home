@@ -72,21 +72,22 @@ function validInput(overrides = {}) {
     assert.equal(property.humanHandoffSituations.length, 3);
     assert.equal(property.pricing.weekday, "雙人房 2800 元起");
 
+    const [firstRoomId, secondRoomId] = property.rooms.map((room) => room.id);
     const rows = providers.availability.getRows("friendly_homestay_003", "2026-07-14", "2026-07-17");
     assert.equal(rows.length, 3);
-    assert.ok(rows.every((row) => row.room301 === "closed" && row.room302 === "closed"));
+    assert.ok(rows.every((row) => row[firstRoomId] === "closed" && row[secondRoomId] === "closed"));
 
     providers.persistence.appendMessageLog("friendly_homestay_003", {
       eventId: "preserve-on-reimport", guestMessage: "保留紀錄", createdAt: now().toISOString()
     });
-    providers.availability.setDay("friendly_homestay_003", "2026-07-15", "room301", "available");
+    providers.availability.setDay("friendly_homestay_003", "2026-07-15", firstRoomId, "available");
     const second = importFriendlyProperty(validInput({ propertyName: "友好旅宿三號更新" }), { dataFile, seedFile, now });
     assert.equal(second.created, false);
 
     providers = createJsonProviders({ dataFile, seedFile, now });
     property = providers.customerSettings.getProperty("friendly_homestay_003");
     assert.equal(property.displayName, "友好旅宿三號更新");
-    assert.equal(providers.availability.getRows("friendly_homestay_003", "2026-07-15", "2026-07-16")[0].room301, "available");
+    assert.equal(providers.availability.getRows("friendly_homestay_003", "2026-07-15", "2026-07-16")[0][firstRoomId], "available");
     assert.equal(providers.persistence.findMessageByEventId("friendly_homestay_003", "preserve-on-reimport").guestMessage, "保留紀錄");
     assert.equal(providers.customerSettings.getProperty("demo_homestay_a").displayName, "山嵐示範民宿");
 

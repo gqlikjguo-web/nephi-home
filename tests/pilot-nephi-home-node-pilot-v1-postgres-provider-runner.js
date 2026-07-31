@@ -7,7 +7,7 @@ const path = require("node:path");
 const ROOT = path.resolve(__dirname, "../pilot/nephi-home-node-pilot-v1");
 const { createProviders } = require(path.join(ROOT, "lib/providers/provider-factory"));
 const { migratePostgres } = require(path.join(ROOT, "lib/providers/postgres-migrate"));
-const { seedPostgres } = require(path.join(ROOT, "lib/providers/postgres-seed"));
+const { seedNephiPostgres } = require(path.join(ROOT, "tests/helpers/nephi-postgres-seed"));
 const { openPostgres } = require(path.join(ROOT, "lib/providers/postgres-client"));
 
 async function main() {
@@ -19,14 +19,14 @@ async function main() {
   try {
     await migratePostgres(connection);
     await migratePostgres(connection);
-    const seeded = await seedPostgres(connection);
+    const seeded = await seedNephiPostgres(connection);
     assert.equal(seeded.propertyId, "nephi_home");
     assert.equal(seeded.roomTypeCount, 4);
     assert.equal(seeded.availabilityDayCount, 49);
     const client = await openPostgres(connection);
     await client.query("UPDATE properties SET display_name='preserved' WHERE property_id='nephi_home'");
     await client.close();
-    const repeatedSeed = await seedPostgres(connection);
+    const repeatedSeed = await seedNephiPostgres(connection);
     assert.equal(repeatedSeed.seeded, false);
 
     const providers = createProviders({ databaseUrl: "pglite:test", postgresConnection: connection });

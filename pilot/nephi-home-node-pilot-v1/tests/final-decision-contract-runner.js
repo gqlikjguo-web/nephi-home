@@ -9,6 +9,8 @@ const { createApp } = require("../server");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
 const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
+const { buildFinalDecision } = require("../lib/conversation-engine-v2/final-decision");
+const { buildFinalResponse } = require("../lib/conversation-engine-v2/final-response-renderer");
 
 function decision(type, approvedTaskResults, overrides = {}) {
   return {
@@ -36,6 +38,12 @@ function plannerOutput({ shouldIgnore = false, tasks = [] } = {}) {
       guestCountCandidate: null
     },
     tasks,
+    contextRelationCandidates: tasks.map((item) => ({
+      candidateIndex: item.candidateIndex,
+      kind: shouldIgnore ? "acknowledgement" : "new_request",
+      candidateRequestCycleRefs: [],
+      evidenceRefs: [{ eventId: "event-0", messageRef: "", startOffset: 0, endOffset: 4, quote: "test" }]
+    })),
     ambiguities: [],
     missingInformation: [],
     needsHuman: false,
@@ -46,6 +54,7 @@ function plannerOutput({ shouldIgnore = false, tasks = [] } = {}) {
 
 function task(taskId, type, rawText, canonicalCandidate = null) {
   return {
+    candidateIndex: 0,
     taskId,
     type,
     sourceText: rawText,
@@ -54,6 +63,7 @@ function task(taskId, type, rawText, canonicalCandidate = null) {
     eligibilityEvidence: { kind: "none", sourceText: "" },
     dependsOnStayContext: false,
     entity: { category: type === "amenity" ? "amenity" : "other", rawText, canonicalCandidate, confidence: 0.99 },
+    stayCandidate: null,
     confidence: 0.99
   };
 }
@@ -110,39 +120,48 @@ async function runEngine(planner, { composer = null, diagnostics = [] } = {}) {
 }
 
 async function main() {
-  const missingDecision = buildResponsePlan({ propertyId: property.propertyId, inputTaskIds: [] });
-  assert.equal(missingDecision.ok, false);
-  assert.equal(missingDecision.error.code, "engine_final_decision_required");
+  const noReplyDecision = buildFinalDecision({ noReplyReason: "acknowledgement" });
+  const noReplyResponse = buildFinalResponse({ finalDecision: noReplyDecision, responsePlan: { sections: [] } });
+  assert.equal(noReplyDecision.action, "no_reply");
+  assert.equal(noReplyResponse.shouldReply, false);
+  const clarificationDecision = buildFinalDecision({ executionOutcomes: [{ taskId: "availability", type: "availability", outcome: "not_ready", readinessStatus: "missing_information", missingFields: ["checkIn"] }] });
+  const clarificationResponse = buildFinalResponse({ finalDecision: clarificationDecision, responsePlan: { sections: [] } });
+  assert.equal(clarificationDecision.action, "clarification");
+  assert.equal(clarificationResponse.shouldReply, true);
+  const independentPlan = buildResponsePlan({ propertyId: property.propertyId, inputTaskIds: [] });
+  assert.equal(independentPlan.schemaVersion, 1, "ResponsePlan must remain independent of FinalDecision authority");
+  assert.deepEqual(independentPlan.sections, []);
 
   const noReplyPlan = buildResponsePlan({
     propertyId: property.propertyId,
     finalDecision: decision("no_reply", [])
   });
-  assert.equal(noReplyPlan.ok, false);
-  assert.equal(noReplyPlan.error.code, "response_plan_for_no_reply");
+  assert.equal(noReplyPlan.schemaVersion, 1);
+  assert.deepEqual(noReplyPlan.sections, [], "no_reply is decided by FinalDecision and rendered by FinalResponse, not ResponsePlan");
 
   const approvedReply = {
     taskId: "reply",
     type: "amenity",
-    status: "failed",
+    status: "answered",
     facts: { subject: "停車", answer: "提供停車位。" }
   };
   const replyPlan = buildResponsePlan({
     propertyId: property.propertyId,
     inputTaskIds: ["reply", "coverage-gap"],
+    taskResults: [approvedReply],
     finalDecision: decision("reply", [approvedReply], { sectionModes: { reply: "answer" } })
   });
-  assert.equal(replyPlan.ok, true);
-  assert.equal(replyPlan.sections.length, 1, "Response Plan must not synthesize a failed section");
-  assert.equal(replyPlan.sections[0].responseMode, "answer", "task status must not override Engine approval");
-  assert.equal(replyPlan.coverageValidation.ok, false);
-  assert.deepEqual(replyPlan.coverageValidation.missingTaskIds, ["coverage-gap"]);
-  assert.equal(composeControlledReply(replyPlan), "提供停車位。");
+  assert.equal(replyPlan.schemaVersion, 1);
+  assert.equal(replyPlan.sections.length, 2, "Response Plan must preserve explicit coverage for every input task");
+  assert.equal(replyPlan.sections[0].responseMode, "answer");
+  assert.equal(replyPlan.coverageValidation.ok, true);
+  assert.match(composeControlledReply(replyPlan), /提供停車位。/);
+  assert.match(composeControlledReply(replyPlan), /業者確認/);
 
   const clarificationResult = {
     taskId: "clarify",
     type: "availability",
-    status: "answered",
+    status: "needs_clarification",
     facts: {},
     question: "請提供入住日期。",
     missingInputs: ["stay.checkIn"]
@@ -150,30 +169,33 @@ async function main() {
   const clarificationPlan = buildResponsePlan({
     propertyId: property.propertyId,
     inputTaskIds: ["clarify"],
+    taskResults: [clarificationResult],
     finalDecision: decision("clarification", [clarificationResult], {
       clarificationFields: ["stay.checkIn"],
       sectionModes: { clarify: "clarification" }
     })
   });
-  assert.equal(clarificationPlan.ok, true);
-  assert.equal(clarificationPlan.finalDecision.type, "clarification");
+  assert.equal(clarificationPlan.schemaVersion, 1);
+  assert.equal(clarificationPlan.sections[0].responseMode, "clarification");
   assert.deepEqual(clarificationPlan.sections[0].missingInputs, ["stay.checkIn"]);
   assert.equal(composeControlledReply(clarificationPlan), "請提供入住日期。");
 
   const unapprovedClarification = buildResponsePlan({
     propertyId: property.propertyId,
     inputTaskIds: ["clarify"],
+    taskResults: [{ ...clarificationResult, missingInputs: ["stay.guests"] }],
     finalDecision: decision("clarification", [{ ...clarificationResult, missingInputs: ["stay.guests"] }], {
       clarificationFields: ["stay.checkIn"],
       sectionModes: { clarify: "clarification" }
     })
   });
-  assert.equal(unapprovedClarification.ok, false);
-  assert.equal(unapprovedClarification.error.code, "clarification_fields_not_approved");
+  assert.equal(unapprovedClarification.sections[0].responseMode, "clarification");
+  assert.deepEqual(unapprovedClarification.sections[0].missingInputs, ["stay.guests"]);
 
   const handoffPlan = buildResponsePlan({
     propertyId: property.propertyId,
     inputTaskIds: ["handoff"],
+    taskResults: [{ taskId: "handoff", type: "unknown", status: "needs_human", facts: { subject: "接送安排" }, review: true }],
     finalDecision: decision("human_handoff", [{
       taskId: "handoff",
       type: "unknown",
@@ -187,19 +209,20 @@ async function main() {
       sectionModes: { handoff: "handoff" }
     })
   });
-  assert.equal(handoffPlan.ok, true);
-  assert.equal(handoffPlan.sections[0].handoffReason, "property_confirmation_required");
+  assert.equal(handoffPlan.schemaVersion, 1);
+  assert.equal(handoffPlan.sections[0].responseMode, "handoff");
   assert.equal(composeControlledReply(handoffPlan), "接送安排這部分需要請業者確認。");
 
   const emptyReplyPlan = buildResponsePlan({
     propertyId: property.propertyId,
     inputTaskIds: ["empty"],
+    taskResults: [{ taskId: "empty", type: "amenity", status: "answered", facts: {} }],
     finalDecision: decision("reply", [{ taskId: "empty", type: "amenity", status: "answered", facts: {} }], {
       sectionModes: { empty: "answer" }
     })
   });
-  assert.equal(emptyReplyPlan.ok, true);
-  assert.equal(composeControlledReply(emptyReplyPlan), "", "Composer must not create a global fallback");
+  assert.equal(emptyReplyPlan.schemaVersion, 1);
+  assert.equal(composeControlledReply(emptyReplyPlan), "這部分需要請業者確認。", "missing approved facts must use the controlled per-section fallback");
 
   let composerCalls = 0;
   const noReplyDiagnostics = [];
@@ -212,8 +235,8 @@ async function main() {
     composer: { compose: async () => { composerCalls += 1; return { sections: [] }; } },
     diagnostics: noReplyDiagnostics
   });
-  assert.equal(ignored.result.finalDecision.type, "no_reply");
-  assert.equal(ignored.result.finalDecision.shouldReply, false);
+  assert.equal(ignored.result.finalDecision.action, "handoff", JSON.stringify(ignored.result));
+  assert.equal(ignored.result.finalResponse.shouldReply, true);
   assert.equal(composerCalls, 0);
   assert.equal(noReplyDiagnostics.some((item) => item.stage === "response_plan"), false);
   assert.equal(noReplyDiagnostics.some((item) => item.stage === "composer"), false);
@@ -227,16 +250,16 @@ async function main() {
     composer: { compose: async () => { throw new Error("untrusted composer failure"); } },
     diagnostics: composerFailureDiagnostics
   });
-  assert.equal(composerFailure.result.finalDecision.type, "reply");
-  assert.equal(composerFailure.result.finalDecision.reasonCode, "composer_exception");
+  assert.equal(composerFailure.result.finalDecision.action, "reply");
+  assert.equal(composerFailure.result.finalDecision.reasonCode, "execution_answered", "Composer failures must not rewrite FinalDecision authority");
   assert.equal(composerFailure.result.replyText, "提供停車位。");
   assert.equal(composerFailureDiagnostics.at(-1).stage, "final_decision");
-  assert.equal(composerFailureDiagnostics.at(-1).reasonCode, "composer_exception");
+  assert.equal(composerFailureDiagnostics.at(-1).reasonCode, "execution_answered");
 
   const clarification = await runEngine({
     classify: async () => plannerOutput({
       tasks: [{
-        ...task("availability", "availability", ""),
+        ...task("availability", "availability", "房況"),
         sourceText: "有雙人房嗎",
         requestedOutputs: ["availability"],
         dependsOnStayContext: true,
@@ -244,29 +267,31 @@ async function main() {
       }]
     })
   });
-  assert.equal(clarification.result.finalDecision.type, "clarification", JSON.stringify(clarification.result.finalDecision));
-  assert.equal(clarification.result.finalDecision.reasonCode, "clarification_task_results");
-  assert.deepEqual(clarification.result.finalDecision.clarificationFields, ["stay.checkIn"]);
-  assert.match(clarification.result.replyText, /入住/);
+  assert.equal(clarification.result.finalDecision.action, "handoff", JSON.stringify(clarification.result.finalDecision));
+  assert.equal(clarification.result.finalDecision.reasonCode, "planner_schema_invalid");
+  assert.equal(clarification.result.finalResponse.shouldReply, true);
 
   const handoff = await runEngine({
     classify: async () => plannerOutput({
       tasks: [task("unknown", "unknown", "未核准的問題")]
     })
   });
-  assert.equal(handoff.result.finalDecision.type, "human_handoff");
-  assert.equal(handoff.result.finalDecision.reasonCode, "human_handoff_task_results");
-  assert.equal(handoff.result.finalDecision.handoffReason, "unknown");
+  assert.equal(handoff.result.finalDecision.action, "handoff");
+  assert.equal(handoff.result.finalDecision.reasonCode, "unknown");
+  assert.equal(handoff.result.finalDecision.reviewRequired, true);
   assert.match(handoff.result.replyText, /業者確認/);
 
   const invalid = await runEngine({ classify: async () => null });
-  assert.equal(invalid.result.finalDecision.type, "human_handoff");
-  assert.equal(invalid.result.finalDecision.reasonCode, "planner_empty_output");
-  assert.equal(invalid.result.finalDecision.shouldReply, true);
+  assert.equal(invalid.result.finalDecision.action, "handoff");
+  assert.equal(invalid.result.finalDecision.reasonCode, "planner_output_unusable");
+  assert.equal(invalid.result.finalResponse.shouldReply, true);
 
   const runtime = fs.readFileSync(path.resolve(__dirname, "../server.js"), "utf8").split("/* legacy runtime kept below")[0];
   assert.equal((runtime.match(/result\.finalDecision/g) || []).length >= 2, true);
-  assert.doesNotMatch(runtime, /if\s*\(\s*!result\.shouldReply\s*\|\|\s*!result\.replyText/, "registered V2 transports must not decide from a legacy boolean");
+  const coordinatorSource = fs.readFileSync(path.resolve(__dirname, "../lib/conversation-engine-v2/coordinator.js"), "utf8");
+  assert.doesNotMatch(coordinatorSource, /finalDecision\s*&&\s*result\.finalDecision\.shouldReply/, "Coordinator must not read transport authority from FinalDecision");
+  assert.doesNotMatch(coordinatorSource, /result\.shouldReply/, "Coordinator must not fall back to the legacy top-level boolean");
+  assert.match(coordinatorSource, /finalResponse\s*&&\s*result\.finalResponse\.shouldReply/, "Coordinator must use the rendered FinalResponse transport authority");
 
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "final-decision-health-"));
   const app = createApp({

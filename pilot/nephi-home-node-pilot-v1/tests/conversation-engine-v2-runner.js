@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const { validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { resolveTemporalExpression } = require("../lib/conversation-engine-v2/temporal-resolver");
-const { reduceConversationState, emptyStateV2 } = require("../lib/conversation-engine-v2/state-reducer");
+const { reduceConversationState, emptyStateV2, conditionsForCycle } = require("../lib/conversation-engine-v2/state-reducer");
 const { resolveEntity } = require("../lib/conversation-engine-v2/entity-resolver");
 const { executeTasks } = require("../lib/conversation-engine-v2/capability-executor");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
@@ -17,14 +17,20 @@ function buildApprovedPlan(options) {
 }
 
 function plan(overrides = {}) {
-  return {
+  const output = {
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 0.95 },
     stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-    tasks: [{ taskId: "t1", type: "availability", sourceText: "有房嗎", requestedOutputs: ["availability"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: null, confidence: 0.9 }, confidence: 0.95 }],
+    tasks: [{ taskId: "t1", type: "availability", sourceText: "有房嗎", requestedOutputs: ["availability"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: null, confidence: 0.9 }, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, confidence: 0.95 }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "availability_request",
     ...overrides
+  };
+  const tasks = (output.tasks || []).map((task, candidateIndex) => ({ ...task, candidateIndex }));
+  return {
+    ...output,
+    tasks,
+    contextRelationCandidates: output.contextRelationCandidates || tasks.map((task) => ({ candidateIndex: task.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "fixture", startOffset: 0, endOffset: 1, quote: "x" }] }))
   };
 }
 
@@ -41,7 +47,7 @@ const property = {
 };
 
 assert.equal(validatePlannerOutput(plan()).ok, true);
-assert.equal(validatePlannerOutput(plan({ tasks: [{ taskId: "nearest", type: "available_dates", sourceText: "最近哪天有空房", requestedOutputs: ["availability"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 0.95 }, confidence: 0.95 }] })).ok, true);
+assert.equal(validatePlannerOutput(plan({ tasks: [{ taskId: "nearest", type: "available_dates", sourceText: "最近哪天有空房", requestedOutputs: ["availability"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 0.95 }, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, confidence: 0.95 }] })).ok, true);
 assert.equal(validatePlannerOutput(plan({ tasks: [] })).ok, false);
 assert.equal(validatePlannerOutput({ ...plan(), schemaVersion: 1 }).ok, false);
 assert.equal(validatePlannerOutput(plan({ stateOperations: [{ field: "stay.unapprovedCandidate", operation: "set", value: "x", sourceText: "x" }] })).ok, false);
@@ -125,18 +131,18 @@ assert.equal(resolveTemporalExpression(
   { eventTimestamp: yearEnd, timezone: "Asia/Taipei", checkInCandidate: "2026-01-05", defaultNights: 1 }
 ).checkIn, "2027-01-05");
 assert.deepEqual(resolveTemporalExpression({ rawText: "下週三", kind: "weekday", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei", nightsCandidate: 1 }).checkIn, "2026-07-22");
-assert.equal(resolveTemporalExpression({ rawText: "2/30", kind: "absolute", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei" }).resolutionStatus, "invalid");
+assert.equal(resolveTemporalExpression({ rawText: "2/30", kind: "absolute", anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei" }).resolutionStatus, "unresolved");
 
 let state = emptyStateV2({ propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", now: "2026-07-17T02:00:00.000Z" });
-state = reduceConversationState(state, plan({ stateOperations: [
+state = reduceConversationState(state, { contextDecision: { action: "start", requestCycleId: "state-test" }, contextPatch: [
   { field: "stay.checkIn", operation: "set", value: "2026-08-06", sourceText: "8/6" },
   { field: "stay.guests", operation: "set", value: 2, sourceText: "兩個人" }
-] }), { propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", eventId: "e1", now: "2026-07-17T02:00:00.000Z" });
-assert.equal(state.conditions.stay.guests, 2);
-state = reduceConversationState(state, plan({ discourse: { relation: "modify", confidence: 1 }, stateOperations: [{ field: "stay.guests", operation: "replace", value: 4, sourceText: "改四個人" }] }), { propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", eventId: "e2", now: "2026-07-17T02:01:00.000Z" });
-assert.equal(state.conditions.stay.guests, 4);
-state = reduceConversationState(state, plan({ stateOperations: [{ field: "inventory.features", operation: "clear", value: null, sourceText: "不用浴缸" }] }), { propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", eventId: "e3", now: "2026-07-17T02:02:00.000Z" });
-assert.deepEqual(state.conditions.inventory.features, []);
+] }, { propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", eventId: "e1", now: "2026-07-17T02:00:00.000Z" });
+assert.equal(conditionsForCycle(state, "state-test").stay.guests, 2);
+state = reduceConversationState(state, { contextDecision: { action: "replace" }, contextPatch: [{ field: "stay.guests", operation: "replace", value: 4, sourceText: "改四個人" }] }, { propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", eventId: "e2", now: "2026-07-17T02:01:00.000Z" });
+assert.equal(state.requestCycles.at(-1).confirmedInputs.stay.guests, 4);
+state = reduceConversationState(state, { contextDecision: { action: "continue" }, contextPatch: [{ field: "inventory.features", operation: "clear", value: null, sourceText: "不用浴缸" }] }, { propertyId: "property_alpha", channelId: "c1", lineUserId: "u1", eventId: "e3", now: "2026-07-17T02:02:00.000Z" });
+assert.deepEqual(state.requestCycles.at(-1).confirmedInputs.inventory.features, []);
 
 const availabilityResolver = (query) => ({ ...query, availabilityReliable: true, rooms: property.rooms.filter((room) => room.id === "r1") });
 const taskResults = executeTasks({

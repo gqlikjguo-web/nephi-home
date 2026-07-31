@@ -54,23 +54,42 @@ function task({ taskId, type, sourceText, category, rawText, canonicalCandidate 
 }
 
 function plan(tasks, { shouldIgnore = false, relation = "new_request", dateText = "", dateKind = "none" } = {}) {
+  const stay = {
+    dateExpression: { rawText: dateText, kind: dateKind, anchor: dateText ? "message_time" : "none" },
+    checkInCandidate: null,
+    checkOutCandidate: null,
+    nightsCandidate: null,
+    guestCountCandidate: null
+  };
+  const stayTaskCount = tasks.filter((item) => item.dependsOnStayContext).length;
   return {
     schemaVersion: 2,
     discourse: { relation, confidence: 0.99 },
     stateOperations: [],
-    stay: {
-      dateExpression: { rawText: dateText, kind: dateKind, anchor: dateText ? "message_time" : "none" },
-      checkInCandidate: null,
-      checkOutCandidate: null,
-      nightsCandidate: null,
-      guestCountCandidate: null
-    },
-    tasks,
+    stay,
+    tasks: tasks.map((item, candidateIndex) => ({
+      ...item,
+      candidateIndex,
+      stayCandidate: item.stayCandidate !== undefined ? item.stayCandidate : item.dependsOnStayContext && stayTaskCount === 1 ? stay : null
+    })),
     ambiguities: [],
     missingInformation: [],
     needsHuman: false,
     shouldIgnore,
     reason: shouldIgnore ? "acknowledgement" : "controlled_core_test"
+  };
+}
+
+function withExplicitRelations(output, sourceEvents) {
+  const source = sourceEvents[0];
+  return {
+    ...output,
+    contextRelationCandidates: output.tasks.map((item) => ({
+      candidateIndex: item.candidateIndex,
+      kind: "new_request",
+      candidateRequestCycleRefs: [],
+      evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
+    }))
   };
 }
 
@@ -89,7 +108,7 @@ function memory() {
 function createEngine(plannerOutput, counters = {}) {
   const persistence = memory();
   const engine = new ConversationEngineV2({
-    planner: { classify: async () => plannerOutput },
+    planner: { classify: async ({ sourceEvents }) => withExplicitRelations(plannerOutput, sourceEvents) },
     composer: { compose: async () => { counters.composer = (counters.composer || 0) + 1; return null; } },
     persistence,
     getProperty: () => property,
@@ -158,8 +177,13 @@ async function main() {
       task({ taskId: eventId, type: "availability", sourceText, category: "room", rawText: "unresolved generic inventory" })
     ], { dateText: eventId === "tonight" ? "今晚" : "7/23", dateKind: eventId === "tonight" ? "relative" : "absolute" }), counters);
     const result = await process(runtime.engine, eventId, sourceText);
-    assert.equal(counters.availability, 1);
-    assert.equal(result.taskResults[0].status, "answered");
+    if (eventId === "empty") {
+      assert.equal(counters.availability || 0, 0, "a Planner temporal span absent from the guest message must not reach availability");
+      assert.equal(result.taskResults[0].status, "needs_clarification");
+    } else {
+      assert.equal(counters.availability, 1);
+      assert.equal(result.taskResults[0].status, "answered");
+    }
   }
 
   const ignoreCounters = {};
@@ -199,9 +223,9 @@ async function main() {
     lineChannelAccessToken: "test-token",
     lineChannelIdentityGuardRequired: false,
     conversationDebounceMs: 1,
-    conversationPlannerV2: { classify: async () => plan([
+    conversationPlannerV2: { classify: async ({ sourceEvents }) => withExplicitRelations(plan([
       task({ taskId: "ack", type: "unknown", sourceText: "好的謝謝", category: "other", rawText: "好的謝謝" })
-    ], { shouldIgnore: true, relation: "acknowledgement" }) },
+    ], { shouldIgnore: true, relation: "acknowledgement" }), sourceEvents) },
     lineReplyClientFactory: () => ({ replyMessageWithHttpInfo: async (body) => { replies.push(body); return { httpResponse: { status: 200 } }; } })
   });
   const running = await app.start(0, "127.0.0.1");

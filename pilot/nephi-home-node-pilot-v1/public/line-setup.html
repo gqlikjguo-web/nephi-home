@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>{{PUBLIC_BRAND_NAME}}｜LINE 連線設定</title>
+  <link rel="stylesheet" href="/assets/line-connections.css">
+</head>
+<body>
+<main class="shell narrow">
+  <header>
+    <p class="eyebrow">{{PUBLIC_BRAND_NAME}}</p>
+    <h1>LINE 官方帳號連線設定</h1>
+  </header>
+  <section id="loading" class="card">正在確認設定連結…</section>
+  <section id="invalid" class="card" hidden><h2>無法使用此連結</h2><p id="invalidMessage"></p></section>
+  <section id="setup" class="card" hidden>
+    <h2 id="propertyName"></h2>
+    <p>請從 LINE Developers 的 Messaging API channel 取得下列兩項資料。儲存後系統不會再次顯示原文。</p>
+    <form id="setupForm" autocomplete="off">
+      <label>Channel Secret
+        <span class="secret-row"><input id="channelSecret" type="password" required autocomplete="off"><button type="button" data-toggle="channelSecret">顯示</button></span>
+      </label>
+      <label>Channel Access Token
+        <span class="secret-row"><input id="channelAccessToken" type="password" required autocomplete="off"><button type="button" data-toggle="channelAccessToken">顯示</button></span>
+      </label>
+      <button id="submitButton">安全儲存並完成設定</button>
+    </form>
+    <p id="formMessage" role="alert"></p>
+  </section>
+  <section id="complete" class="card" hidden>
+    <h2>憑證已安全設定</h2>
+    <dl>
+      <dt>Channel Secret</dt><dd>已設定</dd>
+      <dt>Channel Access Token</dt><dd>已設定</dd>
+      <dt>啟用狀態</dt><dd id="enabledStatus"></dd>
+      <dt>最近更新</dt><dd id="updatedAt"></dd>
+    </dl>
+    <label>此旅宿專屬 Webhook URL
+      <span class="copy-row"><input id="webhookUrl" readonly><button id="copyWebhook" type="button">複製</button></span>
+    </label>
+    <h3>LINE Developers 設定步驟</h3>
+    <ol>
+      <li>開啟 LINE Developers，選擇此業者的 Messaging API channel。</li>
+      <li>將上方網址貼入 Webhook URL，按下 Verify。</li>
+      <li>開啟 Use webhook。</li>
+      <li>關閉或調整會與 JunZan AI 重複的自動回覆。</li>
+    </ol>
+    <p>在系統收到有效 LINE 簽章事件前，狀態會保持「尚未觀察到 Webhook」。</p>
+  </section>
+</main>
+<script src="/assets/line-setup.js" defer></script>
+</body>
+</html>

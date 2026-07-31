@@ -9,16 +9,78 @@ const ADMIN_INVITATION_EMAIL_SQL = "COALESCE(NULLIF(trim(i.email),''),NULLIF(tri
 function payload(row) { return row ? (typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload) : null; }
 function dataValue(row) { return row ? (typeof row.data === "string" ? JSON.parse(row.data) : row.data) : null; }
 function iso(value) { return value ? new Date(value).toISOString() : new Date().toISOString(); }
-async function loadOnboarding(id){const a=await client.query("SELECT * FROM onboarding_applications WHERE application_id=$1",[id]);if(!a.rows[0])return null;const row=a.rows[0],core=typeof row.core_data==="string"?JSON.parse(row.core_data):row.core_data||{};const rooms=await client.query("SELECT data FROM onboarding_room_types WHERE application_id=$1 ORDER BY position",[id]),bundles=await client.query("SELECT data FROM onboarding_bundle_offers WHERE application_id=$1 ORDER BY position",[id]),knowledge=await client.query("SELECT data FROM onboarding_knowledge_items WHERE application_id=$1 ORDER BY position",[id]),attachments=await client.query("SELECT attachment_id,file_name,content_type,byte_size,sha256,review_status,created_at FROM onboarding_attachments WHERE application_id=$1 ORDER BY created_at",[id]),notes=await client.query("SELECT action,note,reviewer_property_id,reviewer_username,created_at FROM onboarding_review_notes WHERE application_id=$1 ORDER BY created_at",[id]);return{...core,applicationId:id,status:row.status,propertyIdSuggestion:row.property_id_suggestion,approvalMode:row.approval_mode||"",approvedPropertyId:row.approved_property_id||"",approvedAt:row.approved_at?iso(row.approved_at):"",approvedBy:row.approved_by_property_id||row.approved_by_username?{propertyId:row.approved_by_property_id||"",username:row.approved_by_username||""}:null,submittedAt:iso(row.submitted_at),updatedAt:iso(row.updated_at),rooms:rooms.rows.map(dataValue),bundles:bundles.rows.map(dataValue),knowledge:knowledge.rows.map(dataValue),attachments:attachments.rows.map(x=>({attachmentId:x.attachment_id,fileName:x.file_name,contentType:x.content_type,byteSize:x.byte_size,sha256:x.sha256,reviewStatus:x.review_status,createdAt:iso(x.created_at)})),reviewNotes:notes.rows.map(x=>({action:x.action,note:x.note,reviewerPropertyId:x.reviewer_property_id||"",reviewerUsername:x.reviewer_username||"",createdAt:iso(x.created_at)}))};}
+function sqlDate(value) { return value ? (value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10)) : ""; }
+function lineBindingRow(row) {
+  return row ? {
+    propertyId: row.property_id,
+    webhookKey: row.webhook_key,
+    channelSecretEncrypted: payload({ payload: row.channel_secret_encrypted }),
+    channelAccessTokenEncrypted: payload({ payload: row.channel_access_token_encrypted }),
+    enabled: Boolean(row.enabled),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastWebhookObservedAt: row.last_webhook_observed_at || null,
+    lastValidWebhookAt: row.last_valid_webhook_at || null
+  } : null;
+}
+function lineSetupRow(row) {
+  return row ? {
+    setupId: row.setup_id,
+    tokenHash: row.token_hash,
+    propertyId: row.property_id,
+    expiresAt: row.expires_at,
+    revokedAt: row.revoked_at || null,
+    usedAt: row.used_at || null,
+    createdByPropertyId: row.created_by_property_id,
+    createdByUsername: row.created_by_username,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  } : null;
+}
+function customReplyRow(row) {
+  return row ? {
+    ruleId: row.rule_id,
+    propertyId: row.property_id,
+    name: row.name,
+    topic: row.topic,
+    scope: row.scope,
+    roomTypeId: row.room_type_id || "",
+    stayStartDate: sqlDate(row.stay_start_date),
+    stayEndDate: sqlDate(row.stay_end_date),
+    effectiveStartDate: sqlDate(row.effective_start_date),
+    effectiveEndDate: sqlDate(row.effective_end_date),
+    approvedReply: row.approved_reply,
+    enabled: Boolean(row.enabled),
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at)
+  } : null;
+}
+async function loadOnboarding(id){const a=await client.query("SELECT * FROM onboarding_applications WHERE application_id=$1",[id]);if(!a.rows[0])return null;const row=a.rows[0],core=typeof row.core_data==="string"?JSON.parse(row.core_data):row.core_data||{};const rooms=await client.query("SELECT data FROM onboarding_room_types WHERE application_id=$1 ORDER BY position",[id]),bundles=await client.query("SELECT data FROM onboarding_bundle_offers WHERE application_id=$1 ORDER BY position",[id]),knowledge=await client.query("SELECT data FROM onboarding_knowledge_items WHERE application_id=$1 ORDER BY position",[id]),attachments=await client.query("SELECT attachment_id,file_name,content_type,byte_size,sha256,review_status,created_at FROM onboarding_attachments WHERE application_id=$1 ORDER BY created_at",[id]),notes=await client.query("SELECT action,note,reviewer_property_id,reviewer_username,created_at FROM onboarding_review_notes WHERE application_id=$1 ORDER BY created_at",[id]);return{...core,applicationId:id,status:row.status,propertyIdSuggestion:row.property_id_suggestion,inviteExpiresAt:iso(row.invite_expires_at),inviteRevoked:Boolean(row.invite_revoked_at),approvalMode:row.approval_mode||"",approvedPropertyId:row.approved_property_id||"",approvedAt:row.approved_at?iso(row.approved_at):"",approvedBy:row.approved_by_property_id||row.approved_by_username?{propertyId:row.approved_by_property_id||"",username:row.approved_by_username||""}:null,submittedAt:iso(row.submitted_at),updatedAt:iso(row.updated_at),rooms:rooms.rows.map(dataValue),bundles:bundles.rows.map(dataValue),knowledge:knowledge.rows.map(dataValue),attachments:attachments.rows.map(x=>({attachmentId:x.attachment_id,fileName:x.file_name,contentType:x.content_type,byteSize:x.byte_size,sha256:x.sha256,reviewStatus:x.review_status,createdAt:iso(x.created_at)})),reviewNotes:notes.rows.map(x=>({action:x.action,note:x.note,reviewerPropertyId:x.reviewer_property_id||"",reviewerUsername:x.reviewer_username||"",createdAt:iso(x.created_at)}))};}
 function onboardingSnapshot(app){return{propertyName:String(app.propertyName||""),contactName:String(app.contactName||""),phone:String(app.phone||""),email:String(app.email||""),address:String(app.address||""),googleMapsUrl:String(app.googleMapsUrl||""),checkInTime:String(app.checkInTime||""),checkOutTime:String(app.checkOutTime||""),line:{hasOfficialAccount:Boolean(app.line&&app.line.hasOfficialAccount),contactLink:String(app.line&&app.line.contactLink||"")},propertyIdSuggestion:String(app.propertyIdSuggestion||""),rooms:(app.rooms||[]).map(x=>({key:String(x.key||""),roomCode:String(x.roomCode||"").trim(),displayName:String(x.displayName||x.name||"").trim(),name:String(x.displayName||x.name||"").trim(),highlights:Array.isArray(x.highlights)?x.highlights.map(v=>String(v||"").trim()).filter(Boolean):[],type:String(x.type||""),capacity:Number.isFinite(Number(x.capacity))?Number(x.capacity):null,mondayThursdayPrice:Number.isFinite(Number(x.mondayThursdayPrice))?Number(x.mondayThursdayPrice):null,fridayPrice:Number.isFinite(Number(x.fridayPrice))?Number(x.fridayPrice):null,saturdayHolidayPrice:Number.isFinite(Number(x.saturdayHolidayPrice))?Number(x.saturdayHolidayPrice):null,sundayPrice:Number.isFinite(Number(x.sundayPrice))?Number(x.sundayPrice):null,enabled:x.enabled!==false})),bundles:(app.bundles||[]).map(x=>({key:String(x.key||""),name:String(x.name||""),memberRoomKeys:(x.memberRoomKeys||[]).map(String),capacity:Number.isFinite(Number(x.capacity))?Number(x.capacity):null,mondayThursdayPrice:Number.isFinite(Number(x.mondayThursdayPrice))?Number(x.mondayThursdayPrice):null,fridayPrice:Number.isFinite(Number(x.fridayPrice))?Number(x.fridayPrice):null,saturdayHolidayPrice:Number.isFinite(Number(x.saturdayHolidayPrice))?Number(x.saturdayHolidayPrice):null,sundayPrice:Number.isFinite(Number(x.sundayPrice))?Number(x.sundayPrice):null,enabled:x.enabled!==false,entertainmentAmenities:normalizeEntertainmentAmenities(x.entertainmentAmenities)})),knowledge:(app.knowledge||[]).map(x=>({key:String(x.key||""),label:String(x.label||""),status:String(x.status||"undecided"),answer:String(x.answer||"")}))};}
 async function addChangeRequestState(app){if(!app)return app;const result=await client.query("SELECT n.note,n.created_at,d.status FROM onboarding_review_notes n LEFT JOIN onboarding_email_deliveries d ON d.review_note_id=n.note_id WHERE n.application_id=$1 AND n.action IN ('changes_requested','reopened_changes_requested') ORDER BY n.created_at DESC LIMIT 1",[app.applicationId]);const row=result.rows[0];return{...app,latestChangeRequest:row?{reason:row.note,createdAt:iso(row.created_at)}:null,emailDelivery:row?{status:row.status||"pending"}:null};}
 async function loadOnboardingForReview(id){const row=await client.query("SELECT status,submitted_snapshot,approval_mode,approved_property_id,approved_at,approved_by_property_id,approved_by_username,submitted_at,updated_at FROM onboarding_applications WHERE application_id=$1",[id]);if(!row.rows[0])return null;const live=await loadOnboarding(id),stored=typeof row.rows[0].submitted_snapshot==="string"?JSON.parse(row.rows[0].submitted_snapshot):row.rows[0].submitted_snapshot;return addChangeRequestState({...(stored||onboardingSnapshot(live)),applicationId:id,status:row.rows[0].status,approvalMode:row.rows[0].approval_mode||"",approvedPropertyId:row.rows[0].approved_property_id||"",approvedAt:row.rows[0].approved_at?iso(row.rows[0].approved_at):"",approvedBy:row.rows[0].approved_by_property_id||row.rows[0].approved_by_username?{propertyId:row.rows[0].approved_by_property_id||"",username:row.rows[0].approved_by_username||""}:null,submittedAt:iso(row.rows[0].submitted_at),updatedAt:iso(row.rows[0].updated_at),reviewNotes:live.reviewNotes||[]});}
 async function adminMemberships(userId){const r=await client.query("SELECT m.property_id,m.username,p.display_name FROM admin_user_properties m JOIN properties p ON p.property_id=m.property_id WHERE m.user_id=$1 ORDER BY p.display_name,m.property_id",[userId]);return r.rows.map(x=>({propertyId:x.property_id,username:x.username,propertyName:x.display_name}));}
 async function loadAdminIdentity(email){const normalizedEmail=String(email||"").trim().toLowerCase(),r=await client.query("SELECT user_id,email,password_hash FROM admin_identities WHERE normalized_email=$1",[normalizedEmail]);if(!r.rows[0])return null;const row=r.rows[0],properties=await adminMemberships(row.user_id),grant=await client.query("SELECT 1 FROM platform_admin_grants g JOIN admin_user_properties m ON m.property_id=g.property_id AND m.username=g.username WHERE m.user_id=$1 LIMIT 1",[row.user_id]);return{userId:row.user_id,email:row.email,passwordHash:row.password_hash,properties,platformAdmin:Boolean(grant.rows.length)};}
-async function loadAdminSession(tokenHash){const r=await client.query("SELECT token_hash,user_id,property_id,username,expires_at FROM admin_sessions WHERE token_hash=$1 AND expires_at>now()",[tokenHash]);if(!r.rows[0])return null;const row=r.rows[0];if(!row.user_id)return{propertyId:row.property_id,username:row.username,expiresAt:new Date(row.expires_at).toISOString()};const identity=await client.query("SELECT email FROM admin_identities WHERE user_id=$1",[row.user_id]);if(!identity.rows[0])return null;const properties=await adminMemberships(row.user_id),grant=await client.query("SELECT 1 FROM platform_admin_grants g JOIN admin_user_properties m ON m.property_id=g.property_id AND m.username=g.username WHERE m.user_id=$1 LIMIT 1",[row.user_id]);return{userId:row.user_id,email:identity.rows[0].email,propertyId:row.property_id||"",username:row.username||"",properties,requiresPropertySelection:!row.property_id&&properties.length>1,platformAdmin:Boolean(grant.rows.length),expiresAt:new Date(row.expires_at).toISOString()};}
+async function loadAdminSession(tokenHash){const r=await client.query("SELECT token_hash,user_id,property_id,username,expires_at FROM admin_sessions WHERE token_hash=$1 AND expires_at>now()",[tokenHash]);if(!r.rows[0])return null;const row=r.rows[0];if(!row.user_id){const membership=await client.query("SELECT u.property_id,u.username,p.display_name FROM admin_users u JOIN properties p ON p.property_id=u.property_id WHERE u.property_id=$1 AND u.username=$2",[row.property_id,row.username]);if(!membership.rows[0])return null;const property=membership.rows[0],grant=await client.query("SELECT 1 FROM platform_admin_grants WHERE property_id=$1 AND username=$2",[property.property_id,property.username]);return{propertyId:property.property_id,username:property.username,properties:[{propertyId:property.property_id,username:property.username,propertyName:property.display_name}],requiresPropertySelection:false,platformAdmin:Boolean(grant.rows.length),expiresAt:new Date(row.expires_at).toISOString()};}const identity=await client.query("SELECT email FROM admin_identities WHERE user_id=$1",[row.user_id]);if(!identity.rows[0])return null;const properties=await adminMemberships(row.user_id),grant=await client.query("SELECT 1 FROM platform_admin_grants g JOIN admin_user_properties m ON m.property_id=g.property_id AND m.username=g.username WHERE m.user_id=$1 LIMIT 1",[row.user_id]);return{userId:row.user_id,email:identity.rows[0].email,propertyId:row.property_id||"",username:row.username||"",properties,requiresPropertySelection:!row.property_id&&properties.length>1,platformAdmin:Boolean(grant.rows.length),expiresAt:new Date(row.expires_at).toISOString()};}
 
 async function operation(name, args) {
   if (name === "ready") return true;
+  if(name==="customReplies_list"){
+    const r=await client.query("SELECT * FROM property_custom_replies WHERE property_id=$1 ORDER BY created_at,rule_id",[args[0]]);
+    return r.rows.map(customReplyRow);
+  }
+  if(name==="customReplies_create"){
+    const x=args[0],r=await client.query("INSERT INTO property_custom_replies(rule_id,property_id,name,topic,scope,room_type_id,stay_start_date,stay_end_date,effective_start_date,effective_end_date,approved_reply,enabled,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *",[x.ruleId,x.propertyId,x.name,x.topic,x.scope,x.roomTypeId||null,x.stayStartDate||null,x.stayEndDate||null,x.effectiveStartDate,x.effectiveEndDate,x.approvedReply,Boolean(x.enabled),x.createdAt,x.updatedAt]);
+    return customReplyRow(r.rows[0]);
+  }
+  if(name==="customReplies_update"){
+    const [propertyId,ruleId,x]=args,r=await client.query("UPDATE property_custom_replies SET name=$3,topic=$4,scope=$5,room_type_id=$6,stay_start_date=$7,stay_end_date=$8,effective_start_date=$9,effective_end_date=$10,approved_reply=$11,enabled=$12,updated_at=$13 WHERE property_id=$1 AND rule_id=$2 RETURNING *",[propertyId,ruleId,x.name,x.topic,x.scope,x.roomTypeId||null,x.stayStartDate||null,x.stayEndDate||null,x.effectiveStartDate,x.effectiveEndDate,x.approvedReply,Boolean(x.enabled),x.updatedAt]);
+    return customReplyRow(r.rows[0]);
+  }
+  if(name==="customReplies_remove"){
+    const r=await client.query("DELETE FROM property_custom_replies WHERE property_id=$1 AND rule_id=$2 RETURNING rule_id",args);
+    return Boolean(r.rows.length);
+  }
   if (name === "getProperty" || name === "listProperties") {
     const filter = name === "getProperty" ? "WHERE p.property_id=$1" : "";
     const result = await client.query(`SELECT p.property_id,p.display_name,s.settings,
@@ -27,7 +89,7 @@ async function operation(name, args) {
       FROM properties p LEFT JOIN property_settings s ON s.property_id=p.property_id ${filter} ORDER BY p.property_id`, name === "getProperty" ? [args[0]] : []);
     const mapped = result.rows.map((row) => {
       const settings = typeof row.settings === "string" ? JSON.parse(row.settings) : (row.settings || {});
-      return { propertyId: row.property_id, displayName: row.display_name, currency:settings.currency||"TWD", rooms: row.rooms || [], commonAnswers: settings.commonAnswers || {}, pricing: settings.pricing || {}, faqs: row.faqs || [], humanHandoffSituations: settings.humanHandoffSituations || [], businessProfile:settings.businessProfile||{}, contactLink: settings.contactLink || settings.businessProfile&&settings.businessProfile.line&&settings.businessProfile.line.contactLink || "", onboarding: settings.onboarding || { isReady: true } };
+      return { propertyId: row.property_id, displayName: row.display_name, currency:settings.currency||"TWD", rooms: row.rooms || [], commonAnswers: settings.commonAnswers || {}, propertyFacts: settings.propertyFacts || [], pricing: settings.pricing || {}, faqs: row.faqs || [], humanHandoffSituations: settings.humanHandoffSituations || [], businessProfile:settings.businessProfile||{}, contactLink: settings.contactLink || settings.businessProfile&&settings.businessProfile.line&&settings.businessProfile.line.contactLink || "", onboarding: settings.onboarding || { isReady: true } };
     });
     for (const item of mapped) {
       const bundles = await operation("listBundles", [item.propertyId]);
@@ -68,10 +130,13 @@ async function operation(name, args) {
   if (name === "getRows") {
     const [propertyId, from, to] = args;
     const normalized = await client.query("SELECT stay_date::text date,inventory_id,status FROM inventory_availability_days WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date,inventory_id",[propertyId,from||null,to||null]);
-    if(normalized.rows.length){const by={};for(const x of normalized.rows){const date=x.date.slice(0,10);by[date]=by[date]||{date};by[date][x.inventory_id]=x.status;}const bundles=await operation("listBundles",[propertyId]);for(const row of Object.values(by))for(const bundle of bundles){const own=row[bundle.id]||"closed";row[bundle.id]=bundle.enabled&&own==="available"&&bundle.memberRoomIds.every(id=>row[id]==="available")?"available":"closed";}return Object.values(by);}
-    const result = await client.query("SELECT stay_date::text date,room301,room302,room401,room402,whole_house FROM availability_days WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date", [propertyId, from || null, to || null]);
-    const rows=result.rows.map((r) => ({ date: r.date.slice(0,10), room301:r.room301, room302:r.room302, room401:r.room401, room402:r.room402, wholeHouse:r.whole_house }));
-    const bundles=await operation("listBundles",[propertyId]);for(const row of rows){for(const bundle of bundles){const own=await client.query("SELECT status FROM bundle_availability_days WHERE property_id=$1 AND bundle_id=$2 AND stay_date=$3",[propertyId,bundle.id,row.date]);const ownStatus=own.rows[0]?own.rows[0].status:"available";row[bundle.id]=bundle.enabled&&ownStatus==="available"&&bundle.memberRoomIds.every(id=>row[id]==="available")?"available":"closed";}}return rows;
+    const legacy = await client.query("SELECT stay_date::text date,to_jsonb(a)-'property_id'-'stay_date' inventory FROM availability_days a WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date",[propertyId,from||null,to||null]);
+    const roomRecords=await client.query("SELECT room_id FROM room_types WHERE property_id=$1",[propertyId]),roomIds=new Set(roomRecords.rows.map(row=>row.room_id)),by={},legacyDates=new Set();
+    for(const item of legacy.rows){const date=item.date.slice(0,10),inventory=typeof item.inventory==="string"?JSON.parse(item.inventory):item.inventory||{};by[date]=by[date]||{date};legacyDates.add(date);for(const [inventoryId,status] of Object.entries(inventory))if(roomIds.has(inventoryId)&&["available","closed"].includes(status))by[date][inventoryId]=status;}
+    for(const item of normalized.rows){const date=item.date.slice(0,10);by[date]=by[date]||{date};by[date][item.inventory_id]=item.status;}
+    const bundleAvailability=await client.query("SELECT bundle_id,stay_date::text date,status FROM bundle_availability_days WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date)",[propertyId,from||null,to||null]),bundleStatus=new Map(bundleAvailability.rows.map(item=>[`${item.date.slice(0,10)}\u0000${item.bundle_id}`,item.status])),bundles=await operation("listBundles",[propertyId]);
+    for(const row of Object.values(by))for(const bundle of bundles){const own=row[bundle.id]||bundleStatus.get(`${row.date}\u0000${bundle.id}`)||(legacyDates.has(row.date)?"available":"closed");row[bundle.id]=bundle.enabled&&bundle.memberRoomIds.length>0&&own==="available"&&bundle.memberRoomIds.every(id=>row[id]==="available")?"available":"closed";}
+    return Object.values(by).sort((left,right)=>left.date.localeCompare(right.date));
   }
   if (name === "getDayNotes") {
     const [propertyId,from,to]=args;
@@ -102,14 +167,10 @@ async function operation(name, args) {
   }
   if (name === "setDay") {
     const [propertyId,date,roomId,status] = args;
-    const normalized=await client.query("SELECT 1 FROM inventory_availability_days WHERE property_id=$1 LIMIT 1",[propertyId]);
-    if(normalized.rows.length){await client.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES($1,$2,$3,$4,$5) ON CONFLICT(property_id,inventory_id,stay_date) DO UPDATE SET status=excluded.status,remaining=excluded.remaining,updated_at=now()",[propertyId,roomId,date,status,status==="available"?1:0]);return (await operation("getRows",[propertyId,date,new Date(Date.parse(date)+86400000).toISOString().slice(0,10)]))[0];}
-    const bundle=(await operation("listBundles",[propertyId])).find(x=>x.id===roomId);if(bundle){await client.query("INSERT INTO bundle_availability_days(property_id,bundle_id,stay_date,status) VALUES($1,$2,$3,$4) ON CONFLICT(property_id,bundle_id,stay_date) DO UPDATE SET status=excluded.status,updated_at=now()",[propertyId,roomId,date,status]);return (await operation("getRows",[propertyId,date,new Date(Date.parse(date)+86400000).toISOString().slice(0,10)]))[0];}
-    const column = {room301:"room301",room302:"room302",room401:"room401",room402:"room402",wholeHouse:"whole_house"}[roomId];
-    if (!column) throw new Error("invalid roomId");
-    await client.query("INSERT INTO availability_days(property_id,stay_date,room301,room302,room401,room402,whole_house) VALUES($1,$2,'available','available','available','available','available') ON CONFLICT DO NOTHING", [propertyId,date]);
-    if (roomId === "wholeHouse") await client.query("UPDATE availability_days SET room301=$3,room302=$3,room401=$3,room402=$3,whole_house=$3 WHERE property_id=$1 AND stay_date=$2", [propertyId,date,status]);
-    else { await client.query(`UPDATE availability_days SET ${column}=$3 WHERE property_id=$1 AND stay_date=$2`, [propertyId,date,status]); await client.query("UPDATE availability_days SET whole_house=CASE WHEN room301='available' AND room302='available' AND room401='available' AND room402='available' THEN 'available' ELSE 'closed' END WHERE property_id=$1 AND stay_date=$2",[propertyId,date]); }
+    const room=await client.query("SELECT 1 FROM room_types WHERE property_id=$1 AND room_id=$2",[propertyId,roomId]),bundle=(await operation("listBundles",[propertyId])).find(item=>item.id===roomId);
+    if(!room.rows.length&&!bundle)throw new Error("invalid inventory");
+    const inventoryIds=bundle?[bundle.id,...bundle.memberRoomIds]:[roomId];
+    for(const inventoryId of inventoryIds)await client.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES($1,$2,$3,$4,$5) ON CONFLICT(property_id,inventory_id,stay_date) DO UPDATE SET status=excluded.status,remaining=excluded.remaining,updated_at=now()",[propertyId,inventoryId,date,status,status==="available"?1:0]);
     return (await operation("getRows", [propertyId,date,new Date(Date.parse(date)+86400000).toISOString().slice(0,10)]))[0];
   }
   if (name === "updatePropertyProfile") {
@@ -120,8 +181,27 @@ async function operation(name, args) {
     try { await client.query("UPDATE properties SET display_name=$2,updated_at=now() WHERE property_id=$1",[propertyId,input.displayName]);const settings={...existingSettings,commonAnswers:input.commonAnswers||current.commonAnswers||{},businessProfile:input.businessProfile||current.businessProfile||{},contactLink:input.contactLink||""};await client.query("UPDATE property_settings SET settings=$2::jsonb WHERE property_id=$1",[propertyId,JSON.stringify(settings)]);await client.query("COMMIT"); } catch(error) { await client.query("ROLLBACK");throw error; }
     return operation("getProperty",[propertyId]);
   }
+  if (name === "updatePropertyFacts") {
+    const [propertyId, propertyFacts] = args;
+    const current = await operation("getProperty", [propertyId]);
+    if (!current) return null;
+    const stored = await client.query("SELECT settings FROM property_settings WHERE property_id=$1", [propertyId]);
+    const settings = stored.rows[0] ? (typeof stored.rows[0].settings === "string" ? JSON.parse(stored.rows[0].settings) : stored.rows[0].settings || {}) : {};
+    await client.query(
+      "UPDATE property_settings SET settings=$2::jsonb WHERE property_id=$1",
+      [propertyId, JSON.stringify({ ...settings, propertyFacts })]
+    );
+    return operation("getProperty", [propertyId]);
+  }
   if(name==="createOnboarding"){await client.query("INSERT INTO onboarding_applications(application_id,draft_token_hash) VALUES($1,$2)",args);return loadOnboarding(args[0]);}
-  if(name==="verifyOnboardingToken"){const r=await client.query("SELECT 1 FROM onboarding_applications a WHERE a.application_id=$1 AND (a.draft_token_hash=$2 OR EXISTS(SELECT 1 FROM onboarding_resume_tokens t WHERE t.application_id=a.application_id AND t.token_hash=$2 AND t.expires_at>now()))",args);return Boolean(r.rows.length);}
+  if(name==="createOnboardingInvitation"){
+    const [id,tokenHash,expiresAt,createdByPropertyId,createdByUsername]=args;
+    await client.query("INSERT INTO onboarding_applications(application_id,draft_token_hash,invite_expires_at,invite_created_by_property_id,invite_created_by_username) VALUES($1,$2,$3,$4,$5)",[id,tokenHash,expiresAt,createdByPropertyId,createdByUsername]);
+    return loadOnboarding(id);
+  }
+  if(name==="resolveOnboardingInvitation"){const r=await client.query("SELECT application_id,status,invite_expires_at FROM onboarding_applications WHERE draft_token_hash=$1 AND invite_expires_at>now() AND invite_revoked_at IS NULL",[args[0]]);return r.rows[0]?{applicationId:r.rows[0].application_id,status:r.rows[0].status,expiresAt:iso(r.rows[0].invite_expires_at)}:null;}
+  if(name==="revokeOnboardingInvitation"){const r=await client.query("UPDATE onboarding_applications SET invite_revoked_at=now(),updated_at=now() WHERE application_id=$1 AND status='draft' AND invite_expires_at IS NOT NULL AND invite_revoked_at IS NULL RETURNING application_id",[args[0]]);return Boolean(r.rows.length);}
+  if(name==="verifyOnboardingToken"){const r=await client.query("SELECT 1 FROM onboarding_applications a WHERE a.application_id=$1 AND ((a.draft_token_hash=$2 AND (a.invite_expires_at IS NULL OR (a.invite_expires_at>now() AND a.invite_revoked_at IS NULL))) OR EXISTS(SELECT 1 FROM onboarding_resume_tokens t WHERE t.application_id=a.application_id AND t.token_hash=$2 AND t.expires_at>now()))",args);return Boolean(r.rows.length);}
   if(name==="resolveOnboardingResumeToken"){const r=await client.query("SELECT application_id FROM onboarding_resume_tokens WHERE token_hash=$1 AND expires_at>now()",args);return r.rows[0]?{applicationId:r.rows[0].application_id}:null;}
   if(name==="rotateOnboardingResumeToken"){
     const [id,tokenHash,expiresAt]=args;await client.query("BEGIN");try{const application=await client.query("SELECT status FROM onboarding_applications WHERE application_id=$1 FOR UPDATE",[id]);if(!application.rows[0])throw new Error("application not found");if(application.rows[0].status!=="changes_requested")throw new Error("application is not awaiting changes");const note=await client.query("SELECT note_id FROM onboarding_review_notes WHERE application_id=$1 AND action IN ('changes_requested','reopened_changes_requested') ORDER BY created_at DESC LIMIT 1",[id]);if(!note.rows[0])throw new Error("change request not found");await client.query("DELETE FROM onboarding_resume_tokens WHERE application_id=$1",[id]);await client.query("INSERT INTO onboarding_resume_tokens(token_hash,application_id,review_note_id,expires_at) VALUES($1,$2,$3,$4)",[tokenHash,id,note.rows[0].note_id,expiresAt]);await client.query("COMMIT");}catch(error){await client.query("ROLLBACK");throw error;}return true;
@@ -138,8 +218,11 @@ async function operation(name, args) {
   if(name==="isPlatformAdmin"){const [propertyId,username,userId]=args;if(userId){const r=await client.query("SELECT 1 FROM platform_admin_grants g JOIN admin_user_properties m ON m.property_id=g.property_id AND m.username=g.username WHERE m.user_id=$1 LIMIT 1",[userId]);return Boolean(r.rows.length);}const r=await client.query("SELECT 1 FROM platform_admin_grants WHERE property_id=$1 AND username=$2",[propertyId,username]);return Boolean(r.rows.length);}
   if(name==="listOnboarding"){const r=await client.query("SELECT application_id FROM onboarding_applications ORDER BY updated_at DESC");const out=[];for(const x of r.rows)out.push(await loadOnboardingForReview(x.application_id));return out;}
   if(name==="listOnboardingProperties"){
-    const allowedPropertyId=String(args[0]||"");
-    const properties=await client.query("SELECT property_id,display_name FROM properties WHERE property_id=$1 ORDER BY display_name,property_id",[allowedPropertyId]),items=[];
+    const scope=args[0]&&typeof args[0]==="object"?args[0]:{},allowedPropertyIds=[...new Set((Array.isArray(scope.propertyIds)?scope.propertyIds:[]).map(value=>String(value||"")).filter(Boolean))];
+    if(!scope.all&&!allowedPropertyIds.length)return[];
+    const properties=scope.all
+      ?await client.query("SELECT property_id,display_name FROM properties ORDER BY display_name,property_id")
+      :await client.query("SELECT property_id,display_name FROM properties WHERE property_id=ANY($1::text[]) ORDER BY display_name,property_id",[allowedPropertyIds]),items=[];
     for(const property of properties.rows){
       const rooms=await client.query("SELECT room_id,name FROM room_types WHERE property_id=$1 ORDER BY position,room_id",[property.property_id]);
       const bundles=await operation("listBundles",[property.property_id]);
@@ -317,20 +400,56 @@ async function operation(name, args) {
   if (name === "deleteAdminSession") { await client.query("DELETE FROM admin_sessions WHERE token_hash=$1",args); return true; }
   if(name==="getLineBindingByPropertyId"||name==="getLineBindingByWebhookKey"){
     const column=name==="getLineBindingByPropertyId"?"property_id":"webhook_key";
-    const r=await client.query(`SELECT property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,last_webhook_at,created_at,updated_at FROM property_line_bindings WHERE ${column}=$1`,args),row=r.rows[0];
-    return row?{propertyId:row.property_id,webhookKey:row.webhook_key,channelSecretEncrypted:payload({payload:row.channel_secret_encrypted}),channelAccessTokenEncrypted:payload({payload:row.channel_access_token_encrypted}),enabled:Boolean(row.enabled),lastWebhookAt:row.last_webhook_at?iso(row.last_webhook_at):"",createdAt:row.created_at,updatedAt:row.updated_at}:null;
+    const r=await client.query(`SELECT property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at,last_webhook_observed_at,last_valid_webhook_at FROM property_line_bindings WHERE ${column}=$1`,args);
+    return lineBindingRow(r.rows[0]);
   }
   if(name==="upsertLineBinding"){
-    const row=args[0],r=await client.query("INSERT INTO property_line_bindings(property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled) VALUES($1,$2,$3::jsonb,$4::jsonb,$5) ON CONFLICT(property_id) DO UPDATE SET webhook_key=excluded.webhook_key,channel_secret_encrypted=excluded.channel_secret_encrypted,channel_access_token_encrypted=excluded.channel_access_token_encrypted,enabled=excluded.enabled,updated_at=now() RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,last_webhook_at,created_at,updated_at",[row.propertyId,row.webhookKey,JSON.stringify(row.channelSecretEncrypted),JSON.stringify(row.channelAccessTokenEncrypted),Boolean(row.enabled)]),saved=r.rows[0];
-    return{propertyId:saved.property_id,webhookKey:saved.webhook_key,channelSecretEncrypted:payload({payload:saved.channel_secret_encrypted}),channelAccessTokenEncrypted:payload({payload:saved.channel_access_token_encrypted}),enabled:Boolean(saved.enabled),lastWebhookAt:saved.last_webhook_at?iso(saved.last_webhook_at):"",createdAt:saved.created_at,updatedAt:saved.updated_at};
+    const row=args[0],r=await client.query("INSERT INTO property_line_bindings(property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled) VALUES($1,$2,$3::jsonb,$4::jsonb,$5) ON CONFLICT(property_id) DO UPDATE SET webhook_key=excluded.webhook_key,channel_secret_encrypted=excluded.channel_secret_encrypted,channel_access_token_encrypted=excluded.channel_access_token_encrypted,enabled=excluded.enabled,updated_at=now() RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at,last_webhook_observed_at,last_valid_webhook_at",[row.propertyId,row.webhookKey,JSON.stringify(row.channelSecretEncrypted),JSON.stringify(row.channelAccessTokenEncrypted),Boolean(row.enabled)]);
+    return lineBindingRow(r.rows[0]);
   }
   if(name==="setLineBindingEnabled"){
-    const r=await client.query("UPDATE property_line_bindings SET enabled=$2,updated_at=now() WHERE property_id=$1 RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,last_webhook_at,created_at,updated_at",args),saved=r.rows[0];
-    return saved?{propertyId:saved.property_id,webhookKey:saved.webhook_key,channelSecretEncrypted:payload({payload:saved.channel_secret_encrypted}),channelAccessTokenEncrypted:payload({payload:saved.channel_access_token_encrypted}),enabled:Boolean(saved.enabled),lastWebhookAt:saved.last_webhook_at?iso(saved.last_webhook_at):"",createdAt:saved.created_at,updatedAt:saved.updated_at}:null;
+    const r=await client.query("UPDATE property_line_bindings SET enabled=$2,updated_at=now() WHERE property_id=$1 RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at,last_webhook_observed_at,last_valid_webhook_at",args);
+    return lineBindingRow(r.rows[0]);
+  }
+  if(name==="markLineBindingWebhookObserved"){
+    const r=await client.query("UPDATE property_line_bindings SET last_webhook_observed_at=$2,updated_at=now() WHERE webhook_key=$1 RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at,last_webhook_observed_at,last_valid_webhook_at",args);
+    return lineBindingRow(r.rows[0]);
+  }
+  if(name==="createLineSetupToken"){
+    const row=args[0],r=await client.query("INSERT INTO property_line_setup_tokens(setup_id,token_hash,property_id,expires_at,created_by_property_id,created_by_username) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",[row.setupId,row.tokenHash,row.propertyId,row.expiresAt,row.createdByPropertyId,row.createdByUsername]);
+    return lineSetupRow(r.rows[0]);
+  }
+  if(name==="listLineSetupTokens"){
+    const propertyId=String(args[0]||"").trim(),r=await client.query(`SELECT * FROM property_line_setup_tokens ${propertyId?"WHERE property_id=$1":""} ORDER BY created_at DESC`,propertyId?[propertyId]:[]);
+    return r.rows.map(lineSetupRow);
+  }
+  if(name==="getLineSetupTokenByHash"){
+    const r=await client.query("SELECT * FROM property_line_setup_tokens WHERE token_hash=$1",args);
+    return lineSetupRow(r.rows[0]);
+  }
+  if(name==="revokeLineSetupToken"){
+    const r=await client.query("UPDATE property_line_setup_tokens SET revoked_at=$2,updated_at=now() WHERE setup_id=$1 AND revoked_at IS NULL AND used_at IS NULL RETURNING *",args);
+    return lineSetupRow(r.rows[0]);
+  }
+  if(name==="redeemLineSetupToken"){
+    const [tokenHash,binding,usedAt]=args;
+    await client.query("BEGIN");
+    try{
+      const tokenResult=await client.query("SELECT * FROM property_line_setup_tokens WHERE token_hash=$1 FOR UPDATE",[tokenHash]),token=tokenResult.rows[0];
+      if(!token){await client.query("ROLLBACK");return{ok:false,state:"invalid"};}
+      if(token.used_at){await client.query("ROLLBACK");return{ok:false,state:"used"};}
+      if(token.revoked_at){await client.query("ROLLBACK");return{ok:false,state:"revoked"};}
+      if(new Date(token.expires_at).getTime()<=new Date(usedAt).getTime()){await client.query("ROLLBACK");return{ok:false,state:"expired"};}
+      if(token.property_id!==binding.propertyId){await client.query("ROLLBACK");return{ok:false,state:"invalid"};}
+      const saved=await client.query("INSERT INTO property_line_bindings(property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled) VALUES($1,$2,$3::jsonb,$4::jsonb,$5) ON CONFLICT(property_id) DO UPDATE SET webhook_key=property_line_bindings.webhook_key,channel_secret_encrypted=excluded.channel_secret_encrypted,channel_access_token_encrypted=excluded.channel_access_token_encrypted,enabled=excluded.enabled,updated_at=now() RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at,last_webhook_observed_at,last_valid_webhook_at",[binding.propertyId,binding.webhookKey,JSON.stringify(binding.channelSecretEncrypted),JSON.stringify(binding.channelAccessTokenEncrypted),Boolean(binding.enabled)]);
+      await client.query("UPDATE property_line_setup_tokens SET used_at=$2,updated_at=now() WHERE token_hash=$1",[tokenHash,usedAt]);
+      await client.query("COMMIT");
+      return{ok:true,binding:lineBindingRow(saved.rows[0])};
+    }catch(error){await client.query("ROLLBACK");throw error;}
   }
   if(name==="recordValidLineWebhook"){
-    const r=await client.query("UPDATE property_line_bindings SET last_webhook_at=now(),updated_at=now() WHERE property_id=$1 AND enabled=true RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,last_webhook_at,created_at,updated_at",args),saved=r.rows[0];
-    return saved?{propertyId:saved.property_id,webhookKey:saved.webhook_key,channelSecretEncrypted:payload({payload:saved.channel_secret_encrypted}),channelAccessTokenEncrypted:payload({payload:saved.channel_access_token_encrypted}),enabled:Boolean(saved.enabled),lastWebhookAt:iso(saved.last_webhook_at),createdAt:saved.created_at,updatedAt:saved.updated_at}:null;
+    const r=await client.query("UPDATE property_line_bindings SET last_valid_webhook_at=$2,updated_at=now() WHERE property_id=$1 AND enabled=true RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at,last_webhook_observed_at,last_valid_webhook_at",args);
+    return lineBindingRow(r.rows[0]);
   }
   if (name === "getConversationState") {
     const r=await client.query("SELECT state FROM conversation_states WHERE property_id=$1 AND channel_id=$2 AND line_user_id=$3",args); return r.rows[0] ? (typeof r.rows[0].state === "string" ? JSON.parse(r.rows[0].state) : r.rows[0].state) : null;

@@ -54,19 +54,28 @@ const otherCatalog = buildPropertyCatalog({
 });
 assert.equal(resolveEntity(otherCatalog, { category: "amenity", rawText: "KTV", canonicalCandidate: "singing" }).entity.answer, "Other property policy");
 
-const planner = { classify: async () => ({
+const planner = { classify: async ({ sourceEvents }) => {
+  const output = ({
   schemaVersion: 2,
   discourse: { relation: "new_request", confidence: 1 },
   stateOperations: [],
   stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
   tasks: [
-    { taskId: "singing", type: "amenity", sourceText: "可以唱到幾點？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "可以唱到幾點？", canonicalCandidate: "singing", confidence: 1 }, confidence: 1 },
-    { taskId: "cancellation-policy", type: "policy", sourceText: "可以退費嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "policy", rawText: "退費", canonicalCandidate: "cancellation", confidence: 1 }, confidence: 1 },
-    { taskId: "cancellation-operation", type: "human_help", sourceText: "請幫我取消訂房", requestedOutputs: ["handoff"], dependsOnStayContext: false, entity: { category: "other", rawText: "取消訂房", canonicalCandidate: null, confidence: 1 }, confidence: 1 },
-    { taskId: "missing", type: "amenity", sourceText: "有未提供的設施嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "未提供的設施", canonicalCandidate: "not_provided_feature", confidence: 1 }, confidence: 1 }
+    { taskId: "singing", type: "amenity", sourceText: "可以唱到幾點？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "可以唱到幾點？", canonicalCandidate: "singing", confidence: 1 }, stayCandidate: null, confidence: 1 },
+    { taskId: "cancellation-policy", type: "policy", sourceText: "可以退費嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "policy", rawText: "退費", canonicalCandidate: "cancellation", confidence: 1 }, stayCandidate: null, confidence: 1 },
+    { taskId: "cancellation-operation", type: "human_help", sourceText: "請幫我取消訂房", requestedOutputs: ["handoff"], dependsOnStayContext: false, entity: { category: "other", rawText: "取消訂房", canonicalCandidate: null, confidence: 1 }, stayCandidate: null, confidence: 1 },
+    { taskId: "missing", type: "amenity", sourceText: "有未提供的設施嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "未提供的設施", canonicalCandidate: "not_provided_feature", confidence: 1 }, stayCandidate: null, confidence: 1 }
   ],
   ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "phase1_multi_question"
-}) };
+  });
+  const source = sourceEvents[0];
+  const tasks = output.tasks.map((item, candidateIndex) => ({ ...item, candidateIndex }));
+  return {
+    ...output,
+    tasks,
+    contextRelationCandidates: tasks.map((item) => ({ candidateIndex: item.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }] }))
+  };
+} };
 const memory = new Map();
 const engine = new ConversationEngineV2({
   planner,
