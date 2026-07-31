@@ -60,6 +60,15 @@ async function waitFor(predicate, timeoutMs = 1500) {
   try {
     const migration = await migratePostgres(connection);
     assert.ok(migration.files.includes("015_property_line_bindings.sql"), "the production binding migration must be applied");
+    assert.equal(migration.files.length, 19, "the first-version migration chain must remain complete and uniquely numbered");
+    assert.deepEqual(migration.files.slice(-5), [
+      "015_property_line_bindings.sql",
+      "016_onboarding_intake_invites.sql",
+      "017_property_line_setup_tokens.sql",
+      "018_property_custom_replies.sql",
+      "019_property_line_binding_webhook_status.sql"
+    ], "LINE webhook status must follow the existing 016-018 migrations");
+    assert.equal(migration.files.includes("016_property_line_binding_webhook_status.sql"), false, "the removed duplicate migration number must not return");
     const setup = await openPostgres(connection);
     await setup.query("INSERT INTO properties(property_id,display_name) VALUES($1,$2),($3,$4)", ["pg_property_a", "Postgres Property A", "pg_property_b", "Postgres Property B"]);
     await setup.query("INSERT INTO property_settings(property_id,settings) VALUES($1,$2::jsonb),($3,$4::jsonb)", ["pg_property_a", JSON.stringify({ commonAnswers: { parkingRule: "Postgres Parking A" } }), "pg_property_b", JSON.stringify({ commonAnswers: { parkingRule: "Postgres Parking B" } })]);
