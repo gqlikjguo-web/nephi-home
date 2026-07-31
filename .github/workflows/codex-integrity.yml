@@ -1,0 +1,23 @@
+name: codex-integrity
+
+on:
+  push:
+    branches: [codex/integrity-gate]
+  pull_request:
+    branches: [codex/integrity-gate]
+
+jobs:
+  verify-codex-integrity:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pilot/nephi-home-node-pilot-v1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: pilot/nephi-home-node-pilot-v1/package-lock.json
+      - run: npm ci
+      - run: npm run verify:codex-integrity
