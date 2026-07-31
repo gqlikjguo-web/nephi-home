@@ -25,24 +25,30 @@ function decision(type, approvedTaskResults, overrides = {}) {
   };
 }
 
-function plannerOutput({ shouldIgnore = false, tasks = [] } = {}) {
+function plannerOutput({ shouldIgnore = false, tasks = [], sourceEvent = {} } = {}) {
+  const stay = {
+    dateExpression: { rawText: "", kind: "none", anchor: "none" },
+    checkInCandidate: null,
+    checkOutCandidate: null,
+    nightsCandidate: null,
+    guestCountCandidate: null
+  };
+  const sourceText = String(sourceEvent.messageText || "test");
+  const normalizedTasks = tasks.map((item) => ({
+    ...item,
+    stayCandidate: item.dependsOnStayContext ? { ...stay } : null
+  }));
   return {
     schemaVersion: 2,
     discourse: { relation: shouldIgnore ? "acknowledgement" : "new_request", confidence: 0.99 },
     stateOperations: [],
-    stay: {
-      dateExpression: { rawText: "", kind: "none", anchor: "none" },
-      checkInCandidate: null,
-      checkOutCandidate: null,
-      nightsCandidate: null,
-      guestCountCandidate: null
-    },
-    tasks,
-    contextRelationCandidates: tasks.map((item) => ({
+    stay,
+    tasks: normalizedTasks,
+    contextRelationCandidates: normalizedTasks.map((item) => ({
       candidateIndex: item.candidateIndex,
-      kind: shouldIgnore ? "acknowledgement" : "new_request",
+      kind: shouldIgnore ? "relation_uncertain" : "new_request",
       candidateRequestCycleRefs: [],
-      evidenceRefs: [{ eventId: "event-0", messageRef: "", startOffset: 0, endOffset: 4, quote: "test" }]
+      evidenceRefs: [{ eventId: String(sourceEvent.eventId || "event-0"), messageRef: String(sourceEvent.messageRef || ""), startOffset: 0, endOffset: sourceText.length, quote: sourceText }]
     })),
     ambiguities: [],
     missingInformation: [],
@@ -95,15 +101,17 @@ const property = {
   semanticCatalog: { aliases: { parking: ["停車"] }, amenities: [] }
 };
 
-async function runEngine(planner, { composer = null, diagnostics = [] } = {}) {
+async function runEngine(planner, { composer = null, diagnostics = [], messageText = "test" } = {}) {
   const persistence = memory();
+  const availabilityCalls = [];
+  const availableDatesCalls = [];
   const engine = new ConversationEngineV2({
     planner,
     composer,
     persistence,
     getProperty: () => property,
-    availabilityResolver: () => ({ availabilityReliable: true, rooms: [] }),
-    availableDatesResolver: () => ({ status: "answered", dates: [], source: "test" }),
+    availabilityResolver: (query) => { availabilityCalls.push(query); return { availabilityReliable: true, rooms: [] }; },
+    availableDatesResolver: (query) => { availableDatesCalls.push(query); return { status: "answered", dates: [], source: "test" }; },
     listPriceOverrides: () => [],
     onDiagnostic: (item) => diagnostics.push(item),
     now: () => new Date("2026-07-23T02:00:00.000Z")
@@ -114,9 +122,9 @@ async function runEngine(planner, { composer = null, diagnostics = [] } = {}) {
     lineUserId: "same-user",
     eventId: `event-${diagnostics.length}`,
     eventTimestamp: Date.parse("2026-07-23T10:00:00+08:00"),
-    messageText: "test"
+    messageText
   });
-  return { result, persistence };
+  return { result, persistence, availabilityCalls, availableDatesCalls };
 }
 
 async function main() {
@@ -227,17 +235,23 @@ async function main() {
   let composerCalls = 0;
   const noReplyDiagnostics = [];
   const ignored = await runEngine({
-    classify: async () => plannerOutput({
+    classify: async ({ sourceEvents }) => plannerOutput({
       shouldIgnore: true,
-      tasks: [task("ack", "unknown", "好的，謝謝")]
+      tasks: [task("ack", "unknown", "好的，謝謝")],
+      sourceEvent: sourceEvents[0]
     })
   }, {
     composer: { compose: async () => { composerCalls += 1; return { sections: [] }; } },
-    diagnostics: noReplyDiagnostics
+    diagnostics: noReplyDiagnostics,
+    messageText: "好的，謝謝"
   });
-  assert.equal(ignored.result.finalDecision.action, "handoff", JSON.stringify(ignored.result));
-  assert.equal(ignored.result.finalResponse.shouldReply, true);
+  assert.equal(ignored.result.finalDecision.action, "no_reply", JSON.stringify(ignored.result));
+  assert.equal(ignored.result.finalResponse.shouldReply, false);
+  assert.equal(ignored.result.finalResponse.replyText, "");
+  assert.equal(ignored.result.reviewCount, 0);
   assert.equal(composerCalls, 0);
+  assert.equal(noReplyDiagnostics.some((item) => item.stage === "query_plan"), false);
+  assert.equal(noReplyDiagnostics.some((item) => item.stage === "executor"), false);
   assert.equal(noReplyDiagnostics.some((item) => item.stage === "response_plan"), false);
   assert.equal(noReplyDiagnostics.some((item) => item.stage === "composer"), false);
 
@@ -256,20 +270,45 @@ async function main() {
   assert.equal(composerFailureDiagnostics.at(-1).stage, "final_decision");
   assert.equal(composerFailureDiagnostics.at(-1).reasonCode, "execution_answered");
 
+  const clarificationDiagnostics = [];
   const clarification = await runEngine({
-    classify: async () => plannerOutput({
+    classify: async ({ sourceEvents }) => plannerOutput({
       tasks: [{
         ...task("availability", "availability", "房況"),
         sourceText: "有雙人房嗎",
         requestedOutputs: ["availability"],
         dependsOnStayContext: true,
         entity: { category: "room", rawText: "雙人房", canonicalCandidate: null, confidence: 0.99 }
-      }]
+      }],
+      sourceEvent: sourceEvents[0]
     })
-  });
-  assert.equal(clarification.result.finalDecision.action, "handoff", JSON.stringify(clarification.result.finalDecision));
-  assert.equal(clarification.result.finalDecision.reasonCode, "planner_schema_invalid");
+  }, { diagnostics: clarificationDiagnostics, messageText: "有雙人房嗎" });
+  assert.equal(clarification.result.finalDecision.action, "clarification", JSON.stringify(clarification.result.finalDecision));
+  assert.deepEqual(clarification.result.finalDecision.missingFields, ["checkIn", "checkOut"]);
   assert.equal(clarification.result.finalResponse.shouldReply, true);
+  assert.match(clarification.result.finalResponse.replyText, /入住日期/);
+  assert.equal(clarification.result.reviewCount, 0);
+  assert.equal(clarification.availabilityCalls.length, 0);
+  assert.equal(clarification.availableDatesCalls.length, 0);
+
+  const invalidSchemaDiagnostics = [];
+  const invalidSchema = await runEngine({
+    classify: async ({ sourceEvents }) => {
+      const output = plannerOutput({
+        tasks: [task("invalid-schema", "availability", "有房嗎")],
+        sourceEvent: sourceEvents[0]
+      });
+      output.tasks[0] = { ...output.tasks[0], dependsOnStayContext: true, stayCandidate: { ...output.stay } };
+      output.contextRelationCandidates[0] = { ...output.contextRelationCandidates[0], kind: "acknowledgement" };
+      return output;
+    }
+  }, { diagnostics: invalidSchemaDiagnostics, messageText: "有房嗎" });
+  assert.equal(invalidSchema.result.finalDecision.action, "handoff");
+  assert.equal(invalidSchema.result.finalDecision.reasonCode, "planner_schema_invalid");
+  assert.equal(invalidSchema.result.finalDecision.reviewRequired, true);
+  assert.equal(invalidSchema.availabilityCalls.length, 0);
+  assert.equal(invalidSchema.availableDatesCalls.length, 0);
+  assert.equal(invalidSchemaDiagnostics.some((item) => item.stage === "query_plan"), false);
 
   const handoff = await runEngine({
     classify: async () => plannerOutput({
