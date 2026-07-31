@@ -2,9 +2,8 @@ name: codex-integrity
 
 on:
   push:
-    branches: [codex/integrity-gate]
+    branches: ["codex/**"]
   pull_request:
-    branches: [codex/integrity-gate]
 
 jobs:
   verify-codex-integrity:
