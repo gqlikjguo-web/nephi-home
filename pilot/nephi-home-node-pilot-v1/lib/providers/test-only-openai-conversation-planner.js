@@ -193,7 +193,7 @@ function annotateProviderSuccess(output, firstAttemptErrorCategory, providerAtte
 }
 
 class TestOnlyOpenAiConversationPlanner {
-  constructor({ apiKey, model, fetchImpl = globalThis.fetch, timeoutMs = 15000, retryDelayMs = DEFAULT_RETRY_DELAY_MS, waitImpl = waitForRetry, nowMs = Date.now, requestIdFactory = crypto.randomUUID }) {
+  constructor({ apiKey, model, fetchImpl = globalThis.fetch, timeoutMs = 15000, roundTimeoutMs, retryDelayMs = DEFAULT_RETRY_DELAY_MS, waitImpl = waitForRetry, nowMs = Date.now, requestIdFactory = crypto.randomUUID }) {
     if (!apiKey || !model) throw plannerFailure({ code: "planner_configuration_error", category: "unknown", model, providerAttemptCount: 0 });
     this.apiKey = apiKey;
     this.model = model;
@@ -201,15 +201,21 @@ class TestOnlyOpenAiConversationPlanner {
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
     this.retryDelayMs = boundedRetryDelay(retryDelayMs);
+    // A small scheduler allowance keeps the configured two attempts available
+    // while retaining a finite wall-clock ceiling for the whole Planner round.
+    const defaultRoundTimeoutMs = (Number(timeoutMs) * MAX_PROVIDER_ATTEMPTS) + this.retryDelayMs + 1000;
+    this.roundTimeoutMs = Number.isFinite(Number(roundTimeoutMs)) && Number(roundTimeoutMs) > 0
+      ? Math.min(Math.floor(Number(roundTimeoutMs)), Math.max(1, Math.floor(defaultRoundTimeoutMs)))
+      : Math.max(1, Math.floor(defaultRoundTimeoutMs));
     this.waitImpl = typeof waitImpl === "function" ? waitImpl : waitForRetry;
     this.nowMs = typeof nowMs === "function" ? nowMs : Date.now;
     this.requestIdFactory = typeof requestIdFactory === "function" ? requestIdFactory : crypto.randomUUID;
   }
-  async requestOnce(input, attemptNumber) {
+  async requestOnce(input, attemptNumber, timeoutMs = this.timeoutMs) {
     const generatedRequestId = String(this.requestIdFactory() || "");
     const clientRequestId = UUID_PATTERN.test(generatedRequestId) ? generatedRequestId : crypto.randomUUID();
     const startedAtMs = Number(this.nowMs());
-    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs);
     let httpStatus = 0;
     let providerRequestId = "";
     let responseBodyPresent = false;
@@ -252,7 +258,7 @@ class TestOnlyOpenAiConversationPlanner {
       startedAtMs,
       completedAtMs,
       durationMs: Math.max(0, completedAtMs - startedAtMs),
-      timeoutMs: this.timeoutMs,
+      timeoutMs,
       clientRequestId,
       providerRequestId,
       timeout: Boolean(failure && failure.timeout),
@@ -271,9 +277,17 @@ class TestOnlyOpenAiConversationPlanner {
   async classify(input) {
     let firstAttemptErrorCategory = "";
     const providerAttempts = [];
+    // Use the wall clock for the live deadline. `nowMs` is reserved for safe
+    // diagnostic timestamps and is deliberately injectable in contract tests.
+    const deadlineMs = Date.now() + this.roundTimeoutMs;
     for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
+      const remainingMs = Math.floor(deadlineMs - Date.now());
+      if (remainingMs <= 0) {
+        const timeoutError = plannerFailure({ code: "planner_timeout", category: "timeout", timeout: true, model: this.model, name: "AbortError", retryable: false });
+        throw annotateFailure(timeoutError, { providerAttemptCount: providerAttempts.length, firstAttemptErrorCategory, retryPerformed: providerAttempts.length > 1, providerAttempts });
+      }
       try {
-        const result = await this.requestOnce(input, attempt);
+        const result = await this.requestOnce(input, attempt, Math.min(this.timeoutMs, remainingMs));
         providerAttempts.push(result.attemptDiagnostic);
         return annotateProviderSuccess(result.output, firstAttemptErrorCategory, providerAttempts);
       } catch (error) {

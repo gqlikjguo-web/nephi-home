@@ -157,6 +157,7 @@ function canonicalReadiness(canonicalRequest, stay) {
     status: readiness.status === "missing"
       ? "missing_information"
       : readiness.status,
+    knownFields: readiness.knownFields,
     missingFields: readiness.missingFields,
     invalidFields: readiness.invalidFields,
     conflictingFields: []
@@ -166,6 +167,7 @@ function canonicalReadiness(canonicalRequest, stay) {
     && canonicalRequest.canonicalEntity.category !== "other") {
     return {
       status: "entity_unresolved",
+      knownFields: readiness.knownFields,
       missingFields: [],
       invalidFields: [],
       conflictingFields: []
@@ -173,6 +175,7 @@ function canonicalReadiness(canonicalRequest, stay) {
   }
   return {
     status: "ready",
+    knownFields: readiness.knownFields,
     missingFields: [],
     invalidFields: [],
     conflictingFields: []

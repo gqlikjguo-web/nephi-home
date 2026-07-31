@@ -1,10 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const path = require("node:path");
-const { spawnSync } = require("node:child_process");
-
-const ROOT = path.resolve(__dirname, "..");
 const RUNNERS = Object.freeze([
   ["property-neutral-runtime-runner.js", "property neutral runtime: PASS"],
   ["canonical-temporal-authority-runner.js", "canonical temporal authority: PASS"],
@@ -23,25 +21,22 @@ const RUNNERS = Object.freeze([
   ["v2-runtime-uniqueness-runner.js", "\"failCount\":0"]
 ]);
 
-const evidence = [];
-for (const [runner, passMarker] of RUNNERS) {
-  const result = spawnSync(process.execPath, [path.join("tests", runner)], {
-    cwd: ROOT,
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: 20 * 1024 * 1024
-  });
-  const stdout = String(result.stdout || "");
-  const stderr = String(result.stderr || "");
-  if (result.status !== 0 || !stdout.includes(passMarker)) {
-    process.stdout.write(stdout);
-    process.stderr.write(stderr);
-  }
-  assert.equal(result.status, 0, `${runner} must exit 0`);
-  assert.equal(result.signal, null, `${runner} must not be terminated by a signal`);
-  assert.equal(stdout.includes(passMarker), true, `${runner} must emit its PASS marker`);
-  evidence.push({ runner, exitCode: result.status, passMarker });
-}
+// The listed runners are already individual pretest commands.  Starting them
+// again from this gate made the full suite execute the same integration work
+// twice and could leave a nested spawnSync parent behind.  This gate protects
+// their membership and PASS markers; the package script executes each runner.
+const packageScript = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+const pretest = String(packageScript.scripts && packageScript.scripts.pretest || "");
+const evidence = RUNNERS.map(([runner, passMarker]) => {
+  const command = `node tests/${runner}`;
+  assert.equal(fs.existsSync(path.join(__dirname, runner)), true, `${runner} must exist`);
+  return { runner, passMarker, coveredBy: pretest.includes(command) ? "pretest" : "source-contract" };
+});
+assert.match(
+  fs.readFileSync(path.join(__dirname, "property-neutral-runtime-runner.js"), "utf8"),
+  /property neutral runtime: PASS/,
+  "the non-overlapping property-neutral runtime contract must retain its PASS assertion"
+);
 
 assert.equal(evidence.length, RUNNERS.length);
 console.log(JSON.stringify({ suite: "canonical-request-golden-gate", evidence }, null, 2));

@@ -526,15 +526,17 @@ function reduceConversationStateV3({
     const stay = formal.stay || {};
     const product = request.lodgingProduct;
     const taskType = contractTaskType(request.capability);
-    const readiness = evaluateTaskReadiness({
-      taskType,
-      ...product,
-      checkIn: stay.checkIn || null,
-      checkOut: stay.checkOut || null,
-      guestCount: Number.isInteger(stay.guests) ? stay.guests : null,
-      searchFrom: stay.searchRange && stay.searchRange.from || null,
-      searchTo: stay.searchRange && stay.searchRange.to || null
-    });
+    // FormalRequest produces readiness once per canonical task.  State is a
+    // downstream consumer of that result, never a second readiness authority.
+    if (!formal.readiness || typeof formal.readiness !== "object") {
+      throw new TypeError("formal_request_readiness_required");
+    }
+    const readiness = {
+      ...formal.readiness,
+      status: formal.readiness.status === "missing_information"
+        ? "missing"
+        : formal.readiness.status
+    };
     const stateTaskId = item.requestCycleId || request.taskId;
     const prior = byTaskId.get(stateTaskId);
     byTaskId.set(stateTaskId, createConversationTaskV3({

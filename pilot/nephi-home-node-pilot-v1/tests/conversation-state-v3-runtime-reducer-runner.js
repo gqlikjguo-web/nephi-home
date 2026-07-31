@@ -443,6 +443,13 @@ const reduced = reduceConversationStateV3({
   }],
   formalRequests: [{
     taskId: "pricing-task",
+    readiness: {
+      status: "ready",
+      knownFields: ["productType", "checkIn", "checkOut"],
+      missingFields: [],
+      invalidFields: [],
+      conflictingFields: []
+    },
     stay: {
       checkIn: "2026-07-30",
       checkOut: "2026-07-31",

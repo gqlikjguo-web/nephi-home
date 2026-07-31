@@ -415,6 +415,7 @@ function createRequestHandler(service, options = {}) {
   const customerSettings = options.customerSettings;
   const onboarding = options.onboarding;
   const customReplyService = options.customReplyService;
+  const testOnlyAcceptanceHandler = options.testOnlyAcceptanceHandler;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
   const publicBrand = options.publicBrand || createPublicBrand();
   return async function handleRequest(request, response) {
@@ -434,6 +435,13 @@ function createRequestHandler(service, options = {}) {
           customerId: url.searchParams.get("customerId")
         });
         return sendData(response, result);
+      }
+      if (request.method === "POST" && pathname === "/api/admin/test-only/conversation-acceptance") {
+        if (typeof testOnlyAcceptanceHandler !== "function") return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
+        const token = cookieValue(request, "nephi_admin_session");
+        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        if (!session || !onboarding || !onboarding.isPlatformAdmin(session)) throw new AppError(401, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
+        return sendData(response, await testOnlyAcceptanceHandler(await readJsonBody(request), session));
       }
       const sharedLineWebhookMatch = /^\/api\/line\/webhooks\/([A-Za-z0-9_-]{32,128})$/.exec(pathname);
       if (request.method === "POST" && sharedLineWebhookMatch) {
@@ -848,6 +856,16 @@ function createApp(options = {}) {
     }
   };
   const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: false, onDiagnostic: logSafeTestOnlyConversationTrace, testOnlyOverrides: options.testOnlyOverrides || null });
+  const testOnlyAcceptanceHandler = options.testOnlyAcceptanceEnabled === true && options.testOnlyEnvironment === true
+    ? async (body = {}) => {
+      const customerId = String(body.customerId || body.propertyId || "").trim();
+      const messageText = String(body.messageText || "").trim();
+      if (!customerId || !messageText) throw new AppError(400, "ACCEPTANCE_INPUT_REQUIRED", "customerId and messageText are required");
+      if (!providers.customerSettings.getProperty(customerId)) throw new AppError(404, "UNKNOWN_CUSTOMER_ID", "Unknown test-only customerId");
+      const result = await root.engine.process({ customerId, channelId: `test-acceptance:${customerId}`, lineUserId: `admin-acceptance:${crypto.randomUUID()}`, eventId: `acceptance-${crypto.randomUUID()}`, eventTimestamp: now().toISOString(), messageText });
+      return { traceId: result.traceId, finalDecision: { action: result.finalDecision.action, reasonCode: result.finalDecision.reasonCode }, claimValidation: { ok: Boolean(result.claimValidation.ok), errors: result.claimValidation.errors.map(String) }, taskResults: result.taskResults.map((item) => ({ taskId: String(item.taskId || ""), type: String(item.type || ""), status: String(item.status || ""), reason: String(item.reason || "") })) };
+    }
+    : null;
   const claimEvent = (input) => providers.persistence.claimMessageEvent(input.customerId, input.channelId, input.eventId, { lineUserId: String(input.lineUserId || ""), eventTimestamp: input.eventTimestamp || "", guestMessage: String(input.messageText || ""), replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
   const updateEventStatus = (customerId, channelId, eventId, patch) => providers.persistence.updateMessageEvent(customerId, channelId, eventId, patch);
   const lineWebhookHandler = async ({ rawBody, signature, customerId }) => {
@@ -904,7 +922,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
+  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, testOnlyAcceptanceHandler, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host })); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
   /* legacy runtime kept below temporarily unreachable during source migration */ {
   const structuredClassifier = Object.hasOwn(options, "structuredClassifier")
