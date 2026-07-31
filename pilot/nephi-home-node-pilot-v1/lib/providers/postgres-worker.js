@@ -448,7 +448,7 @@ async function operation(name, args) {
     }catch(error){await client.query("ROLLBACK");throw error;}
   }
   if(name==="recordValidLineWebhook"){
-    const r=await client.query("UPDATE property_line_bindings SET last_valid_webhook_at=$2,updated_at=now() WHERE webhook_key=$1 AND enabled=true RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at,last_webhook_observed_at,last_valid_webhook_at",args);
+    const r=await client.query("UPDATE property_line_bindings SET last_valid_webhook_at=$2,updated_at=now() WHERE property_id=$1 AND enabled=true RETURNING property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled,created_at,updated_at,last_webhook_observed_at,last_valid_webhook_at",args);
     return lineBindingRow(r.rows[0]);
   }
   if (name === "getConversationState") {

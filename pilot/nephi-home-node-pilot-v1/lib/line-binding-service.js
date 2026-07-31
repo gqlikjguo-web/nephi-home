@@ -71,8 +71,12 @@ function createLineBindingService({ provider, env = process.env } = {}) {
       const id = String(propertyId || "").trim();
       if (!id) throw new AppError(400, "PROPERTY_ID_REQUIRED", "propertyId is required");
       const current = provider.getLineBindingByPropertyId(id);
-      const channelSecret = String(input.channelSecret || "").trim() || null;
-      const channelAccessToken = String(input.channelAccessToken || "").trim() || null;
+      const channelSecret = String(input.channelSecret || "").trim()
+        ? requiredCredential(input.channelSecret, "LINE_CHANNEL_SECRET_REQUIRED")
+        : null;
+      const channelAccessToken = String(input.channelAccessToken || "").trim()
+        ? requiredCredential(input.channelAccessToken, "LINE_CHANNEL_ACCESS_TOKEN_REQUIRED")
+        : null;
       if (!current && (!channelSecret || !channelAccessToken)) throw new AppError(400, "LINE_CREDENTIALS_REQUIRED", "Both LINE Channel Secret and Channel Access Token are required");
       const encryption = channelSecret || channelAccessToken || !current ? requireKey() : null;
       const row = {
