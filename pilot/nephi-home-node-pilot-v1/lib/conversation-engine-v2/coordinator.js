@@ -18,7 +18,7 @@ class ConversationEngineV2Coordinator {
     try {
       const result = await this.engine.process({ ...last, messageText: burst.messages.map((x) => x.messageText).join("\n"), currentMessages: burst.messages.map((x) => x.messageText), eventIds: burst.messages.map((x) => x.eventId), sourceEvents: burst.messages.map((x) => ({ eventId: x.eventId, messageRef: x.messageRef || "", messageText: x.messageText })) });
       burst.messages.forEach((x) => this.seenEvents.add(`${x.customerId}:${x.eventId}`));
-      const engineShouldReply = Boolean(result.finalDecision && result.finalDecision.shouldReply);
+      const engineShouldReply = Boolean(result.finalResponse && result.finalResponse.shouldReply);
       burst.waiters.forEach(({ resolve }, index) => { const trailing = index === burst.waiters.length - 1; resolve(trailing ? { ...result, replyToken: this.externalReplyToken ? "" : String(last.replyToken || ""), shouldReply: Boolean(engineShouldReply && (this.externalReplyToken || last.replyToken)), noReply: !engineShouldReply } : { shouldReply: false, noReply: true, merged: true, replyToken: "" }); });
     } catch (error) { burst.waiters.forEach(({ reject }) => reject(error)); }
   }

@@ -267,6 +267,10 @@ async function main() {
   const runtime = fs.readFileSync(path.resolve(__dirname, "../server.js"), "utf8").split("/* legacy runtime kept below")[0];
   assert.equal((runtime.match(/result\.finalDecision/g) || []).length >= 2, true);
   assert.doesNotMatch(runtime, /if\s*\(\s*!result\.shouldReply\s*\|\|\s*!result\.replyText/, "registered V2 transports must not decide from a legacy boolean");
+  const coordinatorSource = fs.readFileSync(path.resolve(__dirname, "../lib/conversation-engine-v2/coordinator.js"), "utf8");
+  assert.doesNotMatch(coordinatorSource, /finalDecision\s*&&\s*result\.finalDecision\.shouldReply/, "Coordinator must not read transport authority from FinalDecision");
+  assert.doesNotMatch(coordinatorSource, /result\.shouldReply/, "Coordinator must not fall back to the legacy top-level boolean");
+  assert.match(coordinatorSource, /finalResponse\s*&&\s*result\.finalResponse\.shouldReply/, "Coordinator must use the rendered FinalResponse transport authority");
 
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "final-decision-health-"));
   const app = createApp({
