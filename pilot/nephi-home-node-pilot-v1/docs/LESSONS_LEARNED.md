@@ -178,3 +178,7 @@ Fixtures for these boundaries must bind every claimed date and entity span to th
 Adding provider methods and database columns does not make the production handler call both. Record an admitted webhook observation separately, then update the valid timestamp only after the enabled binding, signature, JSON payload, and bound property have all passed validation. Exercise unknown keys, wrong signatures, and disabled bindings to prove they cannot advance the valid timestamp.
 
 Keep the service argument contract and worker SQL key identical: observed receipts use `webhookKey`, while valid receipts use `propertyId`. A successful RPC returning no row is still a failed state transition and needs an end-to-end persistence assertion. Likewise, defining a credential validator is insufficient unless every setup and admin write path invokes it before encryption or token consumption.
+
+## 2026-08-01 — Compatibility transport fields are not response authority
+
+Coordinator compatibility output may retain a top-level delivery boolean for callers, but an active LINE handler must not use it to infer an action or gate a reply. Both registered transports must read `finalResponse.shouldReply` and `finalResponse.replyText`; `finalDecision` fields are diagnostic and review metadata only. Source contracts must scan the active runtime before the legacy marker so unreachable compatibility code cannot mask a second transport authority.

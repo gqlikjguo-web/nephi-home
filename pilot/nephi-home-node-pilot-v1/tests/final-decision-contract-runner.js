@@ -288,6 +288,11 @@ async function main() {
 
   const runtime = fs.readFileSync(path.resolve(__dirname, "../server.js"), "utf8").split("/* legacy runtime kept below")[0];
   assert.equal((runtime.match(/result\.finalDecision/g) || []).length >= 2, true);
+  assert.doesNotMatch(runtime, /result\.shouldReply/, "active LINE transports must not use the legacy top-level shouldReply boolean");
+  assert.doesNotMatch(runtime, /result\.replyText/, "active LINE transports must not use the legacy top-level replyText");
+  assert.doesNotMatch(runtime, /finalDecision\s*&&\s*result\.finalDecision\.shouldReply/, "active LINE transports must not read shouldReply from FinalDecision");
+  assert.equal((runtime.match(/result\.finalResponse\s*&&\s*result\.finalResponse\.shouldReply/g) || []).length, 2, "both active LINE transports must gate only on FinalResponse.shouldReply");
+  assert.equal((runtime.match(/result\.finalResponse\s*&&\s*result\.finalResponse\.replyText/g) || []).length, 2, "both active LINE transports must send only FinalResponse.replyText");
   const coordinatorSource = fs.readFileSync(path.resolve(__dirname, "../lib/conversation-engine-v2/coordinator.js"), "utf8");
   assert.doesNotMatch(coordinatorSource, /finalDecision\s*&&\s*result\.finalDecision\.shouldReply/, "Coordinator must not read transport authority from FinalDecision");
   assert.doesNotMatch(coordinatorSource, /result\.shouldReply/, "Coordinator must not fall back to the legacy top-level boolean");
