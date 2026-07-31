@@ -180,3 +180,4 @@
 - Made V3 reducer transitions authoritative for continuation topic/product and catalog-validated for new room/bundle products; Canonicalizer now consumes that approved result.
 - Replaced stale semantic expectations with data-driven resolved/unresolved, property isolation, mixed-result, follow-up, and forged-product regressions.
 - Normalized ungrounded acknowledgement fragments before execution and preserved catalog-validated current products when V3 continuations reuse approved stay dates.
+- Wired the production property-scoped LINE webhook to record valid receipts separately from observed receipts after binding, signature, JSON, and property validation.

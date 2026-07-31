@@ -919,8 +919,9 @@ function createApp(options = {}) {
     if (!binding) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE webhook is unavailable");
     if (!validateSignature(rawBody, binding.channelSecret, String(signature || ""))) throw new AppError(401, "INVALID_LINE_SIGNATURE", "Invalid LINE signature");
     let payload; try { payload = JSON.parse(rawBody.toString("utf8")); } catch { throw new AppError(400, "INVALID_JSON", "Request body must be valid JSON"); }
+    const observedAt = now().toISOString();
     try {
-      lineBindingService.markWebhookObserved(webhookKey, now().toISOString());
+      lineBindingService.markWebhookObserved(webhookKey, observedAt);
     } catch (error) {
       console.error("LINE webhook observation update failed", {
         code: String(error && error.code || "LINE_WEBHOOK_OBSERVATION_FAILED"),
@@ -929,6 +930,14 @@ function createApp(options = {}) {
     }
     const id = binding.propertyId;
     if (!providers.customerSettings.getProperty(id)) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE webhook is unavailable");
+    try {
+      lineBindingService.recordValidWebhook(id, observedAt);
+    } catch (error) {
+      console.error("Valid LINE webhook update failed", {
+        code: String(error && error.code || "VALID_LINE_WEBHOOK_UPDATE_FAILED"),
+        propertyId: id
+      });
+    }
     const channelId = `line-binding:${crypto.createHash("sha256").update(binding.webhookKey).digest("hex").slice(0, 24)}`;
     for (const event of (payload.events || []).filter((item) => item && item.type === "message" && item.message && item.message.type === "text" && item.replyToken)) {
       const input = { customerId: id, channelId, lineUserId: String(event.source && event.source.userId || ""), eventId: String(event.webhookEventId || event.message.id || ""), eventTimestamp: event.timestamp || "", messageText: event.message.text || "" };

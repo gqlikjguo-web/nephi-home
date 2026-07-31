@@ -172,3 +172,7 @@ Choose capability and lodging product from the canonical entity first, merge tru
 An acknowledgement-only Planner contradiction must be normalized before execution, while an ungrounded social fragment in a mixed substantive request must not create a human handoff that overrides the answerable task. When an accepted continuation supplies a catalog-validated room or bundle, the V3 reducer must combine that current product with approved stay context instead of silently restoring the prior generic product.
 
 Fixtures for these boundaries must bind every claimed date and entity span to the actual guest message. Otherwise evidence validation fails before the intended acknowledgement, temporal, or continuation contract is exercised.
+
+## 2026-07-31 — Observed and valid webhook timestamps are separate writes
+
+Adding provider methods and database columns does not make the production handler call both. Record an admitted webhook observation separately, then update the valid timestamp only after the enabled binding, signature, JSON payload, and bound property have all passed validation. Exercise unknown keys, wrong signatures, and disabled bindings to prove they cannot advance the valid timestamp.
