@@ -353,6 +353,13 @@ function decideContextExecutionV3({
           && currentTask(candidate, now)
       );
       if (target) {
+        const currentProduct = approvedProductForTask(task, catalog);
+        const contextInventory = inventoryForTask(target);
+        const contextProduct = contextInventory.mode === "bundle_only"
+          ? { productType: "bundle", productId: target.productId, roomTypeId: null, bundleId: target.bundleId }
+          : contextInventory.mode === "room_only"
+            ? { productType: "room_type", productId: target.productId, roomTypeId: target.roomTypeId, bundleId: null }
+            : { productType: "any", productId: null, roomTypeId: null, bundleId: null };
         resumedPending = resumedPending || PENDING_STATUSES.has(target.status);
         return [{
           candidateIndex: task.candidateIndex,
@@ -361,7 +368,7 @@ function decideContextExecutionV3({
           transition: {
             reasonCode: relation.reasonCode || "continue_existing_task",
             contextTask: target,
-            approvedProduct: inventoryForTask(target).mode === "bundle_only" ? { productType: "bundle", productId: target.productId, roomTypeId: null, bundleId: target.bundleId } : inventoryForTask(target).mode === "room_only" ? { productType: "room_type", productId: target.productId, roomTypeId: target.roomTypeId, bundleId: null } : { productType: "any", productId: null, roomTypeId: null, bundleId: null },
+            approvedProduct: currentProduct.productType === "any" ? contextProduct : currentProduct,
             slotSources: {
               checkIn: task.stayCandidate && task.stayCandidate.checkInCandidate ? "current_turn" : target.checkIn ? "completed_or_pending_context" : "absent",
               checkOut: task.stayCandidate && (task.stayCandidate.checkOutCandidate || Number.isInteger(task.stayCandidate.nightsCandidate)) ? "current_turn" : target.checkOut ? "completed_or_pending_context" : "absent",

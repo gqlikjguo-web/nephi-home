@@ -166,3 +166,9 @@ Broad location behavior belongs in the Planner's semantic contract and the exist
 A missing date is not evidence that a bundle task is Unknown. Selecting a capability only after its required fields are present prevents the system from storing the real pending task and makes the next date-only turn impossible to recover.
 
 Choose capability and lodging product from the canonical entity first, merge trusted context in one reducer, then evaluate readiness through one contract. Use accepted Planner relations for semantic follow-ups, but permit a narrow structural recovery when exactly one pending task is missing exactly the supplied slot. The supplied slot must occupy the whole turn; a guest count plus another question is not structural recovery. Repeated task labels must not become state identity, same-turn duplicate IDs must be rejected before maps can collapse them, end relations must persist cancellation even on a no-reply turn, and entity-resolution failure must produce a contract-valid safe state rather than throwing during persistence.
+
+## 2026-07-31 — Acknowledgement fragments and continuation products need explicit authority handoff
+
+An acknowledgement-only Planner contradiction must be normalized before execution, while an ungrounded social fragment in a mixed substantive request must not create a human handoff that overrides the answerable task. When an accepted continuation supplies a catalog-validated room or bundle, the V3 reducer must combine that current product with approved stay context instead of silently restoring the prior generic product.
+
+Fixtures for these boundaries must bind every claimed date and entity span to the actual guest message. Otherwise evidence validation fails before the intended acknowledgement, temporal, or continuation contract is exercised.

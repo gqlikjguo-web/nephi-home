@@ -179,3 +179,4 @@
 - Removed legacy full-source alias recovery and canonical-ID-specific parking, pool, and location task repairs.
 - Made V3 reducer transitions authoritative for continuation topic/product and catalog-validated for new room/bundle products; Canonicalizer now consumes that approved result.
 - Replaced stale semantic expectations with data-driven resolved/unresolved, property isolation, mixed-result, follow-up, and forged-product regressions.
+- Normalized ungrounded acknowledgement fragments before execution and preserved catalog-validated current products when V3 continuations reuse approved stay dates.

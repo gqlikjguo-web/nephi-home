@@ -151,7 +151,8 @@ function validatePlannerOutput(value) {
 function applyPlannerSemanticContract(value, { catalog } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tasks)) return value;
   const acceptedTasks = [], repairedTasks = [], rejectedTasks = [];
-  const tasks = value.tasks.map((original, index) => {
+  let contextRelationCandidates = value.contextRelationCandidates;
+  let tasks = value.tasks.map((original, index) => {
     let task = { ...original, eligibilityEvidence: normalizeEligibilityEvidence(original && original.eligibilityEvidence), entity: original && original.entity ? { ...original.entity } : original && original.entity };
     let entity = task && task.entity;
     if (!entity) return task;
@@ -184,6 +185,13 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
       task = { ...task, type: "unknown", detailIntent: "general", requestedOutputs: ["answer"], entity: { ...task.entity, category: "other", canonicalCandidate: null } };
     }
 
+    if (value.discourse && value.discourse.relation === "acknowledgement"
+      && ["amenity", "policy", "property_fact"].includes(task.type)
+      && !groundedTask) {
+      rejectedTasks.push({ taskId: task.taskId, index, reason: "ungrounded_acknowledgement_fact" });
+      task = { ...task, type: "unknown", detailIntent: "general", requestedOutputs: ["answer"], entity: { ...task.entity, category: "other", canonicalCandidate: null } };
+    }
+
     if (task.detailIntent === "eligibility" && !hasExplicitEligibilityEvidence(task)) {
       task = { ...task, detailIntent: "general", eligibilityEvidence: { kind: "none", sourceText: "" } };
       repairedTasks.push({ taskId: task.taskId, index, reason: "eligibility_evidence_missing" });
@@ -192,7 +200,34 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
     if (!repairedTasks.some((item) => item.index === index) && !rejectedTasks.some((item) => item.index === index)) acceptedTasks.push({ taskId: task.taskId, index });
     return task;
   });
-  return { ...value, tasks, semanticValidation: { acceptedTasks, repairedTasks, rejectedTasks } };
+  const acknowledgementWithActionableTask = value.discourse
+    && value.discourse.relation === "acknowledgement"
+    && tasks.some((task) => task && task.type !== "unknown");
+  if (acknowledgementWithActionableTask) {
+    const ignoredIndexes = new Set(tasks
+      .map((task, index) => task && task.type === "unknown" ? index : -1)
+      .filter((index) => index >= 0));
+    tasks = tasks.filter((_task, index) => !ignoredIndexes.has(index));
+    contextRelationCandidates = Array.isArray(contextRelationCandidates)
+      ? contextRelationCandidates.filter((candidate) => !ignoredIndexes.has(candidate.candidateIndex))
+      : contextRelationCandidates;
+    for (let index = acceptedTasks.length - 1; index >= 0; index -= 1) {
+      if (ignoredIndexes.has(acceptedTasks[index].index)) acceptedTasks.splice(index, 1);
+    }
+    for (const index of ignoredIndexes) {
+      rejectedTasks.push({ taskId: value.tasks[index].taskId, index, reason: "acknowledgement_fragment_ignored" });
+    }
+  }
+  const acknowledgementOnly = value.discourse
+    && value.discourse.relation === "acknowledgement"
+    && tasks.every((task) => task && task.type === "unknown");
+  return {
+    ...value,
+    tasks,
+    contextRelationCandidates,
+    shouldIgnore: acknowledgementOnly ? true : value.shouldIgnore,
+    semanticValidation: { acceptedTasks, repairedTasks, rejectedTasks }
+  };
 }
 
 function plannerJsonSchema() {

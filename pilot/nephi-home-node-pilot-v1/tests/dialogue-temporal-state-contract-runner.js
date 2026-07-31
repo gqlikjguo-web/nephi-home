@@ -30,21 +30,24 @@ const property = {
 };
 
 function task(type, taskId, options = {}) {
-  const factType = ["amenity", "policy", "property_fact"].includes(type);
   return {
+    candidateIndex: options.candidateIndex === undefined ? 0 : options.candidateIndex,
     taskId,
     type,
     sourceText: options.sourceText || taskId,
     detailIntent: "general",
     requestedOutputs: ["answer"],
     eligibilityEvidence: { kind: "none", sourceText: "" },
-    dependsOnStayContext: options.dependsOnStayContext === undefined ? !factType : options.dependsOnStayContext,
+    dependsOnStayContext: options.dependsOnStayContext === undefined
+      ? new Set(["availability", "available_dates", "bundle_availability", "room_options", "capacity", "price", "total_price"]).has(type)
+      : options.dependsOnStayContext,
     entity: {
       category: options.category || (type === "amenity" ? "amenity" : type === "policy" ? "policy" : type === "property_fact" ? "other" : "other"),
       rawText: options.rawText === undefined ? "" : options.rawText,
       canonicalCandidate: options.canonicalCandidate === undefined ? null : options.canonicalCandidate,
       confidence: 0.99
     },
+    stayCandidate: null,
     confidence: 0.99
   };
 }
@@ -78,7 +81,7 @@ function plannerOutput(tasks, options = {}) {
       dateExpression: { rawText, kind, anchor },
       checkInCandidate: options.checkInCandidate || null,
       checkOutCandidate: null,
-      nightsCandidate: null,
+      nightsCandidate: options.nights || null,
       guestCountCandidate: options.guests || null
     },
     tasks,
@@ -88,6 +91,40 @@ function plannerOutput(tasks, options = {}) {
     shouldIgnore: Boolean(options.shouldIgnore),
     reason: options.reason || "production_shape_regression"
   };
+}
+
+function bindPlanToSource(output, sourceEvents, contextSnapshot) {
+  const source = sourceEvents[0];
+  const contextCycle = contextSnapshot && Array.isArray(contextSnapshot.cycles)
+    ? contextSnapshot.cycles.at(-1)
+    : null;
+  const referencesContext = ["continue", "modify", "answer_clarification"].includes(output.discourse.relation);
+  output.tasks = output.tasks.map((item, index) => ({
+    ...item,
+    candidateIndex: index,
+    stayCandidate: item.dependsOnStayContext ? { ...output.stay } : null
+  }));
+  output.contextRelationCandidates = output.tasks.map((item) => ({
+    candidateIndex: item.candidateIndex,
+    kind: item.type === "unknown"
+      ? "relation_uncertain"
+      : output.discourse.relation === "modify"
+        ? "modify_existing"
+        : ["continue", "answer_clarification"].includes(output.discourse.relation)
+          ? "supplement_existing"
+          : output.discourse.relation === "acknowledgement"
+            ? "relation_uncertain"
+            : "new_request",
+    candidateRequestCycleRefs: referencesContext && contextCycle ? [contextCycle.requestCycleId] : [],
+    evidenceRefs: [{
+      eventId: source.eventId,
+      messageRef: source.messageRef || "",
+      startOffset: 0,
+      endOffset: source.messageText.length,
+      quote: source.messageText
+    }]
+  }));
+  return output;
 }
 
 function memory() {
@@ -114,7 +151,7 @@ function runtime(outputs, persistence = memory()) {
   const availabilityCalls = [];
   const availableDatesCalls = [];
   const engine = new ConversationEngineV2({
-    planner: { classify: async () => outputs.shift() },
+    planner: { classify: async ({ sourceEvents, contextSnapshot }) => bindPlanToSource(outputs.shift(), sourceEvents, contextSnapshot) },
     persistence,
     getProperty: () => property,
     availabilityResolver: (query) => {
@@ -157,7 +194,11 @@ async function testAcknowledgementContradictions() {
       category: "other"
     })
   ], { relation: "acknowledgement", shouldIgnore: false }), "一般社交訊息", "ack-property-fact");
-  assert.equal(propertyFact.result.finalDecision.type, "no_reply");
+  assert.equal(propertyFact.result.finalDecision.action, "no_reply", JSON.stringify({
+    finalDecision: propertyFact.result.finalDecision,
+    finalResponse: propertyFact.result.finalResponse,
+    diagnostics: propertyFact.diagnostics
+  }));
   assert.equal(propertyFact.result.reviewCount, 0);
   assert.equal(propertyFact.availabilityCalls.length, 0);
   const propertyFactSemantic = propertyFact.diagnostics.find((item) => item.stage === "semantic_contract");
@@ -171,7 +212,7 @@ async function testAcknowledgementContradictions() {
       category: "other"
     })
   ], { relation: "acknowledgement", shouldIgnore: false }), "一般社交訊息", "ack-unknown");
-  assert.equal(unknown.result.finalDecision.type, "no_reply");
+  assert.equal(unknown.result.finalDecision.action, "no_reply");
   assert.equal(unknown.result.reviewCount, 0);
 
   const policy = await processOne(plannerOutput([
@@ -182,7 +223,7 @@ async function testAcknowledgementContradictions() {
       canonicalCandidate: "unresolved_social_candidate"
     })
   ], { relation: "acknowledgement", shouldIgnore: false }), "一般社交訊息", "ack-policy");
-  assert.equal(policy.result.finalDecision.type, "no_reply");
+  assert.equal(policy.result.finalDecision.action, "no_reply");
   assert.equal(policy.result.reviewCount, 0);
 }
 
@@ -193,55 +234,60 @@ async function testAcknowledgementWithSubstantiveQuestion() {
       rawText: "一般社交片段"
     }),
     task("availability", "mixed-availability", {
-      sourceText: "明日房況問題",
+      sourceText: "明天有房嗎",
       rawText: ""
     })
   ], {
     relation: "acknowledgement",
     shouldIgnore: true,
     rawText: "明天",
-    kind: "relative"
-  }), "一般社交片段加住宿問題", "ack-mixed");
-  assert.equal(current.result.finalDecision.type, "reply");
+    kind: "relative",
+    nights: 1
+  }), "一般社交片段，明天有房嗎？", "ack-mixed");
+  assert.equal(current.result.finalDecision.action, "reply", JSON.stringify({
+    finalDecision: current.result.finalDecision,
+    diagnostics: current.diagnostics
+  }));
   assert.equal(current.availabilityCalls.length, 1);
   assert.equal(current.availabilityCalls[0].checkIn, "2026-07-24");
   assert.deepEqual(current.result.taskResults.map((item) => item.taskId), ["mixed-availability"]);
 }
 
-async function testMislabeledRelativeDateIsCanonicalAmbiguity() {
+async function testMislabeledRelativeDateUsesCanonicalGrammar() {
   const current = await processOne(plannerOutput([
     task("availability", "today-availability", {
-      sourceText: "相對日期房況問題",
+      sourceText: "今天有房嗎",
       rawText: ""
     })
   ], {
     rawText: "今天",
     kind: "absolute",
     checkInCandidate: null
-  }), "相對日期房況問題", "today-mislabeled");
-  assert.equal(current.result.finalDecision.type, "clarification");
-  assert.deepEqual(current.result.finalDecision.clarificationFields, ["stay.checkIn"]);
-  assert.equal(current.availabilityCalls.length, 0);
+  }), "今天有房嗎？", "today-mislabeled");
+  assert.equal(current.result.finalDecision.action, "reply");
+  assert.equal(current.availabilityCalls.length, 1);
+  assert.equal(current.availabilityCalls[0].checkIn, "2026-07-23");
+  assert.equal(current.availabilityCalls[0].checkOut, "2026-07-24");
   assert.equal(current.availableDatesCalls.length, 0);
-  const semantic = current.diagnostics.find((item) => item.stage === "semantic_contract");
-  assert.equal(semantic.semanticValidation.temporal.status, "ambiguous");
-  assert.equal(semantic.semanticValidation.temporal.reasonCode, "absolute_candidate_missing");
   const temporal = current.diagnostics.find((item) => item.stage === "temporal");
-  assert.equal(temporal.output.resolutionStatus, "ambiguous");
-  assert.equal(temporal.output.ambiguity, "absolute_candidate_missing");
+  const temporalItem = temporal.items.find((item) => item.taskIds.includes("today-availability"));
+  assert.equal(temporalItem.resolutionStatus, "resolved");
+  assert.equal(temporalItem.fields.checkIn.value, "2026-07-23");
+  assert.equal(temporalItem.fields.checkOut.value, "2026-07-24");
 
   const availableDates = await processOne(plannerOutput([
     task("available_dates", "today-available-dates", {
-      sourceText: "相對日期範圍候選",
+      sourceText: "今天有哪些日期有房",
       rawText: ""
     })
   ], {
     rawText: "今天",
     kind: "absolute",
     checkInCandidate: null
-  }), "相對日期範圍候選", "today-mislabeled-range");
-  assert.equal(availableDates.result.finalDecision.type, "clarification");
-  assert.deepEqual(availableDates.result.finalDecision.clarificationFields, ["stay.searchRange"]);
+  }), "今天有哪些日期有房？", "today-mislabeled-range");
+  assert.equal(availableDates.result.finalDecision.action, "clarification");
+  assert.deepEqual(availableDates.result.finalDecision.missingFields, ["checkOut"]);
+  assert.equal(availableDates.availabilityCalls.length, 0);
   assert.equal(availableDates.availableDatesCalls.length, 0, "an unresolved date attempt must not receive the default available-dates range");
 }
 
@@ -249,17 +295,18 @@ async function testInvalidCurrentDateCannotReusePreviousStay() {
   const current = runtime([
     plannerOutput([
       task("availability", "initial-availability", {
-        sourceText: "明確日期房況",
+        sourceText: "7/25有房嗎",
         rawText: ""
       })
     ], {
       rawText: "7/25",
       kind: "absolute",
-      checkInCandidate: "2026-07-25"
+      checkInCandidate: "2026-07-25",
+      nights: 1
     }),
     plannerOutput([
       task("availability", "invalid-date-availability", {
-        sourceText: "無法解析日期房況",
+        sourceText: "7224有房嗎",
         rawText: ""
       })
     ], {
@@ -267,51 +314,61 @@ async function testInvalidCurrentDateCannotReusePreviousStay() {
       kind: "absolute"
     })
   ]);
-  const first = await current.engine.process(input("previous-date", "明確日期房況"));
-  assert.equal(first.finalDecision.type, "reply");
+  const first = await current.engine.process(input("previous-date", "7/25有房嗎？"));
+  assert.equal(first.finalDecision.action, "reply");
   assert.equal(current.availabilityCalls.length, 1);
   assert.equal(current.availabilityCalls[0].checkIn, "2026-07-25");
 
-  const second = await current.engine.process(input("invalid-current-date", "無法解析日期房況"));
-  assert.equal(second.finalDecision.type, "clarification");
-  assert.deepEqual(second.finalDecision.clarificationFields, ["stay.checkIn"]);
+  const second = await current.engine.process(input("invalid-current-date", "7224有房嗎？"));
+  assert.equal(second.finalDecision.action, "clarification");
+  assert.deepEqual(second.finalDecision.missingFields, ["checkIn", "checkOut"]);
   assert.equal(current.availabilityCalls.length, 1, "an unresolved current-turn date must not call Resolver with a stale date");
   assert.equal(current.availableDatesCalls.length, 0);
-  assert.equal(second.state.conditions.stay.checkIn, null);
-  assert.equal(second.state.conditions.stay.checkOut, null);
-  assert.ok(second.state.transition.cleared.includes("stay.checkIn"));
-  assert.ok(second.state.transition.cleared.includes("stay.checkOut"));
+  const invalidTask = second.state.tasks.find((item) => item.taskId === "invalid-date-availability");
+  assert.ok(invalidTask, JSON.stringify(second.state));
+  assert.equal(invalidTask.checkIn, null);
+  assert.equal(invalidTask.checkOut, null);
+  assert.deepEqual(invalidTask.missingFields, ["checkIn", "checkOut"]);
 }
 
 async function testNoDateRoomFollowUpCanReusePreviousStay() {
   const current = runtime([
     plannerOutput([
       task("availability", "initial-room-stay", {
-        sourceText: "明確日期房況",
+        sourceText: "7/25有房嗎",
         rawText: ""
       })
     ], {
       rawText: "7/25",
       kind: "absolute",
-      checkInCandidate: "2026-07-25"
+      checkInCandidate: "2026-07-25",
+      nights: 1
     }),
     plannerOutput([
       task("availability", "room-follow-up", {
-        sourceText: "房型追問",
+        sourceText: "雙人房還有嗎",
         rawText: "雙人房",
-        category: "room"
+        category: "room",
+        canonicalCandidate: "room_double"
       })
     ], {
       relation: "continue",
       roomId: "room_double"
     })
   ]);
-  await current.engine.process(input("room-stay-first", "明確日期房況"));
-  const followUp = await current.engine.process(input("room-stay-follow-up", "房型追問"));
-  assert.equal(followUp.finalDecision.type, "reply");
+  await current.engine.process(input("room-stay-first", "7/25有房嗎？"));
+  const followUp = await current.engine.process(input("room-stay-follow-up", "雙人房還有嗎？"));
+  assert.equal(followUp.finalDecision.action, "reply", JSON.stringify({
+    finalDecision: followUp.finalDecision,
+    diagnostics: current.diagnostics
+  }));
   assert.equal(current.availabilityCalls.length, 2);
   assert.equal(current.availabilityCalls[1].checkIn, "2026-07-25");
-  assert.equal(current.availabilityCalls[1].roomType, "room_double");
+  assert.equal(current.availabilityCalls[1].roomType, "room_double", JSON.stringify({
+    query: current.availabilityCalls[1],
+    state: followUp.state,
+    diagnostics: current.diagnostics.filter((item) => item.eventId === "room-stay-follow-up")
+  }));
 }
 
 async function testRelativeDatesAndBookingStayStable() {
@@ -321,32 +378,35 @@ async function testRelativeDatesAndBookingStayStable() {
   ]) {
     const current = await processOne(plannerOutput([
       task("availability", `${label}-availability`, {
-        sourceText: "相對日期房況",
+        sourceText: `${rawText}有房嗎`,
         rawText: ""
       })
     ], {
       rawText,
-      kind: "relative"
-    }), "相對日期房況", label);
-    assert.equal(current.result.finalDecision.type, "reply");
+      kind: "relative",
+      nights: 1
+    }), `${rawText}有房嗎？`, label);
+    assert.equal(current.result.finalDecision.action, "reply");
     assert.equal(current.availabilityCalls.length, 1);
     assert.equal(current.availabilityCalls[0].checkIn, checkIn);
   }
 
   const booking = await processOne(plannerOutput([
     task("availability", "booking-feasibility", {
-      sourceText: "預訂可行性房況問題",
+      sourceText: "7/25雙人房2位有房嗎",
       rawText: "雙人房",
-      category: "room"
+      category: "room",
+      canonicalCandidate: "room_double"
     })
   ], {
     rawText: "7/25",
     kind: "absolute",
     checkInCandidate: "2026-07-25",
+    nights: 1,
     roomId: "room_double",
     guests: 2
-  }), "預訂可行性房況問題", "booking-feasibility");
-  assert.equal(booking.result.finalDecision.type, "reply");
+  }), "7/25雙人房2位有房嗎？", "booking-feasibility");
+  assert.equal(booking.result.finalDecision.action, "reply");
   assert.equal(booking.availabilityCalls.length, 1);
   assert.equal(booking.availabilityCalls[0].checkIn, "2026-07-25");
   assert.equal(booking.availabilityCalls[0].roomType, "room_double");
@@ -355,7 +415,7 @@ async function testRelativeDatesAndBookingStayStable() {
 (async () => {
   await testAcknowledgementContradictions();
   await testAcknowledgementWithSubstantiveQuestion();
-  await testMislabeledRelativeDateIsCanonicalAmbiguity();
+  await testMislabeledRelativeDateUsesCanonicalGrammar();
   await testInvalidCurrentDateCannotReusePreviousStay();
   await testNoDateRoomFollowUpCanReusePreviousStay();
   await testRelativeDatesAndBookingStayStable();
