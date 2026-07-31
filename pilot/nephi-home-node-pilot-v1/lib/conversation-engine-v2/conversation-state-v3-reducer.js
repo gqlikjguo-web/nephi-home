@@ -199,10 +199,12 @@ function suppliedSlotFields(task) {
   const stay = task && task.stayCandidate || {};
   const entity = task && task.entity || {};
   const supplied = new Set();
-  if (stay.checkInCandidate) supplied.add("checkIn");
-  if (stay.checkOutCandidate || (
-    stay.checkInCandidate && Number.isInteger(stay.nightsCandidate)
-  )) supplied.add("checkOut");
+  if (stay.checkInCandidate || (
+    stay.dateExpression && stay.dateExpression.rawText
+  )) supplied.add("checkIn");
+  if (stay.checkOutCandidate || Number.isInteger(stay.nightsCandidate)) {
+    supplied.add("checkOut");
+  }
   if (Number.isInteger(stay.guestCountCandidate)) {
     supplied.add("guestCount");
   }
@@ -255,6 +257,8 @@ function isSlotOnlyLodgingTurn(task) {
     || stay.checkOutCandidate
     || stay.dateExpression && stay.dateExpression.rawText
   );
+  const hasNights = Number.isInteger(stay.nightsCandidate);
+  const hasStandaloneNights = hasNights && !hasDate;
   const hasGuests = Number.isInteger(stay.guestCountCandidate);
   const hasProduct = Boolean(
     entity.canonicalCandidate
@@ -264,13 +268,22 @@ function isSlotOnlyLodgingTurn(task) {
     entity.canonicalCandidate
     && !["room", "bundle"].includes(entity.category)
   );
-  if (hasOtherEntity || !hasDate && !hasGuests && !hasProduct) return false;
-  if (hasProduct) return false;
+  if (hasOtherEntity) return false;
+  const suppliedSlotKinds = [hasDate, hasStandaloneNights, hasGuests, hasProduct]
+    .filter(Boolean).length;
+  if (suppliedSlotKinds !== 1) return false;
   if (hasDate) {
+    if (stay.checkOutCandidate || (
+      stay.dateExpression && stay.dateExpression.kind === "range"
+    )) return false;
     return !String(entity.rawText || "").trim()
       && String(task.sourceText || "").trim()
         === String(stay.dateExpression && stay.dateExpression.rawText || "").trim();
   }
+  if (hasStandaloneNights) {
+    return !String(entity.rawText || "").trim();
+  }
+  if (hasProduct) return true;
   return hasGuests
     && !String(entity.rawText || "").trim()
     && isExactGuestCountExpression(
@@ -296,7 +309,13 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
   if (pending.length !== 1) return null;
   const target = pending[0];
   const supplied = suppliedSlotFields(task);
-  if (!target.missingFields.some((field) => supplied.has(field))) return null;
+  const suppliesMissingField = target.missingFields.some(
+    (field) => supplied.has(field)
+  );
+  const suppliesLodgingProduct = supplied.has("productId")
+    && ["availability", "pricing", "available_dates", "room_options", "capacity"]
+      .includes(target.taskType);
+  if (!suppliesMissingField && !suppliesLodgingProduct) return null;
   return {
     ...(relation || {
       candidateIndex: task.candidateIndex,

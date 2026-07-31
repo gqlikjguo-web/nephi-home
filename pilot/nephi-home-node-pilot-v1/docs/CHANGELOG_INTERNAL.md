@@ -182,3 +182,5 @@
 - Normalized ungrounded acknowledgement fragments before execution and preserved catalog-validated current products when V3 continuations reuse approved stay dates.
 - Wired the production property-scoped LINE webhook to record valid receipts separately from observed receipts after binding, signature, JSON, and property validation.
 - Aligned the PostgreSQL valid-webhook RPC with its property-ID contract and enforced existing LINE credential format validation before setup-token redemption.
+- Removed active LINE transport reads of compatibility `result.shouldReply` and `result.replyText`; both registered handlers now consume only the rendered `finalResponse` delivery fields.
+- Restored structural V3 pending arbitration for isolated date, nights, guest-count, and room slots while preserving complete new requests as separate tasks; temporal context now derives check-out from an approved check-in plus current-turn nights inside the sole temporal resolver.

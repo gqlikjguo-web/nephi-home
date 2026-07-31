@@ -178,3 +178,13 @@ Fixtures for these boundaries must bind every claimed date and entity span to th
 Adding provider methods and database columns does not make the production handler call both. Record an admitted webhook observation separately, then update the valid timestamp only after the enabled binding, signature, JSON payload, and bound property have all passed validation. Exercise unknown keys, wrong signatures, and disabled bindings to prove they cannot advance the valid timestamp.
 
 Keep the service argument contract and worker SQL key identical: observed receipts use `webhookKey`, while valid receipts use `propertyId`. A successful RPC returning no row is still a failed state transition and needs an end-to-end persistence assertion. Likewise, defining a credential validator is insufficient unless every setup and admin write path invokes it before encryption or token consumption.
+
+## 2026-08-01 — Compatibility transport fields are not response authority
+
+Coordinator compatibility output may retain a top-level delivery boolean for callers, but an active LINE handler must not use it to infer an action or gate a reply. Both registered transports must read `finalResponse.shouldReply` and `finalResponse.replyText`; `finalDecision` fields are diagnostic and review metadata only. Source contracts must scan the active runtime before the legacy marker so unreachable compatibility code cannot mask a second transport authority.
+
+## 2026-08-01 — Pending recovery fixtures must contain a live V3-compatible task
+
+A legacy pending fixture without a future expiry is already expired when V3 reads it, and an availability fixture that claims guests are required does not match the formal readiness contract. Such fixtures can appear to test arbitration while the runtime actually starts a second task.
+
+Exercise isolated slot recovery with evidence-bound Planner source spans and a capability whose formal readiness genuinely requires the supplied field. The V3 reducer may select the unique pending task structurally; date derivation remains in the temporal resolver. A complete new request must retain its own task identity, and a pure acknowledgement must leave persisted state and Resolver call counts unchanged.
