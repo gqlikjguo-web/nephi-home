@@ -36,7 +36,8 @@ async function resolveSetup(baseUrl, token) {
 }
 
 (async () => {
-  const runtime = "C:\\tmp";
+  const runtime = path.join(__dirname, "../.runtime");
+  fs.mkdirSync(runtime, { recursive: true });
   const temp = fs.mkdtempSync(path.join(runtime, "line-setup-red-"));
   const connection = { kind: "pglite", dataDir: path.join(temp, "db") };
   const lineBindingEnv = {
