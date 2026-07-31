@@ -3,8 +3,6 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { ROOM_COLUMNS } = require("./domain");
-
 function dateKey(date) {
   return date.toISOString().slice(0, 10);
 }
@@ -47,6 +45,31 @@ function mergeSeedMessageLogs(state, seed) {
   });
 }
 
+function propertyInventory(property) {
+  return (property && Array.isArray(property.rooms) ? property.rooms : [])
+    .filter((item) => item && item.id)
+    .map((item) => ({ ...item, id: String(item.id) }));
+}
+
+function bundleInventory(property) {
+  return propertyInventory(property).filter((item) => Array.isArray(item.memberRoomIds) && item.memberRoomIds.length);
+}
+
+function availabilityRow(property, date, status) {
+  return Object.fromEntries([
+    ["date", date],
+    ...propertyInventory(property).map((item) => [item.id, status])
+  ]);
+}
+
+function recomputeBundleAvailability(property, row) {
+  for (const bundle of bundleInventory(property)) {
+    row[bundle.id] = bundle.memberRoomIds.every((roomId) => row[roomId] === "available")
+      ? "available"
+      : "closed";
+  }
+}
+
 function migrateDailyRoomNotes(state) {
   state.dailyRoomNotes = state.dailyRoomNotes || {};
   for (const dates of Object.values(state.dailyRoomNotes)) {
@@ -79,6 +102,7 @@ class JsonFileRepository {
     if (fs.existsSync(this.dataFile)) {
       const state = this.read();
       state.conversationStates = state.conversationStates || {};
+      state.customReplies = state.customReplies || {};
       migrateDailyRoomNotes(state);
       const existingById = Object.fromEntries((state.homestays || []).map((item) => [item.customerId, item]));
       const seedIds = new Set((seed.homestays || []).map((item) => item.customerId));
@@ -110,14 +134,7 @@ class JsonFileRepository {
       dailyRoomNotes[homestay.customerId] = {};
       for (let offset = 0; offset < Number(seed.seedDays || 180); offset += 1) {
         const date = dateKey(addUtcDays(start, offset));
-        availability[homestay.customerId][date] = {
-          date,
-          room301: "available",
-          room302: "available",
-          room401: "available",
-          room402: "available",
-          wholeHouse: "available"
-        };
+        availability[homestay.customerId][date] = availabilityRow(homestay, date, "available");
       }
     }
 
@@ -130,7 +147,8 @@ class JsonFileRepository {
       notes,
       dailyRoomNotes,
       messageLogs: seed.messageLogs || {},
-      conversationStates: {}
+      conversationStates: {},
+      customReplies: {}
     };
     fs.mkdirSync(path.dirname(this.dataFile), { recursive: true });
     this.write(state);
@@ -181,20 +199,50 @@ class JsonFileRepository {
       const nextRoomIds = new Set(input.rooms.map((room) => room.id));
       const removedRoomIds = (homestay.rooms || []).map((room) => room.id).filter((id) => !nextRoomIds.has(id));
       Object.values(state.availability[customerId] || {}).forEach((row) => {
-        removedRoomIds.forEach((roomId) => { row[roomId] = "available"; });
-        if (removedRoomIds.length) {
-          row.wholeHouse = ROOM_COLUMNS.slice(0, 4).every((roomId) => row[roomId] === "available")
-            ? "available"
-            : "closed";
-        }
+        removedRoomIds.forEach((roomId) => { delete row[roomId]; });
+        if (removedRoomIds.length) recomputeBundleAvailability(input, row);
       });
       homestay.name = input.name;
       homestay.rooms = input.rooms.map((room) => ({ ...room }));
       homestay.safeFacts = { ...input.safeFacts };
+      if (Object.hasOwn(input, "propertyFacts")) homestay.propertyFacts = JSON.parse(JSON.stringify(input.propertyFacts || []));
       if (input.businessProfile) homestay.businessProfile = { ...input.businessProfile };
       if (Object.hasOwn(input, "lineUrl")) homestay.lineUrl = input.lineUrl;
       homestay.updatedAt = this.now().toISOString();
       return JSON.parse(JSON.stringify(homestay));
+    });
+  }
+
+  listCustomReplies(customerId) {
+    return JSON.parse(JSON.stringify((this.read().customReplies || {})[customerId] || []));
+  }
+
+  createCustomReply(input) {
+    return this.mutate((state) => {
+      state.customReplies = state.customReplies || {};
+      state.customReplies[input.propertyId] = state.customReplies[input.propertyId] || [];
+      state.customReplies[input.propertyId].push(JSON.parse(JSON.stringify(input)));
+      return JSON.parse(JSON.stringify(input));
+    });
+  }
+
+  updateCustomReply(propertyId, ruleId, input) {
+    return this.mutate((state) => {
+      const items = (state.customReplies || {})[propertyId] || [];
+      const index = items.findIndex((item) => item.ruleId === ruleId);
+      if (index < 0) return null;
+      items[index] = JSON.parse(JSON.stringify(input));
+      return JSON.parse(JSON.stringify(items[index]));
+    });
+  }
+
+  removeCustomReply(propertyId, ruleId) {
+    return this.mutate((state) => {
+      const items = (state.customReplies || {})[propertyId] || [];
+      const index = items.findIndex((item) => item.ruleId === ruleId);
+      if (index < 0) return false;
+      items.splice(index, 1);
+      return true;
     });
   }
 
@@ -223,10 +271,7 @@ class JsonFileRepository {
         start.setUTCHours(0, 0, 0, 0);
         for (let offset = 0; offset < Number(seedDays || 240); offset += 1) {
           const date = dateKey(addUtcDays(start, offset));
-          state.availability[input.customerId][date] = Object.fromEntries([
-            ["date", date],
-            ...ROOM_COLUMNS.map((roomId) => [roomId, "closed"])
-          ]);
+          state.availability[input.customerId][date] = availabilityRow(homestay, date, "closed");
         }
       }
       return { created, homestay: JSON.parse(JSON.stringify(homestay)) };
@@ -244,21 +289,16 @@ class JsonFileRepository {
   setAvailabilityDay(customerId, date, roomId, status) {
     return this.mutate((state) => {
       const rows = state.availability[customerId];
-      const row = rows[date] || {
-        date,
-        room301: "available",
-        room302: "available",
-        room401: "available",
-        room402: "available",
-        wholeHouse: "available"
-      };
-      if (roomId === "wholeHouse") {
-        ROOM_COLUMNS.forEach((column) => { row[column] = status; });
+      const property = (state.homestays || []).find((item) => item.customerId === customerId);
+      const inventory = propertyInventory(property).find((item) => item.id === roomId);
+      if (!inventory) throw new Error("invalid inventory");
+      const row = rows[date] || availabilityRow(property, date, "available");
+      if (Array.isArray(inventory.memberRoomIds) && inventory.memberRoomIds.length) {
+        row[roomId] = status;
+        for (const memberRoomId of inventory.memberRoomIds) row[memberRoomId] = status;
       } else {
         row[roomId] = status;
-        row.wholeHouse = ROOM_COLUMNS.slice(0, 4).every((column) => row[column] === "available")
-          ? "available"
-          : "closed";
+        recomputeBundleAvailability(property, row);
       }
       rows[date] = row;
       return { ...row };
@@ -560,4 +600,4 @@ class JsonFileRepository {
   }
 }
 
-module.exports = { JsonFileRepository, ROOM_COLUMNS };
+module.exports = { JsonFileRepository };

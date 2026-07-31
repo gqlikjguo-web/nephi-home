@@ -11,6 +11,7 @@ function toProperty(homestay) {
     displayName: homestay.name,
     rooms: (homestay.rooms || []).map(normalizeRoomRecord),
     commonAnswers: homestay.safeFacts || {},
+    propertyFacts: homestay.propertyFacts || [],
     pricing: homestay.pricing || {},
     faqs: homestay.faqs || [],
     humanHandoffSituations: homestay.humanHandoffSituations || [],
@@ -48,6 +49,17 @@ class JsonCustomerSettingsProvider extends CustomerSettingsProvider {
     });
     return toProperty(updated);
   }
+  updatePropertyFacts(propertyId, propertyFacts) {
+    const current = this.repository.getHomestay(propertyId);
+    if (!current) return null;
+    const updated = this.repository.updateHomestay(propertyId, {
+      name: current.name,
+      rooms: current.rooms || [],
+      safeFacts: current.safeFacts || {},
+      propertyFacts
+    });
+    return toProperty(updated);
+  }
   updateRoomPricingBatch(propertyId, items) {
     const homestay = this.repository.getHomestay(propertyId);
     if (!homestay) throw new Error("room not found");
@@ -71,6 +83,14 @@ class JsonPersistenceProvider extends PersistenceProvider {
   constructor(repository) { super(); this.repository = repository; }
 }
 
+class JsonCustomRepliesProvider {
+  constructor(repository) { this.repository = repository; }
+  list(propertyId) { return this.repository.listCustomReplies(propertyId); }
+  create(input) { return this.repository.createCustomReply(input); }
+  update(propertyId, ruleId, input) { return this.repository.updateCustomReply(propertyId, ruleId, input); }
+  remove(propertyId, ruleId) { return this.repository.removeCustomReply(propertyId, ruleId); }
+}
+
 [
   "listGuests", "createGuest", "updateGuest", "getGuest", "findGuestByLineUserId",
   "listNotes", "addNote", "updateNote", "listMessageLogs", "listRecentMessages", "findMessageByEventId",
@@ -85,9 +105,11 @@ class JsonPersistenceProvider extends PersistenceProvider {
 function createJsonProviders(options) {
   const repository = new JsonFileRepository(options);
   return {
+    kind: "json",
     customerSettings: new JsonCustomerSettingsProvider(repository),
     availability: new JsonAvailabilityProvider(repository),
-    persistence: new JsonPersistenceProvider(repository)
+    persistence: new JsonPersistenceProvider(repository),
+    customReplies: new JsonCustomRepliesProvider(repository)
   };
 }
 
@@ -95,5 +117,6 @@ module.exports = {
   JsonCustomerSettingsProvider,
   JsonAvailabilityProvider,
   JsonPersistenceProvider,
+  JsonCustomRepliesProvider,
   createJsonProviders
 };

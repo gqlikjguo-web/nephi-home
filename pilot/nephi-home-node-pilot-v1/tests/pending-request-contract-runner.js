@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
-const { createPendingRequest, resumePendingRequest } = require("../lib/conversation-engine-v2/pending-request");
+const { createPendingRequest, pendingFromResults } = require("../lib/conversation-engine-v2/pending-request");
 
 const property = {
   propertyId: "pending_contract_property",
@@ -17,6 +17,7 @@ const property = {
 
 function availabilityTask(overrides = {}) {
   return {
+    candidateIndex: Number.isInteger(overrides.candidateIndex) ? overrides.candidateIndex : 0,
     taskId: overrides.taskId || "availability",
     type: overrides.type || "availability",
     sourceText: overrides.sourceText || "住宿需求",
@@ -48,6 +49,21 @@ function plan(tasks, options = {}) {
     needsHuman: false,
     shouldIgnore: Boolean(options.shouldIgnore),
     reason: options.reason || "pending_contract_test"
+  };
+}
+
+function withExplicitRelations(output, sourceEvents, contextSnapshot) {
+  const source = sourceEvents[0];
+  const relationKind = output.discourse.relation === "answer_clarification" ? "supplement_existing" : "new_request";
+  return {
+    ...output,
+    tasks: output.tasks.map((item, candidateIndex) => ({ ...item, candidateIndex })),
+    contextRelationCandidates: output.tasks.map((_item, candidateIndex) => ({
+      candidateIndex,
+      kind: relationKind,
+      candidateRequestCycleRefs: relationKind === "new_request" ? [] : [contextSnapshot.cycles[0].requestCycleId],
+      evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
+    }))
   };
 }
 
@@ -91,7 +107,7 @@ async function main() {
   const calls = { availability: 0, availableDates: 0 };
   const diagnostics = [];
   const engine = new ConversationEngineV2({
-    planner: { classify: async () => plannerOutputs.shift() },
+    planner: { classify: async ({ sourceEvents, contextSnapshot }) => withExplicitRelations(plannerOutputs.shift(), sourceEvents, contextSnapshot) },
     persistence,
     getProperty: () => property,
     availabilityResolver: (query) => {
@@ -109,22 +125,24 @@ async function main() {
 
   const first = await engine.process(input("pending-first", "還有房嗎"));
   assert.equal(first.taskResults[0].status, "needs_clarification");
-  assert.equal(first.state.pendingRequest.version, 1);
-  assert.equal(first.state.pendingRequest.capability, "availability");
-  assert.deepEqual(first.state.pendingRequest.missingFields, ["stay.checkIn"]);
-  assert.equal(first.state.pendingRequest.clarificationTarget, "stay.checkIn");
-  assert.equal(first.state.pendingRequest.tasks[0].type, "availability");
-  assert.equal(Object.hasOwn(first.state.pendingRequest, "replyText"), false);
-  assert.equal(JSON.stringify(first.state.pendingRequest).includes("facts"), false);
+  const firstPending = first.state.tasks[0];
+  assert.equal(first.state.schemaVersion, 3);
+  assert.equal(firstPending.taskId, "availability");
+  assert.equal(firstPending.taskType, "availability");
+  assert.deepEqual(firstPending.missingFields, ["checkIn", "checkOut"]);
+  assert.equal(firstPending.status, "pending");
+  assert.equal(Object.hasOwn(first.state, "pendingRequests"), false);
+  assert.equal(Object.hasOwn(first.state, "requestCycles"), false);
+  assert.equal(JSON.stringify(firstPending).includes("facts"), false);
 
   const second = await engine.process(input("pending-second", "今天"));
-  assert.ok(diagnostics.filter((entry) => entry.stage === "pending_request").some((entry) => entry.reasonCode === "pending_missing_fields_matched"), "a validated missing date must be recognized before execution");
-  assert.equal(second.state.conditions.stay.checkIn, "2026-07-23", "the validated date must reach the Engine state before pending execution");
+  assert.ok(diagnostics.filter((entry) => entry.stage === "pending_request").some((entry) => entry.action === "resumed"), "the V3 reducer must resume the pending request");
+  assert.equal(second.state.tasks.find((item) => item.taskId === firstPending.taskId).checkIn, "2026-07-23", "the validated date must reach V3 state before pending execution");
   assert.equal(calls.availability, 1, "the original availability resolver must run after the missing date is supplied");
   assert.equal(calls.availableDates, 0, "a date-only continuation must not become available_dates");
   assert.equal(second.taskResults[0].type, "availability");
   assert.equal(second.taskResults[0].status, "answered");
-  assert.equal(second.state.pendingRequest, null, "the pending request must clear after execution");
+  assert.equal(second.state.tasks.find((item) => item.taskId === firstPending.taskId).status, "answered", "the pending request must become answered after execution");
 
   const pending = createPendingRequest({
     tasks: [availabilityTask({ entity: { category: "room", rawText: "雙人房", canonicalCandidate: "room_double", confidence: 0.95 } })],
@@ -138,23 +156,17 @@ async function main() {
   assert.deepEqual(pending.missingFields, ["stay.nights", "stay.guests", "inventory.entityId"]);
   assert.equal(Object.hasOwn(pending, "resolverResult"), false);
 
-  for (const [field, operation] of [
-    ["stay.nights", { field: "stay.nightsCandidate", operation: "set", value: 2, sourceText: "supplement" }],
-    ["stay.guests", { field: "stay.guestCountCandidate", operation: "set", value: 4, sourceText: "supplement" }],
-    ["inventory.entityId", { field: "inventory.entityId", operation: "set", value: "room_double", sourceText: "supplement" }]
-  ]) {
-    const item = createPendingRequest({ tasks: [availabilityTask()], conditions: { stay: {}, inventory: {} }, missingFields: [field], clarificationTarget: field, scope: { eventId: `missing-${field}`, now: "2026-07-23T02:00:00.000Z" } });
-    const merged = resumePendingRequest(plan([availabilityTask({ taskId: "continuation" })], { relation: "answer_clarification", stateOperations: [operation] }), item);
-    assert.equal(merged.resumed, true, `${field} must resume the canonical pending capability`);
-    assert.equal(merged.plannerOutput.tasks[0].type, "availability");
-    assert.ok(merged.plannerOutput.stateOperations.some((entry) => entry.field === operation.field));
-  }
+  assert.equal(Object.hasOwn(pending, "resumed"), false, "pending data carries identity and scope only; it does not choose a continuation");
 
-  const replacement = resumePendingRequest(plan([availabilityTask({ taskId: "new-complete" })], { relation: "new_request", checkInCandidate: "2026-07-30", nightsCandidate: 1 }), pending);
-  assert.equal(replacement.resumed, false, "an explicit complete new request replaces rather than merges the pending request");
-  assert.equal(replacement.reason, "explicit_new_request");
-  const explicitRange = resumePendingRequest(plan([availabilityTask({ taskId: "range", type: "available_dates" })], { relation: "new_request" }), null);
-  assert.equal(explicitRange.plannerOutput.tasks[0].type, "available_dates", "available_dates remains available for an explicit standalone range search");
+  const newlyCreatedOnly = pendingFromResults({
+    plannerOutput: plan([availabilityTask({ taskId: "new-pending" })], { missingInformation: ["stay.guests"] }),
+    taskResults: [{ taskId: "new-pending", status: "needs_clarification", missingInputs: ["stay.guests"] }],
+    conditions: pending.conditions,
+    scope: { pendingRequestId: "new-pending-id", requestCycleId: "reducer-approved-cycle", eventId: "new-event", now: "2026-07-23T02:00:00.000Z", previousPendingRequest: pending }
+  });
+  assert.equal(newlyCreatedOnly.pendingRequestId, "new-pending-id");
+  assert.equal(newlyCreatedOnly.requestCycleId, "reducer-approved-cycle");
+  assert.deepEqual(newlyCreatedOnly.tasks.map((task) => task.taskId), ["new-pending"], "pendingFromResults may create only the supplied task result; it cannot select an older pending request");
 
   const acknowledgement = plan([], { relation: "continue", shouldIgnore: true });
   const acknowledgementSnapshot = JSON.parse(JSON.stringify(acknowledgement));

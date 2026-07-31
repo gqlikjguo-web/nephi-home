@@ -1,0 +1,38 @@
+name: codex-integrity
+
+on:
+  push:
+    branches: ["codex/**"]
+  pull_request:
+
+jobs:
+  verify-codex-integrity:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pilot/nephi-home-node-pilot-v1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: pilot/nephi-home-node-pilot-v1/package-lock.json
+      - run: npm ci
+      - run: npm run verify:codex-integrity
+      - run: node tests/verify-codex-integrity-runner.js
+      - run: node tests/test-only-conversation-acceptance-api-runner.js
+      - run: node tests/planner-boundary-contract-runner.js
+      - run: node tests/canonical-request-contract-runner.js
+      - run: node tests/conversation-state-v3-runtime-reducer-runner.js
+      - run: node tests/planner-failure-safety-runner.js
+      - run: node tests/planner-semantic-contract-runner.js
+      - run: node tests/v2-runtime-uniqueness-runner.js
+      - run: node tests/final-decision-contract-runner.js
+      - run: node tests/pending-arbitration-contract-runner.js
+      - run: node tests/dialogue-temporal-state-contract-runner.js
+      - run: node tests/relative-date-availability-runner.js
+      - run: node tests/property-line-binding-runner.js
+      - run: node tests/property-line-binding-postgres-webhook-runner.js
+      - run: node tests/property-line-setup-runner.js
+      - run: node tests/postgres-worker-smoke-runner.js

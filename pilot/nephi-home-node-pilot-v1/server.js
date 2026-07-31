@@ -18,10 +18,23 @@ const { renderPublicHtml } = require("./lib/public-brand-html");
 const { normalizeRoomRecord, normalizeRoomHighlights, characterCount } = require("./lib/room-data");
 const { providedAmenities } = require("./lib/bundle-entertainment");
 const { createLineBindingService } = require("./lib/line-binding-service");
+const { createLineSetupService } = require("./lib/line-setup-service");
+const { CustomReplyError, createCustomReplyService } = require("./lib/custom-reply-rules");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const TEST_LINE_WEBHOOK_ROUTE = "/api/test-line/webhook";
+const SAFE_PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
+const SAFE_PLANNER_ERROR_CODES = new Set(["planner_authentication_error", "planner_model_not_found", "planner_rate_limit", "planner_provider_error", "planner_http_error", "planner_timeout", "planner_parse_error", "planner_empty_response", "planner_structured_output_error", "planner_network_error", "planner_configuration_error", "planner_unknown_error"]);
+const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "unknown"]);
+const SAFE_PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
+const SAFE_CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
+const SAFE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function safeDiagnosticLabel(value, fallback, maxLength) {
+  const text = String(value || "");
+  return /^[A-Za-z0-9._:-]+$/.test(text) ? text.slice(0, maxLength) : fallback;
+}
 
 function safePlannerTraceTask(task) {
   return {
@@ -35,6 +48,50 @@ function safePlannerTraceTask(task) {
   };
 }
 
+function safeContextValidationReason(value) {
+  const text = String(value || "");
+  return /^(?:contextRelationCandidates(?:\.\d+(?:\.(?:candidateIndex|candidateRequestCycleRefs))?)?|tasks\.\d+\.(?:candidateIndex|contextRelationCandidate))$/.test(text) ? text : "";
+}
+
+function safeDiagnosticCount(value) {
+  const count = Number(value);
+  return Number.isInteger(count) && count >= 0 ? count : 0;
+}
+
+function safePlannerErrorCategory(value, fallback = "unknown") {
+  return SAFE_PLANNER_ERROR_CATEGORIES.has(value) ? value : fallback;
+}
+
+function safePlannerAttemptTrace(attempt = {}) {
+  const attemptNumber = Number(attempt.attemptNumber);
+  const durationMs = Number(attempt.durationMs);
+  const timeoutMs = Number(attempt.timeoutMs);
+  const httpStatus = Number(attempt.httpStatus);
+  const startedAt = new Date(String(attempt.startedAt || ""));
+  const completedAt = new Date(String(attempt.completedAt || ""));
+  const clientRequestId = String(attempt.clientRequestId || "");
+  const errorCategory = String(attempt.errorCategory || "");
+  return {
+    attemptNumber: Number.isInteger(attemptNumber) && attemptNumber >= 1 ? Math.min(attemptNumber, 2) : 1,
+    startedAt: Number.isFinite(startedAt.getTime()) ? startedAt.toISOString() : "",
+    completedAt: Number.isFinite(completedAt.getTime()) ? completedAt.toISOString() : "",
+    durationMs: Number.isFinite(durationMs) && durationMs >= 0 ? Math.round(durationMs) : 0,
+    timeoutMs: Number.isFinite(timeoutMs) && timeoutMs >= 0 ? Math.min(Math.round(timeoutMs), 120000) : 0,
+    clientRequestId: SAFE_UUID_PATTERN.test(clientRequestId) ? clientRequestId : "",
+    providerRequestId: safeDiagnosticLabel(attempt.providerRequestId, "", 200),
+    timeout: Boolean(attempt.timeout),
+    retryable: Boolean(attempt.retryable),
+    errorCategory: SAFE_PLANNER_ATTEMPT_ERROR_CATEGORIES.has(errorCategory) ? errorCategory : "unknown",
+    httpStatus: Number.isInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599 ? httpStatus : 0,
+    responseBodyPresent: Boolean(attempt.responseBodyPresent),
+    parsedOutputPresent: Boolean(attempt.parsedOutputPresent)
+  };
+}
+
+function safePlannerAttempts(value) {
+  return (Array.isArray(value) ? value : []).slice(0, 2).map(safePlannerAttemptTrace);
+}
+
 function formatSafeTestOnlyConversationTrace(details = {}) {
   const base = { scope: "conversation-engine-v2", traceId: String(details.traceId || ""), propertyId: String(details.propertyId || ""), stage: String(details.stage || "") };
   if (details.stage === "property_catalog") {
@@ -46,72 +103,108 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       urlValidation: String(location.urlValidation || "fail")
     } };
   }
-  if (details.stage === "planner") return {
-    ...base,
-    parserSucceeded: Boolean(details.parserSucceeded),
-    taskCount: Number(details.taskCount || 0),
-    discourse: details.discourse || null,
-    shouldIgnore: Boolean(details.shouldIgnore),
-    missingInformation: (details.missingInformation || []).map(String),
-    dateExpression: {
-      rawTextPresent: Boolean(details.dateExpression && details.dateExpression.rawTextPresent),
-      kind: String(details.dateExpression && details.dateExpression.kind || "none").slice(0, 40),
-      anchor: String(details.dateExpression && details.dateExpression.anchor || "none").slice(0, 40)
-    },
-    dateCandidates: {
-      checkIn: details.candidates && details.candidates.checkIn || null,
-      checkOut: details.candidates && details.candidates.checkOut || null,
-      nights: details.candidates && details.candidates.nights || null,
-      guests: details.candidates && details.candidates.guests || null
-    },
-    tasks: (details.tasks || []).map(safePlannerTraceTask)
-  };
+  if (details.stage === "planner") {
+    const providerAttempts = safePlannerAttempts(details.providerAttempts);
+    return {
+      ...base,
+      parserSucceeded: Boolean(details.parserSucceeded),
+      taskCount: Number(details.taskCount || 0),
+      discourse: details.discourse || null,
+      shouldIgnore: Boolean(details.shouldIgnore),
+      missingInformation: (details.missingInformation || []).map(String),
+      tasks: (details.tasks || []).map(safePlannerTraceTask),
+      ...(providerAttempts.length ? {
+        providerAttemptCount: providerAttempts.length,
+        firstAttemptErrorCategory: details.retryPerformed === true ? safePlannerErrorCategory(details.firstAttemptErrorCategory) : "",
+        finalErrorCategory: details.retrySucceeded === true || details.retryPerformed !== true ? "" : safePlannerErrorCategory(details.finalErrorCategory),
+        retryPerformed: Boolean(details.retryPerformed),
+        retrySucceeded: Boolean(details.retrySucceeded),
+        providerAttempts
+      } : {})
+    };
+  }
+  if (details.stage === "planner_error") {
+    const status = Number(details.httpStatus);
+    return {
+      ...base,
+      errorName: SAFE_PLANNER_ERROR_NAMES.has(details.errorName) ? details.errorName : "Error",
+      errorCode: SAFE_PLANNER_ERROR_CODES.has(details.errorCode) ? details.errorCode : "planner_unknown_error",
+      httpStatus: Number.isInteger(status) && status >= 100 && status <= 599 ? status : 0,
+      timeout: Boolean(details.timeout),
+      errorCategory: SAFE_PLANNER_ERROR_CATEGORIES.has(details.errorCategory) ? details.errorCategory : "unknown",
+      model: safeDiagnosticLabel(details.model, "", 120),
+      provider: safeDiagnosticLabel(details.provider, "unknown", 40),
+      providerErrorType: safeDiagnosticLabel(details.providerErrorType, "", 120),
+      providerErrorCode: safeDiagnosticLabel(details.providerErrorCode, "", 120),
+      providerErrorParam: safeDiagnosticLabel(details.providerErrorParam, "", 200),
+      providerAttemptCount: Math.min(safeDiagnosticCount(details.providerAttemptCount), 2),
+      firstAttemptErrorCategory: safePlannerErrorCategory(details.firstAttemptErrorCategory, safePlannerErrorCategory(details.errorCategory)),
+      finalErrorCategory: safePlannerErrorCategory(details.finalErrorCategory, safePlannerErrorCategory(details.errorCategory)),
+      retryPerformed: Boolean(details.retryPerformed),
+      retrySucceeded: Boolean(details.retrySucceeded),
+      retryable: Boolean(details.retryable),
+      responseBodyPresent: Boolean(details.responseBodyPresent),
+      parsedOutputPresent: Boolean(details.parsedOutputPresent),
+      providerAttempts: safePlannerAttempts(details.providerAttempts)
+    };
+  }
   if (details.stage === "validation") return {
     ...base,
     acceptedTasks: (details.acceptedTasks || []).map(safePlannerTraceTask),
     rejectedTasks: (details.rejectedTasks || []).map((task) => ({ ...safePlannerTraceTask(task), reasons: (task.reasons || []).map(String) })),
     rejectionReasons: (details.rejectionReasons || []).map(String),
-    finalTasks: (details.finalTasks || []).map(safePlannerTraceTask)
+    finalTasks: (details.finalTasks || []).map(safePlannerTraceTask),
+    ...(details.errorCategory === "local_contract_failure" ? { errorCategory: "local_contract_failure" } : {})
   };
+  if (details.stage === "context_validation") return {
+    ...base,
+    rejectionReasons: (details.rejectionReasons || []).map(safeContextValidationReason).filter(Boolean),
+    candidates: (details.candidates || []).map((candidate) => ({
+      candidateIndex: Number.isInteger(candidate && candidate.candidateIndex) && candidate.candidateIndex >= 0 ? candidate.candidateIndex : -1,
+      relationKind: SAFE_CONTEXT_RELATION_KINDS.has(candidate && candidate.relationKind) ? candidate.relationKind : "",
+      candidateRequestCycleRefCount: safeDiagnosticCount(candidate && candidate.candidateRequestCycleRefCount),
+      evidenceRefCount: safeDiagnosticCount(candidate && candidate.evidenceRefCount),
+      evidenceSourceMatches: (candidate && Array.isArray(candidate.evidenceSourceMatches) ? candidate.evidenceSourceMatches : []).map(Boolean)
+    }))
+  };
+  if (details.stage === "canonical_request") return {
+    ...base,
+    items: (details.items || []).map((item) => ({
+      taskId: String(item && item.taskId || ""),
+      capability: String(item && item.capability || ""),
+      canonicalEntity: {
+        category: String(item && item.canonicalEntity && item.canonicalEntity.category || ""),
+        canonicalId: String(item && item.canonicalEntity && item.canonicalEntity.canonicalId || ""),
+        status: String(item && item.canonicalEntity && item.canonicalEntity.status || "")
+      },
+      detailIntent: String(item && item.detailIntent || ""),
+      temporalState: {
+        resolutionStatus: String(item && item.temporalState && item.temporalState.resolutionStatus || ""),
+        checkIn: String(item && item.temporalState && item.temporalState.checkIn || ""),
+        checkOut: String(item && item.temporalState && item.temporalState.checkOut || ""),
+        nights: Number.isInteger(item && item.temporalState && item.temporalState.nights)
+          ? item.temporalState.nights
+          : null,
+        timezone: String(item && item.temporalState && item.temporalState.timezone || "")
+      },
+      stayDependency: item && item.stayDependency === false
+        ? false
+        : String(item && item.stayDependency || ""),
+      requiredFields: (item && Array.isArray(item.requiredFields) ? item.requiredFields : []).map(String),
+      resolverId: String(item && item.resolverId || ""),
+      riskLevel: String(item && item.riskLevel || ""),
+      responseMode: String(item && item.responseMode || ""),
+      evidenceRefCount: safeDiagnosticCount(item && item.evidenceRefs && item.evidenceRefs.length)
+    }))
+  };
+  if (details.stage === "context_execution") return { ...base, items: (details.items || []).map((item) => ({ taskId: String(item.taskId || ""), reasonCode: String(item.reasonCode || ""), contextTaskId: String(item.contextTaskId || ""), slotSources: { checkIn: String(item.slotSources && item.slotSources.checkIn || ""), checkOut: String(item.slotSources && item.slotSources.checkOut || ""), product: String(item.slotSources && item.slotSources.product || "") } })) };
+  if (details.stage === "formal_request") return { ...base, items: (details.items || []).map((item) => ({ taskId: String(item.taskId || ""), readiness: String(item.readiness || "") })) };
+  if (details.stage === "query_plan") return { ...base, count: safeDiagnosticCount(details.count), items: (details.items || []).map((item) => ({ taskId: String(item.taskId || ""), capability: String(item.capability || ""), operation: String(item.operation || "") })) };
+  if (details.stage === "state") return { ...base, contextAction: String(details.contextAction || ""), revision: safeDiagnosticCount(details.revision), tasks: (details.tasks || []).map((item) => ({ taskId: String(item.taskId || ""), taskType: String(item.taskType || ""), status: String(item.status || ""), missingFields: (item.missingFields || []).map(String) })) };
   if (details.stage === "executor") return { ...base, results: (details.results || []).map((item) => ({ taskId: item.taskId || "", status: item.status || "", reason: item.reason || "", locationFactProvided: Boolean(item.locationFactProvided), factSource: item.factSource || "" })) };
   if (details.stage === "semantic_contract") return { ...base, inputTasks: (details.inputTasks || []).map(safePlannerTraceTask), outputTasks: (details.outputTasks || []).map(safePlannerTraceTask), shouldIgnore: Boolean(details.shouldIgnore), validationPassed: Boolean(details.validationPassed), semanticValidation: details.semanticValidation || null };
   if (details.stage === "no_reply_gate") return { ...base, shouldIgnore: Boolean(details.shouldIgnore), actionableTaskCount: Number(details.actionableTaskCount || 0), unknownTaskCount: Number(details.unknownTaskCount || 0), gateHit: Boolean(details.gateHit), reasonCode: String(details.reasonCode || "") };
-  if (details.stage === "temporal") return {
-    ...base,
-    operationPaths: (details.operationPaths || []).map(String).slice(0, 30),
-    input: {
-      dateExpression: {
-        rawTextPresent: Boolean(details.input && details.input.dateExpression && details.input.dateExpression.rawTextPresent),
-        kind: String(details.input && details.input.dateExpression && details.input.dateExpression.kind || "none").slice(0, 40),
-        anchor: String(details.input && details.input.dateExpression && details.input.dateExpression.anchor || "none").slice(0, 40)
-      },
-      candidates: {
-        checkIn: details.input && details.input.candidates && details.input.candidates.checkIn || null,
-        checkOut: details.input && details.input.candidates && details.input.candidates.checkOut || null,
-        nights: details.input && details.input.candidates && details.input.candidates.nights || null,
-        guests: details.input && details.input.candidates && details.input.candidates.guests || null
-      }
-    },
-    output: {
-      resolutionStatus: String(details.output && details.output.resolutionStatus || details.resolutionStatus || ""),
-      ambiguity: details.output && details.output.ambiguity || null,
-      checkIn: details.output && details.output.checkIn || null,
-      checkOut: details.output && details.output.checkOut || null,
-      nights: details.output && details.output.nights || null,
-      searchRange: details.output && details.output.searchRange || null
-    }
-  };
-  if (details.stage === "pending_request") return {
-    ...base,
-    action: String(details.action || ""),
-    reasonCode: String(details.reasonCode || ""),
-    capability: String(details.capability || ""),
-    missingFields: (details.missingFields || []).map(String),
-    acceptedFields: (details.acceptedFields || []).map(String),
-    rejectedFields: (details.rejectedFields || []).map(String),
-    remainingMissingFields: (details.remainingMissingFields || []).map(String),
-    candidateTaskTypes: (details.candidateTaskTypes || []).map(String)
-  };
+  if (details.stage === "pending_request") return { ...base, action: String(details.action || ""), reasonCode: String(details.reasonCode || ""), capability: String(details.capability || ""), missingFields: (details.missingFields || []).map(String) };
   if (details.stage === "fallback") return { ...base, reasonCode: String(details.reasonCode || ""), branch: String(details.branch || "") };
   if (details.stage === "final_decision" || details.stage === "line_transport") return { ...base, decision: String(details.decision || ""), reasonCode: String(details.reasonCode || ""), attempted: Boolean(details.attempted), delivered: Boolean(details.delivered) };
   if (["response_plan", "composer", "claim_validator", "line_ready"].includes(details.stage)) return { ...base, sectionCount: details.sectionCount, coveredTaskIds: details.coveredTaskIds || [], missingTaskIds: details.missingTaskIds || [], replyLength: details.replyLength, composerSource: details.composerSource || "", validationResult: details.validationResult || "" };
@@ -138,7 +231,7 @@ function cookieValue(request, name) {
 }
 
 function isAdminDataRoute(pathname) {
-  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname === "/api/property-profile" || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
+  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname === "/api/property-profile" || pathname === "/api/property-facts" || pathname.startsWith("/api/custom-replies") || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
 }
 
 function sendData(response, data, status = 200) {
@@ -217,7 +310,11 @@ function sendStatic(response, relativePath, publicBrand) {
     sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
     return;
   }
-  response.writeHead(200, { "content-type": contentType(filePath), "cache-control": "no-store" });
+  response.writeHead(200, {
+    "content-type": contentType(filePath),
+    "cache-control": "no-store",
+    "referrer-policy": "no-referrer"
+  });
   if (path.extname(filePath).toLowerCase() === ".html") {
     response.end(renderPublicHtml(fs.readFileSync(filePath, "utf8"), publicBrand));
     return;
@@ -317,20 +414,21 @@ function createRequestHandler(service, options = {}) {
   const lineWebhookHandler = options.lineWebhookHandler;
   const sharedLineWebhookHandler = options.sharedLineWebhookHandler;
   const lineBindingService = options.lineBindingService;
+  const lineSetupService = options.lineSetupService;
   const persistence = options.persistence;
   const customerSettings = options.customerSettings;
   const onboarding = options.onboarding;
+  const customReplyService = options.customReplyService;
+  const testOnlyAcceptanceHandler = options.testOnlyAcceptanceHandler;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
   const publicBrand = options.publicBrand || createPublicBrand();
-  const deploymentCommitCandidate = String(options.deploymentCommit || "").trim();
-  const deploymentCommit = /^[0-9a-f]{7,64}$/i.test(deploymentCommitCandidate) ? deploymentCommitCandidate : "";
   return async function handleRequest(request, response) {
     const url = new URL(request.url, "http://127.0.0.1");
     const pathname = url.pathname;
 
     try {
       if (request.method === "GET" && pathname === "/api/health") {
-        return sendData(response, { status: "ready", testOnly: true, commit: deploymentCommit });
+        return sendData(response, { status: "ready", testOnly: true });
       }
       if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
       if (request.method === "POST" && pathname === TEST_LINE_WEBHOOK_ROUTE) {
@@ -341,6 +439,20 @@ function createRequestHandler(service, options = {}) {
           customerId: url.searchParams.get("customerId")
         });
         return sendData(response, result);
+      }
+      if (request.method === "POST" && pathname === "/api/admin/test-only/conversation-acceptance") {
+        if (typeof testOnlyAcceptanceHandler !== "function") return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
+        const token = cookieValue(request, "nephi_admin_session");
+        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        if (!session || !onboarding || !onboarding.isPlatformAdmin(session)) throw new AppError(401, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
+        return sendData(response, await testOnlyAcceptanceHandler(await readJsonBody(request), session));
+      }
+      if (request.method === "DELETE" && pathname === "/api/admin/test-only/conversation-acceptance") {
+        if (typeof testOnlyAcceptanceHandler !== "function") return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
+        const token = cookieValue(request, "nephi_admin_session");
+        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        if (!session || !onboarding || !onboarding.isPlatformAdmin(session)) throw new AppError(401, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
+        return sendData(response, await testOnlyAcceptanceHandler({ ...(await readJsonBody(request)), clear: true }, session));
       }
       const sharedLineWebhookMatch = /^\/api\/line\/webhooks\/([A-Za-z0-9_-]{32,128})$/.exec(pathname);
       if (request.method === "POST" && sharedLineWebhookMatch) {
@@ -355,8 +467,15 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "GET" && pathname === "/") return sendStatic(response, "home.html", publicBrand);
       if (request.method === "GET" && pathname === "/guest") return sendStatic(response, "guest.html", publicBrand);
       if (request.method === "GET" && pathname === "/onboarding") return sendStatic(response, "onboarding.html", publicBrand);
+      if (request.method === "GET" && pathname === "/line/setup") return sendStatic(response, "line-setup.html", publicBrand);
       if (request.method === "GET" && pathname === "/admin/setup") return sendStatic(response, "admin-setup.html", publicBrand);
       if (request.method === "GET" && pathname === "/admin/onboarding") {const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");return sendStatic(response,"admin-onboarding.html",publicBrand);}
+      if (request.method === "GET" && pathname === "/admin/line-connections") {
+        const token = cookieValue(request, "nephi_admin_session");
+        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        if (!session || !onboarding || !onboarding.isPlatformAdmin(session)) throw new AppError(401, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
+        return sendStatic(response, "admin-line-connections.html", publicBrand);
+      }
       if (request.method === "GET" && pathname === "/admin") return sendStatic(response, "admin.html", publicBrand);
       if (request.method === "GET" && pathname.startsWith("/assets/")) return sendStatic(response, pathname.slice(1), publicBrand);
 
@@ -365,23 +484,55 @@ function createRequestHandler(service, options = {}) {
         return sendStatic(response, slugRoute[2] ? "admin.html" : "guest.html", publicBrand);
       }
 
-      if(pathname==="/api/public/onboarding/drafts"&&request.method==="POST"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");return sendData(response,onboarding.createDraft(),201);}
+      if(pathname==="/api/public/onboarding/drafts"&&request.method==="POST"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");throw new AppError(401,"ONBOARDING_INVITE_REQUIRED","請使用平台提供的有效邀請連結");}
+      if(pathname==="/api/public/onboarding/invite"&&request.method==="GET"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");return sendData(response,onboarding.resolveInvitation(url.searchParams.get("token")));}
       if(pathname==="/api/public/onboarding/resume"&&request.method==="GET"){if(!onboarding)throw new AppError(503,"ONBOARDING_NOT_CONFIGURED","業者導入只支援 PostgreSQL");return sendData(response,onboarding.resolveResume(url.searchParams.get("token")));}
       const draftMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)$/.exec(pathname),previewMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/preview$/.exec(pathname),submitMatch=/^\/api\/public\/onboarding\/drafts\/([^/]+)\/submit$/.exec(pathname);const draftToken=request.headers["x-onboarding-draft-token"];
       if(draftMatch&&request.method==="GET")return sendData(response,await onboarding.getDraft(draftMatch[1],draftToken));
       if(draftMatch&&request.method==="PATCH")return sendData(response,await onboarding.saveDraft(draftMatch[1],draftToken,await readJsonBody(request)));
       if(previewMatch&&request.method==="GET")return sendData(response,await onboarding.preview(previewMatch[1],draftToken));
       if(submitMatch&&request.method==="POST")return sendData(response,await onboarding.submit(submitMatch[1],draftToken));
+      if (pathname === "/api/public/line-setup/resolve" && request.method === "POST") {
+        if (!lineSetupService) throw new AppError(503, "LINE_SETUP_NOT_CONFIGURED", "LINE setup is not configured");
+        return sendData(response, lineSetupService.resolve((await readJsonBody(request)).token));
+      }
+      if (pathname === "/api/public/line-setup/redeem" && request.method === "POST") {
+        if (!lineSetupService) throw new AppError(503, "LINE_SETUP_NOT_CONFIGURED", "LINE setup is not configured");
+        return sendData(response, lineSetupService.redeem(await readJsonBody(request)));
+      }
+
+      if (pathname === "/api/admin/line-connections" || pathname === "/api/admin/line-setup-links" || pathname.startsWith("/api/admin/line-setup-links/")) {
+        const token = cookieValue(request, "nephi_admin_session");
+        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        if (!session || !onboarding || !onboarding.isPlatformAdmin(session)) throw new AppError(401, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
+        if (!lineSetupService) throw new AppError(503, "LINE_SETUP_NOT_CONFIGURED", "LINE setup is not configured");
+        if (pathname === "/api/admin/line-connections" && request.method === "GET") {
+          return sendData(response, { items: lineSetupService.propertyStatuses() });
+        }
+        if (pathname === "/api/admin/line-setup-links" && request.method === "GET") {
+          return sendData(response, { items: lineSetupService.list(url.searchParams.get("propertyId")) });
+        }
+        if (pathname === "/api/admin/line-setup-links" && request.method === "POST") {
+          return sendData(response, lineSetupService.create(await readJsonBody(request), session), 201);
+        }
+        const revokeMatch = /^\/api\/admin\/line-setup-links\/([^/]+)\/revoke$/.exec(pathname);
+        if (revokeMatch && request.method === "POST") {
+          return sendData(response, lineSetupService.revoke(decodeURIComponent(revokeMatch[1])));
+        }
+      }
+
       if(pathname==="/api/admin/setup-invitation"&&request.method==="GET")return sendData(response,onboarding.getInvitation(url.searchParams.get("token")));
       if(pathname==="/api/admin/setup"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.redeemInvitation(body.token,body.password));}
 
       if(pathname.startsWith("/api/admin/onboarding/")){
         const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");
+        if(pathname==="/api/admin/onboarding/invitations"&&request.method==="POST"){const body=await readJsonBody(request),created=onboarding.createInvitation(body,session),{inviteToken,...safeCreated}=created;return sendData(response,{...safeCreated,inviteUrl:`${publicBrand.publicBaseUrl}/onboarding?invite=${encodeURIComponent(inviteToken)}`},201);}
         if(pathname==="/api/admin/onboarding/applications"&&request.method==="GET")return sendData(response,{items:onboarding.list().map(x=>({...x,completeness:require("./lib/onboarding-service").completeness(x)}))});
-        if(pathname==="/api/admin/onboarding/properties"&&request.method==="GET")return sendData(response,{items:onboarding.listProperties()});
-        const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reopen-for-changes|reject|approve|resume-link))?$/.exec(pathname);
+        if(pathname==="/api/admin/onboarding/properties"&&request.method==="GET")return sendData(response,{items:onboarding.listProperties(session)});
+        const review=/^\/api\/admin\/onboarding\/applications\/([^/]+)(?:\/(request-changes|reopen-for-changes|reject|approve|resume-link|revoke-invite))?$/.exec(pathname);
         if(review&&request.method==="GET"&&!review[2])return sendData(response,onboarding.get(review[1]));
         if(review&&request.method==="POST"){
+          if(review[2]==="revoke-invite")return sendData(response,onboarding.revokeInvitation(review[1]));
           if(review[2]==="resume-link"){const issued=onboarding.issueResumeLink(review[1]);return sendData(response,{resumeUrl:`${publicBrand.publicBaseUrl}/onboarding?resume=${encodeURIComponent(issued.resumeToken)}`,expiresAt:issued.expiresAt});}
           const body=await readJsonBody(request);
           if(review[2]==="approve"){const approved=onboarding.approve(review[1],body,session);if(approved.approvalMode==="existing")return sendData(response,approved);return sendData(response,{...approved,adminSetupUrl:`${publicBrand.publicBaseUrl}/admin/setup?token=${encodeURIComponent(approved.adminSetupToken)}`});}
@@ -514,6 +665,29 @@ function createRequestHandler(service, options = {}) {
       }
       if (request.method === "GET" && pathname === "/api/property-profile") return sendData(response, service.getPropertyProfile(url.searchParams.get("propertyId") || url.searchParams.get("customerId")));
       if (request.method === "PUT" && pathname === "/api/property-profile") { const body = request.adminBody || await readJsonBody(request); return sendData(response, service.updatePropertyProfile({ ...body, customerId: body.propertyId || body.customerId })); }
+      if (request.method === "GET" && pathname === "/api/property-facts") return sendData(response, service.getPropertyFacts(url.searchParams.get("propertyId") || url.searchParams.get("customerId")));
+      if (request.method === "PUT" && pathname === "/api/property-facts") { const body = request.adminBody || await readJsonBody(request); return sendData(response, service.updatePropertyFacts({ ...body, customerId: body.propertyId || body.customerId })); }
+      if (request.method === "GET" && pathname === "/api/custom-replies") {
+        return sendData(response, customReplyService.list(url.searchParams.get("propertyId") || url.searchParams.get("customerId")));
+      }
+      if (request.method === "POST" && pathname === "/api/custom-replies") {
+        const body = request.adminBody || await readJsonBody(request);
+        return sendData(response, { rule: customReplyService.create(body.propertyId || body.customerId, body) }, 201);
+      }
+      const customReplyMatch = /^\/api\/custom-replies\/([^/]+)(?:\/(enabled))?$/.exec(pathname);
+      if (customReplyMatch && request.method === "PUT" && !customReplyMatch[2]) {
+        const body = request.adminBody || await readJsonBody(request);
+        return sendData(response, { rule: customReplyService.update(body.propertyId || body.customerId, decodeURIComponent(customReplyMatch[1]), body) });
+      }
+      if (customReplyMatch && request.method === "PATCH" && customReplyMatch[2] === "enabled") {
+        const body = request.adminBody || await readJsonBody(request);
+        if (typeof body.enabled !== "boolean") throw new AppError(400, "CUSTOM_REPLY_ENABLED_REQUIRED", "enabled must be boolean");
+        return sendData(response, { rule: customReplyService.setEnabled(body.propertyId || body.customerId, decodeURIComponent(customReplyMatch[1]), body.enabled) });
+      }
+      if (customReplyMatch && request.method === "DELETE" && !customReplyMatch[2]) {
+        const body = request.adminBody || await readJsonBody(request);
+        return sendData(response, { deleted: customReplyService.remove(body.propertyId || body.customerId, decodeURIComponent(customReplyMatch[1])) });
+      }
       if (request.method === "PUT" && pathname === "/api/settings") {
         return sendData(response, { settings: service.updateSettings(request.adminBody || await readJsonBody(request)) });
       }
@@ -664,8 +838,57 @@ function createApp(options = {}) {
   const onboardingEmailNotifier=createOnboardingEmailNotifier({env:options.onboardingEmailEnv||process.env,fetchImpl:options.onboardingEmailFetch||globalThis.fetch,publicBaseUrl:publicBrand.publicBaseUrl});
   const onboarding = createOnboardingService(providers.onboarding,{emailNotifier:onboardingEmailNotifier});
   const lineBindingService = createLineBindingService({ provider: providers.lineBindings, env: options.lineBindingEnv || process.env });
+  const lineSetupService = createLineSetupService({
+    provider: providers.lineBindings,
+    lineBindingService,
+    customerSettings: providers.customerSettings,
+    publicBaseUrl: publicBrand.publicBaseUrl,
+    now
+  });
+  const unsupportedCustomReplyMutation = () => {
+    throw new CustomReplyError(503, "CUSTOM_REPLY_PROVIDER_UNAVAILABLE", "Custom reply storage is unavailable");
+  };
+  const customReplyService = createCustomReplyService({
+    provider: providers.customReplies || {
+      list: () => [],
+      create: unsupportedCustomReplyMutation,
+      update: unsupportedCustomReplyMutation,
+      remove: unsupportedCustomReplyMutation
+    },
+    customerSettings: providers.customerSettings,
+    now
+  });
   const replyClient = options.lineReplyClientFactory || (options.lineReplyFetch && (({ channelAccessToken }) => ({ replyMessageWithHttpInfo: async (body) => { const response = await options.lineReplyFetch("https://api.line.me/v2/bot/message/reply", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${channelAccessToken}` }, body: JSON.stringify(body) }); if (!response.ok) { const error = new Error("line_reply_failed"); error.status = response.status; throw error; } return { httpResponse: { status: response.status } }; } })));
-  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: false, onDiagnostic: logSafeTestOnlyConversationTrace });
+  const testOnlyTransportDiagnostic = typeof options.testOnlyTransportDiagnostic === "function" ? options.testOnlyTransportDiagnostic : null;
+  const emitTransportDiagnostic = (entry) => {
+    logSafeTestOnlyConversationTrace(entry);
+    if (testOnlyTransportDiagnostic) {
+      try { testOnlyTransportDiagnostic(entry); } catch { /* test-only diagnostics must not affect transport */ }
+    }
+  };
+  const acceptanceTraces = new Map();
+  const captureSafeTrace = (entry) => { const safe = formatSafeTestOnlyConversationTrace(entry); logSafeTestOnlyConversationTrace(entry); if (safe.traceId) { const list = acceptanceTraces.get(safe.traceId) || []; list.push(safe); acceptanceTraces.set(safe.traceId, list.slice(-40)); } };
+  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: false, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null });
+  const testOnlyAcceptanceHandler = options.testOnlyAcceptanceEnabled === true && options.testOnlyEnvironment === true
+    ? async (body = {}) => {
+      const customerId = String(body.customerId || body.propertyId || "").trim();
+      const conversationId = String(body.conversationId || "").trim();
+      const messageText = String(body.messageText || "").trim();
+      if (!customerId || !conversationId || (!body.clear && !messageText)) throw new AppError(400, "ACCEPTANCE_INPUT_REQUIRED", "customerId, conversationId and messageText are required");
+      if (!providers.customerSettings.getProperty(customerId)) throw new AppError(404, "UNKNOWN_CUSTOMER_ID", "Unknown test-only customerId");
+      const conversationHash = crypto.createHash("sha256").update(conversationId).digest("hex").slice(0, 32);
+      const channelId = `test-acceptance:${customerId}`;
+      const lineUserId = `test-only-conversation:${conversationHash}`;
+      if (body.clear) return { cleared: Boolean(providers.persistence.deleteConversationState(customerId, channelId, lineUserId)) };
+      const eventId = String(body.eventId || `acceptance-${crypto.randomUUID()}`);
+      const claimed = await providers.persistence.claimMessageEvent(customerId, channelId, eventId, { lineUserId, eventTimestamp: now().toISOString(), guestMessage: messageText, replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
+      if (!claimed.claimed) return { duplicate: true, eventId };
+      const result = await root.engine.process({ customerId, channelId, lineUserId, eventId, eventTimestamp: now().toISOString(), messageText });
+      const trace = acceptanceTraces.get(result.traceId) || [];
+      acceptanceTraces.delete(result.traceId);
+      return { traceId: result.traceId, eventId, finalDecision: { action: result.finalDecision.action, reasonCode: result.finalDecision.reasonCode }, claimValidation: { ok: Boolean(result.claimValidation.ok), errors: result.claimValidation.errors.map(String) }, taskResults: result.taskResults.map((item) => ({ taskId: String(item.taskId || ""), type: String(item.type || ""), status: String(item.status || ""), reason: String(item.reason || "") })), trace };
+    }
+    : null;
   const claimEvent = (input) => providers.persistence.claimMessageEvent(input.customerId, input.channelId, input.eventId, { lineUserId: String(input.lineUserId || ""), eventTimestamp: input.eventTimestamp || "", guestMessage: String(input.messageText || ""), replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
   const updateEventStatus = (customerId, channelId, eventId, patch) => providers.persistence.updateMessageEvent(customerId, channelId, eventId, patch);
   const lineWebhookHandler = async ({ rawBody, signature, customerId }) => {
@@ -679,10 +902,12 @@ function createApp(options = {}) {
       const input = { customerId: id, channelId: String(payload.destination || "line"), lineUserId: String(event.source && event.source.userId || ""), eventId: String(event.webhookEventId || event.message.id || ""), eventTimestamp: event.timestamp || "", messageText: event.message.text || "" };
       if (!(await claimEvent(input)).claimed) continue;
       void root.coordinator.enqueue(input).then(async (result) => {
-        const finalDecision = result.finalDecision;
-        if (!finalDecision || !finalDecision.shouldReply || !result.replyText) { logSafeTestOnlyConversationTrace({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision: finalDecision && finalDecision.type || "no_reply", reasonCode: finalDecision && finalDecision.reasonCode || "engine_final_decision_missing", attempted: false, delivered: false }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
-        try { logSafeTestOnlyConversationTrace({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision: finalDecision.type, reasonCode: finalDecision.reasonCode, attempted: true, delivered: false }); await (replyClient ? replyClient({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: result.replyText }] }); logSafeTestOnlyConversationTrace({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision: finalDecision.type, reasonCode: finalDecision.reasonCode, attempted: true, delivered: true }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" }); }
-        catch (error) { const status = Number(error && (error.status || error.statusCode)); logSafeTestOnlyConversationTrace({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision: finalDecision.type, reasonCode: finalDecision.reasonCode, attempted: true, delivered: false, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); }
+        const decision = String(result.finalDecision && result.finalDecision.action || (result.shouldReply ? "reply" : "no_reply"));
+        const traceTransport = (details) => emitTransportDiagnostic(details);
+        await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired) });
+        if (decision === "no_reply" || !result.shouldReply || !result.replyText) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "engine_should_reply_false", attempted: false, delivered: false }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
+        try { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_attempt", attempted: true, delivered: false }); await (replyClient ? replyClient({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: result.replyText }] }); traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_succeeded", attempted: true, delivered: true }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" }); }
+        catch (error) { const status = Number(error && (error.status || error.statusCode)); traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_failed", attempted: true, delivered: false }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); }
       }).catch(async () => updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
     }
     return { accepted: true };
@@ -693,17 +918,22 @@ function createApp(options = {}) {
     if (!binding) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE webhook is unavailable");
     if (!validateSignature(rawBody, binding.channelSecret, String(signature || ""))) throw new AppError(401, "INVALID_LINE_SIGNATURE", "Invalid LINE signature");
     let payload; try { payload = JSON.parse(rawBody.toString("utf8")); } catch { throw new AppError(400, "INVALID_JSON", "Request body must be valid JSON"); }
+    try {
+      lineBindingService.markWebhookObserved(webhookKey, now().toISOString());
+    } catch (error) {
+      console.error("LINE webhook observation update failed", {
+        code: String(error && error.code || "LINE_WEBHOOK_OBSERVATION_FAILED"),
+        webhookKeyHash: crypto.createHash("sha256").update(webhookKey).digest("hex").slice(0, 16)
+      });
+    }
     const id = binding.propertyId;
     if (!providers.customerSettings.getProperty(id)) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE webhook is unavailable");
     const channelId = `line-binding:${crypto.createHash("sha256").update(binding.webhookKey).digest("hex").slice(0, 24)}`;
-    const messageEvents = (payload.events || []).filter((item) => item && item.type === "message" && item.message && item.message.type === "text" && item.replyToken);
-    if (messageEvents.length) lineBindingService.recordValidWebhook(id);
-    for (const event of messageEvents) {
+    for (const event of (payload.events || []).filter((item) => item && item.type === "message" && item.message && item.message.type === "text" && item.replyToken)) {
       const input = { customerId: id, channelId, lineUserId: String(event.source && event.source.userId || ""), eventId: String(event.webhookEventId || event.message.id || ""), eventTimestamp: event.timestamp || "", messageText: event.message.text || "" };
       if (!(await claimEvent(input)).claimed) continue;
       void root.coordinator.enqueue(input).then(async (result) => {
-        const finalDecision = result.finalDecision;
-        if (!finalDecision || !finalDecision.shouldReply || !result.replyText) return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true });
+        if (!result.shouldReply || !result.replyText) return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true });
         try {
           await (replyClient ? replyClient({ channelAccessToken: binding.channelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: binding.channelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: result.replyText }] });
           await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" });
@@ -715,7 +945,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, deploymentCommit: options.deploymentCommit || process.env.RENDER_GIT_COMMIT }));
+  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, testOnlyAcceptanceHandler, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host })); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
   /* legacy runtime kept below temporarily unreachable during source migration */ {
   const structuredClassifier = Object.hasOwn(options, "structuredClassifier")

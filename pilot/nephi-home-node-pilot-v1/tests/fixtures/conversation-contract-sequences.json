@@ -1,0 +1,2436 @@
+{
+  "schemaVersion": 1,
+  "providerFixture": "conversation-contract-postgres-properties.json",
+  "cases": [
+    {
+      "id": "incident_pricing_then_date",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-pricing"
+          },
+          "turns": [
+            {
+              "message": "請問一晚費用多少呢",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-pricing"
+                    },
+                    "webhookEventId": "evt-pricing-1",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-pricing-1",
+                    "message": {
+                      "id": "msg-pricing-1",
+                      "type": "text",
+                      "quoteToken": "quote-pricing-1",
+                      "text": "請問一晚費用多少呢"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "pricing",
+                    "taskType": "pricing",
+                    "productType": "any",
+                    "sourceText": "請問一晚費用多少呢"
+                  }
+                ]
+              }
+            },
+            {
+              "message": "7/30",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376860000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-pricing"
+                    },
+                    "webhookEventId": "evt-pricing-2",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-pricing-2",
+                    "message": {
+                      "id": "msg-pricing-2",
+                      "type": "text",
+                      "quoteToken": "quote-pricing-2",
+                      "text": "7/30"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "date-slot",
+                    "taskType": "slot_update",
+                    "productType": "any",
+                    "sourceText": "7/30"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:01:00.000Z",
+            "expiresAt": "2026-07-30T02:31:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "pricing",
+                "taskType": "pricing",
+                "productType": "any",
+                "productId": null,
+                "roomTypeId": null,
+                "bundleId": null,
+                "checkIn": "2026-07-30",
+                "checkOut": "2026-07-31",
+                "guestCount": null,
+                "knownFields": [
+                  "productType",
+                  "checkIn",
+                  "checkOut"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:01:00.000Z",
+                "expiresAt": "2026-07-30T02:31:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "pricing",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "pricing"
+            ],
+            "layers": {
+              "planner": "pricing_then_slot_update",
+              "reducer": "date_merged_into_existing_pricing",
+              "readiness": "ready",
+              "canonicalRequest": "pricing_any_2026-07-30",
+              "queryPlan": "pricing_property_alpha",
+              "resolver": "official_property_pricing",
+              "claimValidator": "pass",
+              "finalDecision": "reply",
+              "finalText": "resolver_pricing_facts_only"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "availability_then_date",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-availability-date"
+          },
+          "turns": [
+            {
+              "message": "請問有房嗎",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-availability-date"
+                    },
+                    "webhookEventId": "evt-availability-date-1",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-availability-date-1",
+                    "message": {
+                      "id": "msg-availability-date-1",
+                      "type": "text",
+                      "quoteToken": "quote-availability-date-1",
+                      "text": "請問有房嗎"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "請問有房嗎"
+                  }
+                ]
+              }
+            },
+            {
+              "message": "7/30",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376860000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-availability-date"
+                    },
+                    "webhookEventId": "evt-availability-date-2",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-availability-date-2",
+                    "message": {
+                      "id": "msg-availability-date-2",
+                      "type": "text",
+                      "quoteToken": "quote-availability-date-2",
+                      "text": "7/30"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "date-slot",
+                    "taskType": "slot_update",
+                    "productType": "any",
+                    "sourceText": "7/30"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:01:00.000Z",
+            "expiresAt": "2026-07-30T02:31:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "availability",
+                "taskType": "availability",
+                "productType": "any",
+                "productId": null,
+                "roomTypeId": null,
+                "bundleId": null,
+                "checkIn": "2026-07-30",
+                "checkOut": "2026-07-31",
+                "guestCount": null,
+                "knownFields": [
+                  "productType",
+                  "checkIn",
+                  "checkOut"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:01:00.000Z",
+                "expiresAt": "2026-07-30T02:31:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "availability",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "availability"
+            ],
+            "layers": {
+              "planner": "availability_then_slot_update",
+              "reducer": "date_merged_into_existing_availability",
+              "readiness": "ready",
+              "canonicalRequest": "availability_any_2026-07-30",
+              "queryPlan": "availability_property_alpha",
+              "resolver": "official_property_availability",
+              "claimValidator": "pass",
+              "finalDecision": "reply",
+              "finalText": "resolver_availability_facts_only"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "availability_then_guest_count",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-availability-guests"
+          },
+          "turns": [
+            {
+              "message": "7/30有適合的房嗎",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-availability-guests"
+                    },
+                    "webhookEventId": "evt-availability-guests-1",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-availability-guests-1",
+                    "message": {
+                      "id": "msg-availability-guests-1",
+                      "type": "text",
+                      "quoteToken": "quote-availability-guests-1",
+                      "text": "7/30有適合的房嗎"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "7/30有適合的房嗎"
+                  }
+                ]
+              }
+            },
+            {
+              "message": "4位",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376860000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-availability-guests"
+                    },
+                    "webhookEventId": "evt-availability-guests-2",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-availability-guests-2",
+                    "message": {
+                      "id": "msg-availability-guests-2",
+                      "type": "text",
+                      "quoteToken": "quote-availability-guests-2",
+                      "text": "4位"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "guest-slot",
+                    "taskType": "slot_update",
+                    "productType": "any",
+                    "sourceText": "4位"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:01:00.000Z",
+            "expiresAt": "2026-07-30T02:31:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "availability",
+                "taskType": "availability",
+                "productType": "any",
+                "productId": null,
+                "roomTypeId": null,
+                "bundleId": null,
+                "checkIn": "2026-07-30",
+                "checkOut": "2026-07-31",
+                "guestCount": 4,
+                "knownFields": [
+                  "productType",
+                  "checkIn",
+                  "checkOut",
+                  "guestCount"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:01:00.000Z",
+                "expiresAt": "2026-07-30T02:31:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "availability",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "checkIn",
+                    "checkOut",
+                    "guestCount"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "availability"
+            ],
+            "layers": {
+              "planner": "availability_then_guest_slot",
+              "reducer": "guest_count_merged_into_existing_availability",
+              "readiness": "ready",
+              "canonicalRequest": "availability_any_four_guests",
+              "queryPlan": "availability_property_alpha_four_guests",
+              "resolver": "official_property_availability",
+              "claimValidator": "pass",
+              "finalDecision": "reply",
+              "finalText": "resolver_availability_facts_only"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "bundle_then_date",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-bundle-date"
+          },
+          "turns": [
+            {
+              "message": "想包棟",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-bundle-date"
+                    },
+                    "webhookEventId": "evt-bundle-date-1",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-bundle-date-1",
+                    "message": {
+                      "id": "msg-bundle-date-1",
+                      "type": "text",
+                      "quoteToken": "quote-bundle-date-1",
+                      "text": "想包棟"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "bundle-availability",
+                    "taskType": "availability",
+                    "productType": "bundle",
+                    "sourceText": "想包棟"
+                  }
+                ]
+              }
+            },
+            {
+              "message": "7/30",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376860000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-bundle-date"
+                    },
+                    "webhookEventId": "evt-bundle-date-2",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-bundle-date-2",
+                    "message": {
+                      "id": "msg-bundle-date-2",
+                      "type": "text",
+                      "quoteToken": "quote-bundle-date-2",
+                      "text": "7/30"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "date-slot",
+                    "taskType": "slot_update",
+                    "productType": "bundle",
+                    "sourceText": "7/30"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:01:00.000Z",
+            "expiresAt": "2026-07-30T02:31:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "bundle-availability",
+                "taskType": "availability",
+                "productType": "bundle",
+                "productId": "alpha-whole-house",
+                "roomTypeId": null,
+                "bundleId": "alpha-whole-house",
+                "checkIn": "2026-07-30",
+                "checkOut": "2026-07-31",
+                "guestCount": null,
+                "knownFields": [
+                  "productType",
+                  "productId",
+                  "bundleId",
+                  "checkIn",
+                  "checkOut"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:01:00.000Z",
+                "expiresAt": "2026-07-30T02:31:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "bundle-availability",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "productId",
+                    "bundleId",
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "bundle-availability"
+            ],
+            "layers": {
+              "planner": "bundle_availability_then_slot_update",
+              "reducer": "date_merged_into_existing_bundle_task",
+              "readiness": "ready",
+              "canonicalRequest": "availability_bundle_alpha_whole_house",
+              "queryPlan": "availability_property_alpha_bundle",
+              "resolver": "official_bundle_availability",
+              "claimValidator": "pass",
+              "finalDecision": "reply",
+              "finalText": "resolver_bundle_availability_facts_only"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "next_day_followup",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-next-day"
+          },
+          "turns": [
+            {
+              "message": "7/30有房嗎",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-next-day"
+                    },
+                    "webhookEventId": "evt-next-day-1",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-next-day-1",
+                    "message": {
+                      "id": "msg-next-day-1",
+                      "type": "text",
+                      "quoteToken": "quote-next-day-1",
+                      "text": "7/30有房嗎"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "7/30有房嗎"
+                  }
+                ]
+              }
+            },
+            {
+              "message": "那隔天呢",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376860000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-next-day"
+                    },
+                    "webhookEventId": "evt-next-day-2",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-next-day-2",
+                    "message": {
+                      "id": "msg-next-day-2",
+                      "type": "text",
+                      "quoteToken": "quote-next-day-2",
+                      "text": "那隔天呢"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability-next-day",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "那隔天呢"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:01:00.000Z",
+            "expiresAt": "2026-07-30T02:31:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "availability-next-day",
+                "taskType": "availability",
+                "productType": "any",
+                "productId": null,
+                "roomTypeId": null,
+                "bundleId": null,
+                "checkIn": "2026-07-31",
+                "checkOut": "2026-08-01",
+                "guestCount": null,
+                "knownFields": [
+                  "productType",
+                  "checkIn",
+                  "checkOut"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:01:00.000Z",
+                "expiresAt": "2026-07-30T02:31:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "availability-next-day",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "availability-next-day"
+            ],
+            "layers": {
+              "planner": "modify_existing_temporal",
+              "reducer": "replace_dates_only",
+              "readiness": "ready",
+              "canonicalRequest": "availability_any_2026-07-31",
+              "queryPlan": "availability_property_alpha",
+              "resolver": "official_property_availability",
+              "claimValidator": "pass",
+              "finalDecision": "reply",
+              "finalText": "resolver_availability_facts_only"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "then_bundle_followup",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-then-bundle"
+          },
+          "turns": [
+            {
+              "message": "7/30雙人房有房嗎",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-then-bundle"
+                    },
+                    "webhookEventId": "evt-then-bundle-1",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-then-bundle-1",
+                    "message": {
+                      "id": "msg-then-bundle-1",
+                      "type": "text",
+                      "quoteToken": "quote-then-bundle-1",
+                      "text": "7/30雙人房有房嗎"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability-room",
+                    "taskType": "availability",
+                    "productType": "room_type",
+                    "sourceText": "7/30雙人房有房嗎"
+                  }
+                ]
+              }
+            },
+            {
+              "message": "那包棟呢",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376860000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-then-bundle"
+                    },
+                    "webhookEventId": "evt-then-bundle-2",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-then-bundle-2",
+                    "message": {
+                      "id": "msg-then-bundle-2",
+                      "type": "text",
+                      "quoteToken": "quote-then-bundle-2",
+                      "text": "那包棟呢"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability-bundle",
+                    "taskType": "availability",
+                    "productType": "bundle",
+                    "sourceText": "那包棟呢"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:01:00.000Z",
+            "expiresAt": "2026-07-30T02:31:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "availability-bundle",
+                "taskType": "availability",
+                "productType": "bundle",
+                "productId": "alpha-whole-house",
+                "roomTypeId": null,
+                "bundleId": "alpha-whole-house",
+                "checkIn": "2026-07-30",
+                "checkOut": "2026-07-31",
+                "guestCount": null,
+                "knownFields": [
+                  "productType",
+                  "productId",
+                  "bundleId",
+                  "checkIn",
+                  "checkOut"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:01:00.000Z",
+                "expiresAt": "2026-07-30T02:31:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "availability-bundle",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "productId",
+                    "bundleId",
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "availability-bundle"
+            ],
+            "layers": {
+              "planner": "modify_existing_product",
+              "reducer": "replace_product_keep_dates",
+              "readiness": "ready",
+              "canonicalRequest": "availability_bundle_alpha_whole_house",
+              "queryPlan": "availability_property_alpha_bundle",
+              "resolver": "official_bundle_availability",
+              "claimValidator": "pass",
+              "finalDecision": "reply",
+              "finalText": "resolver_bundle_availability_facts_only"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "four_person_room_followup",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-family-room"
+          },
+          "turns": [
+            {
+              "message": "7/30有房嗎",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-family-room"
+                    },
+                    "webhookEventId": "evt-family-room-1",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-family-room-1",
+                    "message": {
+                      "id": "msg-family-room-1",
+                      "type": "text",
+                      "quoteToken": "quote-family-room-1",
+                      "text": "7/30有房嗎"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "7/30有房嗎"
+                  }
+                ]
+              }
+            },
+            {
+              "message": "四人房呢",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376860000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-family-room"
+                    },
+                    "webhookEventId": "evt-family-room-2",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-family-room-2",
+                    "message": {
+                      "id": "msg-family-room-2",
+                      "type": "text",
+                      "quoteToken": "quote-family-room-2",
+                      "text": "四人房呢"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability-family",
+                    "taskType": "availability",
+                    "productType": "room_type",
+                    "sourceText": "四人房呢"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:01:00.000Z",
+            "expiresAt": "2026-07-30T02:31:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "availability-family",
+                "taskType": "availability",
+                "productType": "room_type",
+                "productId": "alpha-family",
+                "roomTypeId": "alpha-family",
+                "bundleId": null,
+                "checkIn": "2026-07-30",
+                "checkOut": "2026-07-31",
+                "guestCount": 4,
+                "knownFields": [
+                  "productType",
+                  "productId",
+                  "roomTypeId",
+                  "checkIn",
+                  "checkOut",
+                  "guestCount"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:01:00.000Z",
+                "expiresAt": "2026-07-30T02:31:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "availability-family",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "productId",
+                    "roomTypeId",
+                    "checkIn",
+                    "checkOut",
+                    "guestCount"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "availability-family"
+            ],
+            "layers": {
+              "planner": "modify_existing_room_type",
+              "reducer": "replace_product_keep_dates",
+              "readiness": "ready",
+              "canonicalRequest": "availability_room_type_alpha_family",
+              "queryPlan": "availability_property_alpha_alpha_family",
+              "resolver": "official_room_availability",
+              "claimValidator": "pass",
+              "finalDecision": "reply",
+              "finalText": "resolver_availability_facts_only"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "mixed_then_partial_supplement",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-mixed"
+          },
+          "turns": [
+            {
+              "message": "有房嗎？有車位嗎？",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-mixed"
+                    },
+                    "webhookEventId": "evt-mixed-1",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-mixed-1",
+                    "message": {
+                      "id": "msg-mixed-1",
+                      "type": "text",
+                      "quoteToken": "quote-mixed-1",
+                      "text": "有房嗎？有車位嗎？"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "有房嗎"
+                  },
+                  {
+                    "taskId": "parking",
+                    "taskType": "parking",
+                    "productType": "any",
+                    "sourceText": "有車位嗎"
+                  }
+                ]
+              }
+            },
+            {
+              "message": "7/30",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376860000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-mixed"
+                    },
+                    "webhookEventId": "evt-mixed-2",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-mixed-2",
+                    "message": {
+                      "id": "msg-mixed-2",
+                      "type": "text",
+                      "quoteToken": "quote-mixed-2",
+                      "text": "7/30"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "date-slot",
+                    "taskType": "slot_update",
+                    "productType": "any",
+                    "sourceText": "7/30"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:01:00.000Z",
+            "expiresAt": "2026-07-30T02:31:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "availability",
+                "taskType": "availability",
+                "productType": "any",
+                "productId": null,
+                "roomTypeId": null,
+                "bundleId": null,
+                "checkIn": "2026-07-30",
+                "checkOut": "2026-07-31",
+                "guestCount": null,
+                "knownFields": [
+                  "productType",
+                  "checkIn",
+                  "checkOut"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:01:00.000Z",
+                "expiresAt": "2026-07-30T02:31:00.000Z"
+              },
+              {
+                "taskId": "parking",
+                "taskType": "parking",
+                "productType": "any",
+                "productId": null,
+                "roomTypeId": null,
+                "bundleId": null,
+                "checkIn": null,
+                "checkOut": null,
+                "guestCount": null,
+                "knownFields": [
+                  "productType"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:00:00.000Z",
+                "expiresAt": "2026-07-30T02:31:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "availability",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              },
+              {
+                "taskId": "parking",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "availability",
+              "parking"
+            ],
+            "layers": {
+              "planner": "mixed_tasks_then_slot_update",
+              "reducer": "date_updates_only_availability_task",
+              "readiness": "both_ready",
+              "canonicalRequest": "availability_and_parking",
+              "queryPlan": "two_independent_plans",
+              "resolver": "availability_and_property_catalog",
+              "claimValidator": "pass_both_sections",
+              "finalDecision": "reply",
+              "finalText": "both_task_results_present"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "change_date",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-change-date"
+          },
+          "turns": [
+            {
+              "message": "7/30有房嗎",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-change-date"
+                    },
+                    "webhookEventId": "evt-change-date-1",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-change-date-1",
+                    "message": {
+                      "id": "msg-change-date-1",
+                      "type": "text",
+                      "quoteToken": "quote-change-date-1",
+                      "text": "7/30有房嗎"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "7/30有房嗎"
+                  }
+                ]
+              }
+            },
+            {
+              "message": "改7/31",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376860000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-change-date"
+                    },
+                    "webhookEventId": "evt-change-date-2",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-change-date-2",
+                    "message": {
+                      "id": "msg-change-date-2",
+                      "type": "text",
+                      "quoteToken": "quote-change-date-2",
+                      "text": "改7/31"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "改7/31"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:01:00.000Z",
+            "expiresAt": "2026-07-30T02:31:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "availability",
+                "taskType": "availability",
+                "productType": "any",
+                "productId": null,
+                "roomTypeId": null,
+                "bundleId": null,
+                "checkIn": "2026-07-31",
+                "checkOut": "2026-08-01",
+                "guestCount": null,
+                "knownFields": [
+                  "productType",
+                  "checkIn",
+                  "checkOut"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:01:00.000Z",
+                "expiresAt": "2026-07-30T02:31:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "availability",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "availability"
+            ],
+            "layers": {
+              "planner": "modify_existing_temporal",
+              "reducer": "replace_old_dates",
+              "readiness": "ready",
+              "canonicalRequest": "availability_any_2026-07-31",
+              "queryPlan": "availability_property_alpha",
+              "resolver": "official_property_availability",
+              "claimValidator": "pass",
+              "finalDecision": "reply",
+              "finalText": "new_date_only"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "duplicate_message",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-duplicate"
+          },
+          "turns": [
+            {
+              "message": "7/30有房嗎",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-duplicate"
+                    },
+                    "webhookEventId": "evt-duplicate",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-duplicate-1",
+                    "message": {
+                      "id": "msg-duplicate",
+                      "type": "text",
+                      "quoteToken": "quote-duplicate-1",
+                      "text": "7/30有房嗎"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "7/30有房嗎"
+                  }
+                ]
+              }
+            },
+            {
+              "message": "7/30有房嗎",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-duplicate"
+                    },
+                    "webhookEventId": "evt-duplicate",
+                    "deliveryContext": {
+                      "isRedelivery": true
+                    },
+                    "replyToken": "reply-duplicate-2",
+                    "message": {
+                      "id": "msg-duplicate",
+                      "type": "text",
+                      "quoteToken": "quote-duplicate-2",
+                      "text": "7/30有房嗎"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "7/30有房嗎"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:00:00.000Z",
+            "expiresAt": "2026-07-30T02:30:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "availability",
+                "taskType": "availability",
+                "productType": "any",
+                "productId": null,
+                "roomTypeId": null,
+                "bundleId": null,
+                "checkIn": "2026-07-30",
+                "checkOut": "2026-07-31",
+                "guestCount": null,
+                "knownFields": [
+                  "productType",
+                  "checkIn",
+                  "checkOut"
+                ],
+                "missingFields": [],
+                "status": "answered",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:00:00.000Z",
+                "expiresAt": "2026-07-30T02:30:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "availability",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [],
+            "layers": {
+              "planner": "first_delivery_only",
+              "reducer": "no_second_mutation",
+              "readiness": "ready_first_delivery",
+              "canonicalRequest": "single_request",
+              "queryPlan": "single_plan",
+              "resolver": "single_call",
+              "claimValidator": "single_validation",
+              "finalDecision": "no_reply_for_duplicate",
+              "finalText": "empty_for_duplicate"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "pending_expired",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-expired"
+          },
+          "turns": [
+            {
+              "message": "請問一晚費用多少呢",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785290400000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-expired"
+                    },
+                    "webhookEventId": "evt-expired-1",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-expired-1",
+                    "message": {
+                      "id": "msg-expired-1",
+                      "type": "text",
+                      "quoteToken": "quote-expired-1",
+                      "text": "請問一晚費用多少呢"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "pricing-expired",
+                    "taskType": "pricing",
+                    "productType": "any",
+                    "sourceText": "請問一晚費用多少呢"
+                  }
+                ]
+              }
+            },
+            {
+              "message": "7/30",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-expired"
+                    },
+                    "webhookEventId": "evt-expired-2",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-expired-2",
+                    "message": {
+                      "id": "msg-expired-2",
+                      "type": "text",
+                      "quoteToken": "quote-expired-2",
+                      "text": "7/30"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "date-without-current-task",
+                    "taskType": "slot_update",
+                    "productType": "any",
+                    "sourceText": "7/30"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-29T02:00:00.000Z",
+            "updatedAt": "2026-07-29T02:00:00.000Z",
+            "expiresAt": "2026-07-29T02:30:00.000Z",
+            "evaluationTime": "2026-07-30T02:00:00.000Z",
+            "tasks": [
+              {
+                "taskId": "pricing-expired",
+                "taskType": "pricing",
+                "productType": "any",
+                "productId": null,
+                "roomTypeId": null,
+                "bundleId": null,
+                "checkIn": null,
+                "checkOut": null,
+                "guestCount": null,
+                "knownFields": [
+                  "productType"
+                ],
+                "missingFields": [
+                  "checkIn",
+                  "checkOut"
+                ],
+                "status": "pending",
+                "createdAt": "2026-07-29T02:00:00.000Z",
+                "updatedAt": "2026-07-29T02:00:00.000Z",
+                "expiresAt": "2026-07-29T02:30:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "pricing-expired",
+                "result": {
+                  "status": "missing",
+                  "knownFields": [
+                    "productType"
+                  ],
+                  "missingFields": [
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [],
+            "layers": {
+              "planner": "new_turn_without_reusable_pending",
+              "reducer": "expired_task_not_merged",
+              "readiness": "old_task_expired",
+              "canonicalRequest": "none_for_expired_task",
+              "queryPlan": "none_for_expired_task",
+              "resolver": "not_called_for_expired_task",
+              "claimValidator": "not_run_for_expired_task",
+              "finalDecision": "safe_clarification_or_new_request",
+              "finalText": "no_stale_pricing_answer"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "different_users_isolated",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-user-a"
+          },
+          "turns": [
+            {
+              "message": "請問有房嗎",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-user-a"
+                    },
+                    "webhookEventId": "evt-user-a-1",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-user-a-1",
+                    "message": {
+                      "id": "msg-user-a-1",
+                      "type": "text",
+                      "quoteToken": "quote-user-a-1",
+                      "text": "請問有房嗎"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability-user-a",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "請問有房嗎"
+                  }
+                ]
+              }
+            },
+            {
+              "message": "7/30",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376860000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-user-a"
+                    },
+                    "webhookEventId": "evt-user-a-2",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-user-a-2",
+                    "message": {
+                      "id": "msg-user-a-2",
+                      "type": "text",
+                      "quoteToken": "quote-user-a-2",
+                      "text": "7/30"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "date-user-a",
+                    "taskType": "slot_update",
+                    "productType": "any",
+                    "sourceText": "7/30"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:01:00.000Z",
+            "expiresAt": "2026-07-30T02:31:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "availability-user-a",
+                "taskType": "availability",
+                "productType": "any",
+                "productId": null,
+                "roomTypeId": null,
+                "bundleId": null,
+                "checkIn": "2026-07-30",
+                "checkOut": "2026-07-31",
+                "guestCount": null,
+                "knownFields": [
+                  "productType",
+                  "checkIn",
+                  "checkOut"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:01:00.000Z",
+                "expiresAt": "2026-07-30T02:31:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "availability-user-a",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "availability-user-a"
+            ],
+            "layers": {
+              "planner": "user_a_followup",
+              "reducer": "user_a_scope_only",
+              "readiness": "ready",
+              "canonicalRequest": "user_a_availability",
+              "queryPlan": "property_alpha_user_a",
+              "resolver": "official_property_availability",
+              "claimValidator": "pass",
+              "finalDecision": "reply",
+              "finalText": "user_a_result_only"
+            }
+          }
+        },
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-user-b"
+          },
+          "turns": [
+            {
+              "message": "請問有房嗎",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-user-b"
+                    },
+                    "webhookEventId": "evt-user-b-1",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-user-b-1",
+                    "message": {
+                      "id": "msg-user-b-1",
+                      "type": "text",
+                      "quoteToken": "quote-user-b-1",
+                      "text": "請問有房嗎"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability-user-b",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "請問有房嗎"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:00:00.000Z",
+            "expiresAt": "2026-07-30T02:30:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "availability-user-b",
+                "taskType": "availability",
+                "productType": "any",
+                "productId": null,
+                "roomTypeId": null,
+                "bundleId": null,
+                "checkIn": null,
+                "checkOut": null,
+                "guestCount": null,
+                "knownFields": [
+                  "productType"
+                ],
+                "missingFields": [
+                  "checkIn",
+                  "checkOut"
+                ],
+                "status": "pending",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:00:00.000Z",
+                "expiresAt": "2026-07-30T02:30:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "availability-user-b",
+                "result": {
+                  "status": "missing",
+                  "knownFields": [
+                    "productType"
+                  ],
+                  "missingFields": [
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "availability-user-b"
+            ],
+            "layers": {
+              "planner": "user_b_initial_request",
+              "reducer": "user_b_scope_unchanged_by_user_a",
+              "readiness": "missing_dates",
+              "canonicalRequest": "user_b_not_ready",
+              "queryPlan": "none",
+              "resolver": "not_called",
+              "claimValidator": "safe_clarification",
+              "finalDecision": "clarification",
+              "finalText": "ask_user_b_for_date"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "alpha_beta_properties_isolated",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-shared"
+          },
+          "turns": [
+            {
+              "message": "7/30雙人房有房嗎",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-shared"
+                    },
+                    "webhookEventId": "evt-property-alpha",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-property-alpha",
+                    "message": {
+                      "id": "msg-property-alpha",
+                      "type": "text",
+                      "quoteToken": "quote-property-alpha",
+                      "text": "7/30雙人房有房嗎"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability-alpha",
+                    "taskType": "availability",
+                    "productType": "room_type",
+                    "sourceText": "7/30雙人房有房嗎"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:00:00.000Z",
+            "expiresAt": "2026-07-30T02:30:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "availability-alpha",
+                "taskType": "availability",
+                "productType": "room_type",
+                "productId": "alpha-double",
+                "roomTypeId": "alpha-double",
+                "bundleId": null,
+                "checkIn": "2026-07-30",
+                "checkOut": "2026-07-31",
+                "guestCount": 2,
+                "knownFields": [
+                  "productType",
+                  "productId",
+                  "roomTypeId",
+                  "checkIn",
+                  "checkOut",
+                  "guestCount"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:00:00.000Z",
+                "expiresAt": "2026-07-30T02:30:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "availability-alpha",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "productId",
+                    "roomTypeId",
+                    "checkIn",
+                    "checkOut",
+                    "guestCount"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "availability-alpha"
+            ],
+            "layers": {
+              "planner": "alpha_room_type",
+              "reducer": "alpha_scope_only",
+              "readiness": "ready",
+              "canonicalRequest": "alpha_double",
+              "queryPlan": "property_alpha_only",
+              "resolver": "alpha_provider_rows_only",
+              "claimValidator": "pass",
+              "finalDecision": "reply",
+              "finalText": "alpha_facts_only"
+            }
+          }
+        },
+        {
+          "scope": {
+            "propertyId": "property_beta",
+            "channel": "line:test-only-beta",
+            "userId": "Uguest-shared"
+          },
+          "turns": [
+            {
+              "message": "7/30雙人房有房嗎",
+              "lineWebhook": {
+                "destination": "Ubot-beta",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-shared"
+                    },
+                    "webhookEventId": "evt-property-beta",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-property-beta",
+                    "message": {
+                      "id": "msg-property-beta",
+                      "type": "text",
+                      "quoteToken": "quote-property-beta",
+                      "text": "7/30雙人房有房嗎"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability-beta",
+                    "taskType": "availability",
+                    "productType": "room_type",
+                    "sourceText": "7/30雙人房有房嗎"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:00:00.000Z",
+            "expiresAt": "2026-07-30T02:30:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "availability-beta",
+                "taskType": "availability",
+                "productType": "room_type",
+                "productId": "beta-double",
+                "roomTypeId": "beta-double",
+                "bundleId": null,
+                "checkIn": "2026-07-30",
+                "checkOut": "2026-07-31",
+                "guestCount": 2,
+                "knownFields": [
+                  "productType",
+                  "productId",
+                  "roomTypeId",
+                  "checkIn",
+                  "checkOut",
+                  "guestCount"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:00:00.000Z",
+                "expiresAt": "2026-07-30T02:30:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "availability-beta",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "productId",
+                    "roomTypeId",
+                    "checkIn",
+                    "checkOut",
+                    "guestCount"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "availability-beta"
+            ],
+            "layers": {
+              "planner": "beta_room_type",
+              "reducer": "beta_scope_only",
+              "readiness": "ready",
+              "canonicalRequest": "beta_double",
+              "queryPlan": "property_beta_only",
+              "resolver": "beta_provider_rows_only",
+              "claimValidator": "pass",
+              "finalDecision": "reply",
+              "finalText": "beta_facts_only"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "closed_unknown_distinct",
+      "expectedOutcomes": {
+        "closed": "closed",
+        "unknown": "unknown"
+      },
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-outcomes"
+          },
+          "turns": [
+            {
+              "message": "7/30有房嗎？7/31有房嗎？",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-outcomes"
+                    },
+                    "webhookEventId": "evt-outcomes",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-outcomes",
+                    "message": {
+                      "id": "msg-outcomes",
+                      "type": "text",
+                      "quoteToken": "quote-outcomes",
+                      "text": "7/30有房嗎？7/31有房嗎？"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "availability-closed",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "7/30有房嗎"
+                  },
+                  {
+                    "taskId": "availability-unknown",
+                    "taskType": "availability",
+                    "productType": "any",
+                    "sourceText": "7/31有房嗎"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:00:00.000Z",
+            "expiresAt": "2026-07-30T02:30:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "availability-closed",
+                "taskType": "availability",
+                "productType": "any",
+                "productId": null,
+                "roomTypeId": null,
+                "bundleId": null,
+                "checkIn": "2026-07-30",
+                "checkOut": "2026-07-31",
+                "guestCount": null,
+                "knownFields": [
+                  "productType",
+                  "checkIn",
+                  "checkOut"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:00:00.000Z",
+                "expiresAt": "2026-07-30T02:30:00.000Z"
+              },
+              {
+                "taskId": "availability-unknown",
+                "taskType": "availability",
+                "productType": "any",
+                "productId": null,
+                "roomTypeId": null,
+                "bundleId": null,
+                "checkIn": "2026-07-31",
+                "checkOut": "2026-08-01",
+                "guestCount": null,
+                "knownFields": [
+                  "productType",
+                  "checkIn",
+                  "checkOut"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:00:00.000Z",
+                "expiresAt": "2026-07-30T02:30:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "availability-closed",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              },
+              {
+                "taskId": "availability-unknown",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "availability-closed",
+              "availability-unknown"
+            ],
+            "layers": {
+              "planner": "two_availability_tasks",
+              "reducer": "two_independent_tasks",
+              "readiness": "both_ready",
+              "canonicalRequest": "two_date_scoped_requests",
+              "queryPlan": "two_queries",
+              "resolver": "closed_and_unknown_are_distinct",
+              "claimValidator": "unknown_not_rendered_as_no",
+              "finalDecision": "partial_reply_and_scoped_review",
+              "finalText": "closed_is_no_but_unknown_is_not_no"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "incident_explicit_date_bundle",
+      "sessions": [
+        {
+          "scope": {
+            "propertyId": "property_alpha",
+            "channel": "line:test-only-alpha",
+            "userId": "Uguest-explicit-bundle"
+          },
+          "turns": [
+            {
+              "message": "7/30可以包棟嗎",
+              "lineWebhook": {
+                "destination": "Ubot-alpha",
+                "events": [
+                  {
+                    "type": "message",
+                    "mode": "active",
+                    "timestamp": 1785376800000,
+                    "source": {
+                      "type": "user",
+                      "userId": "Uguest-explicit-bundle"
+                    },
+                    "webhookEventId": "evt-explicit-bundle",
+                    "deliveryContext": {
+                      "isRedelivery": false
+                    },
+                    "replyToken": "reply-explicit-bundle",
+                    "message": {
+                      "id": "msg-explicit-bundle",
+                      "type": "text",
+                      "quoteToken": "quote-explicit-bundle",
+                      "text": "7/30可以包棟嗎"
+                    }
+                  }
+                ]
+              },
+              "planner": {
+                "tasks": [
+                  {
+                    "taskId": "bundle-availability",
+                    "taskType": "availability",
+                    "productType": "bundle",
+                    "sourceText": "7/30可以包棟嗎"
+                  }
+                ]
+              }
+            }
+          ],
+          "expected": {
+            "createdAt": "2026-07-30T02:00:00.000Z",
+            "updatedAt": "2026-07-30T02:00:00.000Z",
+            "expiresAt": "2026-07-30T02:30:00.000Z",
+            "evaluationTime": "2026-07-30T02:02:00.000Z",
+            "tasks": [
+              {
+                "taskId": "bundle-availability",
+                "taskType": "availability",
+                "productType": "bundle",
+                "productId": "alpha-whole-house",
+                "roomTypeId": null,
+                "bundleId": "alpha-whole-house",
+                "checkIn": "2026-07-30",
+                "checkOut": "2026-07-31",
+                "guestCount": null,
+                "knownFields": [
+                  "productType",
+                  "productId",
+                  "bundleId",
+                  "checkIn",
+                  "checkOut"
+                ],
+                "missingFields": [],
+                "status": "ready",
+                "createdAt": "2026-07-30T02:00:00.000Z",
+                "updatedAt": "2026-07-30T02:00:00.000Z",
+                "expiresAt": "2026-07-30T02:30:00.000Z"
+              }
+            ],
+            "readiness": [
+              {
+                "taskId": "bundle-availability",
+                "result": {
+                  "status": "ready",
+                  "knownFields": [
+                    "productType",
+                    "productId",
+                    "bundleId",
+                    "checkIn",
+                    "checkOut"
+                  ],
+                  "missingFields": [],
+                  "invalidFields": []
+                }
+              }
+            ],
+            "activeTaskIds": [
+              "bundle-availability"
+            ],
+            "layers": {
+              "planner": "availability_with_bundle_product",
+              "reducer": "single_bundle_task",
+              "readiness": "ready",
+              "canonicalRequest": "availability_bundle_alpha_whole_house",
+              "queryPlan": "availability_property_alpha_bundle",
+              "resolver": "official_bundle_availability",
+              "claimValidator": "pass",
+              "finalDecision": "reply",
+              "finalText": "resolver_bundle_availability_facts_only"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

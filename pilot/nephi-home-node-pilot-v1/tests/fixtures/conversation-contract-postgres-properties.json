@@ -1,0 +1,186 @@
+{
+  "sourceContract": "lib/providers/postgres-worker.js:getProperty",
+  "properties": [
+    {
+      "propertyId": "property_alpha",
+      "displayName": "Alpha Lodge",
+      "currency": "TWD",
+      "rooms": [
+        {
+          "id": "alpha-double",
+          "roomCode": "A201",
+          "displayName": "Alpha Double",
+          "name": "Alpha Double",
+          "capacity": 2,
+          "highlights": [
+            "balcony"
+          ],
+          "type": "double",
+          "description": "Alpha room description",
+          "mondayThursdayPrice": 1800,
+          "fridayPrice": 2200,
+          "saturdayHolidayPrice": 2600,
+          "sundayPrice": 2000,
+          "enabled": true
+        },
+        {
+          "id": "alpha-family",
+          "roomCode": "A301",
+          "displayName": "Alpha Family",
+          "name": "Alpha Family",
+          "capacity": 4,
+          "highlights": [],
+          "type": "family",
+          "description": "Alpha family room description",
+          "mondayThursdayPrice": 3000,
+          "fridayPrice": 3500,
+          "saturdayHolidayPrice": 4200,
+          "sundayPrice": 3200,
+          "enabled": true
+        },
+        {
+          "id": "alpha-whole-house",
+          "name": "Alpha Whole House",
+          "capacity": 6,
+          "type": "bundle",
+          "description": "Whole-property bundle",
+          "memberRoomIds": [
+            "alpha-double",
+            "alpha-family"
+          ],
+          "entertainmentAmenities": [
+            "mahjong"
+          ],
+          "basePrice": 4800,
+          "mondayThursdayPrice": 4800,
+          "fridayPrice": 5600,
+          "saturdayHolidayPrice": 6800,
+          "sundayPrice": 5200,
+          "inventoryType": "bundle"
+        }
+      ],
+      "commonAnswers": {
+        "parking": "Alpha approved parking information."
+      },
+      "propertyFacts": [
+        {
+          "canonicalId": "parking",
+          "category": "amenity",
+          "status": "provided",
+          "publicText": "Alpha approved parking information.",
+          "aliases": [
+            "parking-alpha"
+          ]
+        },
+        {
+          "canonicalId": "location",
+          "category": "transport",
+          "status": "provided",
+          "publicText": "https://maps.example.test/alpha",
+          "aliases": [
+            "map-alpha"
+          ]
+        }
+      ],
+      "pricing": {},
+      "faqs": [
+        {
+          "knowledgeId": "alpha-faq-1",
+          "question": "Alpha policy question",
+          "answer": "Alpha approved policy answer",
+          "knowledgeKey": "alpha_policy"
+        }
+      ],
+      "humanHandoffSituations": [],
+      "businessProfile": {
+        "googleMapsUrl": "https://maps.example.test/alpha",
+        "checkInTime": "15:00",
+        "checkOutTime": "11:00",
+        "line": {
+          "contactLink": "https://line.example.test/alpha"
+        }
+      },
+      "contactLink": "https://line.example.test/alpha",
+      "onboarding": {
+        "isReady": true
+      }
+    },
+    {
+      "propertyId": "property_beta",
+      "displayName": "Beta Lodge",
+      "currency": "TWD",
+      "rooms": [
+        {
+          "id": "beta-double",
+          "roomCode": "B201",
+          "displayName": "Beta Double",
+          "name": "Beta Double",
+          "capacity": 2,
+          "highlights": [],
+          "type": "double",
+          "description": "Beta room description",
+          "mondayThursdayPrice": 2100,
+          "fridayPrice": 2500,
+          "saturdayHolidayPrice": 2900,
+          "sundayPrice": 2300,
+          "enabled": true
+        },
+        {
+          "id": "beta-whole-house",
+          "name": "Beta Whole House",
+          "capacity": 2,
+          "type": "bundle",
+          "description": "Beta whole-property bundle",
+          "memberRoomIds": [
+            "beta-double"
+          ],
+          "entertainmentAmenities": [],
+          "basePrice": 3600,
+          "mondayThursdayPrice": 3600,
+          "fridayPrice": 4200,
+          "saturdayHolidayPrice": 5000,
+          "sundayPrice": 3900,
+          "inventoryType": "bundle"
+        }
+      ],
+      "commonAnswers": {
+        "parking": "Beta approved parking information."
+      },
+      "propertyFacts": [
+        {
+          "canonicalId": "parking",
+          "category": "amenity",
+          "status": "provided",
+          "publicText": "Beta approved parking information.",
+          "aliases": [
+            "parking-beta"
+          ]
+        },
+        {
+          "canonicalId": "location",
+          "category": "transport",
+          "status": "provided",
+          "publicText": "https://maps.example.test/beta",
+          "aliases": [
+            "map-beta"
+          ]
+        }
+      ],
+      "pricing": {},
+      "faqs": [],
+      "humanHandoffSituations": [],
+      "businessProfile": {
+        "googleMapsUrl": "https://maps.example.test/beta",
+        "checkInTime": "16:00",
+        "checkOutTime": "10:00",
+        "line": {
+          "contactLink": "https://line.example.test/beta"
+        }
+      },
+      "contactLink": "https://line.example.test/beta",
+      "onboarding": {
+        "isReady": true
+      }
+    }
+  ]
+}

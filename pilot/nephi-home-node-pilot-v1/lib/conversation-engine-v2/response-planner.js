@@ -12,11 +12,10 @@ const TASK_PRIORITY = Object.freeze({
   human_help: 70, high_risk: 70,
   unknown: 80
 });
-const FINAL_DECISION_TYPES = new Set(["reply", "clarification", "human_handoff", "no_reply"]);
-const SECTION_MODES = new Set(["answer", "clarification", "handoff"]);
-const NON_PUBLIC_FACT_KEYS = new Set(["source", "propertyId", "canonicalId", "id"]);
 
 function taskPriority(type) { return TASK_PRIORITY[type] || TASK_PRIORITY.unknown; }
+function responseMode(status) { return status === "answered" ? "answer" : status === "needs_clarification" ? "clarification" : "handoff"; }
+const NON_PUBLIC_FACT_KEYS = new Set(["source", "propertyId", "canonicalId", "id", "customReplyRuleId", "customReplySource"]);
 function collectAllowedFacts(value, key = "") {
   if (NON_PUBLIC_FACT_KEYS.has(key) || value === null || value === undefined) return [];
   if (["string", "number"].includes(typeof value)) return [String(value)].filter(Boolean);
@@ -24,81 +23,40 @@ function collectAllowedFacts(value, key = "") {
   if (typeof value === "object") return Object.entries(value).flatMap(([childKey, childValue]) => collectAllowedFacts(childValue, childKey));
   return [];
 }
-function contractError(code, details = {}) {
-  return {
-    ok: false,
-    schemaVersion: 2,
-    sections: [],
-    coverage: coverageByStatus([]),
-    coverageValidation: assertTaskCoverage([], coverageByStatus([])),
-    reviewActions: [],
-    allowedFacts: [],
-    error: { code, ...details }
-  };
-}
 
-function buildResponsePlan({ propertyId, inputTaskIds, reviewActions = [], finalDecision = null }) {
-  if (!finalDecision || !FINAL_DECISION_TYPES.has(finalDecision.type)) return contractError("engine_final_decision_required");
-  if (finalDecision.type === "no_reply") return contractError("response_plan_for_no_reply");
-  if (finalDecision.shouldReply !== true) return contractError("invalid_should_reply_contract");
-  if (!Array.isArray(finalDecision.approvedTaskResults)) return contractError("approved_task_results_required");
-
-  const clarificationFields = new Set((finalDecision.clarificationFields || []).map(String));
-  const sectionModes = finalDecision.sectionModes && typeof finalDecision.sectionModes === "object" ? finalDecision.sectionModes : {};
-  const handoffReasons = finalDecision.handoffReasons && typeof finalDecision.handoffReasons === "object" ? finalDecision.handoffReasons : {};
-  const expected = inputTaskIds || finalDecision.approvedTaskResults.map((result) => result.taskId);
-  const order = new Map(expected.map((taskId, index) => [taskId, index]));
-  const sections = [];
-
-  for (const result of finalDecision.approvedTaskResults) {
-    const responseMode = sectionModes[result.taskId];
-    if (!SECTION_MODES.has(responseMode)) return contractError("section_decision_required", { taskId: result.taskId });
-    const missingInputs = (result.missingInputs || []).map(String);
-    if (responseMode === "clarification" && missingInputs.some((field) => !clarificationFields.has(field))) {
-      return contractError("clarification_fields_not_approved", { taskId: result.taskId });
-    }
-    const handoffReason = responseMode === "handoff"
-      ? String(handoffReasons[result.taskId] || finalDecision.handoffReason || "")
-      : "";
-    if (responseMode === "handoff" && !handoffReason) return contractError("handoff_reason_required", { taskId: result.taskId });
-    const facts = result.facts || {};
-    sections.push({
+function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalRequests = [], reviewActions = [] }) {
+  const canonicalByTaskId = new Map((canonicalRequests || []).map((request) => [request.taskId, request]));
+  const sections = (taskResults || []).map((result, inputOrder) => {
+    const canonicalRequest = canonicalByTaskId.get(result.taskId) || null;
+    const type = canonicalRequest ? canonicalRequest.capability : result.type;
+    return {
       taskId: result.taskId,
-      type: result.type,
+      type,
       status: result.status,
-      responseMode,
-      priority: taskPriority(result.type),
-      inputOrder: order.has(result.taskId) ? order.get(result.taskId) : Number.MAX_SAFE_INTEGER,
-      facts,
-      question: responseMode === "clarification" ? String(result.question || "") : "",
-      missingInputs: responseMode === "clarification" ? missingInputs : [],
-      handoffReason,
-      needsReview: responseMode === "handoff",
-      allowedFacts: [...new Set(collectAllowedFacts(facts))]
-    });
-  }
-
-  sections.sort((a, b) => a.inputOrder - b.inputOrder);
+      responseMode: responseMode(result.status),
+      canonicalResponseMode: canonicalRequest && canonicalRequest.responseMode || "",
+      resolverId: canonicalRequest && canonicalRequest.resolverId || "",
+      riskLevel: canonicalRequest && canonicalRequest.riskLevel || "",
+      priority: taskPriority(type),
+      inputOrder,
+      facts: result.facts || {},
+      question: result.question || "",
+      missingInputs: result.missingInputs || [],
+      needsReview: Boolean(result.review)
+    };
+  });
+  const expected = inputTaskIds || sections.map((section) => section.taskId);
   const coverage = coverageByStatus(sections);
-  return {
-    ok: true,
-    schemaVersion: 2,
-    propertyId,
-    finalDecision: {
-      type: finalDecision.type,
-      reasonCode: finalDecision.reasonCode,
-      shouldReply: finalDecision.shouldReply,
-      clarificationFields: [...clarificationFields],
-      handoffReason: String(finalDecision.handoffReason || "")
-    },
-    sections,
-    coverage,
-    coverageValidation: assertTaskCoverage(expected, coverage),
-    reviewActions,
-    allowedFacts: [...new Set(sections.flatMap((section) => section.allowedFacts))],
-    forbiddenClaims: ["已替你保留", "已完成訂房", "一定有房", "免費加人", "可以折扣", "一定退款", "業者已同意", "真人已看過", "已通知業者"],
-    maxLength: 1200
-  };
+  const coverageValidation = assertTaskCoverage(expected, coverage);
+  for (const taskId of coverageValidation.missingTaskIds) sections.push({ taskId, type: "unknown", status: "failed", facts: { subject: "這個問題" }, question: "", needsReview: true });
+  for (const section of sections) {
+    if (!section.responseMode) section.responseMode = responseMode(section.status);
+    if (!Number.isFinite(section.priority)) section.priority = taskPriority(section.type);
+    section.allowedFacts = [...new Set(collectAllowedFacts(section.facts))];
+  }
+  sections.sort((a, b) => (a.inputOrder ?? Number.MAX_SAFE_INTEGER) - (b.inputOrder ?? Number.MAX_SAFE_INTEGER));
+  const finalCoverage = coverageByStatus(sections);
+  return { schemaVersion: 1, propertyId, sections, coverage: finalCoverage, coverageValidation: assertTaskCoverage(expected, finalCoverage), reviewActions, allowedFacts: [...new Set(sections.flatMap((section) => section.allowedFacts || []))], forbiddenClaims: ["已替你保留", "已完成訂房", "一定有房", "免費加人", "可以折扣", "一定退款", "業者已同意", "真人已看過", "已通知業者"], maxLength: 1200 };
 }
 
 module.exports = { TASK_PRIORITY, taskPriority, buildResponsePlan };

@@ -37,7 +37,7 @@ for (const item of [
   [{ rawText: "7/18", kind: "absolute" }, "2026-07-18"], [{ rawText: "明天", kind: "relative" }, "2026-07-18"], [{ rawText: "後天", kind: "relative" }, "2026-07-19"], [{ rawText: "下週三", kind: "weekday" }, "2026-07-22"], [{ rawText: "1/5", kind: "absolute" }, "2027-01-05"], [{ rawText: "週末", kind: "weekend" }, "2026-07-18"], [{ rawText: "8/6", kind: "range" }, "2026-08-06"], [{ rawText: "12月3日", kind: "absolute" }, "2026-12-03"]
 ]) { assert.equal(resolveTemporalExpression({ rawText: item[0].rawText, kind: item[0].kind, anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei", defaultNights: 1 }).checkIn || resolveTemporalExpression({ rawText: item[0].rawText, kind: item[0].kind, anchor: "message_time" }, { eventTimestamp: eventTime, timezone: "Asia/Taipei", defaultNights: 1 }).searchRange.from, item[1]); cases += 1; }
 const pastDate = resolveTemporalExpression({ rawText: "7/18", kind: "absolute", anchor: "message_time" }, { eventTimestamp: Date.parse("2026-07-19T10:00:00+08:00"), timezone: "Asia/Taipei", defaultNights: 1 });
-assert.equal(pastDate.resolutionStatus, "invalid"); assert.equal(pastDate.ambiguity, "past_date"); cases += 1;
+assert.equal(pastDate.resolutionStatus, "unresolved"); assert.equal(pastDate.ambiguity, "past_date"); cases += 1;
 assert.deepEqual(inferExplicitTemporalExpression("7/18 包棟住兩晚還有嗎？"), { rawText: "7/18", kind: "absolute", anchor: "message_time" }); cases += 1;
 const doubles = resolveEntity(alphaCatalog, { category: "room", rawText: "Double", canonicalCandidate: "a_double_1" });
 assert.equal(doubles.status, "matched_set"); assert.deepEqual(doubles.entities.map((room) => room.canonicalId), ["a_double_1", "a_double_2"]); cases += 1;

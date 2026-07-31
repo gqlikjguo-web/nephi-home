@@ -2,6 +2,7 @@
 
 const { resolveEntity } = require("./entity-resolver");
 const { addDays } = require("./temporal-resolver");
+const { assertCanonicalRequest } = require("./canonical-request");
 const { resolveAvailability, resolveAvailableDates } = require("./resolver-adapter");
 const { detailFactCandidates, includeBaseAnswer, normalizeDetailIntent } = require("./detail-intent");
 
@@ -16,6 +17,15 @@ function selected(property, request, entities) {
     .filter((room) => !request.stay.guests || Number(room.capacity) >= Number(request.stay.guests));
 }
 function priceKey(date) { const day = new Date(`${date}T00:00:00Z`).getUTCDay(); return day === 5 ? "fridayPrice" : day === 6 ? "saturdayHolidayPrice" : day === 0 ? "sundayPrice" : "mondayThursdayPrice"; }
+function buildPricingFacts({ property, availableInventory, checkIn, checkOut, priceOverrides = [] }) {
+  const availableIds = new Set((availableInventory || []).map((item) => item.canonicalId));
+  const dates = stayDates(checkIn, checkOut);
+  const prices = (property.rooms || []).filter((room) => availableIds.has(room.id)).map((room) => {
+    const daily = dates.map((date) => { const override = priceOverrides.find((item) => item.roomId === room.id && item.date === date); const price = override ? Number(override.price) : Number(room[priceKey(date)]); return { date, price: Number.isInteger(price) && price > 0 ? price : null, source: override ? "price_override" : "room_pricing" }; });
+    return { inventory: publicInventory(room), daily, total: daily.every((item) => item.price !== null) ? daily.reduce((sum, item) => sum + item.price, 0) : null, currency: property.currency || "TWD" };
+  });
+  return { prices, missing: prices.some((item) => item.total === null) };
+}
 function isGenericAvailabilityEntity(task) {
   if (!task || !["availability", "bundle_availability", "room_options", "capacity", "price", "total_price", "available_dates"].includes(task.type)) return false;
   const entity = task.entity || {};
@@ -44,7 +54,7 @@ function executeTasks({ property, catalog, tasks, request, availabilityResolver,
   return tasks.map((task) => {
     try {
     const genericAvailabilityEntity = isGenericAvailabilityEntity(task);
-    const resolved = task.entity && task.entity.rawText && !genericAvailabilityEntity ? resolveEntity(catalog, task.entity) : null;
+    const resolved = task._resolvedEntity || (task.entity && task.entity.rawText && !genericAvailabilityEntity ? resolveEntity(catalog, task.entity) : null);
     if (resolved && resolved.status === "ambiguous") return { taskId: task.taskId, type: task.type, status: "needs_clarification", question: "想確認您指的是哪一個？", candidates: resolved.candidates, facts: {}, missingInputs: ["entity.canonicalId"] };
     if (["amenity", "policy", "property_fact"].includes(task.type)) return executePropertyFactTask({ property, catalog, task, resolved });
     if (task.type === "amenity_list") return { taskId: task.taskId, type: task.type, status: "answered", facts: { amenities: catalog.amenities.filter((x) => x.status === "confirmed_yes").map((x) => x.publicName), source: "property_catalog", propertyId: property.propertyId } };
@@ -64,16 +74,8 @@ function executeTasks({ property, catalog, tasks, request, availabilityResolver,
       if (["availability", "bundle_availability", "room_options", "capacity"].includes(task.type)) return { taskId: task.taskId, type: task.type, status: "answered", facts: adapted.facts };
       const availableInventory = adapted.facts.availableInventory;
       if (!availableInventory.length) return { taskId: task.taskId, type: task.type, status: "answered", facts: { availability: "full", checkIn: request.stay.checkIn, checkOut: request.stay.checkOut, prices: [], source: "availability_provider", propertyId: property.propertyId } };
-      const availableIds = new Set((availableInventory || []).map((item) => item.canonicalId));
-      const candidates = (property.rooms || []).filter((room) => availableIds.has(room.id));
-      const dates = stayDates(request.stay.checkIn, request.stay.checkOut);
-      const prices = [];
-      for (const room of candidates) {
-        const daily = dates.map((date) => { const override = priceOverrides.find((item) => item.roomId === room.id && item.date === date); const price = override ? Number(override.price) : Number(room[priceKey(date)]); return { date, price: Number.isInteger(price) && price > 0 ? price : null, source: override ? "price_override" : "room_pricing" }; });
-        prices.push({ inventory: publicInventory(room), daily, total: daily.every((x) => x.price !== null) ? daily.reduce((sum, x) => sum + x.price, 0) : null, currency: property.currency || "TWD" });
-      }
-      const missing = prices.some((item) => item.total === null);
-      return { taskId: task.taskId, type: task.type, status: missing ? "property_data_missing" : "answered", facts: { availability: "available", checkIn: request.stay.checkIn, checkOut: request.stay.checkOut, prices, source: "pricing_provider", propertyId: property.propertyId }, review: missing };
+      const pricing = buildPricingFacts({ property, availableInventory, checkIn: request.stay.checkIn, checkOut: request.stay.checkOut, priceOverrides });
+      return { taskId: task.taskId, type: task.type, status: pricing.missing ? "property_data_missing" : "answered", facts: { availability: "available", checkIn: request.stay.checkIn, checkOut: request.stay.checkOut, prices: pricing.prices, source: "pricing_provider", propertyId: property.propertyId }, review: pricing.missing };
     }
     return { taskId: task.taskId, type: task.type, status: ["booking_request", "human_help", "high_risk", "unknown"].includes(task.type) ? "needs_human" : "failed", reason: task.type, facts: {}, review: true };
     } catch {
@@ -82,4 +84,102 @@ function executeTasks({ property, catalog, tasks, request, availabilityResolver,
   });
 }
 
-module.exports = { executeTasks, priceKey, isGenericAvailabilityEntity, executePropertyFactTask, catalogFactByCanonicalId };
+// The active Engine runtime calls this entrypoint exclusively.  The legacy
+// executeTasks export remains for isolated historical test fixtures only.
+function executeQueryPlans({ property, catalog, queryPlans, availabilityResolver, availableDatesResolver, priceOverrides = [] }) {
+  return (queryPlans || []).map((queryPlan) => executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, availableDatesResolver, priceOverrides }));
+}
+
+function queryOutcome(queryPlan, outcome, extra = {}) { return { taskId: queryPlan.taskId, type: queryPlan.capability, formalRequestId: queryPlan.formalRequestId, requestCycleId: queryPlan.requestCycleId, outcome, facts: {}, resolverAttempted: false, ...extra }; }
+function catalogEntity(catalog, canonicalId) {
+  if (!canonicalId) return null;
+  return [...(catalog.rooms || []), ...(catalog.amenities || []), ...(catalog.policies || []), ...(catalog.faqs || [])]
+    .find((entity) => entity.canonicalId === canonicalId) || null;
+}
+function queryResolvedEntity(queryPlan, catalog) {
+  const entity = queryPlan.entity || {};
+  if (queryPlan.resolvedEntity) return queryPlan.resolvedEntity;
+  if (entity.status === "matched_set") {
+    return {
+      status: "matched_set",
+      entities: (entity.canonicalSet || []).map((canonicalId) => catalogEntity(catalog, canonicalId)
+        || { canonicalId, category: entity.category })
+    };
+  }
+  if (entity.status !== "resolved") return null;
+  return {
+    status: "resolved",
+    entity: catalogEntity(catalog, entity.canonicalId)
+      || { canonicalId: entity.canonicalId, category: entity.category }
+  };
+}
+function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, availableDatesResolver, priceOverrides = [] }) {
+  if (!queryPlan || queryPlan.propertyId !== property.propertyId) return queryOutcome(queryPlan || {}, "invalid_query_plan", { reason: "property_scope_mismatch" });
+  const request = queryPlan.conditions || {};
+  const stay = request.stay || {};
+  const resolved = queryResolvedEntity(queryPlan, catalog);
+  const resolverId = queryPlan.resolverId || (
+    ["amenity", "policy", "property_fact", "amenity_list"].includes(queryPlan.capability)
+      ? "property_catalog"
+      : ["booking_request", "human_help", "high_risk", "unknown"].includes(queryPlan.capability)
+        ? "human_handoff"
+        : "availability_resolver"
+  );
+  try {
+    if (resolverId === "property_catalog" && queryPlan.capability === "amenity_list") {
+      return queryOutcome(queryPlan, "answered", { facts: { amenities: (catalog.amenities || []).filter((item) => item.status === "confirmed_yes").map((item) => item.publicName), source: "property_catalog", propertyId: property.propertyId }, resolverAttempted: false });
+    }
+    if (resolverId === "property_catalog") {
+      const entity = resolved && resolved.status === "resolved" && resolved.entity;
+      if (!entity || entity.status === "unknown") return queryOutcome(queryPlan, "unknown", { reason: "property_fact_unknown", facts: { subject: queryPlan.entity && queryPlan.entity.rawText || "question" } });
+      const detailIntent = normalizeDetailIntent(queryPlan.detailIntent);
+      if (detailIntent === "general") return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", ...(entity.canonicalId === "location" ? { locationMapUrl: entity.answer || "" } : {}), ...(Array.isArray(entity.applicableBundles) ? { applicableBundles: entity.applicableBundles } : {}), source: "property_catalog", propertyId: property.propertyId, detailIntent }, resolverAttempted: false });
+      if (Array.isArray(entity.applicableBundles) && entity.applicableBundles.some((bundle) => bundle.note)) return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", applicableBundles: entity.applicableBundles, source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: true }, resolverAttempted: false });
+      const detail = catalogFactByCanonicalId(catalog, detailFactCandidates(entity.canonicalId, detailIntent));
+      return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: (detail || entity).status, answer: detail ? detail.answer || "" : includeBaseAnswer(detailIntent) ? entity.answer || "" : "", source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: Boolean(detail), detailNeedsConfirmation: !detail }, resolverAttempted: false });
+    }
+    if (resolverId === "availability_resolver" && queryPlan.capability === "available_dates") {
+      if (!stay.searchRange || !stay.searchRange.from || !stay.searchRange.to) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "missing_search_range" });
+      if (!queryPlan.resolverTask) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "resolver_task_required" });
+      const result = resolveAvailableDates({ availableDatesResolver, resolverTask: queryPlan.resolverTask });
+      if (result.status === "answered") return queryOutcome(queryPlan, "answered", { facts: { availableDates: result.dates.filter((item) => item.available).map((item) => item.checkIn), range: stay.searchRange, source: result.source, propertyId: property.propertyId }, resolverAttempted: true });
+      return queryOutcome(queryPlan, result.status === "unknown" ? "unknown" : "technical_error", { reason: `available_dates_${result.status}`, resolverAttempted: true });
+    }
+    if (resolverId === "availability_resolver") {
+      if (!stay.checkIn || !stay.checkOut) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "missing_stay" });
+      if (!queryPlan.resolverTask) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "resolver_task_required" });
+      const adapted = resolveAvailability({ availabilityResolver, resolverTask: queryPlan.resolverTask });
+      if (!adapted.result.availabilityReliable) return queryOutcome(queryPlan, "technical_error", { reason: "availability_unreliable", resolverAttempted: true });
+      if (["availability", "bundle_availability", "room_options", "capacity"].includes(queryPlan.capability)) return queryOutcome(queryPlan, adapted.facts.availableInventory.length ? "answered" : "no_availability", { facts: adapted.facts, resolverAttempted: true });
+      if (!adapted.facts.availableInventory.length) return queryOutcome(queryPlan, "no_availability", { facts: { availability: "full", checkIn: stay.checkIn, checkOut: stay.checkOut, prices: [], source: "availability_provider", propertyId: property.propertyId }, resolverAttempted: true });
+      const pricing = buildPricingFacts({ property, availableInventory: adapted.facts.availableInventory, checkIn: stay.checkIn, checkOut: stay.checkOut, priceOverrides });
+      return queryOutcome(queryPlan, pricing.missing ? "property_data_missing" : "answered", { facts: { availability: "available", checkIn: stay.checkIn, checkOut: stay.checkOut, prices: pricing.prices, source: "pricing_provider", propertyId: property.propertyId }, resolverAttempted: true });
+    }
+    if (resolverId === "human_handoff") {
+      return queryOutcome(queryPlan, "unknown", { reason: queryPlan.capability });
+    }
+    return queryOutcome(queryPlan, "invalid_query_plan", { reason: "unsupported_resolver" });
+  } catch { return queryOutcome(queryPlan, "technical_error", { reason: "resolver_exception", resolverAttempted: true }); }
+}
+
+function executeCanonicalQueryPlans(input) {
+  for (const queryPlan of input.queryPlans || []) {
+    assertCanonicalRequest(queryPlan && queryPlan.canonicalRequest);
+    if (queryPlan.resolverId !== queryPlan.canonicalRequest.resolverId) {
+      return [queryOutcome(queryPlan, "invalid_query_plan", { reason: "resolver_authority_mismatch" })];
+    }
+  }
+  return executeQueryPlans(input);
+}
+
+module.exports = {
+  executeTasks,
+  executeQueryPlan,
+  executeQueryPlans,
+  executeCanonicalQueryPlans,
+  buildPricingFacts,
+  priceKey,
+  isGenericAvailabilityEntity,
+  executePropertyFactTask,
+  catalogFactByCanonicalId
+};

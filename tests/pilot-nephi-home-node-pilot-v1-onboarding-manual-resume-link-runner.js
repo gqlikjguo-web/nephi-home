@@ -1,13 +1,14 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "../pilot/nephi-home-node-pilot-v1");
 const { migratePostgres } = require(path.join(root, "lib/providers/postgres-migrate"));
-const { seedPostgres } = require(path.join(root, "lib/providers/postgres-seed"));
+const { seedNephiPostgres } = require(path.join(root, "tests/helpers/nephi-postgres-seed"));
 const { openPostgres } = require(path.join(root, "lib/providers/postgres-client"));
 const { createPostgresProviders } = require(path.join(root, "lib/providers/postgres-providers"));
 const { upsertAdminUser, sessionTokenHash } = require(path.join(root, "lib/admin-auth"));
@@ -29,9 +30,16 @@ async function request(url, options = {}) {
   return { response, body, text };
 }
 
-async function createSubmitted(base) {
-  let result = await request(`${base}/api/public/onboarding/drafts`, { method: "POST" });
-  const { applicationId, draftToken } = result.body.data;
+async function createSubmitted(base, providers) {
+  const applicationId = crypto.randomUUID();
+  const draftToken = crypto.randomBytes(32).toString("base64url");
+  providers.onboarding.createOnboardingInvitation(
+    applicationId,
+    sessionTokenHash(draftToken),
+    new Date(Date.now() + 86400000).toISOString(),
+    "nephi_home",
+    "platform"
+  );
   const headers = { "content-type": "application/json", "x-onboarding-draft-token": draftToken };
   await request(`${base}/api/public/onboarding/drafts/${applicationId}`, { method: "PATCH", headers, body: JSON.stringify(payload) });
   await request(`${base}/api/public/onboarding/drafts/${applicationId}/submit`, { method: "POST", headers: { "x-onboarding-draft-token": draftToken } });
@@ -42,7 +50,7 @@ async function createSubmitted(base) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-manual-resume-"));
   const connection = { kind: "pglite", dataDir: temp };
   await migratePostgres(connection);
-  await seedPostgres(connection);
+  await seedNephiPostgres(connection);
   await upsertAdminUser(connection, { propertyId: "nephi_home", username: "platform", password: "platform-password-123" });
   let db = await openPostgres(connection);
   await db.query("INSERT INTO platform_admin_grants(property_id,username) VALUES($1,$2)", ["nephi_home", "platform"]);
@@ -60,10 +68,10 @@ async function createSubmitted(base) {
   }
   await startRuntime();
   try {
-    const first = await createSubmitted(base);
-    const second = await createSubmitted(base);
-    const rejected = await createSubmitted(base);
-    const rollbackRejected = await createSubmitted(base);
+    const first = await createSubmitted(base, providers);
+    const second = await createSubmitted(base, providers);
+    const rejected = await createSubmitted(base, providers);
+    const rollbackRejected = await createSubmitted(base, providers);
     let result = await request(`${base}/api/admin/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", username: "platform", password: "platform-password-123" }) });
     const cookie = result.response.headers.get("set-cookie").split(";")[0];
 

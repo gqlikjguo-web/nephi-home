@@ -70,8 +70,11 @@ function factTask(id, type, rawText, candidate) {
   return { taskId: id, type, sourceText: rawText, requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: type === "policy" ? "policy" : "amenity", rawText, canonicalCandidate: candidate, confidence: 0.99 }, confidence: 0.99 };
 }
 function casePlan(item) {
+  const defaultDateText = item.request && item.request.checkIn
+    ? item.request.checkIn.slice(5).split("-").map(Number).join("/")
+    : "";
   const stay = item.request && item.request.checkIn ? {
-    dateExpression: { rawText: item.dateText || item.request.checkIn.slice(5).replace("-", "/"), kind: "absolute", anchor: "message_time" },
+    dateExpression: { rawText: item.dateText || defaultDateText, kind: "absolute", anchor: "message_time" },
     checkInCandidate: item.request.checkIn, checkOutCandidate: null, nightsCandidate: item.request.nights || 1, guestCountCandidate: item.request.guests || null
   } : { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null };
   const stateOperations = item.request && item.request.checkIn ? [
@@ -83,9 +86,38 @@ function casePlan(item) {
     ...(item.request.guests ? [{ field: "stay.guestCountCandidate", operation: "set", value: item.request.guests, sourceText: String(item.request.guests) }] : []),
     { field: "inventory.mode", operation: "set", value: item.request.queryMode || "any", sourceText: item.request.queryMode || "any" }
   ] : [];
+  const stayTaskCount = (item.tasks || []).filter((task) => task.dependsOnStayContext).length;
+  const tasks = (item.tasks || []).map((task) => ({
+    ...task,
+    stayCandidate: task.stayCandidate !== undefined ? task.stayCandidate : task.dependsOnStayContext && stayTaskCount === 1 ? stay : null
+  }));
   return {
-    schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations, stay, tasks: item.tasks,
+    schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations, stay, tasks,
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "fixture_matrix"
+  };
+}
+
+// The fixture models the AI contract explicitly.  Production must not derive
+// this relation from the legacy discourse field or from a single snapshot.
+function withExplicitRelations(plannerOutput, sourceEvents) {
+  const source = (sourceEvents || [])[0] || {};
+  const messageText = String(source.messageText || "");
+  const tasks = (plannerOutput.tasks || []).map((task, candidateIndex) => ({ ...task, candidateIndex }));
+  return {
+    ...plannerOutput,
+    tasks,
+    contextRelationCandidates: tasks.map((task) => ({
+      candidateIndex: task.candidateIndex,
+      kind: "new_request",
+      candidateRequestCycleRefs: [],
+      evidenceRefs: [{
+        eventId: String(source.eventId || ""),
+        messageRef: String(source.messageRef || ""),
+        startOffset: 0,
+        endOffset: messageText.length,
+        quote: messageText
+      }]
+    }))
   };
 }
 
@@ -149,7 +181,7 @@ function createPersistence() {
 
 async function runCase(engine, item, index) {
   const plannerOutput = casePlan(item);
-  engine.planner = { classify: async () => plannerOutput };
+  engine.planner = { classify: async ({ sourceEvents }) => withExplicitRelations(plannerOutput, sourceEvents) };
   return engine.process({ customerId: item.propertyId, channelId: "matrix-channel", lineUserId: `matrix-user-${index}`, eventId: `matrix-event-${index}`, eventTimestamp: EVENT_TIME, messageText: item.message });
 }
 

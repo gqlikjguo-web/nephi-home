@@ -2,7 +2,7 @@
 
 const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("node:path");
 const {migratePostgres}=require("../lib/providers/postgres-migrate");
-const {seedPostgres}=require("../lib/providers/postgres-seed");
+const {seedNephiPostgres}=require("./helpers/nephi-postgres-seed");
 const {createProviders}=require("../lib/providers/provider-factory");
 const {openPostgres}=require("../lib/providers/postgres-client");
 const {cleanInput}=require("../lib/onboarding-service");
@@ -11,7 +11,7 @@ const {cleanInput}=require("../lib/onboarding-service");
   const runtime=path.join(__dirname,"../.runtime");fs.mkdirSync(runtime,{recursive:true});
   const temp=fs.mkdtempSync(path.join(runtime,"room-data-pg-")),connection={kind:"pglite",dataDir:path.join(temp,"db")};
   try{
-    await migratePostgres(connection);await migratePostgres(connection);await seedPostgres(connection);
+    await migratePostgres(connection);await migratePostgres(connection);await seedNephiPostgres(connection);
     const client=await openPostgres(connection);
     await client.query("INSERT INTO properties(property_id,display_name) VALUES('room_data_other','Other')");
     await client.query("INSERT INTO property_settings(property_id,settings) VALUES('room_data_other','{}'::jsonb)");

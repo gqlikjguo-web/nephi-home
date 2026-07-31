@@ -16,9 +16,10 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(requestBody.text.format.schema.properties.tasks.minItems, 1);
   assert.match(requestBody.input[0].content[0].text, /preserve every stated nights, guest count, and feature even when a date is missing/i);
   assert.match(requestBody.input[0].content[0].text, /explicit calendar expression/i);
-  assert.match(requestBody.input[0].content[0].text, /relationship between the property and any external place/i, "planner must recognize location relationships as one shared semantic concept");
-  assert.match(requestBody.input[0].content[0].text, /proximity, near, far, distance, duration, directions, or nearby existence/i, "planner must cover proximity semantics rather than a fixed list of place names");
-  assert.match(requestBody.input[0].content[0].text, /takes precedence over a general FAQ or place topic/i, "location relationships must win when a place topic would otherwise compete");
+  assert.match(requestBody.input[0].content[0].text, /direct requests for the property's location, address, map, or navigation/i, "planner must recognize direct property location requests");
+  assert.match(requestBody.input[0].content[0].text, /relationship between the property and (?:an|any) external place/i, "planner must recognize location relationships as one shared semantic concept");
+  assert.match(requestBody.input[0].content[0].text, /proximity, near, far, distance, duration, directions, navigation, or nearby existence/i, "planner must cover proximity semantics rather than a fixed list of place names");
+  assert.match(requestBody.input[0].content[0].text, /never search for, recommend, invent, or identify a nearby place/i, "planner must not create unapproved nearby-place facts");
   assert.equal(JSON.stringify(requestBody).includes("test-key"), false);
   assert.equal(runtimeConfig({ TEST_ONLY_CONVERSATION_ENGINE_V2: "true" }).testOnlyConversationEngineV2, true);
   assert.equal(runtimeConfig({}).testOnlyConversationEngineV2, false);
@@ -29,6 +30,11 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.deepEqual(composed, composerOutput);
   assert.equal(composerRequest.text.format.name, "junzan_controlled_reply_v2");
   assert.deepEqual(composerRequest.text.format.schema.properties.sections.items.properties.responseMode.enum, ["answer", "clarification", "handoff"]);
+  assert.deepEqual(JSON.parse(composerRequest.input[1].content[0].text), {
+    sections: [{ taskId: "1", responseMode: "answer", exactText: "已確認住宿資訊。" }]
+  });
+  assert.deepEqual(composerRequest.text.format.schema.properties.sections.items.properties.text.enum, ["已確認住宿資訊。"]);
+  assert.match(composerRequest.input[0].content[0].text, /copy taskId, responseMode, and exactText without changing/i);
   assert.equal(JSON.stringify(composerRequest).includes("test-key"), false);
   console.log("conversation planner v2 adapter: PASS");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

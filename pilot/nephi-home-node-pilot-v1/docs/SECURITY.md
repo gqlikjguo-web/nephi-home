@@ -30,6 +30,14 @@
 - The Bot User ID is a non-secret identifier obtained from the same Messaging API Channel's LINE Developers Basic settings page. Never copy it from another Channel or guess it.
 - Channel Secret and Access Token remain sensitive and must never be written to documentation, Git, or conversation logs.
 
+## Test-only Planner provider diagnostics
+
+- Persisted `planner_error` records are keyed by trace ID and use a closed allowlist. They may contain bounded attempt/status values, booleans, fixed categories, model/provider identifiers, and sanitized provider error type/code/param only.
+- Raw response bodies are inspected only long enough to derive allowlisted booleans and fields, then discarded. Provider messages, refusal text, prompts, guest content, source identifiers, property data, headers, stacks, tokens, API keys, credentials, and raw JSON must never be attached to errors or logs.
+- Diagnostic callbacks and application logging remain isolated from the conversation fallback. A logging failure cannot prevent `planner_parse_failed` from reaching the safe handoff and existing LINE delivery path.
+- Retry diagnostics add only bounded attempt count, the first and final safe error categories, and `retryPerformed`/`retrySucceeded` booleans. Retry never stores either request or response content.
+- Only `timeout`, `network`, `rate_limit`, and `provider_5xx` may trigger the single retry. Invalid or unclassified content cannot expand the retry boundary.
+
 ## Property-scoped LINE binding
 
 - 共用多業者 route 使用 `/api/line/webhooks/<webhookKey>`；`webhookKey` 只用來選出唯一候選 binding，不直接授權 property。
@@ -38,3 +46,24 @@
 - Channel Secret 與 Access Token 以 AES-256-GCM 加密保存；加密金鑰只來自 `JUNZAN_LINE_CREDENTIAL_ENCRYPTION_KEY`，不得保存至資料庫、Repository、log 或 API response。
 - 缺少加密金鑰時，新 binding 的建立、credential 更新與 runtime 使用必須拒絕；既有 legacy test-only env webhook 不受影響。
 - 管理 API 僅限 platform admin，且只能回傳是否已設定、webhook key 與 enabled 狀態。
+
+## Onboarding intake invitations
+
+- Initial onboarding access is issued only by an authenticated platform administrator. A public request without an invitation cannot create a staging draft.
+- The database stores only the invitation token hash. Each token is bound to one onboarding application and has an explicit expiry and revocation state.
+- Application IDs or frontend-supplied property IDs are never authorization. A token from one application cannot read or write another application.
+- Unapproved onboarding data remains in staging and must not create formal property facts, LINE bindings, availability, or automatic replies.
+- Invitation tokens, draft tokens, cookies, contact details, credentials, and raw request bodies must not be written to application logs.
+- Test-only invitation, resume, and admin-setup links must use the dedicated test-only host. They must never use `app.junzanai.com`.
+- Test-only startup may run migrations but must not seed data automatically.
+- Deploy Hooks are credentials: use them only for the intended test-only service, rotate them after exposure, and never read back, log, or commit the replacement value.
+
+## One-time LINE setup links
+
+- Only an authenticated platform administrator may create, list, or revoke setup links. A link is bound to one existing formal property, expires, may be revoked, and may be consumed once.
+- The database stores only a SHA-256 token hash. The raw token appears only in the one-time URL returned at creation and must not enter logs, errors, analytics, localStorage, repository files, or later API responses.
+- The one-time URL carries the raw token only after `#`. The setup page removes the fragment with `history.replaceState` before resolving it by POST, sends `Referrer-Policy: no-referrer`, and rejects the former query-string resolve route.
+- Redemption derives property scope only from the locked token row. A frontend `propertyId` is ignored and cannot redirect credentials to another property.
+- Token validation, encrypted binding upsert, and `used_at` are one PostgreSQL transaction. Any encryption, constraint, storage, or commit failure leaves the token unused and no partial binding.
+- Channel Secret and Channel Access Token use the existing AES-256-GCM envelope and `JUNZAN_LINE_CREDENTIAL_ENCRYPTION_KEY`. Missing or invalid encryption configuration fails closed; the key and credential plaintext are never read back.
+- Webhook-observed time is non-authoritative telemetry. A failure to record it is logged only with a hashed webhook identifier and must not reject an otherwise valid signed LINE webhook.

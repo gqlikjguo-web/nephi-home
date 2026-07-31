@@ -17,17 +17,19 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["date", "301", "302", "401", "402"],
+        "required": ["date"],
         "properties": {
           "date": {
             "type": "string",
             "format": "date",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
-          },
-          "301": { "type": "string", "enum": ["open", "closed"] },
-          "302": { "type": "string", "enum": ["open", "closed"] },
-          "401": { "type": "string", "enum": ["open", "closed"] },
-          "402": { "type": "string", "enum": ["open", "closed"] }
+          }
+        },
+        "patternProperties": {
+          "^(?!date$)[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$": {
+            "type": "string",
+            "enum": ["open", "closed"]
+          }
         }
       }
     }
