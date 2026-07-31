@@ -478,6 +478,7 @@ class ConversationEngineV2 {
     }
     const executionTasks = contextExecution.executionTasks;
     const executionItems = contextExecution.executionItems;
+    this.trace(traceId, "context_execution", { items: executionItems.map((item) => ({ taskId: item.task.taskId, reasonCode: item.transition && item.transition.reasonCode || "", contextTaskId: item.transition && item.transition.contextTask && item.transition.contextTask.taskId || "", slotSources: item.transition && item.transition.slotSources || {} })) });
     const relationsByCandidateIndex = new Map(contextExecution.relations.map((relation) => [relation.candidateIndex, relation]));
     const candidateInputsByCandidateIndex = {};
     const canonicalItems = executionItems.map((item) => canonicalizeExecutionItem({
