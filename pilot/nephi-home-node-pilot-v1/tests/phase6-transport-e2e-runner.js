@@ -32,9 +32,9 @@ function plannerFor(kind) {
   } };
 }
 
-async function run(kind, mode, { callbackThrows = false } = {}) {
+async function run(kind, mode, { callbackThrows = false, finalResponseOverride = null } = {}) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "phase6-transport-"));
-  const engineDiagnostics = [], transportDiagnostics = [], calls = [], finalDecisions = new Map();
+  const engineDiagnostics = [], transportDiagnostics = [], calls = [], finalDecisions = new Map(), finalResponses = new Map();
   const app = createApp({
     dataFile: path.join(temp, "store.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json"),
     lineChannelSecret: secret, lineChannelAccessToken: "token", conversationDebounceMs: 1, lineChannelIdentityGuardRequired: false,
@@ -45,8 +45,13 @@ async function run(kind, mode, { callbackThrows = false } = {}) {
   const processEngine = app.conversationEngineV2.process.bind(app.conversationEngineV2);
   app.conversationEngineV2.process = async (input) => {
     const result = await processEngine(input);
+    if (finalResponseOverride) result.finalResponse = { ...result.finalResponse, ...finalResponseOverride };
     const finalDecision = JSON.parse(JSON.stringify(result.finalDecision));
-    for (const eventId of input.eventIds || [input.eventId]) finalDecisions.set(eventId, finalDecision);
+    const finalResponse = JSON.parse(JSON.stringify(result.finalResponse));
+    for (const eventId of input.eventIds || [input.eventId]) {
+      finalDecisions.set(eventId, finalDecision);
+      finalResponses.set(eventId, finalResponse);
+    }
     return result;
   };
   const running = await app.start(0, "127.0.0.1");
@@ -59,7 +64,7 @@ async function run(kind, mode, { callbackThrows = false } = {}) {
     assert.equal(response.status, 200);
     await new Promise((resolve) => setTimeout(resolve, 80));
     const records = app.providers.persistence.listMessageLogs(propertyId).map((entry) => ({ ...entry, propertyId }));
-    return { propertyId, channelId, lineUserId, eventId, finalDecision: finalDecisions.get(eventId), engineDiagnostics, transportDiagnostics, calls, records };
+    return { propertyId, channelId, lineUserId, eventId, finalDecision: finalDecisions.get(eventId), finalResponse: finalResponses.get(eventId), engineDiagnostics, transportDiagnostics, calls, records };
   } finally {
     await app.stop();
     fs.rmSync(temp, { recursive: true, force: true });
@@ -112,8 +117,29 @@ function assertRecordAlignment(result) {
   const silent = await run("no_reply", "success");
   assert.equal(silent.engineDiagnostics.find((entry) => entry.stage === "final_decision").decision, "no_reply");
   assert.deepEqual(silent.transportDiagnostics, [{ traceId: silent.transportDiagnostics[0].traceId, propertyId, stage: "line_transport", decision: "no_reply", reasonCode: "no_reply_gate_hit", attempted: false, delivered: false }]);
+  assert.equal(silent.finalResponse.shouldReply, false);
+  assert.equal(silent.finalResponse.replyText.trim(), "");
   assert.equal(silent.calls.length, 0);
+  assert.deepEqual(Object.fromEntries(["processingStatus", "shouldReply", "noReply"].map((key) => [key, findExactRecord(silent, (eventId) => eventId === silent.eventId)[key]])), {
+    processingStatus: "no_reply", shouldReply: false, noReply: true
+  });
   assertRecordAlignment(silent);
+  const delivered = await run("reply", "success");
+  assert.equal(delivered.finalResponse.shouldReply, true);
+  assert.notEqual(delivered.finalResponse.replyText.trim(), "");
+  assert.equal(delivered.calls.length, 1);
+  assert.equal(delivered.calls[0].messages[0].text, delivered.finalResponse.replyText);
+  assert.equal(findExactRecord(delivered, (eventId) => eventId === delivered.eventId).processingStatus, "reply_succeeded");
+  assert.equal(findExactRecord(delivered, (eventId) => eventId === delivered.eventId).replyDelivered, true);
+  const blank = await run("reply", "success", { finalResponseOverride: { shouldReply: true, replyText: " \t " } });
+  const blankRecord = findExactRecord(blank, (eventId) => eventId === blank.eventId);
+  assert.equal(blank.calls.length, 0, "a blank FinalResponse must not call the LINE reply API");
+  assert.equal(blankRecord.processingStatus, "final_response_contract_failed");
+  assert.equal(blankRecord.needsReview, true);
+  assert.equal(blankRecord.replyDelivered, false);
+  assert.equal(blankRecord.noReply, false);
+  assert.equal(blankRecord.deliveryErrorCode, "final_response_empty_reply");
+  assert.deepEqual(blank.transportDiagnostics.at(-1), { traceId: blank.transportDiagnostics.at(-1).traceId, propertyId, stage: "line_transport", decision: "reply", reasonCode: "final_response_empty_reply", attempted: false, delivered: false });
   const callbackFailure = await run("reply", "success", { callbackThrows: true });
   assert.equal(callbackFailure.calls.length, 1, "a diagnostic callback failure must not suppress the LINE reply");
   assert.equal(callbackFailure.records.find((entry) => entry.eventId === callbackFailure.eventId).processingStatus, "reply_succeeded");
