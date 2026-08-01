@@ -34,7 +34,7 @@ function runtimeConfig(env = process.env) {
     ,testOnlyConversationEngineV2: /^(?:1|true|yes)$/i.test(String(env.TEST_ONLY_CONVERSATION_ENGINE_V2 || ""))
     ,testOnlyConversationTraceV2: /^(?:1|true|yes)$/i.test(String(env.TEST_ONLY_CONVERSATION_TRACE_V2 || ""))
     ,testOnlyEnvironment: /^(?:1|true|yes)$/i.test(String(env.TEST_ONLY_ENVIRONMENT || ""))
-    ,testOnlyAvailabilityDiagnostic: /^(?:1|true|yes)$/i.test(String(env.TEST_ONLY_AVAILABILITY_DIAGNOSTIC || ""))
+    ,testOnlyAvailabilityStartupDiagnostic: /^(?:1|true|yes)$/i.test(String(env.TEST_ONLY_AVAILABILITY_STARTUP_DIAGNOSTIC || ""))
   };
 }
 
