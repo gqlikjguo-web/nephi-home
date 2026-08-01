@@ -26,6 +26,10 @@ services:
         value: 0.0.0.0
       - key: NEPHI_PILOT_TIME_ZONE
         value: Asia/Taipei
+      - key: TEST_ONLY_ENVIRONMENT
+        value: "true"
+      - key: TEST_ONLY_AVAILABILITY_DIAGNOSTIC
+        value: "true"
       - key: NEPHI_PILOT_CLASSIFIER_TIMEOUT_MS
         value: "15000"
       - key: PUBLIC_BASE_URL
