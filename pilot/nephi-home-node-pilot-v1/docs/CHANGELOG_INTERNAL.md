@@ -190,3 +190,8 @@
 
 - Split legal `shouldReply=false` silence from invalid blank rendered replies in both active LINE handlers.
 - Added test-only and property-scoped transport regressions proving blank replies are not sent or recorded as `no_reply`, and are persisted with `final_response_empty_reply` for review.
+
+## 2026-08-01 PostgreSQL availability authority repair
+
+- Added migration 020 to convert complete legacy availability days into normalized property-scoped room and formal bundle inventory, and removed the active PostgreSQL legacy-table overlay.
+- Added a true PGlite regression for untouched first-query frontend/admin/LINE consistency, adjacent dates, restart persistence, bundle relations, idempotence, and cross-property isolation.

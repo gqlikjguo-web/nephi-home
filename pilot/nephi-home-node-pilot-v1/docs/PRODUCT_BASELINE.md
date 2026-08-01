@@ -110,3 +110,10 @@
 - Active LINE transports may record a normal `no_reply` only when `finalResponse.shouldReply` is explicitly `false`.
 - When `finalResponse.shouldReply` is `true` but `finalResponse.replyText` is empty after trimming, transport must not call LINE and must persist `final_response_empty_reply` as a review-required contract failure.
 - Transport sends only `finalResponse.replyText`; it does not fall back to compatibility output, FinalDecision delivery flags, or server-generated text.
+
+## PostgreSQL availability authority
+
+- Active PostgreSQL room and bundle availability is read only from `inventory_availability_days`.
+- Legacy daily room data is converted exactly once by migration into property-scoped inventory rows; formal bundles are derived only from stored member relations.
+- The admin month API, public frontend API, Conversation Resolver, and LINE flow consume the same normalized rows. A backend toggle is not an initialization or warm-up requirement.
+- Missing daily rows remain visibly missing/unreliable rather than being silently converted into either availability or a false no-room answer.

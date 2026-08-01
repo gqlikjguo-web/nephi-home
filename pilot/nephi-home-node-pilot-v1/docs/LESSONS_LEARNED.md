@@ -200,3 +200,9 @@ Keep each scan aligned with the concrete authority contract. The Engine must cal
 Combining a false delivery decision and an empty reply string in one transport condition silently converted a broken `shouldReply=true` FinalResponse into normal `no_reply`; whitespace-only text could instead reach the LINE API.
 
 Gate normal silence only on an explicit `finalResponse.shouldReply === false`. Validate the rendered text separately before transport, retain the original FinalResponse as the sole content authority, and record an empty rendered reply as a review-required contract failure with a stable diagnostic code.
+
+## 2026-08-01 — A compatibility merge can silently become a second data authority
+
+Overlaying a partially populated replacement table on a complete legacy day made row presence determine which value won. The result looked reliable because every room had some value after the merge, even though those values came from conflicting authorities.
+
+When replacing a persistent authority, migrate the complete graph first, make the migration idempotent, and then remove the legacy read from active runtime. Regressions must start from the conflicting pre-migration database shape and verify the first public request, admin view, Resolver, restart, adjacent dates, bundles, and another property without calling a mutation endpoint.

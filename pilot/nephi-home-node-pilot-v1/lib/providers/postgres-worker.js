@@ -130,12 +130,10 @@ async function operation(name, args) {
   if (name === "getRows") {
     const [propertyId, from, to] = args;
     const normalized = await client.query("SELECT stay_date::text date,inventory_id,status FROM inventory_availability_days WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date,inventory_id",[propertyId,from||null,to||null]);
-    const legacy = await client.query("SELECT stay_date::text date,to_jsonb(a)-'property_id'-'stay_date' inventory FROM availability_days a WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date",[propertyId,from||null,to||null]);
-    const roomRecords=await client.query("SELECT room_id FROM room_types WHERE property_id=$1",[propertyId]),roomIds=new Set(roomRecords.rows.map(row=>row.room_id)),by={},legacyDates=new Set();
-    for(const item of legacy.rows){const date=item.date.slice(0,10),inventory=typeof item.inventory==="string"?JSON.parse(item.inventory):item.inventory||{};by[date]=by[date]||{date};legacyDates.add(date);for(const [inventoryId,status] of Object.entries(inventory))if(roomIds.has(inventoryId)&&["available","closed"].includes(status))by[date][inventoryId]=status;}
+    const by={};
     for(const item of normalized.rows){const date=item.date.slice(0,10);by[date]=by[date]||{date};by[date][item.inventory_id]=item.status;}
-    const bundleAvailability=await client.query("SELECT bundle_id,stay_date::text date,status FROM bundle_availability_days WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date)",[propertyId,from||null,to||null]),bundleStatus=new Map(bundleAvailability.rows.map(item=>[`${item.date.slice(0,10)}\u0000${item.bundle_id}`,item.status])),bundles=await operation("listBundles",[propertyId]);
-    for(const row of Object.values(by))for(const bundle of bundles){const own=row[bundle.id]||bundleStatus.get(`${row.date}\u0000${bundle.id}`)||(legacyDates.has(row.date)?"available":"closed");row[bundle.id]=bundle.enabled&&bundle.memberRoomIds.length>0&&own==="available"&&bundle.memberRoomIds.every(id=>row[id]==="available")?"available":"closed";}
+    const bundles=await operation("listBundles",[propertyId]);
+    for(const row of Object.values(by))for(const bundle of bundles){const own=row[bundle.id]||"closed";row[bundle.id]=bundle.enabled&&bundle.memberRoomIds.length>0&&own==="available"&&bundle.memberRoomIds.every(id=>row[id]==="available")?"available":"closed";}
     return Object.values(by).sort((left,right)=>left.date.localeCompare(right.date));
   }
   if (name === "getAvailabilityDiagnosticSnapshot") {

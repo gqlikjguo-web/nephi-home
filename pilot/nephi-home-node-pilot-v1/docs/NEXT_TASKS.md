@@ -159,3 +159,10 @@
 
 - Complete final local verification with `npm.cmd test`, review the exact diff for secrets and contract bypasses, then commit and push only `codex/unique-core-convergence`.
 - No deployment, merge, Render/LINE operation, credential access, or production/formal-data mutation is authorized.
+
+## 2026-08-01 Test-only availability authority verification
+
+- Run the full repository suite and CI for migration 020 plus the normalized-only provider.
+- Deploy only the CI-verified test-only commit, confirm the migration result from the one-time startup diagnostic, and verify the first public/admin/LINE Resolver query without any toggle.
+- Complete restart, adjacent-date, bundle, and cross-property evidence plus real test-only LINE acceptance.
+- Remove the temporary startup diagnostic, fixed property/date scope, and diagnostic provider RPC; rerun full CI and deploy the final clean test-only commit. Do not change production LINE, DNS, or production runtime.

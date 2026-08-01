@@ -10,6 +10,7 @@ const { createPostgresProviders } = require("../lib/providers/postgres-providers
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const { createApp } = require("../server");
 const { runtimeConfig } = require("../config/runtime");
+const { run: runAvailabilityAuthorityMigration } = require("./availability-authority-migration-runner");
 
 const PROPERTY_ID = "nephi_home";
 const FROM = "2026-08-05";
@@ -49,6 +50,7 @@ async function seed(connection) {
 }
 
 async function run() {
+  await runAvailabilityAuthorityMigration();
   assert.equal(runtimeConfig({ TEST_ONLY_ENVIRONMENT: "true" }).testOnlyEnvironment, true);
   assert.equal(runtimeConfig({ TEST_ONLY_AVAILABILITY_STARTUP_DIAGNOSTIC: "true" }).testOnlyAvailabilityStartupDiagnostic, true);
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "availability-diagnostic-"));

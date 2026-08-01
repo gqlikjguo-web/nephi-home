@@ -231,3 +231,11 @@
 **Reason:** Directly copying a Planner `canonicalCandidate` into a product admitted forged IDs even when the catalog resolved a different room. Conversely, allowing a continuation to reuse its raw Planner entity could lose the persisted topic for a controlled detail follow-up.
 
 **Constraint:** A `continue` transition preserves the V3 task topic and product. A new task may use only a catalog-resolved room or bundle; unknown, ambiguous, or forged candidates become `any` rather than a product selection. Exact catalog grounding remains data-driven; no full-source alias scan or parking/pool/location-specific transition is permitted.
+
+## D-023 — Normalized PostgreSQL inventory is the sole active availability authority
+
+**Decision:** `inventory_availability_days`, scoped by property, inventory, and stay date, is the only table read by the active PostgreSQL availability provider. Migration 020 performs the one-time conversion of legacy room rows and derives formal bundle rows from stored bundle-member relations.
+
+**Reason:** The compatibility reader merged `availability_days` with partially populated normalized rows and allowed the normalized fragment to overwrite the legacy day. Real test-only evidence showed legacy rooms as available while normalized rows said closed or were absent, causing the first frontend and LINE Resolver query to return no rooms until a toggle created more normalized rows.
+
+**Constraint:** The migration is property-, room-, bundle-, and date-neutral, idempotent, and does not infer bundle members. Runtime reads never merge legacy or bundle-legacy tables. Missing normalized dates remain explicit missing data, and every backend, frontend, and LINE caller consumes the same Resolver result.
