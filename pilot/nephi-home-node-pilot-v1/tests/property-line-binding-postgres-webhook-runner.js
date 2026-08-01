@@ -60,15 +60,16 @@ async function waitFor(predicate, timeoutMs = 1500) {
   try {
     const migration = await migratePostgres(connection);
     assert.ok(migration.files.includes("015_property_line_bindings.sql"), "the production binding migration must be applied");
-    assert.equal(migration.files.length, 20, "the first-version migration chain must remain complete and uniquely numbered");
-    assert.deepEqual(migration.files.slice(-6), [
+    assert.equal(migration.files.length, 21, "the migration chain must remain complete and uniquely numbered");
+    assert.deepEqual(migration.files.slice(-7), [
       "015_property_line_bindings.sql",
       "016_onboarding_intake_invites.sql",
       "017_property_line_setup_tokens.sql",
       "018_property_custom_replies.sql",
       "019_property_line_binding_webhook_status.sql",
-      "020_inventory_availability_authority.sql"
-    ], "inventory authority migration must follow the existing LINE webhook status migration");
+      "020_inventory_availability_authority.sql",
+      "021_test_only_line_message_traces.sql"
+    ], "test-only trace storage must follow the inventory authority migration without replacing it");
     assert.equal(migration.files.includes("016_property_line_binding_webhook_status.sql"), false, "the removed duplicate migration number must not return");
     const setup = await openPostgres(connection);
     await setup.query("INSERT INTO properties(property_id,display_name) VALUES($1,$2),($3,$4)", ["pg_property_a", "Postgres Property A", "pg_property_b", "Postgres Property B"]);

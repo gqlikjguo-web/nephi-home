@@ -55,6 +55,21 @@ function customReplyRow(row) {
     updatedAt: iso(row.updated_at)
   } : null;
 }
+function testOnlyLineTraceRow(row) {
+  return row ? {
+    propertyId: row.property_id,
+    channelIdHash: row.channel_id_hash,
+    eventId: row.event_id,
+    eventTimestamp: row.event_timestamp,
+    lineUserHash: row.line_user_hash,
+    messageTextHash: row.message_text_hash,
+    traceId: row.trace_id,
+    stages: typeof row.stages === "string" ? JSON.parse(row.stages) : (row.stages || {}),
+    expiresAt: iso(row.expires_at),
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at)
+  } : null;
+}
 async function loadOnboarding(id){const a=await client.query("SELECT * FROM onboarding_applications WHERE application_id=$1",[id]);if(!a.rows[0])return null;const row=a.rows[0],core=typeof row.core_data==="string"?JSON.parse(row.core_data):row.core_data||{};const rooms=await client.query("SELECT data FROM onboarding_room_types WHERE application_id=$1 ORDER BY position",[id]),bundles=await client.query("SELECT data FROM onboarding_bundle_offers WHERE application_id=$1 ORDER BY position",[id]),knowledge=await client.query("SELECT data FROM onboarding_knowledge_items WHERE application_id=$1 ORDER BY position",[id]),attachments=await client.query("SELECT attachment_id,file_name,content_type,byte_size,sha256,review_status,created_at FROM onboarding_attachments WHERE application_id=$1 ORDER BY created_at",[id]),notes=await client.query("SELECT action,note,reviewer_property_id,reviewer_username,created_at FROM onboarding_review_notes WHERE application_id=$1 ORDER BY created_at",[id]);return{...core,applicationId:id,status:row.status,propertyIdSuggestion:row.property_id_suggestion,inviteExpiresAt:iso(row.invite_expires_at),inviteRevoked:Boolean(row.invite_revoked_at),approvalMode:row.approval_mode||"",approvedPropertyId:row.approved_property_id||"",approvedAt:row.approved_at?iso(row.approved_at):"",approvedBy:row.approved_by_property_id||row.approved_by_username?{propertyId:row.approved_by_property_id||"",username:row.approved_by_username||""}:null,submittedAt:iso(row.submitted_at),updatedAt:iso(row.updated_at),rooms:rooms.rows.map(dataValue),bundles:bundles.rows.map(dataValue),knowledge:knowledge.rows.map(dataValue),attachments:attachments.rows.map(x=>({attachmentId:x.attachment_id,fileName:x.file_name,contentType:x.content_type,byteSize:x.byte_size,sha256:x.sha256,reviewStatus:x.review_status,createdAt:iso(x.created_at)})),reviewNotes:notes.rows.map(x=>({action:x.action,note:x.note,reviewerPropertyId:x.reviewer_property_id||"",reviewerUsername:x.reviewer_username||"",createdAt:iso(x.created_at)}))};}
 function onboardingSnapshot(app){return{propertyName:String(app.propertyName||""),contactName:String(app.contactName||""),phone:String(app.phone||""),email:String(app.email||""),address:String(app.address||""),googleMapsUrl:String(app.googleMapsUrl||""),checkInTime:String(app.checkInTime||""),checkOutTime:String(app.checkOutTime||""),line:{hasOfficialAccount:Boolean(app.line&&app.line.hasOfficialAccount),contactLink:String(app.line&&app.line.contactLink||"")},propertyIdSuggestion:String(app.propertyIdSuggestion||""),rooms:(app.rooms||[]).map(x=>({key:String(x.key||""),roomCode:String(x.roomCode||"").trim(),displayName:String(x.displayName||x.name||"").trim(),name:String(x.displayName||x.name||"").trim(),highlights:Array.isArray(x.highlights)?x.highlights.map(v=>String(v||"").trim()).filter(Boolean):[],type:String(x.type||""),capacity:Number.isFinite(Number(x.capacity))?Number(x.capacity):null,mondayThursdayPrice:Number.isFinite(Number(x.mondayThursdayPrice))?Number(x.mondayThursdayPrice):null,fridayPrice:Number.isFinite(Number(x.fridayPrice))?Number(x.fridayPrice):null,saturdayHolidayPrice:Number.isFinite(Number(x.saturdayHolidayPrice))?Number(x.saturdayHolidayPrice):null,sundayPrice:Number.isFinite(Number(x.sundayPrice))?Number(x.sundayPrice):null,enabled:x.enabled!==false})),bundles:(app.bundles||[]).map(x=>({key:String(x.key||""),name:String(x.name||""),memberRoomKeys:(x.memberRoomKeys||[]).map(String),capacity:Number.isFinite(Number(x.capacity))?Number(x.capacity):null,mondayThursdayPrice:Number.isFinite(Number(x.mondayThursdayPrice))?Number(x.mondayThursdayPrice):null,fridayPrice:Number.isFinite(Number(x.fridayPrice))?Number(x.fridayPrice):null,saturdayHolidayPrice:Number.isFinite(Number(x.saturdayHolidayPrice))?Number(x.saturdayHolidayPrice):null,sundayPrice:Number.isFinite(Number(x.sundayPrice))?Number(x.sundayPrice):null,enabled:x.enabled!==false,entertainmentAmenities:normalizeEntertainmentAmenities(x.entertainmentAmenities)})),knowledge:(app.knowledge||[]).map(x=>({key:String(x.key||""),label:String(x.label||""),status:String(x.status||"undecided"),answer:String(x.answer||"")}))};}
 async function addChangeRequestState(app){if(!app)return app;const result=await client.query("SELECT n.note,n.created_at,d.status FROM onboarding_review_notes n LEFT JOIN onboarding_email_deliveries d ON d.review_note_id=n.note_id WHERE n.application_id=$1 AND n.action IN ('changes_requested','reopened_changes_requested') ORDER BY n.created_at DESC LIMIT 1",[app.applicationId]);const row=result.rows[0];return{...app,latestChangeRequest:row?{reason:row.note,createdAt:iso(row.created_at)}:null,emailDelivery:row?{status:row.status||"pending"}:null};}
@@ -456,6 +471,21 @@ async function operation(name, args) {
     await client.query("INSERT INTO conversation_states(property_id,channel_id,line_user_id,state) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(property_id,channel_id,line_user_id) DO UPDATE SET state=excluded.state,updated_at=now()",[args[0],args[1],args[2],JSON.stringify(args[3])]); return args[3];
   }
   if (name === "deleteConversationState") { const r=await client.query("DELETE FROM conversation_states WHERE property_id=$1 AND channel_id=$2 AND line_user_id=$3 RETURNING property_id",args); return Boolean(r.rows&&r.rows.length); }
+  if (name === "upsertTestOnlyLineTrace") {
+    const [item] = args;
+    const r = await client.query(
+      "INSERT INTO test_only_line_message_traces(property_id,channel_id_hash,event_id,event_timestamp,line_user_hash,message_text_hash,trace_id,stages,expires_at,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11) ON CONFLICT(property_id,event_id) DO UPDATE SET trace_id=CASE WHEN excluded.trace_id<>'' THEN excluded.trace_id ELSE test_only_line_message_traces.trace_id END,stages=test_only_line_message_traces.stages||excluded.stages,expires_at=excluded.expires_at,updated_at=excluded.updated_at RETURNING *",
+      [item.propertyId,item.channelIdHash,item.eventId,item.eventTimestamp||"",item.lineUserHash,item.messageTextHash,item.traceId||"",JSON.stringify(item.stages||{}),item.expiresAt,item.createdAt,item.updatedAt]
+    );
+    return testOnlyLineTraceRow(r.rows[0]);
+  }
+  if (name === "listTestOnlyLineTraces") {
+    const [filters={}] = args;
+    const propertyId=String(filters.propertyId||"").trim(),eventId=String(filters.eventId||"").trim(),traceId=String(filters.traceId||"").trim(),messageTextHash=String(filters.messageTextHash||"").trim(),now=String(filters.now||new Date().toISOString()),limit=Math.max(1,Math.min(20,Number(filters.limit)||20));
+    if(!propertyId)return[];
+    const r=await client.query("SELECT * FROM test_only_line_message_traces WHERE property_id=$1 AND expires_at>$2 AND ($3::text='' OR event_id=$3) AND ($4::text='' OR trace_id=$4) AND ($5::text='' OR message_text_hash=$5) ORDER BY created_at DESC,event_id DESC LIMIT $6",[propertyId,now,eventId,traceId,messageTextHash,limit]);
+    return r.rows.map(testOnlyLineTraceRow);
+  }
   if (name === "listMessageLogs") { const r=await client.query("SELECT payload FROM message_logs WHERE property_id=$1 ORDER BY created_at",[args[0]]); return r.rows.map(payload).map((x)=>({...x,customerId:args[0]})); }
   if (name === "findMessageByEventId") { const r=await client.query("SELECT payload FROM message_logs WHERE property_id=$1 AND event_id=$2 AND ($3::text IS NULL OR channel_id=$3) ORDER BY created_at LIMIT 1",[args[0],args[1],args[2]||null]); const x=payload(r.rows[0]); return x?{...x,customerId:args[0]}:null; }
   if (name === "appendMessageLog") {

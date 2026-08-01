@@ -46,6 +46,8 @@ class PersistenceProvider {
   getConversationState() { return notImplemented("PersistenceProvider", "getConversationState"); }
   setConversationState() { return notImplemented("PersistenceProvider", "setConversationState"); }
   deleteConversationState() { return notImplemented("PersistenceProvider", "deleteConversationState"); }
+  upsertTestOnlyLineTrace() { return notImplemented("PersistenceProvider", "upsertTestOnlyLineTrace"); }
+  listTestOnlyLineTraces() { return notImplemented("PersistenceProvider", "listTestOnlyLineTraces"); }
   resolveReview() { return notImplemented("PersistenceProvider", "resolveReview"); }
 }
 
