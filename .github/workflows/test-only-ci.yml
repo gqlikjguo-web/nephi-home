@@ -20,6 +20,7 @@ jobs:
           cache: npm
           cache-dependency-path: pilot/nephi-home-node-pilot-v1/package-lock.json
       - run: npm ci
+      - run: npm run test:line-message-trace
       - run: node tests/v2-runtime-uniqueness-runner.js
       - run: node tests/junzan-ai-constitution-contract-runner.js
       - run: node tests/v1-golden-acceptance-matrix-runner.js

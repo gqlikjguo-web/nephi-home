@@ -196,3 +196,9 @@
 - Added migration 020 to convert complete legacy availability days into normalized property-scoped room and formal bundle inventory, and removed the active PostgreSQL legacy-table overlay.
 - Added a true PGlite regression for untouched first-query frontend/admin/LINE consistency, adjacent dates, restart persistence, bundle relations, idempotence, and cross-property isolation.
 - Removed the temporary test-only startup diagnostic, its fixed scope, and its provider RPC after deployment logs established the root cause and corrected data chain; retained only the permanent authority regression.
+
+## 2026-08-01 Test-only dual-user LINE trace
+
+- Added a test-only, property- and message-hash-scoped 72-hour PostgreSQL trace for `state_before`, pending state, Planner, validation, CanonicalRequest, temporal resolution, availability Resolver request/response, FinalDecision, FinalResponse, and actual LINE transport text.
+- Added existing-admin-authenticated, property-scoped read access and fail-closed gates for non-test, unauthenticated, unconfigured, unrelated-message, and cross-property requests.
+- Stored only hashed LINE user/channel identifiers and allowlisted diagnostic fields; raw identities, source/evidence text, credentials, cookies, database URLs, and personal data are excluded.

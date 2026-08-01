@@ -239,3 +239,11 @@
 **Reason:** The compatibility reader merged `availability_days` with partially populated normalized rows and allowed the normalized fragment to overwrite the legacy day. Real test-only evidence showed legacy rooms as available while normalized rows said closed or were absent, causing the first frontend and LINE Resolver query to return no rooms until a toggle created more normalized rows.
 
 **Constraint:** The migration is property-, room-, bundle-, and date-neutral, idempotent, and does not infer bundle members. Runtime reads never merge legacy or bundle-legacy tables. Missing normalized dates remain explicit missing data, and every backend, frontend, and LINE caller consumes the same Resolver result.
+
+## D-024 — Test-only dual-user LINE trace is bounded and non-authoritative
+
+**Decision:** A temporary per-message trace may run only in the test-only environment, behind the existing authenticated admin property scope, for one explicitly configured property and one SHA-256-selected message. It stores only allowlisted structured stages and hashed LINE user/channel identifiers for 72 hours.
+
+**Reason:** Two real LINE users received different answers to the same availability question, while the earlier connection check did not preserve enough original per-event evidence to locate the first divergent layer without replaying or clearing conversation state.
+
+**Constraint:** The trace cannot change Planner, CanonicalRequest, V3 state, temporal resolution, Resolver, FinalDecision, FinalResponse, or transport authority. Unknown fields, source/evidence text, credentials, tokens, cookies, database URLs, raw LINE identities, and guest personal data are excluded. Diagnostic failures cannot affect delivery. The table and wiring must be removed after the two real traces are compared and the incident is resolved.

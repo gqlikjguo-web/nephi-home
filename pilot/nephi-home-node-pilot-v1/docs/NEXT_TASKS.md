@@ -166,3 +166,10 @@
 - Confirm the final runtime contains no startup diagnostic, fixed property/date scope, diagnostic RPC, or public diagnostic API, and repeat untouched public availability queries after deployment.
 - Complete real test-only LINE acceptance only when a valid existing test-only channel and actual LINE client are available. Do not substitute deterministic fixtures, simulated webhooks, the production LINE channel, or the old production runtime.
 - Do not change production LINE, DNS, credentials, formal data, or production runtime.
+
+## 2026-08-01 Dual-user LINE trace capture
+
+- Complete GitHub Actions for the locally verified bounded trace commit.
+- Deploy only the CI-verified commit to the existing test-only Render service with the property scope and target-message SHA-256 explicitly configured.
+- After readiness is confirmed, wait for the user to resend the same target sentence from two real LINE accounts; then compare the two persisted traces from `state_before` through actual transport and identify the first divergent layer before changing core logic.
+- Do not clear either conversation state, replay old events, use a simulated webhook, touch production LINE/DNS/data, or infer a root cause before both real traces exist.

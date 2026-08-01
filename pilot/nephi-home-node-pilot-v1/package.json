@@ -10,6 +10,7 @@
     "admin:bind-email": "node scripts/bind-admin-email.js",
     "test:postgres": "node ../../tests/pilot-nephi-home-node-pilot-v1-postgres-provider-runner.js",
     "initialize:render": "node scripts/initialize-render-data.js",
+    "test:line-message-trace": "node tests/test-only-line-message-trace-runner.js && node tests/test-only-line-message-trace-postgres-runner.js && node tests/test-only-line-message-trace-http-runner.js",
     "verify:codex-integrity": "node scripts/verify-codex-integrity.js",
     "test:custom-replies": "node tests/admin-availability-window-runner.js && node tests/custom-reply-rules-runner.js && node tests/custom-reply-rules-postgres-runner.js && node tests/admin-custom-replies-runner.js && node tests/controlled-custom-reply-runtime-runner.js",
     "verify:codex-integrity": "node scripts/verify-codex-integrity.js",

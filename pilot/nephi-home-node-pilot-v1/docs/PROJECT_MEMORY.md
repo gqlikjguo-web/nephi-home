@@ -242,3 +242,10 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - Merge `4146ba04a1520461b7a5602a0ae900ce671fba1c` passed GitHub Actions run `30689068471` and was deployed to test-only. Untouched first queries for 2026-08-05 through 2026-08-07 returned the migrated normalized inventory; the same results survived a service restart and matched the public availability Resolver without a toggle warm-up.
 - The temporary startup diagnostic, fixed property/date scope, and diagnostic provider RPC have been removed from the final-cleanup tree. The permanent PGlite regression remains.
 - Real test-only LINE acceptance remains external: the locally available test-only channel token is rejected by LINE and Windows LINE client automation is unavailable. Deterministic fixtures or simulated webhooks must not be reported as real LINE acceptance.
+
+## 2026-08-01 Dual-user LINE trace implementation
+
+- A temporary diagnostic is being prepared for the existing test-only LINE runtime to capture two new real events for the configured `nephi_home` message only.
+- The trace is non-authoritative, hashes LINE user/channel identifiers, excludes source/evidence text and credentials, retains records for 72 hours, and exposes reads only through the existing authenticated admin property scope.
+- No conversation state was cleared and no Planner, CanonicalRequest, V3 reducer, temporal, Resolver, FinalDecision, FinalResponse, or transport decision behavior was changed.
+- Local focused verification and the full repository `npm test` suite are complete; GitHub Actions and deployment to the existing test-only service remain pending.

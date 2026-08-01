@@ -52,7 +52,8 @@ assert.match(root, /testOnlyOverrides = null/, "test-only overrides are an expli
 assert.match(server, /testOnlyOverrides: options\.testOnlyOverrides \|\| null/, "only the server factory may pass test-only overrides into the active root");
 assert.match(server, /const testOnlyTransportDiagnostic = typeof options\.testOnlyTransportDiagnostic === "function" \? options\.testOnlyTransportDiagnostic : null/, "transport diagnostics are an explicit server-factory-only seam");
 assert.match(server, /const emitTransportDiagnostic = \(entry\) => \{[\s\S]*logSafeTestOnlyConversationTrace\(entry\);[\s\S]*try \{ testOnlyTransportDiagnostic\(entry\); \} catch/, "transport diagnostics must retain the safe logger and isolate callback failures");
-assert.match(server, /const traceTransport = \(details\) => emitTransportDiagnostic\(details\);/, "active transport traces must use the safe diagnostic helper");
+assert.equal((runtime.match(/const \{ replyText: _replyText, \.\.\.diagnostic \} = details; emitTransportDiagnostic\(diagnostic\);/g) || []).length, 2, "both active transports must exclude reply text from the existing safe diagnostic callback");
+assert.equal((runtime.match(/testOnlyLineMessageTrace\.transport\(\{ traceId: result\.traceId, eventId: input\.eventId, propertyId: id, \.\.\.details \}\)/g) || []).length, 2, "both active transports must persist the bounded test-only transport trace through its dedicated service");
 assert.equal((root.match(/createTestOnlyOpenAiConversationPlannerFromEnv/g) || []).length, 2, "only the composition root wires the planner");
 assert.equal((root.match(/createTestOnlyOpenAiControlledComposerFromEnv/g) || []).length, 2, "only the composition root wires the controlled composer");
 assert.match(root, /availabilityResolver: overrides\.availabilityResolver \|\| \(\(query\) => service\.searchAvailability\(query\)\)/);
