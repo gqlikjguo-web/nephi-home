@@ -61,7 +61,7 @@ async function normalizedSnapshot(connection) {
 
 function assertRuntimeUsesOneAuthority() {
   const source = fs.readFileSync(path.join(ROOT, "lib", "providers", "postgres-worker.js"), "utf8");
-  const getRows = source.slice(source.indexOf('if (name === "getRows")'), source.indexOf('if (name === "getAvailabilityDiagnosticSnapshot")'));
+  const getRows = source.slice(source.indexOf('if (name === "getRows")'), source.indexOf('if (name === "getDayNotes")'));
   assert.match(getRows, /inventory_availability_days/);
   assert.doesNotMatch(getRows, /\b(?:availability_days|bundle_availability_days)\b/, "active availability reads must not merge a second runtime authority");
   const migration = fs.readFileSync(MIGRATION, "utf8");
