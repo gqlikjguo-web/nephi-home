@@ -35,6 +35,7 @@ function createTrace(overrides = {}) {
     trace: createTestOnlyLineMessageTrace({
       enabled: true,
       testOnly: true,
+      targetPropertyId: "nephi_home",
       targetMessageSha256: sha256(TARGET_MESSAGE),
       persistence,
       now: () => new Date("2026-08-01T12:00:00.000Z"),
@@ -101,9 +102,21 @@ function recordsOf(persistence) {
       productId: "room401",
       checkIn: "2026-08-06",
       checkOut: "2026-08-07",
+      requestedOutputs: ["availability"],
+      dependsOnStayContext: true,
+      entity: { category: "room", canonicalCandidate: "room401", confidence: 0.99, rawText: "雙人房" },
+      stayCandidate: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2026-08-06", checkOutCandidate: "2026-08-07", nightsCandidate: 1, guestCountCandidate: 2 },
       evidence: [{ text: TARGET_MESSAGE }],
       authorization: "Bearer must-not-survive"
     }]
+  });
+  trace.diagnostic({
+    traceId: "trace-a",
+    eventId: "event-a",
+    propertyId: "nephi_home",
+    stage: "temporal",
+    contextAction: "start",
+    items: [{ candidateIndex: 0, requestCycleId: "availability-1", taskIds: ["availability-1"], dateExpressionPresent: true, expressionType: "absolute", resolutionStatus: "resolved", resolutionSource: "current_turn", repairReasonCode: "", timezone: "Asia/Taipei", fields: { checkIn: "2026-08-06", checkOut: "2026-08-07" }, produced: { checkIn: true, checkOut: true, nights: true } }]
   });
   trace.diagnostic({
     traceId: "trace-a",
@@ -133,7 +146,7 @@ function recordsOf(persistence) {
     propertyId: "nephi_home",
     stage: "executor",
     results: [{ taskId: "availability-1", status: "answered", facts: { availableRoomIds: ["room401"] } }],
-    resolverCalls: [{ resolverId: "availability", result: { rooms: [{ id: "room401", name: "401雙人房" }] } }]
+    resolverCalls: [{ request: { customerId: "nephi_home", checkIn: "2026-08-06", checkOut: "2026-08-07", guests: 2, roomType: "all", roomTypeSet: [], queryMode: "room_only" }, response: { customerId: "nephi_home", availabilityReliable: true, rooms: [{ id: "room401", name: "401雙人房" }] } }]
   });
   trace.finalResponse({
     traceId: "trace-a",
@@ -162,9 +175,13 @@ function recordsOf(persistence) {
   assert.deepEqual(record.stages.state_before.pending, [{ taskId: "availability-1", missingFields: ["guestCount"] }]);
   assert.deepEqual(record.stages.state_before.tasks[0], { taskId: "availability-1", taskType: "availability", productType: "room", productId: "room401", checkIn: "2026-08-06", checkOut: "2026-08-07", missingFields: [], status: "pending" });
   assert.equal(record.stages.planner.parserSucceeded, true);
+  assert.equal(record.stages.planner.tasks[0].stayCandidate.checkInCandidate, "2026-08-06");
+  assert.equal(record.stages.planner.tasks[0].entity.canonicalCandidate, "room401");
+  assert.equal(Object.hasOwn(record.stages.planner.tasks[0].entity, "rawText"), false);
   assert.equal(record.stages.validation.rejectedTasks.length, 0);
   assert.equal(record.stages.canonical_request.items[0].temporalState.timezone, "Asia/Taipei");
-  assert.deepEqual(record.stages.executor.resolverCalls[0].result.rooms, [{ id: "room401", name: "401雙人房" }]);
+  assert.equal(record.stages.temporal.items[0].resolutionSource, "current_turn");
+  assert.deepEqual(record.stages.executor.resolverCalls[0].response.rooms, [{ id: "room401", name: "401雙人房" }]);
   assert.equal(record.stages.final_decision.action, "reply");
   assert.equal(record.stages.final_response.shouldReply, true);
   assert.equal(record.stages.line_transport.replyText, "2026-08-06 入住可選：401雙人房。");
@@ -189,6 +206,12 @@ function recordsOf(persistence) {
   const { trace, persistence } = createTrace();
   assert.equal(begin(trace, "other", "Uother", "你好"), false);
   assert.equal(recordsOf(persistence).length, 0, "unrelated messages must not be persisted");
+}
+
+{
+  const { trace, persistence } = createTrace();
+  assert.equal(trace.begin({ propertyId: "other_property", channelId: "test-only-channel", lineUserId: "Uother", eventId: "event-other-property", messageText: TARGET_MESSAGE }), false);
+  assert.equal(recordsOf(persistence).length, 0, "a target message from a different property must not be persisted");
 }
 
 for (const options of [

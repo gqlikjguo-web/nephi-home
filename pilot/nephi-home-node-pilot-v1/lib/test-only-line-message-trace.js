@@ -12,6 +12,7 @@ const TRACE_STAGES = new Set([
   "validation",
   "context_validation",
   "canonical_request",
+  "temporal",
   "context_execution",
   "executor",
   "final_decision",
@@ -20,19 +21,21 @@ const TRACE_STAGES = new Set([
 ]);
 const SAFE_KEYS = new Set([
   "schemaVersion", "revision", "createdAt", "updatedAt", "expiresAt",
-  "taskId", "taskType", "type", "capability", "category", "productType", "productId",
+  "taskId", "taskIds", "taskType", "type", "capability", "category", "productType", "productId",
   "roomType", "roomTypeId", "roomTypeSet", "bundleId", "entityId", "entityCategory",
-  "canonicalCandidate", "canonicalEntity", "canonicalId", "canonicalSet", "status", "detailIntent",
-  "checkIn", "checkOut", "nights", "timezone", "resolutionStatus", "temporalState", "dateExpression", "dateKey",
+  "canonicalCandidate", "canonicalEntity", "canonicalId", "canonicalSet", "entity", "status", "detailIntent", "confidence",
+  "checkIn", "checkOut", "nights", "timezone", "resolutionStatus", "resolutionSource", "temporalState", "stayCandidate", "dateExpression", "dateKey", "kind", "anchor",
+  "checkInCandidate", "checkOutCandidate", "nightsCandidate", "guestCountCandidate", "requestedOutputs", "dependsOnStayContext",
   "searchFrom", "searchTo", "guestCount", "guests", "knownFields", "missingFields", "requiredFields",
   "parserSucceeded", "taskCount", "shouldIgnore", "missingInformation", "discourse", "relation", "confidence",
-  "acceptedTasks", "rejectedTasks", "rejectionReasons", "finalTasks", "candidates", "candidateIndex",
+  "acceptedTasks", "rejectedTasks", "rejectionReasons", "finalTasks", "semanticValidation", "repairedTasks", "index", "reason", "errorCategory", "candidates", "candidateIndex",
   "relationKind", "candidateRequestCycleRefCount", "evidenceRefCount", "evidenceSourceMatches",
-  "items", "contextAction", "action", "reasonCode", "reviewRequired", "needsReview", "failure",
+  "items", "contextAction", "requestCycleId", "action", "reasonCode", "reviewRequired", "needsReview", "failure",
   "failureCode", "stale", "staleReason", "resolved", "resolverId", "resolverCalls", "query", "result",
-  "results", "facts", "available", "availability", "rooms", "bundles", "id", "name", "roomId",
+  "results", "facts", "request", "response", "customerId", "propertyId", "source", "available", "availability", "availabilityReliable", "rooms", "roomTypes", "roomTypeName", "bundles", "dates", "id", "name", "roomId",
   "roomIds", "memberRoomIds", "availableRoomIds", "availableBundleIds", "capacity", "quantity", "enabled",
-  "blocked", "blockedDates", "availableDates", "price", "totalPrice", "queryMode", "operation",
+  "blocked", "blockedDates", "availableDates", "dateFrom", "dateTo", "price", "totalPrice", "queryMode", "operation",
+  "dateExpressionPresent", "expressionType", "repairReasonCode", "provenance", "ruleRefs", "fields", "produced",
   "responseMode", "riskLevel", "stayDependency", "shouldReply", "attempted", "delivered", "deliveryErrorCode"
 ]);
 const BLOCKED_KEY_PATTERN = /(secret|token|password|credential|authorization|cookie|database.?url|line.?user|source.?text|evidence|prompt|email|phone|contact|address)/i;
@@ -78,7 +81,8 @@ function taskSummary(task) {
     "roomTypeId", "roomTypeSet", "bundleId", "entityId", "entityCategory", "canonicalCandidate",
     "canonicalEntity", "detailIntent", "checkIn", "checkOut", "nights", "timezone", "resolutionStatus",
     "dateExpression", "searchFrom", "searchTo", "guestCount", "guests", "knownFields", "missingFields",
-    "requiredFields", "status", "reasonCode", "responseMode", "riskLevel", "stayDependency", "resolverId"
+    "requiredFields", "status", "reasonCode", "responseMode", "riskLevel", "stayDependency", "resolverId",
+    "requestedOutputs", "dependsOnStayContext", "entity", "stayCandidate", "confidence"
   ]);
 }
 
@@ -98,7 +102,7 @@ function diagnosticProjection(stage, entry) {
   if (stage === "state_before") return stateBeforeProjection(entry);
   if (stage === "planner") {
     return {
-      ...select(entry, ["parserSucceeded", "taskCount", "discourse", "shouldIgnore", "missingInformation", "failure", "failureCode"]),
+      ...select(entry, ["parserSucceeded", "taskCount", "discourse", "shouldIgnore", "missingInformation", "failure", "failureCode", "providerAttemptCount", "firstAttemptErrorCategory", "finalErrorCategory", "retryPerformed", "retrySucceeded"]),
       tasks: Array.isArray(entry.tasks) ? entry.tasks.map(taskSummary) : []
     };
   }
@@ -107,19 +111,22 @@ function diagnosticProjection(stage, entry) {
       acceptedTasks: Array.isArray(entry.acceptedTasks) ? entry.acceptedTasks.map(taskSummary) : [],
       rejectedTasks: Array.isArray(entry.rejectedTasks) ? entry.rejectedTasks.map(taskSummary) : [],
       rejectionReasons: safeValue(entry.rejectionReasons || [], "rejectionReasons"),
-      finalTasks: Array.isArray(entry.finalTasks) ? entry.finalTasks.map(taskSummary) : []
+      finalTasks: Array.isArray(entry.finalTasks) ? entry.finalTasks.map(taskSummary) : [],
+      ...select(entry, ["semanticValidation", "errorCategory"])
     };
   }
   if (stage === "context_validation") return select(entry, ["rejectionReasons", "candidates"]);
   if (stage === "canonical_request") return { items: safeValue(entry.items || [], "items") };
+  if (stage === "temporal") return select(entry, ["contextAction", "items"]);
   if (stage === "context_execution") return { items: safeValue(entry.items || [], "items") };
   if (stage === "executor") return select(entry, ["results", "resolverCalls"]);
   return {};
 }
 
-function createTestOnlyLineMessageTrace({ enabled = false, testOnly = false, targetMessageSha256 = "", persistence, now = () => new Date(), onError } = {}) {
+function createTestOnlyLineMessageTrace({ enabled = false, testOnly = false, targetPropertyId = "", targetMessageSha256 = "", persistence, now = () => new Date(), onError } = {}) {
+  const propertyScope = String(targetPropertyId || "").trim();
   const targetHash = String(targetMessageSha256 || "").trim().toLowerCase();
-  const active = enabled === true && testOnly === true && TARGET_HASH_PATTERN.test(targetHash)
+  const active = enabled === true && testOnly === true && Boolean(propertyScope) && TARGET_HASH_PATTERN.test(targetHash)
     && persistence && typeof persistence.upsertTestOnlyLineTrace === "function"
     && typeof persistence.listTestOnlyLineTraces === "function";
   const byEventId = new Map();
@@ -159,7 +166,7 @@ function createTestOnlyLineMessageTrace({ enabled = false, testOnly = false, tar
     if (!active || sha256(input.messageText) !== targetHash) return false;
     const propertyId = boundedString(input.propertyId || input.customerId || "");
     const eventId = boundedString(input.eventId || "");
-    if (!propertyId || !eventId) return false;
+    if (propertyId !== propertyScope || !eventId) return false;
     const timestamp = now();
     const context = {
       record: {
@@ -211,7 +218,7 @@ function createTestOnlyLineMessageTrace({ enabled = false, testOnly = false, tar
   function list(filters = {}) {
     if (!active) return [];
     const propertyId = boundedString(filters.propertyId || "");
-    if (!propertyId) return [];
+    if (propertyId !== propertyScope) return [];
     return persistence.listTestOnlyLineTraces({
       propertyId,
       eventId: boundedString(filters.eventId || ""),

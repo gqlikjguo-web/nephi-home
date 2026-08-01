@@ -20,6 +20,7 @@ const { providedAmenities } = require("./lib/bundle-entertainment");
 const { createLineBindingService } = require("./lib/line-binding-service");
 const { createLineSetupService } = require("./lib/line-setup-service");
 const { CustomReplyError, createCustomReplyService } = require("./lib/custom-reply-rules");
+const { createTestOnlyLineMessageTrace } = require("./lib/test-only-line-message-trace");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -231,7 +232,7 @@ function cookieValue(request, name) {
 }
 
 function isAdminDataRoute(pathname) {
-  return pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname === "/api/property-profile" || pathname === "/api/property-facts" || pathname.startsWith("/api/custom-replies") || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
+  return pathname === "/api/test-only/line-message-traces" || pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname === "/api/property-profile" || pathname === "/api/property-facts" || pathname.startsWith("/api/custom-replies") || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
 }
 
 function sendData(response, data, status = 200) {
@@ -420,6 +421,7 @@ function createRequestHandler(service, options = {}) {
   const onboarding = options.onboarding;
   const customReplyService = options.customReplyService;
   const testOnlyAcceptanceHandler = options.testOnlyAcceptanceHandler;
+  const testOnlyLineMessageTrace = options.testOnlyLineMessageTrace;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
   const publicBrand = options.publicBrand || createPublicBrand();
   const deploymentCommit = String(options.deploymentCommit || process.env.RENDER_GIT_COMMIT || "");
@@ -657,6 +659,18 @@ function createRequestHandler(service, options = {}) {
         if (requestedPropertyId && requestedPropertyId !== adminSession.propertyId) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權存取其他業者資料");
       }
 
+      if (request.method === "GET" && pathname === "/api/test-only/line-message-traces") {
+        if (!testOnlyLineMessageTrace || !testOnlyLineMessageTrace.active) return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
+        const propertyId = String(url.searchParams.get("propertyId") || "").trim();
+        return sendData(response, { items: testOnlyLineMessageTrace.list({
+          propertyId,
+          eventId: url.searchParams.get("eventId"),
+          traceId: url.searchParams.get("traceId"),
+          messageTextHash: url.searchParams.get("messageTextHash"),
+          limit: url.searchParams.get("limit")
+        }) });
+      }
+
       if (request.method === "GET" && pathname === "/api/homestays") {
         const homestays = service.listHomestays();
         return sendData(response, { homestays: adminSession ? homestays.filter((item) => item.customerId === adminSession.propertyId) : homestays });
@@ -859,6 +873,16 @@ function createApp(options = {}) {
     customerSettings: providers.customerSettings,
     now
   });
+  const testOnlyEnvironment = Object.hasOwn(options, "testOnlyEnvironment") ? options.testOnlyEnvironment === true : config.testOnlyEnvironment === true;
+  const testOnlyLineMessageTrace = createTestOnlyLineMessageTrace({
+    enabled: adminAuthRequired && (Object.hasOwn(options, "testOnlyLineMessageTraceEnabled") ? options.testOnlyLineMessageTraceEnabled === true : config.testOnlyLineMessageTraceEnabled === true),
+    testOnly: testOnlyEnvironment,
+    targetPropertyId: options.testOnlyLineMessageTracePropertyId || config.testOnlyLineMessageTracePropertyId,
+    targetMessageSha256: options.testOnlyLineMessageTraceTargetSha256 || config.testOnlyLineMessageTraceTargetSha256,
+    persistence: providers.persistence,
+    now,
+    onError: (error) => console.error(JSON.stringify({ scope: "test-only-line-message-trace", ...error }))
+  });
   const replyClient = options.lineReplyClientFactory || (options.lineReplyFetch && (({ channelAccessToken }) => ({ replyMessageWithHttpInfo: async (body) => { const response = await options.lineReplyFetch("https://api.line.me/v2/bot/message/reply", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${channelAccessToken}` }, body: JSON.stringify(body) }); if (!response.ok) { const error = new Error("line_reply_failed"); error.status = response.status; throw error; } return { httpResponse: { status: response.status } }; } })));
   const testOnlyTransportDiagnostic = typeof options.testOnlyTransportDiagnostic === "function" ? options.testOnlyTransportDiagnostic : null;
   const emitTransportDiagnostic = (entry) => {
@@ -868,9 +892,8 @@ function createApp(options = {}) {
     }
   };
   const acceptanceTraces = new Map();
-  const captureSafeTrace = (entry) => { const safe = formatSafeTestOnlyConversationTrace(entry); logSafeTestOnlyConversationTrace(entry); if (safe.traceId) { const list = acceptanceTraces.get(safe.traceId) || []; list.push(safe); acceptanceTraces.set(safe.traceId, list.slice(-40)); } };
-  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: false, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null });
-  const testOnlyEnvironment = Object.hasOwn(options, "testOnlyEnvironment") ? options.testOnlyEnvironment === true : config.testOnlyEnvironment === true;
+  const captureSafeTrace = (entry) => { testOnlyLineMessageTrace.diagnostic(entry); const safe = formatSafeTestOnlyConversationTrace(entry); logSafeTestOnlyConversationTrace(entry); if (safe && safe.traceId) { const list = acceptanceTraces.get(safe.traceId) || []; list.push(safe); acceptanceTraces.set(safe.traceId, list.slice(-40)); } };
+  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: testOnlyLineMessageTrace.active, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null });
   const testOnlyAcceptanceHandler = options.testOnlyAcceptanceEnabled === true && options.testOnlyEnvironment === true
     ? async (body = {}) => {
       const customerId = String(body.customerId || body.propertyId || "").trim();
@@ -903,16 +926,18 @@ function createApp(options = {}) {
     for (const event of (payload.events || []).filter((item) => item && item.type === "message" && item.message && item.message.type === "text" && item.replyToken)) {
       const input = { customerId: id, channelId: String(payload.destination || "line"), lineUserId: String(event.source && event.source.userId || ""), eventId: String(event.webhookEventId || event.message.id || ""), eventTimestamp: event.timestamp || "", messageText: event.message.text || "" };
       if (!(await claimEvent(input)).claimed) continue;
+      testOnlyLineMessageTrace.begin({ propertyId: id, ...input });
       void root.coordinator.enqueue(input).then(async (result) => {
         const finalResponseShouldReply = result.finalResponse && result.finalResponse.shouldReply;
         const finalResponseReplyText = String(result.finalResponse && result.finalResponse.replyText || "");
         const decision = String(result.finalDecision && result.finalDecision.action || result.finalResponse && result.finalResponse.action || "no_reply");
-        const traceTransport = (details) => emitTransportDiagnostic(details);
+        testOnlyLineMessageTrace.finalResponse({ traceId: result.traceId, eventId: input.eventId, propertyId: id, finalDecision: result.finalDecision, finalResponse: result.finalResponse });
+        const traceTransport = (details) => { const { replyText: _replyText, ...diagnostic } = details; emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
         await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired) });
-        if (finalResponseShouldReply === false) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "final_response_should_reply_false", attempted: false, delivered: false }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
-        if (!finalResponseReplyText.trim()) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_empty_reply", attempted: false, delivered: false }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); }
-        try { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_attempt", attempted: true, delivered: false }); await (replyClient ? replyClient({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: finalResponseReplyText }] }); traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_succeeded", attempted: true, delivered: true }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" }); }
-        catch (error) { const status = Number(error && (error.status || error.statusCode)); traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_failed", attempted: true, delivered: false }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); }
+        if (finalResponseShouldReply === false) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "final_response_should_reply_false", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
+        if (!finalResponseReplyText.trim()) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_empty_reply", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); }
+        try { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_attempt", attempted: true, delivered: false, replyText: finalResponseReplyText }); await (replyClient ? replyClient({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: finalResponseReplyText }] }); traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_succeeded", attempted: true, delivered: true, replyText: finalResponseReplyText }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" }); }
+        catch (error) { const status = Number(error && (error.status || error.statusCode)); traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_failed", attempted: true, delivered: false, replyText: finalResponseReplyText, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); }
       }).catch(async () => updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
     }
     return { accepted: true };
@@ -946,23 +971,30 @@ function createApp(options = {}) {
     for (const event of (payload.events || []).filter((item) => item && item.type === "message" && item.message && item.message.type === "text" && item.replyToken)) {
       const input = { customerId: id, channelId, lineUserId: String(event.source && event.source.userId || ""), eventId: String(event.webhookEventId || event.message.id || ""), eventTimestamp: event.timestamp || "", messageText: event.message.text || "" };
       if (!(await claimEvent(input)).claimed) continue;
+      testOnlyLineMessageTrace.begin({ propertyId: id, ...input });
       void root.coordinator.enqueue(input).then(async (result) => {
         const finalResponseShouldReply = result.finalResponse && result.finalResponse.shouldReply;
         const finalResponseReplyText = String(result.finalResponse && result.finalResponse.replyText || "");
-        if (finalResponseShouldReply === false) return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true });
-        if (!finalResponseReplyText.trim()) { emitTransportDiagnostic({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision: String(result.finalResponse && result.finalResponse.action || ""), reasonCode: "final_response_empty_reply", attempted: false, delivered: false }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); }
+        const decision = String(result.finalDecision && result.finalDecision.action || result.finalResponse && result.finalResponse.action || "no_reply");
+        testOnlyLineMessageTrace.finalResponse({ traceId: result.traceId, eventId: input.eventId, propertyId: id, finalDecision: result.finalDecision, finalResponse: result.finalResponse });
+        const traceTransport = (details) => { const { replyText: _replyText, ...diagnostic } = details; emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
+        if (finalResponseShouldReply === false) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "final_response_should_reply_false", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
+        if (!finalResponseReplyText.trim()) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_empty_reply", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); }
         try {
+          traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_attempt", attempted: true, delivered: false, replyText: finalResponseReplyText });
           await (replyClient ? replyClient({ channelAccessToken: binding.channelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: binding.channelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: finalResponseReplyText }] });
+          traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_succeeded", attempted: true, delivered: true, replyText: finalResponseReplyText });
           await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" });
         } catch (error) {
           const status = Number(error && (error.status || error.statusCode));
+          traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_failed", attempted: true, delivered: false, replyText: finalResponseReplyText, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
           await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
         }
       }).catch(async () => updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, testOnlyAcceptanceHandler, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, deploymentCommit: options.deploymentCommit }));
+  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, testOnlyAcceptanceHandler, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, deploymentCommit: options.deploymentCommit }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
   /* legacy runtime kept below temporarily unreachable during source migration */ {
   const structuredClassifier = Object.hasOwn(options, "structuredClassifier")
