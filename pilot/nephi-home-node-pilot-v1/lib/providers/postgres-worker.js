@@ -138,6 +138,25 @@ async function operation(name, args) {
     for(const row of Object.values(by))for(const bundle of bundles){const own=row[bundle.id]||bundleStatus.get(`${row.date}\u0000${bundle.id}`)||(legacyDates.has(row.date)?"available":"closed");row[bundle.id]=bundle.enabled&&bundle.memberRoomIds.length>0&&own==="available"&&bundle.memberRoomIds.every(id=>row[id]==="available")?"available":"closed";}
     return Object.values(by).sort((left,right)=>left.date.localeCompare(right.date));
   }
+  if (name === "getAvailabilityDiagnosticSnapshot") {
+    const [propertyId, from, to] = args;
+    const roomTypes = await client.query("SELECT room_id,room_code,COALESCE(NULLIF(display_name,''),name) display_name,capacity,type,position,enabled FROM room_types WHERE property_id=$1 ORDER BY position,room_id", [propertyId]);
+    const legacy = await client.query("SELECT stay_date::text date,room301,room302,room401,room402,whole_house FROM availability_days WHERE property_id=$1 AND stay_date >= $2::date AND stay_date < $3::date ORDER BY stay_date", [propertyId, from, to]);
+    const normalized = await client.query("SELECT inventory_id,stay_date::text date,status,remaining FROM inventory_availability_days WHERE property_id=$1 AND stay_date >= $2::date AND stay_date < $3::date ORDER BY stay_date,inventory_id", [propertyId, from, to]);
+    const blocks = await client.query("SELECT block_id,room_id,starts_on::text starts_on,ends_on::text ends_on,status FROM availability_blocks WHERE property_id=$1 AND starts_on < $3::date AND ends_on >= $2::date ORDER BY starts_on,block_id", [propertyId, from, to]);
+    const bundles = await client.query("SELECT bundle_id,name,capacity,enabled FROM bundle_offers WHERE property_id=$1 ORDER BY bundle_id", [propertyId]);
+    const members = await client.query("SELECT bundle_id,room_id,position FROM bundle_offer_members WHERE property_id=$1 ORDER BY bundle_id,position,room_id", [propertyId]);
+    const bundleRows = await client.query("SELECT bundle_id,stay_date::text date,status FROM bundle_availability_days WHERE property_id=$1 AND stay_date >= $2::date AND stay_date < $3::date ORDER BY stay_date,bundle_id", [propertyId, from, to]);
+    return {
+      roomTypes: roomTypes.rows.map((row) => ({ roomId: row.room_id, roomCode: row.room_code, displayName: row.display_name, capacity: Number(row.capacity), type: row.type, position: Number(row.position), enabled: Boolean(row.enabled) })),
+      legacyAvailabilityRows: legacy.rows.map((row) => ({ date: row.date.slice(0,10), room301: row.room301, room302: row.room302, room401: row.room401, room402: row.room402, wholeHouse: row.whole_house })),
+      inventoryAvailabilityRows: normalized.rows.map((row) => ({ inventoryId: row.inventory_id, date: row.date.slice(0,10), status: row.status, remaining: Number(row.remaining) })),
+      availabilityBlocks: blocks.rows.map((row) => ({ blockId: row.block_id, roomId: row.room_id, startsOn: row.starts_on.slice(0,10), endsOn: row.ends_on.slice(0,10), status: row.status })),
+      bundles: bundles.rows.map((row) => ({ bundleId: row.bundle_id, name: row.name, capacity: Number(row.capacity), enabled: Boolean(row.enabled) })),
+      bundleMembers: members.rows.map((row) => ({ bundleId: row.bundle_id, roomId: row.room_id, position: Number(row.position) })),
+      bundleAvailabilityRows: bundleRows.rows.map((row) => ({ bundleId: row.bundle_id, date: row.date.slice(0,10), status: row.status }))
+    };
+  }
   if (name === "getDayNotes") {
     const [propertyId,from,to]=args;
     const result=await client.query("SELECT property_id,inventory_type,inventory_id,stay_date::text date,note,created_at,updated_at FROM daily_room_notes WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date,inventory_type,inventory_id",[propertyId,from||null,to||null]);
