@@ -239,4 +239,6 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 
 - Startup diagnostics on runtime `a7b6fb68103c684386f378c0dc9a0d2801ece1ba` captured legacy available values conflicting with normalized closed/missing values for the same property and dates; the public Resolver returned an empty room set.
 - The root fix makes normalized PostgreSQL inventory the sole active authority and migrates complete legacy room/bundle days generically before application startup.
-- The PGlite root-cause regression is green. Full CI, test-only deployment, untouched public/admin/LINE real acceptance, and removal of all temporary diagnostics are still required before completion.
+- Merge `4146ba04a1520461b7a5602a0ae900ce671fba1c` passed GitHub Actions run `30689068471` and was deployed to test-only. Untouched first queries for 2026-08-05 through 2026-08-07 returned the migrated normalized inventory; the same results survived a service restart and matched the public availability Resolver without a toggle warm-up.
+- The temporary startup diagnostic, fixed property/date scope, and diagnostic provider RPC have been removed from the final-cleanup tree. The permanent PGlite regression remains.
+- Real test-only LINE acceptance remains external: the locally available test-only channel token is rejected by LINE and Windows LINE client automation is unavailable. Deterministic fixtures or simulated webhooks must not be reported as real LINE acceptance.

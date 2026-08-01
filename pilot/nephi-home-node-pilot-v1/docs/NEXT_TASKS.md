@@ -162,7 +162,7 @@
 
 ## 2026-08-01 Test-only availability authority verification
 
-- Run the full repository suite and CI for migration 020 plus the normalized-only provider.
-- Deploy only the CI-verified test-only commit, confirm the migration result from the one-time startup diagnostic, and verify the first public/admin/LINE Resolver query without any toggle.
-- Complete restart, adjacent-date, bundle, and cross-property evidence plus real test-only LINE acceptance.
-- Remove the temporary startup diagnostic, fixed property/date scope, and diagnostic provider RPC; rerun full CI and deploy the final clean test-only commit. Do not change production LINE, DNS, or production runtime.
+- Finish full local verification and CI for the final-cleanup tree, then deploy only its CI-verified commit to the existing test-only service.
+- Confirm the final runtime contains no startup diagnostic, fixed property/date scope, diagnostic RPC, or public diagnostic API, and repeat untouched public availability queries after deployment.
+- Complete real test-only LINE acceptance only when a valid existing test-only channel and actual LINE client are available. Do not substitute deterministic fixtures, simulated webhooks, the production LINE channel, or the old production runtime.
+- Do not change production LINE, DNS, credentials, formal data, or production runtime.

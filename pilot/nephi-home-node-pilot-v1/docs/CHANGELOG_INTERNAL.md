@@ -195,3 +195,4 @@
 
 - Added migration 020 to convert complete legacy availability days into normalized property-scoped room and formal bundle inventory, and removed the active PostgreSQL legacy-table overlay.
 - Added a true PGlite regression for untouched first-query frontend/admin/LINE consistency, adjacent dates, restart persistence, bundle relations, idempotence, and cross-property isolation.
+- Removed the temporary test-only startup diagnostic, its fixed scope, and its provider RPC after deployment logs established the root cause and corrected data chain; retained only the permanent authority regression.
