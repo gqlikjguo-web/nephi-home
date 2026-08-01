@@ -420,7 +420,6 @@ function createRequestHandler(service, options = {}) {
   const onboarding = options.onboarding;
   const customReplyService = options.customReplyService;
   const testOnlyAcceptanceHandler = options.testOnlyAcceptanceHandler;
-  const testOnlyAvailabilityDiagnosticHandler = options.testOnlyAvailabilityDiagnosticHandler;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
   const publicBrand = options.publicBrand || createPublicBrand();
   const deploymentCommit = String(options.deploymentCommit || process.env.RENDER_GIT_COMMIT || "");
@@ -433,14 +432,6 @@ function createRequestHandler(service, options = {}) {
         return sendData(response, { status: "ready", testOnly: true, commit: deploymentCommit });
       }
       if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
-      if (request.method === "GET" && pathname === "/api/admin/test-only/availability-diagnostic") {
-        if (typeof testOnlyAvailabilityDiagnosticHandler !== "function") return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
-        if (url.search) throw new AppError(400, "DIAGNOSTIC_SCOPE_FIXED", "Diagnostic scope is fixed");
-        const token = cookieValue(request, "nephi_admin_session");
-        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
-        if (!session || !onboarding || !onboarding.isPlatformAdmin(session)) throw new AppError(401, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
-        return sendData(response, await testOnlyAvailabilityDiagnosticHandler());
-      }
       if (request.method === "POST" && pathname === TEST_LINE_WEBHOOK_ROUTE) {
         if (!lineWebhookHandler) throw new AppError(503, "TEST_LINE_WEBHOOK_NOT_CONFIGURED", "Test-only LINE webhook is not configured");
         const result = await lineWebhookHandler({
@@ -880,23 +871,30 @@ function createApp(options = {}) {
   const captureSafeTrace = (entry) => { const safe = formatSafeTestOnlyConversationTrace(entry); logSafeTestOnlyConversationTrace(entry); if (safe.traceId) { const list = acceptanceTraces.get(safe.traceId) || []; list.push(safe); acceptanceTraces.set(safe.traceId, list.slice(-40)); } };
   const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: false, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null });
   const testOnlyEnvironment = Object.hasOwn(options, "testOnlyEnvironment") ? options.testOnlyEnvironment === true : config.testOnlyEnvironment === true;
-  const testOnlyAvailabilityDiagnosticEnabled = Object.hasOwn(options, "testOnlyAvailabilityDiagnosticEnabled") ? options.testOnlyAvailabilityDiagnosticEnabled === true : config.testOnlyAvailabilityDiagnostic === true;
-  const testOnlyAvailabilityDiagnosticHandler = testOnlyEnvironment && testOnlyAvailabilityDiagnosticEnabled && providers.kind === "postgres" && typeof providers.availability.getDiagnosticSnapshot === "function"
+  const testOnlyAvailabilityStartupDiagnosticEnabled = Object.hasOwn(options, "testOnlyAvailabilityStartupDiagnosticEnabled") ? options.testOnlyAvailabilityStartupDiagnosticEnabled === true : config.testOnlyAvailabilityStartupDiagnostic === true;
+  const testOnlyAvailabilityStartupDiagnostic = testOnlyEnvironment && testOnlyAvailabilityStartupDiagnosticEnabled && providers.kind === "postgres" && typeof providers.availability.getDiagnosticSnapshot === "function"
     ? async () => {
       const propertyId = "nephi_home", from = "2026-08-05", toExclusive = "2026-08-08";
       const property = providers.customerSettings.getProperty(propertyId);
       if (!property) throw new AppError(404, "DIAGNOSTIC_PROPERTY_NOT_FOUND", "Fixed diagnostic property is unavailable");
-      const priceOverrides = providers.customerSettings.listRoomPriceOverrides(propertyId);
-      const adminMonth = service.getMonth(propertyId, 2026, 8);
       const dates = ["2026-08-05", "2026-08-06", "2026-08-07"];
-      const lineAvailabilityResolver = dates.map((checkIn) => service.searchAvailability({ customerId: propertyId, checkIn, checkOut: nextDateKey(checkIn), guests: 2, roomType: "all", queryMode: "any" }));
-      const publicApi = lineAvailabilityResolver.map((result) => publicAvailabilityResult(result, property, priceOverrides));
       return {
-        scope: { testOnly: true, propertyId, from, toExclusive },
+        scope: "test-only-availability-startup-diagnostic",
+        testOnly: true,
+        propertyId,
+        from,
+        toExclusive,
+        steps: [
+          { step: "postgres_snapshot", propertyId, from, toExclusive },
+          { step: "frontend_availability_resolver", propertyId, from, toExclusive }
+        ],
         postgres: providers.availability.getDiagnosticSnapshot(propertyId, from, toExclusive),
-        adminApi: { propertyId, rooms: adminMonth.rooms, rows: adminMonth.rows.filter((row) => row.date >= from && row.date < toExclusive) },
-        publicApi,
-        lineAvailabilityResolver
+        frontendAvailabilityResolver: dates.map((checkIn) => ({
+          propertyId,
+          checkIn,
+          checkOut: nextDateKey(checkIn),
+          result: service.searchAvailability({ customerId: propertyId, checkIn, checkOut: nextDateKey(checkIn), guests: 2, roomType: "all", queryMode: "any" })
+        }))
       };
     }
     : null;
@@ -991,8 +989,9 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, testOnlyAcceptanceHandler, testOnlyAvailabilityDiagnosticHandler, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, deploymentCommit: options.deploymentCommit }));
-  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host })); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
+  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, testOnlyAcceptanceHandler, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, deploymentCommit: options.deploymentCommit }));
+  let startupDiagnosticEmitted = false;
+  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, async () => { if (testOnlyAvailabilityStartupDiagnostic && !startupDiagnosticEmitted) { startupDiagnosticEmitted = true; try { console.log(JSON.stringify(await testOnlyAvailabilityStartupDiagnostic())); } catch { console.error(JSON.stringify({ scope: "test-only-availability-startup-diagnostic", testOnly: true, code: "availability_startup_diagnostic_failed" })); } } resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
   /* legacy runtime kept below temporarily unreachable during source migration */ {
   const structuredClassifier = Object.hasOwn(options, "structuredClassifier")
     ? options.structuredClassifier

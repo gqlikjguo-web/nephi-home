@@ -8,17 +8,15 @@ const { openPostgres } = require("../lib/providers/postgres-client");
 const { migratePostgres } = require("../lib/providers/postgres-migrate");
 const { createPostgresProviders } = require("../lib/providers/postgres-providers");
 const { createJsonProviders } = require("../lib/providers/json-providers");
-const { sessionTokenHash } = require("../lib/admin-auth");
 const { createApp } = require("../server");
 const { runtimeConfig } = require("../config/runtime");
 
-const ADMIN_TOKEN = "diagnostic-platform-admin-token";
 const PROPERTY_ID = "nephi_home";
 const FROM = "2026-08-05";
 const TO = "2026-08-08";
 
-async function get(url, cookie = `nephi_admin_session=${ADMIN_TOKEN}`) {
-  const response = await fetch(url, { headers: cookie ? { cookie } : {} });
+async function get(url) {
+  const response = await fetch(url);
   const payload = await response.json();
   return { response, body: payload.data || payload };
 }
@@ -52,52 +50,58 @@ async function seed(connection) {
 
 async function run() {
   assert.equal(runtimeConfig({ TEST_ONLY_ENVIRONMENT: "true" }).testOnlyEnvironment, true);
-  assert.equal(runtimeConfig({ TEST_ONLY_AVAILABILITY_DIAGNOSTIC: "true" }).testOnlyAvailabilityDiagnostic, true);
+  assert.equal(runtimeConfig({ TEST_ONLY_AVAILABILITY_STARTUP_DIAGNOSTIC: "true" }).testOnlyAvailabilityStartupDiagnostic, true);
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "availability-diagnostic-"));
   const connection = { kind: "pglite", dataDir: path.join(temp, "database") };
+  const originalLog = console.log;
   let app;
   try {
     await migratePostgres(connection);
     await seed(connection);
     const before = await countRows(connection);
     const providers = createPostgresProviders(connection);
-    providers.persistence.getAdminSession = (tokenHash) => tokenHash === sessionTokenHash(ADMIN_TOKEN) ? { propertyId: PROPERTY_ID, username: "platform", userId: "platform-user" } : null;
-    providers.onboarding.isPlatformAdmin = () => true;
-    app = createApp({ providers, adminAuthRequired: true, testOnlyEnvironment: true, testOnlyAvailabilityDiagnosticEnabled: true, lineChannelIdentityGuardRequired: false });
+    const logs = [];
+    console.log = (...args) => logs.push(args.map(String).join(" "));
+    app = createApp({ providers, adminAuthRequired: true, testOnlyEnvironment: true, testOnlyAvailabilityStartupDiagnosticEnabled: true, lineChannelIdentityGuardRequired: false });
     const running = await app.start(0, "127.0.0.1");
     const route = `${running.url}/api/admin/test-only/availability-diagnostic`;
 
-    assert.equal((await get(route, "")).response.status, 401, "the diagnostic must require the existing admin session");
-    assert.equal((await get(`${route}?propertyId=other&from=1900-01-01`)).response.status, 400, "the diagnostic must reject caller-controlled scope");
+    assert.equal((await get(route)).response.status, 404, "the temporary HTTP diagnostic must be removed");
+    const diagnosticLogs = logs.map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter((entry) => entry && entry.scope === "test-only-availability-startup-diagnostic");
+    assert.equal(diagnosticLogs.length, 1, "startup must emit the diagnostic exactly once");
+    const result = diagnosticLogs[0];
+    assert.deepEqual({ testOnly: result.testOnly, propertyId: result.propertyId, from: result.from, toExclusive: result.toExclusive }, { testOnly: true, propertyId: PROPERTY_ID, from: FROM, toExclusive: TO });
+    assert.deepEqual(result.steps, [
+      { step: "postgres_snapshot", propertyId: PROPERTY_ID, from: FROM, toExclusive: TO },
+      { step: "frontend_availability_resolver", propertyId: PROPERTY_ID, from: FROM, toExclusive: TO }
+    ]);
+    assert.deepEqual(result.postgres.roomTypes.map((item) => item.roomId), ["room301", "room302", "room401", "room402"]);
+    assert.deepEqual(result.postgres.legacyAvailabilityRows.map((item) => item.date), ["2026-08-05"]);
+    assert.equal(result.postgres.inventoryAvailabilityRows.length, 4);
+    assert.deepEqual(result.postgres.availabilityBlocks, [{ blockId: "maintenance-1", roomId: "room302", startsOn: "2026-08-05", endsOn: "2026-08-07", status: "closed" }]);
+    assert.deepEqual(result.postgres.bundleMembers.map((item) => item.roomId), ["room301", "room302", "room401", "room402"]);
+    assert.deepEqual(result.frontendAvailabilityResolver.map((item) => item.checkIn), ["2026-08-05", "2026-08-06", "2026-08-07"]);
+    assert.equal(result.frontendAvailabilityResolver[1].result.availabilityReliable, true);
+    assert.deepEqual(result.frontendAvailabilityResolver[1].result.rooms.map((item) => item.id), ["room301", "room401", "room402"]);
 
-    const result = await get(route);
-    assert.equal(result.response.status, 200);
-    assert.deepEqual(result.body.scope, { testOnly: true, propertyId: PROPERTY_ID, from: FROM, toExclusive: TO });
-    assert.deepEqual(result.body.postgres.roomTypes.map((item) => item.roomId), ["room301", "room302", "room401", "room402"]);
-    assert.deepEqual(result.body.postgres.legacyAvailabilityRows.map((item) => item.date), ["2026-08-05"]);
-    assert.equal(result.body.postgres.inventoryAvailabilityRows.length, 4);
-    assert.deepEqual(result.body.postgres.availabilityBlocks, [{ blockId: "maintenance-1", roomId: "room302", startsOn: "2026-08-05", endsOn: "2026-08-07", status: "closed" }]);
-    assert.deepEqual(result.body.postgres.bundleMembers.map((item) => item.roomId), ["room301", "room302", "room401", "room402"]);
-    assert.deepEqual(result.body.adminApi.rows.map((item) => item.date), ["2026-08-05", "2026-08-06"]);
-    assert.equal(result.body.publicApi[1].empty, false);
-    assert.equal(result.body.lineAvailabilityResolver[1].availabilityReliable, true);
-    assert.deepEqual(result.body.publicApi[1].rooms.map((item) => item.id), result.body.lineAvailabilityResolver[1].rooms.map((item) => item.id));
-
-    const serialized = JSON.stringify(result.body);
-    for (const forbidden of ["DATABASE_URL", "postgres://", "password", "token", "channelSecret", "channelAccessToken", "privateNote", "must-not-leak"]) assert.equal(serialized.includes(forbidden), false, `diagnostic leaked ${forbidden}`);
+    const serialized = JSON.stringify(result);
+    for (const forbidden of ["DATABASE_URL", "postgres://", "password", "token", "cookie", "LINE", "channelSecret", "channelAccessToken", "privateNote", "must-not-leak"]) assert.equal(serialized.includes(forbidden), false, `diagnostic leaked ${forbidden}`);
     assert.deepEqual(await countRows(connection), before, "the diagnostic must not modify PostgreSQL state");
 
     await app.stop(); app = null;
     const json = () => createJsonProviders({ dataFile: path.join(temp, `${Math.random()}.json`), seedFile: path.resolve(__dirname, "../fixtures/seed.json") });
-    const disabled = createApp({ providers: json(), adminAuthRequired: false, testOnlyEnvironment: true, testOnlyAvailabilityDiagnosticEnabled: false, lineChannelIdentityGuardRequired: false });
+    const disabledLogs = [];
+    console.log = (...args) => disabledLogs.push(args.map(String).join(" "));
+    const disabled = createApp({ providers: json(), adminAuthRequired: false, testOnlyEnvironment: true, testOnlyAvailabilityStartupDiagnosticEnabled: false, lineChannelIdentityGuardRequired: false });
     const disabledRunning = await disabled.start(0, "127.0.0.1");
-    try { assert.equal((await get(`${disabledRunning.url}/api/admin/test-only/availability-diagnostic`)).response.status, 404); } finally { await disabled.stop(); }
-    const nonTest = createApp({ providers: json(), adminAuthRequired: false, testOnlyEnvironment: false, testOnlyAvailabilityDiagnosticEnabled: true, lineChannelIdentityGuardRequired: false });
+    try { assert.equal(disabledLogs.length, 0); } finally { await disabled.stop(); }
+    const nonTest = createApp({ providers: json(), adminAuthRequired: false, testOnlyEnvironment: false, testOnlyAvailabilityStartupDiagnosticEnabled: true, lineChannelIdentityGuardRequired: false });
     const nonTestRunning = await nonTest.start(0, "127.0.0.1");
-    try { assert.equal((await get(`${nonTestRunning.url}/api/admin/test-only/availability-diagnostic`)).response.status, 404); } finally { await nonTest.stop(); }
+    try { assert.equal(disabledLogs.length, 0); } finally { await nonTest.stop(); }
 
-    console.log(JSON.stringify({ suite: "test-only-availability-diagnostic", caseCount: 18, passCount: 18, failCount: 0 }));
+    originalLog(JSON.stringify({ suite: "test-only-availability-diagnostic", caseCount: 20, passCount: 20, failCount: 0 }));
   } finally {
+    console.log = originalLog;
     if (app) await app.stop();
     fs.rmSync(temp, { recursive: true, force: true });
   }
