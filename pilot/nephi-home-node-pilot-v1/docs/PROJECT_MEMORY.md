@@ -234,3 +234,9 @@ Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memor
 - Local convergence is in final verification: V3 reducer owns task/product/context transitions, new products require exact property-catalog resolution, and Canonicalizer consumes only the approved transition result.
 - Planner entities that are empty, ambiguous, unregistered, or forged remain unresolved; no full-source alias scan or capability-ID-specific repair is allowed.
 - Before release review, require the complete `npm.cmd test` result from the final worktree state. Do not deploy, merge, operate Render/LINE, or access credentials/formal data.
+
+## 2026-08-01 Test-only availability authority incident
+
+- Startup diagnostics on runtime `a7b6fb68103c684386f378c0dc9a0d2801ece1ba` captured legacy available values conflicting with normalized closed/missing values for the same property and dates; the public Resolver returned an empty room set.
+- The root fix makes normalized PostgreSQL inventory the sole active authority and migrates complete legacy room/bundle days generically before application startup.
+- The PGlite root-cause regression is green. Full CI, test-only deployment, untouched public/admin/LINE real acceptance, and removal of all temporary diagnostics are still required before completion.

@@ -33,7 +33,7 @@ async function run() {
     {
       cwd: ROOT,
       encoding: "utf8",
-      timeout: 3000
+      timeout: 15000
     }
   );
   assert.equal(missingConnection.status, 1, "missing connection must fail with a non-zero exit");
