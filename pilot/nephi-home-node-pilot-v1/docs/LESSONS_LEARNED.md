@@ -194,3 +194,9 @@ Exercise isolated slot recovery with evidence-bound Planner source spans and a c
 A source-level integrity runner can become contradictory when an authority API is renamed or moved: requiring a removed FinalDecision factory while also expecting the Composer to mention FinalDecision made the target CI reject the same architecture enforced by the newer runtime-uniqueness gate. Response-planning fixtures that still call a removed Engine decision helper and safe-trace assertions that expect intentionally redacted Planner temporal fields are the same class of stale boundary test.
 
 Keep each scan aligned with the concrete authority contract. The Engine must call the sole `buildFinalDecision` builder, while the Composer may render section `responseMode` but must not import or reference FinalDecision, decide `no_reply`, emit an action, or expose transport `shouldReply`. ResponsePlan fixtures should test their own pre-decision boundary, and temporal integration tests should assert raw Resolver diagnostics plus CanonicalRequest state while proving that safe traces omit guest-derived temporal text and candidates.
+
+## 2026-08-01 — Empty FinalResponse text is not a no-reply decision
+
+Combining a false delivery decision and an empty reply string in one transport condition silently converted a broken `shouldReply=true` FinalResponse into normal `no_reply`; whitespace-only text could instead reach the LINE API.
+
+Gate normal silence only on an explicit `finalResponse.shouldReply === false`. Validate the rendered text separately before transport, retain the original FinalResponse as the sole content authority, and record an empty rendered reply as a review-required contract failure with a stable diagnostic code.

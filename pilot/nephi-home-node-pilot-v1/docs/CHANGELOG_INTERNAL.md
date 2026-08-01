@@ -185,3 +185,8 @@
 - Removed active LINE transport reads of compatibility `result.shouldReply` and `result.replyText`; both registered handlers now consume only the rendered `finalResponse` delivery fields.
 - Restored structural V3 pending arbitration for isolated date, nights, guest-count, and room slots while preserving complete new requests as separate tasks; temporal context now derives check-out from an approved check-in plus current-turn nights inside the sole temporal resolver.
 - Realigned constitution, response-planning, and safe temporal trace fixtures with the unique FinalDecision/Composer/CanonicalRequest boundaries so test-only CI checks active authority instead of obsolete symbols or intentionally redacted fields.
+
+## 2026-08-01 — FinalResponse empty-reply guard
+
+- Split legal `shouldReply=false` silence from invalid blank rendered replies in both active LINE handlers.
+- Added test-only and property-scoped transport regressions proving blank replies are not sent or recorded as `no_reply`, and are persisted with `final_response_empty_reply` for review.

@@ -104,3 +104,9 @@
 - Shared PostgreSQL seed logic is explicit, idempotent, and property-parameterized; representative operator fixtures may retain real identifiers but are not runtime routing rules.
 - New friendly-operator intake starts only from a platform-admin-issued, expiring and revocable invitation. One token authorizes one staging application; invalid, expired, revoked, or cross-application tokens are rejected.
 - Draft save/read-back, idempotent submit, and admin review continue to use the existing onboarding staging and review workflow. No unapproved submission becomes a formal property, guest-facing fact, LINE binding, or automatic-reply source.
+
+## FinalResponse transport contract
+
+- Active LINE transports may record a normal `no_reply` only when `finalResponse.shouldReply` is explicitly `false`.
+- When `finalResponse.shouldReply` is `true` but `finalResponse.replyText` is empty after trimming, transport must not call LINE and must persist `final_response_empty_reply` as a review-required contract failure.
+- Transport sends only `finalResponse.replyText`; it does not fall back to compatibility output, FinalDecision delivery flags, or server-generated text.

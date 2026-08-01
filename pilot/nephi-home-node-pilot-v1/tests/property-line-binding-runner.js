@@ -130,14 +130,29 @@ async function waitFor(predicate, timeoutMs = 1000) {
   const plannerProperties = [];
   const plannerStates = [];
   const replies = [];
+  const transportDiagnostics = [];
+  const scenarioResults = new Map();
+  const finalResponseOverrides = new Map([
+    ["property-transport-no-reply", { action: "no_reply", shouldReply: false, replyText: " \t " }],
+    ["property-transport-blank", { action: "reply", shouldReply: true, replyText: " \t " }]
+  ]);
   const app = createApp({
     providers,
     adminAuthRequired: true,
     lineBindingEnv: { JUNZAN_LINE_CREDENTIAL_ENCRYPTION_KEY: encryptionKey },
     conversationDebounceMs: 1,
     conversationPlannerV2: { classify: async ({ catalog, sourceEvents }) => { plannerProperties.push(catalog.propertyId); return planParking(sourceEvents[0]); } },
+    testOnlyTransportDiagnostic: (entry) => transportDiagnostics.push(entry),
     lineReplyClientFactory: ({ channelAccessToken }) => ({ replyMessageWithHttpInfo: async (body) => { replies.push({ channelAccessToken, body }); return { httpResponse: { status: 200 } }; } })
   });
+  const processEngine = app.conversationEngineV2.process.bind(app.conversationEngineV2);
+  app.conversationEngineV2.process = async (input) => {
+    const result = await processEngine(input);
+    const override = finalResponseOverrides.get(input.eventId);
+    if (override) result.finalResponse = { ...result.finalResponse, ...override };
+    scenarioResults.set(input.eventId, result);
+    return result;
+  };
   const running = await app.start(0, "127.0.0.1");
   try {
     const event = (id, userId) => JSON.stringify({ destination: "untrusted-destination", propertyId: "property_b", customerId: "property_b", events: [{ type: "message", webhookEventId: id, replyToken: `reply-${id}`, timestamp: 1, source: { userId }, message: { type: "text", id: `message-${id}`, text: "Parking?" } }] });
@@ -170,6 +185,44 @@ async function waitFor(predicate, timeoutMs = 1000) {
     const storedA = providers.persistence.getConversationState("property_a", bindingChannel(bindingA), "same-user");
     const storedB = providers.persistence.getConversationState("property_b", bindingChannel(bindingB), "same-user");
     assert.notEqual(JSON.stringify(storedA), JSON.stringify(storedB), "Binding A and B must persist independent state for the shared LINE user");
+
+    const transportEvent = (id) => JSON.stringify({ events: [{ type: "message", webhookEventId: id, replyToken: `reply-${id}`, timestamp: 3, source: { userId: `user-${id}` }, message: { type: "text", id: `message-${id}`, text: "Parking?" } }] });
+    const findTransportRecord = (eventId) => providers.persistence.listMessageLogs("property_a").find((entry) => entry.eventId === eventId);
+    const normalEventId = "property-transport-normal";
+    const normalPayload = transportEvent(normalEventId);
+    const repliesBeforeTransportMatrix = replies.length;
+    assert.equal((await post(running.url, `/api/line/webhooks/${bindingA.webhookKey}`, normalPayload, signed(secretA, normalPayload))).status, 200);
+    await waitFor(() => findTransportRecord(normalEventId) && findTransportRecord(normalEventId).processingStatus === "reply_succeeded");
+    assert.equal(scenarioResults.get(normalEventId).finalResponse.shouldReply, true);
+    assert.notEqual(scenarioResults.get(normalEventId).finalResponse.replyText.trim(), "");
+    assert.equal(replies.length, repliesBeforeTransportMatrix + 1);
+    assert.equal(replies.at(-1).body.messages[0].text, scenarioResults.get(normalEventId).finalResponse.replyText);
+    assert.equal(findTransportRecord(normalEventId).replyDelivered, true);
+
+    const noReplyEventId = "property-transport-no-reply";
+    const noReplyPayload = transportEvent(noReplyEventId);
+    const repliesBeforeNoReply = replies.length;
+    assert.equal((await post(running.url, `/api/line/webhooks/${bindingA.webhookKey}`, noReplyPayload, signed(secretA, noReplyPayload))).status, 200);
+    await waitFor(() => findTransportRecord(noReplyEventId) && findTransportRecord(noReplyEventId).processingStatus !== "processing");
+    assert.equal(replies.length, repliesBeforeNoReply);
+    assert.deepEqual(Object.fromEntries(["processingStatus", "shouldReply", "noReply"].map((key) => [key, findTransportRecord(noReplyEventId)[key]])), {
+      processingStatus: "no_reply", shouldReply: false, noReply: true
+    });
+
+    const blankEventId = "property-transport-blank";
+    const blankPayload = transportEvent(blankEventId);
+    const repliesBeforeBlank = replies.length;
+    assert.equal((await post(running.url, `/api/line/webhooks/${bindingA.webhookKey}`, blankPayload, signed(secretA, blankPayload))).status, 200);
+    await waitFor(() => findTransportRecord(blankEventId) && findTransportRecord(blankEventId).processingStatus !== "processing");
+    const blankRecord = findTransportRecord(blankEventId);
+    assert.equal(replies.length, repliesBeforeBlank, "a blank FinalResponse must not call the property LINE reply API");
+    assert.equal(blankRecord.processingStatus, "final_response_contract_failed");
+    assert.equal(blankRecord.needsReview, true);
+    assert.equal(blankRecord.replyDelivered, false);
+    assert.equal(blankRecord.noReply, false);
+    assert.equal(blankRecord.deliveryErrorCode, "final_response_empty_reply");
+    const blankDiagnostic = transportDiagnostics.find((entry) => entry.traceId === scenarioResults.get(blankEventId).traceId && entry.reasonCode === "final_response_empty_reply");
+    assert.deepEqual(blankDiagnostic, { traceId: scenarioResults.get(blankEventId).traceId, propertyId: "property_a", stage: "line_transport", decision: "reply", reasonCode: "final_response_empty_reply", attempted: false, delivered: false });
 
     const callsBeforeFailures = plannerProperties.length;
     const bindingBWebhookBeforeRejectedRequests = bindingService.status("property_b").lastValidWebhookAt;
