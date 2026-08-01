@@ -169,7 +169,6 @@
 
 ## 2026-08-01 Dual-user LINE trace capture
 
-- Complete GitHub Actions for the locally verified bounded trace commit.
-- Deploy only the CI-verified commit to the existing test-only Render service with the property scope and target-message SHA-256 explicitly configured.
+- The bounded trace commit passed GitHub Actions run `30707218127` and is live on the existing test-only Render service with its property scope and target-message SHA-256 explicitly configured.
 - After readiness is confirmed, wait for the user to resend the same target sentence from two real LINE accounts; then compare the two persisted traces from `state_before` through actual transport and identify the first divergent layer before changing core logic.
 - Do not clear either conversation state, replay old events, use a simulated webhook, touch production LINE/DNS/data, or infer a root cause before both real traces exist.
