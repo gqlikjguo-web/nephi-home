@@ -19,6 +19,8 @@ jobs:
           cache: npm
           cache-dependency-path: pilot/nephi-home-node-pilot-v1/package-lock.json
       - run: npm ci
+      - run: npm run test:custom-replies
+      - run: npm test
       - run: npm run verify:codex-integrity
       - run: node tests/verify-codex-integrity-runner.js
       - run: node tests/test-only-conversation-acceptance-api-runner.js
