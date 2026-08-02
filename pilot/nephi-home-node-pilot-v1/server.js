@@ -247,8 +247,9 @@ function adminSessionData(session) {
 
 function sendError(response, error) {
   const isGuardError = Boolean(error && error.fatal && Number.isInteger(error.status) && error.code);
-  const status = error instanceof AppError || isGuardError ? error.status : 500;
-  const code = error instanceof AppError || isGuardError ? error.code : "INTERNAL_ERROR";
+  const isProviderAppError = Boolean(error && Number.isInteger(error.status) && error.status >= 400 && error.status < 500 && error.code);
+  const status = error instanceof AppError || isGuardError || isProviderAppError ? error.status : 500;
+  const code = error instanceof AppError || isGuardError || isProviderAppError ? error.code : "INTERNAL_ERROR";
   sendJson(response, status, {
     ok: false,
     error: { code, message: status === 500 ? "伺服器暫時無法完成操作，請稍後再試" : error.message }
@@ -688,6 +689,10 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "POST" && pathname === "/api/custom-replies") {
         const body = request.adminBody || await readJsonBody(request);
         return sendData(response, { rule: customReplyService.create(body.propertyId || body.customerId, body) }, 201);
+      }
+      if (request.method === "POST" && pathname === "/api/custom-replies/test") {
+        const body = request.adminBody || await readJsonBody(request);
+        return sendData(response, customReplyService.evaluate(body.propertyId || body.customerId, body.ruleId, body.request || {}));
       }
       const customReplyMatch = /^\/api\/custom-replies\/([^/]+)(?:\/(enabled))?$/.exec(pathname);
       if (customReplyMatch && request.method === "PUT" && !customReplyMatch[2]) {
