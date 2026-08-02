@@ -9,7 +9,7 @@ const customReplyScopes=[["all","全部"],["room_only","單訂房間"],["bundle"
 const bundleAmenityPresets=[["singing","KTV／歡唱設備"],["electric_mahjong","電動麻將桌"],["mahjong","一般麻將"],["board_games","桌遊"],["game_console","Switch／遊戲主機"],["projector","投影機／大螢幕"],["billiards","撞球桌"],["darts","飛鏢"],["table_football","桌上足球"],["massage_chair","按摩椅"],["bbq","烤肉區／烤肉設備"],["splash_pool","戲水池"],["swimming_pool","游泳池"],["children_play_area","兒童遊戲區"],["slide","溜滑梯"],["sandpit","沙坑"],["outdoor_yard","戶外庭院"],["shared_living_room","公共客廳"],["kitchen","廚房"],["hot_pot_equipment","火鍋設備"],["streaming_media","Netflix／影音串流"]];
 function renderBundleAmenities(items=[]){const byKey=new Map(items.map(item=>[item.key,item]));const nodes=bundleAmenityPresets.map(([key,name])=>{const item=byKey.get(key)||{},row=element("div","amenity-row"),check=document.createElement("input"),label=document.createElement("label"),noteLabel=document.createElement("label"),note=document.createElement("input");row.dataset.amenityKey=key;check.type="checkbox";check.checked=item.provided===true;check.dataset.amenityProvided="";label.append(check,document.createTextNode(name));note.maxLength=100;note.value=check.checked?item.note||"":"";note.dataset.amenityNote="";noteLabel.append(document.createTextNode("備註（選填）"),note);noteLabel.hidden=!check.checked;check.onchange=()=>{noteLabel.hidden=!check.checked;if(!check.checked)note.value=""};row.append(label,noteLabel);return row});for(const item of items.filter(item=>item.source==="custom"&&item.provided)){const row=element("div","custom-amenity-row"),name=document.createElement("input"),note=document.createElement("input"),remove=cell("button","刪除");name.value=item.displayName||"";name.maxLength=20;name.dataset.customAmenityName="";note.value=item.note||"";note.maxLength=100;note.dataset.customAmenityNote="";remove.type="button";remove.className="secondary";remove.onclick=()=>row.remove();row.append(name,note,remove);nodes.push(row)}$("bundleAmenities").replaceChildren(...nodes)}
 function collectBundleAmenities(){const presets=[...$("bundleAmenities").querySelectorAll("[data-amenity-key]")].map((row,position)=>{const input=row.querySelector("[data-amenity-provided]"),preset=bundleAmenityPresets[position];return{key:preset[0],displayName:preset[1],provided:input.checked,note:input.checked?row.querySelector("[data-amenity-note]").value:"",source:"preset",position}});const custom=[...$("bundleAmenities").querySelectorAll(".custom-amenity-row")].map((row,index)=>({key:"",displayName:row.querySelector("[data-custom-amenity-name]").value,provided:true,note:row.querySelector("[data-custom-amenity-note]").value,source:"custom",position:bundleAmenityPresets.length+index}));return presets.concat(custom)}
-const availabilityState = { rooms: [], days: new Map(), notesByDate: {}, view: "recent", selectedDate: "", loading: false, loadedMonth: "" };
+const availabilityState = { rooms: [], days: new Map(), notesByDate: {}, selection: "rolling", selectedDate: "", loading: false, loadedSelection: "" };
 let requestGeneration = 0;
 const mutationQueues = new Map();
 const mutationVersions = new Map();
@@ -117,12 +117,11 @@ function createRoomRow(date, room) {
   renderSaveState(statusArea, mutationKey("status", date, room.id)); row.append(name, actions, statusArea); return row;
 }
 
-function futureDailyDates(dates) { return dates.filter(date => date >= currentDateKey()).slice(0, 15); }
 function createDayCard(date) { const day = availabilityState.days.get(date), card = element("section", `availability-day-card${date === currentDateKey() ? " is-today" : ""}`), heading = element("div", "availability-day-heading"), title = element("h3", "", dateLabel(date)), inventoryGrid = element("div", "availability-inventory-grid"); const available = availabilityState.rooms.filter(room => day[room.id] === "available").length, summary = element("span", "day-summary", `${available} 可售／${availabilityState.rooms.length - available} 不可售`); heading.append(title, summary); if (!day._hasAvailability) heading.append(element("span", "missing-data", "尚無房況資料，依不可售顯示")); inventoryGrid.append(...availabilityState.rooms.map(room => createRoomRow(date, room))); card.append(heading, inventoryGrid); return card; }
 function renderDailyView() {
   const container = $("dailyAvailability");
   if (!availabilityState.rooms.length) { container.replaceChildren(element("div", "availability-empty", "目前沒有可管理的房型。")); return; }
-  const dates = futureDailyDates([...availabilityState.days.keys()]);
+  const dates = [...availabilityState.days.keys()];
   container.replaceChildren(...(dates.length ? dates.map(createDayCard) : [element("div", "availability-empty", "每日房況只顯示今天與未來日期；過去日期請切換到月曆查看。") ]));
 }
 
@@ -140,19 +139,15 @@ function renderCalendarView() {
 }
 
 function renderAvailability() {
-  const recent = availabilityState.view === "recent"; $("dailyAvailability").hidden = !recent; $("availabilityCalendar").hidden = recent; $("monthControl").hidden = recent; document.querySelectorAll("[data-view]").forEach(button => { const active = button.dataset.view === availabilityState.view; button.classList.toggle("active", active); button.setAttribute("aria-pressed", String(active)); }); if (recent) renderDailyView(); else renderCalendarView();
-}
-
-function switchView(view) {
-  if (![/^recent$/, /^calendar$/].some(pattern => pattern.test(view))) return; availabilityState.view = view; if (!matchMedia("(max-width: 640px)").matches) localStorage.setItem("junzanAvailabilityView", view); loadMonth();
+  $("dailyAvailability").hidden = false; $("availabilityCalendar").hidden = true; renderDailyView();
 }
 
 async function loadMonth() {
-  const generation = ++requestGeneration, recent = availabilityState.view === "recent", recentDates = recent ? AdminAvailabilityWindow.recentDateKeys(currentDateKey(), 15) : [], months = recent ? AdminAvailabilityWindow.monthsForDateKeys(recentDates) : [$("month").value]; availabilityState.loading = true; $("availabilityLoading").hidden = false; $("status").textContent = "";
+  const generation = ++requestGeneration, plan = AdminAvailabilityWindow.availabilityLoadPlan(currentDateKey(), availabilityState.selection), months = plan.months; availabilityState.loading = true; $("availabilityLoading").hidden = false; $("status").textContent = "";
   try {
     const pages = await Promise.all(months.map(async value => { const [year, month] = value.split("-").map(Number); return api(`/api/availability/month?propertyId=${encodeURIComponent(session.propertyId)}&year=${year}&month=${month}`); })); if (generation !== requestGeneration) return;
-    const data = pages[0] || { rooms: [], rows: [], notesByDate: {} }, rows = new Map(pages.flatMap(page => page.rows || []).map(row => [row.date, row])), dateKeys = recent ? recentDates : monthDateKeys(...$("month").value.split("-").map(Number)); availabilityState.rooms = data.rooms || []; rooms = availabilityState.rooms; availabilityState.notesByDate = Object.assign({}, ...pages.map(page => page.notesByDate || {})); availabilityState.days = new Map(dateKeys.map(date => { const row = rows.get(date), normalized = { date, _hasAvailability: Boolean(row) }; for (const room of rooms) normalized[room.id] = row?.[room.id] === "available" ? "available" : "closed"; return [date, normalized]; }));
-    availabilityState.selectedDate = availabilityState.days.has(currentDateKey()) ? currentDateKey() : [...availabilityState.days.keys()][0] || ""; availabilityState.loadedMonth = $("month").value; renderMembers(); renderAvailability(); $("status").textContent = "房況已載入";
+    const data = pages[0] || { rooms: [], rows: [], notesByDate: {} }, rows = new Map(pages.flatMap(page => page.rows || []).map(row => [row.date, row])), dateKeys = plan.dateKeys; availabilityState.rooms = data.rooms || []; rooms = availabilityState.rooms; availabilityState.notesByDate = Object.assign({}, ...pages.map(page => page.notesByDate || {})); availabilityState.days = new Map(dateKeys.map(date => { const row = rows.get(date), normalized = { date, _hasAvailability: Boolean(row) }; for (const room of rooms) normalized[room.id] = row?.[room.id] === "available" ? "available" : "closed"; return [date, normalized]; }));
+    availabilityState.selectedDate = availabilityState.days.has(currentDateKey()) ? currentDateKey() : [...availabilityState.days.keys()][0] || ""; availabilityState.loadedSelection = availabilityState.selection; renderMembers(); renderAvailability(); $("status").textContent = "房況已載入";
   } catch (error) { if (generation === requestGeneration) $("status").textContent = `房況載入失敗：${error.message}，請稍後重試。`; }
   finally { if (generation === requestGeneration) { availabilityState.loading = false; $("availabilityLoading").hidden = true; } }
 }
@@ -245,4 +240,43 @@ $("noteText").oninput = updateNoteCount; $("noteSave").onclick = () => saveNote(
 $("month").onchange = () => { if (hasUnsavedNote() && !confirm("備註尚未儲存，確定切換月份嗎？")) { $("month").value = availabilityState.loadedMonth; return; } noteEditorState = null; $("noteEditor").hidden = true; loadMonth(); };
 $("bundleCancel").onclick = clearBundle; $("logout").onclick = async () => { await api("/api/admin/logout", { method: "POST", body: "{}" }); showLogin(); };
 window.addEventListener("beforeunload", event => { if (!hasUnsavedNote() && !pricingState.dirty && !mutationQueues.size) return; event.preventDefault(); event.returnValue = ""; });
+function populateAvailabilityRanges() {
+  const select = $("availabilityRange"), today = currentDateKey(), start = new Date(`${today}T00:00:00`);
+  while (select.options.length > 1) select.remove(1);
+  for (let offset = 0; offset < 13; offset += 1) {
+    const date = new Date(Date.UTC(start.getFullYear(), start.getMonth() + offset, 1));
+    const value = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+    const option = document.createElement("option"); option.value = value;
+    option.textContent = `${date.getUTCFullYear()} 年 ${date.getUTCMonth() + 1} 月`;
+    select.append(option);
+  }
+  select.value = availabilityState.selection;
+}
+populateAvailabilityRanges();
+$("availabilityRange").onchange = () => { availabilityState.selection = $("availabilityRange").value; noteEditorState = null; $("noteEditor").hidden = true; loadMonth(); };
+$("availabilityToday").onclick = () => { availabilityState.selection = "rolling"; $("availabilityRange").value = "rolling"; noteEditorState = null; $("noteEditor").hidden = true; loadMonth(); };
+function updateCustomReplyPreview() {
+  const topic = customReplyTopics.find(item => item[0] === $("customReplyTopic").value)?.[1] || "指定主題";
+  const scope = customReplyScopes.find(item => item[0] === $("customReplyScope").value)?.[1] || "指定訂房類型";
+  const stayStart = $("customReplyStayStart").value || "不限日期", stayEnd = $("customReplyStayEnd").value || "不限日期";
+  const effectiveStart = $("customReplyEffectiveStart").value || "不限日期", effectiveEnd = $("customReplyEffectiveEnd").value || "不限日期";
+  const reply = $("customReplyText").value.trim() || "（尚未填寫回覆內容）";
+  $("customReplyPreview").textContent = `${effectiveStart}～${effectiveEnd} 期間，當客人詢問 ${stayStart}～${stayEnd} 入住的${scope}「${topic}」時，回覆：「${reply}」`;
+}
+for (const id of ["customReplyTopic", "customReplyScope", "customReplyStayStart", "customReplyStayEnd", "customReplyEffectiveStart", "customReplyEffectiveEnd", "customReplyText"]) $(id).addEventListener("input", updateCustomReplyPreview);
+$("customReplyTest").onclick = async () => {
+  const ruleId = $("customReplyId").value;
+  if (!ruleId) { $("customReplyTestResult").textContent = "請先儲存規則，再進行測試。"; return; }
+  const topic = $("customReplyTopic").value;
+  const capability = ({ booking_open:"availability", booking_paused:"availability", price_unannounced:"price", room:"room_options", bundle:"bundle_availability", parking_notice:"parking", facility_notice:"amenity", checkin_checkout:"policy", lodging_rules:"policy", temporary_operation:"availability" })[topic];
+  const scope = $("customReplyScope").value;
+  const checkIn = $("customReplyStayStart").value || currentDateKey();
+  const request = { capability, canonicalEntity: { category: scope === "bundle" ? "bundle" : scope === "room_only" || scope === "room_type" ? "room" : "other", canonicalId: scope === "room_type" ? $("customReplyRoomType").value : null }, temporalState: { checkIn } };
+  $("customReplyTestResult").textContent = "測試中…";
+  try {
+    const result = await api("/api/custom-replies/test", { method:"POST", body:JSON.stringify({ propertyId:session.propertyId, ruleId, request }) });
+    $("customReplyTestResult").textContent = result.matched ? `會命中：${result.rule.name}。預計回覆：${result.reply}` : `不會命中：${result.reason.message}`;
+  } catch (error) { $("customReplyTestResult").textContent = `測試失敗：${error.message}`; }
+};
+updateCustomReplyPreview();
 api(`/api/admin/session${expectedSlug ? `?slug=${encodeURIComponent(expectedSlug)}` : ""}`).then(enter).catch(() => showLogin());

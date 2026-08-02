@@ -38,6 +38,11 @@ async function request(base, route, options = {}) {
     assert.match(html, /旅客查房頁/);
     assert.match(html, /不提供 AI 回答/);
 
+    assert.match(html, /客人詢問的主題/);
+    assert.match(html, /客人詢問的入住日期/);
+    assert.match(html, /這則回覆會在以下情況使用/);
+    assert.match(html, /測試這則回覆/);
+
     let result = await request(running.url, "/api/custom-replies?propertyId=property_alpha");
     assert.equal(result.response.status, 200);
     assert.deepEqual(result.body.data, { used: 0, limit: 5, items: [] });
@@ -60,6 +65,23 @@ async function request(base, route, options = {}) {
     });
     assert.equal(result.response.status, 201);
     const ruleId = result.body.data.rule.ruleId;
+    result = await request(running.url, "/api/custom-replies/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        propertyId: "property_alpha",
+        ruleId,
+        request: {
+          capability: "availability",
+          canonicalEntity: { category: "other", canonicalId: null },
+          temporalState: { checkIn: "2026-09-03" }
+        }
+      })
+    });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.matched, true);
+    assert.equal(result.body.data.rule.ruleId, ruleId);
+    assert.equal((await request(running.url, "/api/custom-replies?propertyId=property_alpha")).body.data.used, 1, "testing must not mutate stored rules");
     result = await request(running.url, `/api/custom-replies/${encodeURIComponent(ruleId)}/enabled`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -73,7 +95,7 @@ async function request(base, route, options = {}) {
     });
     assert.deepEqual(result.body.data, { deleted: true });
 
-    console.log(JSON.stringify({ suite: "admin-custom-replies", pass: true, assertions: 15 }));
+    console.log(JSON.stringify({ suite: "admin-custom-replies", pass: true, assertions: 20 }));
   } finally {
     await app.stop();
     fs.rmSync(temp, { recursive: true, force: true });

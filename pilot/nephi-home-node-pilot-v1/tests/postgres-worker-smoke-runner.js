@@ -11,6 +11,14 @@ const { createPostgresProviders } = require("../lib/providers/postgres-providers
 const ROOT = path.resolve(__dirname, "..");
 
 async function run() {
+  const directMigration = spawnSync(
+    process.execPath,
+    ["-e", "require('./lib/providers/postgres-migrate').migratePostgres({kind:'pglite',dataDir:require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(),'pglite-direct-'))}).then(()=>console.log('migration-complete')).catch(error=>{console.error(error.stack||error);process.exit(1)})"],
+    { cwd: ROOT, encoding: "utf8", timeout: 30000 }
+  );
+  assert.equal(directMigration.status, 0, "a direct PGlite migration must complete instead of letting Node exit before its promise settles");
+  assert.match(directMigration.stdout, /migration-complete/, "a direct PGlite migration must reach its completion marker");
+
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "postgres-worker-smoke-"));
   const connection = { kind: "pglite", dataDir: path.join(temp, "database") };
   let providers;
@@ -43,7 +51,7 @@ async function run() {
     /postgres connection is required/,
     "missing connection must expose a bounded safe configuration error"
   );
-  console.log(JSON.stringify({ caseCount: 2, passCount: 2, failCount: 0 }));
+  console.log(JSON.stringify({ caseCount: 3, passCount: 3, failCount: 0 }));
   console.log("postgres worker smoke: PASS");
 }
 

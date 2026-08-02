@@ -165,6 +165,13 @@ function createCustomReplyService({ provider, customerSettings, now = () => new 
     remove(propertyId, ruleId) {
       property(propertyId);
       return provider.remove(String(propertyId), String(ruleId));
+    },
+    evaluate(propertyId, ruleId, request) {
+      const id = String(propertyId || "").trim();
+      property(id);
+      const rule = listRaw(id).find((item) => item.ruleId === String(ruleId || ""));
+      if (!rule) throw new CustomReplyError(404, "CUSTOM_REPLY_NOT_FOUND", "找不到這則自訂回覆");
+      return evaluateCustomReplyMatch({ rules: [rule], propertyId: id, request, now: now(), timeZone });
     }
   };
 }
@@ -214,18 +221,32 @@ function conflictsWithFormalFacts(rule, outcome) {
   );
 }
 
+function matchReason(code, message) { return { code, message }; }
+
+function evaluateCustomReplyMatch({ rules = [], propertyId, request, now = new Date(), timeZone = "Asia/Taipei" } = {}) {
+  const scoped = rules.filter((rule) => rule.propertyId === propertyId);
+  if (!scoped.length) return { matched: false, rule: null, reply: "", reason: matchReason(rules.length ? "PROPERTY_MISMATCH" : "NO_RULES_FOR_PROPERTY", rules.length ? "規則屬於其他旅宿，不能跨旅宿使用" : "此旅宿沒有可測試的規則") };
+  const active = scoped.filter((rule) => ruleState(rule, now, timeZone) === "active");
+  if (!active.length) return { matched: false, rule: null, reply: "", reason: matchReason("NO_ACTIVE_RULES", "規則目前未啟用或不在生效期間") };
+  const topic = active.filter((rule) => topicMatches(rule, request));
+  if (!topic.length) return { matched: false, rule: null, reply: "", reason: matchReason("TOPIC_NOT_MATCHED", "客人詢問的主題不符合規則") };
+  const scope = topic.filter((rule) => scopeMatches(rule, request));
+  if (!scope.length) return { matched: false, rule: null, reply: "", reason: matchReason("SCOPE_NOT_MATCHED", "客人詢問的訂房類型不符合規則") };
+  const stay = scope.filter((rule) => stayMatches(rule, request));
+  if (!stay.length) return { matched: false, rule: null, reply: "", reason: matchReason("STAY_DATE_OUT_OF_RANGE", "客人詢問的入住日期不在規則適用範圍") };
+  if (stay.length > 1) return { matched: false, rule: null, reply: "", reason: matchReason("AMBIGUOUS_RULES", "有多條規則同時命中，請調整適用範圍") };
+  const rule = stay[0];
+  return { matched: true, rule, reply: rule.approvedReply, reason: null };
+}
+
 function applyControlledReplyRules({ rules = [], property, canonicalItems = [], executionOutcomes = [], now = new Date(), timeZone = "Asia/Taipei" } = {}) {
   const requests = new Map(canonicalItems.map((item) => [item.canonicalRequest.taskId, item.canonicalRequest]));
   return executionOutcomes.map((outcome) => {
     const request = requests.get(outcome.taskId);
     if (!request) return outcome;
-    const matches = rules.filter((rule) => rule.propertyId === property.propertyId
-      && ruleState(rule, now, timeZone) === "active"
-      && topicMatches(rule, request)
-      && scopeMatches(rule, request)
-      && stayMatches(rule, request));
-    if (!matches.length) return outcome;
-    if (matches.length > 1) {
+    const match = evaluateCustomReplyMatch({ rules, propertyId: property.propertyId, request, now, timeZone });
+    if (!match.matched && match.reason.code !== "AMBIGUOUS_RULES") return outcome;
+    if (!match.matched) {
       return {
         ...outcome,
         outcome: "unknown",
@@ -234,8 +255,7 @@ function applyControlledReplyRules({ rules = [], property, canonicalItems = [], 
         facts: { subject: request.canonicalEntity && request.canonicalEntity.rawText || "這個問題", propertyId: property.propertyId }
       };
     }
-    const match = matches[0];
-    if (conflictsWithFormalFacts(match, outcome)) {
+    if (conflictsWithFormalFacts(match.rule, outcome)) {
       return {
         ...outcome,
         outcome: "unknown",
@@ -251,8 +271,8 @@ function applyControlledReplyRules({ rules = [], property, canonicalItems = [], 
       ...outcome,
       facts: {
         ...(outcome.facts || {}),
-        customReply: match.approvedReply,
-        customReplyRuleId: match.ruleId,
+        customReply: match.reply,
+        customReplyRuleId: match.rule.ruleId,
         customReplySource: "operator_approved_rule",
         propertyId: property.propertyId
       }
@@ -267,6 +287,7 @@ module.exports = {
   CustomReplyError,
   applyControlledReplyRules,
   createCustomReplyService,
+  evaluateCustomReplyMatch,
   localDateKey,
   rangesOverlap,
   ruleState

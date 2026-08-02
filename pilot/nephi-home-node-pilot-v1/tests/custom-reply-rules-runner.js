@@ -8,7 +8,8 @@ const path = require("node:path");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const {
   createCustomReplyService,
-  applyControlledReplyRules
+  applyControlledReplyRules,
+  evaluateCustomReplyMatch
 } = require("../lib/custom-reply-rules");
 
 const NOW = new Date("2026-07-30T04:00:00.000Z");
@@ -192,6 +193,24 @@ function canonicalItem(taskId, capability, {
     assert.equal(mixed[0].facts.customReply, activeRule.approvedReply);
     assert.equal(mixed[0].facts.customReplySource, "operator_approved_rule");
     assert.deepEqual(mixed[1], unchangedOutcomes[0], "parking must remain owned by property_catalog");
+
+    const matcherResult = evaluateCustomReplyMatch({
+      rules: [alphaRule],
+      propertyId: "property_alpha",
+      request: canonicalItem("booking", "availability", { checkIn: "2026-09-03", checkOut: "2026-09-04" }).canonicalRequest,
+      now: NOW
+    });
+    assert.equal(matcherResult.matched, true, "the formal matcher must allow a September stay while the rule is effective");
+    assert.equal(matcherResult.rule.ruleId, alphaRule.ruleId);
+    assert.equal(matcherResult.reply, activeRule.approvedReply);
+    assert.equal(evaluateCustomReplyMatch({
+      rules: [alphaRule], propertyId: "property_alpha",
+      request: canonicalItem("booking", "availability", { checkIn: "2026-08-20" }).canonicalRequest, now: NOW
+    }).reason.code, "STAY_DATE_OUT_OF_RANGE", "August stays must not match a September rule");
+    assert.equal(evaluateCustomReplyMatch({
+      rules: [alphaRule], propertyId: "property_beta",
+      request: canonicalItem("booking", "availability", { checkIn: "2026-09-03" }).canonicalRequest, now: NOW
+    }).reason.code, "PROPERTY_MISMATCH", "a rule cannot cross the property boundary");
 
     const outsideStay = applyControlledReplyRules({
       rules: [alphaRule],
