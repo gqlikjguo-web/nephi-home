@@ -37,8 +37,8 @@ function property(propertyId, name, lineUrl) {
   assert.match(guestScript, /inventoryOptions/, "guest room choices must be supplied by public property data");
   assert.match(guestScript, /lineDisclaimer/, "guest results must include the LINE booking disclaimer");
   assert.doesNotMatch(guestScript, /✓ 可入住/, "public cards must not repeat the redundant availability label");
-  assert.match(guestScript, /詢問此房型/, "room cards must use the approved LINE inquiry label");
-  assert.match(guestScript, /詢問此包棟方案/, "bundle cards must use the approved LINE inquiry label");
+  assert.match(guestScript, /\\u4e00\\u9375\\u8907\\u88fd\\u8a62\\u554f\\u5167\\u5bb9/, "public cards must expose the approved one-click inquiry action");
+  assert.match(guestScript, /\\u524d\\u5f80 LINE \\u5b98\\u65b9\\u5e33\\u865f/, "public cards must expose the approved official LINE entry");
   assert.match(guestScript, /Intl\.NumberFormat\("zh-TW"/, "public prices must use a locale-safe currency formatter");
   assert.match(adminScript, /status-toggle/, "admin availability must use a single controlled toggle");
   assert.match(adminScript, /＋備註/, "admin must expose an explicit add-note action");
@@ -115,7 +115,7 @@ function property(propertyId, name, lineUrl) {
     assert.deepEqual(availability.body.data.rooms.find((item) => item.id === "room301").nightlyPrices, [{ date: "2026-08-06", price: 2500 }], "public result must expose the formal nightly price used for the stay");
     assert.equal(availability.body.data.rooms.find((item) => item.id === "room302").price, 3000, "the matching weekday base price must be used when there is no date override");
     assert.equal(availability.body.data.rooms.find((item) => item.id === "room302").name, "家庭房", "public results must retain the formal property room name");
-    assert.deepEqual(availability.body.data.rooms.find((item) => item.id === "room301"), { id: "room301", displayName: "陽光客房", name: "陽光客房", roomCode: "R-A", capacity: 2, highlights: ["採光佳", "安靜"], price: 2500, currency: "TWD" }, "public cards must use the complete formal room presentation data");
+    assert.deepEqual(availability.body.data.rooms.find((item) => item.id === "room301"), { id: "room301", displayName: "陽光客房", name: "陽光客房", roomCode: "R-A", capacity: 2, highlights: ["採光佳", "安靜"], price: 2500, nightlyPrices: [{ date: "2026-08-06", price: 2500 }], currency: "TWD" }, "public cards must use the complete formal room presentation data");
     assert.equal(availability.body.data.lineUrl, "https://lin.ee/nephiOfficial", "public results must retain the current property's validated LINE URL");
     assert.equal(JSON.stringify(availability.body).includes("note"), false, "admin notes must never be public data");
 
