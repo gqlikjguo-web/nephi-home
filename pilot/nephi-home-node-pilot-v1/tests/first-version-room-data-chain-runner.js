@@ -64,7 +64,7 @@ function onboarding(overrides = {}) {
   assert.equal(guestHtml.includes('name="queryMode"'), false);
   assert.equal(guestHtml.includes('name="roomType"'), false);
   assert.ok(guestJs.includes("checkInDate") && guestJs.includes("checkOutDate"));
-  for (const text of ["詢問此房型", "詢問此包棟方案", "最多入住", "roomCode", "highlights"]) assert.ok(guestJs.includes(text));
+  for (const text of ["\\u4e00\\u9375\\u8907\\u88fd\\u8a62\\u554f\\u5167\\u5bb9", "\\u524d\\u5f80 LINE \\u5b98\\u65b9\\u5e33\\u865f", "最多入住", "roomCode", "highlights"]) assert.ok(guestJs.includes(text));
   assert.equal(guestJs.includes("propertyId"), false);
   assert.match(guestCss, /@media\s*\(min-width:\s*768px\)/);
 
