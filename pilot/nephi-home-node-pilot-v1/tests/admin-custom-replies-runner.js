@@ -46,6 +46,15 @@ async function request(base, route, options = {}) {
     let result = await request(running.url, "/api/custom-replies?propertyId=property_alpha");
     assert.equal(result.response.status, 200);
     assert.deepEqual(result.body.data, { used: 0, limit: 5, items: [] });
+    result = await request(running.url, "/api/availability/batch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ customerId: "property_alpha", mode: "all_inventory", startDate: "2026-08-01", endDate: "2026-08-02", status: "available" })
+    });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.updated, 2);
+    result = await request(running.url, "/api/availability/month?propertyId=property_alpha&year=2026&month=8");
+    assert.equal(result.body.data.rows.find(row => row.date === "2026-08-01").alpha_room, "available");
     result = await request(running.url, "/api/custom-replies", {
       method: "POST",
       headers: { "content-type": "application/json" },

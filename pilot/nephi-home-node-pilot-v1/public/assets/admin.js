@@ -147,7 +147,7 @@ async function loadMonth() {
   try {
     const pages = await Promise.all(months.map(async value => { const [year, month] = value.split("-").map(Number); return api(`/api/availability/month?propertyId=${encodeURIComponent(session.propertyId)}&year=${year}&month=${month}`); })); if (generation !== requestGeneration) return;
     const data = pages[0] || { rooms: [], rows: [], notesByDate: {} }, rows = new Map(pages.flatMap(page => page.rows || []).map(row => [row.date, row])), dateKeys = plan.dateKeys; availabilityState.rooms = data.rooms || []; rooms = availabilityState.rooms; availabilityState.notesByDate = Object.assign({}, ...pages.map(page => page.notesByDate || {})); availabilityState.days = new Map(dateKeys.map(date => { const row = rows.get(date), normalized = { date, _hasAvailability: Boolean(row) }; for (const room of rooms) normalized[room.id] = row?.[room.id] === "available" ? "available" : "closed"; return [date, normalized]; }));
-    availabilityState.selectedDate = availabilityState.days.has(currentDateKey()) ? currentDateKey() : [...availabilityState.days.keys()][0] || ""; availabilityState.loadedSelection = availabilityState.selection; renderMembers(); renderAvailability(); $("status").textContent = "房況已載入";
+    availabilityState.selectedDate = availabilityState.days.has(currentDateKey()) ? currentDateKey() : [...availabilityState.days.keys()][0] || ""; availabilityState.loadedSelection = availabilityState.selection; renderMembers(); renderAvailability(); if (availabilityState.refreshBulk) availabilityState.refreshBulk(); $("status").textContent = "房況已載入";
   } catch (error) { if (generation === requestGeneration) $("status").textContent = `房況載入失敗：${error.message}，請稍後重試。`; }
   finally { if (generation === requestGeneration) { availabilityState.loading = false; $("availabilityLoading").hidden = true; } }
 }
@@ -252,9 +252,46 @@ function populateAvailabilityRanges() {
   }
   select.value = availabilityState.selection;
 }
+initializeAdminNavigation();
+initializeAvailabilityBulkControls();
 populateAvailabilityRanges();
 $("availabilityRange").onchange = () => { availabilityState.selection = $("availabilityRange").value; noteEditorState = null; $("noteEditor").hidden = true; loadMonth(); };
 $("availabilityToday").onclick = () => { availabilityState.selection = "rolling"; $("availabilityRange").value = "rolling"; noteEditorState = null; $("noteEditor").hidden = true; loadMonth(); };
+function initializeAdminNavigation() {
+  const panelMap = { availability: document.querySelector(".availability-card"), pricing: document.querySelector(".pricing-card"), bundles: document.querySelector(".bundles"), "custom-replies": document.querySelector(".custom-replies-card"), other: document.querySelector(".other-settings") };
+  for (const [tab, panel] of Object.entries(panelMap)) if (panel) panel.dataset.adminPanel = tab;
+  const select = $("adminTabSelect");
+  const show = tab => { for (const [name, panel] of Object.entries(panelMap)) if (panel) panel.hidden = name !== tab; document.querySelectorAll("[data-admin-tab]").forEach(button => button.classList.toggle("active", button.dataset.adminTab === tab)); if (select) select.value = tab; };
+  document.querySelectorAll("[data-admin-tab]").forEach(button => { button.onclick = () => show(button.dataset.adminTab); });
+  if (select) select.onchange = () => show(select.value);
+  show("availability");
+}
+function initializeAvailabilityBulkControls() {
+  const host = document.querySelector(".availability-card"); if (!host || $("availabilityBulkStatus")) return;
+  const box = element("section", "availability-bulk"), title = element("h3", "", "\u6574\u6708\u623f\u6cc1"), status = element("p", "hint"), actions = element("div", "actions"), open = element("button", "", "\u5168\u90e8\u958b\u653e"), close = element("button", "secondary", "\u5168\u90e8\u95dc\u9589"), confirmBox = element("section", "availability-bulk-confirm"), confirmText = element("p"), yes = element("button", "", "\u78ba\u5b9a"), no = element("button", "secondary", "\u53d6\u6d88");
+  status.id = "availabilityBulkStatus"; open.id = "availabilityBulkOpen"; close.id = "availabilityBulkClose"; confirmBox.id = "availabilityBulkConfirm"; confirmText.id = "availabilityBulkConfirmText"; yes.id = "availabilityBulkConfirmYes"; no.id = "availabilityBulkConfirmNo"; confirmBox.hidden = true; open.type = close.type = yes.type = no.type = "button"; actions.append(open, close); confirmBox.append(confirmText, element("div", "actions")); confirmBox.lastChild.append(yes, no); box.append(title, status, actions, confirmBox); host.querySelector("#status").before(box);
+  let pending = null;
+  const refresh = () => { const plan = AdminAvailabilityWindow.availabilityBulkPlan(currentDateKey(), availabilityState.selection); const states = [...availabilityState.days.values()].flatMap(day => availabilityState.rooms.map(room => day[room.id])); const state = states.length && states.every(value => value === "available") ? "\u5168\u90e8\u958b\u653e" : states.length && states.every(value => value === "closed") ? "\u5168\u90e8\u95dc\u9589" : "\u90e8\u5206\u958b\u653e"; status.textContent = plan.allowed ? `\u76ee\u524d\uff1a${state}` : plan.message; open.disabled = close.disabled = !plan.allowed; confirmBox.hidden = true; };
+  const ask = state => { const plan = AdminAvailabilityWindow.availabilityBulkPlan(currentDateKey(), availabilityState.selection); if (!plan.allowed) return refresh(); pending = { ...plan, state }; confirmText.textContent = `\u5373\u5c07\u5c07 ${plan.startDate} \u81f3 ${plan.endDate} \u7684\u6240\u6709\u623f\u578b\u8207\u5305\u68df\u8a2d\u70ba${state === "available" ? "\u5168\u90e8\u958b\u653e" : "\u5168\u90e8\u95dc\u9589"}\u3002`; confirmBox.hidden = false; };
+  open.onclick = () => ask("available"); close.onclick = () => ask("closed"); no.onclick = () => { pending = null; confirmBox.hidden = true; };
+  yes.onclick = async () => { if (!pending) return; yes.disabled = true; try { await api("/api/availability/batch", { method: "POST", body: JSON.stringify({ customerId: session.propertyId, mode: "all_inventory", startDate: pending.startDate, endDate: pending.endDate, status: pending.state }) }); await loadMonth(); } catch (error) { status.textContent = `\u6279\u6b21\u5132\u5b58\u5931\u6557\uff1a${error.message}`; } finally { pending = null; yes.disabled = false; confirmBox.hidden = true; refresh(); } };
+  availabilityState.refreshBulk = refresh;
+}
+function initializeSimpleCustomReplies() {
+  const form = $("customReplyForm"); if (!form || $("customReplyCreate")) return;
+  const create = element("button", "", "＋\u65b0\u589e\u81ea\u8a02\u56de\u8986"), cancel = $("customReplyCancel"), topic = $("customReplyTopic"), name = $("customReplyName"), stayStart = $("customReplyStayStart"), stayEnd = $("customReplyStayEnd"), effectiveStart = $("customReplyEffectiveStart"), effectiveEnd = $("customReplyEffectiveEnd");
+  create.id = "customReplyCreate"; create.type = "button"; form.before(create); form.hidden = true;
+  const month = document.createElement("input"); month.id = "customReplyStayMonth"; month.type = "month"; month.required = true; const monthLabel = document.createElement("label"); monthLabel.textContent = "\u5ba2\u4eba\u60f3\u5165\u4f4f\u7684\u6708\u4efd"; monthLabel.append(month);
+  const expiry = document.createElement("input"); expiry.id = "customReplyExpiry"; expiry.type = "date"; expiry.required = true; const expiryLabel = document.createElement("label"); expiryLabel.textContent = "\u516c\u544a\u4f7f\u7528\u81f3"; expiryLabel.append(expiry);
+  const basic = element("section", "custom-reply-basic"), stepOne = element("h3", "", "1. \u4f60\u60f3\u901a\u77e5\u5ba2\u4eba\u4ec0\u9ebc\uff1f"), stepTwo = element("h3", "", "2. \u9019\u5247\u516c\u544a\u9069\u7528\u4ec0\u9ebc\u60c5\u6cc1\uff1f"), stepThree = element("h3", "", "3. \u8981\u56de\u8986\u5ba2\u4eba\u4ec0\u9ebc\uff1f");
+  const advanced = document.createElement("details"); advanced.id = "customReplyAdvanced"; const summary = document.createElement("summary"); summary.textContent = "\u9032\u968e\u8a2d\u5b9a"; advanced.append(summary);
+  const labelFor = control => control.closest("label"); const topicLabel = labelFor(topic), scopeLabel = labelFor($("customReplyScope")), roomLabel = labelFor($("customReplyRoomType")), nameLabel = labelFor(name), startLabel = labelFor(stayStart), endLabel = labelFor(stayEnd), effectiveStartLabel = labelFor(effectiveStart), effectiveEndLabel = labelFor(effectiveEnd), textLabel = labelFor($("customReplyText")), enabledLabel = labelFor($("customReplyEnabled"));
+  basic.append(stepOne, topicLabel, stepTwo, monthLabel, scopeLabel, roomLabel, expiryLabel, stepThree, textLabel, enabledLabel); advanced.append(nameLabel, startLabel, endLabel, effectiveStartLabel, effectiveEndLabel); form.prepend(basic, advanced);
+  const normalize = () => { const value = month.value; if (/^\d{4}-\d{2}$/.test(value)) { const start = `${value}-01`, end = new Date(Date.UTC(Number(value.slice(0,4)), Number(value.slice(5,7)), 0)).toISOString().slice(0,10); stayStart.value = start; stayEnd.value = end; } effectiveStart.value = effectiveStart.value || new Date().toISOString().slice(0,10); effectiveEnd.value = expiry.value; const option = topic.options[topic.selectedIndex]; if (!name.value || name.dataset.generated === "true") { name.value = option ? option.textContent : "\u81ea\u8a02\u516c\u544a"; name.dataset.generated = "true"; } updateCustomReplyPreview(); };
+  month.onchange = normalize; expiry.onchange = normalize; topic.onchange = () => { name.dataset.generated = "true"; normalize(); }; create.onclick = () => { form.hidden = false; create.hidden = true; clearCustomReplyForm(); effectiveStart.value = new Date().toISOString().slice(0,10); normalize(); form.scrollIntoView({ block: "start" }); }; cancel.addEventListener("click", () => { form.hidden = true; create.hidden = false; });
+  const testInput = document.createElement("input"); testInput.id = "customReplyTestText"; testInput.placeholder = "\u4f8b\uff1a9/3 \u53ef\u4ee5\u8a02\u623f\u55ce"; const testLabel = document.createElement("label"); testLabel.textContent = "\u8f38\u5165\u5ba2\u4eba\u8a62\u554f\u4f86\u6e2c\u8a66"; testLabel.append(testInput); $("customReplyTest").before(testLabel);
+  window.customReplyTestDate = () => { const match = /(?:^|\D)(\d{1,2})\/(\d{1,2})(?:\D|$)/.exec(testInput.value); if (!match) return stayStart.value || currentDateKey(); return `${(stayStart.value || currentDateKey()).slice(0,4)}-${String(match[1]).padStart(2,"0")}-${String(match[2]).padStart(2,"0")}`; };
+}
 function updateCustomReplyPreview() {
   const topic = customReplyTopics.find(item => item[0] === $("customReplyTopic").value)?.[1] || "指定主題";
   const scope = customReplyScopes.find(item => item[0] === $("customReplyScope").value)?.[1] || "指定訂房類型";
@@ -270,7 +307,7 @@ $("customReplyTest").onclick = async () => {
   const topic = $("customReplyTopic").value;
   const capability = ({ booking_open:"availability", booking_paused:"availability", price_unannounced:"price", room:"room_options", bundle:"bundle_availability", parking_notice:"parking", facility_notice:"amenity", checkin_checkout:"policy", lodging_rules:"policy", temporary_operation:"availability" })[topic];
   const scope = $("customReplyScope").value;
-  const checkIn = $("customReplyStayStart").value || currentDateKey();
+  const checkIn = window.customReplyTestDate ? window.customReplyTestDate() : $("customReplyStayStart").value || currentDateKey();
   const request = { capability, canonicalEntity: { category: scope === "bundle" ? "bundle" : scope === "room_only" || scope === "room_type" ? "room" : "other", canonicalId: scope === "room_type" ? $("customReplyRoomType").value : null }, temporalState: { checkIn } };
   $("customReplyTestResult").textContent = "測試中…";
   try {
@@ -278,5 +315,7 @@ $("customReplyTest").onclick = async () => {
     $("customReplyTestResult").textContent = result.matched ? `會命中：${result.rule.name}。預計回覆：${result.reply}` : `不會命中：${result.reason.message}`;
   } catch (error) { $("customReplyTestResult").textContent = `測試失敗：${error.message}`; }
 };
+function editCustomReply(rule) { $("customReplyId").value = rule.ruleId; $("customReplyName").value = rule.name; $("customReplyTopic").value = rule.topic; $("customReplyScope").value = rule.scope; $("customReplyRoomType").value = rule.roomTypeId || ""; $("customReplyStayStart").value = rule.stayStartDate || ""; $("customReplyStayEnd").value = rule.stayEndDate || ""; $("customReplyEffectiveStart").value = rule.effectiveStartDate; $("customReplyEffectiveEnd").value = rule.effectiveEndDate; $("customReplyText").value = rule.approvedReply; $("customReplyEnabled").checked = rule.enabled; const month = $("customReplyStayMonth"); if (month) month.value = String(rule.stayStartDate || "").slice(0, 7); const expiry = $("customReplyExpiry"); if (expiry) expiry.value = rule.effectiveEndDate || ""; toggleCustomReplyRoomField(); $("customReplyForm").hidden = false; $("customReplyCreate").hidden = true; updateCustomReplyPreview(); $("customReplyForm").scrollIntoView({ behavior: "smooth", block: "start" }); }
+initializeSimpleCustomReplies();
 updateCustomReplyPreview();
 api(`/api/admin/session${expectedSlug ? `?slug=${encodeURIComponent(expectedSlug)}` : ""}`).then(enter).catch(() => showLogin());

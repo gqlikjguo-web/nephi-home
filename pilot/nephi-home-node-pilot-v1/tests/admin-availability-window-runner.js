@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { recentDateKeys, monthsForDateKeys, availabilityRangeForSelection, availabilityLoadPlan } = require("../public/assets/admin-availability-window");
+const { recentDateKeys, monthsForDateKeys, availabilityRangeForSelection, availabilityLoadPlan, availabilityBulkPlan } = require("../public/assets/admin-availability-window");
 
 const dates = recentDateKeys("2026-07-30", 15);
 assert.equal(dates.length, 15);
@@ -22,5 +22,8 @@ assert.deepEqual(availabilityLoadPlan("2026-08-18", "2026-08"), {
   months: ["2026-08"],
   dateKeys: recentDateKeys("2026-08-18", 14)
 });
+assert.deepEqual(availabilityBulkPlan("2026-08-18", "rolling"), { allowed: false, message: "請先選擇月份，才能設定整月房況。" });
+assert.deepEqual(availabilityBulkPlan("2026-08-18", "2026-08"), { allowed: true, startDate: "2026-08-18", endDate: "2026-08-31" });
+assert.deepEqual(availabilityBulkPlan("2026-08-18", "2026-09"), { allowed: true, startDate: "2026-09-01", endDate: "2026-09-30" });
 
 console.log(JSON.stringify({ suite: "admin-availability-window", pass: true, assertions: 5 }));

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{PUBLIC_BRAND_NAME}} 業者後台</title>
   <link rel="stylesheet" href="/assets/styles.css">
+  <style>.admin-navigation{position:sticky;top:0;z-index:2;display:flex;gap:8px;margin-bottom:20px;padding:10px;border:1px solid #dce6df;border-radius:16px;background:#f8fbf9}.admin-navigation button{flex:1;background:#e3ece6;color:#204b33}.admin-navigation button.active{background:#22633e;color:#fff}.admin-mobile-navigation{display:none;margin-bottom:14px}.availability-bulk{margin:14px 0;padding:14px;border:1px solid #dce6df;border-radius:12px;background:#f8fbf9}.availability-bulk h3{margin:0 0 8px}.availability-bulk-confirm{margin-top:12px;padding:12px;border:1px solid #b7cabd;border-radius:10px;background:#fff}@media(max-width:640px){.admin-navigation{display:none}.admin-mobile-navigation{display:grid}.admin-mobile-navigation select{width:100%}.availability-bulk .actions{display:grid;grid-template-columns:1fr 1fr}.availability-bulk button{min-height:46px}.custom-replies-card,.pricing-card,.bundles,.other-settings{min-width:0;max-width:100%;overflow-wrap:anywhere}}</style>
 </head>
 <body data-public-base-url="{{PUBLIC_BASE_URL}}">
 <main class="shell">
@@ -12,7 +13,11 @@
   <section id="login" class="card login"><h2>業者登入</h2><p class="hint">登入 {{PUBLIC_BRAND_NAME}} 管理房況與價格。</p><form id="loginForm"><label>Email<input name="email" type="email" required autocomplete="username"></label><label>密碼<input name="password" type="password" required autocomplete="current-password"></label><button>登入</button><p id="loginMessage" class="message" role="alert"></p></form></section>
   <section id="propertyChooser" class="card login" hidden><h2>選擇要管理的旅宿</h2><p class="hint">此 Email 可管理多家旅宿，請選擇本次要進入的後台。</p><div id="propertyChoices" class="property-choices"></div><p id="propertyChoiceMessage" class="message" role="alert"></p></section>
 	  <div id="workspace" hidden>
-	    <section class="card availability-card">
+      <nav id="adminNavigation" class="admin-navigation" aria-label="admin navigation">
+        <button type="button" data-admin-tab="availability" class="active">&#25151;&#27841;&#31649;&#29702;</button><button type="button" data-admin-tab="pricing">&#25151;&#22411;&#33287;&#20729;&#26684;</button><button type="button" data-admin-tab="bundles">&#21253;&#26847;&#26041;&#26696;</button><button type="button" data-admin-tab="custom-replies">&#33258;&#35330;&#22238;&#35206;</button><button type="button" data-admin-tab="other">&#20854;&#20182;&#35373;&#23450;</button>
+      </nav>
+      <label id="adminMobileNavigation" class="admin-mobile-navigation">&#21151;&#33021;&#36984;&#21934;<select id="adminTabSelect"><option value="availability">&#25151;&#27841;&#31649;&#29702;</option><option value="pricing">&#25151;&#22411;&#33287;&#20729;&#26684;</option><option value="bundles">&#21253;&#26847;&#26041;&#26696;</option><option value="custom-replies">&#33258;&#35330;&#22238;&#35206;</option><option value="other">&#20854;&#20182;&#35373;&#23450;</option></select></label>
+	    <section class="card availability-card" data-admin-panel="availability">
       <div class="toolbar availability-toolbar"><div><p class="eyebrow" id="propertyLabel"></p><h2>房況管理</h2></div><div class="availability-range-actions"><label>顯示日期<select id="availabilityRange" aria-label="房況顯示日期"><option value="rolling">今天起 30 天</option></select></label><button id="availabilityToday" type="button" class="secondary">回到今天</button><input id="month" type="month" hidden></div></div>
       <p class="hint">切換開關即可更新可售狀態；內部備註只供業者查看。</p>
       <p id="status" class="message" role="status" aria-live="polite"></p>

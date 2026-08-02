@@ -40,7 +40,13 @@
     };
   }
 
-  const api = { recentDateKeys, monthsForDateKeys, availabilityRangeForSelection, availabilityLoadPlan };
+  function availabilityBulkPlan(today, selection) {
+    if (selection === "rolling") return { allowed: false, message: "\u8acb\u5148\u9078\u64c7\u6708\u4efd\uff0c\u624d\u80fd\u8a2d\u5b9a\u6574\u6708\u623f\u6cc1\u3002" };
+    const range = availabilityRangeForSelection(today, selection);
+    return { allowed: true, startDate: range.startDate, endDate: range.endDate };
+  }
+
+  const api = { recentDateKeys, monthsForDateKeys, availabilityRangeForSelection, availabilityLoadPlan, availabilityBulkPlan };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (root) root.AdminAvailabilityWindow = api;
 })(typeof globalThis === "undefined" ? null : globalThis);

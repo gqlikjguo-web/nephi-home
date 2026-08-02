@@ -552,6 +552,20 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
 
   function applyBatch(input) {
     const homestay = requireCustomerId(input.customerId);
+    if (input.mode === "all_inventory") {
+      const startDate = parseDateKey(input.startDate, "startDate");
+      const endDate = parseDateKey(input.endDate, "endDate");
+      const status = String(input.status || "");
+      if (endDate < startDate) throw new AppError(400, "INVALID_DATE_RANGE", "endDate must not be before startDate");
+      if (startDate < now().toISOString().slice(0, 10)) throw new AppError(400, "PAST_DATE_FORBIDDEN", "Past availability cannot be changed");
+      if (!ALLOWED_STATUSES.has(status)) throw new AppError(400, "INVALID_STATUS", "Invalid availability status");
+      const inventory = homestay.rooms || [];
+      if (!inventory.length) throw new AppError(400, "NO_INVENTORY", "No inventory to update");
+      const dates = [];
+      for (let date = startDate; date <= endDate; date = addDays(date, 1)) dates.push(date);
+      for (const date of dates) for (const room of inventory) repository.setAvailabilityDay(homestay.customerId, date, room.id, status);
+      return { customerId: homestay.customerId, startDate, endDate, status, updated: dates.length * inventory.length };
+    }
     const year = Number(input.year);
     const month = Number(input.month);
     if (!Number.isInteger(year) || !Number.isInteger(month)) {
