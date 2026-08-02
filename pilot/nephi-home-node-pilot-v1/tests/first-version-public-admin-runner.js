@@ -112,6 +112,7 @@ function property(propertyId, name, lineUrl) {
     assert.equal(Object.hasOwn(availability.body.data, "propertyId"), false, "public availability must not expose internal propertyId");
     assert.deepEqual(availability.body.data.rooms.map((item) => item.id), ["room301", "room302", "room401", "room402"], "public availability must use the slug-resolved property only");
     assert.equal(availability.body.data.rooms.find((item) => item.id === "room301").price, 2500, "a date-specific price must override the base weekday price");
+    assert.deepEqual(availability.body.data.rooms.find((item) => item.id === "room301").nightlyPrices, [{ date: "2026-08-06", price: 2500 }], "public result must expose the formal nightly price used for the stay");
     assert.equal(availability.body.data.rooms.find((item) => item.id === "room302").price, 3000, "the matching weekday base price must be used when there is no date override");
     assert.equal(availability.body.data.rooms.find((item) => item.id === "room302").name, "家庭房", "public results must retain the formal property room name");
     assert.deepEqual(availability.body.data.rooms.find((item) => item.id === "room301"), { id: "room301", displayName: "陽光客房", name: "陽光客房", roomCode: "R-A", capacity: 2, highlights: ["採光佳", "安靜"], price: 2500, currency: "TWD" }, "public cards must use the complete formal room presentation data");

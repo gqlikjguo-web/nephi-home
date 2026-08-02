@@ -361,6 +361,16 @@ function publicPriceForStay(room, checkIn, checkOut, overrides = []) {
   return total > 0 ? total : null;
 }
 
+function publicNightlyPrices(room, checkIn, checkOut, overrides = []) {
+  const nights = [];
+  for (let date = checkIn; date < checkOut; date = nextDateKey(date)) {
+    const price = publicPriceForDate(room, date, overrides);
+    if (price === null) return [];
+    nights.push({ date, price });
+  }
+  return nights;
+}
+
 function publicAvailabilityResult(result, property, overrides = []) {
   let lineUrl = "";
   try {
@@ -379,6 +389,7 @@ function publicAvailabilityResult(result, property, overrides = []) {
     highlights: room.highlights,
     ...(input.inventoryType === "bundle" ? { entertainmentAmenities: providedAmenities(input.entertainmentAmenities).slice(0, 5).map(({ key, displayName, source, position }) => ({ key, displayName, source, position })) } : {}),
     price: publicPriceForStay(room, result.checkIn, result.checkOut, overrides),
+    nightlyPrices: publicNightlyPrices(room, result.checkIn, result.checkOut, overrides),
     currency: String(property.currency || "TWD")
   });};
   const rooms = result.rooms.filter((room) => room.inventoryType !== "bundle").map(item);
