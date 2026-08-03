@@ -40,6 +40,7 @@ function assertResolved(result, expected) {
   assert.equal(result.expressionType, expected.expressionType);
   assert.equal(result.checkIn, expected.checkIn);
   assert.equal(result.checkOut, expected.checkOut);
+  if (Object.prototype.hasOwnProperty.call(expected, "nights")) assert.equal(result.nights, expected.nights);
   assert.equal(result.timezone, TIMEZONE);
   assert.equal(result.resolutionSource, expected.resolutionSource || "canonical_temporal_grammar");
   assert.equal(result.repairReasonCode, expected.repairReasonCode || "");
@@ -126,6 +127,23 @@ assertResolved(resolve("8/6住一晚", candidate("8/6住一晚", "range", "2056-
   checkOut: "2026-08-07",
   repairReasonCode: "planner_candidate_rejected"
 });
+
+for (const testCase of [
+  { rawText: "8/6住兩晚", guestMessage: "8/6 住兩晚" },
+  { rawText: "8/6入住兩晚", guestMessage: "8/6 入住兩晚，401 雙人房總房價多少？" }
+]) {
+  assertResolved(resolve(
+    testCase.rawText,
+    candidate(testCase.rawText, "range", "2026-08-06", "2026-08-08", 2),
+    { guestMessage: testCase.guestMessage }
+  ), {
+    rawText: testCase.rawText,
+    expressionType: "date_range",
+    checkIn: "2026-08-06",
+    checkOut: "2026-08-08",
+    nights: 2
+  });
+}
 
 assertResolved(resolve("8/6到8/8", candidate("8/6到8/8", "absolute", "2056-08-06", "2056-08-08")), {
   rawText: "8/6到8/8",

@@ -136,7 +136,7 @@ function explicitNights(raw) {
 }
 
 function expressionBeforeNights(raw) {
-  return raw.replace(/住[一二兩三四五六七八九十\d]+晚.*$/u, "");
+  return raw.replace(/(?:入)?住[一二兩三四五六七八九十\d]+晚.*$/u, "");
 }
 
 function parseSingleExpression(raw, base, baseWeekday) {
