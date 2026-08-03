@@ -26,6 +26,7 @@ function runtimeConfig(env = process.env) {
     ,testOnlyConversationEngineV2: /^(?:1|true|yes)$/i.test(String(env.TEST_ONLY_CONVERSATION_ENGINE_V2 || ""))
     ,testOnlyConversationTraceV2: /^(?:1|true|yes)$/i.test(String(env.TEST_ONLY_CONVERSATION_TRACE_V2 || ""))
     ,testOnlyEnvironment: /^(?:1|true|yes)$/i.test(String(env.TEST_ONLY_ENVIRONMENT || ""))
+    ,testOnlyAcceptanceEnabled: /^(?:1|true|yes)$/i.test(String(env.TEST_ONLY_ACCEPTANCE_ENABLED || ""))
     ,testOnlyLineMessageTraceEnabled: /^(?:1|true|yes)$/i.test(String(env.TEST_ONLY_LINE_MESSAGE_TRACE_ENABLED || ""))
     ,testOnlyLineMessageTracePropertyId: String(env.TEST_ONLY_LINE_MESSAGE_TRACE_PROPERTY_ID || "").trim()
     ,testOnlyLineMessageTraceTargetSha256: String(env.TEST_ONLY_LINE_MESSAGE_TRACE_TARGET_SHA256 || "").trim().toLowerCase()

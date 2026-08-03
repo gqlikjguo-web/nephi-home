@@ -26,3 +26,9 @@
 
 - 本機 Gate exit 0 只證明 Gate 實際檢查的 Repository 不變量，不等於真實 provider 或正式部署成功。
 - 沒有可獨立核對的 assertion、exit code、commit、push或 runtime／外部證據時，必須標示 `UNPROVEN` 或精確 blocker，不得宣稱完成。
+
+## 2026-08-04 deployed acceptance checkpoint
+
+- The secure post-deployment test-only conversation acceptance channel is implemented and fully verified locally on `codex/deployed-acceptance-closure-20260804`.
+- The route is dual-gated, preserves platform-admin access, and adds commit-bound GitHub Actions OIDC with safe FinalResponse and execution evidence.
+- The deployed matrix has not been pushed, run in GitHub Actions, deployed, or executed against Render; independent review and later integration remain required.

@@ -311,3 +311,11 @@
 **Reason:** Two real LINE users received different answers to the same availability question, while the earlier connection check did not preserve enough original per-event evidence to locate the first divergent layer without replaying or clearing conversation state.
 
 **Constraint:** The trace cannot change Planner, CanonicalRequest, V3 state, temporal resolution, Resolver, FinalDecision, FinalResponse, or transport authority. Unknown fields, source/evidence text, credentials, tokens, cookies, database URLs, raw LINE identities, and guest personal data are excluded. Diagnostic failures cannot affect delivery. The table and wiring must be removed after the two real traces are compared and the incident is resolved.
+
+## D-025 — Deployed test-only acceptance uses commit-bound GitHub OIDC
+
+**Decision:** The deployed conversation-acceptance route exists only when both the test-only environment and its dedicated acceptance flag are enabled. It retains platform-admin session authorization and additionally accepts GitHub Actions OIDC only after official-signature verification and exact audience, repository, branch, workflow, and deployed-commit checks.
+
+**Reason:** Post-deployment acceptance must exercise the real test-only Planner, PostgreSQL providers, Engine, Claim Validator, and FinalResponse without storing a user password, LINE credential, Render credential, or reusable acceptance secret in GitHub Actions.
+
+**Constraint:** Request data cannot select identity claims or the deployment SHA. Failed OIDC verification is fail-closed, tokens are never logged or returned, and the response exposes only the Engine's unique FinalResponse plus allowlisted task facts and safe trace evidence. The deployed runner may poll health for the exact commit but never retries a failed conversation case.

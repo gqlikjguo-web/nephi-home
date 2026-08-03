@@ -28,3 +28,24 @@ jobs:
       - run: node tests/v2-live-availability-regression-runner.js
       - run: node tests/conversation-engine-v2-integration-runner.js
       - run: npm test
+
+  deployed-acceptance:
+    if: github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: pilot/nephi-home-node-pilot-v1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Verify deployed test-only conversation matrix
+        env:
+          TEST_ONLY_ACCEPTANCE_BASE_URL: https://nephi-home-node-pilot-test-only-btye.onrender.com
+          TEST_ONLY_ACCEPTANCE_PROPERTY_ID: nephi_home
+        run: node scripts/run-deployed-conversation-acceptance.js

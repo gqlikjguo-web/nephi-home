@@ -21,6 +21,7 @@ const { createLineBindingService } = require("./lib/line-binding-service");
 const { createLineSetupService } = require("./lib/line-setup-service");
 const { CustomReplyError, createCustomReplyService } = require("./lib/custom-reply-rules");
 const { createTestOnlyLineMessageTrace } = require("./lib/test-only-line-message-trace");
+const { createGithubActionsOidcVerifier } = require("./lib/test-only-acceptance-oidc");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -30,6 +31,86 @@ const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provide
 const SAFE_PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const SAFE_CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
 const SAFE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function safeAcceptanceText(value, maxLength = 2000) {
+  return String(value === undefined || value === null ? "" : value).slice(0, maxLength);
+}
+
+function safeAcceptanceInteger(value) {
+  return value !== null && value !== undefined && value !== "" && Number.isInteger(Number(value)) ? Number(value) : null;
+}
+
+function safeAcceptanceInventory(item) {
+  return {
+    publicName: safeAcceptanceText(item && item.publicName, 120),
+    capacity: safeAcceptanceInteger(item && item.capacity),
+    category: ["room", "bundle"].includes(item && item.category) ? item.category : ""
+  };
+}
+
+function safeAcceptanceFacts(facts = {}) {
+  const safe = {};
+  for (const key of ["subject", "status", "answer", "locationMapUrl", "detailIntent", "availability", "checkIn", "checkOut"]) {
+    if (facts[key] !== undefined && facts[key] !== null) safe[key] = safeAcceptanceText(facts[key]);
+  }
+  for (const key of ["detailProvided", "detailNeedsConfirmation"]) {
+    if (typeof facts[key] === "boolean") safe[key] = facts[key];
+  }
+  if (Array.isArray(facts.amenities)) safe.amenities = facts.amenities.slice(0, 100).map((item) => safeAcceptanceText(item, 120));
+  if (Array.isArray(facts.availableDates)) safe.availableDates = facts.availableDates.slice(0, 366).map((item) => safeAcceptanceText(item, 20));
+  if (facts.range && typeof facts.range === "object") safe.range = { from: safeAcceptanceText(facts.range.from, 20), to: safeAcceptanceText(facts.range.to, 20) };
+  if (Array.isArray(facts.availableInventory)) safe.availableInventory = facts.availableInventory.slice(0, 100).map(safeAcceptanceInventory);
+  if (Array.isArray(facts.applicableBundles)) safe.applicableBundles = facts.applicableBundles.slice(0, 100).map((item) => ({ name: safeAcceptanceText(item && item.name, 120), note: safeAcceptanceText(item && item.note, 500) }));
+  if (Array.isArray(facts.prices)) safe.prices = facts.prices.slice(0, 100).map((item) => ({
+    inventory: safeAcceptanceInventory(item && item.inventory),
+    daily: Array.isArray(item && item.daily) ? item.daily.slice(0, 60).map((daily) => ({ date: safeAcceptanceText(daily && daily.date, 20), price: safeAcceptanceInteger(daily && daily.price), source: safeAcceptanceText(daily && daily.source, 80) })) : [],
+    total: safeAcceptanceInteger(item && item.total),
+    currency: safeAcceptanceText(item && item.currency, 10)
+  }));
+  return safe;
+}
+
+function safeAcceptanceTaskResult(item = {}) {
+  const facts = item.facts || {};
+  return {
+    taskId: safeAcceptanceText(item.taskId, 80),
+    capability: safeAcceptanceText(item.type, 80),
+    type: safeAcceptanceText(item.type, 80),
+    status: safeAcceptanceText(item.status, 80),
+    reason: safeAcceptanceText(item.reason, 160),
+    dataSource: safeAcceptanceText(facts.customReplySource || facts.source, 80),
+    facts: safeAcceptanceFacts(facts)
+  };
+}
+
+function safeAcceptanceList(values, maxLength = 80) {
+  return Array.isArray(values) ? values.slice(0, 200).map((value) => safeAcceptanceText(value, maxLength)) : [];
+}
+
+function safeAcceptanceFinalDecision(decision = {}) {
+  const summary = decision.executionSummary || {};
+  const executionSummary = {};
+  for (const key of ["answeredTaskIds", "noAvailabilityTaskIds", "notReadyTaskIds", "unknownTaskIds", "propertyDataMissingTaskIds", "technicalErrorTaskIds", "invalidQueryPlanTaskIds"]) executionSummary[key] = safeAcceptanceList(summary[key]);
+  return {
+    action: safeAcceptanceText(decision.action, 40),
+    reasonCode: safeAcceptanceText(decision.reasonCode, 160),
+    taskIds: safeAcceptanceList(decision.taskIds),
+    missingFields: safeAcceptanceList(decision.missingFields, 120),
+    clarificationCandidates: safeAcceptanceList(decision.clarificationCandidates, 160),
+    reviewRequired: decision.reviewRequired === true,
+    executionSummary
+  };
+}
+
+function safeAcceptanceClaimValidation(validation = {}) {
+  return {
+    ok: validation.ok === true,
+    errors: safeAcceptanceList(validation.errors, 120),
+    coveredTaskIds: safeAcceptanceList(validation.coveredTaskIds),
+    missingTaskIds: safeAcceptanceList(validation.missingTaskIds),
+    unexpectedTaskIds: safeAcceptanceList(validation.unexpectedTaskIds)
+  };
+}
 
 function safeDiagnosticLabel(value, fallback, maxLength) {
   const text = String(value || "");
@@ -432,10 +513,23 @@ function createRequestHandler(service, options = {}) {
   const customReplyService = options.customReplyService;
   const customReplyTestHandler = options.customReplyTestHandler;
   const testOnlyAcceptanceHandler = options.testOnlyAcceptanceHandler;
+  const testOnlyAcceptanceOidcVerifier = options.testOnlyAcceptanceOidcVerifier;
   const testOnlyLineMessageTrace = options.testOnlyLineMessageTrace;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
   const publicBrand = options.publicBrand || createPublicBrand();
   const deploymentCommit = String(options.deploymentCommit || process.env.RENDER_GIT_COMMIT || "");
+  async function authorizeTestOnlyAcceptance(request) {
+    const sessionToken = cookieValue(request, "nephi_admin_session");
+    const session = sessionToken && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(sessionToken)) : null;
+    if (session && onboarding && onboarding.isPlatformAdmin(session)) return { kind: "platform_admin", session };
+    const authorization = String(request.headers.authorization || "");
+    const bearer = /^Bearer ([A-Za-z0-9._~-]+)$/.exec(authorization);
+    if (!bearer || typeof testOnlyAcceptanceOidcVerifier !== "function") throw new AppError(401, "ACCEPTANCE_AUTH_REQUIRED", "Authorized test-only acceptance identity is required");
+    let verified = false;
+    try { verified = await testOnlyAcceptanceOidcVerifier(bearer[1]); } catch { verified = false; }
+    if (!verified) throw new AppError(403, "ACCEPTANCE_OIDC_REJECTED", "GitHub Actions acceptance identity was rejected");
+    return { kind: "github_actions_oidc" };
+  }
   return async function handleRequest(request, response) {
     const url = new URL(request.url, "http://127.0.0.1");
     const pathname = url.pathname;
@@ -447,17 +541,13 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
       if (request.method === "POST" && pathname === "/api/admin/test-only/conversation-acceptance") {
         if (typeof testOnlyAcceptanceHandler !== "function") return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
-        const token = cookieValue(request, "nephi_admin_session");
-        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
-        if (!session || !onboarding || !onboarding.isPlatformAdmin(session)) throw new AppError(401, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
-        return sendData(response, await testOnlyAcceptanceHandler(await readJsonBody(request), session));
+        const identity = await authorizeTestOnlyAcceptance(request);
+        return sendData(response, await testOnlyAcceptanceHandler(await readJsonBody(request), identity));
       }
       if (request.method === "DELETE" && pathname === "/api/admin/test-only/conversation-acceptance") {
         if (typeof testOnlyAcceptanceHandler !== "function") return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
-        const token = cookieValue(request, "nephi_admin_session");
-        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
-        if (!session || !onboarding || !onboarding.isPlatformAdmin(session)) throw new AppError(401, "PLATFORM_ADMIN_REQUIRED", "Platform administrator access is required");
-        return sendData(response, await testOnlyAcceptanceHandler({ ...(await readJsonBody(request)), clear: true }, session));
+        const identity = await authorizeTestOnlyAcceptance(request);
+        return sendData(response, await testOnlyAcceptanceHandler({ ...(await readJsonBody(request)), clear: true }, identity));
       }
       const sharedLineWebhookMatch = /^\/api\/line\/webhooks\/([A-Za-z0-9_-]{32,128})$/.exec(pathname);
       if (request.method === "POST" && sharedLineWebhookMatch) {
@@ -866,6 +956,13 @@ function createApp(options = {}) {
     now
   });
   const testOnlyEnvironment = Object.hasOwn(options, "testOnlyEnvironment") ? options.testOnlyEnvironment === true : config.testOnlyEnvironment === true;
+  const testOnlyAcceptanceEnabled = Object.hasOwn(options, "testOnlyAcceptanceEnabled") ? options.testOnlyAcceptanceEnabled === true : config.testOnlyAcceptanceEnabled === true;
+  const deploymentCommit = String(options.deploymentCommit || process.env.RENDER_GIT_COMMIT || "").trim().toLowerCase();
+  const testOnlyAcceptanceOidcVerifier = typeof options.testOnlyAcceptanceOidcVerifier === "function"
+    ? options.testOnlyAcceptanceOidcVerifier
+    : testOnlyEnvironment && testOnlyAcceptanceEnabled && deploymentCommit
+      ? createGithubActionsOidcVerifier({ deploymentCommit, fetchImpl: options.testOnlyAcceptanceOidcFetch || globalThis.fetch, now })
+      : null;
   const testOnlyLineMessageTrace = createTestOnlyLineMessageTrace({
     enabled: adminAuthRequired && (Object.hasOwn(options, "testOnlyLineMessageTraceEnabled") ? options.testOnlyLineMessageTraceEnabled === true : config.testOnlyLineMessageTraceEnabled === true),
     testOnly: testOnlyEnvironment,
@@ -920,7 +1017,7 @@ function createApp(options = {}) {
       reason: matched ? null : { code: "RULE_NOT_MATCHED", message: "客人詢問經正式語意流程後未命中這則規則" }
     };
   };
-  const testOnlyAcceptanceHandler = options.testOnlyAcceptanceEnabled === true && options.testOnlyEnvironment === true
+  const testOnlyAcceptanceHandler = testOnlyAcceptanceEnabled && testOnlyEnvironment
     ? async (body = {}) => {
       const customerId = String(body.customerId || body.propertyId || "").trim();
       const conversationId = String(body.conversationId || "").trim();
@@ -937,7 +1034,19 @@ function createApp(options = {}) {
       const result = await root.engine.process({ customerId, channelId, lineUserId, eventId, eventTimestamp: now().toISOString(), messageText });
       const trace = acceptanceTraces.get(result.traceId) || [];
       acceptanceTraces.delete(result.traceId);
-      return { traceId: result.traceId, eventId, finalDecision: { action: result.finalDecision.action, reasonCode: result.finalDecision.reasonCode }, claimValidation: { ok: Boolean(result.claimValidation.ok), errors: result.claimValidation.errors.map(String) }, taskResults: result.taskResults.map((item) => ({ taskId: String(item.taskId || ""), type: String(item.type || ""), status: String(item.status || ""), reason: String(item.reason || "") })), trace };
+      return {
+        traceId: result.traceId,
+        eventId,
+        finalDecision: safeAcceptanceFinalDecision(result.finalDecision),
+        claimValidation: safeAcceptanceClaimValidation(result.claimValidation),
+        finalResponse: {
+          action: result.finalResponse.action,
+          shouldReply: result.finalResponse.shouldReply,
+          replyText: result.finalResponse.replyText
+        },
+        taskResults: result.taskResults.map(safeAcceptanceTaskResult),
+        trace
+      };
     }
     : null;
   const claimEvent = (input) => providers.persistence.claimMessageEvent(input.customerId, input.channelId, input.eventId, { lineUserId: String(input.lineUserId || ""), eventTimestamp: input.eventTimestamp || "", guestMessage: String(input.messageText || ""), replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
@@ -995,7 +1104,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, deploymentCommit: options.deploymentCommit }));
+  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, deploymentCommit }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
 }
 

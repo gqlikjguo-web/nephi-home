@@ -18,3 +18,9 @@
 `DEPLOYMENT_BLOCKED_TEST_ONLY_LINE_BINDING_MIGRATION`
 
 此限制與其他未證明的 runtime／外部狀態記錄在 [PROJECT_MEMORY](PROJECT_MEMORY.md)。它們不是本次收尾工作的自動待辦，也不得被誤標為已完成。
+
+## 2026-08-04 deployed acceptance follow-up
+
+1. Independently review the local deployed-acceptance closure commit and complete diff.
+2. After explicit authorization, push and integrate it into `test-only/node-pilot-integration` without rewriting history.
+3. Require normal test-only CI, Render deployment of the exact commit, and the new OIDC-authenticated deployed conversation matrix to succeed before any real LINE acceptance.

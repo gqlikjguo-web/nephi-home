@@ -202,3 +202,9 @@
 - Added a test-only, property- and message-hash-scoped 72-hour PostgreSQL trace for `state_before`, pending state, Planner, validation, CanonicalRequest, temporal resolution, availability Resolver request/response, FinalDecision, FinalResponse, and actual LINE transport text.
 - Added existing-admin-authenticated, property-scoped read access and fail-closed gates for non-test, unauthenticated, unconfigured, unrelated-message, and cross-property requests.
 - Stored only hashed LINE user/channel identifiers and allowlisted diagnostic fields; raw identities, source/evidence text, credentials, cookies, database URLs, and personal data are excluded.
+
+## 2026-08-04 Deployed test-only conversation acceptance
+
+- Added a dual-gated test-only acceptance route contract with existing platform-admin authorization plus commit-bound GitHub Actions OIDC verification.
+- Added allowlisted FinalResponse, FinalDecision, Claim Validator, task source/fact, and safe trace evidence without returning prompts, provider objects, or credentials.
+- Added a health-pinned, no-retry deployed conversation matrix job that runs only after the existing test-only CI verification succeeds.
