@@ -1,6 +1,6 @@
 # JunZan AI Codex Integrity Rules
 
-These repository-wide rules apply to every Codex task. Read this file and each applicable descendant `AGENTS.md` before acting. Repository history, source, tests, and observed command output are the only project facts; do not rely on chat memory or invent missing evidence.
+These repository-wide rules apply to every Codex task. Read this file and each applicable descendant `AGENTS.md` before acting. For work under JunZan AI, the required authority entry is [pilot/nephi-home-node-pilot-v1/docs/RULES_INDEX.md](pilot/nephi-home-node-pilot-v1/docs/RULES_INDEX.md). Repository history, source, tests, and observed command output are the only project facts; do not rely on chat memory or invent missing evidence.
 
 ## Trust Boundaries and Evidence
 
@@ -32,4 +32,4 @@ Use `IMPLEMENTED_LOCAL_VERIFIED` only after the exact worktree/branch/HEAD, diff
 
 ## Project-specific Rules
 
-The JunZan AI rules for `pilot/nephi-home-node-pilot-v1` are in [its descendant AGENTS.md](pilot/nephi-home-node-pilot-v1/AGENTS.md) and apply in addition to these repository-wide rules.
+The JunZan AI rules for `pilot/nephi-home-node-pilot-v1` are in [its descendant AGENTS.md](pilot/nephi-home-node-pilot-v1/AGENTS.md) and apply in addition to these repository-wide rules. Descendant rules may be stricter but cannot weaken these repository integrity, evidence, or completion-status requirements; stop and report any conflict.
