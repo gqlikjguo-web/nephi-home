@@ -39,6 +39,7 @@ jobs:
       - run: node tests/verify-codex-integrity-runner.js
       - run: npm run test:canonical-golden
       - run: npm run test:runtime-uniqueness
+      - run: npm run test:provider-fail-closed
       - run: npm run test:custom-replies
         env:
           CUSTOM_REPLY_TEST_DATABASE_URL: postgresql://codex_test:codex_test_password@localhost:5432/codex_admin_test

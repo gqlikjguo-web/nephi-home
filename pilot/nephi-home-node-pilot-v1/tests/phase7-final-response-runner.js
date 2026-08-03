@@ -113,7 +113,7 @@ cases.push(invalidClarification);
 const handoff = buildFinalResponse({
   finalDecision: decision("handoff"),
   responsePlan: plan([handoffSection]),
-  validatedReplyText: "業者已同意可以攜帶寵物。",
+  validatedReplyText: "寵物規則這部分需要請業者確認。",
   claimValidation: { ok: true, errors: [] }
 });
 assert.deepEqual(handoff, {
@@ -126,7 +126,7 @@ cases.push(handoff);
 const answeredAndHandoff = buildFinalResponse({
   finalDecision: decision("handoff"),
   responsePlan: plan([answeredSection, handoffSection]),
-  validatedReplyText: "民宿旁空地可停車。\n業者已同意可以攜帶寵物。",
+  validatedReplyText: "民宿旁空地可停車。\n寵物規則這部分需要請業者確認。",
   claimValidation: { ok: true, errors: [] }
 });
 assert.deepEqual(answeredAndHandoff, {
@@ -145,7 +145,7 @@ const claimRejection = buildFinalResponse({
 });
 assert.deepEqual(claimRejection, {
   action: "handoff",
-  replyText: `民宿旁空地可停車。\n${SAFE_HANDOFF_TEXT}`,
+  replyText: SAFE_HANDOFF_TEXT,
   shouldReply: true
 });
 assert.equal(claimRejection.replyText.includes(rejectedCandidate), false);
@@ -173,10 +173,38 @@ const composerException = buildFinalResponse({
 });
 assert.deepEqual(composerException, {
   action: "handoff",
-  replyText: `民宿旁空地可停車。\n${SAFE_HANDOFF_TEXT}`,
+  replyText: SAFE_HANDOFF_TEXT,
   shouldReply: true
 });
 cases.push(composerException);
+
+const rejectedClaims = ["一定有房", "已完成訂房"];
+const rejectedSection = {
+  taskId: "unsafe-availability",
+  type: "availability",
+  status: "answered",
+  responseMode: "answer",
+  facts: { subject: "訂房", answer: rejectedClaims.join("，") },
+  allowedFacts: [...rejectedClaims]
+};
+for (const action of ["reply", "clarification", "handoff"]) {
+  const rejectedOutput = buildFinalResponse({
+    finalDecision: decision(action, {
+      reasonCode: "claim_validation_failed",
+      missingFields: action === "clarification" ? ["stay.checkIn"] : []
+    }),
+    responsePlan: plan([rejectedSection]),
+    validatedReplyText: rejectedClaims.join("，"),
+    claimValidation: { ok: false, errors: ["forbidden_claim"] }
+  });
+  for (const rejectedClaim of rejectedClaims) {
+    assert.equal(
+      rejectedOutput.replyText.includes(rejectedClaim),
+      false,
+      `${action} must never restore a Claim Validator rejected string`
+    );
+  }
+}
 
 for (const output of cases) {
   assert.ok(["reply", "clarification", "handoff", "no_reply"].includes(output.action));

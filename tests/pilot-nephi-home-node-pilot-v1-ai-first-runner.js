@@ -10,6 +10,7 @@ const contracts = require(path.join(PILOT_ROOT, "lib/providers/contracts"));
 const { createAiFirstDecisionPipeline } = require(path.join(PILOT_ROOT, "lib/ai-first-decision-pipeline"));
 const { createApp } = require(path.join(PILOT_ROOT, "server"));
 const { createJsonProviders } = require(path.join(PILOT_ROOT, "lib/providers/json-providers"));
+const { attachPropertyScopedLineBinding } = require(path.join(PILOT_ROOT, "tests/helpers/property-scoped-line-webhook"));
 
 const SECRET = "pilot-ai-first-test-secret";
 const TOKEN = "pilot-ai-first-test-token";
@@ -25,14 +26,9 @@ function lineEvent(id, replyToken, userId, text) {
   };
 }
 
-async function sendLine(url, propertyId, event, channelId = "line-channel-a") {
+async function sendLine(bindings, url, propertyId, event, channelId = "line-channel-a") {
   const raw = JSON.stringify({ destination: channelId, events: [event] });
-  const signature = crypto.createHmac("sha256", SECRET).update(raw).digest("base64");
-  const response = await fetch(`${url}/api/test-line/webhook?customerId=${encodeURIComponent(propertyId)}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-line-signature": signature },
-    body: raw
-  });
+  const response = await bindings[propertyId].post(url, raw);
   return { status: response.status, payload: await response.json() };
 }
 
@@ -265,6 +261,14 @@ function validDecision(overrides = {}) {
   let currentTime = new Date("2026-07-13T16:30:00.000Z");
   const now = () => new Date(currentTime);
   const providers = createJsonProviders({ dataFile, seedFile, now });
+  const encryptionKey = crypto.randomBytes(32).toString("base64");
+  const bindings = {
+    demo_homestay_a: attachPropertyScopedLineBinding({ providers, propertyId: "demo_homestay_a", channelSecret: SECRET, channelAccessToken: TOKEN, encryptionKey }),
+    demo_homestay_b: attachPropertyScopedLineBinding({ providers, propertyId: "demo_homestay_b", channelSecret: "pilot-ai-first-secret-b", channelAccessToken: "pilot-ai-first-token-b", encryptionKey })
+  };
+  const bindingChannel = (binding) => `line-binding:${crypto.createHash("sha256").update(binding.binding.webhookKey).digest("hex").slice(0, 24)}`;
+  const channelA = bindingChannel(bindings.demo_homestay_a);
+  const channelB = bindingChannel(bindings.demo_homestay_b);
   const fakeAi = new DeterministicFakeAi();
   const replies = [];
   const appOptions = {
@@ -275,8 +279,7 @@ function validDecision(overrides = {}) {
     recentMessageLimit: 3,
     recentMessageWindowMs: 5 * 60 * 1000,
     conversationDebounceMs: 15,
-    lineChannelSecret: SECRET,
-    lineChannelAccessToken: TOKEN,
+    lineBindingEnv: bindings.demo_homestay_a.lineBindingEnv,
     lineReplyFetch: async (url, options) => {
       replies.push({ url, options });
       return { ok: true, status: 200, text: async () => "{}" };
@@ -285,12 +288,12 @@ function validDecision(overrides = {}) {
   let app = createApp(appOptions);
   let running = await app.start(0, "127.0.0.1");
   try {
-    await sendLine(running.url, "demo_homestay_a", lineEvent("complete-1", "token-complete", "U_complete", "2026-07-19 2人 301空房"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("complete-1", "token-complete", "U_complete", "2026-07-19 2人 301空房"));
     await wait();
     assert.equal(replies.length, 1, "complete availability must reply once");
     assert.match(JSON.parse(replies.at(-1).options.body).messages[0].text, /2026-07-19/);
     assert.equal(fakeAi.inputs.at(-1).propertyId, "demo_homestay_a");
-    assert.equal(fakeAi.inputs.at(-1).channelId, "line-channel-a");
+    assert.equal(fakeAi.inputs.at(-1).channelId, channelA);
     assert.equal(fakeAi.inputs.at(-1).currentDate, "2026-07-14");
     assert.equal(fakeAi.inputs.at(-1).timeZone, "Asia/Taipei");
     assert.deepEqual(fakeAi.inputs.at(-1).availableRoutes.sort(), [
@@ -298,36 +301,35 @@ function validDecision(overrides = {}) {
     ]);
 
     await Promise.all([
-      sendLine(running.url, "demo_homestay_a", lineEvent("split-1", "token-split-1", "U_split", "有空房嗎")),
-      sendLine(running.url, "demo_homestay_a", lineEvent("split-2", "token-split-2", "U_split", "7/19")),
-      sendLine(running.url, "demo_homestay_a", lineEvent("split-3", "token-split-3", "U_split", "兩人 301"))
+      sendLine(bindings, running.url, "demo_homestay_a", lineEvent("split-1", "token-split-1", "U_split", "有空房嗎")),
+      sendLine(bindings, running.url, "demo_homestay_a", lineEvent("split-2", "token-split-2", "U_split", "7/19")),
+      sendLine(bindings, running.url, "demo_homestay_a", lineEvent("split-3", "token-split-3", "U_split", "兩人 301"))
     ]);
     await wait();
     assert.equal(replies.length, 2, "split messages must produce one trailing reply");
-    const splitState = providers.persistence.getConversationState("demo_homestay_a", "line-channel-a", "U_split");
+    const splitState = providers.persistence.getConversationState("demo_homestay_a", channelA, "U_split");
     assert.equal(splitState.checkInDate, "2026-07-19");
     assert.equal(splitState.guestCount, 2);
     assert.equal(splitState.roomType, "room301");
 
-    await sendLine(running.url, "demo_homestay_a", lineEvent("overwrite-1", "token-overwrite", "U_split", "改成7/20"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("overwrite-1", "token-overwrite", "U_split", "改成7/20"));
     await wait();
-    const overwritten = providers.persistence.getConversationState("demo_homestay_a", "line-channel-a", "U_split");
+    const overwritten = providers.persistence.getConversationState("demo_homestay_a", channelA, "U_split");
     assert.equal(overwritten.checkInDate, "2026-07-20", "new date must overwrite only the old date fields");
     assert.equal(overwritten.guestCount, 2);
     assert.equal(overwritten.roomType, "room301");
 
-    await sendLine(running.url, "demo_homestay_a", lineEvent("isolate-user", "token-isolate-user", "U_other", "7/21 2人 302空房"));
-    await sendLine(running.url, "demo_homestay_b", lineEvent("isolate-property", "token-isolate-property", "U_split", "7/22 2人 301空房"));
-    await sendLine(running.url, "demo_homestay_a", lineEvent("isolate-channel", "token-isolate-channel", "U_split", "7/23 2人 301空房"), "line-channel-b");
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("isolate-user", "token-isolate-user", "U_other", "7/21 2人 302空房"));
+    await sendLine(bindings, running.url, "demo_homestay_b", lineEvent("isolate-property", "token-isolate-property", "U_split", "7/22 2人 301空房"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("isolate-channel", "token-isolate-channel", "U_split", "7/23 2人 301空房"), "line-channel-b");
     await wait();
-    assert.equal(providers.persistence.getConversationState("demo_homestay_a", "line-channel-a", "U_other").checkInDate, "2026-07-21");
-    assert.equal(providers.persistence.getConversationState("demo_homestay_b", "line-channel-a", "U_split").checkInDate, "2026-07-22");
-    assert.equal(providers.persistence.getConversationState("demo_homestay_a", "line-channel-b", "U_split").checkInDate, "2026-07-23");
-    assert.equal(providers.persistence.getConversationState("demo_homestay_a", "line-channel-a", "U_split").checkInDate, "2026-07-20");
+    assert.equal(providers.persistence.getConversationState("demo_homestay_a", channelA, "U_other").checkInDate, "2026-07-21");
+    assert.equal(providers.persistence.getConversationState("demo_homestay_b", channelB, "U_split").checkInDate, "2026-07-22");
+    assert.equal(providers.persistence.getConversationState("demo_homestay_a", channelA, "U_split").checkInDate, "2026-07-23", "payload destination must not create a second property channel authority");
 
     const repliesBeforeSilent = replies.length;
-    await sendLine(running.url, "demo_homestay_a", lineEvent("silent-meaningless", "token-silent-1", "U_silent", "..."));
-    await sendLine(running.url, "demo_homestay_a", lineEvent("silent-thanks", "token-silent-2", "U_thanks", "謝謝"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("silent-meaningless", "token-silent-1", "U_silent", "..."));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("silent-thanks", "token-silent-2", "U_thanks", "謝謝"));
     await wait();
     assert.equal(replies.length, repliesBeforeSilent, "silent ignore must not call Reply API");
     for (const eventId of ["silent-meaningless", "silent-thanks"]) {
@@ -338,18 +340,18 @@ function validDecision(overrides = {}) {
     }
 
     const reviewsBefore = providers.persistence.listMessageLogs("demo_homestay_a").filter((item) => item.needsReview).length;
-    await sendLine(running.url, "demo_homestay_a", lineEvent("risk-payment", "token-risk", "U_risk", "付款問題"));
-    await sendLine(running.url, "demo_homestay_a", lineEvent("risk-low", "token-low", "U_low", "低信心問題"));
-    await sendLine(running.url, "demo_homestay_a", lineEvent("risk-unknown", "token-unknown", "U_unknown", "未知問題"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("risk-payment", "token-risk", "U_risk", "付款問題"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("risk-low", "token-low", "U_low", "低信心問題"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("risk-unknown", "token-unknown", "U_unknown", "未知問題"));
     await wait();
     const riskLogs = ["risk-payment", "risk-low", "risk-unknown"].map((id) => providers.persistence.findMessageByEventId("demo_homestay_a", id));
     assert.ok(riskLogs.every((item) => item.humanHandoff && item.needsReview && item.replyType === "human_handoff"));
     assert.ok(riskLogs.every((item) => item.replyText === "請稍候，將由真人客服協助確認。"));
     assert.equal(providers.persistence.listMessageLogs("demo_homestay_a").filter((item) => item.needsReview).length, reviewsBefore + 3);
 
-    await sendLine(running.url, "demo_homestay_a", lineEvent("early-policy", "token-early-policy", "U_early_policy", "可以提早入住嗎？"));
-    await sendLine(running.url, "demo_homestay_a", lineEvent("early-request", "token-early-request", "U_early_request", "今天可以提早入住嗎？"));
-    await sendLine(running.url, "demo_homestay_a", lineEvent("late-request", "token-late-request", "U_late_request", "我們明天想晚一點退房"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("early-policy", "token-early-policy", "U_early_policy", "可以提早入住嗎？"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("early-request", "token-early-request", "U_early_request", "今天可以提早入住嗎？"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("late-request", "token-late-request", "U_late_request", "我們明天想晚一點退房"));
     await wait();
     const policyLog = providers.persistence.findMessageByEventId("demo_homestay_a", "early-policy");
     assert.equal(policyLog.detectedIntent, "checkin_rule");
@@ -363,7 +365,7 @@ function validDecision(overrides = {}) {
       assert.equal(requestLog.status, "pending");
     }
 
-    await sendLine(running.url, "demo_homestay_a", lineEvent(
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent(
       "invalid-schema-audit", "token-invalid-schema", "U_invalid_schema", "TEST_INVALID_SCHEMA"
     ));
     await wait();
@@ -374,7 +376,7 @@ function validDecision(overrides = {}) {
     assert.equal(JSON.stringify(invalidSchemaLog).includes("MODEL_RAW_OUTPUT_MUST_NOT_BE_STORED"), false);
     assert.equal(JSON.stringify(providers.persistence.listMessageLogs("demo_homestay_a")).includes("MODEL_RAW_OUTPUT_MUST_NOT_BE_STORED"), false);
 
-    await sendLine(running.url, "demo_homestay_a", lineEvent("missing-availability", "token-missing", "U_missing_data", "2027-12-01 2人 301空房"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("missing-availability", "token-missing", "U_missing_data", "2027-12-01 2人 301空房"));
     await wait();
     const missingLog = providers.persistence.findMessageByEventId("demo_homestay_a", "missing-availability");
     assert.equal(missingLog.humanHandoff, true);
@@ -384,7 +386,7 @@ function validDecision(overrides = {}) {
 
     for (let index = 0; index < 8; index += 1) {
       providers.persistence.appendMessageLog("demo_homestay_a", {
-        channelId: "line-channel-a",
+        channelId: channelA,
         lineUserId: "U_context",
         eventId: `context-${index}`,
         guestMessage: `近期-${index}`,
@@ -392,21 +394,21 @@ function validDecision(overrides = {}) {
       });
     }
     providers.persistence.appendMessageLog("demo_homestay_a", {
-      channelId: "line-channel-a", lineUserId: "U_context", eventId: "context-old",
+      channelId: channelA, lineUserId: "U_context", eventId: "context-old",
       guestMessage: "過期上下文", createdAt: new Date(currentTime.getTime() - 10 * 60000).toISOString()
     });
-    await sendLine(running.url, "demo_homestay_a", lineEvent("context-now", "token-context", "U_context", "停車問題"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("context-now", "token-context", "U_context", "停車問題"));
     await wait();
     const contextInput = fakeAi.inputs.at(-1);
     assert.equal(contextInput.recentMessages.length, 3, "recent context must respect count limit");
     assert.equal(contextInput.recentMessages.some((item) => item.guestMessage === "過期上下文"), false);
 
-    providers.persistence.setConversationState("demo_homestay_a", "line-channel-a", "U_expired", {
+    providers.persistence.setConversationState("demo_homestay_a", channelA, "U_expired", {
       checkInDate: "2026-07-30", guestCount: 9, roomType: "room402",
       updatedAt: currentTime.toISOString(), lastMessageFingerprint: "", lastReplyAt: ""
     });
     currentTime = new Date(currentTime.getTime() + 31 * 60 * 1000);
-    await sendLine(running.url, "demo_homestay_a", lineEvent("expired-state", "token-expired", "U_expired", "停車問題"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("expired-state", "token-expired", "U_expired", "停車問題"));
     await wait();
     const expiredInput = fakeAi.inputs.at(-1);
     assert.equal(expiredInput.conversationState.checkInDate, null, "expired state must not be sent to provider");
@@ -414,7 +416,7 @@ function validDecision(overrides = {}) {
 
     const classifierCallsBeforeDuplicate = fakeAi.inputs.length;
     const repliesBeforeDuplicate = replies.length;
-    await sendLine(running.url, "demo_homestay_a", lineEvent("restart-duplicate", "token-duplicate-1", "U_duplicate", "停車問題"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("restart-duplicate", "token-duplicate-1", "U_duplicate", "停車問題"));
     await wait();
     assert.equal(fakeAi.inputs.length, classifierCallsBeforeDuplicate + 1);
     assert.equal(replies.length, repliesBeforeDuplicate + 1);
@@ -422,7 +424,7 @@ function validDecision(overrides = {}) {
 
     app = createApp(appOptions);
     running = await app.start(0, "127.0.0.1");
-    await sendLine(running.url, "demo_homestay_a", lineEvent("restart-duplicate", "token-duplicate-2", "U_duplicate", "不同內容也不得重跑"));
+    await sendLine(bindings, running.url, "demo_homestay_a", lineEvent("restart-duplicate", "token-duplicate-2", "U_duplicate", "不同內容也不得重跑"));
     await wait();
     assert.equal(fakeAi.inputs.length, classifierCallsBeforeDuplicate + 1, "persistent duplicate must be rejected before AI");
     assert.equal(replies.length, repliesBeforeDuplicate + 1, "persistent duplicate must not call Reply API after restart");

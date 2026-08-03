@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createApp } = require("../server");
+const { createJsonProviders } = require("../lib/providers/json-providers");
 
 (async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "operator-data-form-"));
@@ -24,10 +25,8 @@ const { createApp } = require("../server");
       messageLogs: { property_alpha: [] }
     }));
     app = createApp({
-      dataFile,
-      seedFile,
+      providers: createJsonProviders({ dataFile, seedFile }),
       adminAuthRequired: false,
-      lineChannelIdentityGuardRequired: false,
       lineBindingEnv: {}
     });
     const running = await app.start(0, "127.0.0.1");

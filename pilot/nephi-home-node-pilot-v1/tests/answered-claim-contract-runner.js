@@ -1,11 +1,12 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createApp } = require("../server");
+const { createJsonProviders } = require("../lib/providers/json-providers");
+const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
 const { TestOnlyOpenAiControlledComposer } = require("../lib/providers/test-only-openai-controlled-composer");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
 const { composeSection } = require("../lib/conversation-engine-v2/controlled-composer");
@@ -236,13 +237,21 @@ async function runCase(testCase) {
       };
     }
   });
-  const app = createApp({
+  const providers = { kind: "json", ...createJsonProviders({
     dataFile: path.join(temp, "store.json"),
     seedFile: path.resolve(__dirname, "../fixtures/seed.json"),
+    now: () => new Date(FIXED_NOW)
+  }) };
+  const binding = attachPropertyScopedLineBinding({
+    providers,
+    propertyId: PROPERTY_ID,
+    channelSecret: LINE_SECRET,
+    channelAccessToken: "test-only-access-token"
+  });
+  const app = createApp({
+    providers,
     now: () => new Date(FIXED_NOW),
-    lineChannelSecret: LINE_SECRET,
-    lineChannelAccessToken: "test-only-token",
-    lineChannelIdentityGuardRequired: false,
+    lineBindingEnv: binding.lineBindingEnv,
     conversationDebounceMs: 1,
     testOnlyOverrides: {
       planner: plannerFor(testCase),
@@ -284,12 +293,7 @@ async function runCase(testCase) {
         message: { type: "text", id: `message-${testCase.id}`, text: testCase.message }
       }]
     });
-    const signature = crypto.createHmac("sha256", LINE_SECRET).update(raw).digest("base64");
-    const response = await fetch(`${running.url}/api/test-line/webhook?customerId=${PROPERTY_ID}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-line-signature": signature },
-      body: raw
-    });
+    const response = await binding.post(running.url, raw);
     assert.equal(response.status, 200);
     const result = await waitForResult(engineResults, eventId);
     const stage = (name) => diagnostics.find((entry) => entry.stage === name);

@@ -1,12 +1,13 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
 const { createApp } = require("../server");
+const { createJsonProviders } = require("../lib/providers/json-providers");
+const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { applyPlannerSemanticContract } = require("../lib/conversation-engine-v2/planner-schema");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
@@ -216,12 +217,19 @@ async function main() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "controlled-core-line-"));
   const secret = "controlled-core-secret";
   const replies = [];
-  const app = createApp({
+  const providers = { kind: "json", ...createJsonProviders({
     dataFile: path.join(temp, "store.json"),
-    seedFile: path.resolve(__dirname, "../fixtures/seed.json"),
-    lineChannelSecret: secret,
-    lineChannelAccessToken: "test-token",
-    lineChannelIdentityGuardRequired: false,
+    seedFile: path.resolve(__dirname, "../fixtures/seed.json")
+  }) };
+  const binding = attachPropertyScopedLineBinding({
+    providers,
+    propertyId: "demo_homestay_a",
+    channelSecret: secret,
+    channelAccessToken: "controlled-core-token"
+  });
+  const app = createApp({
+    providers,
+    lineBindingEnv: binding.lineBindingEnv,
     conversationDebounceMs: 1,
     conversationPlannerV2: { classify: async ({ sourceEvents }) => withExplicitRelations(plan([
       task({ taskId: "ack", type: "unknown", sourceText: "好的謝謝", category: "other", rawText: "好的謝謝" })
@@ -231,8 +239,7 @@ async function main() {
   const running = await app.start(0, "127.0.0.1");
   try {
     const payload = JSON.stringify({ destination: "line", events: [{ type: "message", webhookEventId: "ignore-line", replyToken: "reply-token", timestamp: 1, source: { userId: "guest" }, message: { type: "text", id: "m1", text: "好的謝謝" } }] });
-    const signature = crypto.createHmac("sha256", secret).update(payload).digest("base64");
-    const response = await fetch(`${running.url}/api/test-line/webhook?customerId=demo_homestay_a`, { method: "POST", headers: { "content-type": "application/json", "x-line-signature": signature }, body: payload });
+    const response = await binding.post(running.url, payload);
     assert.equal(response.status, 200);
     await new Promise((resolve) => setTimeout(resolve, 50));
     assert.equal(replies.length, 0);

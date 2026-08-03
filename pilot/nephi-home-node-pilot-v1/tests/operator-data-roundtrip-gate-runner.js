@@ -309,7 +309,6 @@ async function api(url, route, options = {}) {
       providers,
       adminAuthRequired: true,
       now: () => new Date(NOW),
-      lineChannelIdentityGuardRequired: false,
       lineBindingEnv: {}
     });
     const running = await app.start(0, "127.0.0.1");

@@ -45,12 +45,15 @@ process.once("beforeExit", () => {
       mondayThursdayPrice: 1000, fridayPrice: 1100, saturdayHolidayPrice: 1200, sundayPrice: 1050,
       enabled: true, entertainmentAmenities: []
     });
+    await providers.close();
+    providers = null;
     const bundleAvailability = await openPostgres(connection);
     await bundleAvailability.query(
       "INSERT INTO bundle_availability_days(property_id,bundle_id,stay_date,status) VALUES($1,$2,$3,$4)",
       ["property_alpha", bundle.id, "2026-09-03", "available"]
     );
     await bundleAvailability.close();
+    providers = createPostgresProviders(connection);
     const updatedBundle = providers.customerSettings.updateBundle("property_alpha", bundle.id, {
       ...bundle, name: "Alpha bundle updated", capacity: 3, mondayThursdayPrice: 1300, fridayPrice: 1400,
       saturdayHolidayPrice: 1500, sundayPrice: 1350, enabled: false,
@@ -63,6 +66,8 @@ process.once("beforeExit", () => {
       () => providers.customerSettings.updateBundle("property_alpha", bundle.id, { ...updatedBundle, memberRoomIds: ["beta_room"] }),
       (error) => error && error.code === "BUNDLE_MEMBERS_LOCKED" && error.status === 409
     );
+    await providers.close();
+    providers = null;
     const bundleInspection = await openPostgres(connection);
     const preservedAvailability = await bundleInspection.query(
       "SELECT status FROM bundle_availability_days WHERE property_id=$1 AND bundle_id=$2 AND stay_date=$3",
@@ -71,6 +76,7 @@ process.once("beforeExit", () => {
     await bundleInspection.close();
     assert.deepEqual(preservedAvailability.rows, [{ status: "available" }]);
 
+    providers = createPostgresProviders(connection);
     const service = createCustomReplyService({
       provider: providers.customReplies,
       customerSettings: providers.customerSettings,
@@ -97,11 +103,11 @@ process.once("beforeExit", () => {
     });
     assert.equal(reloadedService.list("property_alpha").items[0].name, "September booking reply updated");
     assert.equal(reloadedService.evaluate("property_alpha", saved.ruleId, {
-      capability: "availability", canonicalEntity: { category: "room", canonicalId: "alpha_room" }, temporalState: { checkIn: "2026-09-03" }
+      capability: "availability", canonicalEntity: { category: "room", canonicalId: "alpha_room" }, lodgingProduct: { productType: "room_type", productId: "alpha_room", roomTypeId: "alpha_room", bundleId: null }, temporalState: { checkIn: "2026-09-03" }
     }).matched, true);
     assert.throws(
       () => reloadedService.evaluate("property_beta", saved.ruleId, {
-        capability: "availability", canonicalEntity: { category: "room", canonicalId: "beta_room" }, temporalState: { checkIn: "2026-09-03" }
+        capability: "availability", canonicalEntity: { category: "room", canonicalId: "beta_room" }, lodgingProduct: { productType: "room_type", productId: "beta_room", roomTypeId: "beta_room", bundleId: null }, temporalState: { checkIn: "2026-09-03" }
       }),
       (error) => error && error.code === "CUSTOM_REPLY_NOT_FOUND" && error.status === 404
     );
@@ -110,6 +116,8 @@ process.once("beforeExit", () => {
     assert.equal(reloadedService.remove("property_alpha", saved.ruleId), true);
     assert.equal(reloadedService.list("property_alpha").used, 0);
 
+    await providers.close();
+    providers = null;
     const inspection = await openPostgres(connection);
     const columns = await inspection.query("SELECT column_name FROM information_schema.columns WHERE table_name='property_custom_replies' ORDER BY ordinal_position");
     await inspection.close();

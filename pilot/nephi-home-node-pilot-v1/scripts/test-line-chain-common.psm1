@@ -46,15 +46,15 @@ function Get-TunnelPublicUrl {
   return $match.Value.TrimEnd('/')
 }
 
-function Get-TestLineWebhookUrl {
+function Get-PropertyScopedLineWebhookUrl {
   param(
     [Parameter(Mandatory)][string]$PublicUrl,
-    [Parameter(Mandatory)][string]$PropertyId
+    [Parameter(Mandatory)][string]$WebhookKey
   )
   $base = $PublicUrl.Trim().TrimEnd('/')
   if ($base -notmatch '^https://') { throw "Public URL must use HTTPS" }
-  $encodedPropertyId = [uri]::EscapeDataString($PropertyId)
-  return "$base/api/test-line/webhook?customerId=$encodedPropertyId"
+  $encodedWebhookKey = [uri]::EscapeDataString($WebhookKey)
+  return "$base/api/line/webhooks/$encodedWebhookKey"
 }
 
 function Find-TunnelmoleEntry {
@@ -92,4 +92,4 @@ function Test-OwnedProcess {
   return $true
 }
 
-Export-ModuleMember -Function Resolve-ClassifierTimeoutMs,Test-PortInUse,Test-PilotHealth,Get-TunnelPublicUrl,Get-TestLineWebhookUrl,Find-TunnelmoleEntry,Test-OwnedProcess
+Export-ModuleMember -Function Resolve-ClassifierTimeoutMs,Test-PortInUse,Test-PilotHealth,Get-TunnelPublicUrl,Get-PropertyScopedLineWebhookUrl,Find-TunnelmoleEntry,Test-OwnedProcess

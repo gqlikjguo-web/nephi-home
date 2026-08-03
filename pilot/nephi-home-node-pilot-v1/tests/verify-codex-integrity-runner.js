@@ -23,7 +23,8 @@ const requiredScripts = Object.freeze({
   "verify:protected-acceptance": "node scripts/verify-protected-acceptance.js",
   "verify:codex-integrity": "node scripts/verify-codex-integrity.js",
   "test:canonical-golden": "node tests/canonical-request-golden-gate-runner.js",
-  "test:runtime-uniqueness": "node tests/v2-runtime-uniqueness-runner.js"
+  "test:runtime-uniqueness": "node tests/v2-runtime-uniqueness-runner.js",
+  "test:provider-fail-closed": "node tests/provider-authority-fail-closed-runner.js"
 });
 const protectedPaths = Object.freeze([
   "pilot/nephi-home-node-pilot-v1/docs/CONTROLLED_ARCHITECTURE_TEST_ACCEPTANCE.md",
@@ -55,6 +56,7 @@ const validWorkflow = [
   "      - run: node tests/verify-codex-integrity-runner.js",
   "      - run: npm run test:canonical-golden",
   "      - run: npm run test:runtime-uniqueness",
+  "      - run: npm run test:provider-fail-closed",
   "      - run: npm test"
 ].join("\n");
 const omitWorkflowCommand = (command) => validWorkflow
@@ -209,12 +211,12 @@ for (const command of [
   "node tests/verify-codex-integrity-runner.js",
   "npm run test:canonical-golden",
   "npm run test:runtime-uniqueness",
+  "npm run test:provider-fail-closed",
   "npm test"
 ]) {
   expectsFailure(createFixture({ workflow: omitWorkflowCommand(command) }), `workflow missing ${command}`);
 }
 expectsFailure(createFixture({ workflow: `${validWorkflow}\n        continue-on-error: true` }), "workflow continue-on-error bypass");
-expectsFailure(createFixture({ workflow: `${validWorkflow}\n      - run: npm run test:provider-fail-closed` }), "premature provider fail-closed requirement");
 expectsFailure(createFixture({ omitProtectedManifest: true }), "missing protected acceptance manifest");
 expectsFailure(createFixture({ protectedManifest: JSON.stringify({ protectedPaths: [...protectedPaths].reverse() }) }), "changed protected acceptance list");
 expectsFailure(createFixture({ omitCodeowners: true }), "missing CODEOWNERS");
@@ -243,4 +245,4 @@ const missingContractRoot = createFixture();
 fs.rmSync(path.join(missingContractRoot, projectPath(`tests/${requiredContractRunners[0]}`)));
 expectsFailure(missingContractRoot, "missing required contract runner");
 
-console.log(JSON.stringify({ suite: "verify-codex-integrity", caseCount: 35, passCount: 35, failCount: 0 }));
+console.log(JSON.stringify({ suite: "verify-codex-integrity", caseCount: 36, passCount: 36, failCount: 0 }));

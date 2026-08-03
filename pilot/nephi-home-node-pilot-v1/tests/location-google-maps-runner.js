@@ -1,12 +1,13 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { createApp } = require("../server");
+const { createJsonProviders } = require("../lib/providers/json-providers");
+const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
 const { instructions } = require("../lib/providers/test-only-openai-conversation-planner");
 
 function plan(relation = "new_request") {
@@ -162,12 +163,13 @@ async function runEngine(property, messages, diagnostics = []) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "location-chain-"));
   const seedFile = path.join(temp, "seed.json"), dataFile = path.join(temp, "store.json"), secret = "location-chain-secret", replies = [];
   fs.writeFileSync(seedFile, JSON.stringify({ testOnly: true, homestays: [{ customerId: "location_line", name: "Line location", businessProfile: { googleMapsUrl: alphaUrl }, safeFacts: {}, rooms: [] }], messageLogs: { location_line: [] } }));
-  const app = createApp({ dataFile, seedFile, lineChannelSecret: secret, lineChannelAccessToken: "token", lineChannelIdentityGuardRequired: false, conversationDebounceMs: 1, conversationPlannerV2: { classify: async ({ sourceEvents, contextSnapshot }) => withExplicitRelation(plan(), sourceEvents, contextSnapshot) }, lineReplyClientFactory: () => ({ replyMessageWithHttpInfo: async (body) => { replies.push(body); return { httpResponse: { status: 200 } }; } }) });
+  const providers = { kind: "json", ...createJsonProviders({ dataFile, seedFile }) };
+  const binding = attachPropertyScopedLineBinding({ providers, propertyId: "location_line", channelSecret: secret, channelAccessToken: "token-token-token-token" });
+  const app = createApp({ providers, lineBindingEnv: binding.lineBindingEnv, conversationDebounceMs: 1, conversationPlannerV2: { classify: async ({ sourceEvents, contextSnapshot }) => withExplicitRelation(plan(), sourceEvents, contextSnapshot) }, lineReplyClientFactory: () => ({ replyMessageWithHttpInfo: async (body) => { replies.push(body); return { httpResponse: { status: 200 } }; } }) });
   const running = await app.start(0, "127.0.0.1");
   try {
     const payload = JSON.stringify({ destination: "line", events: [{ type: "message", webhookEventId: "location-event", replyToken: "token", timestamp: 1, source: { userId: "guest" }, message: { type: "text", id: "m1", text: "我要怎麼導航過去？" } }] });
-    const signature = crypto.createHmac("sha256", secret).update(payload).digest("base64");
-    assert.equal((await fetch(`${running.url}/api/test-line/webhook?customerId=location_line`, { method: "POST", headers: { "content-type": "application/json", "x-line-signature": signature }, body: payload })).status, 200);
+    assert.equal((await binding.post(running.url, payload)).status, 200);
     await new Promise((resolve) => setTimeout(resolve, 50));
     assert.equal(replies.length, 1);
     assert.ok(replies[0].messages[0].text.includes(alphaUrl));

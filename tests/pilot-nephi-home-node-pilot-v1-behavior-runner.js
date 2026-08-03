@@ -1,13 +1,13 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { createApp } = require("../pilot/nephi-home-node-pilot-v1/server");
 const { ConversationCoordinator } = require("../pilot/nephi-home-node-pilot-v1/lib/conversation-coordinator");
 const { createJsonProviders } = require("../pilot/nephi-home-node-pilot-v1/lib/providers/json-providers");
 const { createMvpService } = require("../pilot/nephi-home-node-pilot-v1/lib/mvp-service");
+const { attachPropertyScopedLineBinding } = require("../pilot/nephi-home-node-pilot-v1/tests/helpers/property-scoped-line-webhook");
 
 const PILOT_ROOT = path.resolve(__dirname, "../pilot/nephi-home-node-pilot-v1");
 const SECRET = "pilot-test-channel-secret";
@@ -21,15 +21,9 @@ function lineEvent(id, replyToken, userId, text) {
   };
 }
 
-async function sendLine(url, customerId, event) {
+async function sendLine(binding, url, event, routeSuffix = "") {
   const raw = JSON.stringify({ destination: "pilot-test", events: [event] });
-  const signature = crypto.createHmac("sha256", SECRET).update(raw).digest("base64");
-  const suffix = customerId === undefined ? "" : `?customerId=${encodeURIComponent(customerId)}`;
-  const response = await fetch(`${url}/api/test-line/webhook${suffix}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-line-signature": signature },
-    body: raw
-  });
+  const response = await binding.post(url, raw, { routeSuffix });
   return { status: response.status, payload: await response.json() };
 }
 
@@ -92,11 +86,11 @@ function message(overrides = {}) {
   const dataFile = path.join(tempDir, "pilot-store.json");
   const seedFile = path.join(PILOT_ROOT, "fixtures/seed.json");
   const providers = createJsonProviders({ dataFile, seedFile, now: () => new Date("2026-07-12T00:00:00.000Z") });
+  const binding = attachPropertyScopedLineBinding({ providers, propertyId: "demo_homestay_a", channelSecret: SECRET, channelAccessToken: TOKEN });
   const replies = [];
   const app = createApp({
     providers,
-    lineChannelSecret: SECRET,
-    lineChannelAccessToken: TOKEN,
+    lineBindingEnv: binding.lineBindingEnv,
     conversationDebounceMs: 80,
     lineReplyFetch: async (url, options) => {
       replies.push({ url, options });
@@ -105,17 +99,16 @@ function message(overrides = {}) {
   });
   const running = await app.start(0, "127.0.0.1");
   try {
-    const missing = await sendLine(running.url, undefined, lineEvent("missing", "missing-token", "U_missing", "有空房嗎"));
-    const unknown = await sendLine(running.url, "unknown", lineEvent("unknown", "unknown-token", "U_unknown", "有空房嗎"));
-    assert.equal(missing.status, 400);
-    assert.equal(missing.payload.error.code, "MISSING_CUSTOMER_ID");
+    const emptyBody = JSON.stringify({ events: [] });
+    assert.equal((await binding.post(running.url, emptyBody, { routeSuffix: "?customerId=unknown" })).status, 200, "query identity must not override the binding");
+    const unknown = await fetch(`${running.url}/api/line/webhooks/unknown-binding-key-0000000000000000`, { method: "POST", headers: { "content-type": "application/json", "x-line-signature": "invalid" }, body: emptyBody });
     assert.equal(unknown.status, 404);
-    assert.equal(unknown.payload.error.code, "UNKNOWN_CUSTOMER_ID");
+    assert.equal((await unknown.json()).error.code, "LINE_BINDING_NOT_FOUND");
 
     await Promise.all([
-      sendLine(running.url, "demo_homestay_a", lineEvent("burst-1", "burst-token-1", "U_burst", "有空房嗎")),
-      sendLine(running.url, "demo_homestay_a", lineEvent("burst-2", "burst-token-2", "U_burst", "7/19")),
-      sendLine(running.url, "demo_homestay_a", lineEvent("burst-3", "burst-token-3", "U_burst", "六個人"))
+      sendLine(binding, running.url, lineEvent("burst-1", "burst-token-1", "U_burst", "有空房嗎")),
+      sendLine(binding, running.url, lineEvent("burst-2", "burst-token-2", "U_burst", "7/19")),
+      sendLine(binding, running.url, lineEvent("burst-3", "burst-token-3", "U_burst", "六個人"))
     ]);
     await new Promise((resolve) => setTimeout(resolve, 160));
     assert.equal(replies.length, 1);
@@ -186,29 +179,38 @@ function message(overrides = {}) {
   const restartDir = fs.mkdtempSync(path.join(__dirname, ".tmp-pilot-restart-duplicate-"));
   const restartDataFile = path.join(restartDir, "pilot-store.json");
   const restartReplies = [];
-  const restartOptions = {
-    dataFile: restartDataFile,
-    seedFile,
-    testLineSecret: "pilot-test-bridge-secret",
-    lineChannelSecret: SECRET,
-    lineChannelAccessToken: TOKEN,
-    conversationDebounceMs: 80,
-    lineReplyFetch: async (url, options) => {
-      restartReplies.push({ url, options });
-      return { ok: true, status: 200, text: async () => "{}" };
-    }
+  const createRestartApp = () => {
+    const restartProviders = createJsonProviders({ dataFile: restartDataFile, seedFile });
+    const restartBinding = attachPropertyScopedLineBinding({ providers: restartProviders, propertyId: "demo_homestay_a", channelSecret: SECRET, channelAccessToken: TOKEN });
+    return {
+      binding: restartBinding,
+      app: createApp({
+        providers: restartProviders,
+        testLineSecret: "pilot-test-bridge-secret",
+        lineBindingEnv: restartBinding.lineBindingEnv,
+        conversationDebounceMs: 80,
+        lineReplyFetch: async (url, options) => {
+          restartReplies.push({ url, options });
+          return { ok: true, status: 200, text: async () => "{}" };
+        }
+      })
+    };
   };
-  let firstApp = createApp(restartOptions);
+  const firstSetup = createRestartApp();
+  let firstApp = firstSetup.app;
   let secondApp;
+  let secondBinding;
   try {
     const duplicateEvent = lineEvent("persistent-duplicate-event", "persistent-token-1", "U_persistent", "停車方便嗎？");
     const firstRunning = await firstApp.start(0, "127.0.0.1");
-    assert.equal((await sendLine(firstRunning.url, "demo_homestay_a", duplicateEvent)).status, 200);
+    assert.equal((await sendLine(firstSetup.binding, firstRunning.url, duplicateEvent)).status, 200);
     await new Promise((resolve) => setTimeout(resolve, 160));
     assert.equal(restartReplies.length, 1, "first delivery must call LINE Reply API once");
     await firstApp.stop();
 
-    secondApp = createApp(restartOptions);
+    const secondSetup = createRestartApp();
+    secondApp = secondSetup.app;
+    secondBinding = secondSetup.binding;
     let replayReachedCoordinator = false;
     const enqueuePersisted = secondApp.lineWebhookCoordinator.enqueue.bind(secondApp.lineWebhookCoordinator);
     secondApp.lineWebhookCoordinator.enqueue = (input) => {
@@ -217,7 +219,7 @@ function message(overrides = {}) {
     };
     const secondRunning = await secondApp.start(0, "127.0.0.1");
     const replayedEvent = lineEvent("persistent-duplicate-event", "persistent-token-2", "U_persistent", "請問停車方便嗎？");
-    assert.equal((await sendLine(secondRunning.url, "demo_homestay_a", replayedEvent)).status, 200);
+    assert.equal((await sendLine(secondBinding, secondRunning.url, replayedEvent)).status, 200);
     await new Promise((resolve) => setTimeout(resolve, 160));
 
     assert.equal(restartReplies.length, 1, "persisted duplicate after restart must not call LINE Reply API again");

@@ -103,7 +103,7 @@ async function run() {
     providers = createPostgresProviders(connection);
     const firstService = createMvpService(providers);
     assertConsistentResults(firstService);
-    app = createApp({ providers, adminAuthRequired: false, testOnlyEnvironment: false, lineChannelIdentityGuardRequired: false });
+    app = createApp({ providers, adminAuthRequired: false, testOnlyEnvironment: false });
     const running = await app.start(0, "127.0.0.1");
     const frontendResponse = await fetch(`${running.url}/api/public/availability?slug=legacyproperty&checkIn=2026-08-06&checkOut=2026-08-07&guests=2&queryMode=any&roomType=all`);
     const frontendPayload = await frontendResponse.json();

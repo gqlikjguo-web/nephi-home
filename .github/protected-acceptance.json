@@ -44,32 +44,32 @@
     },
     {
       "path": "pilot/nephi-home-node-pilot-v1/tests/v2-runtime-uniqueness-runner.js",
-      "sha256": "4698d4155b4d0137fadfadf9f393d413edc1075c0204bacf205d32eaaafdb50e",
+      "sha256": "3102c9411779ab89e991c5595aadc4b66ab11d297c50c92c57a76237c98af95e",
       "baseline": "accepted-current"
     },
     {
       "path": "pilot/nephi-home-node-pilot-v1/scripts/verify-codex-integrity.js",
-      "sha256": "db2038c652427e0acbd68c3af2943f928a9917bdda670406c448bed2254fc08c",
+      "sha256": "4bf6debf5b08e2c5585028d2abc93f9406801e6ac316f2b9799aea9599633822",
       "baseline": "accepted-current"
     },
     {
       "path": "pilot/nephi-home-node-pilot-v1/tests/verify-codex-integrity-runner.js",
-      "sha256": "e2994e0af32574850e9f6fd0475be0fc1b4abb88b0478f97f2374e85cedb46de",
+      "sha256": "a1a9d32fb451aedb90210abe2db98ac830437d8024fbc5c466161aeb14892360",
       "baseline": "accepted-current"
     },
     {
       "path": "pilot/nephi-home-node-pilot-v1/scripts/verify-protected-acceptance.js",
-      "sha256": "370e306a54e874d6f939ee091f7f3775a92398542b1a39cac97ea2780aa8e26a",
+      "sha256": "6a563a2a9f3c7af40d011d217befb5edcaa8bf917e3a9f40f8708b8b2f25e2f6",
       "baseline": "accepted-current"
     },
     {
       "path": "pilot/nephi-home-node-pilot-v1/tests/verify-protected-acceptance-runner.js",
-      "sha256": "e2e39df27c84abd496462f2cec9507efc2f08be556ace12d376b4a510f51b895",
+      "sha256": "d5788ee74f74f16631339b88af609a2a598ac0cefd24756acab7e8eb9e453a62",
       "baseline": "accepted-current"
     },
     {
       "path": ".github/workflows/codex-integrity.yml",
-      "sha256": "43c8e2257561250ec6d565fb7df476e328f80a5b11ce4be9eede97db3a92ad59",
+      "sha256": "7f6e057fde11f17e333899c2e11f530c414f380827ca607231bf4ca64d240c54",
       "baseline": "accepted-current"
     },
     {

@@ -22,14 +22,16 @@ const { runtimeConfig } = require(path.join(PILOT_ROOT, "config/runtime"));
   assert.equal(typeof StructuredClassifierProvider, "function");
   assert.equal(runtimeConfig({}).dataFile, path.join(PILOT_ROOT, ".runtime", "store.json"));
 
-  for (const relativePath of ["lib/mvp-service.js", "lib/conversation-coordinator.js", "lib/test-line-webhook.js"]) {
+  for (const relativePath of ["lib/mvp-service.js", "lib/conversation-coordinator.js"]) {
     const source = fs.readFileSync(path.join(PILOT_ROOT, relativePath), "utf8");
     assert.doesNotMatch(source, /JsonFileRepository|seed\.json|json-repository/);
   }
   const serverSource = fs.readFileSync(path.join(PILOT_ROOT, "server.js"), "utf8");
+  assert.equal(fs.existsSync(path.join(PILOT_ROOT, "lib/test-line-webhook.js")), false);
+  assert.doesNotMatch(serverSource, /TEST_LINE_WEBHOOK_ROUTE|\/api\/test-line\/webhook|\blineWebhookHandler\b|legacy runtime kept|pushToTestLine/);
+  assert.equal(serverSource.includes("const sharedLineWebhookMatch = /^\\/api\\/line\\/webhooks\\/"), true);
   assert.doesNotMatch(serverSource, /JsonFileRepository/);
   assert.doesNotMatch(serverSource, /classifyTestLineText/);
-  assert.doesNotMatch(fs.readFileSync(path.join(PILOT_ROOT, "lib/test-line-webhook.js"), "utf8"), /classify|parseChineseGuestCount/);
 
   const tempDir = fs.mkdtempSync(path.join(__dirname, ".tmp-pilot-contract-"));
   try {

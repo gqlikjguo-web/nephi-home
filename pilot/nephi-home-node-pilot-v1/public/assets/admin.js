@@ -290,7 +290,6 @@ function initializeSimpleCustomReplies() {
   const normalize = () => { const value = month.value; if (/^\d{4}-\d{2}$/.test(value)) { const start = `${value}-01`, end = new Date(Date.UTC(Number(value.slice(0,4)), Number(value.slice(5,7)), 0)).toISOString().slice(0,10); stayStart.value = start; stayEnd.value = end; } effectiveStart.value = effectiveStart.value || new Date().toISOString().slice(0,10); effectiveEnd.value = expiry.value; const option = topic.options[topic.selectedIndex]; if (!name.value || name.dataset.generated === "true") { name.value = option ? option.textContent : "\u81ea\u8a02\u516c\u544a"; name.dataset.generated = "true"; } updateCustomReplyPreview(); };
   month.onchange = normalize; expiry.onchange = normalize; topic.onchange = () => { name.dataset.generated = "true"; normalize(); }; create.onclick = () => { form.hidden = false; create.hidden = true; clearCustomReplyForm(); effectiveStart.value = new Date().toISOString().slice(0,10); normalize(); form.scrollIntoView({ block: "start" }); }; cancel.addEventListener("click", () => { form.hidden = true; create.hidden = false; });
   const testInput = document.createElement("input"); testInput.id = "customReplyTestText"; testInput.placeholder = "\u4f8b\uff1a9/3 \u53ef\u4ee5\u8a02\u623f\u55ce"; const testLabel = document.createElement("label"); testLabel.textContent = "\u8f38\u5165\u5ba2\u4eba\u8a62\u554f\u4f86\u6e2c\u8a66"; testLabel.append(testInput); $("customReplyTest").before(testLabel);
-  window.customReplyTestDate = () => { const match = /(?:^|\D)(\d{1,2})\/(\d{1,2})(?:\D|$)/.exec(testInput.value); if (!match) return stayStart.value || currentDateKey(); return `${(stayStart.value || currentDateKey()).slice(0,4)}-${String(match[1]).padStart(2,"0")}-${String(match[2]).padStart(2,"0")}`; };
 }
 function updateCustomReplyPreview() {
   const topic = customReplyTopics.find(item => item[0] === $("customReplyTopic").value)?.[1] || "指定主題";
@@ -304,14 +303,11 @@ for (const id of ["customReplyTopic", "customReplyScope", "customReplyStayStart"
 $("customReplyTest").onclick = async () => {
   const ruleId = $("customReplyId").value;
   if (!ruleId) { $("customReplyTestResult").textContent = "請先儲存規則，再進行測試。"; return; }
-  const topic = $("customReplyTopic").value;
-  const capability = ({ booking_open:"availability", booking_paused:"availability", price_unannounced:"price", room:"room_options", bundle:"bundle_availability", parking_notice:"parking", facility_notice:"amenity", checkin_checkout:"policy", lodging_rules:"policy", temporary_operation:"availability" })[topic];
-  const scope = $("customReplyScope").value;
-  const checkIn = window.customReplyTestDate ? window.customReplyTestDate() : $("customReplyStayStart").value || currentDateKey();
-  const request = { capability, canonicalEntity: { category: scope === "bundle" ? "bundle" : scope === "room_only" || scope === "room_type" ? "room" : "other", canonicalId: scope === "room_type" ? $("customReplyRoomType").value : null }, temporalState: { checkIn } };
+  const messageText = $("customReplyTestText").value.trim();
+  if (!messageText) { $("customReplyTestResult").textContent = "請先輸入客人的詢問。"; return; }
   $("customReplyTestResult").textContent = "測試中…";
   try {
-    const result = await api("/api/custom-replies/test", { method:"POST", body:JSON.stringify({ propertyId:session.propertyId, ruleId, request }) });
+    const result = await api("/api/custom-replies/test", { method:"POST", body:JSON.stringify({ propertyId:session.propertyId, ruleId, messageText }) });
     $("customReplyTestResult").textContent = result.matched ? `會命中：${result.rule.name}。預計回覆：${result.reply}` : `不會命中：${result.reason.message}`;
   } catch (error) { $("customReplyTestResult").textContent = `測試失敗：${error.message}`; }
 };

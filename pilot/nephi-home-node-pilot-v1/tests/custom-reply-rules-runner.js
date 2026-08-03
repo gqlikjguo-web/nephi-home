@@ -41,13 +41,21 @@ function canonicalItem(taskId, capability, {
   canonicalId = null,
   category = "other",
   checkIn = null,
-  checkOut = null
+  checkOut = null,
+  productType = "any",
+  productId = null
 } = {}) {
   return {
     canonicalRequest: {
       taskId,
       capability,
       canonicalEntity: { canonicalId, category, canonicalSet: canonicalId ? [canonicalId] : [], status: canonicalId ? "resolved" : "generic", rawText: "" },
+      lodgingProduct: {
+        productType,
+        productId,
+        roomTypeId: productType === "room_type" ? productId : null,
+        bundleId: productType === "bundle" ? productId : null
+      },
       temporalState: {
         resolutionStatus: checkIn ? "resolved" : "absent",
         checkIn,
@@ -203,6 +211,27 @@ function canonicalItem(taskId, capability, {
     assert.equal(matcherResult.matched, true, "the formal matcher must allow a September stay while the rule is effective");
     assert.equal(matcherResult.rule.ruleId, alphaRule.ruleId);
     assert.equal(matcherResult.reply, activeRule.approvedReply);
+
+    const productScopedRules = [
+      { ...alphaRule, ruleId: "room-only", topic: "booking_open", scope: "room_only", roomTypeId: "" },
+      { ...alphaRule, ruleId: "room-type", topic: "booking_open", scope: "room_type", roomTypeId: "alpha_room" },
+      { ...alphaRule, ruleId: "bundle", topic: "bundle", scope: "bundle", roomTypeId: "" }
+    ];
+    assert.equal(evaluateCustomReplyMatch({
+      rules: [productScopedRules[0]], propertyId: "property_alpha",
+      request: canonicalItem("generic-room", "availability", { category: "other", checkIn: "2026-09-03", checkOut: "2026-09-04", productType: "any" }).canonicalRequest,
+      now: NOW
+    }).matched, true, "an unspecified-room availability request must match room_only through its formal lodging product scope");
+    assert.equal(evaluateCustomReplyMatch({
+      rules: [productScopedRules[1]], propertyId: "property_alpha",
+      request: canonicalItem("named-room", "availability", { category: "other", checkIn: "2026-09-03", checkOut: "2026-09-04", productType: "room_type", productId: "alpha_room" }).canonicalRequest,
+      now: NOW
+    }).matched, true, "room_type matching must use the canonical lodging product ID");
+    assert.equal(evaluateCustomReplyMatch({
+      rules: [productScopedRules[2]], propertyId: "property_alpha",
+      request: canonicalItem("whole-house", "bundle_availability", { category: "other", checkIn: "2026-09-03", checkOut: "2026-09-04", productType: "bundle", productId: "alpha_bundle" }).canonicalRequest,
+      now: NOW
+    }).matched, true, "bundle matching must use the canonical lodging product scope");
     assert.equal(evaluateCustomReplyMatch({
       rules: [alphaRule], propertyId: "property_alpha",
       request: canonicalItem("booking", "availability", { checkIn: "2026-08-20" }).canonicalRequest, now: NOW

@@ -1,13 +1,13 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createApp } = require("../server");
 const { createMvpService } = require("../lib/mvp-service");
-const { createProviders } = require("../lib/providers/provider-factory");
+const { createJsonProviders } = require("../lib/providers/json-providers");
+const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
 
 const PROPERTY_ID = "golden_property_alpha";
 const TIMEZONE = "Asia/Taipei";
@@ -185,7 +185,8 @@ async function runCase(testCase) {
   const dataFile = path.join(temp, "data.json");
   fs.writeFileSync(seedFile, JSON.stringify(seed()));
   const now = () => new Date(FIXED_NOW);
-  const providers = createProviders({ dataFile, seedFile, now });
+  const providers = { kind: "json", ...createJsonProviders({ dataFile, seedFile, now }) };
+  const binding = attachPropertyScopedLineBinding({ providers, propertyId: PROPERTY_ID, channelSecret: LINE_SECRET, channelAccessToken: "relative-date-test-token" });
   const service = createMvpService(providers, { now });
   const diagnostics = [];
   const availabilityCalls = [];
@@ -205,9 +206,7 @@ async function runCase(testCase) {
   const app = createApp({
     providers,
     now,
-    lineChannelSecret: LINE_SECRET,
-    lineChannelAccessToken: "test-only-token",
-    lineChannelIdentityGuardRequired: false,
+    lineBindingEnv: binding.lineBindingEnv,
     conversationDebounceMs: 1,
     testOnlyOverrides: {
       planner,
@@ -249,18 +248,7 @@ async function runCase(testCase) {
       message: { type: "text", id: `message-${testCase.id}`, text: testCase.message }
     };
     const raw = JSON.stringify({ destination: "relative-date-line", events: [event] });
-    const signature = crypto.createHmac("sha256", LINE_SECRET).update(raw).digest("base64");
-    const response = await fetch(
-      `${running.url}/api/test-line/webhook?customerId=${PROPERTY_ID}`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-line-signature": signature
-        },
-        body: raw
-      }
-    );
+    const response = await binding.post(running.url, raw);
     assert.equal(response.status, 200);
     const completed = await waitForResult(engineResults, eventId);
     const stage = (name) => diagnostics.filter((entry) => entry.stage === name).at(-1) || null;

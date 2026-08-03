@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -38,6 +39,62 @@ const PROTECTED_FILE_KEYS = Object.freeze(["baseline", "path", "sha256"]);
 
 function sha256File(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+function lineEndingVariants(bytes) {
+  const lfBytes = Buffer.allocUnsafe(bytes.length);
+  let lfLength = 0;
+  for (let index = 0; index < bytes.length; index += 1) {
+    if (bytes[index] === 13 && bytes[index + 1] === 10) continue;
+    lfBytes[lfLength] = bytes[index];
+    lfLength += 1;
+  }
+  const lf = lfBytes.subarray(0, lfLength);
+  let lineFeedCount = 0;
+  for (const byte of lf) if (byte === 10) lineFeedCount += 1;
+  const crlf = Buffer.allocUnsafe(lf.length + lineFeedCount);
+  let crlfOffset = 0;
+  for (const byte of lf) {
+    if (byte === 10) crlf[crlfOffset++] = 13;
+    crlf[crlfOffset++] = byte;
+  }
+  return [bytes, lf, crlf];
+}
+
+function sha256Variants(bytes) {
+  return [...new Set(lineEndingVariants(bytes).map((variant) => (
+    crypto.createHash("sha256").update(variant).digest("hex")
+  )))];
+}
+
+function createAuthorityReader(root) {
+  try {
+    const gitRoot = execFileSync("git", ["-C", root, "rev-parse", "--show-toplevel"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true
+    }).trim();
+    const resolvedRoot = path.resolve(root);
+    const resolvedGitRoot = path.resolve(gitRoot);
+    const sameRoot = process.platform === "win32"
+      ? resolvedRoot.toLowerCase() === resolvedGitRoot.toLowerCase()
+      : resolvedRoot === resolvedGitRoot;
+    if (sameRoot) {
+      return (relativePath) => execFileSync("git", ["-C", root, "show", `:${relativePath}`], {
+        encoding: null,
+        stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true
+      });
+    }
+  } catch {
+    // Standalone fixture roots intentionally use their on-disk bytes.
+  }
+  return (relativePath) => path.join(root, ...relativePath.split("/"));
+}
+
+function readAuthorityBytes(reader, relativePath) {
+  const result = reader(relativePath);
+  return Buffer.isBuffer(result) ? result : fs.readFileSync(result);
 }
 
 function hasExactKeys(value, expected) {
@@ -116,7 +173,7 @@ function hashesEqual(expected, actual) {
   return crypto.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(actual, "hex"));
 }
 
-function verifyProtectedAcceptance(root, manifest) {
+function verifyProtectedAcceptance(root, manifest, authorityReader = createAuthorityReader(root)) {
   const failures = validateManifest(manifest);
   if (failures.length) return failures;
   for (const relativePath of manifest.protectedPaths) {
@@ -130,13 +187,25 @@ function verifyProtectedAcceptance(root, manifest) {
   for (const entry of manifest.protectedFiles) {
     const target = path.join(root, ...entry.path.split("/"));
     if (!fs.existsSync(target) || !fs.statSync(target).isFile()) continue;
-    const actual = sha256File(target);
-    if (!hashesEqual(entry.sha256, actual)) failures.push(`SHA-256 mismatch for ${entry.path}: expected ${entry.sha256}, actual ${actual}`);
+    let actualVariants;
+    try {
+      actualVariants = sha256Variants(readAuthorityBytes(authorityReader, entry.path));
+    } catch (error) {
+      failures.push(`cannot read protected Git authority for ${entry.path}: ${error.message}`);
+      continue;
+    }
+    if (!actualVariants.some((actual) => hashesEqual(entry.sha256, actual))) {
+      failures.push(`SHA-256 mismatch for ${entry.path}: expected ${entry.sha256}, actual variants ${actualVariants.join(", ")}`);
+    }
   }
   const protectedGatePath = path.join(root, ..."pilot/nephi-home-node-pilot-v1/scripts/verify-protected-acceptance.js".split("/"));
   if (fs.existsSync(protectedGatePath) && fs.statSync(protectedGatePath).isFile()) {
     const forcedSuccessText = "process" + ".exit(0)";
-    if (fs.readFileSync(protectedGatePath, "utf8").includes(forcedSuccessText)) {
+    const protectedGateSource = readAuthorityBytes(
+      authorityReader,
+      "pilot/nephi-home-node-pilot-v1/scripts/verify-protected-acceptance.js"
+    ).toString("utf8");
+    if (protectedGateSource.includes(forcedSuccessText)) {
       failures.push("protected acceptance Gate must not force a successful exit");
     }
   }
@@ -166,8 +235,9 @@ function main() {
       failures.push(`missing protected acceptance manifest: ${MANIFEST_PATH}`);
     } else {
       try {
-        const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-        failures.push(...verifyProtectedAcceptance(root, manifest));
+        const authorityReader = createAuthorityReader(root);
+        const manifest = JSON.parse(readAuthorityBytes(authorityReader, MANIFEST_PATH).toString("utf8"));
+        failures.push(...verifyProtectedAcceptance(root, manifest, authorityReader));
       } catch (error) {
         failures.push(`cannot read protected acceptance manifest: ${error.message}`);
       }
@@ -184,6 +254,8 @@ function main() {
 if (require.main === module) main();
 
 module.exports = {
+  createAuthorityReader,
+  lineEndingVariants,
   sha256File,
   validateManifest,
   verifyProtectedAcceptance

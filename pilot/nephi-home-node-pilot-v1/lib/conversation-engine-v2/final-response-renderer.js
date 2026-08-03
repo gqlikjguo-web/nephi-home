@@ -37,6 +37,13 @@ function sectionsFor(responsePlan, responseMode) {
     .filter(Boolean);
 }
 
+function verifiedSectionsFor(responsePlan, responseMode, validatedReplyText, claimValidation) {
+  if (!claimValidation || claimValidation.ok !== true) return [];
+  const verifiedText = String(validatedReplyText || "");
+  return sectionsFor(responsePlan, responseMode)
+    .filter((sectionText) => verifiedText.includes(sectionText));
+}
+
 function clarificationQuestions(missingFields) {
   const fields = Array.isArray(missingFields) ? missingFields : [];
   const minimalFields = fields.includes("checkIn") && fields.includes("checkOut")
@@ -72,7 +79,12 @@ function buildFinalResponse({
       : "";
     return { action, replyText, shouldReply: true };
   }
-  const answered = sectionsFor(responsePlan, "answer");
+  const answered = verifiedSectionsFor(
+    responsePlan,
+    "answer",
+    validatedReplyText,
+    claimValidation
+  );
   if (action === "clarification") {
     const questions = clarificationQuestions(finalDecision.missingFields);
     return {
@@ -84,7 +96,12 @@ function buildFinalResponse({
       shouldReply: true
     };
   }
-  const handoff = sectionsFor(responsePlan, "handoff");
+  const handoff = verifiedSectionsFor(
+    responsePlan,
+    "handoff",
+    validatedReplyText,
+    claimValidation
+  );
   return {
     action,
     replyText: withinLimit([

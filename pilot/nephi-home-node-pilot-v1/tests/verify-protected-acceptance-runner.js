@@ -68,6 +68,39 @@ function createFixture(options = {}) {
   return root;
 }
 
+function runGit(root, args) {
+  const result = spawnSync("git", ["-c", "core.autocrlf=false", ...args], {
+    cwd: root,
+    encoding: "utf8"
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+}
+
+function createCrlfCheckoutFixture() {
+  const root = createFixture();
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, MANIFEST_PATH), "utf8"));
+  const checkoutHashPath = ".github/CODEOWNERS";
+  const checkoutHashLfText = fs.readFileSync(path.join(root, checkoutHashPath), "utf8");
+  manifest.protectedFiles.find((item) => item.path === checkoutHashPath).sha256 = sha256(
+    checkoutHashLfText.replace(/\r?\n/g, "\r\n")
+  );
+
+  const intentionalCrlfPath = ".github/workflows/codex-integrity.yml";
+  const intentionalCrlfText = fs.readFileSync(path.join(root, intentionalCrlfPath), "utf8")
+    .replace(/\r?\n/g, "\r\n");
+  writeFile(root, intentionalCrlfPath, intentionalCrlfText);
+  manifest.protectedFiles.find((item) => item.path === intentionalCrlfPath).sha256 = sha256(intentionalCrlfText);
+  writeManifest(root, manifest);
+  runGit(root, ["init"]);
+  runGit(root, ["add", "--", "."]);
+
+  const checkoutConvertedPath = APPROVED_PATHS[0];
+  const checkoutConvertedTarget = path.join(root, checkoutConvertedPath);
+  const authoritativeLfText = fs.readFileSync(checkoutConvertedTarget, "utf8");
+  fs.writeFileSync(checkoutConvertedTarget, authoritativeLfText.replace(/\r?\n/g, "\r\n"), "utf8");
+  return root;
+}
+
 function updateProtectedHash(root, manifest, relativePath, content) {
   writeFile(root, relativePath, content);
   const entry = manifest.protectedFiles.find((item) => item.path === relativePath);
@@ -99,6 +132,10 @@ function expectsFailure(root, label, args = [], env = {}) {
 
 const evidence = [];
 evidence.push(expectsPass(createFixture(), "valid manifest"));
+evidence.push(expectsPass(
+  createCrlfCheckoutFixture(),
+  "Git index authority preserves intentional line endings across a CRLF checkout"
+));
 
 const missingFileRoot = createFixture();
 fs.rmSync(path.join(missingFileRoot, APPROVED_PATHS[4]));

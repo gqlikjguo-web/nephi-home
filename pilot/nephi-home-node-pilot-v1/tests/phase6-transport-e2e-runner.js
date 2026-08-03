@@ -6,8 +6,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createApp } = require("../server");
+const { createJsonProviders } = require("../lib/providers/json-providers");
+const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
 
-const secret = "phase6-secret";
+const secret = "phase6-channel-secret";
 const propertyId = "demo_homestay_a";
 const channelId = "line";
 const lineUserId = "u";
@@ -35,9 +37,10 @@ function plannerFor(kind) {
 async function run(kind, mode, { callbackThrows = false, finalResponseOverride = null } = {}) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "phase6-transport-"));
   const engineDiagnostics = [], transportDiagnostics = [], calls = [], finalDecisions = new Map(), finalResponses = new Map();
+  const providers = { kind: "json", ...createJsonProviders({ dataFile: path.join(temp, "store.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json") }) };
+  const binding = attachPropertyScopedLineBinding({ providers, propertyId, channelSecret: secret, channelAccessToken: "phase6-test-token" });
   const app = createApp({
-    dataFile: path.join(temp, "store.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json"),
-    lineChannelSecret: secret, lineChannelAccessToken: "token", conversationDebounceMs: 1, lineChannelIdentityGuardRequired: false,
+    providers, lineBindingEnv: binding.lineBindingEnv, conversationDebounceMs: 1,
     testOnlyOverrides: { planner: plannerFor(kind), getProperty: () => property, onDiagnostic: (entry) => engineDiagnostics.push(entry) },
     testOnlyTransportDiagnostic: (entry) => { transportDiagnostics.push(entry); if (callbackThrows) throw new Error("diagnostic failure"); },
     lineReplyClientFactory: () => ({ replyMessageWithHttpInfo: async (body) => { calls.push(body); if (mode === "failure") { const error = new Error("failed"); error.status = 500; throw error; } return { httpResponse: { status: 200 } }; } })
@@ -59,12 +62,12 @@ async function run(kind, mode, { callbackThrows = false, finalResponseOverride =
     const eventId = `${kind}-${mode}${callbackThrows ? "-callback-throws" : ""}`;
     const event = { type: "message", webhookEventId: eventId, replyToken: "token", timestamp: Date.now(), source: { userId: lineUserId }, message: { type: "text", id: `m-${eventId}`, text: kind } };
     const raw = JSON.stringify({ destination: channelId, events: [event] });
-    const signature = crypto.createHmac("sha256", secret).update(raw).digest("base64");
-    const response = await fetch(`${running.url}/api/test-line/webhook?customerId=${propertyId}`, { method: "POST", headers: { "content-type": "application/json", "x-line-signature": signature }, body: raw });
+    const response = await binding.post(running.url, raw);
     assert.equal(response.status, 200);
     await new Promise((resolve) => setTimeout(resolve, 80));
     const records = app.providers.persistence.listMessageLogs(propertyId).map((entry) => ({ ...entry, propertyId }));
-    return { propertyId, channelId, lineUserId, eventId, finalDecision: finalDecisions.get(eventId), finalResponse: finalResponses.get(eventId), engineDiagnostics, transportDiagnostics, calls, records };
+    const boundChannelId = `line-binding:${crypto.createHash("sha256").update(binding.binding.webhookKey).digest("hex").slice(0, 24)}`;
+    return { propertyId, channelId: boundChannelId, lineUserId, eventId, finalDecision: finalDecisions.get(eventId), finalResponse: finalResponses.get(eventId), engineDiagnostics, transportDiagnostics, calls, records };
   } finally {
     await app.stop();
     fs.rmSync(temp, { recursive: true, force: true });

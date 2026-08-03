@@ -6,8 +6,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createApp } = require("../server");
+const { createJsonProviders } = require("../lib/providers/json-providers");
+const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
 
-const secret = "phase7-secret";
+const secret = "phase7-channel-secret";
 const propertyId = "demo_homestay_a";
 const channelId = "line";
 const lineUserId = "phase7-user";
@@ -180,13 +182,12 @@ async function run(kind) {
       : kind === "no_reply"
         ? { compose: async () => { composerCalls.push(kind); return { sections: [] }; } }
         : null;
+  const providers = { kind: "json", ...createJsonProviders({ dataFile: path.join(temp, "store.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json") }) };
+  const binding = attachPropertyScopedLineBinding({ providers, propertyId, channelSecret: secret, channelAccessToken: "phase7-test-token" });
   const app = createApp({
-    dataFile: path.join(temp, "store.json"),
-    seedFile: path.resolve(__dirname, "../fixtures/seed.json"),
-    lineChannelSecret: secret,
-    lineChannelAccessToken: "token",
+    providers,
+    lineBindingEnv: binding.lineBindingEnv,
     conversationDebounceMs: 1,
-    lineChannelIdentityGuardRequired: false,
     testOnlyOverrides: {
       planner: plannerFor(kind),
       getProperty: () => property,
@@ -223,28 +224,15 @@ async function run(kind) {
       }
     };
     const raw = JSON.stringify({ destination: channelId, events: [event] });
-    const signature = crypto
-      .createHmac("sha256", secret)
-      .update(raw)
-      .digest("base64");
-    const response = await fetch(
-      `${running.url}/api/test-line/webhook?customerId=${propertyId}`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-line-signature": signature
-        },
-        body: raw
-      }
-    );
+    const response = await binding.post(running.url, raw);
     assert.equal(response.status, 200);
     await new Promise((resolve) => setTimeout(resolve, 100));
     const result = engineResults.get(eventId);
     assert.ok(result, `${kind} must complete the real Engine execution`);
+    const boundChannelId = `line-binding:${crypto.createHash("sha256").update(binding.binding.webhookKey).digest("hex").slice(0, 24)}`;
     const mainRecord = app.providers.persistence.listMessageLogs(propertyId)
       .find((entry) => (
-        entry.channelId === channelId
+        entry.channelId === boundChannelId
         && entry.lineUserId === lineUserId
         && entry.eventId === eventId
       ));

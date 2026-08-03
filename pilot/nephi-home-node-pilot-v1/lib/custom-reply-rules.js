@@ -197,11 +197,13 @@ function topicMatches(rule, request) {
 }
 
 function scopeMatches(rule, request) {
-  const entity = request.canonicalEntity || {};
+  const lodgingProduct = request.lodgingProduct || {};
   if (rule.scope === "all") return true;
-  if (rule.scope === "bundle") return request.capability === "bundle_availability" || entity.category === "bundle";
-  if (rule.scope === "room_only") return entity.category === "room";
-  if (rule.scope === "room_type") return entity.category === "room" && entity.canonicalId === rule.roomTypeId;
+  if (rule.scope === "bundle") return lodgingProduct.productType === "bundle";
+  if (rule.scope === "room_only") return request.capability !== "bundle_availability"
+    && ["any", "room_type"].includes(lodgingProduct.productType);
+  if (rule.scope === "room_type") return lodgingProduct.productType === "room_type"
+    && lodgingProduct.roomTypeId === rule.roomTypeId;
   return false;
 }
 

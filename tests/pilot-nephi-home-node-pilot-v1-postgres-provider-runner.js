@@ -7,7 +7,7 @@ const path = require("node:path");
 const ROOT = path.resolve(__dirname, "../pilot/nephi-home-node-pilot-v1");
 const { createProviders } = require(path.join(ROOT, "lib/providers/provider-factory"));
 const { migratePostgres } = require(path.join(ROOT, "lib/providers/postgres-migrate"));
-const { seedNephiPostgres } = require(path.join(ROOT, "tests/helpers/nephi-postgres-seed"));
+const { loadSeedManifest, seedPostgres } = require(path.join(ROOT, "lib/providers/postgres-seed"));
 const { openPostgres } = require(path.join(ROOT, "lib/providers/postgres-client"));
 
 async function main() {
@@ -16,20 +16,22 @@ async function main() {
   const temp = fs.mkdtempSync(path.join(runtimeRoot, "postgres-test-"));
   const databasePath = path.join(temp, "database");
   const connection = { kind: "pglite", dataDir: databasePath };
+  const seedInput = loadSeedManifest(path.join(ROOT, "fixtures/postgres-seed.json"));
+  seedInput.availability.storage = "normalized";
   try {
     await migratePostgres(connection);
     await migratePostgres(connection);
-    const seeded = await seedNephiPostgres(connection);
+    const seeded = await seedPostgres(connection, seedInput);
     assert.equal(seeded.propertyId, "nephi_home");
     assert.equal(seeded.roomTypeCount, 4);
     assert.equal(seeded.availabilityDayCount, 49);
     const client = await openPostgres(connection);
     await client.query("UPDATE properties SET display_name='preserved' WHERE property_id='nephi_home'");
     await client.close();
-    const repeatedSeed = await seedNephiPostgres(connection);
+    const repeatedSeed = await seedPostgres(connection, seedInput);
     assert.equal(repeatedSeed.seeded, false);
 
-    const providers = createProviders({ databaseUrl: "pglite:test", postgresConnection: connection });
+    const providers = createProviders({ postgresConnection: connection });
     assert.equal(providers.kind, "postgres");
     const property = providers.customerSettings.getProperty("nephi_home");
     assert.equal(property.displayName, "preserved");
@@ -63,8 +65,10 @@ async function main() {
     assert.equal(providers.persistence.listMessageLogs("other_home").length, 0);
 
     providers.close();
-    const jsonProviders = createProviders({ databaseUrl: "", dataFile: path.join(temp, "store.json"), seedFile: path.join(ROOT, "fixtures/seed.json") });
-    assert.equal(jsonProviders.kind, "json");
+    assert.throws(
+      () => createProviders({ databaseUrl: "", dataFile: path.join(temp, "store.json"), seedFile: path.join(ROOT, "fixtures/seed.json") }),
+      (error) => error && error.code === "DATABASE_URL_REQUIRED"
+    );
     console.log("PostgreSQL provider: 14/14 PASS");
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });

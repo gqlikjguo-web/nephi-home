@@ -35,8 +35,8 @@ https://abc123.tunnelmole.net is forwarding to localhost
 "@
 $publicUrl = Get-TunnelPublicUrl -Text $sample
 if ($publicUrl -ne "https://abc123.tunnelmole.net") { throw "Tunnel URL parsing failed" }
-$webhookUrl = Get-TestLineWebhookUrl -PublicUrl "$publicUrl/" -PropertyId "nephi_home"
-if ($webhookUrl -ne "https://abc123.tunnelmole.net/api/test-line/webhook?customerId=nephi_home") {
+$webhookUrl = Get-PropertyScopedLineWebhookUrl -PublicUrl "$publicUrl/" -WebhookKey "binding-key"
+if ($webhookUrl -ne "https://abc123.tunnelmole.net/api/line/webhooks/binding-key") {
   throw "Webhook URL composition failed"
 }
 

@@ -9,6 +9,7 @@ const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const { sessionTokenHash } = require("../lib/admin-auth");
 const { sha256 } = require("../lib/test-only-line-message-trace");
+const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
 
 const TARGET_MESSAGE = "8/6 有雙人房嗎？";
 const PROPERTY_ID = "demo_homestay_a";
@@ -97,10 +98,6 @@ function webhookBody(eventId, lineUserId, text = TARGET_MESSAGE) {
   });
 }
 
-function signature(body) {
-  return crypto.createHmac("sha256", LINE_SECRET).update(body).digest("base64");
-}
-
 async function waitFor(predicate, timeoutMs = 3000) {
   const started = Date.now();
   while (!predicate()) {
@@ -129,7 +126,6 @@ async function traceGet(baseUrl, propertyId = PROPERTY_ID, cookie = `nephi_admin
       testOnlyLineMessageTraceEnabled: true,
       testOnlyLineMessageTracePropertyId: PROPERTY_ID,
       testOnlyLineMessageTraceTargetSha256: sha256(TARGET_MESSAGE),
-      lineChannelIdentityGuardRequired: false,
       now: () => new Date(NOW)
     });
     const disabledRunning = await disabled.start(0, "127.0.0.1");
@@ -142,6 +138,7 @@ async function traceGet(baseUrl, propertyId = PROPERTY_ID, cookie = `nephi_admin
     providers.persistence.getAdminSession = (tokenHash) => tokenHash === sessionTokenHash(ADMIN_TOKEN)
       ? { propertyId: PROPERTY_ID, username: "trace-admin", properties: [{ propertyId: PROPERTY_ID }] }
       : null;
+    const binding = attachPropertyScopedLineBinding({ providers, propertyId: PROPERTY_ID, channelSecret: LINE_SECRET, channelAccessToken: LINE_TOKEN });
     const replies = [];
     app = createApp({
       providers,
@@ -150,9 +147,7 @@ async function traceGet(baseUrl, propertyId = PROPERTY_ID, cookie = `nephi_admin
       testOnlyLineMessageTraceEnabled: true,
       testOnlyLineMessageTracePropertyId: PROPERTY_ID,
       testOnlyLineMessageTraceTargetSha256: sha256(TARGET_MESSAGE),
-      lineChannelSecret: LINE_SECRET,
-      lineChannelAccessToken: LINE_TOKEN,
-      lineChannelIdentityGuardRequired: false,
+      lineBindingEnv: binding.lineBindingEnv,
       conversationDebounceMs: 1,
       now: () => new Date(NOW),
       conversationPlannerV2: { classify: async ({ sourceEvents }) => plannerOutput(sourceEvents[0]) },
@@ -169,11 +164,7 @@ async function traceGet(baseUrl, propertyId = PROPERTY_ID, cookie = `nephi_admin
     assert.equal((await traceGet(running.url, "demo_homestay_b")).status, 403, "an admin must not read a different property trace");
 
     const targetBody = webhookBody("event-a", "U-real-user-a");
-    const webhook = await fetch(`${running.url}/api/test-line/webhook?customerId=${PROPERTY_ID}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-line-signature": signature(targetBody) },
-      body: targetBody
-    });
+    const webhook = await binding.post(running.url, targetBody);
     assert.equal(webhook.status, 200);
     await waitFor(() => replies.length === 1 && [...persistenceState.traces.values()].some((record) => record.stages.line_transport && record.stages.line_transport.delivered === true));
 
@@ -200,14 +191,11 @@ async function traceGet(baseUrl, propertyId = PROPERTY_ID, cookie = `nephi_admin
     assert.equal(record.stages.line_transport.delivered, true);
     assert.equal(record.stages.line_transport.replyText, replies[0].body.messages[0].text, "trace must retain the exact text actually submitted to LINE");
     assert.equal(persistenceState.deleteCalls(), 0, "tracing must never clear conversation state");
-    assert.ok(providers.persistence.getConversationState(PROPERTY_ID, "test-only-destination", "U-real-user-a"), "the real conversation state must remain present");
+    const bindingChannel = `line-binding:${crypto.createHash("sha256").update(binding.binding.webhookKey).digest("hex").slice(0, 24)}`;
+    assert.ok(providers.persistence.getConversationState(PROPERTY_ID, bindingChannel, "U-real-user-a"), "the real conversation state must remain present");
 
     const unrelatedBody = webhookBody("event-other", "U-unrelated", "你好");
-    assert.equal((await fetch(`${running.url}/api/test-line/webhook?customerId=${PROPERTY_ID}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-line-signature": signature(unrelatedBody) },
-      body: unrelatedBody
-    })).status, 200);
+    assert.equal((await binding.post(running.url, unrelatedBody)).status, 200);
     await waitFor(() => replies.length === 2);
     assert.equal(persistenceState.traces.size, 1, "unrelated LINE messages must not create diagnostic records");
 

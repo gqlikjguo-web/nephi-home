@@ -25,7 +25,23 @@ const claimValidator = read("../lib/conversation-engine-v2/claim-validator.js");
 const finalResponseRendererFiles = fs.readdirSync(path.resolve(__dirname, "../lib/conversation-engine-v2"))
   .filter((file) => /^final-response.*\.js$/.test(file));
 
-if (mutation === "second_runtime") server = server.replace("/* legacy runtime", "const secondRoot = createV2CompositionRoot({});\n  /* legacy runtime");
+const MUTATIONS = Object.freeze([
+  "legacy_query_line_route",
+  "caller_controlled_property_handler",
+  "second_runtime",
+  "resolver_bypass",
+  "second_final_renderer",
+  "second_canonicalizer",
+  "second_temporal_writer",
+  "second_capability_writer",
+  "second_entity_writer",
+  "second_resolver_writer",
+  "unreachable_dead_runtime_after_return"
+]);
+
+if (mutation === "legacy_query_line_route") server += "\nconst TEST_LINE_WEBHOOK_ROUTE = '/api/test-line/webhook';";
+if (mutation === "caller_controlled_property_handler") server += "\nfunction lineWebhookHandler({ customerId }) { return customerId; }";
+if (mutation === "second_runtime") server += "\nconst secondRoot = createV2CompositionRoot({});";
 if (mutation === "resolver_bypass") engine += "\nfunction forbidden() { return availability.getRows(); }";
 if (mutation === "second_final_renderer") engine += "\nfunction buildFinalResponse() { return { action: 'reply', replyText: '', shouldReply: false }; }";
 if (mutation === "second_canonicalizer") engine += "\nfunction forbiddenCanonicalizer(item) { return canonicalizeExecutionItem(item); }";
@@ -33,13 +49,12 @@ if (mutation === "second_temporal_writer") canonicalizer += "\nfunction forbidde
 if (mutation === "second_capability_writer") engine += "\nconst forbiddenCapabilityWriter = getCapabilityDefinition('availability');";
 if (mutation === "second_entity_writer") formalRequest += "\nconst forbiddenEntityWriter = resolveEntity({}, {});";
 if (mutation === "second_resolver_writer") executor += "\nconst forbiddenResolverWriter = getCapabilityDefinition('availability').resolverId;";
+if (mutation === "unreachable_dead_runtime_after_return") server += "\n/* legacy runtime kept below */";
 
-const runtimeEnd = server.indexOf("/* legacy runtime");
-assert.notEqual(runtimeEnd, -1, "runtime boundary marker must exist for the active source audit");
-const runtime = server.slice(0, runtimeEnd);
+const runtime = server;
 
-assert.match(runtime, /const TEST_LINE_WEBHOOK_ROUTE = "\/api\/test-line\/webhook"/);
-assert.equal((runtime.match(/TEST_LINE_WEBHOOK_ROUTE/g) || []).length, 2, "only one active LINE webhook route may be registered");
+assert.doesNotMatch(runtime, /TEST_LINE_WEBHOOK_ROUTE|\/api\/test-line\/webhook|\blineWebhookHandler\b|legacy runtime kept|pushToTestLine/);
+assert.equal((runtime.match(/\^\\\/api\\\/line\\\/webhooks\\\//g) || []).length, 1, "exactly one property-scoped shared LINE route may be registered");
 assert.equal((runtime.match(/createV2CompositionRoot\(/g) || []).length, 1, "runtime may invoke exactly one composition root");
 assert.doesNotMatch(runtime, /SECOND_TEST_LINE_ROUTE|\/api\/junzan-test-line\/webhook|\/api\/test-line\/resolve/);
 assert.doesNotMatch(runtime, /new ConversationEngineV2\(|new ConversationEngineV2Coordinator\(/, "runtime must not construct a parallel engine or coordinator");
@@ -52,8 +67,8 @@ assert.match(root, /testOnlyOverrides = null/, "test-only overrides are an expli
 assert.match(server, /testOnlyOverrides: options\.testOnlyOverrides \|\| null/, "only the server factory may pass test-only overrides into the active root");
 assert.match(server, /const testOnlyTransportDiagnostic = typeof options\.testOnlyTransportDiagnostic === "function" \? options\.testOnlyTransportDiagnostic : null/, "transport diagnostics are an explicit server-factory-only seam");
 assert.match(server, /const emitTransportDiagnostic = \(entry\) => \{[\s\S]*logSafeTestOnlyConversationTrace\(entry\);[\s\S]*try \{ testOnlyTransportDiagnostic\(entry\); \} catch/, "transport diagnostics must retain the safe logger and isolate callback failures");
-assert.equal((runtime.match(/const \{ replyText: _replyText, \.\.\.diagnostic \} = details; emitTransportDiagnostic\(diagnostic\);/g) || []).length, 2, "both active transports must exclude reply text from the existing safe diagnostic callback");
-assert.equal((runtime.match(/testOnlyLineMessageTrace\.transport\(\{ traceId: result\.traceId, eventId: input\.eventId, propertyId: id, \.\.\.details \}\)/g) || []).length, 2, "both active transports must persist the bounded test-only transport trace through its dedicated service");
+assert.equal((runtime.match(/const \{ replyText: _replyText, \.\.\.diagnostic \} = details; emitTransportDiagnostic\(diagnostic\);/g) || []).length, 1, "the sole shared transport must exclude reply text from the existing safe diagnostic callback");
+assert.equal((runtime.match(/testOnlyLineMessageTrace\.transport\(\{ traceId: result\.traceId, eventId: input\.eventId, propertyId: id, \.\.\.details \}\)/g) || []).length, 1, "the sole shared transport must persist the bounded test-only transport trace through its dedicated service");
 assert.equal((root.match(/createTestOnlyOpenAiConversationPlannerFromEnv/g) || []).length, 2, "only the composition root wires the planner");
 assert.equal((root.match(/createTestOnlyOpenAiControlledComposerFromEnv/g) || []).length, 2, "only the composition root wires the controlled composer");
 assert.match(root, /availabilityResolver: overrides\.availabilityResolver \|\| \(\(query\) => service\.searchAvailability\(query\)\)/);
@@ -115,13 +130,7 @@ assert.match(engine, /composeControlledReply\(/, "V2 must use the controlled com
 assert.doesNotMatch(runtime, /reply.*push|push.*reply/i, "LINE transport must not retain a push fallback");
 
 if (!mutation) {
-  for (const injectedMutation of [
-    "second_canonicalizer",
-    "second_temporal_writer",
-    "second_capability_writer",
-    "second_entity_writer",
-    "second_resolver_writer"
-  ]) {
+  for (const injectedMutation of MUTATIONS) {
     const child = spawnSync(process.execPath, [__filename], {
       cwd: process.cwd(),
       env: { ...process.env, JUNZAN_GUARD_MUTATION: injectedMutation },
@@ -131,4 +140,4 @@ if (!mutation) {
   }
 }
 
-console.log(JSON.stringify({ caseCount: 46, passCount: 46, failCount: 0, mutation: mutation || "none" }));
+console.log(JSON.stringify({ caseCount: 52, passCount: 52, failCount: 0, mutation: mutation || "none", mutationCount: MUTATIONS.length }));

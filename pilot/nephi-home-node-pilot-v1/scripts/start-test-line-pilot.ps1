@@ -70,7 +70,7 @@ $process = Start-Process -FilePath $node.Source -ArgumentList @("server.js") -Wo
 } | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
 
 $healthPath = "/api/health"
-$webhookPath = "/api/test-line/webhook"
+$webhookPath = "/api/line/webhooks/{webhookKey}"
 $healthUrl = "http://${localHost}:${port}${healthPath}"
 $ready = $false
 for ($attempt = 0; $attempt -lt 20; $attempt += 1) {
@@ -98,4 +98,4 @@ Write-Output ("PORT={0}" -f $port)
 Write-Output ("HEALTH_PATH={0}" -f $healthPath)
 Write-Output ("LINE_WEBHOOK_PATH={0}" -f $webhookPath)
 Write-Output ("HEALTH_URL={0}" -f $healthUrl)
-Write-Output ("WEBHOOK_URL_FORMAT=http://{0}:{1}{2}?customerId={{propertyId}}" -f $localHost, $port, $webhookPath)
+Write-Output ("WEBHOOK_URL_FORMAT=http://{0}:{1}{2}" -f $localHost, $port, $webhookPath)

@@ -1,7 +1,6 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -11,6 +10,8 @@ const { plannerJsonSchema, validatePlannerOutput } = require("../lib/conversatio
 const { SAFE_HANDOFF_TEXT } = require("../lib/conversation-engine-v2/final-response-renderer");
 const { TestOnlyOpenAiConversationPlanner } = require("../lib/providers/test-only-openai-conversation-planner");
 const { createApp, formatSafeTestOnlyConversationTrace } = require("../server");
+const { createJsonProviders } = require("../lib/providers/json-providers");
+const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
 
 const property = { propertyId: "demo_homestay_a", timezone: "Asia/Taipei", rooms: [], commonAnswers: { checkInTime: "15:00" } };
 const sensitive = {
@@ -61,10 +62,9 @@ function invalidRelationOutput() {
   };
 }
 
-async function sendWebhook(url, secret, eventId, text) {
+async function sendWebhook(binding, url, eventId, text) {
   const payload = JSON.stringify({ destination: "line", events: [{ type: "message", webhookEventId: eventId, replyToken: `token-${eventId}`, timestamp: 1, source: { userId: "guest" }, message: { type: "text", id: `m-${eventId}`, text } }] });
-  const signature = crypto.createHmac("sha256", secret).update(payload).digest("base64");
-  const response = await fetch(`${url}/api/test-line/webhook?customerId=demo_homestay_a`, { method: "POST", headers: { "content-type": "application/json", "x-line-signature": signature }, body: payload });
+  const response = await binding.post(url, payload);
   assert.equal(response.status, 200);
 }
 
@@ -520,13 +520,12 @@ async function main() {
   const logSecret = "planner-provider-log-secret";
   const applicationLogs = [];
   const originalConsoleLog = console.log;
+  const logProviders = { kind: "json", ...createJsonProviders({ dataFile: path.join(logTemp, "store.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json") }) };
+  const logBinding = attachPropertyScopedLineBinding({ providers: logProviders, propertyId: "demo_homestay_a", channelSecret: logSecret, channelAccessToken: "planner-log-test-token" });
   const logApp = createApp({
-    dataFile: path.join(logTemp, "store.json"),
-    seedFile: path.resolve(__dirname, "../fixtures/seed.json"),
-    lineChannelSecret: logSecret,
-    lineChannelAccessToken: "token",
+    providers: logProviders,
+    lineBindingEnv: logBinding.lineBindingEnv,
     conversationDebounceMs: 1,
-    lineChannelIdentityGuardRequired: false,
     conversationPlannerV2: openAiPlanner(async () => providerResponse(429, JSON.stringify({
       error: {
         message: sensitive.providerMessage,
@@ -541,7 +540,7 @@ async function main() {
   const logRunning = await logApp.start(0, "127.0.0.1");
   try {
     console.log = (...args) => applicationLogs.push(args.map(String).join(" "));
-    await sendWebhook(logRunning.url, logSecret, "planner-provider-log-event", "test");
+    await sendWebhook(logBinding, logRunning.url, "planner-provider-log-event", "test");
     await new Promise((resolve) => setTimeout(resolve, 120));
   } finally {
     console.log = originalConsoleLog;
@@ -579,13 +578,12 @@ async function main() {
   const secret = "planner-failure-secret";
   const replies = [];
   const diagnostics = [];
+  const providers = { kind: "json", ...createJsonProviders({ dataFile, seedFile: path.resolve(__dirname, "../fixtures/seed.json") }) };
+  const binding = attachPropertyScopedLineBinding({ providers, propertyId: "demo_homestay_a", channelSecret: secret, channelAccessToken: "planner-failure-token" });
   const app = createApp({
-    dataFile,
-    seedFile: path.resolve(__dirname, "../fixtures/seed.json"),
-    lineChannelSecret: secret,
-    lineChannelAccessToken: "token",
+    providers,
+    lineBindingEnv: binding.lineBindingEnv,
     conversationDebounceMs: 1,
-    lineChannelIdentityGuardRequired: false,
     conversationPlannerV2: {
       classify: async ({ currentMessage }) => {
         if (currentMessage === "invalid relation") return invalidRelationOutput();
@@ -598,9 +596,9 @@ async function main() {
   });
   const running = await app.start(0, "127.0.0.1");
   try {
-    await sendWebhook(running.url, secret, "planner-null-event", "test");
-    await sendWebhook(running.url, secret, "invalid-relation-event", "invalid relation");
-    await sendWebhook(running.url, secret, "planner-throw-event", "planner throws");
+    await sendWebhook(binding, running.url, "planner-null-event", "test");
+    await sendWebhook(binding, running.url, "invalid-relation-event", "invalid relation");
+    await sendWebhook(binding, running.url, "planner-throw-event", "planner throws");
     await new Promise((resolve) => setTimeout(resolve, 120));
     assert.equal(replies.length, 3);
     replies.forEach((body) => assert.ok(body.messages[0].text.length > 0, "contract failure must be delivered as a non-empty safe reply"));

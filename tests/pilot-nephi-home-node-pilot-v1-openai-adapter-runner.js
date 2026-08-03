@@ -23,6 +23,7 @@ const {
 } = require(path.join(PILOT_ROOT, "scripts/test-openai-structured-classifier"));
 const { createApp } = require(path.join(PILOT_ROOT, "server"));
 const { createJsonProviders } = require(path.join(PILOT_ROOT, "lib/providers/json-providers"));
+const { attachPropertyScopedLineBinding } = require(path.join(PILOT_ROOT, "tests/helpers/property-scoped-line-webhook"));
 
 const input = {
   propertyId: "demo_homestay_a",
@@ -126,14 +127,9 @@ async function resolveBridge(appOptions, eventId) {
   }
 }
 
-async function sendSignedLineWebhook(url, customerId, event) {
+async function sendSignedLineWebhook(binding, url, event) {
   const rawBody = JSON.stringify({ destination: "line-channel-a", events: [event] });
-  const signature = crypto.createHmac("sha256", "adapter-line-secret").update(rawBody).digest("base64");
-  const response = await fetch(`${url}/api/test-line/webhook?customerId=${encodeURIComponent(customerId)}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-line-signature": signature },
-    body: rawBody
-  });
+  const response = await binding.post(url, rawBody);
   return { status: response.status, body: await response.json() };
 }
 
@@ -351,6 +347,7 @@ async function sendSignedLineWebhook(url, customerId, event) {
       dataFile: path.join(tempDir, "store.json"),
       seedFile: path.join(PILOT_ROOT, "fixtures/seed.json")
     });
+    const binding = attachPropertyScopedLineBinding({ providers, propertyId: "demo_homestay_a", channelSecret: "adapter-line-secret", channelAccessToken: "adapter-line-token" });
     const common = {
       providers,
       testLineSecret: "adapter-test-secret",
@@ -412,8 +409,7 @@ async function sendSignedLineWebhook(url, customerId, event) {
         return responseWith(validDecision());
       },
       conversationDebounceMs: 1,
-      lineChannelSecret: "adapter-line-secret",
-      lineChannelAccessToken: "adapter-line-token",
+      lineBindingEnv: binding.lineBindingEnv,
       lineReplyFetch: async (_url, options) => {
         lineReplies.push(JSON.parse(options.body));
         return { ok: true, status: 200, text: async () => "{}" };
@@ -421,7 +417,7 @@ async function sendSignedLineWebhook(url, customerId, event) {
     });
     const running = await lineApp.start(0, "127.0.0.1");
     try {
-      const accepted = await sendSignedLineWebhook(running.url, "demo_homestay_a", {
+      const accepted = await sendSignedLineWebhook(binding, running.url, {
         type: "message",
         webhookEventId: "adapter-real-line",
         timestamp: 1783987200000,

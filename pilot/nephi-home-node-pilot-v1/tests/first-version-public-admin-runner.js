@@ -6,6 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { createApp } = require("../server");
 const { createMvpService } = require("../lib/mvp-service");
+const { createJsonProviders } = require("../lib/providers/json-providers");
 
 async function json(url) {
   const response = await fetch(url);
@@ -82,7 +83,7 @@ function property(propertyId, name, lineUrl) {
     }],
     messageLogs: { nephi_home: [], other_home: [] }
   }));
-  const app = createApp({ dataFile, seedFile, lineChannelIdentityGuardRequired: false, adminAuthRequired: false });
+  const app = createApp({ providers: createJsonProviders({ dataFile, seedFile }), adminAuthRequired: false });
   const running = await app.start(0, "127.0.0.1");
   try {
     const metadata = await json(`${running.url}/api/public/property?slug=nephihome`);

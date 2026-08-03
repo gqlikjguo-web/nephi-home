@@ -60,7 +60,7 @@ async function request(url, method, body, cookie = `nephi_admin_session=${adminT
   const sessions = new Map([[sessionTokenHash(adminToken), { propertyId, username: "platform", userId: "platform-user" }]]);
   providers.persistence.getAdminSession = (tokenHash) => sessions.get(tokenHash) || null;
   providers.onboarding = { isPlatformAdmin: (_propertyId, username, userId) => username === "platform" && userId === "platform-user" };
-  const app = createApp({ providers, adminAuthRequired: true, testOnlyEnvironment: true, testOnlyAcceptanceEnabled: true, lineChannelIdentityGuardRequired: false, now, testOnlyOverrides: { planner: { classify: plannerOutput } } });
+  const app = createApp({ providers, adminAuthRequired: true, testOnlyEnvironment: true, testOnlyAcceptanceEnabled: true, now, testOnlyOverrides: { planner: { classify: plannerOutput } } });
   const running = await app.start(0, "127.0.0.1");
   try {
     const post = (conversationId, messageText, eventId) => request(running.url, "POST", { customerId: propertyId, conversationId, messageText, ...(eventId ? { eventId } : {}) });
@@ -109,10 +109,10 @@ async function request(url, method, body, cookie = `nephi_admin_session=${adminT
     for (const forbidden of ["sk-", "OPENAI_API_KEY", "LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET", "DATABASE_URL", "postgres://", "platform-admin-token", "parking followup"]) assert.equal(serialized.includes(forbidden), false, `safe trace leaked ${forbidden}`);
     assert.equal(continued.body.finalDecision.action, "reply");
 
-    const disabled = createApp({ providers: createJsonProviders({ dataFile: path.join(temp, "disabled.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json"), now }), adminAuthRequired: false, testOnlyEnvironment: true, testOnlyAcceptanceEnabled: false, lineChannelIdentityGuardRequired: false, now });
+    const disabled = createApp({ providers: createJsonProviders({ dataFile: path.join(temp, "disabled.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json"), now }), adminAuthRequired: false, testOnlyEnvironment: true, testOnlyAcceptanceEnabled: false, now });
     const disabledRunning = await disabled.start(0, "127.0.0.1");
     try { assert.equal((await request(disabledRunning.url, "POST", { customerId: propertyId, conversationId: "x", messageText: "parking" }).then((x) => x.response.status)), 404); assert.equal((await request(disabledRunning.url, "DELETE", { customerId: propertyId, conversationId: "x" }).then((x) => x.response.status)), 404); } finally { await disabled.stop(); }
-    const nonTest = createApp({ providers: createJsonProviders({ dataFile: path.join(temp, "non-test.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json"), now }), adminAuthRequired: false, testOnlyEnvironment: false, testOnlyAcceptanceEnabled: true, lineChannelIdentityGuardRequired: false, now });
+    const nonTest = createApp({ providers: createJsonProviders({ dataFile: path.join(temp, "non-test.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json"), now }), adminAuthRequired: false, testOnlyEnvironment: false, testOnlyAcceptanceEnabled: true, now });
     const nonTestRunning = await nonTest.start(0, "127.0.0.1");
     try { assert.equal((await request(nonTestRunning.url, "POST", { customerId: propertyId, conversationId: "x", messageText: "parking" }).then((x) => x.response.status)), 404); assert.equal((await request(nonTestRunning.url, "DELETE", { customerId: propertyId, conversationId: "x" }).then((x) => x.response.status)), 404); } finally { await nonTest.stop(); }
     console.log(JSON.stringify({ suite: "test-only-conversation-acceptance-api", caseCount: 15, passCount: 15, failCount: 0 }));

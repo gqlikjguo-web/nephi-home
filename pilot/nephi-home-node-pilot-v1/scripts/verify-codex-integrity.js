@@ -172,13 +172,11 @@ function verify(root) {
         "verify:protected-acceptance": "node scripts/verify-protected-acceptance.js",
         "verify:codex-integrity": "node scripts/verify-codex-integrity.js",
         "test:canonical-golden": "node tests/canonical-request-golden-gate-runner.js",
-        "test:runtime-uniqueness": "node tests/v2-runtime-uniqueness-runner.js"
+        "test:runtime-uniqueness": "node tests/v2-runtime-uniqueness-runner.js",
+        "test:provider-fail-closed": "node tests/provider-authority-fail-closed-runner.js"
       };
       for (const [name, command] of Object.entries(requiredScripts)) {
         if (packageJson.scripts?.[name] !== command) failures.push(`package.json must define ${name} as ${command}`);
-      }
-      if (Object.keys(packageJson.scripts || {}).some((name) => name.includes("provider-fail-closed"))) {
-        failures.push("Checkpoint A must not require the Checkpoint B provider fail-closed Gate");
       }
     } catch {
       failures.push("package.json is not valid JSON");
@@ -203,6 +201,7 @@ function verify(root) {
       "run: node tests/verify-codex-integrity-runner.js",
       "run: npm run test:canonical-golden",
       "run: npm run test:runtime-uniqueness",
+      "run: npm run test:provider-fail-closed",
       "run: npm test"
     ];
     const normalizedLines = workflow.split(/\r?\n/).map((line) => line.trim().replace(/^-[ ]*/, ""));
@@ -214,11 +213,10 @@ function verify(root) {
     }
     if (positions.every((position) => position >= 0)
       && positions.some((position, index) => index > 0 && position <= positions[index - 1])) {
-      failures.push("integrity CI workflow must run checkout, install, protection, integrity, canonical, uniqueness, then complete tests in order");
+      failures.push("integrity CI workflow must run checkout, install, protection, integrity, canonical, uniqueness, provider fail-closed, then complete tests in order");
     }
     if (/continue-on-error\s*:\s*true/i.test(workflow)) failures.push("integrity CI workflow must not use continue-on-error for required Gates");
     if (/^\s*if\s*:/m.test(workflow)) failures.push("integrity CI workflow must not conditionally skip required Gates");
-    if (workflow.includes("provider-fail-closed")) failures.push("Checkpoint A workflow must not require the Checkpoint B provider fail-closed Gate");
   }
 
   const protectedPaths = [

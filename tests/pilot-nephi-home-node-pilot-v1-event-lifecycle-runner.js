@@ -9,6 +9,7 @@ const PILOT_ROOT = path.resolve(__dirname, "../pilot/nephi-home-node-pilot-v1");
 const { createApp } = require(path.join(PILOT_ROOT, "server"));
 const { createJsonProviders } = require(path.join(PILOT_ROOT, "lib/providers/json-providers"));
 const { StructuredClassifierProvider } = require(path.join(PILOT_ROOT, "lib/providers/contracts"));
+const { attachPropertyScopedLineBinding } = require(path.join(PILOT_ROOT, "tests/helpers/property-scoped-line-webhook"));
 
 const SECRET = "pilot-event-lifecycle-test-secret";
 const TOKEN = "pilot-event-lifecycle-test-token";
@@ -26,10 +27,11 @@ function lineEvent(eventId, replyToken, lineUserId, text) {
   };
 }
 
-async function sendLine(url, event) {
+async function sendLine(app, url, event) {
   const raw = JSON.stringify({ destination: CHANNEL_ID, events: [event] });
   const signature = crypto.createHmac("sha256", SECRET).update(raw).digest("base64");
-  const response = await fetch(`${url}/api/test-line/webhook?customerId=${PROPERTY_ID}`, {
+  const row = app.providers.lineBindings.getLineBindingByPropertyId(PROPERTY_ID);
+  const response = await fetch(`${url}/api/line/webhooks/${row.webhookKey}`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-line-signature": signature },
     body: raw
@@ -86,15 +88,14 @@ class LifecycleClassifier extends StructuredClassifierProvider {
 }
 
 function appOptions(dataFile, classifier, lineReplyFetch, providers) {
+  const explicitProviders = providers || createJsonProviders({ dataFile, seedFile: path.join(PILOT_ROOT, "fixtures/seed.json") });
+  const binding = attachPropertyScopedLineBinding({ providers: explicitProviders, propertyId: PROPERTY_ID, channelSecret: SECRET, channelAccessToken: TOKEN });
   return {
-    dataFile,
-    seedFile: path.join(PILOT_ROOT, "fixtures/seed.json"),
-    providers,
+    providers: explicitProviders,
+    lineBindingEnv: binding.lineBindingEnv,
     structuredClassifier: classifier,
     classifierTimeoutMs: 300,
     conversationDebounceMs: 5,
-    lineChannelSecret: SECRET,
-    lineChannelAccessToken: TOKEN,
     lineReplyFetch
   };
 }
@@ -114,9 +115,9 @@ function appOptions(dataFile, classifier, lineReplyFetch, providers) {
     apps.push(inFlightA, inFlightB);
     const inFlightRunningA = await inFlightA.start(0, "127.0.0.1");
     const inFlightRunningB = await inFlightB.start(0, "127.0.0.1");
-    await sendLine(inFlightRunningA.url, lineEvent("claim-in-flight", "reply-a", "U_claim", "BLOCK_IN_FLIGHT"));
+    await sendLine(inFlightA, inFlightRunningA.url, lineEvent("claim-in-flight", "reply-a", "U_claim", "BLOCK_IN_FLIGHT"));
     await waitFor(() => inFlightClassifier.inputs.length === 1, "first classifier call to start");
-    await sendLine(inFlightRunningB.url, lineEvent("claim-in-flight", "reply-b", "U_claim", "BLOCK_IN_FLIGHT"));
+    await sendLine(inFlightB, inFlightRunningB.url, lineEvent("claim-in-flight", "reply-b", "U_claim", "BLOCK_IN_FLIGHT"));
     await new Promise((resolve) => setTimeout(resolve, 40));
     assert.equal(inFlightClassifier.inputs.length, 1, "duplicate must be rejected by persistence while classifier is running");
 
@@ -126,14 +127,14 @@ function appOptions(dataFile, classifier, lineReplyFetch, providers) {
     const restartA = createApp(appOptions(restartFile, restartClassifierA, async () => ({ ok: true, status: 200, text: async () => "{}" })));
     apps.push(restartA);
     const restartRunningA = await restartA.start(0, "127.0.0.1");
-    await sendLine(restartRunningA.url, lineEvent("claim-restart", "restart-a", "U_restart", "BLOCK_RESTART"));
+    await sendLine(restartA, restartRunningA.url, lineEvent("claim-restart", "restart-a", "U_restart", "BLOCK_RESTART"));
     await waitFor(() => restartClassifierA.inputs.length === 1, "restart classifier call to start");
     await restartA.stop();
     const restartClassifierB = new LifecycleClassifier();
     const restartB = createApp(appOptions(restartFile, restartClassifierB, async () => ({ ok: true, status: 200, text: async () => "{}" })));
     apps.push(restartB);
     const restartRunningB = await restartB.start(0, "127.0.0.1");
-    await sendLine(restartRunningB.url, lineEvent("claim-restart", "restart-b", "U_restart", "BLOCK_RESTART"));
+    await sendLine(restartB, restartRunningB.url, lineEvent("claim-restart", "restart-b", "U_restart", "BLOCK_RESTART"));
     await new Promise((resolve) => setTimeout(resolve, 40));
     assert.equal(restartClassifierB.inputs.length, 0, "persisted processing claim must survive app restart");
 
@@ -146,8 +147,8 @@ function appOptions(dataFile, classifier, lineReplyFetch, providers) {
     const raceRunningA = await raceA.start(0, "127.0.0.1");
     const raceRunningB = await raceB.start(0, "127.0.0.1");
     await Promise.all([
-      sendLine(raceRunningA.url, lineEvent("claim-race", "race-a", "U_race", "PARKING")),
-      sendLine(raceRunningB.url, lineEvent("claim-race", "race-b", "U_race", "PARKING"))
+      sendLine(raceA, raceRunningA.url, lineEvent("claim-race", "race-a", "U_race", "PARKING")),
+      sendLine(raceB, raceRunningB.url, lineEvent("claim-race", "race-b", "U_race", "PARKING"))
     ]);
     await waitFor(() => raceClassifier.inputs.length >= 1, "race classifier call");
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -161,12 +162,12 @@ function appOptions(dataFile, classifier, lineReplyFetch, providers) {
     const statusApp = createApp(appOptions(statusFile, statusClassifier, async () => ({ ok: true, status: 200, text: async () => "{}" })));
     apps.push(statusApp);
     const statusRunning = await statusApp.start(0, "127.0.0.1");
-    await sendLine(statusRunning.url, lineEvent("status-silent", "silent-token", "U_silent", "SILENT"));
+    await sendLine(statusApp, statusRunning.url, lineEvent("status-silent", "silent-token", "U_silent", "SILENT"));
     await waitFor(() => {
       const item = statusApp.providers.persistence.findMessageByEventId(PROPERTY_ID, "status-silent");
       return item && item.processingStatus === "no_reply";
     }, "silent no_reply status");
-    await sendLine(statusRunning.url, lineEvent("status-success", "success-token", "U_success", "PARKING"));
+    await sendLine(statusApp, statusRunning.url, lineEvent("status-success", "success-token", "U_success", "PARKING"));
     await waitFor(() => {
       const item = statusApp.providers.persistence.findMessageByEventId(PROPERTY_ID, "status-success");
       return item && item.processingStatus === "reply_succeeded";
@@ -185,7 +186,7 @@ function appOptions(dataFile, classifier, lineReplyFetch, providers) {
       const failureApp = createApp(appOptions(failureFile, failureClassifier, failure.fetch));
       apps.push(failureApp);
       const failureRunning = await failureApp.start(0, "127.0.0.1");
-      await sendLine(failureRunning.url, lineEvent(failure.id, `${failure.id}-token`, `U_${failure.id}`, "PARKING"));
+      await sendLine(failureApp, failureRunning.url, lineEvent(failure.id, `${failure.id}-token`, `U_${failure.id}`, "PARKING"));
       await waitFor(() => {
         const item = failureApp.providers.persistence.findMessageByEventId(PROPERTY_ID, failure.id);
         return item && item.processingStatus === "reply_failed";
@@ -196,7 +197,7 @@ function appOptions(dataFile, classifier, lineReplyFetch, providers) {
       assert.equal(JSON.stringify(failedRecord).includes("external payload"), false);
       assert.equal(JSON.stringify(failedRecord).includes("external sensitive exception"), false);
       const callsBeforeDuplicate = failureClassifier.inputs.length;
-      await sendLine(failureRunning.url, lineEvent(failure.id, `${failure.id}-duplicate-token`, `U_${failure.id}`, "PARKING"));
+      await sendLine(failureApp, failureRunning.url, lineEvent(failure.id, `${failure.id}-duplicate-token`, `U_${failure.id}`, "PARKING"));
       await new Promise((resolve) => setTimeout(resolve, 40));
       assert.equal(failureClassifier.inputs.length, callsBeforeDuplicate, "reply failure duplicate must not re-run AI");
       assert.ok(failureApp.service.listReviews(PROPERTY_ID, "pending").some((item) => item.reviewId === failedRecord.reviewId));

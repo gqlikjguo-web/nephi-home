@@ -24,7 +24,6 @@ const { createTestOnlyLineMessageTrace } = require("./lib/test-only-line-message
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
-const TEST_LINE_WEBHOOK_ROUTE = "/api/test-line/webhook";
 const SAFE_PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
 const SAFE_PLANNER_ERROR_CODES = new Set(["planner_authentication_error", "planner_model_not_found", "planner_rate_limit", "planner_provider_error", "planner_http_error", "planner_timeout", "planner_parse_error", "planner_empty_response", "planner_structured_output_error", "planner_network_error", "planner_configuration_error", "planner_unknown_error"]);
 const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "unknown"]);
@@ -424,7 +423,6 @@ function publicPropertyMetadata(property) {
 }
 
 function createRequestHandler(service, options = {}) {
-  const lineWebhookHandler = options.lineWebhookHandler;
   const sharedLineWebhookHandler = options.sharedLineWebhookHandler;
   const lineBindingService = options.lineBindingService;
   const lineSetupService = options.lineSetupService;
@@ -432,6 +430,7 @@ function createRequestHandler(service, options = {}) {
   const customerSettings = options.customerSettings;
   const onboarding = options.onboarding;
   const customReplyService = options.customReplyService;
+  const customReplyTestHandler = options.customReplyTestHandler;
   const testOnlyAcceptanceHandler = options.testOnlyAcceptanceHandler;
   const testOnlyLineMessageTrace = options.testOnlyLineMessageTrace;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
@@ -446,15 +445,6 @@ function createRequestHandler(service, options = {}) {
         return sendData(response, { status: "ready", testOnly: true, commit: deploymentCommit });
       }
       if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
-      if (request.method === "POST" && pathname === TEST_LINE_WEBHOOK_ROUTE) {
-        if (!lineWebhookHandler) throw new AppError(503, "TEST_LINE_WEBHOOK_NOT_CONFIGURED", "Test-only LINE webhook is not configured");
-        const result = await lineWebhookHandler({
-          rawBody: await readRawBody(request),
-          signature: request.headers["x-line-signature"],
-          customerId: url.searchParams.get("customerId")
-        });
-        return sendData(response, result);
-      }
       if (request.method === "POST" && pathname === "/api/admin/test-only/conversation-acceptance") {
         if (typeof testOnlyAcceptanceHandler !== "function") return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
         const token = cookieValue(request, "nephi_admin_session");
@@ -703,7 +693,8 @@ function createRequestHandler(service, options = {}) {
       }
       if (request.method === "POST" && pathname === "/api/custom-replies/test") {
         const body = request.adminBody || await readJsonBody(request);
-        return sendData(response, customReplyService.evaluate(body.propertyId || body.customerId, body.ruleId, body.request || {}));
+        if (typeof customReplyTestHandler !== "function") throw new AppError(503, "CUSTOM_REPLY_TEST_UNAVAILABLE", "Custom reply testing is unavailable");
+        return sendData(response, await customReplyTestHandler(body));
       }
       const customReplyMatch = /^\/api\/custom-replies\/([^/]+)(?:\/(enabled))?$/.exec(pathname);
       if (customReplyMatch && request.method === "PUT" && !customReplyMatch[2]) {
@@ -848,21 +839,6 @@ function createApp(options = {}) {
   const seedFile = options.seedFile || config.seedFile;
   const now = options.now || (() => new Date());
   const timeZone = options.timeZone || config.timeZone;
-  const testLineSecret = options.testLineSecret || config.lineBridgeSecret;
-  const lineChannelSecret = options.lineChannelSecret || config.lineChannelSecret;
-  const lineChannelAccessToken = options.lineChannelAccessToken || config.lineChannelAccessToken;
-  const runtimeLineCredentialsConfigured = Boolean(config.lineChannelSecret || config.lineChannelAccessToken);
-  const lineChannelIdentityGuardRequired = Object.hasOwn(options, "lineChannelIdentityGuardRequired")
-    ? Boolean(options.lineChannelIdentityGuardRequired)
-    : runtimeLineCredentialsConfigured;
-  const configuredLineChannelIdentity = options.lineChannelIdentity || {
-    environment: config.lineChannelEnvironment,
-    channelId: config.lineChannelId,
-    destinationId: config.lineDestinationId,
-    webhookRoute: config.lineWebhookRoute,
-    channelSecretSha256: config.lineChannelSecretSha256
-  };
-  let validatedLineChannelIdentity = null;
   const providers = options.providers || createProviders({ databaseUrl: config.databaseUrl, dataFile, seedFile, now });
   const adminAuthRequired = Object.hasOwn(options, "adminAuthRequired") ? Boolean(options.adminAuthRequired) : providers.kind === "postgres";
   const service = createMvpService(providers, { now });
@@ -910,6 +886,40 @@ function createApp(options = {}) {
   const acceptanceTraces = new Map();
   const captureSafeTrace = (entry) => { testOnlyLineMessageTrace.diagnostic(entry); const safe = formatSafeTestOnlyConversationTrace(entry); logSafeTestOnlyConversationTrace(entry); if (safe && safe.traceId) { const list = acceptanceTraces.get(safe.traceId) || []; list.push(safe); acceptanceTraces.set(safe.traceId, list.slice(-40)); } };
   const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: testOnlyLineMessageTrace.active, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null });
+  const customReplyTestHandler = async (body = {}) => {
+    const propertyId = String(body.propertyId || body.customerId || "").trim();
+    const ruleId = String(body.ruleId || "").trim();
+    const messageText = String(body.messageText || "").trim();
+    if (!propertyId || !ruleId || !messageText) throw new AppError(400, "CUSTOM_REPLY_TEST_INPUT_REQUIRED", "propertyId, ruleId and messageText are required");
+    const rule = customReplyService.list(propertyId).items.find((item) => item.ruleId === ruleId);
+    if (!rule) throw new CustomReplyError(404, "CUSTOM_REPLY_NOT_FOUND", "找不到這則自訂回覆");
+    const nonce = crypto.randomUUID();
+    const channelId = `custom-reply-test:${nonce}`;
+    const lineUserId = `custom-reply-test:${nonce}`;
+    const eventId = `custom-reply-test:${nonce}`;
+    let result;
+    try {
+      result = await root.engine.process({
+        customerId: propertyId,
+        channelId,
+        lineUserId,
+        eventId,
+        eventTimestamp: now().toISOString(),
+        messageText
+      });
+    } finally {
+      if (typeof providers.persistence.deleteConversationState === "function") {
+        providers.persistence.deleteConversationState(propertyId, channelId, lineUserId);
+      }
+    }
+    const matched = result.taskResults.some((item) => item.facts && item.facts.customReplyRuleId === ruleId);
+    return {
+      matched,
+      rule: matched ? rule : null,
+      reply: matched ? rule.approvedReply : "",
+      reason: matched ? null : { code: "RULE_NOT_MATCHED", message: "客人詢問經正式語意流程後未命中這則規則" }
+    };
+  };
   const testOnlyAcceptanceHandler = options.testOnlyAcceptanceEnabled === true && options.testOnlyEnvironment === true
     ? async (body = {}) => {
       const customerId = String(body.customerId || body.propertyId || "").trim();
@@ -932,32 +942,6 @@ function createApp(options = {}) {
     : null;
   const claimEvent = (input) => providers.persistence.claimMessageEvent(input.customerId, input.channelId, input.eventId, { lineUserId: String(input.lineUserId || ""), eventTimestamp: input.eventTimestamp || "", guestMessage: String(input.messageText || ""), replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
   const updateEventStatus = (customerId, channelId, eventId, patch) => providers.persistence.updateMessageEvent(customerId, channelId, eventId, patch);
-  const lineWebhookHandler = async ({ rawBody, signature, customerId }) => {
-    if (!lineChannelSecret || !lineChannelAccessToken) throw new AppError(503, "TEST_LINE_WEBHOOK_NOT_CONFIGURED", "Test-only LINE webhook is not configured");
-    if (!validateSignature(rawBody, lineChannelSecret, String(signature || ""))) throw new AppError(401, "INVALID_LINE_SIGNATURE", "Invalid LINE signature");
-    let payload; try { payload = JSON.parse(rawBody.toString("utf8")); } catch { throw new AppError(400, "INVALID_JSON", "Request body must be valid JSON"); }
-    const id = String(customerId || "").trim();
-    if (!id) throw new AppError(400, "MISSING_CUSTOMER_ID", "customerId is required");
-    if (!providers.customerSettings.getProperty(id)) throw new AppError(404, "UNKNOWN_CUSTOMER_ID", "Unknown Pilot customerId");
-    for (const event of (payload.events || []).filter((item) => item && item.type === "message" && item.message && item.message.type === "text" && item.replyToken)) {
-      const input = { customerId: id, channelId: String(payload.destination || "line"), lineUserId: String(event.source && event.source.userId || ""), eventId: String(event.webhookEventId || event.message.id || ""), eventTimestamp: event.timestamp || "", messageText: event.message.text || "" };
-      if (!(await claimEvent(input)).claimed) continue;
-      testOnlyLineMessageTrace.begin({ propertyId: id, ...input });
-      void root.coordinator.enqueue(input).then(async (result) => {
-        const finalResponseShouldReply = result.finalResponse && result.finalResponse.shouldReply;
-        const finalResponseReplyText = String(result.finalResponse && result.finalResponse.replyText || "");
-        const decision = String(result.finalDecision && result.finalDecision.action || result.finalResponse && result.finalResponse.action || "no_reply");
-        testOnlyLineMessageTrace.finalResponse({ traceId: result.traceId, eventId: input.eventId, propertyId: id, finalDecision: result.finalDecision, finalResponse: result.finalResponse });
-        const traceTransport = (details) => { const { replyText: _replyText, ...diagnostic } = details; emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
-        await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired) });
-        if (finalResponseShouldReply === false) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "final_response_should_reply_false", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
-        if (!finalResponseReplyText.trim()) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_empty_reply", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); }
-        try { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_attempt", attempted: true, delivered: false, replyText: finalResponseReplyText }); await (replyClient ? replyClient({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: finalResponseReplyText }] }); traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_succeeded", attempted: true, delivered: true, replyText: finalResponseReplyText }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" }); }
-        catch (error) { const status = Number(error && (error.status || error.statusCode)); traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_failed", attempted: true, delivered: false, replyText: finalResponseReplyText, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" }); }
-      }).catch(async () => updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
-    }
-    return { accepted: true };
-  };
   const sharedLineWebhookHandler = async ({ rawBody, signature, webhookKey }) => {
     if (!lineBindingService) throw new AppError(503, "LINE_BINDING_WEBHOOK_NOT_CONFIGURED", "LINE webhook is not configured");
     const binding = lineBindingService.resolve(webhookKey);
@@ -994,6 +978,7 @@ function createApp(options = {}) {
         const decision = String(result.finalDecision && result.finalDecision.action || result.finalResponse && result.finalResponse.action || "no_reply");
         testOnlyLineMessageTrace.finalResponse({ traceId: result.traceId, eventId: input.eventId, propertyId: id, finalDecision: result.finalDecision, finalResponse: result.finalResponse });
         const traceTransport = (details) => { const { replyText: _replyText, ...diagnostic } = details; emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
+        await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired) });
         if (finalResponseShouldReply === false) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "final_response_should_reply_false", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
         if (!finalResponseReplyText.trim()) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_empty_reply", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); }
         try {
@@ -1004,265 +989,14 @@ function createApp(options = {}) {
         } catch (error) {
           const status = Number(error && (error.status || error.statusCode));
           traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_failed", attempted: true, delivered: false, replyText: finalResponseReplyText, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
-          await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
+          await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
         }
       }).catch(async () => updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { lineWebhookHandler, sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, testOnlyAcceptanceHandler, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, deploymentCommit: options.deploymentCommit }));
+  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, deploymentCommit: options.deploymentCommit }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
-  /* legacy runtime kept below temporarily unreachable during source migration */ {
-  const structuredClassifier = Object.hasOwn(options, "structuredClassifier")
-    ? options.structuredClassifier
-    : createTestOnlyOpenAiStructuredClassifierFromEnv({
-      env: options.openAiTestEnv || process.env,
-      fetchImpl: options.openAiTestFetch || globalThis.fetch,
-      timeoutMs: options.classifierTimeoutMs || config.classifierTimeoutMs
-    });
-  const decisionPipeline = createAiFirstDecisionPipeline({
-    classifier: structuredClassifier,
-    timeoutMs: options.classifierTimeoutMs || config.classifierTimeoutMs,
-    minConfidence: options.classifierMinConfidence || config.classifierMinConfidence
-  });
-  const useConversationEngineV2 = Object.hasOwn(options, "testOnlyConversationEngineV2") ? Boolean(options.testOnlyConversationEngineV2) : config.testOnlyConversationEngineV2;
-  const conversationPlannerV2 = Object.hasOwn(options, "conversationPlannerV2") ? options.conversationPlannerV2 : createTestOnlyOpenAiConversationPlannerFromEnv({ env: options.openAiTestEnv || process.env, fetchImpl: options.openAiTestFetch || globalThis.fetch, timeoutMs: options.classifierTimeoutMs || config.classifierTimeoutMs });
-  const controlledComposerV2 = Object.hasOwn(options, "controlledComposerV2") ? options.controlledComposerV2 : createTestOnlyOpenAiControlledComposerFromEnv({ env: options.openAiTestEnv || process.env, fetchImpl: options.openAiTestFetch || globalThis.fetch, timeoutMs: options.classifierTimeoutMs || config.classifierTimeoutMs });
-  const conversationEngineV2 = useConversationEngineV2 ? new ConversationEngineV2({ planner: conversationPlannerV2, composer: controlledComposerV2, persistence: providers.persistence, getProperty: (propertyId) => providers.customerSettings.getProperty(propertyId), availabilityResolver: (query) => service.searchAvailability(query), availableDatesResolver: (query) => service.searchAvailableDates(query), listPriceOverrides: (propertyId) => providers.customerSettings.listRoomPriceOverrides(propertyId), now, diagnosticDetail: config.testOnlyConversationTraceV2, onDiagnostic: config.testOnlyConversationTraceV2 ? (details) => console.log(JSON.stringify({ scope: "conversation-engine-v2", ...details })) : null }) : null;
-  const coordinatorOptions = {
-    persistence: providers.persistence,
-    now,
-    timeZone,
-    debounceMs: options.conversationDebounceMs || config.conversationDebounceMs,
-    ttlMs: options.conversationTtlMs || config.conversationTtlMs,
-    recentMessageLimit: options.recentMessageLimit || config.recentMessageLimit,
-    recentMessageWindowMs: options.recentMessageWindowMs || config.recentMessageWindowMs,
-    decisionPipeline,
-    getProperty: (propertyId) => providers.customerSettings.getProperty(propertyId),
-    availableIntents: DEFAULT_INTENTS,
-    availableRoutes: DEFAULT_ROUTES,
-    onDiagnostic: options.conversationDiagnostic || ((details) => {
-      console.error(JSON.stringify({ scope: "conversation-coordinator", step: "flush_exception", ...details }));
-    }),
-    resolveMerged: (input) => service.resolveTestLine(input)
-    ,availabilityFingerprint: (fields) => { try { const result=service.searchAvailability({customerId:fields.propertyId||"",checkIn:fields.checkInDate,checkOut:fields.checkOutDate,guests:fields.guestCount,roomType:fields.roomType||"all",queryMode:fields.queryMode||"any"});return JSON.stringify([result.availabilityReliable,result.rooms.map(room=>room.id)]); } catch { return ""; } }
-  };
-  const conversationCoordinator = useConversationEngineV2 ? new ConversationEngineV2Coordinator({ engine: conversationEngineV2, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, externalReplyToken: true }) : new ConversationCoordinator({ ...coordinatorOptions, externalReplyToken: true });
-  const claimEvent = async (input) => providers.persistence.claimMessageEvent(
-    input.customerId,
-    input.channelId,
-    input.eventId,
-    {
-      lineUserId: String(input.lineUserId || ""),
-      eventTimestamp: input.eventTimestamp || "",
-      guestMessage: String(input.messageText || ""),
-      replyType: "processing",
-      replyText: "",
-      route: "",
-      decisionReason: "",
-      humanHandoff: false,
-      silentIgnore: false
-    }
-  );
-  const updateEventStatus = async (customerId, channelId, eventId, patch) => (
-    providers.persistence.updateMessageEvent(customerId, channelId, eventId, patch)
-  );
-  const resolveTestLineRequest = async (input) => {
-    const customerId = String(input && input.customerId || "").trim();
-    const eventId = String(input && input.eventId || "").trim();
-    if (!customerId) throw new AppError(400, "MISSING_CUSTOMER_ID", "customerId is required");
-    if (!providers.customerSettings.getProperty(customerId)) throw new AppError(404, "UNKNOWN_CUSTOMER_ID", "Unknown Pilot customerId");
-    if (!eventId) throw new AppError(400, "MISSING_EVENT_ID", "LINE webhook eventId is required");
-    const channelId = String(input.channelId || "test-line-bridge");
-    const claimed = await claimEvent({ ...input, customerId, channelId, eventId });
-    if (!claimed.claimed) {
-      return { shouldReply: false, noReply: true, duplicate: true, replyToken: "", superseded: false };
-    }
-    return conversationCoordinator.enqueue({ ...input, channelId }).catch(async (error) => {
-      await updateEventStatus(customerId, channelId, eventId, {
-        processingStatus: "processing_failed",
-        deliveryErrorCode: "message_processing_exception",
-        needsReview: true,
-        status: "pending",
-        reviewNote: "訊息處理失敗，請人工確認。"
-      });
-      throw error;
-    });
-  };
-  const lineWebhookCoordinator = useConversationEngineV2 ? new ConversationEngineV2Coordinator({ engine: conversationEngineV2, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs }) : new ConversationCoordinator({ ...coordinatorOptions });
-  const lineWebhookHandler = async ({ rawBody, signature, customerId }) => {
-    logTestLineDiagnostic("received", { hasBody: rawBody.length > 0, hasSignature: Boolean(signature) });
-    if (!lineChannelSecret || !lineChannelAccessToken) {
-      logTestLineDiagnostic("configuration_missing", { hasChannelSecret: Boolean(lineChannelSecret), hasChannelAccessToken: Boolean(lineChannelAccessToken) });
-      throw new AppError(503, "TEST_LINE_WEBHOOK_NOT_CONFIGURED", "Test-only LINE webhook is not configured");
-    }
-    if (!verifyTestLineSignature(rawBody, signature, lineChannelSecret)) {
-      logTestLineDiagnostic("signature_rejected");
-      throw new AppError(401, "INVALID_LINE_SIGNATURE", "Invalid LINE signature");
-    }
-    logTestLineDiagnostic("signature_verified");
-    let payload;
-    try { payload = JSON.parse(rawBody.toString("utf8")); } catch {
-      throw new AppError(400, "INVALID_JSON", "Request body must be valid JSON");
-    }
-    const id = String(customerId || "").trim();
-    if (!id) throw new AppError(400, "MISSING_CUSTOMER_ID", "customerId is required");
-    if (!providers.customerSettings.getProperty(id)) throw new AppError(404, "UNKNOWN_CUSTOMER_ID", "Unknown Pilot customerId");
-    const channelId = String(payload.destination || "").trim();
-    if (!channelId) throw new AppError(400, "MISSING_CHANNEL_ID", "LINE destination channel identifier is required");
-    if (lineChannelIdentityGuardRequired) validateLineWebhookDestination(validatedLineChannelIdentity, channelId);
-    const textEvents = (payload.events || []).filter((event) => event && event.type === "message" && event.message && event.message.type === "text");
-    logTestLineDiagnostic("payload_parsed", { customerId: id, eventCount: (payload.events || []).length, textEventCount: textEvents.length });
-    for (const event of textEvents) {
-      const eventId = String(event.webhookEventId || event.message.id || "");
-      logTestLineDiagnostic("coordinator_enter", { customerId: id, hasEventId: Boolean(eventId), hasReplyToken: Boolean(event.replyToken) });
-      const eventInput = {
-        customerId: id,
-        channelId,
-        lineUserId: event.source && event.source.userId || "",
-        eventId,
-        eventTimestamp: event.timestamp || "",
-        replyToken: event.replyToken || "",
-        messageText: event.message.text || ""
-      };
-      const claimed = await claimEvent(eventInput);
-      if (!claimed.claimed) {
-        logTestLineDiagnostic("persistent_duplicate", { customerId: id, eventId });
-        continue;
-      }
-      lineWebhookCoordinator.enqueue(eventInput).then(async (result) => {
-        logTestLineDiagnostic("coordinator_result", { customerId: id, shouldReply: Boolean(result.shouldReply), hasReplyText: Boolean(result.replyText), hasReplyToken: Boolean(result.replyToken), duplicate: Boolean(result.duplicate), silent: Boolean(result.silent) });
-        if (!result.shouldReply || !result.replyText || !result.replyToken) {
-          await updateEventStatus(id, channelId, eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true });
-          return;
-        }
-        let reply;
-        try {
-          reply = await replyToTestLine(result.replyToken, result.replyText, lineChannelAccessToken, lineReplyClientFactory);
-        } catch {
-          await updateEventStatus(id, channelId, eventId, {
-            processingStatus: "reply_failed",
-            deliveryErrorCode: "line_reply_exception",
-            replyDelivered: false,
-            needsReview: true,
-            status: "pending",
-            reviewNote: "LINE 回覆傳送失敗，請人工確認是否需要聯絡客人。"
-          });
-          logTestLineDiagnostic("reply_api_exception", { customerId: id, eventId });
-          return;
-        }
-        logTestLineDiagnostic("reply_api_result", { status: reply.status, ok: reply.ok });
-        if (config.testOnlyConversationTraceV2 && result.traceId) console.log(JSON.stringify({ scope: "conversation-engine-v2", traceId: result.traceId, stage: "line_reply", delivered: Boolean(reply.ok), coveredTaskIds: result.claimValidation && result.claimValidation.coveredTaskIds || [], missingTaskIds: result.claimValidation && result.claimValidation.missingTaskIds || [] }));
-        if (!reply.ok) {
-          if (reply.exception) {
-            await updateEventStatus(id, channelId, eventId, {
-              processingStatus: "reply_failed",
-              deliveryErrorCode: "line_reply_exception",
-              replyDelivered: false,
-              needsReview: true,
-              status: "pending",
-              reviewNote: "LINE 回覆傳送失敗，請人工確認是否需要聯絡客人。"
-            });
-            return;
-          }
-          if (event.source && event.source.userId) {
-            const pushed = await pushToTestLine(event.source.userId, result.replyText, lineChannelAccessToken, lineReplyClientFactory);
-            if (pushed.ok) {
-              await updateEventStatus(id, channelId, eventId, { processingStatus: "reply_succeeded", deliveryErrorCode: "", replyDelivered: true, deliveryFallback: "push" });
-              return;
-            }
-          }
-          await updateEventStatus(id, channelId, eventId, {
-            processingStatus: "reply_failed",
-            deliveryErrorCode: `line_reply_http_error_${reply.status}`,
-            replyDelivered: false,
-            needsReview: true,
-            status: "pending",
-            reviewNote: "LINE 回覆傳送失敗，請人工確認是否需要聯絡客人。"
-          });
-          return;
-        }
-        await updateEventStatus(id, channelId, eventId, {
-          processingStatus: "reply_succeeded",
-          deliveryErrorCode: "",
-          replyDelivered: true
-        });
-      }).catch(async (error) => {
-        await updateEventStatus(id, channelId, eventId, {
-          processingStatus: "processing_failed",
-          deliveryErrorCode: "message_processing_exception",
-          needsReview: true,
-          status: "pending",
-          reviewNote: "訊息處理失敗，請人工確認。"
-        });
-        console.error(JSON.stringify({ scope: "test-only-line-webhook", step: "background_error", code: error.code || "INTERNAL_ERROR" }));
-      });
-    }
-    return { accepted: true };
-  };
-  const junzanTestLineGateway = async ({ rawBody, signature, customerId }) => {
-    if (!lineChannelSecret || !lineChannelAccessToken) throw new AppError(503, "JUNZAN_TEST_LINE_GATEWAY_NOT_CONFIGURED", "JunZan test-only LINE gateway is not configured");
-    if (!validateSignature(rawBody, lineChannelSecret, String(signature || ""))) throw new AppError(401, "INVALID_LINE_SIGNATURE", "Invalid LINE signature");
-    let payload;
-    try { payload = JSON.parse(rawBody.toString("utf8")); } catch { throw new AppError(400, "INVALID_JSON", "Request body must be valid JSON"); }
-    const id = String(customerId || "").trim();
-    if (!id) throw new AppError(400, "MISSING_CUSTOMER_ID", "customerId is required");
-    if (!providers.customerSettings.getProperty(id)) throw new AppError(404, "UNKNOWN_CUSTOMER_ID", "Unknown Pilot customerId");
-    const channelId = String(payload.destination || "").trim();
-    const textEvents = (payload.events || []).filter((event) => event && event.type === "message" && event.message && event.message.type === "text");
-    for (const event of textEvents) {
-      const eventId = String(event.webhookEventId || event.message.id || "");
-      const eventInput = { customerId: id, channelId, lineUserId: event.source && event.source.userId || "", eventId, eventTimestamp: event.timestamp || "", replyToken: event.replyToken || "", messageText: event.message.text || "" };
-      const claimed = await claimEvent(eventInput);
-      if (!claimed.claimed) continue;
-      lineWebhookCoordinator.enqueue(eventInput).then(async (result) => {
-        if (!result.shouldReply || !result.replyText || !result.replyToken) return updateEventStatus(id, channelId, eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true });
-        let reply;
-        try {
-          const client = lineReplyClientFactory ? lineReplyClientFactory({ channelAccessToken: lineChannelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: lineChannelAccessToken });
-          reply = await client.replyMessageWithHttpInfo({ replyToken: result.replyToken, messages: [{ type: "text", text: result.replyText }] });
-        } catch (error) {
-          const status = Number(error && (error.status || error.statusCode));
-          return updateEventStatus(id, channelId, eventId, { processingStatus: "reply_failed", deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception", replyDelivered: false, needsReview: true, status: "pending", reviewNote: "LINE 回覆傳送失敗，請人工確認是否需要聯絡客人。" });
-        }
-        await updateEventStatus(id, channelId, eventId, { processingStatus: "reply_succeeded", deliveryErrorCode: "", replyDelivered: true });
-      }).catch(async () => updateEventStatus(id, channelId, eventId, { processingStatus: "processing_failed", deliveryErrorCode: "message_processing_exception", needsReview: true, status: "pending", reviewNote: "訊息處理失敗，請人工確認。" }));
-    }
-    return { accepted: true };
-  };
-  const server = http.createServer(createRequestHandler(service, { testLineSecret, resolveTestLineRequest, lineWebhookHandler, junzanTestLineGateway, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand }));
-
-  return {
-    providers,
-    service,
-    conversationCoordinator,
-    lineWebhookCoordinator,
-    start(port = config.port, host = config.host) {
-      if (lineChannelIdentityGuardRequired) {
-        validatedLineChannelIdentity = validateLineChannelConfiguration({
-          ...configuredLineChannelIdentity,
-          channelSecret: lineChannelSecret,
-          channelAccessToken: lineChannelAccessToken,
-          actualWebhookRoute: TEST_LINE_WEBHOOK_ROUTE
-        });
-      }
-      return new Promise((resolve, reject) => {
-        server.once("error", reject);
-        server.listen(port, host, () => {
-          const address = server.address();
-          resolve({ url: `http://${host}:${address.port}`, port: address.port, host });
-        });
-      });
-    },
-    async stop() {
-      await new Promise((resolve, reject) => {
-        if (!server.listening) return resolve();
-        server.close((error) => error ? reject(error) : resolve());
-      });
-      if (typeof providers.close === "function") await providers.close();
-    }
-  };
-}
 }
 
 if (require.main === module) {

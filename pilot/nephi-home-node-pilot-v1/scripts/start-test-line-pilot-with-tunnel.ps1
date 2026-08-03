@@ -6,7 +6,8 @@ $requiredEnvironment = @(
   "OPENAI_TEST_API_KEY",
   "OPENAI_TEST_MODEL",
   "NEPHI_PILOT_LINE_CHANNEL_SECRET",
-  "NEPHI_PILOT_LINE_CHANNEL_ACCESS_TOKEN"
+  "NEPHI_PILOT_LINE_CHANNEL_ACCESS_TOKEN",
+  "NEPHI_PILOT_LINE_WEBHOOK_KEY"
 )
 $missing = @()
 foreach ($name in $requiredEnvironment) {
@@ -116,7 +117,7 @@ if (-not $publicReady) {
   exit 10
 }
 
-$webhookUrl = Get-TestLineWebhookUrl -PublicUrl $publicUrl -PropertyId "nephi_home"
+$webhookUrl = Get-PropertyScopedLineWebhookUrl -PublicUrl $publicUrl -WebhookKey $env:NEPHI_PILOT_LINE_WEBHOOK_KEY
 Write-Output "TEST_LINE_CHAIN_READY"
 Write-Output ("PORT={0}" -f $port)
 Write-Output "PILOT_HEALTH=PASS"

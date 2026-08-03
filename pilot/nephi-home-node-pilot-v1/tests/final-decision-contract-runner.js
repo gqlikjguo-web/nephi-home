@@ -6,6 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { createApp } = require("../server");
+const { createJsonProviders } = require("../lib/providers/json-providers");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
 const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
@@ -325,22 +326,22 @@ async function main() {
   assert.equal(invalid.result.finalDecision.reasonCode, "planner_output_unusable");
   assert.equal(invalid.result.finalResponse.shouldReply, true);
 
-  const runtime = fs.readFileSync(path.resolve(__dirname, "../server.js"), "utf8").split("/* legacy runtime kept below")[0];
+  const runtime = fs.readFileSync(path.resolve(__dirname, "../server.js"), "utf8");
   assert.equal((runtime.match(/result\.finalDecision/g) || []).length >= 2, true);
   assert.doesNotMatch(runtime, /result\.shouldReply/, "active LINE transports must not use the legacy top-level shouldReply boolean");
   assert.doesNotMatch(runtime, /result\.replyText/, "active LINE transports must not use the legacy top-level replyText");
   assert.doesNotMatch(runtime, /finalDecision\s*&&\s*result\.finalDecision\.shouldReply/, "active LINE transports must not read shouldReply from FinalDecision");
-  assert.equal((runtime.match(/result\.finalResponse\s*&&\s*result\.finalResponse\.shouldReply/g) || []).length, 2, "both active LINE transports must gate only on FinalResponse.shouldReply");
-  assert.equal((runtime.match(/result\.finalResponse\s*&&\s*result\.finalResponse\.replyText/g) || []).length, 2, "both active LINE transports must send only FinalResponse.replyText");
+  assert.equal((runtime.match(/result\.finalResponse\s*&&\s*result\.finalResponse\.shouldReply/g) || []).length, 1, "the sole shared LINE transport must gate only on FinalResponse.shouldReply");
+  assert.equal((runtime.match(/result\.finalResponse\s*&&\s*result\.finalResponse\.replyText/g) || []).length, 1, "the sole shared LINE transport must send only FinalResponse.replyText");
   const coordinatorSource = fs.readFileSync(path.resolve(__dirname, "../lib/conversation-engine-v2/coordinator.js"), "utf8");
   assert.doesNotMatch(coordinatorSource, /finalDecision\s*&&\s*result\.finalDecision\.shouldReply/, "Coordinator must not read transport authority from FinalDecision");
   assert.doesNotMatch(coordinatorSource, /result\.shouldReply/, "Coordinator must not fall back to the legacy top-level boolean");
   assert.match(coordinatorSource, /finalResponse\s*&&\s*result\.finalResponse\.shouldReply/, "Coordinator must use the rendered FinalResponse transport authority");
 
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "final-decision-health-"));
+  const providers = createJsonProviders({ dataFile: path.join(temp, "store.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json") });
   const app = createApp({
-    dataFile: path.join(temp, "store.json"),
-    seedFile: path.resolve(__dirname, "../fixtures/seed.json"),
+    providers,
     deploymentCommit: "0123456789abcdef",
     adminAuthRequired: false
   });
