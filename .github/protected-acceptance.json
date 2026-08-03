@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "5a7c018c4a409ec5b429fb191c1ad6ab84e47696",
+  "protectedPaths": [
+    "pilot/nephi-home-node-pilot-v1/docs/CONTROLLED_ARCHITECTURE_TEST_ACCEPTANCE.md",
+    "pilot/nephi-home-node-pilot-v1/tests/fixtures/v1-golden-acceptance-matrix.json",
+    "pilot/nephi-home-node-pilot-v1/tests/v1-golden-acceptance-matrix-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/first-version-acceptance-matrix-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/canonical-request-golden-gate-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/v2-runtime-uniqueness-runner.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/verify-codex-integrity.js",
+    "pilot/nephi-home-node-pilot-v1/tests/verify-codex-integrity-runner.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/verify-protected-acceptance.js",
+    "pilot/nephi-home-node-pilot-v1/tests/verify-protected-acceptance-runner.js",
+    ".github/workflows/codex-integrity.yml",
+    ".github/protected-acceptance.json",
+    ".github/CODEOWNERS"
+  ],
+  "protectedFiles": [
+    {
+      "path": "pilot/nephi-home-node-pilot-v1/docs/CONTROLLED_ARCHITECTURE_TEST_ACCEPTANCE.md",
+      "sha256": "a34d2239415acbb2569eca7e03a82fd4f87337108460a2572ab9f7d78c27def3",
+      "baseline": "immutable"
+    },
+    {
+      "path": "pilot/nephi-home-node-pilot-v1/tests/fixtures/v1-golden-acceptance-matrix.json",
+      "sha256": "9f4b7c1b4058b6682009bd3def0d75b88a4ce42fcd15a422376be1e294c6ad4e",
+      "baseline": "immutable"
+    },
+    {
+      "path": "pilot/nephi-home-node-pilot-v1/tests/v1-golden-acceptance-matrix-runner.js",
+      "sha256": "530cfc42e1fdae806c00946724ab4378e409df9dafe2f378127b2e4bf5968c5e",
+      "baseline": "immutable"
+    },
+    {
+      "path": "pilot/nephi-home-node-pilot-v1/tests/first-version-acceptance-matrix-runner.js",
+      "sha256": "93632254252245b95943fe2a1d648665d1cb0cf057f5dd16d73f2da16b22fa21",
+      "baseline": "immutable"
+    },
+    {
+      "path": "pilot/nephi-home-node-pilot-v1/tests/canonical-request-golden-gate-runner.js",
+      "sha256": "3e99860f1795acd1ec35c96466a8624d4a94c412c7c518e12d01d1273e51bcd7",
+      "baseline": "accepted-current"
+    },
+    {
+      "path": "pilot/nephi-home-node-pilot-v1/tests/v2-runtime-uniqueness-runner.js",
+      "sha256": "4698d4155b4d0137fadfadf9f393d413edc1075c0204bacf205d32eaaafdb50e",
+      "baseline": "accepted-current"
+    },
+    {
+      "path": "pilot/nephi-home-node-pilot-v1/scripts/verify-codex-integrity.js",
+      "sha256": "db2038c652427e0acbd68c3af2943f928a9917bdda670406c448bed2254fc08c",
+      "baseline": "accepted-current"
+    },
+    {
+      "path": "pilot/nephi-home-node-pilot-v1/tests/verify-codex-integrity-runner.js",
+      "sha256": "e2994e0af32574850e9f6fd0475be0fc1b4abb88b0478f97f2374e85cedb46de",
+      "baseline": "accepted-current"
+    },
+    {
+      "path": "pilot/nephi-home-node-pilot-v1/scripts/verify-protected-acceptance.js",
+      "sha256": "370e306a54e874d6f939ee091f7f3775a92398542b1a39cac97ea2780aa8e26a",
+      "baseline": "accepted-current"
+    },
+    {
+      "path": "pilot/nephi-home-node-pilot-v1/tests/verify-protected-acceptance-runner.js",
+      "sha256": "e2e39df27c84abd496462f2cec9507efc2f08be556ace12d376b4a510f51b895",
+      "baseline": "accepted-current"
+    },
+    {
+      "path": ".github/workflows/codex-integrity.yml",
+      "sha256": "43c8e2257561250ec6d565fb7df476e328f80a5b11ce4be9eede97db3a92ad59",
+      "baseline": "accepted-current"
+    },
+    {
+      "path": ".github/CODEOWNERS",
+      "sha256": "01984c31c8315ee7894510cb913bfe3bd02bd5d669ddddf1915784f18f03dcb4",
+      "baseline": "accepted-current"
+    }
+  ],
+  "manifestControl": {
+    "selfHash": false
+  }
+}

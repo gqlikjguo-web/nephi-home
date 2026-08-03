@@ -19,6 +19,48 @@ const requiredContractRunners = [
   "planner-semantic-contract-runner.js",
   "v2-runtime-uniqueness-runner.js"
 ];
+const requiredScripts = Object.freeze({
+  "verify:protected-acceptance": "node scripts/verify-protected-acceptance.js",
+  "verify:codex-integrity": "node scripts/verify-codex-integrity.js",
+  "test:canonical-golden": "node tests/canonical-request-golden-gate-runner.js",
+  "test:runtime-uniqueness": "node tests/v2-runtime-uniqueness-runner.js"
+});
+const protectedPaths = Object.freeze([
+  "pilot/nephi-home-node-pilot-v1/docs/CONTROLLED_ARCHITECTURE_TEST_ACCEPTANCE.md",
+  "pilot/nephi-home-node-pilot-v1/tests/fixtures/v1-golden-acceptance-matrix.json",
+  "pilot/nephi-home-node-pilot-v1/tests/v1-golden-acceptance-matrix-runner.js",
+  "pilot/nephi-home-node-pilot-v1/tests/first-version-acceptance-matrix-runner.js",
+  "pilot/nephi-home-node-pilot-v1/tests/canonical-request-golden-gate-runner.js",
+  "pilot/nephi-home-node-pilot-v1/tests/v2-runtime-uniqueness-runner.js",
+  "pilot/nephi-home-node-pilot-v1/scripts/verify-codex-integrity.js",
+  "pilot/nephi-home-node-pilot-v1/tests/verify-codex-integrity-runner.js",
+  "pilot/nephi-home-node-pilot-v1/scripts/verify-protected-acceptance.js",
+  "pilot/nephi-home-node-pilot-v1/tests/verify-protected-acceptance-runner.js",
+  ".github/workflows/codex-integrity.yml",
+  ".github/protected-acceptance.json",
+  ".github/CODEOWNERS"
+]);
+
+const validWorkflow = [
+  "name: codex-integrity",
+  "jobs:",
+  "  verify:",
+  "    steps:",
+  "      - uses: actions/checkout@v4",
+  "      - uses: actions/setup-node@v4",
+  "      - run: npm ci",
+  "      - run: npm run verify:protected-acceptance",
+  "      - run: node tests/verify-protected-acceptance-runner.js",
+  "      - run: npm run verify:codex-integrity",
+  "      - run: node tests/verify-codex-integrity-runner.js",
+  "      - run: npm run test:canonical-golden",
+  "      - run: npm run test:runtime-uniqueness",
+  "      - run: npm test"
+].join("\n");
+const omitWorkflowCommand = (command) => validWorkflow
+  .split("\n")
+  .filter((line) => line.trim() !== `- run: ${command}`)
+  .join("\n");
 
 const validRootAgents = [
   "# JunZan AI Codex Integrity Rules",
@@ -119,20 +161,15 @@ function createFixture(options = {}) {
   ]) writeFile(root, projectPath(`docs/${authority}`), `fixture:${authority}\n`);
   if (options.additionalAuthority) writeFile(root, projectPath(options.additionalAuthority), "fixture:additional authority\n");
 
-  const packageScript = options.packageScript === undefined
-    ? "node scripts/verify-codex-integrity.js"
-    : options.packageScript;
-  writeFile(root, projectPath("package.json"), JSON.stringify({ scripts: { "verify:codex-integrity": packageScript } }, null, 2));
+  const packageScripts = options.packageScripts === undefined
+    ? { ...requiredScripts }
+    : options.packageScripts;
+  writeFile(root, projectPath("package.json"), JSON.stringify({ scripts: packageScripts }, null, 2));
 
   if (!options.omitGateScript) writeFile(root, projectPath("scripts/verify-codex-integrity.js"), "\"use strict\";\nconsole.log(\"fixture\");\n");
-  if (!options.omitWorkflow) writeFile(root, ".github/workflows/codex-integrity.yml", [
-    "name: codex-integrity",
-    "jobs:",
-    "  verify:",
-    "    steps:",
-    "      - run: npm ci",
-    "      - run: npm run verify:codex-integrity"
-  ].join("\n"));
+  if (!options.omitWorkflow) writeFile(root, ".github/workflows/codex-integrity.yml", options.workflow || validWorkflow);
+  if (!options.omitProtectedManifest) writeFile(root, ".github/protected-acceptance.json", options.protectedManifest || JSON.stringify({ protectedPaths }, null, 2));
+  if (!options.omitCodeowners) writeFile(root, ".github/CODEOWNERS", options.codeowners || protectedPaths.map((item) => `/${item} @gqlikjguo-web`).join("\n"));
   for (const runner of requiredContractRunners) writeFile(root, projectPath(`tests/${runner}`), "\"use strict\";\n");
   writeFile(root, projectPath("lib/safe.js"), options.source || "\"use strict\";\nmodule.exports = true;\n");
   return root;
@@ -157,9 +194,37 @@ function expectsFailure(root, label) {
 expectsPass(createFixture(), "valid fixture");
 expectsFailure(createFixture({ agents: null }), "missing AGENTS.md");
 expectsFailure(createFixture({ agents: "# incomplete" }), "missing integrity rules");
-expectsFailure(createFixture({ packageScript: "node scripts/not-the-gate.js" }), "wrong package script");
+expectsFailure(createFixture({ packageScripts: { ...requiredScripts, "verify:codex-integrity": "node scripts/not-the-gate.js" } }), "wrong package script");
+for (const scriptName of Object.keys(requiredScripts)) {
+  const scripts = { ...requiredScripts };
+  delete scripts[scriptName];
+  expectsFailure(createFixture({ packageScripts: scripts }), `missing package script ${scriptName}`);
+}
 expectsFailure(createFixture({ omitGateScript: true }), "missing gate script");
 expectsFailure(createFixture({ omitWorkflow: true }), "missing integrity CI workflow");
+for (const command of [
+  "npm run verify:protected-acceptance",
+  "node tests/verify-protected-acceptance-runner.js",
+  "npm run verify:codex-integrity",
+  "node tests/verify-codex-integrity-runner.js",
+  "npm run test:canonical-golden",
+  "npm run test:runtime-uniqueness",
+  "npm test"
+]) {
+  expectsFailure(createFixture({ workflow: omitWorkflowCommand(command) }), `workflow missing ${command}`);
+}
+expectsFailure(createFixture({ workflow: `${validWorkflow}\n        continue-on-error: true` }), "workflow continue-on-error bypass");
+expectsFailure(createFixture({ workflow: `${validWorkflow}\n      - run: npm run test:provider-fail-closed` }), "premature provider fail-closed requirement");
+expectsFailure(createFixture({ omitProtectedManifest: true }), "missing protected acceptance manifest");
+expectsFailure(createFixture({ protectedManifest: JSON.stringify({ protectedPaths: [...protectedPaths].reverse() }) }), "changed protected acceptance list");
+expectsFailure(createFixture({ omitCodeowners: true }), "missing CODEOWNERS");
+expectsFailure(createFixture({ codeowners: "/* @gqlikjguo-web" }), "wildcard CODEOWNERS rule");
+expectsFailure(createFixture({
+  workflow: validWorkflow
+    .replace("npm run verify:protected-acceptance", "__PROTECTION_GATE__")
+    .replace("npm run verify:codex-integrity", "npm run verify:protected-acceptance")
+    .replace("__PROTECTION_GATE__", "npm run verify:codex-integrity")
+}), "workflow Gate order changed");
 expectsFailure(createFixture({ source: "test.skip(\"disabled\", () => {});\n" }), "forbidden skipped test");
 expectsFailure(createFixture({ source: "process.exit(0);\n" }), "forbidden forced success exit");
 expectsFailure(createFixture({ source: "const token = \"sk-live-0123456789abcdef0123456789abcdef0123456789\";\n" }), "embedded secret-like value");
@@ -178,4 +243,4 @@ const missingContractRoot = createFixture();
 fs.rmSync(path.join(missingContractRoot, projectPath(`tests/${requiredContractRunners[0]}`)));
 expectsFailure(missingContractRoot, "missing required contract runner");
 
-console.log(JSON.stringify({ suite: "verify-codex-integrity", caseCount: 17, passCount: 17, failCount: 0 }));
+console.log(JSON.stringify({ suite: "verify-codex-integrity", caseCount: 35, passCount: 35, failCount: 0 }));

@@ -168,8 +168,17 @@ function verify(root) {
   if (fs.existsSync(packagePath)) {
     try {
       const packageJson = JSON.parse(readText(packagePath));
-      if (packageJson.scripts?.["verify:codex-integrity"] !== "node scripts/verify-codex-integrity.js") {
-        failures.push("package.json must define verify:codex-integrity as node scripts/verify-codex-integrity.js");
+      const requiredScripts = {
+        "verify:protected-acceptance": "node scripts/verify-protected-acceptance.js",
+        "verify:codex-integrity": "node scripts/verify-codex-integrity.js",
+        "test:canonical-golden": "node tests/canonical-request-golden-gate-runner.js",
+        "test:runtime-uniqueness": "node tests/v2-runtime-uniqueness-runner.js"
+      };
+      for (const [name, command] of Object.entries(requiredScripts)) {
+        if (packageJson.scripts?.[name] !== command) failures.push(`package.json must define ${name} as ${command}`);
+      }
+      if (Object.keys(packageJson.scripts || {}).some((name) => name.includes("provider-fail-closed"))) {
+        failures.push("Checkpoint A must not require the Checkpoint B provider fail-closed Gate");
       }
     } catch {
       failures.push("package.json is not valid JSON");
@@ -185,8 +194,69 @@ function verify(root) {
   const workflowPath = requireFile(".github/workflows/codex-integrity.yml", "missing .github/workflows/codex-integrity.yml");
   if (fs.existsSync(workflowPath)) {
     const workflow = readText(workflowPath);
-    if (!workflow.includes("npm ci")) failures.push("integrity CI workflow must install locked dependencies with npm ci");
-    if (!workflow.includes("npm run verify:codex-integrity")) failures.push("integrity CI workflow must run npm run verify:codex-integrity");
+    const requiredWorkflowLines = [
+      "uses: actions/checkout@v4",
+      "run: npm ci",
+      "run: npm run verify:protected-acceptance",
+      "run: node tests/verify-protected-acceptance-runner.js",
+      "run: npm run verify:codex-integrity",
+      "run: node tests/verify-codex-integrity-runner.js",
+      "run: npm run test:canonical-golden",
+      "run: npm run test:runtime-uniqueness",
+      "run: npm test"
+    ];
+    const normalizedLines = workflow.split(/\r?\n/).map((line) => line.trim().replace(/^-[ ]*/, ""));
+    const positions = [];
+    for (const requiredLine of requiredWorkflowLines) {
+      const matches = normalizedLines.reduce((items, line, index) => line === requiredLine ? [...items, index] : items, []);
+      if (matches.length !== 1) failures.push(`integrity CI workflow must contain exactly one ${requiredLine}`);
+      positions.push(matches.length === 1 ? matches[0] : -1);
+    }
+    if (positions.every((position) => position >= 0)
+      && positions.some((position, index) => index > 0 && position <= positions[index - 1])) {
+      failures.push("integrity CI workflow must run checkout, install, protection, integrity, canonical, uniqueness, then complete tests in order");
+    }
+    if (/continue-on-error\s*:\s*true/i.test(workflow)) failures.push("integrity CI workflow must not use continue-on-error for required Gates");
+    if (/^\s*if\s*:/m.test(workflow)) failures.push("integrity CI workflow must not conditionally skip required Gates");
+    if (workflow.includes("provider-fail-closed")) failures.push("Checkpoint A workflow must not require the Checkpoint B provider fail-closed Gate");
+  }
+
+  const protectedPaths = [
+    "pilot/nephi-home-node-pilot-v1/docs/CONTROLLED_ARCHITECTURE_TEST_ACCEPTANCE.md",
+    "pilot/nephi-home-node-pilot-v1/tests/fixtures/v1-golden-acceptance-matrix.json",
+    "pilot/nephi-home-node-pilot-v1/tests/v1-golden-acceptance-matrix-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/first-version-acceptance-matrix-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/canonical-request-golden-gate-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/v2-runtime-uniqueness-runner.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/verify-codex-integrity.js",
+    "pilot/nephi-home-node-pilot-v1/tests/verify-codex-integrity-runner.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/verify-protected-acceptance.js",
+    "pilot/nephi-home-node-pilot-v1/tests/verify-protected-acceptance-runner.js",
+    ".github/workflows/codex-integrity.yml",
+    ".github/protected-acceptance.json",
+    ".github/CODEOWNERS"
+  ];
+  const manifestPath = requireFile(".github/protected-acceptance.json", "missing .github/protected-acceptance.json");
+  if (fs.existsSync(manifestPath)) {
+    try {
+      const manifest = JSON.parse(readText(manifestPath));
+      if (!Array.isArray(manifest.protectedPaths)
+        || manifest.protectedPaths.length !== protectedPaths.length
+        || manifest.protectedPaths.some((item, index) => item !== protectedPaths[index])) {
+        failures.push("protected acceptance manifest must contain the exact approved protected path list");
+      }
+    } catch {
+      failures.push("protected acceptance manifest is not valid JSON");
+    }
+  }
+  const codeownersPath = requireFile(".github/CODEOWNERS", "missing .github/CODEOWNERS");
+  if (fs.existsSync(codeownersPath)) {
+    const rules = readText(codeownersPath).split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
+    const expectedRules = protectedPaths.map((item) => `/${item} @gqlikjguo-web`);
+    if (rules.some((line) => /[*?]/.test(line))) failures.push("CODEOWNERS must not use wildcard ownership for protected acceptance files");
+    if (rules.length !== expectedRules.length || rules.some((line, index) => line !== expectedRules[index])) {
+      failures.push("CODEOWNERS must explicitly and exclusively list every protected acceptance path");
+    }
   }
 
   for (const runner of [

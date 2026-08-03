@@ -1,0 +1,13 @@
+/pilot/nephi-home-node-pilot-v1/docs/CONTROLLED_ARCHITECTURE_TEST_ACCEPTANCE.md @gqlikjguo-web
+/pilot/nephi-home-node-pilot-v1/tests/fixtures/v1-golden-acceptance-matrix.json @gqlikjguo-web
+/pilot/nephi-home-node-pilot-v1/tests/v1-golden-acceptance-matrix-runner.js @gqlikjguo-web
+/pilot/nephi-home-node-pilot-v1/tests/first-version-acceptance-matrix-runner.js @gqlikjguo-web
+/pilot/nephi-home-node-pilot-v1/tests/canonical-request-golden-gate-runner.js @gqlikjguo-web
+/pilot/nephi-home-node-pilot-v1/tests/v2-runtime-uniqueness-runner.js @gqlikjguo-web
+/pilot/nephi-home-node-pilot-v1/scripts/verify-codex-integrity.js @gqlikjguo-web
+/pilot/nephi-home-node-pilot-v1/tests/verify-codex-integrity-runner.js @gqlikjguo-web
+/pilot/nephi-home-node-pilot-v1/scripts/verify-protected-acceptance.js @gqlikjguo-web
+/pilot/nephi-home-node-pilot-v1/tests/verify-protected-acceptance-runner.js @gqlikjguo-web
+/.github/workflows/codex-integrity.yml @gqlikjguo-web
+/.github/protected-acceptance.json @gqlikjguo-web
+/.github/CODEOWNERS @gqlikjguo-web

@@ -33,14 +33,18 @@ jobs:
           cache: npm
           cache-dependency-path: pilot/nephi-home-node-pilot-v1/package-lock.json
       - run: npm ci
+      - run: npm run verify:protected-acceptance
+      - run: node tests/verify-protected-acceptance-runner.js
+      - run: npm run verify:codex-integrity
+      - run: node tests/verify-codex-integrity-runner.js
+      - run: npm run test:canonical-golden
+      - run: npm run test:runtime-uniqueness
       - run: npm run test:custom-replies
         env:
           CUSTOM_REPLY_TEST_DATABASE_URL: postgresql://codex_test:codex_test_password@localhost:5432/codex_admin_test
       - run: npm test
         env:
           CUSTOM_REPLY_TEST_DATABASE_URL: postgresql://codex_test:codex_test_password@localhost:5432/codex_admin_test
-      - run: npm run verify:codex-integrity
-      - run: node tests/verify-codex-integrity-runner.js
       - run: node tests/test-only-conversation-acceptance-api-runner.js
       - run: node tests/planner-boundary-contract-runner.js
       - run: node tests/canonical-request-contract-runner.js
