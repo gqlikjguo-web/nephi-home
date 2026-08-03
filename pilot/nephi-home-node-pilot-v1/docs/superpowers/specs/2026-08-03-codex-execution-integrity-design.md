@@ -15,9 +15,9 @@
 1. `RULES_INDEX.md` 是規則權威、責任分工及衝突優先順序的唯一索引；它不複製其他文件全文。
 2. 每一份規則文件只負責一個清楚範圍，重複內容刪除或改為連結。
 3. fixture、mock、stub、合成資料與 isolated test database 只能證明其明示的測試層級，不能冒充真實 LINE、正式 PostgreSQL、正式部署或 production runtime 證據。
-4. 測試必須走與對應 runtime 相同的 production entry point、resolver、provider、renderer 與 writer；測試專用入口不得形成第二套產品邏輯。
+4. 核心 acceptance、runtime component、signed webhook E2E 與真實 LINE 驗收必須走正式 production entry point、provider selection、resolver、writer、FinalDecision、FinalResponse 與 transport；測試專用入口不得形成第二套產品邏輯。一般 unit test 可隔離模組，但必須明確分類，其證據不得擴張宣稱為完整 runtime 證據。
 5. 禁止寫死答案、keyword/regex 特例、legacy fallback、雙 runtime、第二 writer、第二 resolver、第二資料權威及任何可繞過正式路徑的旁路。
-6. Golden Matrix 的案例、分類、預期結果與既有核心驗收標準不得修改、弱化、跳過或重新解釋來取得通過。若發現錯誤或矛盾，立即停止並回報，不自行修正。
+6. 本次 A／B／C 工作中，Golden Matrix 的案例、分類、預期結果與既有核心驗收標準必須 byte-identical，不得修改、弱化、跳過或重新解釋來取得通過；若發現錯誤或矛盾，立即停止並回報。未來只有在使用者事前明確批准的獨立「驗收標準變更任務」中才可變更；該任務不得同時修改 runtime，必須獨立審查並留下新舊基準對照。
 7. Codex 必須逐條完成原始任務，不能只完成容易部分、縮小需求、用相似功能替代、只測容易成功的案例，或以「核心已完成」包裝部分完成。
 8. 新路徑完成時，已被取代的 runtime route、handler、fallback、dead code、第二 writer 與第二資料來源必須封閉。相容性保留需先取得使用者明確批准，並以不可達測試證明 runtime 不會使用。
 9. 每項完成聲明必須具備可獨立核對的「原始要求 → 修改檔案與函式 → 真實呼叫鏈 → assertion → 測試分類 → exit code → commit/CI → runtime 證據」鏈。缺一段就標示「尚未證明」。
@@ -93,7 +93,7 @@
 - Golden Matrix、其 runner、核心 acceptance runner
 - runtime、provider 與一般功能測試
 
-`PROJECT_MEMORY.md`、`NEXT_TASKS.md`、`PRODUCT_BASELINE.md` 只保留可證明的現況；真實 LINE migration、真實外部驗收及部署若無本輪證據，一律改為 `UNPROVEN` 或 `DEPLOYMENT_BLOCKED`。`DECISIONS.md` 修正重複編號、狀態與 supersedes 關係，但不改變既有決策的實質內容。`SECURITY.md` 移除「legacy test-only webhook 不受 binding 要求影響」這類仍允許旁路的現行例外，並把尚未遷移狀態寫成部署阻塞，不宣稱已完成遷移。
+`PROJECT_MEMORY.md`、`NEXT_TASKS.md`、`PRODUCT_BASELINE.md` 只保留可證明的現況；真實 LINE migration、真實外部驗收及部署若無本輪證據，一律改為 `UNPROVEN` 或 `DEPLOYMENT_BLOCKED`。`DECISIONS.md` 必須保留每項歷史決策的原始內容，不得無對照直接改寫重複編號；另建立「舊重複編號／原始標題與日期 → 新唯一編號」對照，標示每項 `active` 或 `superseded` 及取代關係，並更新現行權威文件引用。歷史文件可保留原引用，但必須能藉對照追溯到新唯一編號。`SECURITY.md` 移除「legacy test-only webhook 不受 binding 要求影響」這類仍允許旁路的現行例外，並把尚未遷移狀態寫成部署阻塞，不宣稱已完成遷移。
 
 ### 4.2 Protected acceptance 清單
 
@@ -123,12 +123,14 @@ manifest 不能對自己做不可解的 self-hash。除 `.github/protected-accep
 
 1. 讀取受版本控制的 manifest，確認所有列出的檔案存在、是普通檔案且路徑無重複、無目錄與廣泛 glob。
 2. 對 manifest 以外的每一受保護檔案計算內容 hash，與 manifest 的 accepted baseline 比對；任何遺漏、修改或刪除皆 exit non-zero，並列出實際路徑，不靜默通過。
-3. 確認 Golden fixture 的案例 ID、分類、預期結果及核心 runner 內容與基準 commit 完全一致。Checkpoint A 與 C 必須 byte-identical。
+3. 確認 Golden fixture 的案例 ID、分類、預期結果及核心 runner 內容與基準 commit 完全一致。Checkpoint A、B 與 C 都必須 byte-identical。
 4. 拒絕任何 `--bootstrap`、`--update`、`--skip`、環境變數 override、branch/SHA allowlist 或 `process.exit(0)` 快捷通過。
-5. 只允許本規格明列且經使用者核准的 protected Gate 實作變更在 Checkpoint B 以人工 diff 審查後更新該檔案的明確 hash entry；不得提交產生或刷新 hash 的工具。Golden Matrix、Constitution 與核心 acceptance 標準的基準 hash 不得刷新。
+5. 只允許本規格明列且經使用者核准的 protected Gate 實作變更在 Checkpoint B 以人工 diff 審查後更新該檔案的明確 hash entry；不得提交產生或刷新 hash 的工具。本次 A／B／C 中 Golden Matrix、Constitution 與核心 acceptance 標準的基準 hash 不得刷新。
 6. 自身 runner 必須 mutation 測試：修改受保護檔、刪除受保護檔、改 Golden 預期值、加入 bypass flag 均必須使 Gate 失敗；新增普通 unit test 必須不觸發保護失敗。
 
 首次建立 manifest 的 bootstrap 只是一個不提交、不可重用的本機產生動作。Repository 最終不得包含 bootstrap script、CLI flag、環境開關或任何可再次更新全部基準的 bypass。
+
+未來若驗收標準本身被證明錯誤，必須另開由使用者事前明確批准的「驗收標準變更任務」。該任務不得同時修改 runtime，必須由獨立 reviewer 核對錯誤證據及新舊案例、分類、預期結果與 hash 對照；完成後以明確 diff 建立新基準。本次實作不得因此預留任何 bootstrap、update、override 或 bypass。
 
 `.github/CODEOWNERS` 只為核心檔案提供 review ownership 訊號；是否真正有 branch protection 必須標示 `UNPROVEN`，不得把檔案存在當成平台已強制執行。
 
@@ -139,8 +141,8 @@ manifest 不能對自己做不可解的 self-hash。除 `.github/protected-accep
 - 兩層 `AGENTS.md` 都要求先讀 `RULES_INDEX.md`，且 index 指到正確、存在的權威文件。
 - `RULES_INDEX.md` 沒有兩個文件宣稱同一唯一責任，且現行/歷史狀態可解析。
 - `CODEX_EXECUTION_INTEGRITY_CONTRACT.md` 包含第 1 節的十二項不可違反條件與測試分類。
-- `package.json` 存在且實際執行 protection、integrity、canonical、uniqueness 與 provider fail-closed Gate；不得只搜尋 PASS 字串。
-- workflow 使用乾淨 checkout、`npm ci`，並實際執行上述 Gate 與完整測試；不得 `continue-on-error` 或以條件排除 Gate。
+- `package.json` 存在且在 Checkpoint A 實際執行當時已存在的 protection、integrity、canonical 與 uniqueness Gate；不得要求尚未在 Checkpoint B 建立的 provider fail-closed Gate，也不得只搜尋 PASS 字串。
+- workflow 在 Checkpoint A 使用乾淨 checkout、`npm ci`，並實際執行 protection、integrity、canonical、uniqueness 與完整測試；不得要求尚未建立的 provider fail-closed Gate，不得 `continue-on-error` 或以條件排除既有 Gate。
 - 不存在可讓 Gate 靜默跳過的 skip flag、空 runner、固定 PASS、只掃檔名不執行 assertion 的捷徑。
 
 ### 4.5 Checkpoint A 完成標準
@@ -151,6 +153,8 @@ manifest 不能對自己做不可解的 self-hash。除 `.github/protected-accep
 - 四份現況文件與 `SECURITY.md` 已去除過期、重複及誤標完成內容；每項外部狀態有證據或明示 `UNPROVEN/BLOCKED`。
 - Golden Matrix、Constitution、核心 acceptance 檔與 runtime byte-identical。
 - protection 與 integrity runner 的 positive/negative/mutation cases 全部通過並有 exit code。
+- `package.json`、workflow 與 Integrity 必要清單只要求 Checkpoint A 已存在的 protection、integrity、canonical 與 uniqueness Gate；沒有提前引用 provider fail-closed Gate。
+- `DECISIONS.md` 保留原始決策內容，重複舊編號已有可核對的新編號對照、`active/superseded` 狀態與現行權威引用更新。
 - 一般 unit/regression test 新增不受 protection Gate 阻擋。
 - diff 僅包含 4.1 的 A 檔案，並完成本機 diff 審查。
 - 回報：完整檔案清單、逐檔責任、命令、assertion、測試分類、exit code、commit、未證明項目。
@@ -173,7 +177,10 @@ Gate 與 provider 驗證：
 - 修改 `pilot/nephi-home-node-pilot-v1/tests/canonical-request-golden-gate-runner.js`
 - 修改 `tests/pilot-nephi-home-node-pilot-v1-postgres-provider-runner.js`
 - 新增 `pilot/nephi-home-node-pilot-v1/tests/provider-authority-fail-closed-runner.js`
+- 修改 `pilot/nephi-home-node-pilot-v1/scripts/verify-codex-integrity.js`，在 provider Gate 建立後才將它加入必要 Gate 清單
+- 修改 `pilot/nephi-home-node-pilot-v1/tests/verify-codex-integrity-runner.js`，增加 provider Gate 缺失、跳過或未執行的 negative/mutation cases
 - 修改 `pilot/nephi-home-node-pilot-v1/package.json`
+- 修改 `.github/workflows/codex-integrity.yml`，在本階段加入 provider fail-closed 執行入口並固定 isolated PostgreSQL service
 - 只更新 `.github/protected-acceptance.json` 中本規格已批准變更的 Gate hash；不得更新 Golden/core acceptance hash
 
 LINE 測試 harness：
@@ -285,6 +292,8 @@ Production `createProviders` 在缺少 `DATABASE_URL` 或必要 PostgreSQL confi
 - mutation 恢復 `if (!databaseUrl) return createJsonProviders(...)` 時 Gate non-zero。
 - runtime 只有 PostgreSQL authority；不存在同時寫 JSON/PostgreSQL 或讀取第二權威的分支。
 
+Checkpoint B 同步完成執行入口：`package.json` 新增並實際串接 provider fail-closed Gate；Integrity Gate 及其 runner 從此階段起斷言該入口存在、不可跳過且真的執行；`.github/workflows/codex-integrity.yml` 在乾淨 checkout 與 `npm ci` 後啟動 isolated PostgreSQL service、等待健康檢查，執行 provider fail-closed/integration assertions 與完整 suite。不得把 workflow 或 isolated PostgreSQL 設定延後到 Checkpoint C 才臨時修改。
+
 ### 5.5 Checkpoint B 完成標準
 
 只有以下全部成立才可回報 B 完成：
@@ -295,6 +304,8 @@ Production `createProviders` 在缺少 `DATABASE_URL` 或必要 PostgreSQL confi
 - canonical Gate 真正執行每一 runner；全部 child exit code 可核對。
 - uniqueness 的每個 mutation 均被實際注入且 Gate 對每個 mutation non-zero。
 - provider 缺失 fail closed；JSON 只可由測試明確 injection。
+- `package.json`、Integrity 必要清單與 workflow 已在 B 同步加入並實際執行 provider fail-closed Gate。
+- workflow 已固定乾淨 checkout、`npm ci`、isolated PostgreSQL service/health check 與 provider integration 執行入口；Checkpoint C 只能在乾淨環境驗證這份既定 workflow，不得臨時補設定。
 - Golden Matrix、Constitution、核心 acceptance 標準仍與 base commit byte-identical；若不一致立即停止。
 - 目標測試、完整本機測試與 Gate 均有分類及 exit code；B 的完整本機測試不取代 C 的乾淨環境 CI。
 - diff 僅包含 5.1 的 B 檔案與經證據發現的額外直接引用，並完成 diff 審查。
@@ -383,7 +394,7 @@ reviewer 必須不是本次實作者，且只審查本次核心封口：
 本工作不做以下事項：
 
 - 不部署，不操作 Render、LINE Console、正式 PostgreSQL、credentials 或 production environment。
-- 不修改 Golden Matrix 的案例、分類、預期結果，不修改 Constitution 或既有核心驗收標準。
+- 本次 A／B／C 不修改 Golden Matrix 的案例、分類、預期結果，不修改 Constitution 或既有核心驗收標準；未來只有第 4.3 節所定義、由使用者事前明確批准且不與 runtime 修改併行的獨立驗收標準變更任務可建立新基準。
 - 不因 Gate 困難而刪除、跳過、改名或縮小測試。
 - 不建立 approval platform、外部 audit service、大型 provenance/attestation 系統、第二套 issue 流程或其他與本次防作假無直接關係的流程。
 - 不要求所有日常小修改都進行獨立第二審查。
