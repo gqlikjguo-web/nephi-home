@@ -103,6 +103,7 @@ function validateAcceptanceResult(result, expectation = {}) {
   if (!Array.isArray(result.taskResults) || !Array.isArray(result.trace)) throw new Error("acceptance_execution_evidence_required");
   for (const task of result.taskResults) {
     if (!task || !task.taskId || !(task.capability || task.type) || !task.status || typeof task.reason !== "string" || typeof task.dataSource !== "string") throw new Error("task_evidence_invalid");
+    if (task.status === "answered" && !task.dataSource.trim()) throw new Error("answered_task_data_source_required");
     validateSafeFacts(task.facts);
   }
   const capabilities = new Set(result.taskResults.flatMap((task) => [task.capability, task.type].filter(Boolean)));
@@ -129,16 +130,11 @@ async function acceptanceRequest({ baseUrl, oidcToken, method = "POST", body, fe
 
 function safeEvidence(caseId, turnNumber, result) {
   return {
-    caseId,
-    turn: turnNumber,
+    case: `${caseId}:turn-${turnNumber}`,
     status: "PASS",
     traceId: result.traceId,
-    eventId: result.eventId,
-    finalDecision: result.finalDecision,
-    claimValidation: result.claimValidation,
-    finalResponse: result.finalResponse,
-    taskResults: result.taskResults,
-    trace: result.trace
+    finalDecisionAction: result.finalDecision.action,
+    claimValidationOk: result.claimValidation.ok === true
   };
 }
 
@@ -157,12 +153,10 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, commit, fet
     if (item.mode === "duplicate") {
       const duplicate = await acceptanceRequest({ baseUrl, oidcToken, body: firstRequest, fetchImpl });
       if (!duplicate || duplicate.duplicate !== true || duplicate.eventId !== firstRequest.eventId) throw new Error("duplicate_event_contract_failed");
-      write({ caseId: item.id, status: "PASS", duplicate: true, eventId: duplicate.eventId });
     }
     if (item.mode === "clear") {
       const cleared = await acceptanceRequest({ baseUrl, oidcToken, method: "DELETE", body: { customerId: propertyId, conversationId }, fetchImpl });
       if (!cleared || cleared.cleared !== true) throw new Error("clear_state_contract_failed");
-      write({ caseId: item.id, status: "PASS", cleared: true });
     }
   }
 }
