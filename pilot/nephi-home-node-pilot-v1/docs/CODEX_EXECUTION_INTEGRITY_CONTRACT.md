@@ -46,6 +46,16 @@ Checkpoint B 的 provider fail-closed 必須保留合法、明確的 PostgreSQL�
 
 只建立會直接阻止作假、改考卷、旁路、第二權威或虛假完成的規則與 Gate。不得新增 approval platform、外部 audit service、大型 provenance／attestation 系統、第二套 issue 流程或與本次風險無直接關係的官僚程序。
 
+### 任務範圍 Gate
+
+每次派工、修改或執行前，必須先明確寫出：
+
+1. 使用者要的唯一結果。
+2. 本輪只做的事項。
+3. 本輪明確不做的事項。
+
+只有第 2 項明列的內容屬於本輪授權範圍。任何未明列的延伸工作，包括後續階段、優化、重構、文件、測試、CI、PR、部署、外部操作或「順便修正」，即使看似有幫助，也不得自行加入。發現額外問題只能回報，除非使用者另外明確批准。不得把建議、可能的後續方案、設計備選或未授權計畫解讀成本輪任務。
+
 ## 11. 外部系統與部署授權
 
 沒有使用者對特定外部動作的明確授權，不得 push、建立 PR、merge、部署或操作 Render、LINE Console、正式 PostgreSQL、credentials 與 production environment。測試或本機完成不能解除：
