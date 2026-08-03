@@ -1,251 +1,37 @@
-# JunZan AI 專案記憶入口
+# JunZan AI 當前專案事實
 
-Repository 是 JunZan AI 專案唯一可信知識來源。ChatGPT 對話、Memory 與 Codex Session 只是暫時協作介面；未寫入 Repository 的內容，不視為永久專案知識。
+本文件只保存目前已證明事實、已知限制、blocker 與交接上下文。權威、必讀順序及文件責任見 [RULES_INDEX](RULES_INDEX.md)；產品行為見 [PRODUCT_BASELINE](PRODUCT_BASELINE.md)；未完成工作見 [NEXT_TASKS](NEXT_TASKS.md)。歷史演進由 Git、[DECISIONS](DECISIONS.md)、`CHANGELOG_INTERNAL.md` 與 `LESSONS_LEARNED.md` 追溯，不在此重複。
 
-## 目前目標
+## 當前工作
 
-完成 JunZan AI 第一版在尼腓的家正式導入：先讓 test-only LINE 的 Conversation Engine V2 通過真實驗收，再建立回退點；只有取得使用者逐次明確授權後，才能處理正式 LINE 切換。
+- Branch：`codex/execution-integrity-rules`。
+- 基準：`5a7c018c4a409ec5b429fb191c1ad6ab84e47696`。
+- 本輪固定順序：Checkpoint A 完成回報並等待批准 → Checkpoint B 完成回報並等待批准 → Checkpoint C 完成回報。
+- 目前只授權 Checkpoint A；不得提前執行 B 的 runtime/provider 修改或 C 的 push、PR、CI 外部動作。
 
-## 第一版完成定義
+## 已證明的本機事實
 
-第一版完成必須同時符合：
+- `RECORDED_REPRODUCTION`：本工作開始 HEAD `0735730f82161603f5f16f06a1a302b1e8d37826` 的完整 `npm.cmd test` 在安裝 lockfile 依賴後 exit 0。輸出包含 fixture、local HTTP 與 PGlite，因此不構成真實 LINE、正式 PostgreSQL 或正式部署證據。
+- `STRUCTURED_CONTRACT_TEST`：protected-acceptance runner 對 valid、缺檔、改檔、Golden mutation、重複／glob／directory、自身 hash、bootstrap／update／skip／override、branch/SHA allowlist、forced success 與一般 unit test 新增執行 mutation cases。
+- `STRUCTURED_CONTRACT_TEST`：Integrity runner 驗證兩層 `AGENTS.md` 的不同作用域連結、`RULES_INDEX.md`、十二項完整性契約、唯一 active authority 與既有 anti-skip／credential assertions。
+- A0 source audit 仍命中 legacy `/api/test-line/webhook`、caller-controlled property handler、return 後 dead runtime 與 production JSON fallback。這些是 Checkpoint B 的已知 RED，不得在 A 宣稱已封閉。
 
-- 尼腓的家既有 `nephi_home` property、房型、包棟、價格、FAQ 與安全知識正確套用且隔離。
-- 後台房況是唯一事實來源；開房或關房後，下一次查詢立即讀到最新資料。
-- Conversation Engine 能理解日期、房型、人數、多問題與多輪修改，且不受舊 state 污染。
-- 回覆只使用 Resolver 與 property 授權資料；Unknown 不得回答成 No。
-- 可回答的子問題完整回答；真正需要人工的子問題才 scoped review／轉真人。
-- test-only LINE、完整測試、部署與 health 驗收通過。
-- 正式 LINE 有明確回退點，且只在使用者明確授權後切換；真實正式 LINE 驗收通過。
+## 已知限制與未證明外部狀態
 
-詳細不可退步行為見 [產品基準](PRODUCT_BASELINE.md)。
+- `UNPROVEN_REAL_LINE`：本輪沒有真實 LINE request、reply、signature、property identity 或雙使用者 trace 證據。
+- `UNPROVEN_REAL_POSTGRESQL_PROVIDER`：本輪 PostgreSQL 類測試是 isolated PGlite／test service 等級，不是正式 PostgreSQL。
+- `UNPROVEN_REAL_RENDER_DEPLOYMENT`：過去文件中的 test-only 部署、health 與 live service 敘述未在本輪以相同 commit、URL、時間與平台輸出重新核對。
+- `UNPROVEN_GITHUB_BRANCH_PROTECTION`：`CODEOWNERS` 或 workflow 檔案存在不代表 GitHub 平台已強制 branch protection。
+- 第一版、test-only LINE binding migration、正式 LINE 切換與正式驗收均不得由本機測試推論為完成。
 
-## 必讀文件
+## Blocker
 
-1. [本入口](PROJECT_MEMORY.md)
-2. [產品基準](PRODUCT_BASELINE.md)
-3. [核心產品憲法](JUNZAN_AI_CONSTITUTION.md)
-4. [重大決策](DECISIONS.md)
-5. [永久安全規則](SECURITY.md)
-6. [下一步任務](NEXT_TASKS.md)
+`DEPLOYMENT_BLOCKED_TEST_ONLY_LINE_BINDING_MIGRATION`
 
-需要查事件原因與產品演進時，再讀 [經驗教訓](LESSONS_LEARNED.md) 與 [重要產品演進](CHANGELOG_INTERNAL.md)。
+解除條件由 [SECURITY](SECURITY.md) 與 [Codex 執行完整性契約](CODEX_EXECUTION_INTEGRITY_CONTRACT.md) 定義。本輪不得讀寫 credentials、操作 LINE Console、Render 或正式資料庫，也不得以 fixture／local HTTP／isolated database 取代真實遷移與驗收。
 
-## 目前最高優先
+## 交接原則
 
-真實 test-only LINE 驗收 V2 短日期與即時房況鏈路：
-
-1. 連續三次詢問 `7/18 的301可以預訂嗎？`，結果必須 deterministic。
-2. 後台將 7/18 的 301 設為可售後，下一次 LINE 查詢立即回答有房。
-3. 將同一筆改為不可售後，下一次 LINE 查詢立即回答無房。
-4. 驗收 `8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？` 的 multi-task 完整性。
-
-## 已知 blocker
-
-- 目前沒有已由程式或部署證據確認的 blocker。
-- 真實 test-only LINE 人工驗收尚未完成，因此不得宣稱第一版完成或建議切正式 LINE。
-- 多業者共用 service 的 property-scoped LINE binding 核心與最小 platform-admin API 已完成自動驗證；尚缺總後台 LINE 管理 UI，且本次未部署。
-
-## 第一版驗收狀態
-
-- PostgreSQL、multi-property、property 隔離、admin identity、platform admin：完成。
-- Onboarding、既有 property 套用、room／bundle mapping、交易與回滾：完成。
-- 後台房況、每日／月曆、備註、價格矩陣與手機版：完成。
-- LINE 正式／test-only Channel Identity 安全硬隔離：完成。
-- Conversation Engine V2 已部署至 test-only；短日期 trust boundary 修正 commit：`0c743642b69c9d671410bb44dc1e8b42735c938a`。
-- 完整 `npm test`：最近一次驗證 exit 0（V2 generic availability／available-dates schema、property-backed setting catalog、回覆順序回歸後）。
-- Phase 6 local transport E2E：完成（reply／clarification／handoff success+failure、no_reply，以及 FinalDecision/transport alignment）。
-- Phase 7 local final response authority：完成（單一 renderer、11-case unit matrix、6-path signed webhook E2E、runtime uniqueness 28/28；完整 `npm test` exit 0）。
-- 真實 test-only LINE 最終驗收：進行中。
-- 正式 LINE 切換與真實正式驗收：未開始，需使用者明確授權。
-
-## 永久知識維護規則
-
-- 同一知識只由一份主要文件負責，其他文件使用連結，不複製全文。
-- 重大決策 append 到 `DECISIONS.md`，不得改寫既有決策歷史。
-- 已驗收且不得退步的行為更新 `PRODUCT_BASELINE.md`。
-- 重要 bug 與可重複避免的事件更新 `LESSONS_LEARNED.md`。
-- 核心能力或安全邊界的重要 commit 以一句摘要更新 `CHANGELOG_INTERNAL.md`。
-- 每次正式驗收或優先順序改變，同步更新本文件與 `NEXT_TASKS.md`。
-
-## 2026-07-23 V2 final decision 收斂狀態
-
-- Engine 已成為 V2 唯一 `finalDecision` 擁有者；Response Plan、Controlled Composer 與兩條已註冊 LINE transport 的競爭決策能力已移除。
-- pending 與 follow-up 不再改寫本輪 Planner task；測試中的 follow-up context 必須由 Planner 輸出明確 candidate，不再依賴 state 覆寫。
-- 完整 `npm test` 已自然 exit 0；下一步只剩 test-only 部署驗證與真實 LINE 人工驗收，正式環境仍未授權。
-
-## 2026-07-23 pending canonical 仲裁狀態
-
-- 已證實並修正 pending `availability` 遇到 Planner 候選 `available_dates/new_request` 時，在 canonical slot matching 前被放棄的問題。
-- 新順序為 Planner／semantic contract → Temporal／canonical slots → pending arbitration → merge／missing fields recomputation → Engine finalDecision → Resolver／Composer／LINE。
-- 單一日期、晚數、人數與房型共用同一 missing-field matching 契約；明確日期範圍搜尋與完整新需求仍可取代 pending。
-- 新增 production HTTP route 黑箱回歸與安全日期診斷；完整 `npm test` 已自然 exit 0。下一步是 test-only 部署後由使用者重測原真實訊息順序。
-
-## 2026-07-23 dialogue-act／temporal 最終有限修正狀態
-
-- acknowledgement 與 task／`shouldIgnore` 的矛盾已由 semantic contract 收斂；無可信 substantive task 時不再進 Executor，同句有效住宿問題仍保留。
-- Temporal 已將 Planner `kind` 降為候選，建立 absent／resolved／unresolved 的 canonical 日期意圖；明確日期嘗試解析失敗時，state reducer 清除舊 stay 日期且 Resolver gate 不建立預設日期範圍。
-- 使用 production Planner output shape 的完整鏈回歸已涵蓋錯標相對日期、舊日期污染、合法房型 follow-up、相對日期與訂房可行性；完整 `npm test` 自然 exit 0。
-- 核心修正 commit `34c5faa599fdfdac25a4320248e0963ef6b66d3e` 已部署至 test-only，health 為 HTTP 200／`ready`／`testOnly=true`。
-- 第一版仍未完成；下一步由使用者執行最後一次真實 LINE 驗收，正式環境維持未授權。
-## 2026-07-26 Planner failure diagnostics
-
-- The safe Planner failure diagnostic checkpoint is on `phase1-4-authoritative` at `5f862ff2be3c45c8383efcec2b502f8886a775ac`. It extracts only sanitized OpenAI `error.type`, `error.code`, and `error.param` from non-2xx JSON responses; non-JSON responses retain the original HTTP failure with empty provider fields.
-- Targeted safety coverage includes 400 JSON and non-JSON responses, field allowlisting/truncation, 401, 404, 429, 5xx, timeout, empty response, parse, configuration, generic failure, sensitive-field exclusion, callback isolation, FinalDecision stability, and signed webhook LINE delivery.
-- Phase 6/7 regressions and runtime uniqueness pass; the completed full `npm.cmd test` returned OS exit 0, reached the final runner, and produced empty stderr.
-- The diagnostic extension has been pushed; deployment and operational Render/LINE verification remain separately authorized work.
-
-## 2026-07-26 OpenAI strict Planner schema compatibility
-
-- The confirmed OpenAI `invalid_json_schema` at `text.format.schema` traced to `contextRelationCandidates[].evidenceRefs[]`: `eventId` and `messageRef` were declared properties but absent from `required`.
-- The local fix requires both fields while retaining empty-string support, relation/evidence validation, offsets, quote rules, strict mode, and all Planner semantics.
-- The recursive schema audit, targeted contracts, Phase 6/7 regressions, runtime uniqueness, and one complete `npm.cmd test` all pass with exit 0 and empty stderr.
-- The strict-schema fix remains local for review; no push, deployment, Render operation, LINE operation, model, credential, or environment change is part of this task.
-
-## 2026-07-26 Safe context-validation diagnostics
-
-- Test-only traces now expose allowlisted `context_validation` rejection paths and candidate summaries: index, relation kind, request-cycle reference count, evidence count, and per-evidence source-match booleans.
-- Integration coverage includes accepted evidence, real validator rejection, hostile sensitive payload exclusion, and unchanged `context_relation_invalid` handoff behavior.
-- Relation/evidence, Planner-failure, Phase 6/7 transport, runtime uniqueness, and one complete `npm.cmd test` pass with exit 0 and empty stderr.
-- The safe diagnostic checkpoint `35acec8d070726df1029d324028f665d76e8493f` is pushed; no deployment, Render operation, LINE operation, or credential change occurred.
-
-## 2026-07-26 Canonical Planner evidence coordinates
-
-- A production-equivalent replay of `8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？` reproduced three source mismatches and `context_relation_invalid` before the fix.
-- Deterministic normalization now replaces Planner coordinates only for a unique exact task `sourceText` occurrence in a uniquely identifiable source event, immediately before the unchanged context validator.
-- The replay now produces three successful evidence source matches and continues through temporal, FormalRequest, QueryPlan, and executor without a parking classification change.
-- Exact-match edge cases, relation/evidence defenses, Planner semantics/fallback, Phase 6/7, runtime uniqueness, and one complete `npm.cmd test` pass with exit 0 and empty stderr.
-- The fix remains local pending review; no push, deployment, Render operation, LINE operation, model, credential, or environment change occurred.
-
-## 2026-07-27 Parking routing and mixed results
-
-- A real test-only replay proved that canonical `parking` was structurally valid but incorrectly retained the `availability` capability, so it requested stay dates instead of reading the property-scoped parking fact.
-- The local fix deterministically maps canonical `parking` to the shared property-catalog amenity capability and prevents the availability Resolver from running for parking questions.
-- Mixed answer plus clarification/review plans now preserve deterministic per-task sections; a scoped unknown no longer converts safe answered sections into `claim_validation_failed`, while high-risk tasks still require handoff.
-- The real three-question regression, single parking variants, Phase 6/7 regressions, runtime uniqueness, and one complete `npm.cmd test` pass with exit 0. No push, deployment, Render operation, LINE operation, or credential change is authorized here.
-
-## 2026-07-27 Deterministic Composer claim contract
-
-- Production-equivalent signed-webhook RED replay proved that availability, parking, BBQ, and pool all reached `answered` with correct sources, but the Composer was asked to paraphrase while the validator required the exact deterministic section. Every case failed first at `ungrounded_section_text` and ended in `claim_validation_failed`.
-- The local fix supplies exact per-task text to the Composer and constrains strict structured output to those values. Claim Validator remains active and now explicitly rejects answered sections lacking a fact source.
-- The four single-answer cases and the room/parking/BBQ mixed case now produce accepted composition, complete coverage, `claimValidation.ok=true`, and `FinalDecision=reply`.
-- Safety gates, Phase 6/7, runtime uniqueness, and one complete `npm.cmd test` pass with exit 0 and empty stderr. The fix remains local; no push, deployment, Render, LINE, or credential operation is authorized.
-
-## 2026-07-27 Canonical Temporal Authority
-
-- One local `resolveCanonicalTemporal()` boundary now converts Planner candidates into the only executable temporal result, with `absent`, `resolved`, and `unresolved` as the complete status set.
-- Relative days, weekdays, weekends, absolute dates, ranges, and night counts use a fixed property timezone and injectable clock. State clears stale stay dates on unresolved current intent, and FormalRequest no longer restores dates from state.
-- Fixed-clock signed-webhook regressions cover availability plus parking, BBQ, and pool, with Composer acceptance, Claim Validator pass, FinalDecision reply, and one LINE mock call.
-- Targeted gates and one complete `npm.cmd test` pass with OS exit 0 and empty stderr. The real-provider 20-run stability matrix was not rerun because this local environment has no test OpenAI key or model setting.
-- The fix remains local; no push, deployment, Render operation, LINE operation, credential change, or environment change occurred.
-
-## 2026-07-27 Persistent safe Planner provider diagnostics
-
-- Test-only `planner_error` application logs now persist the trace ID plus attempt count, normalized HTTP status, timeout, sanitized provider type/code/param, safe category, retryability, response-body presence, and parsed-output presence.
-- Failure categories distinguish timeout, rate limit, provider 5xx, invalid request, empty response, JSON parse, structured output, network, and unknown without retaining raw provider content.
-- At this diagnostic checkpoint the provider still performed exactly one request. Planner failure still followed `planner_parse_failed` to the existing safe handoff and LINE delivery path.
-- Targeted Planner, Phase 6/7, runtime-uniqueness tests and one complete `npm.cmd test` pass with exit 0 and empty stderr.
-- The diagnostics remain local pending review; no push, deployment, Render operation, LINE operation, credential read, or environment change occurred.
-
-## 2026-07-27 Bounded Planner provider retry
-
-- A real test-only stability replay completed 139/140 requests; the only failure was a first-attempt OpenAI Planner timeout classified as retryable before downstream processing began.
-- The OpenAI Planner provider now retries exactly once after `timeout`, `network`, `rate_limit`, or `provider_5xx`, with a 100 ms default delay bounded to at most 1000 ms and a hard total limit of two attempts.
-- Invalid requests, non-429 4xx responses, empty responses, JSON parse failures, structured-output failures, unknown/configuration failures, and local Planner contract failures remain single-attempt failures.
-- Retry success resumes the unchanged validation and conversation pipeline. A second failure retains `planner_parse_failed`, the existing safe handoff, and existing LINE delivery behavior.
-- Targeted regressions and one complete `npm.cmd test` pass locally. The change remains local pending review; no push, deployment, Render, LINE, credential, or environment operation occurred.
-
-## 2026-07-27 Canonical Request core convergence
-
-- Five local stop gates established the permanent golden suite, property data roundtrip contract, immutable CanonicalRequest/capability registry, compact date-range grammar, and sole semantic-writer cutover.
-- The active Engine now invokes one `canonicalizeExecutionItem()` boundary. CanonicalRequest-backed consumers preserve mixed availability/property-fact routing, stale-date protection, claim validation, FinalDecision safety, and signed-webhook transport behavior.
-- The change remains local pending review. The three draft Canonical Request planning files and all historical verification artifacts remain untracked and excluded.
-
-## 2026-07-28 Property-neutral runtime cleanup
-
-- Onboarding authorization now comes from authenticated account/session membership or the existing platform-admin grant, with no runtime property allowlist.
-- JSON/PostgreSQL availability and bundle updates now derive inventory and members from property-scoped records. Shared import and seed code no longer assumes a room count, room number, bundle ID, or property ID.
-- Historical Nephi initialization identifiers remain only in explicit fixtures/migrations; they are not imported as routing rules.
-- The implementation remains local pending final verification and review. The three draft Canonical Request documents and historical verification artifacts remain untracked and excluded.
-
-## 2026-07-29 Friendly operator onboarding intake
-
-- The unrestricted public draft-creation boundary was replaced with platform-admin-issued, expiring, revocable invitation links.
-- Existing onboarding staging tables remain authoritative for drafts and submissions; formal property data is unchanged until the existing approval workflow runs.
-- The targeted gate covers partial draft save, refresh/read-back, idempotent submit, invalid/expired/revoked tokens, Alpha/Beta isolation, transaction rollback, admin visibility, frontend preservation, and formal-data non-pollution.
-- The permanent test-only Blueprint now uses migration-only startup and the dedicated Render host for invite, resume, and admin-setup URLs.
-- One wrong-host fake Alpha application was uniquely identified by its original invitation authority and removed as a single staging-only transaction after proving it was submitted, unapproved, and unrelated to any formal property, LINE binding, or formal fact.
-
-## 2026-07-29 Property-scoped LINE connection setup
-
-- Platform administrators can create and revoke expiring, one-time setup links for an existing formal property. Only the token hash is stored; API lists never return either the raw token or its hash.
-- The public setup token is the sole property authority. Credential submission ignores any frontend property ID and atomically revalidates the locked token, upserts the existing AES-256-GCM property binding, and marks the token used.
-- Invalid, expired, revoked, and used links are rejected distinctly. Missing encryption configuration or any binding transaction failure leaves the token unused and no partial binding.
-- Raw setup authority stays in the URL fragment, is removed from history before the first request, and reaches resolve/redeem only in a POST body under a no-referrer policy. Query-string resolution is rejected.
-- The platform page exposes safe binding status and the property webhook URL. The operator page accepts only Channel Secret and Channel Access Token, clears them after success, never persists them in browser storage, and never reads them back.
-- Webhook-observed status is best-effort telemetry: its storage failure cannot turn a valid signed webhook into a failed delivery.
-- The targeted setup runner, existing LINE binding runners, authorization/onboarding gates, runtime uniqueness, and one complete `npm.cmd test` pass locally. The branch is pending review and was not deployed; no Render, LINE, database, credential, or formal-environment operation occurred.
-
-## 2026-07-29 Limited core fixes from the 90-run validation
-
-- The 90-run evidence exposed a stale Composer-rejection flag: a rejected OpenAI candidate was replaced by a valid deterministic reply, but FinalDecision still received `claimValidation.ok=false`. FinalDecision now consumes only the Claim Validator result for the final candidate.
-- Pool routing now repairs a missing or conflicting Planner canonical candidate only when the entity raw text resolves uniquely to an existing low-risk property-catalog capability. Canonical `pool` is normalized to the property-catalog amenity route without stay-date readiness.
-- The minimal `民宿在哪裡？` replay passes Planner, semantic/context validation, CanonicalRequest, FormalRequest, and the property-catalog executor. Its prior final handoff is reproduced only when the Composer candidate is rejected, proving it shares the stale fallback-state defect rather than an independent location defect.
-- The new three-case regression, related property-fact/location/Planner/Claim/FinalDecision/signed-webhook/runtime gates, Canonical Request golden gate, and one complete `npm.cmd test` pass with exit 0.
-- The branch remains pending review. The 90-run real-provider matrix was not rerun, and no deployment, Render, LINE, database, credential, onboarding, or formal-data operation occurred.
-
-## 2026-07-29 Provider-shaped pool and parking routing follow-up
-
-- The remaining pool failure was reproduced with the real provider shape: canonical `pool` is stored under catalog `policies` with `category=policy`. The previous amenity fixture did not exercise that contract.
-- The pool capability now accepts the provider policy category. Entity-specific canonical routes require their own registered candidate type, preventing a resolved or generic policy from falling through to `bbq`, `parking`, or another capability.
-- When Planner omits entity text, grounding may recover pool or parking only from one unique exact alias in the current property's catalog. Conflicting non-empty text, ambiguous aliases, and unregistered aliases remain on the safe unresolved path.
-- Two-property fixtures verify distinct answers and category fidelity. Targeted and related canonical/property-routing/Planner contracts plus one complete `npm.cmd test` pass locally with exit 0 and empty stderr.
-- No date, availability, Temporal, Composer, Claim Validator, FinalDecision, onboarding, LINE setup, credential, formal-data, Render, or production behavior was changed. The real-provider 90-run matrix was not rerun.
-
-## 2026-07-29 Final parking recovery and shared location contract
-
-- The remaining 90-run parking shape was reproduced with `type=availability`, `canonicalCandidate=null`, non-empty unresolvable raw entity text, and both `room_feature` and `amenity` categories.
-- Complete task source grounding now runs only after raw resolution returns not-found and finds one exact alias in the current property catalog. Registered low-risk `property_catalog` policy remains mandatory; conflicting resolved entities, ambiguous sources, unregistered aliases, and unregistered capabilities stay unresolved.
-- Direct location/address/map/navigation and every property-to-place nearby, distance, duration, or directions request share the existing location capability. The runtime returns only the current property's approved Google Maps URL, never searches or estimates external facts, and keeps other valid mixed tasks.
-- Targeted and related canonical/property-routing/location/Planner/runtime gates pass locally. One complete `npm.cmd test` passed with exit 0 and empty stderr; this change has not been deployed and the 90-run real-provider matrix has not been rerun.
-
-## 2026-07-30 Operator console convergence and controlled custom replies
-
-- The operator console now leads with availability, room/pricing, bundle offers, and custom replies. Profile and formal property-fact settings remain intact under a collapsed `其他必要設定` section.
-- Availability defaults to 15 consecutive local dates starting today and loads every involved month, while the existing monthly calendar and all room/bundle status and note operations remain available.
-- Room highlights are used by the guest availability page but are not consumed by the conversation runtime. The operator label is now `房型特色（選填，最多3項）`; blank entries continue to be normalized out.
-- Each property may keep at most five controlled custom replies. Rules are property-scoped, date/status/scope validated, reject overlapping enabled definitions, and are stored in JSON or PostgreSQL through the same provider boundary.
-- Planner and CanonicalRequest still determine each task first. Only after formal Resolver execution may one unique active rule match the understood topic, stay date, and room/bundle scope. The approved text is additive to that task; all unmatched mixed tasks retain their original Resolver outcomes.
-- Formal pricing facts cannot be replaced by a `價格尚未公告` rule. A structural conflict or multiple matches safely becomes Unknown/review rather than asking AI to choose.
-- No public unauthenticated test API, property-specific branch, deployment, Render operation, LINE operation, credential access, or formal-data mutation was introduced.
-
-## 2026-07-30 Conversation State V3 runtime cutover
-
-- ConversationEngineV2 now reads and writes the Phase 1 Conversation State V3 contract. Property, channel, and user remain the persistence scope; V2 cycles and pending requests are compatibility-read inputs only.
-- One V3 reducer performs the only state write after CanonicalRequest, unified readiness, QueryPlan, and execution outcomes are available. A unique pending lodging task may consume a date or guest-count-only turn even when Planner labels it as a new request.
-- Lodging queries now carry `any`, `room_type`, or `bundle` through CanonicalRequest and a normalized Resolver task. Bundle capability selection is independent of readiness, so an undated bundle question remains pending instead of becoming Unknown.
-- Repeated Planner task IDs start isolated V3 tasks unless an accepted context relation explicitly continues an existing task. Mixed tasks remain independently stored and expired tasks are excluded from context reuse.
-- Same-turn duplicate task IDs fail at the Planner schema boundary. Accepted end relations persist `cancelled` on only the referenced task, including silent no-reply turns; unresolved lodging products persist `needs_human` instead of failing the V3 write.
-- Event replay coverage uses the real Engine plus the persisted atomic event claim: a concurrent duplicate and a replay after coordinator restart do not perform a second state write.
-- Phase 1 contracts, provider-shaped two-property fixtures, runtime incident regressions, event replay, existing core/LINE/onboarding/admin gates, and the complete repository test suite pass locally. The branch is pending review and was not deployed.
-
-## 2026-07-31 Unique core convergence
-
-- Local convergence is in final verification: V3 reducer owns task/product/context transitions, new products require exact property-catalog resolution, and Canonicalizer consumes only the approved transition result.
-- Planner entities that are empty, ambiguous, unregistered, or forged remain unresolved; no full-source alias scan or capability-ID-specific repair is allowed.
-- Before release review, require the complete `npm.cmd test` result from the final worktree state. Do not deploy, merge, operate Render/LINE, or access credentials/formal data.
-
-## 2026-08-01 Test-only availability authority incident
-
-- Startup diagnostics on runtime `a7b6fb68103c684386f378c0dc9a0d2801ece1ba` captured legacy available values conflicting with normalized closed/missing values for the same property and dates; the public Resolver returned an empty room set.
-- The root fix makes normalized PostgreSQL inventory the sole active authority and migrates complete legacy room/bundle days generically before application startup.
-- Merge `4146ba04a1520461b7a5602a0ae900ce671fba1c` passed GitHub Actions run `30689068471` and was deployed to test-only. Untouched first queries for 2026-08-05 through 2026-08-07 returned the migrated normalized inventory; the same results survived a service restart and matched the public availability Resolver without a toggle warm-up.
-- The temporary startup diagnostic, fixed property/date scope, and diagnostic provider RPC have been removed from the final-cleanup tree. The permanent PGlite regression remains.
-- Real test-only LINE acceptance remains external: the locally available test-only channel token is rejected by LINE and Windows LINE client automation is unavailable. Deterministic fixtures or simulated webhooks must not be reported as real LINE acceptance.
-
-## 2026-08-01 Dual-user LINE trace implementation
-
-- A temporary diagnostic is being prepared for the existing test-only LINE runtime to capture two new real events for the configured `nephi_home` message only.
-- The trace is non-authoritative, hashes LINE user/channel identifiers, excludes source/evidence text and credentials, retains records for 72 hours, and exposes reads only through the existing authenticated admin property scope.
-- No conversation state was cleared and no Planner, CanonicalRequest, V3 reducer, temporal, Resolver, FinalDecision, FinalResponse, or transport decision behavior was changed.
-- Local focused verification and the full repository `npm test` suite completed successfully. GitHub Actions run `30707218127` passed for `d5de79294d12623ba0274e6d81b1c02b2c89a6f6`, and the same commit was deployed live to the existing test-only Render service with the bounded property/message trace enabled.
+- 只根據 repository、Git object、實際 diff 與當次命令輸出陳述事實。
+- 任一完成聲明缺少 assertion、分類、exit code、commit 或 runtime 證據時標示 `UNPROVEN`。
+- 權威衝突、immutable acceptance 差異或必要 Gate 失敗時停止並回報，不改考卷、不跳過困難部分。

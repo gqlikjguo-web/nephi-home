@@ -1,6 +1,17 @@
-# JunZan AI 已驗收產品基準
+# JunZan AI 產品行為基線與證據分級
 
-本文件記錄已驗收、後續版本不得退步的第一版行為。它描述外部可觀察結果，不重複架構原理；產品原則見 [核心產品憲法](JUNZAN_AI_CONSTITUTION.md)，原因見 [重大決策](DECISIONS.md)。
+本文件記錄已接受、後續版本不得靜默退步的產品行為。它描述外部可觀察契約，不重複架構原理；產品原則見 [核心產品憲法](JUNZAN_AI_CONSTITUTION.md)，原因見 [重大決策](DECISIONS.md)。列入本文件不等於已部署或通過真實外部驗收；證據等級如下。
+
+## 現有證據邊界
+
+| 範圍 | 本輪可核對證據 | 分類 | 未證明 |
+|---|---|---|---|
+| 房況、日期、房型、Conversation Engine、Unknown／handoff | task-start HEAD `0735730f82161603f5f16f06a1a302b1e8d37826` 的完整 `npm.cmd test` exit 0及其中各 contract/runtime runner | `STRUCTURED_CONTRACT_TEST`、`RUNTIME_COMPONENT_TEST`、`FAKE_INTEGRATION` | 真實 LINE、正式資料庫與部署後行為 |
+| Property-scoped LINE binding | `property-line-binding-runner.js`、PGlite provider runner 與 production-entry local webhook runner 在完整 suite 中 exit 0 | `RUNTIME_COMPONENT_TEST`、`FAKE_INTEGRATION` | 真實 Channel、credentials、LINE Console 與正式 transport |
+| PostgreSQL availability authority | PGlite／isolated provider runner exit 0 | `FAKE_INTEGRATION` | `REAL_POSTGRESQL_PROVIDER` |
+| 外部平台狀態 | 無本輪授權或相同 SHA 平台證據 | `UNPROVEN` | `REAL_OPENAI_PLANNER`、`REAL_LINE`、`REAL_RENDER_DEPLOYMENT`、正式 PostgreSQL |
+
+因此下列條目是受保護的產品期待與本機已驗證契約，不得被擴張宣稱成正式環境完成。
 
 ## 房況與後台一致性
 
@@ -63,7 +74,7 @@
 
 ## Baseline 變更門檻
 
-只有通過自動回歸與真實驗收的行為才能加入本文件。若產品決策要改變既有基準，必須先 append 一筆重大決策，說明相容性、風險與回退方式。
+新增或變更條目必須同時標示其實際測試分類與未證明範圍，不得用 fixture／mock／isolated database 冒充真實外部驗收。若既有 Golden Matrix 或核心 acceptance 被證明錯誤，只能在使用者事前明確批准、不得同時修改 runtime、具有獨立審查及新舊基準對照的獨立驗收標準變更任務處理；本輪不得改動。
 ## Planner failure diagnostic boundary
 
 - Planner exceptions retain the existing `planner_parse_failed` → FinalDecision handoff → safe fallback → LINE delivery behavior.

@@ -2,6 +2,56 @@
 
 本文件只記錄跨版本仍有效、會約束後續產品與架構的重大決策。最高原則以 [JunZan AI 核心產品憲法](JUNZAN_AI_CONSTITUTION.md) 為準。
 
+## 現行決策狀態
+
+下表是目前唯一的 ID／狀態索引。`active` 表示決策仍有效；`refined by` 只增加後續約束，不代表原決策被取代。原始決策正文保留在下方；重複舊編號與未編號舊標題依 crosswalk 改用唯一新 ID，但同時逐字保存原始標題以供追溯。
+
+| ID | Status | Relationship |
+|---|---|---|
+| D-001 | active | — |
+| D-002 | active | — |
+| D-003 | active | — |
+| D-004 | active | — |
+| D-005 | active | — |
+| D-006 | active | — |
+| D-007 | active | — |
+| D-008 | active | — |
+| D-009 | active | — |
+| D-010 | active | — |
+| D-011 | active | refined by D-025 |
+| D-012 | active | — |
+| D-013 | active | refined by D-027 |
+| D-014 | active | — |
+| D-015 | active | — |
+| D-016 | active | — |
+| D-017 | active | — |
+| D-018 | active | — |
+| D-019 | active | — |
+| D-020 | active | — |
+| D-021 | active | — |
+| D-022 | active | — |
+| D-023 | active | — |
+| D-024 | active | — |
+| D-025 | active | refines D-011 |
+| D-026 | active | — |
+| D-027 | active | refines D-013 |
+| D-028 | active | — |
+| D-029 | active | — |
+| D-030 | active | — |
+| D-031 | active | — |
+
+## 舊標題到唯一 ID crosswalk
+
+| 原始標題／日期（verbatim） | 唯一 ID | Status / relationship |
+|---|---|---|
+| `D-011：FinalDecision 是最終回覆 action 與內容的共同權威` | D-025 | active; refines D-011 |
+| `D-012 — Planner failure diagnostics are allowlisted and behavior-neutral` | D-026 | active |
+| `D-013 — Canonical Temporal Authority owns executable dates` | D-027 | active; refines D-013 |
+| `2026-07-28 — Property-neutral runtime data authority` | D-028 | active |
+| `2026-07-29 — Onboarding intake starts from a scoped invitation` | D-029 | active |
+| `2026-07-29 — Test-only onboarding URLs are deployment-scoped` | D-030 | active |
+| `2026-07-29 — One-time property-scoped LINE setup authority` | D-031 | active |
+
 ## D-001：AI 負責理解，不負責創造事實
 
 **決策：** AI 負責理解自然語言、上下文、修改、取消、多問題與任務規劃，並在受控範圍內自然組句。
@@ -105,14 +155,18 @@
 **理由：** 真實 Planner 曾把一般社交訊息同時標成 acknowledgement 與 `unknown`／`property_fact`，也曾把相對日期標為 `absolute` 且不提供 candidate。若 routing 信任任一單欄位，會把社交訊息錯誤轉真人，或在日期解析失敗後沿用舊 state 查詢錯誤日期。
 
 **長期後果：** 純 acknowledgement 由 Engine 形成安全 `no_reply`，同句有效住宿問題仍保留；Temporal 以 LINE event timestamp 與 property timezone 解析受驗證的 canonical input。任何明確日期嘗試若 unresolved，不得取得預設日期範圍、不得承接舊 stay 日期，也不得呼叫房況 Resolver；無日期意圖的合法 follow-up 才能沿用既有住宿日期。
-## D-011：FinalDecision 是最終回覆 action 與內容的共同權威
+## D-025：FinalDecision 是最終回覆 action 與內容的共同權威
+
+**原始標題（verbatim）：** `D-011：FinalDecision 是最終回覆 action 與內容的共同權威`
 
 **決策：** Claim Validator 完成候選文字安全檢查後，所有對客文字必須經唯一的 final response renderer。renderer 只能消費既有 FinalDecision、Response Plan、已驗證候選文字與 Claim Validation 結果，輸出的 action 必須等於 `finalDecision.action`；不得建立第二套 action 判斷。
 
 **理由：** FinalDecision 若只控制 transport action，而 transport 仍直接沿用更早產生的候選文字，claim rejection、handoff、clarification 或 no_reply 可能送出與最終決策不一致的內容。
 
 **長期後果：** reply 只可送出已驗證候選；clarification 只保留安全回答並依 `missingFields` 追問；handoff 只保留安全回答與 deterministic fallback；no_reply 固定空字串且不呼叫 Composer。LINE transport 只消費 Engine 的 final response，不得再次 render 或改寫。
-## D-012 — Planner failure diagnostics are allowlisted and behavior-neutral
+## D-026 — Planner failure diagnostics are allowlisted and behavior-neutral
+
+**原始標題（verbatim）：** `D-012 — Planner failure diagnostics are allowlisted and behavior-neutral`
 
 **Decision:** A Planner exception may emit one structured `planner_error` diagnostic containing only an allowlisted error name, fixed code, normalized HTTP status, timeout flag, safe category, model, provider, and sanitized OpenAI `error.type`, `error.code`, and `error.param` fields.
 
@@ -120,7 +174,9 @@
 
 **Constraint:** Diagnostics must never include messages, prompts, source events, catalogs, response bodies, headers, stacks, tokens, or credentials. The three provider fields are string-only, character-allowlisted, length-limited, and empty when invalid or unavailable. Diagnostic failures are isolated and must not alter the existing `planner_parse_failed` handoff, final response, persistence, or LINE delivery.
 
-## D-013 — Canonical Temporal Authority owns executable dates
+## D-027 — Canonical Temporal Authority owns executable dates
+
+**原始標題（verbatim）：** `D-013 — Canonical Temporal Authority owns executable dates`
 
 **Decision:** Planner temporal fields are candidates only. One `resolveCanonicalTemporal()` boundary receives the guest message, Planner temporal candidate, event timestamp, property timezone, and applicable task IDs, and emits the only executable temporal result with status `absent`, `resolved`, or `unresolved`.
 
@@ -152,7 +208,9 @@
 
 **Constraint:** State may persist canonical values but may not rewrite them. FormalRequest and QueryPlan derive readiness and operations only from `CanonicalRequest`. The canonical executor rejects resolver mismatches. ResponsePlan, Claim Validator, and FinalDecision consume canonical outcomes without reclassifying Planner semantics. Capability policy remains property-neutral; property-specific facts come only from the scoped catalog and resolver.
 
-## 2026-07-28 — Property-neutral runtime data authority
+## D-028 — Property-neutral runtime data authority
+
+**原始標題（verbatim）：** `2026-07-28 — Property-neutral runtime data authority`
 
 **Decision:** Authenticated account/session scope, together with the existing platform-admin grant provider, is the only authority for which properties onboarding may list or update. Room and bundle availability are keyed only by property-scoped inventory records and formal bundle-member relations.
 
@@ -160,7 +218,9 @@
 
 **Constraint:** Missing authorization or bundle relations are rejected rather than inferred. Shared seed code accepts an explicit property graph; property-specific initialization values may exist only in explicitly selected fixtures or historical migrations, never as runtime branches.
 
-## 2026-07-29 — Onboarding intake starts from a scoped invitation
+## D-029 — Onboarding intake starts from a scoped invitation
+
+**原始標題（verbatim）：** `2026-07-29 — Onboarding intake starts from a scoped invitation`
 
 **Decision:** A new operator onboarding submission may be created only by a platform administrator issuing an expiring, revocable invitation. The invitation token hash is attached to one staging application and is the only authority for that application's draft read/write operations.
 
@@ -168,7 +228,9 @@
 
 **Constraint:** The browser-supplied property ID is never authorization. Drafts, rooms, bundles, pricing, rules, location, and contact details remain in existing onboarding staging tables until an existing admin approval transaction promotes them. Tokens, cookies, personal data, and credentials must not enter logs.
 
-## 2026-07-29 — Test-only onboarding URLs are deployment-scoped
+## D-030 — Test-only onboarding URLs are deployment-scoped
+
+**原始標題（verbatim）：** `2026-07-29 — Test-only onboarding URLs are deployment-scoped`
 
 **Decision:** The `nephi-home-node-pilot-test-only` service starts with migrations only and uses its explicit `onrender.com` host as `PUBLIC_BASE_URL`. Test-only deploys never run a seed automatically and never generate operator invitation, resume, or admin-setup URLs on `app.junzanai.com`.
 
@@ -176,7 +238,9 @@
 
 **Constraint:** URL generation continues through the existing `publicBrand.publicBaseUrl` boundary. No route, token format, onboarding workflow, formal property data, or LINE behavior changes.
 
-## 2026-07-29 — One-time property-scoped LINE setup authority
+## D-031 — One-time property-scoped LINE setup authority
+
+**原始標題（verbatim）：** `2026-07-29 — One-time property-scoped LINE setup authority`
 
 **Decision:** A platform administrator may issue an expiring, revocable, one-time LINE setup link for one existing property. The raw token is returned only in the newly created URL; PostgreSQL stores its SHA-256 hash. The public setup token, not any browser-supplied property ID, is the sole property authority.
 
