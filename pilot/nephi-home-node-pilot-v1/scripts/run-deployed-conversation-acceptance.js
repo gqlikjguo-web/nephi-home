@@ -185,7 +185,14 @@ async function acceptanceRequest({ baseUrl, oidcToken, method = "POST", body, fe
     body: JSON.stringify(body)
   });
   const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(`acceptance_http_failed:${response.status}:${payload && payload.error && payload.error.code || "unknown"}`);
+  if (!response.ok) {
+    const rawCode = String(payload && payload.error && payload.error.code || "");
+    const error = new Error("acceptance_http_failed");
+    error.code = "acceptance_http_failed";
+    error.httpStatus = Number.isInteger(response.status) ? response.status : 0;
+    error.httpErrorCode = /^[A-Z][A-Z0-9_]{0,79}$/.test(rawCode) ? rawCode : "UNKNOWN";
+    throw error;
+  }
   return responseData(payload);
 }
 
@@ -214,7 +221,17 @@ function safeErrorCode(error) {
   return /^[a-z][a-z0-9_]*$/.test(code) ? code : "acceptance_case_failed";
 }
 
-function safeFailureEvidence(caseId, turnNumber, error, result) {
+function safeHttpEvidence(error, occurredAt) {
+  if (!error || error.code !== "acceptance_http_failed") return {};
+  const timestamp = occurredAt instanceof Date ? occurredAt : new Date(occurredAt);
+  return {
+    httpStatus: Number.isInteger(error.httpStatus) ? error.httpStatus : 0,
+    httpErrorCode: /^[A-Z][A-Z0-9_]{0,79}$/.test(String(error.httpErrorCode || "")) ? error.httpErrorCode : "UNKNOWN",
+    occurredAt: Number.isFinite(timestamp.getTime()) ? timestamp.toISOString() : new Date().toISOString()
+  };
+}
+
+function safeFailureEvidence(caseId, turnNumber, error, result, occurredAt) {
   const finalDecision = result && result.finalDecision && typeof result.finalDecision === "object" ? result.finalDecision : {};
   const claimValidation = result && result.claimValidation && typeof result.claimValidation === "object" ? result.claimValidation : {};
   const taskResults = result && Array.isArray(result.taskResults) ? result.taskResults : [];
@@ -222,6 +239,7 @@ function safeFailureEvidence(caseId, turnNumber, error, result) {
     case: caseId,
     turn: turnNumber,
     errorCode: safeErrorCode(error),
+    ...safeHttpEvidence(error, occurredAt),
     finalDecisionAction: typeof finalDecision.action === "string" ? finalDecision.action : "",
     finalDecisionReasonCode: typeof finalDecision.reasonCode === "string" ? finalDecision.reasonCode : "",
     claimValidationOk: typeof claimValidation.ok === "boolean" ? claimValidation.ok : null,
@@ -234,8 +252,16 @@ function safeFailureEvidence(caseId, turnNumber, error, result) {
   };
 }
 
-async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, commit, fetchImpl = globalThis.fetch, write = (value) => console.log(JSON.stringify(value)) }) {
+function isRefreshableOidcRejection(error) {
+  return Boolean(error
+    && error.code === "acceptance_http_failed"
+    && error.httpStatus === 403
+    && error.httpErrorCode === "ACCEPTANCE_OIDC_REJECTED");
+}
+
+async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidcToken, commit, fetchImpl = globalThis.fetch, now = () => new Date(), write = (value) => console.log(JSON.stringify(value)) }) {
   const failures = [];
+  let currentOidcToken = oidcToken;
   let passCount = 0;
   let partialCount = 0;
   let executableCaseCount = 0;
@@ -243,6 +269,22 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, commit, fet
   let notExecutableCaseCount = 0;
   let notExecutableTurnCount = 0;
   const turnCount = ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0);
+  async function requestForCase(caseId, turnNumber, options) {
+    try {
+      return await acceptanceRequest({ baseUrl, oidcToken: currentOidcToken, fetchImpl, ...options });
+    } catch (error) {
+      if (!isRefreshableOidcRejection(error) || typeof refreshOidcToken !== "function") throw error;
+      write({
+        case: caseId,
+        turn: turnNumber,
+        status: "OIDC_IDENTITY_REJECTED",
+        errorCode: safeErrorCode(error),
+        ...safeHttpEvidence(error, now())
+      });
+      currentOidcToken = await refreshOidcToken();
+      return acceptanceRequest({ baseUrl, oidcToken: currentOidcToken, fetchImpl, ...options });
+    }
+  }
   for (const item of ACCEPTANCE_MATRIX) {
     const conversationId = `gha-${commit.slice(0, 12)}-${item.id}-${crypto.randomUUID()}`;
     let firstRequest = null;
@@ -268,13 +310,13 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, commit, fet
       const request = { customerId: propertyId, conversationId, messageText: turn.messageText, eventId };
       let result = null;
       try {
-        result = await acceptanceRequest({ baseUrl, oidcToken, body: request, fetchImpl });
+        result = await requestForCase(item.id, index + 1, { body: request });
         validateAcceptanceResult(result, turn);
         write(safeEvidence(item.id, index + 1, result));
         lastResult = result;
         if (!firstRequest) firstRequest = request;
       } catch (error) {
-        const failure = safeFailureEvidence(item.id, index + 1, error, result);
+        const failure = safeFailureEvidence(item.id, index + 1, error, result, now());
         failures.push(failure);
         write(failure);
         caseFailed = true;
@@ -289,17 +331,17 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, commit, fet
     if (caseFailed) continue;
     try {
       if (item.mode === "duplicate") {
-        const duplicate = await acceptanceRequest({ baseUrl, oidcToken, body: firstRequest, fetchImpl });
+        const duplicate = await requestForCase(item.id, item.turns.length, { body: firstRequest });
         if (!duplicate || duplicate.duplicate !== true || duplicate.eventId !== firstRequest.eventId) throw new Error("duplicate_event_contract_failed");
       }
       if (item.mode === "clear") {
-        const cleared = await acceptanceRequest({ baseUrl, oidcToken, method: "DELETE", body: { customerId: propertyId, conversationId }, fetchImpl });
+        const cleared = await requestForCase(item.id, item.turns.length, { method: "DELETE", body: { customerId: propertyId, conversationId } });
         if (!cleared || cleared.cleared !== true) throw new Error("clear_state_contract_failed");
       }
       if (caseSkipped) partialCount += 1;
       else passCount += 1;
     } catch (error) {
-      const failure = safeFailureEvidence(item.id, item.turns.length, error, lastResult);
+      const failure = safeFailureEvidence(item.id, item.turns.length, error, lastResult, now());
       failures.push(failure);
       write(failure);
     }
@@ -331,8 +373,15 @@ async function main(env = process.env) {
   const propertyId = String(env.TEST_ONLY_ACCEPTANCE_PROPERTY_ID || "nephi_home").trim();
   const health = await pollForDeployment({ baseUrl, expectedCommit: commit });
   console.log(JSON.stringify({ stage: "deployment-ready", status: health.status, testOnly: health.testOnly, commit: health.commit }));
-  const oidcToken = await requestGithubOidcToken({ requestUrl: env.ACTIONS_ID_TOKEN_REQUEST_URL, requestToken: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN });
-  const summary = await runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, commit });
+  const oidcRequest = { requestUrl: env.ACTIONS_ID_TOKEN_REQUEST_URL, requestToken: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN };
+  const oidcToken = await requestGithubOidcToken(oidcRequest);
+  const summary = await runAcceptanceMatrix({
+    baseUrl,
+    propertyId,
+    oidcToken,
+    refreshOidcToken: () => requestGithubOidcToken(oidcRequest),
+    commit
+  });
   console.log(JSON.stringify({ suite: "deployed-conversation-acceptance", ...summary, commit }));
 }
 if (require.main === module) main().catch((error) => {

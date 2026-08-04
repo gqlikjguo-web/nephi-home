@@ -181,6 +181,97 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     assert.equal(serializedFailure.includes(forbidden), false, `failed case logs must not expose ${forbidden}`);
   }
 
+  const refreshOriginalMatrix = ACCEPTANCE_MATRIX.splice(0);
+  const refreshRequests = [];
+  const refreshWrites = [];
+  const refreshTimes = [
+    new Date("2026-08-04T07:46:20.508Z"),
+    new Date("2026-08-04T07:46:21.000Z")
+  ];
+  let refreshCount = 0;
+  let refreshFailure = null;
+  ACCEPTANCE_MATRIX.push(
+    { id: "auth-first-pass", turns: [{ messageText: "first", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] },
+    { id: "auth-expired-middle", turns: [{ messageText: "expired", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] },
+    { id: "http-non-auth-fail", turns: [{ messageText: "unavailable", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] },
+    { id: "auth-last-pass", turns: [{ messageText: "last", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] }
+  );
+  try {
+    await runAcceptanceMatrix({
+      baseUrl: "https://test-only.example",
+      propertyId: "property-a",
+      oidcToken: "EXPIRED_OIDC_TOKEN",
+      refreshOidcToken: async () => {
+        refreshCount += 1;
+        return "FRESH_OIDC_TOKEN";
+      },
+      commit: expectedCommit,
+      now: () => refreshTimes.shift() || new Date("2026-08-04T07:46:22.000Z"),
+      fetchImpl: async (_url, options) => {
+        const body = JSON.parse(options.body);
+        const authorization = options.headers.authorization;
+        refreshRequests.push({ messageText: body.messageText, authorization, eventId: body.eventId });
+        if (body.messageText === "expired" && authorization === "Bearer EXPIRED_OIDC_TOKEN") {
+          return { ok: false, status: 403, json: async () => ({ ok: false, error: { code: "ACCEPTANCE_OIDC_REJECTED", message: "PRIVATE_AUTH_MESSAGE" } }) };
+        }
+        if (body.messageText === "unavailable") {
+          return { ok: false, status: 503, json: async () => ({ ok: false, error: { code: "SERVICE_UNAVAILABLE", message: "PRIVATE_PROVIDER_MESSAGE" } }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ ok: true, data: { ...safeResult, eventId: body.eventId, traceId: `trace-${body.messageText}` } }) };
+      },
+      write: (value) => refreshWrites.push(value)
+    });
+  } catch (error) {
+    refreshFailure = error;
+  } finally {
+    ACCEPTANCE_MATRIX.splice(0, ACCEPTANCE_MATRIX.length, ...refreshOriginalMatrix);
+  }
+  assert.equal(refreshCount, 1, "an expired deployed acceptance identity must obtain one new GitHub Actions OIDC token");
+  assert.deepEqual(
+    refreshRequests.map((item) => item.messageText),
+    ["first", "expired", "expired", "unavailable", "last"],
+    "only an authentication rejection before handler execution may repeat the same event after legal OIDC renewal"
+  );
+  assert.equal(refreshRequests[1].eventId, refreshRequests[2].eventId, "OIDC renewal must retain the original idempotent event ID");
+  assert.equal(refreshRequests[2].authorization, "Bearer FRESH_OIDC_TOKEN");
+  assert.equal(refreshRequests[4].authorization, "Bearer FRESH_OIDC_TOKEN", "later cases must reuse the renewed short-lived identity");
+  assert.equal(refreshFailure && refreshFailure.code, "deployed_acceptance_matrix_failed");
+  assert.equal(refreshFailure && refreshFailure.failCount, 1, "a non-authentication HTTP failure must remain failed after the batch completes");
+  assert.deepEqual(
+    refreshWrites[1],
+    {
+      case: "auth-expired-middle",
+      turn: 1,
+      status: "OIDC_IDENTITY_REJECTED",
+      errorCode: "acceptance_http_failed",
+      httpStatus: 403,
+      httpErrorCode: "ACCEPTANCE_OIDC_REJECTED",
+      occurredAt: "2026-08-04T07:46:20.508Z"
+    },
+    "the public log must prove the exact safe authentication failure that caused OIDC renewal"
+  );
+  assert.deepEqual(
+    refreshWrites[3],
+    {
+      case: "http-non-auth-fail",
+      turn: 1,
+      errorCode: "acceptance_http_failed",
+      httpStatus: 503,
+      httpErrorCode: "SERVICE_UNAVAILABLE",
+      occurredAt: "2026-08-04T07:46:21.000Z",
+      finalDecisionAction: "",
+      finalDecisionReasonCode: "",
+      claimValidationOk: null,
+      tasks: []
+    },
+    "an unrecovered HTTP failure must retain only bounded status, code, case, time, and existing safe evidence"
+  );
+  assert.equal(refreshWrites[4].status, "PASS", "a non-authentication HTTP failure must not stop later cases");
+  const serializedHttpEvidence = JSON.stringify(refreshWrites);
+  for (const forbidden of ["EXPIRED_OIDC_TOKEN", "FRESH_OIDC_TOKEN", "PRIVATE_AUTH_MESSAGE", "PRIVATE_PROVIDER_MESSAGE"]) {
+    assert.equal(serializedHttpEvidence.includes(forbidden), false, `HTTP diagnostics must not expose ${forbidden}`);
+  }
+
   assert.throws(
     () => validateAcceptanceResult({ ...safeResult, taskResults: [{ ...safeResult.taskResults[0], dataSource: "   " }] }, { expectedActions: ["reply"] }),
     /answered_task_data_source_required/,
