@@ -138,6 +138,20 @@ async function main() {
   assert.deepEqual(canonicalized.contextRelationCandidates[0].candidateRequestCycleRefs, exactSourcePlan.contextRelationCandidates[0].candidateRequestCycleRefs, "normalization must not change request-cycle references");
   assert.equal(validateUnderstandingContext(canonicalized, snapshot(), { sourceEvents }).ok, true, "canonical evidence must still pass the unchanged validator");
 
+  const exactQuotePlan = plannerOutput({
+    tasks: [{ ...task(), sourceText: "semantic paraphrase not present verbatim" }],
+    contextRelationCandidates: [relation({ evidenceRefs: [{ eventId: "event-a", startOffset: 99, endOffset: 111, quote: "availability" }] })]
+  });
+  const quoteCanonicalized = normalizePlannerEvidenceCoordinates(exactQuotePlan, sourceEvents);
+  assert.deepEqual(quoteCanonicalized.contextRelationCandidates[0].evidenceRefs, [{
+    eventId: "event-a",
+    messageRef: "message-a",
+    startOffset: 5,
+    endOffset: 17,
+    quote: "availability"
+  }], "a unique verbatim Planner evidence quote must complete its identified source reference and repair offset drift even when task sourceText is a paraphrase");
+  assert.equal(validateUnderstandingContext(quoteCanonicalized, snapshot(), { sourceEvents }).ok, true);
+
   const eventIdOnlyEvents = [{ eventId: "event-only", messageRef: "", messageText: "availability" }];
   const eventIdOnly = normalizePlannerEvidenceCoordinates(exactSourcePlan, eventIdOnlyEvents);
   assert.deepEqual(eventIdOnly.contextRelationCandidates[0].evidenceRefs[0], {

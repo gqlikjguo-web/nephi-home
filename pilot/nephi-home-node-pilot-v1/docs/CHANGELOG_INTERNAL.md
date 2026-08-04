@@ -217,3 +217,7 @@
 
 - Normalized acknowledgement-only context relations to a non-mutating uncertain relation before context validation while retaining candidate and source-evidence validation, preventing safe no-reply turns from becoming handoffs.
 - Extended the same fail-closed no-reply boundary to unknown-only input containing no letters or numbers, using a general Unicode punctuation/symbol check after OpenAI planning and preserving Planner control for substantive text.
+
+## 2026-08-05 Planner evidence coordinate normalization
+
+- Rebuilt drifted `new_request` evidence coordinates only when the Planner quote occurs exactly once inside its already identified source event, while retaining fail-closed validation for wrong identifiers, absent or ambiguous quotes, historical relations, and multi-event bursts.

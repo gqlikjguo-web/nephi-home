@@ -44,6 +44,21 @@ function uniqueExactSourceMatch(sourceText, sourceEvents, identifierCounts) {
   };
 }
 
+function uniqueIdentifiedSourceMatch(sourceText, evidenceRef, sourceEvents, identifierCounts) {
+  const eventId = String(evidenceRef && evidenceRef.eventId || "").trim();
+  const messageRef = String(evidenceRef && evidenceRef.messageRef || "").trim();
+  if ((!eventId && !messageRef)
+    || (eventId && identifierCounts.eventIds.get(eventId) !== 1)
+    || (messageRef && identifierCounts.messageRefs.get(messageRef) !== 1)) return null;
+  const identified = (Array.isArray(sourceEvents) ? sourceEvents : []).filter((sourceEvent) => {
+    if (!sourceEvent || typeof sourceEvent !== "object") return false;
+    return (!eventId || String(sourceEvent.eventId || "").trim() === eventId)
+      && (!messageRef || String(sourceEvent.messageRef || "").trim() === messageRef);
+  });
+  if (identified.length !== 1) return null;
+  return uniqueExactSourceMatch(sourceText, identified, sourceIdentifierCounts(identified));
+}
+
 function normalizePlannerEvidenceCoordinates(plannerOutput, sourceEvents) {
   if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput)
     || !Array.isArray(plannerOutput.tasks) || !Array.isArray(plannerOutput.contextRelationCandidates)) return plannerOutput;
@@ -58,10 +73,21 @@ function normalizePlannerEvidenceCoordinates(plannerOutput, sourceEvents) {
     if (!candidate || typeof candidate !== "object" || !Number.isInteger(candidate.candidateIndex)) return candidate;
     const task = tasksByCandidateIndex.get(candidate.candidateIndex);
     if (!task) return candidate;
-    const canonicalEvidence = uniqueExactSourceMatch(task.sourceText, sourceEvents, identifierCounts);
-    if (!canonicalEvidence) return candidate;
+    const plannerEvidence = Array.isArray(candidate.evidenceRefs) ? candidate.evidenceRefs : [];
+    const canonicalQuotedEvidence = candidate.kind === "new_request"
+      ? plannerEvidence.map((evidenceRef) => uniqueIdentifiedSourceMatch(
+          evidenceRef && evidenceRef.quote,
+          evidenceRef,
+          sourceEvents,
+          identifierCounts
+        ))
+      : [];
+    const canonicalEvidence = canonicalQuotedEvidence.length > 0 && canonicalQuotedEvidence.every(Boolean)
+      ? canonicalQuotedEvidence
+      : [uniqueExactSourceMatch(task.sourceText, sourceEvents, identifierCounts)].filter(Boolean);
+    if (!canonicalEvidence.length) return candidate;
     changed = true;
-    return { ...candidate, evidenceRefs: [canonicalEvidence] };
+    return { ...candidate, evidenceRefs: canonicalEvidence };
   });
   return changed ? { ...plannerOutput, contextRelationCandidates } : plannerOutput;
 }
