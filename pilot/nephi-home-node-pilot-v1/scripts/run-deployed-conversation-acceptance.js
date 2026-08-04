@@ -138,27 +138,83 @@ function safeEvidence(caseId, turnNumber, result) {
   };
 }
 
+function safeErrorCode(error) {
+  const raw = String(error && (error.code || error.message) || "unknown");
+  const code = raw.split(":", 1)[0];
+  return /^[a-z][a-z0-9_]*$/.test(code) ? code : "acceptance_case_failed";
+}
+
+function safeFailureEvidence(caseId, turnNumber, error, result) {
+  const finalDecision = result && result.finalDecision && typeof result.finalDecision === "object" ? result.finalDecision : {};
+  const claimValidation = result && result.claimValidation && typeof result.claimValidation === "object" ? result.claimValidation : {};
+  const taskResults = result && Array.isArray(result.taskResults) ? result.taskResults : [];
+  return {
+    case: caseId,
+    turn: turnNumber,
+    errorCode: safeErrorCode(error),
+    finalDecisionAction: typeof finalDecision.action === "string" ? finalDecision.action : "",
+    finalDecisionReasonCode: typeof finalDecision.reasonCode === "string" ? finalDecision.reasonCode : "",
+    claimValidationOk: typeof claimValidation.ok === "boolean" ? claimValidation.ok : null,
+    tasks: taskResults.map((task) => ({
+      capability: task && typeof (task.capability || task.type) === "string" ? task.capability || task.type : "",
+      status: task && typeof task.status === "string" ? task.status : "",
+      reason: task && typeof task.reason === "string" ? task.reason : "",
+      dataSource: task && typeof task.dataSource === "string" ? task.dataSource : ""
+    }))
+  };
+}
+
 async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, commit, fetchImpl = globalThis.fetch, write = (value) => console.log(JSON.stringify(value)) }) {
+  const failures = [];
+  let passCount = 0;
   for (const item of ACCEPTANCE_MATRIX) {
     const conversationId = `gha-${commit.slice(0, 12)}-${item.id}-${crypto.randomUUID()}`;
     let firstRequest = null;
+    let lastResult = null;
+    let caseFailed = false;
     for (const [index, turn] of item.turns.entries()) {
       const eventId = `gha-${item.id}-${index + 1}-${crypto.randomUUID()}`;
       const request = { customerId: propertyId, conversationId, messageText: turn.messageText, eventId };
-      const result = await acceptanceRequest({ baseUrl, oidcToken, body: request, fetchImpl });
-      validateAcceptanceResult(result, turn);
-      write(safeEvidence(item.id, index + 1, result));
-      if (index === 0) firstRequest = request;
+      let result = null;
+      try {
+        result = await acceptanceRequest({ baseUrl, oidcToken, body: request, fetchImpl });
+        validateAcceptanceResult(result, turn);
+        write(safeEvidence(item.id, index + 1, result));
+        lastResult = result;
+        if (index === 0) firstRequest = request;
+      } catch (error) {
+        const failure = safeFailureEvidence(item.id, index + 1, error, result);
+        failures.push(failure);
+        write(failure);
+        caseFailed = true;
+        break;
+      }
     }
-    if (item.mode === "duplicate") {
-      const duplicate = await acceptanceRequest({ baseUrl, oidcToken, body: firstRequest, fetchImpl });
-      if (!duplicate || duplicate.duplicate !== true || duplicate.eventId !== firstRequest.eventId) throw new Error("duplicate_event_contract_failed");
-    }
-    if (item.mode === "clear") {
-      const cleared = await acceptanceRequest({ baseUrl, oidcToken, method: "DELETE", body: { customerId: propertyId, conversationId }, fetchImpl });
-      if (!cleared || cleared.cleared !== true) throw new Error("clear_state_contract_failed");
+    if (caseFailed) continue;
+    try {
+      if (item.mode === "duplicate") {
+        const duplicate = await acceptanceRequest({ baseUrl, oidcToken, body: firstRequest, fetchImpl });
+        if (!duplicate || duplicate.duplicate !== true || duplicate.eventId !== firstRequest.eventId) throw new Error("duplicate_event_contract_failed");
+      }
+      if (item.mode === "clear") {
+        const cleared = await acceptanceRequest({ baseUrl, oidcToken, method: "DELETE", body: { customerId: propertyId, conversationId }, fetchImpl });
+        if (!cleared || cleared.cleared !== true) throw new Error("clear_state_contract_failed");
+      }
+      passCount += 1;
+    } catch (error) {
+      const failure = safeFailureEvidence(item.id, item.turns.length, error, lastResult);
+      failures.push(failure);
+      write(failure);
     }
   }
+  if (failures.length) {
+    const error = new Error("deployed_acceptance_matrix_failed");
+    error.code = "deployed_acceptance_matrix_failed";
+    error.failCount = failures.length;
+    error.passCount = passCount;
+    throw error;
+  }
+  return { caseCount: ACCEPTANCE_MATRIX.length, passCount, failCount: 0 };
 }
 
 async function main(env = process.env) {
@@ -174,7 +230,15 @@ async function main(env = process.env) {
   console.log(JSON.stringify({ suite: "deployed-conversation-acceptance", caseCount: ACCEPTANCE_MATRIX.length, passCount: ACCEPTANCE_MATRIX.length, failCount: 0, commit }));
 }
 
-if (require.main === module) main().catch((error) => { console.error(JSON.stringify({ suite: "deployed-conversation-acceptance", status: "FAIL", reason: String(error && error.message || "unknown") })); process.exitCode = 1; });
+if (require.main === module) main().catch((error) => {
+  console.error(JSON.stringify({
+    suite: "deployed-conversation-acceptance",
+    status: "FAIL",
+    errorCode: safeErrorCode(error),
+    failCount: Number.isInteger(error && error.failCount) ? error.failCount : 1
+  }));
+  process.exitCode = 1;
+});
 
 module.exports = {
   ACCEPTANCE_MATRIX,

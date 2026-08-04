@@ -117,6 +117,72 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
       assert.equal(serializedLog.includes(forbidden), false, `public case logs must not expose ${forbidden}`);
     }
   }
+
+  const originalMatrix = ACCEPTANCE_MATRIX.splice(0);
+  const continuedRequests = [];
+  const continuedWrites = [];
+  let matrixFailure = null;
+  ACCEPTANCE_MATRIX.push(
+    { id: "collect-first-pass", turns: [{ messageText: "first", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] },
+    { id: "collect-middle-fail", turns: [{ messageText: "middle", expectedActions: ["clarification"], expectedCapabilities: ["parking"] }] },
+    { id: "collect-last-pass", turns: [{ messageText: "last", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] }
+  );
+  try {
+    await runAcceptanceMatrix({
+      baseUrl: "https://test-only.example",
+      propertyId: "property-a",
+      oidcToken: "PRIVATE_OIDC_TOKEN",
+      commit: expectedCommit,
+      fetchImpl: async (_url, options) => {
+        const body = JSON.parse(options.body);
+        continuedRequests.push(body.messageText);
+        const result = body.messageText === "middle"
+          ? {
+              ...safeResult,
+              traceId: "trace-middle",
+              eventId: body.eventId,
+              finalDecision: { action: "reply", reasonCode: "PRIVATE_DECISION_REASON" },
+              finalResponse: { action: "reply", shouldReply: true, replyText: "PRIVATE_FINAL_RESPONSE" },
+              taskResults: [{
+                ...safeResult.taskResults[0],
+                reason: "PRIVATE_TASK_REASON",
+                facts: { subject: "PRIVATE_FACT_SUBJECT", answer: "PRIVATE_FACT_ANSWER" }
+              }],
+              trace: safeResult.trace.map((entry) => ({ ...entry, privateDetail: "PRIVATE_TRACE_DETAIL" }))
+            }
+          : { ...safeResult, traceId: `trace-${body.messageText}`, eventId: body.eventId };
+        return { ok: true, status: 200, json: async () => ({ ok: true, data: result }) };
+      },
+      write: (value) => continuedWrites.push(value)
+    });
+  } catch (error) {
+    matrixFailure = error;
+  } finally {
+    ACCEPTANCE_MATRIX.splice(0, ACCEPTANCE_MATRIX.length, ...originalMatrix);
+  }
+  assert.deepEqual(continuedRequests, ["first", "middle", "last"], "a failed middle case must not prevent later cases from running");
+  assert.equal(matrixFailure && matrixFailure.code, "deployed_acceptance_matrix_failed", "the completed matrix must still report an aggregate failure");
+  assert.equal(matrixFailure && matrixFailure.failCount, 1);
+  assert.equal(continuedWrites[0].status, "PASS", "successful case output must remain unchanged");
+  assert.equal(continuedWrites[2].status, "PASS", "a later successful case must still emit its PASS record");
+  assert.deepEqual(
+    continuedWrites[1],
+    {
+      case: "collect-middle-fail",
+      turn: 1,
+      errorCode: "unexpected_final_action",
+      finalDecisionAction: "reply",
+      finalDecisionReasonCode: "PRIVATE_DECISION_REASON",
+      claimValidationOk: true,
+      tasks: [{ capability: "parking", status: "answered", reason: "PRIVATE_TASK_REASON", dataSource: "property_catalog" }]
+    },
+    "failed cases must emit only the approved bounded evidence"
+  );
+  const serializedFailure = JSON.stringify(continuedWrites[1]);
+  for (const forbidden of ["PRIVATE_FINAL_RESPONSE", "PRIVATE_FACT_SUBJECT", "PRIVATE_FACT_ANSWER", "PRIVATE_TRACE_DETAIL", "PRIVATE_OIDC_TOKEN", "traceId", "eventId", "finalResponse", "facts", "trace"]) {
+    assert.equal(serializedFailure.includes(forbidden), false, `failed case logs must not expose ${forbidden}`);
+  }
+
   assert.throws(
     () => validateAcceptanceResult({ ...safeResult, taskResults: [{ ...safeResult.taskResults[0], dataSource: "   " }] }, { expectedActions: ["reply"] }),
     /answered_task_data_source_required/,
