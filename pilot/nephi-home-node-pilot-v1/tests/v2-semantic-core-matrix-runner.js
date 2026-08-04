@@ -58,6 +58,7 @@ const groundedFragment = resolveEntity(fragmentAlphaCatalog, { category: "amenit
 assert.equal(groundedFragment.status, "resolved", "a unique property-catalog question fragment must resolve");
 assert.equal(groundedFragment.entity.canonicalId, "shared_cooking");
 assert.equal(groundedFragment.entity.answer, "Alpha kitchen policy.", "fragment grounding must remain property-scoped"); cases += 1;
+assert.equal(resolveEntity(fragmentAlphaCatalog, { category: "other", rawText: "kitchen", canonicalCandidate: null }).status, "not_found", "cross-category searches must not promote fragments"); cases += 1;
 assert.equal(resolveEntity(fragmentBetaCatalog, { category: "amenity", rawText: "kitchen", canonicalCandidate: null }).entity.answer, "Beta kitchen policy."); cases += 1;
 const compactFragmentCatalog = buildPropertyCatalog({
   propertyId: "fragment_compact",

@@ -31,7 +31,11 @@ const property = {
   propertyId: "property_alpha", displayName: "Alpha", timezone: "Asia/Taipei", rooms: [],
   businessProfile: { googleMapsUrl: "https://maps.app.goo.gl/AlphaLocation" },
   commonAnswers: { parkingRule: "Alpha parking policy", bbqRule: "Alpha barbecue policy", cancellationRule: "Alpha cancellation policy", priceRule: "Prices depend on the requested stay." },
-  faqs: [{ knowledgeKey: "shared_cooking", question: "Can registered guests use the shared kitchen?", answer: "Alpha kitchen policy." }],
+  faqs: [
+    { knowledgeKey: "shared_cooking", question: "Can registered guests use the shared kitchen?", answer: "Alpha kitchen policy." },
+    { knowledgeKey: "prepayment_help", question: "How is a prepayment deposit arranged?", answer: "Alpha prepayment FAQ." },
+    { knowledgeKey: "transport", question: "What address transport can guests arrange?", answer: "Alpha transport FAQ." }
+  ],
   semanticCatalog: { aliases: { location: ["directions"], parking: ["parking"], bbq: ["bbq"], cancellation: ["cancel"], pool: ["pool"], price: ["room rate"] }, amenities: [{ id: "pool", name: "Pool", aliases: ["pool"], status: "confirmed_yes", answer: "Alpha pool hours" }] }
 };
 const catalog = buildPropertyCatalog(property);
@@ -141,6 +145,28 @@ function main() {
   assert.equal(faqFragment.semantic.tasks[0].entity.canonicalCandidate, "shared_cooking", "a unique Planner entity fragment must compile to the property-backed FAQ fact");
   assert.equal(faqFragment.item.canonicalRequest.capability, "amenity");
 
+  const policyCandidateWithCrossCategoryFragment = canonical(task({
+    taskId: "payment-candidate",
+    type: "policy",
+    category: "policy",
+    rawText: "prepayment",
+    canonicalCandidate: "payment"
+  }));
+  assert.equal(policyCandidateWithCrossCategoryFragment.semantic.tasks[0].entity.canonicalCandidate, "payment", "an amenity FAQ fragment must not override an exact policy candidate");
+  assert.equal(policyCandidateWithCrossCategoryFragment.semantic.tasks[0].entity.category, "policy");
+  assert.equal(policyCandidateWithCrossCategoryFragment.item.canonicalRequest.capability, "policy");
+
+  const locationCandidateWithCrossCategoryFragment = canonical(task({
+    taskId: "location-candidate",
+    type: "property_fact",
+    category: "transport",
+    rawText: "address",
+    canonicalCandidate: "location"
+  }));
+  assert.equal(locationCandidateWithCrossCategoryFragment.semantic.tasks[0].entity.canonicalCandidate, "location", "an amenity FAQ fragment must not override an exact transport candidate");
+  assert.equal(locationCandidateWithCrossCategoryFragment.semantic.tasks[0].entity.category, "transport");
+  assert.equal(locationCandidateWithCrossCategoryFragment.item.canonicalRequest.capability, "location");
+
   const protectedHumanAction = canonical(task({
     taskId: "cancel-action",
     type: "human_help",
@@ -153,7 +179,7 @@ function main() {
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 14, passCount: 14, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 16, passCount: 16, failCount: 0 }));
 }
 
 main();

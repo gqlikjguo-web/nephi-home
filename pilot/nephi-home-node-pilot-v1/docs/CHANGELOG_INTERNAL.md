@@ -229,3 +229,7 @@
 ## 2026-08-05 Property-catalog fragment grounding
 
 - Grounded sufficiently specific Planner entity fragments only when they uniquely identify a property-scoped formal fact, retained ambiguity as fail-closed, excluded inventory fuzzy matching, and preserved human-action handoff authority.
+
+## 2026-08-05 Category-scoped fragment grounding
+
+- Prevented broad cross-category fragment matches from overriding exact Planner candidates, while retaining unique fragment repair inside the Planner-declared formal catalog category.

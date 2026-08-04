@@ -24,7 +24,7 @@ function resolveEntity(catalog, candidate = {}) {
   if (matches.length === 1) return { status: "resolved", entity: matches[0] };
   if (matches.length > 1 && ["room", "room_feature"].includes(expected)) return { status: "matched_set", entities: matches };
   if (matches.length > 1) return { status: "ambiguous", candidates: matches.map((item) => ({ canonicalId: item.canonicalId, publicName: item.publicName })) };
-  if (!["room", "room_feature"].includes(expected) && fragmentIsSpecificEnough(raw)) {
+  if (!["room", "room_feature", "other"].includes(expected) && fragmentIsSpecificEnough(raw)) {
     const fragmentMatches = uniqueEntities(entities
       .filter((item) => !["room", "bundle"].includes(item.category))
       .filter((item) => [item.publicName, ...(item.aliases || [])]

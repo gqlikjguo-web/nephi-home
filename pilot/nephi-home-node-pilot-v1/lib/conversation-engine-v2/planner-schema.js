@@ -65,8 +65,18 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
       canonicalCandidate: null
     })
     : null;
+  const scopedRawGrounded = entity.rawText
+    && entity.category !== "other"
+    && (!rawGrounded || rawGrounded.status === "not_found")
+    ? resolveEntity(catalog, {
+        category: entity.category,
+        rawText: entity.rawText,
+        canonicalCandidate: null
+      })
+    : null;
   const candidateGrounded = entity.canonicalCandidate
     && (!rawGrounded || rawGrounded.status === "not_found")
+    && (!scopedRawGrounded || scopedRawGrounded.status === "not_found")
     ? resolveEntity(catalog, {
         category: "other",
         rawText: "",
@@ -75,7 +85,9 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
     : null;
   const grounded = rawGrounded && rawGrounded.status !== "not_found"
     ? rawGrounded
-    : candidateGrounded || rawGrounded;
+    : scopedRawGrounded && scopedRawGrounded.status !== "not_found"
+      ? scopedRawGrounded
+      : candidateGrounded || scopedRawGrounded || rawGrounded;
   const groundedEntity = grounded
     && grounded.status === "resolved"
     && grounded.entity;
