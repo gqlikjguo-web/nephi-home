@@ -1,6 +1,8 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 const { TEST_ONLY_ACCEPTANCE_AUDIENCE, EXPECTED_REPOSITORY, EXPECTED_REF, EXPECTED_WORKFLOW_REF } = require("../lib/test-only-acceptance-oidc");
 
 const DEFAULT_BASE_URL = "https://nephi-home-node-pilot-test-only-btye.onrender.com";
@@ -10,36 +12,75 @@ const FORMAL_TRACE_STAGES = [...COMMON_TRACE_STAGES, "canonical_request", "forma
 const NO_REPLY_TRACE_STAGES = ["planner", "validation", "semantic_contract", "final_decision"];
 const FORBIDDEN_FINAL_TEXT = ["一定有房", "已完成訂房"];
 
-const ACCEPTANCE_MATRIX = [
-  { id: "general-availability", turns: [{ messageText: "8/6 還有住宿空間嗎？", expectedActions: ["reply"], expectedCapabilities: ["availability"], requiredStages: FORMAL_TRACE_STAGES }] },
-  { id: "unspecified-room", turns: [{ messageText: "8/6 可以訂房嗎？", expectedActions: ["reply"], expectedCapabilities: ["availability"], requiredStages: FORMAL_TRACE_STAGES }] },
-  { id: "named-room", turns: [{ messageText: "8/6 的 401 雙人房還有嗎？", expectedActions: ["reply"], expectedCapabilities: ["availability"], requiredStages: FORMAL_TRACE_STAGES }] },
-  { id: "price-nights", turns: [{ messageText: "8/6 入住兩晚，401 雙人房總房價多少？", expectedActions: ["reply", "handoff"], expectedCapabilities: [["price", "total_price"]], requiredStages: FORMAL_TRACE_STAGES }] },
-  { id: "bundle", turns: [{ messageText: "8/6 入住一晚，8 位可以包棟嗎？", expectedActions: ["reply"], expectedCapabilities: [["bundle_availability", "availability"]], requiredStages: FORMAL_TRACE_STAGES }] },
-  { id: "parking", turns: [{ messageText: "請問民宿可以停車嗎？", expectedActions: ["reply"], expectedCapabilities: [["parking", "amenity"]], requiredStages: FORMAL_TRACE_STAGES }] },
-  { id: "bbq", turns: [{ messageText: "請問可以烤肉嗎？", expectedActions: ["reply"], expectedCapabilities: [["bbq", "policy", "amenity"]], requiredStages: FORMAL_TRACE_STAGES }] },
-  { id: "pool", turns: [{ messageText: "民宿有戲水池嗎？", expectedActions: ["reply"], expectedCapabilities: [["pool", "amenity"]], requiredStages: FORMAL_TRACE_STAGES }] },
-  { id: "location-navigation", turns: [{ messageText: "民宿在哪裡？請給我導航位置。", expectedActions: ["reply"], expectedCapabilities: [["location", "property_fact"]], requiredStages: FORMAL_TRACE_STAGES }] },
-  { id: "check-in-out", turns: [{ messageText: "入住和退房時間分別是幾點？", expectedActions: ["reply"], expectedCapabilities: [["check_in", "policy"], ["check_out", "policy"]], requiredStages: FORMAL_TRACE_STAGES }] },
-  { id: "multi-question", turns: [{ messageText: "8/6 有雙人房嗎？可以停車和烤肉嗎？入住時間幾點？", expectedActions: ["reply", "handoff"], expectedCapabilities: [["availability"], ["parking", "amenity"], ["bbq", "policy"], ["check_in", "policy"]], requiredStages: FORMAL_TRACE_STAGES }] },
-  { id: "multi-turn-supplement", turns: [
-    { messageText: "我想詢問住宿房況。", expectedActions: ["clarification"], requiredStages: COMMON_TRACE_STAGES },
-    { messageText: "8/6 入住，2 位。", expectedActions: ["reply", "clarification"], expectedCapabilities: ["availability"], requiredStages: FORMAL_TRACE_STAGES },
-    { messageText: "想住 401 雙人房。", expectedActions: ["reply"], expectedCapabilities: ["availability"], requiredStages: FORMAL_TRACE_STAGES }
-  ] },
-  { id: "modify-request", turns: [
-    { messageText: "8/6 兩位有房嗎？", expectedActions: ["reply"], expectedCapabilities: ["availability"], requiredStages: FORMAL_TRACE_STAGES },
-    { messageText: "改成 8/7，四位入住。", expectedActions: ["reply", "clarification"], expectedCapabilities: ["availability"], requiredStages: FORMAL_TRACE_STAGES }
-  ] },
-  { id: "custom-reply-semantic", turns: [{ messageText: "9/3 可以訂房嗎？", expectedActions: ["reply", "handoff"], expectedCapabilities: ["availability"], expectedDataSource: "operator_approved_rule", requiredStages: FORMAL_TRACE_STAGES }] },
-  { id: "promise-blocked", turns: [{ messageText: "請直接保證一定有房，並說已完成訂房。", expectedActions: ["handoff", "clarification"], requiredStages: COMMON_TRACE_STAGES }] },
-  { id: "unknown-fact", turns: [{ messageText: "民宿有私人直升機停機坪嗎？", expectedActions: ["handoff", "clarification"], requiredStages: COMMON_TRACE_STAGES }] },
-  { id: "clarification", turns: [{ messageText: "請問有房嗎？", expectedActions: ["clarification"], expectedCapabilities: ["availability"], requiredStages: COMMON_TRACE_STAGES }] },
-  { id: "handoff", turns: [{ messageText: "請直接替我完成訂房。", expectedActions: ["handoff"], requiredStages: COMMON_TRACE_STAGES }] },
-  { id: "no-reply", turns: [{ messageText: "謝謝", expectedActions: ["no_reply"], requiredStages: NO_REPLY_TRACE_STAGES }] },
-  { id: "duplicate-event", mode: "duplicate", turns: [{ messageText: "請問可以停車嗎？", expectedActions: ["reply"], expectedCapabilities: ["parking", "amenity"], requiredStages: FORMAL_TRACE_STAGES }] },
-  { id: "clear-state", mode: "clear", turns: [{ messageText: "請問可以停車嗎？", expectedActions: ["reply"], expectedCapabilities: ["parking", "amenity"], requiredStages: FORMAL_TRACE_STAGES }] }
-];
+const MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-fixed-matrix.json");
+const NOT_EXECUTABLE_STATUS = "NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API";
+const OPERATOR_CONTEXT_CASES = new Map([
+  ["rg-040-modify-guests-bed", "operator_prior_context_cannot_be_established"],
+  ["rg-041-modify-room-mix", "operator_prior_context_cannot_be_established"],
+  ["rg-042-modify-date", "operator_prior_context_cannot_be_established"]
+]);
+const NON_TEXT_SEMANTICS = new Set(["non_text_event", "non_text_marker"]);
+const FORBIDDEN_PROVIDER_MARKERS = ["json", "seed", "fixture", "pglite", "fake_planner", "fake_composer"];
+
+function semanticCapabilityGroups(tags = []) {
+  const groups = [];
+  const add = (alternatives) => {
+    const normalized = [...new Set(alternatives)].sort();
+    const key = normalized.join("|");
+    if (!groups.some((item) => item.join("|") === key)) groups.push(normalized);
+  };
+  const values = new Set(tags);
+  if ([...values].some((tag) => ["availability", "date_clarification"].includes(tag))) add(["availability", "available_dates", "room_options", "bundle_availability"]);
+  if ([...values].some((tag) => ["price", "total_price", "holiday_price"].includes(tag))) add(["price", "total_price"]);
+  if ([...values].some((tag) => ["extra_bed", "baby_crib", "bathtub", "amenity", "common_space", "kitchen", "towel", "mahjong", "switch", "board_games", "ktv"].includes(tag))) add(["amenity", "policy", "property_fact"]);
+  if ([...values].some((tag) => ["deposit", "payment", "cancellation", "refund", "refund_policy", "payment_method", "deposit_process", "payment_timing", "pet_policy", "check_in", "late_arrival", "latest_arrival", "quiet_hours", "noise_policy", "property_rule", "cleaning_fee"].includes(tag))) add(["policy", "property_fact"]);
+  if ([...values].some((tag) => ["bbq", "bbq_equipment", "bbq_fee", "bbq_food_order", "bbq_hours", "food_order"].includes(tag))) add(["bbq", "amenity", "policy"]);
+  if ([...values].some((tag) => ["pool", "pool_fee", "seasonal_hours"].includes(tag))) add(["pool", "amenity", "policy"]);
+  if (values.has("parking")) add(["parking", "amenity", "property_fact"]);
+  if ([...values].some((tag) => ["location", "navigation"].includes(tag))) add(["location", "property_fact"]);
+  if ([...values].some((tag) => ["booking", "booking_process"].includes(tag))) add(["booking_request", "availability", "policy"]);
+  if (values.has("bundle_capacity")) add(["capacity", "bundle_availability", "property_fact"]);
+  if (values.has("sensitive_access_info")) add(["high_risk", "human_help", "unknown"]);
+  if (values.has("payment_claim")) add(["policy", "high_risk", "human_help", "unknown"]);
+  if (values.has("unknown_property_fact")) add(["property_fact", "unknown", "human_help"]);
+  return groups;
+}
+
+function executionReasonForTurn(item, turn) {
+  if (turn && turn.requiresPriorContextFromSource === true) return "operator_prior_context_cannot_be_established";
+  if (turn && (turn.eventKind || (turn.expectedSemantic || []).some((tag) => NON_TEXT_SEMANTICS.has(tag)))) return "native_non_text_event_requires_line_transport";
+  if (item && item.channelCapabilityRequired === "real_non_text_event_injection") return "native_non_text_event_requires_line_transport";
+  return "";
+}
+
+function loadAcceptanceMatrix(filePath = MATRIX_PATH) {
+  const source = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (!source || !Array.isArray(source.cases)) throw new Error("real_guest_matrix_cases_required");
+  const turnCount = source.cases.reduce((sum, item) => sum + (Array.isArray(item.turns) ? item.turns.length : 0), 0);
+  if (source.cases.length !== 53 || turnCount !== 61) throw new Error("real_guest_matrix_fixed_count_mismatch");
+  return source.cases.map((item) => {
+    const caseReason = OPERATOR_CONTEXT_CASES.get(item.id) || "";
+    return {
+      id: item.id,
+      bucket: item.bucket,
+      sourceRef: item.sourceRef,
+      ...(caseReason ? { executionStatus: NOT_EXECUTABLE_STATUS, executionReasonCode: caseReason } : {}),
+      turns: item.turns.map((turn) => {
+        const turnReason = executionReasonForTurn(item, turn);
+        return {
+          messageText: turn.input,
+          expectedActions: turn.allowedActions,
+          expectedSemantic: turn.expectedSemantic || [],
+          expectedCapabilities: semanticCapabilityGroups(turn.expectedSemantic || []),
+          forbidClaims: turn.forbidClaims || [],
+          ...(turnReason ? { executionStatus: NOT_EXECUTABLE_STATUS, executionReasonCode: turnReason } : {})
+        };
+      })
+    };
+  });
+}
+
+const ACCEPTANCE_MATRIX = loadAcceptanceMatrix();
 
 function delay(milliseconds) { return milliseconds > 0 ? new Promise((resolve) => setTimeout(resolve, milliseconds)) : Promise.resolve(); }
 function responseData(payload) { return payload && payload.ok === true && payload.data ? payload.data : payload; }
@@ -94,29 +135,49 @@ function validateAcceptanceResult(result, expectation = {}) {
   if (!result.traceId || !result.eventId) throw new Error("acceptance_evidence_ids_required");
   if (!result.finalDecision || typeof result.finalDecision.action !== "string") throw new Error("final_decision_required");
   if (!result.claimValidation || typeof result.claimValidation.ok !== "boolean" || !Array.isArray(result.claimValidation.errors)) throw new Error("claim_validation_required");
+  if (result.claimValidation.ok !== true) throw new Error("claim_validation_rejected");
   if (!result.finalResponse || typeof result.finalResponse.replyText !== "string" || typeof result.finalResponse.shouldReply !== "boolean") throw new Error("final_response_required");
   if (result.finalResponse.action !== result.finalDecision.action) throw new Error("final_response_authority_mismatch");
   if (result.finalResponse.shouldReply !== (result.finalResponse.action !== "no_reply")) throw new Error("final_response_reply_contract_mismatch");
   if (result.finalResponse.action === "no_reply" && result.finalResponse.replyText !== "") throw new Error("no_reply_text_must_be_empty");
   if ((expectation.expectedActions || []).length && !expectation.expectedActions.includes(result.finalDecision.action)) throw new Error(`unexpected_final_action:${result.finalDecision.action}`);
-  if (FORBIDDEN_FINAL_TEXT.some((text) => result.finalResponse.replyText.includes(text))) throw new Error("unsafe_final_response");
+  const forbiddenText = [...FORBIDDEN_FINAL_TEXT, ...(expectation.forbidClaims || [])];
+  if (forbiddenText.some((value) => value && result.finalResponse.replyText.includes(value))) throw new Error("unsafe_final_response");
   if (!Array.isArray(result.taskResults) || !Array.isArray(result.trace)) throw new Error("acceptance_execution_evidence_required");
+  const catalog = result.trace.find((entry) => entry && entry.stage === "property_catalog");
+  if (!catalog || !["postgres", "postgresql"].includes(String(catalog.providerType || "").toLowerCase())) throw new Error("deployed_provider_not_postgresql");
+  const planner = result.trace.find((entry) => entry && entry.stage === "planner");
+  if (!planner || planner.parserSucceeded !== true) throw new Error("planner_semantic_path_required");
+  const semanticContract = result.trace.find((entry) => entry && entry.stage === "semantic_contract");
+  if (!semanticContract || semanticContract.validationPassed !== true) throw new Error("semantic_contract_validation_required");
   for (const task of result.taskResults) {
     if (!task || !task.taskId || !(task.capability || task.type) || !task.status || typeof task.reason !== "string" || typeof task.dataSource !== "string") throw new Error("task_evidence_invalid");
     if (task.status === "answered" && !task.dataSource.trim()) throw new Error("answered_task_data_source_required");
+    if (task.status === "answered" && FORBIDDEN_PROVIDER_MARKERS.some((marker) => task.dataSource.toLowerCase().includes(marker))) throw new Error("forbidden_deployed_data_source");
     validateSafeFacts(task.facts);
   }
-  const capabilities = new Set(result.taskResults.flatMap((task) => [task.capability, task.type].filter(Boolean)));
+  const canonicalItems = result.trace.filter((entry) => entry && entry.stage === "canonical_request").flatMap((entry) => Array.isArray(entry.items) ? entry.items : []);
+  const capabilities = new Set([
+    ...result.taskResults.flatMap((task) => [task.capability, task.type].filter(Boolean)),
+    ...canonicalItems.map((item) => item && item.capability).filter(Boolean)
+  ]);
   for (const expected of expectation.expectedCapabilities || []) {
     const alternatives = Array.isArray(expected) ? expected : [expected];
     if (!alternatives.some((capability) => capabilities.has(capability))) throw new Error(`expected_capability_missing:${alternatives.join("|")}`);
   }
   if (expectation.expectedDataSource && !result.taskResults.some((task) => task.dataSource === expectation.expectedDataSource)) throw new Error(`expected_data_source_missing:${expectation.expectedDataSource}`);
+  const semanticTags = new Set(expectation.expectedSemantic || []);
+  if (semanticTags.has("bundle") && canonicalItems.length && !canonicalItems.some((item) => item.capability === "bundle_availability" || item.canonicalEntity && item.canonicalEntity.category === "bundle")) throw new Error("expected_bundle_scope_missing");
+  for (const roomNumber of ["301", "402"]) {
+    if (semanticTags.has(`room_${roomNumber}`) && canonicalItems.length && !canonicalItems.some((item) => String(item.canonicalEntity && item.canonicalEntity.canonicalId || "").includes(roomNumber))) throw new Error(`expected_room_scope_missing:${roomNumber}`);
+  }
+  if (semanticTags.has("date_range") && canonicalItems.length && !canonicalItems.some((item) => item.temporalState && item.temporalState.checkIn && item.temporalState.checkOut)) throw new Error("expected_date_range_missing");
+  if (semanticTags.has("nights") && canonicalItems.length && !canonicalItems.some((item) => Number.isInteger(item.temporalState && item.temporalState.nights) && item.temporalState.nights > 0)) throw new Error("expected_nights_missing");
   const stages = new Set(result.trace.map((entry) => entry && entry.stage));
-  for (const stage of expectation.requiredStages || COMMON_TRACE_STAGES) if (!stages.has(stage)) throw new Error(`trace_stage_missing:${stage}`);
+  const requiredStages = expectation.requiredStages || (result.finalDecision.action === "no_reply" ? NO_REPLY_TRACE_STAGES : result.finalDecision.action === "reply" && result.taskResults.some((task) => task.status === "answered") ? FORMAL_TRACE_STAGES : COMMON_TRACE_STAGES);
+  for (const stage of requiredStages) if (!stages.has(stage)) throw new Error(`trace_stage_missing:${stage}`);
   return { action: result.finalDecision.action, reasonCode: result.finalDecision.reasonCode, claimValidationOk: result.claimValidation.ok };
 }
-
 async function acceptanceRequest({ baseUrl, oidcToken, method = "POST", body, fetchImpl = globalThis.fetch }) {
   const response = await fetchImpl(`${String(baseUrl).replace(/\/$/, "")}/api/admin/test-only/conversation-acceptance`, {
     method,
@@ -135,6 +196,15 @@ function safeEvidence(caseId, turnNumber, result) {
     traceId: result.traceId,
     finalDecisionAction: result.finalDecision.action,
     claimValidationOk: result.claimValidation.ok === true
+  };
+}
+
+function safeNotExecutableEvidence(caseId, turnNumber, reasonCode) {
+  return {
+    case: caseId,
+    turn: turnNumber,
+    status: NOT_EXECUTABLE_STATUS,
+    reasonCode
   };
 }
 
@@ -167,12 +237,33 @@ function safeFailureEvidence(caseId, turnNumber, error, result) {
 async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, commit, fetchImpl = globalThis.fetch, write = (value) => console.log(JSON.stringify(value)) }) {
   const failures = [];
   let passCount = 0;
+  let partialCount = 0;
+  let executableCaseCount = 0;
+  let executableTurnCount = 0;
+  let notExecutableCaseCount = 0;
+  let notExecutableTurnCount = 0;
+  const turnCount = ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0);
   for (const item of ACCEPTANCE_MATRIX) {
     const conversationId = `gha-${commit.slice(0, 12)}-${item.id}-${crypto.randomUUID()}`;
     let firstRequest = null;
     let lastResult = null;
     let caseFailed = false;
+    let caseExecuted = false;
+    let caseSkipped = false;
     for (const [index, turn] of item.turns.entries()) {
+      const reasonCode = item.executionStatus === NOT_EXECUTABLE_STATUS
+        ? item.executionReasonCode
+        : turn.executionStatus === NOT_EXECUTABLE_STATUS
+          ? turn.executionReasonCode
+          : "";
+      if (reasonCode) {
+        notExecutableTurnCount += 1;
+        caseSkipped = true;
+        write(safeNotExecutableEvidence(item.id, index + 1, reasonCode));
+        continue;
+      }
+      caseExecuted = true;
+      executableTurnCount += 1;
       const eventId = `gha-${item.id}-${index + 1}-${crypto.randomUUID()}`;
       const request = { customerId: propertyId, conversationId, messageText: turn.messageText, eventId };
       let result = null;
@@ -181,7 +272,7 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, commit, fet
         validateAcceptanceResult(result, turn);
         write(safeEvidence(item.id, index + 1, result));
         lastResult = result;
-        if (index === 0) firstRequest = request;
+        if (!firstRequest) firstRequest = request;
       } catch (error) {
         const failure = safeFailureEvidence(item.id, index + 1, error, result);
         failures.push(failure);
@@ -190,6 +281,11 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, commit, fet
         break;
       }
     }
+    if (!caseExecuted) {
+      notExecutableCaseCount += 1;
+      continue;
+    }
+    executableCaseCount += 1;
     if (caseFailed) continue;
     try {
       if (item.mode === "duplicate") {
@@ -200,23 +296,33 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, commit, fet
         const cleared = await acceptanceRequest({ baseUrl, oidcToken, method: "DELETE", body: { customerId: propertyId, conversationId }, fetchImpl });
         if (!cleared || cleared.cleared !== true) throw new Error("clear_state_contract_failed");
       }
-      passCount += 1;
+      if (caseSkipped) partialCount += 1;
+      else passCount += 1;
     } catch (error) {
       const failure = safeFailureEvidence(item.id, item.turns.length, error, lastResult);
       failures.push(failure);
       write(failure);
     }
   }
+  const summary = {
+    caseCount: ACCEPTANCE_MATRIX.length,
+    turnCount,
+    executableCaseCount,
+    executableTurnCount,
+    passCount,
+    partialCount,
+    failCount: failures.length,
+    notExecutableCaseCount,
+    notExecutableTurnCount
+  };
   if (failures.length) {
     const error = new Error("deployed_acceptance_matrix_failed");
     error.code = "deployed_acceptance_matrix_failed";
-    error.failCount = failures.length;
-    error.passCount = passCount;
+    Object.assign(error, summary);
     throw error;
   }
-  return { caseCount: ACCEPTANCE_MATRIX.length, passCount, failCount: 0 };
+  return summary;
 }
-
 async function main(env = process.env) {
   const commit = String(env.GITHUB_SHA || "").trim().toLowerCase();
   if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error("github_sha_required");
@@ -226,22 +332,31 @@ async function main(env = process.env) {
   const health = await pollForDeployment({ baseUrl, expectedCommit: commit });
   console.log(JSON.stringify({ stage: "deployment-ready", status: health.status, testOnly: health.testOnly, commit: health.commit }));
   const oidcToken = await requestGithubOidcToken({ requestUrl: env.ACTIONS_ID_TOKEN_REQUEST_URL, requestToken: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN });
-  await runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, commit });
-  console.log(JSON.stringify({ suite: "deployed-conversation-acceptance", caseCount: ACCEPTANCE_MATRIX.length, passCount: ACCEPTANCE_MATRIX.length, failCount: 0, commit }));
+  const summary = await runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, commit });
+  console.log(JSON.stringify({ suite: "deployed-conversation-acceptance", ...summary, commit }));
 }
-
 if (require.main === module) main().catch((error) => {
   console.error(JSON.stringify({
     suite: "deployed-conversation-acceptance",
     status: "FAIL",
     errorCode: safeErrorCode(error),
-    failCount: Number.isInteger(error && error.failCount) ? error.failCount : 1
+    caseCount: Number.isInteger(error && error.caseCount) ? error.caseCount : ACCEPTANCE_MATRIX.length,
+    turnCount: Number.isInteger(error && error.turnCount) ? error.turnCount : ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0),
+    executableCaseCount: Number.isInteger(error && error.executableCaseCount) ? error.executableCaseCount : 0,
+    executableTurnCount: Number.isInteger(error && error.executableTurnCount) ? error.executableTurnCount : 0,
+    passCount: Number.isInteger(error && error.passCount) ? error.passCount : 0,
+    partialCount: Number.isInteger(error && error.partialCount) ? error.partialCount : 0,
+    failCount: Number.isInteger(error && error.failCount) ? error.failCount : 1,
+    notExecutableCaseCount: Number.isInteger(error && error.notExecutableCaseCount) ? error.notExecutableCaseCount : 0,
+    notExecutableTurnCount: Number.isInteger(error && error.notExecutableTurnCount) ? error.notExecutableTurnCount : 0
   }));
   process.exitCode = 1;
 });
 
 module.exports = {
   ACCEPTANCE_MATRIX,
+  loadAcceptanceMatrix,
+  NOT_EXECUTABLE_STATUS,
   pollForDeployment,
   requestGithubOidcToken,
   validateAcceptanceResult,

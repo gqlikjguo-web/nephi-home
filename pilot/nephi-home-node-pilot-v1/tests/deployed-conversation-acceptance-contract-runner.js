@@ -16,13 +16,10 @@ const root = path.resolve(__dirname, "../../..");
 const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
 
 (async () => {
-  const requiredCases = new Set([
-    "general-availability", "unspecified-room", "named-room", "price-nights", "bundle",
-    "parking", "bbq", "pool", "location-navigation", "check-in-out", "multi-question",
-    "multi-turn-supplement", "modify-request", "custom-reply-semantic", "promise-blocked",
-    "unknown-fact", "clarification", "handoff", "no-reply", "duplicate-event", "clear-state"
-  ]);
-  assert.deepEqual(new Set(ACCEPTANCE_MATRIX.map((item) => item.id)), requiredCases, "the deployed matrix must cover every approved core category exactly once");
+  const caseNumbers = ACCEPTANCE_MATRIX.map((item) => item.id.slice(3, 6));
+  assert.equal(ACCEPTANCE_MATRIX.length, 53, "the deployed matrix must retain all fixed real-guest cases");
+  assert.deepEqual(caseNumbers, Array.from({ length: 53 }, (_, index) => String(index + 1).padStart(3, "0")), "fixed case ordering and identity must remain complete");
+  assert.equal(ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 61, "the source matrix must retain all 61 turns before channel exclusions");
   assert.ok(ACCEPTANCE_MATRIX.every((item) => Array.isArray(item.turns) && item.turns.length > 0));
 
   let healthCalls = 0;
@@ -60,7 +57,8 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     finalResponse: { action: "reply", shouldReply: true, replyText: "民宿旁可停車。" },
     taskResults: [{ taskId: "parking", capability: "parking", type: "parking", status: "answered", reason: "", dataSource: "property_catalog", facts: { subject: "停車", status: "confirmed_yes", answer: "民宿旁可停車。" } }],
     trace: [
-      { stage: "planner" }, { stage: "validation" }, { stage: "semantic_contract" },
+      { stage: "property_catalog", providerType: "postgres" },
+      { stage: "planner", parserSucceeded: true }, { stage: "validation" }, { stage: "semantic_contract", validationPassed: true },
       { stage: "canonical_request" }, { stage: "formal_request" }, { stage: "query_plan" },
       { stage: "executor" }, { stage: "claim_validator" }, { stage: "final_decision" }
     ]
@@ -202,12 +200,13 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.doesNotMatch(workflow, /continue-on-error|forced success/i);
 
   const deployedRunnerSource = fs.readFileSync(path.join(__dirname, "../scripts/run-deployed-conversation-acceptance.js"), "utf8");
-  assert.doesNotMatch(deployedRunnerSource, /fake planner|pglite/i);
+  assert.doesNotMatch(deployedRunnerSource, /require\([^)]*pglite|createPglite|fake planner/i);
+  assert.match(deployedRunnerSource, /FORBIDDEN_PROVIDER_MARKERS/, "deployed evidence must explicitly reject fake or local provider markers");
   assert.doesNotMatch(deployedRunnerSource, /console\.(?:log|error)\([^\n]*(?:oidcToken|requestToken)/, "OIDC tokens must never be passed to output calls");
 
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "../package.json"), "utf8"));
-  assert.equal(packageJson.scripts["test:deployed-acceptance-contract"], "node tests/test-only-acceptance-oidc-runner.js && node tests/deployed-conversation-acceptance-contract-runner.js && node tests/test-only-conversation-acceptance-api-runner.js");
-  assert.equal(packageJson.scripts.posttest, "node tests/test-only-acceptance-oidc-runner.js && node tests/deployed-conversation-acceptance-contract-runner.js");
+  assert.equal(packageJson.scripts["test:deployed-acceptance-contract"], "node tests/test-only-acceptance-oidc-runner.js && node tests/deployed-conversation-acceptance-contract-runner.js && node tests/real-guest-deployed-acceptance-matrix-runner.js && node tests/test-only-conversation-acceptance-api-runner.js");
+  assert.equal(packageJson.scripts.posttest, "node tests/test-only-acceptance-oidc-runner.js && node tests/deployed-conversation-acceptance-contract-runner.js && node tests/real-guest-deployed-acceptance-matrix-runner.js");
 
   console.log(JSON.stringify({ suite: "deployed-conversation-acceptance-contract", caseCount: 18, passCount: 18, failCount: 0 }));
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
