@@ -317,7 +317,9 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
   }
   const acknowledgementOnly = value.discourse
     && value.discourse.relation === "acknowledgement"
-    && tasks.every((task) => task && task.type === "unknown");
+    && tasks.every((task) => task
+      && task.type === "unknown"
+      && task.detailIntent === "general");
   const nonSubstantiveUnknownOnly = tasks.every((task) => task && task.type === "unknown")
     && sourceEventsAreUnicodeNonSubstantive(sourceEvents);
   const silentOnly = acknowledgementOnly || nonSubstantiveUnknownOnly;

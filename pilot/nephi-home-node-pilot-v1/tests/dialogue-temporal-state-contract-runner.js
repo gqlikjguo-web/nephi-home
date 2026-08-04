@@ -35,7 +35,7 @@ function task(type, taskId, options = {}) {
     taskId,
     type,
     sourceText: options.sourceText || taskId,
-    detailIntent: "general",
+    detailIntent: options.detailIntent || "general",
     requestedOutputs: ["answer"],
     eligibilityEvidence: { kind: "none", sourceText: "" },
     dependsOnStayContext: options.dependsOnStayContext === undefined
@@ -217,6 +217,18 @@ async function testAcknowledgementContradictions() {
   ], { relation: "acknowledgement", shouldIgnore: false }), "一般社交訊息", "ack-unknown");
   assert.equal(unknown.result.finalDecision.action, "no_reply");
   assert.equal(unknown.result.reviewCount, 0);
+
+  const substantiveUnknown = await processOne(plannerOutput([
+    task("unknown", "verification-required", {
+      sourceText: "A completed action needs verification",
+      rawText: "completed action",
+      category: "other",
+      detailIntent: "missing_information"
+    })
+  ], { relation: "acknowledgement", shouldIgnore: false }), "A completed action needs verification", "ack-substantive-unknown");
+  assert.equal(substantiveUnknown.result.finalDecision.action, "handoff", "an acknowledgement-shaped task that still carries a substantive missing-information intent must fail closed instead of being silenced");
+  assert.equal(substantiveUnknown.result.finalResponse.shouldReply, true);
+  assert.notEqual(substantiveUnknown.result.finalResponse.replyText, "");
 
   const invalidEndRelation = await processOne(plannerOutput([
     task("unknown", "ack-invalid-end", {

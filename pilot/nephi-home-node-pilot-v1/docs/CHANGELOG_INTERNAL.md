@@ -221,3 +221,7 @@
 ## 2026-08-05 Planner evidence coordinate normalization
 
 - Rebuilt drifted `new_request` evidence coordinates only when the Planner quote occurs exactly once inside its already identified source event, while retaining fail-closed validation for wrong identifiers, absent or ambiguous quotes, historical relations, and multi-event bursts.
+
+## 2026-08-05 Substantive acknowledgement isolation
+
+- Restricted acknowledgement-only silence to unknown tasks with the controlled `general` detail intent, so acknowledgement-shaped tasks that still request missing-information verification fail closed with a reply instead of being silently discarded.
