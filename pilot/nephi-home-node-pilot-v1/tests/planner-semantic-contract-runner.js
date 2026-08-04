@@ -75,6 +75,27 @@ function main() {
   assert.equal(resolvedPrice.item.canonicalRequest.capability, "price");
   assert.equal(resolvedPrice.item.canonicalRequest.resolverId, "availability_resolver");
 
+  const ungroundedPrice = canonical(task({
+    taskId: "generic-amount",
+    type: "price",
+    category: "policy",
+    rawText: "quoted amount",
+    requestedOutputs: ["price"]
+  }));
+  assert.equal(ungroundedPrice.semantic.tasks[0].type, "price");
+  assert.equal(ungroundedPrice.semantic.tasks[0].entity.category, "other", "an ungrounded price task must retain its inventory capability with a compatible generic entity");
+  assert.equal(ungroundedPrice.item.canonicalRequest.capability, "price");
+
+  const bundlePriceOutput = canonical(task({
+    taskId: "package-amount",
+    type: "bundle_availability",
+    category: "bundle",
+    rawText: "lodging package",
+    requestedOutputs: ["price"]
+  }));
+  assert.equal(bundlePriceOutput.semantic.tasks[0].type, "price", "an unambiguous controlled price output must correct an availability-shaped task");
+  assert.equal(bundlePriceOutput.item.canonicalRequest.capability, "price");
+
   const standaloneAmenityAvailability = canonical(task({
     taskId: "portable-cot-availability",
     type: "availability",
@@ -113,7 +134,7 @@ function main() {
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 10, passCount: 10, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 12, passCount: 12, failCount: 0 }));
 }
 
 main();

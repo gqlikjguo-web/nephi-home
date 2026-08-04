@@ -133,6 +133,20 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
 function normalizedUngroundedTaskShape(task) {
   const entity = task && task.entity;
   if (!entity) return task;
+  const requestedOutputs = new Set(Array.isArray(task.requestedOutputs) ? task.requestedOutputs : []);
+  const requestedInventoryType = requestedOutputs.size === 1
+    && requestedOutputs.has("total_price")
+    ? "total_price"
+    : requestedOutputs.size === 1 && requestedOutputs.has("price")
+      ? "price"
+      : null;
+  if (requestedInventoryType
+    && ["availability", "bundle_availability", "room_options"].includes(task.type)
+    && ["room", "bundle", "other"].includes(entity.category)) return {
+    ...task,
+    type: requestedInventoryType,
+    dependsOnStayContext: true
+  };
   if (task.type === "availability") {
     const standaloneType = ["amenity", "activity", "room_feature"].includes(entity.category)
       ? "amenity"
@@ -150,8 +164,13 @@ function normalizedUngroundedTaskShape(task) {
   }
   const exactDefinition = getCapabilityDefinition(task.type);
   if (exactDefinition
-    && exactDefinition.resolverId === "property_catalog"
     && !exactDefinition.acceptedEntityCategories.includes(entity.category)) {
+    if (exactDefinition.resolverId === "availability_resolver"
+      && exactDefinition.acceptedEntityCategories.includes("other")
+      && !["room", "bundle"].includes(entity.category)) return {
+      ...task,
+      entity: { ...entity, category: "other", rawText: "", canonicalCandidate: null }
+    };
     const category = task.type === "policy"
       ? "policy"
       : task.type === "amenity"
