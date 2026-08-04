@@ -2,6 +2,16 @@
 
 function key(value) { return String(value || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""); }
 function allEntities(catalog) { return [...(catalog.rooms || []), ...(catalog.amenities || []), ...(catalog.policies || []), ...(catalog.faqs || [])]; }
+function fragmentIsSpecificEnough(value) {
+  const characters = [...value];
+  const containsCompactScript = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(value);
+  return characters.length >= (containsCompactScript ? 2 : 4);
+}
+function uniqueEntities(entities) {
+  const byCanonicalId = new Map();
+  for (const entity of entities) if (!byCanonicalId.has(entity.canonicalId)) byCanonicalId.set(entity.canonicalId, entity);
+  return [...byCanonicalId.values()];
+}
 function resolveEntity(catalog, candidate = {}) {
   const expected = candidate.category;
   const entities = allEntities(catalog).filter((item) => expected === "room" ? ["room", "bundle"].includes(item.category) : expected === "amenity" ? ["amenity", "policy"].includes(item.category) : expected === "room_feature" ? item.category === "room" : expected === "activity" ? item.category === "amenity" : expected === "other" ? true : item.category === expected);
@@ -13,7 +23,17 @@ function resolveEntity(catalog, candidate = {}) {
   if (!raw) return { status: "not_found", candidates: [] };
   if (matches.length === 1) return { status: "resolved", entity: matches[0] };
   if (matches.length > 1 && ["room", "room_feature"].includes(expected)) return { status: "matched_set", entities: matches };
-  return matches.length > 1 ? { status: "ambiguous", candidates: matches.map((item) => ({ canonicalId: item.canonicalId, publicName: item.publicName })) } : { status: "not_found", candidates: [] };
+  if (matches.length > 1) return { status: "ambiguous", candidates: matches.map((item) => ({ canonicalId: item.canonicalId, publicName: item.publicName })) };
+  if (!["room", "room_feature"].includes(expected) && fragmentIsSpecificEnough(raw)) {
+    const fragmentMatches = uniqueEntities(entities
+      .filter((item) => !["room", "bundle"].includes(item.category))
+      .filter((item) => [item.publicName, ...(item.aliases || [])]
+        .map(key)
+        .some((alias) => alias && alias.includes(raw))));
+    if (fragmentMatches.length === 1) return { status: "resolved", entity: fragmentMatches[0] };
+    if (fragmentMatches.length > 1) return { status: "ambiguous", candidates: fragmentMatches.map((item) => ({ canonicalId: item.canonicalId, publicName: item.publicName })) };
+  }
+  return { status: "not_found", candidates: [] };
 }
 
 module.exports = { resolveEntity };

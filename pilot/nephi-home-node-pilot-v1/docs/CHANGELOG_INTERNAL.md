@@ -225,3 +225,7 @@
 ## 2026-08-05 Substantive acknowledgement isolation
 
 - Restricted acknowledgement-only silence to unknown tasks with the controlled `general` detail intent, so acknowledgement-shaped tasks that still request missing-information verification fail closed with a reply instead of being silently discarded.
+
+## 2026-08-05 Property-catalog fragment grounding
+
+- Grounded sufficiently specific Planner entity fragments only when they uniquely identify a property-scoped formal fact, retained ambiguity as fail-closed, excluded inventory fuzzy matching, and preserved human-action handoff authority.

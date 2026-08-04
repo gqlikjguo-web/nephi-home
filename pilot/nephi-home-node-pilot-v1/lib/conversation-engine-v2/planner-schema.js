@@ -57,7 +57,7 @@ function controlledRequestedOutputs(task) {
 
 function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
   const entity = task && task.entity;
-  if (!catalog || !entity) return null;
+  if (!catalog || !entity || ["booking_request", "human_help", "high_risk"].includes(task.type)) return null;
   const rawGrounded = entity.rawText
     ? resolveEntity(catalog, {
       category: "other",
