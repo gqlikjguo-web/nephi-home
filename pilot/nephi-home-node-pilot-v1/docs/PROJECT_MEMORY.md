@@ -32,3 +32,9 @@
 - The secure post-deployment test-only conversation acceptance channel is implemented and fully verified locally on `codex/deployed-acceptance-closure-20260804`.
 - The route is dual-gated, preserves platform-admin access, and adds commit-bound GitHub Actions OIDC with safe FinalResponse and execution evidence.
 - The deployed matrix has not been pushed, run in GitHub Actions, deployed, or executed against Render; independent review and later integration remain required.
+
+## 真實客人對話語料索引
+
+- [JunZan AI 真實 LINE 客人對話語料分析](REAL_GUEST_CONVERSATION_STATISTICS.md)以 4,172 個 LINE CSV 為原始資料，包含 2,692 組有效對話及 22,025 則客人訊息。
+- 此報告是 JunZan AI 後續實測題庫及業者表單設計的正式依據；表單缺口另見[業者表單與真實客人高頻問題缺口分析](OPERATOR_FORM_REAL_GUEST_GAP_ANALYSIS.md)。
+- 原始 CSV 仍只保留在 `private-inputs`，不得進入 Repository。
