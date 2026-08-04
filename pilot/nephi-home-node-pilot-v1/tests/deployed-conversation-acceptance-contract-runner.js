@@ -2,12 +2,15 @@
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const {
   ACCEPTANCE_MATRIX,
   pollForDeployment,
   requestGithubOidcToken,
   validateAcceptanceResult,
+  assessFinalResponseEvidence,
+  writeAcceptanceReport,
   runAcceptanceMatrix,
   TEST_ONLY_ACCEPTANCE_AUDIENCE
 } = require("../scripts/run-deployed-conversation-acceptance");
@@ -53,7 +56,7 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     traceId: "trace-1",
     eventId: "event-1",
     finalDecision: { action: "reply", reasonCode: "execution_answered" },
-    claimValidation: { ok: true, errors: [] },
+    claimValidation: { ok: true, errors: [], coveredTaskIds: ["parking"], missingTaskIds: [], unexpectedTaskIds: [] },
     finalResponse: { action: "reply", shouldReply: true, replyText: "民宿旁可停車。" },
     taskResults: [{ taskId: "parking", capability: "parking", type: "parking", status: "answered", reason: "", dataSource: "property_catalog", facts: { subject: "停車", status: "confirmed_yes", answer: "民宿旁可停車。" } }],
     trace: [
@@ -64,6 +67,51 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     ]
   };
   assert.equal(validateAcceptanceResult(safeResult, { expectedActions: ["reply"], expectedCapabilities: ["parking"] }).action, "reply");
+  const supportedAssessment = assessFinalResponseEvidence(safeResult, { expectedActions: ["reply"], expectedCapabilities: ["parking"] });
+  assert.equal(supportedAssessment.status, "PASS", "an exact Engine FinalResponse grounded in allowlisted formal facts may pass");
+  assert.deepEqual(supportedAssessment.reasons, []);
+  const unprovenAssessment = assessFinalResponseEvidence(
+    { ...safeResult, finalResponse: { ...safeResult.finalResponse, replyText: "" } },
+    { expectedActions: ["reply"], expectedCapabilities: ["parking"] }
+  );
+  assert.equal(unprovenAssessment.status, "FAIL", "a reply without an actual Engine FinalResponse must fail closed");
+  assert.ok(unprovenAssessment.reasons.includes("reply_text_required_for_final_action"));
+  const uncoveredAssessment = assessFinalResponseEvidence(
+    { ...safeResult, claimValidation: { ...safeResult.claimValidation, coveredTaskIds: [], missingTaskIds: ["parking"] } },
+    { expectedActions: ["reply"], expectedCapabilities: ["parking"] }
+  );
+  assert.equal(uncoveredAssessment.status, "FAIL", "an answered task not covered by the existing Claim Validator must fail closed");
+  assert.ok(uncoveredAssessment.reasons.includes("answered_task_not_covered_by_claim_validator"));
+
+  const reportDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-acceptance-report-"));
+  try {
+    const report = {
+      schemaVersion: 1,
+      commit: expectedCommit,
+      generatedAt: "2026-08-04T08:00:00.000Z",
+      summary: { caseCount: 1, passCount: 0, failCount: 1 },
+      cases: [{
+        caseId: "report-private-case",
+        status: "FAIL",
+        turns: [{
+          turn: 1,
+          guestQuestion: "PRIVATE_GUEST_QUESTION",
+          formalEvidence: [{ capability: "parking", status: "answered", reason: "", dataSource: "property_catalog", facts: { subject: "parking", answer: "PRIVATE_FORMAL_FACT" } }],
+          finalResponse: { action: "reply", shouldReply: true, replyText: "PRIVATE_FINAL_RESPONSE" },
+          assessment: { status: "FAIL", reasons: ["reply_text_required_for_final_action"] }
+        }]
+      }]
+    };
+    const files = writeAcceptanceReport(report, reportDirectory);
+    const json = fs.readFileSync(files.jsonPath, "utf8");
+    const markdown = fs.readFileSync(files.markdownPath, "utf8");
+    for (const required of ["PRIVATE_GUEST_QUESTION", "PRIVATE_FORMAL_FACT", "PRIVATE_FINAL_RESPONSE", "reply_text_required_for_final_action"]) {
+      assert.equal(json.includes(required), true, `private JSON artifact must contain ${required}`);
+      assert.equal(markdown.includes(required), true, `private Markdown artifact must contain ${required}`);
+    }
+  } finally {
+    fs.rmSync(reportDirectory, { recursive: true, force: true });
+  }
   const multiCapabilityResult = { ...safeResult, taskResults: [...safeResult.taskResults, { taskId: "bbq", capability: "policy", type: "policy", status: "answered", reason: "", dataSource: "property_catalog", facts: { subject: "烤肉", answer: "依規範使用。" } }] };
   assert.equal(validateAcceptanceResult(multiCapabilityResult, { expectedActions: ["reply"], expectedCapabilities: [["parking", "amenity"], ["bbq", "policy"]] }).action, "reply");
   assert.throws(() => validateAcceptanceResult(safeResult, { expectedActions: ["reply"], expectedCapabilities: [["parking", "amenity"], ["bbq", "policy"]] }), /expected_capability_missing/);
@@ -119,6 +167,7 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   const originalMatrix = ACCEPTANCE_MATRIX.splice(0);
   const continuedRequests = [];
   const continuedWrites = [];
+  let continuedReport = null;
   let matrixFailure = null;
   ACCEPTANCE_MATRIX.push(
     { id: "collect-first-pass", turns: [{ messageText: "first", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] },
@@ -151,7 +200,8 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
           : { ...safeResult, traceId: `trace-${body.messageText}`, eventId: body.eventId };
         return { ok: true, status: 200, json: async () => ({ ok: true, data: result }) };
       },
-      write: (value) => continuedWrites.push(value)
+      write: (value) => continuedWrites.push(value),
+      reportWriter: (report) => { continuedReport = report; }
     });
   } catch (error) {
     matrixFailure = error;
@@ -161,6 +211,12 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.deepEqual(continuedRequests, ["first", "middle", "last"], "a failed middle case must not prevent later cases from running");
   assert.equal(matrixFailure && matrixFailure.code, "deployed_acceptance_matrix_failed", "the completed matrix must still report an aggregate failure");
   assert.equal(matrixFailure && matrixFailure.failCount, 1);
+  assert.equal(continuedReport.cases.length, 3, "a failed matrix must still produce every case in the private report");
+  assert.equal(continuedReport.cases[1].turns[0].guestQuestion, "middle");
+  assert.equal(continuedReport.cases[1].turns[0].finalResponse.replyText, "PRIVATE_FINAL_RESPONSE");
+  assert.equal(continuedReport.cases[1].turns[0].formalEvidence[0].facts.answer, "PRIVATE_FACT_ANSWER");
+  assert.equal(continuedReport.cases[2].status, "PASS", "later cases must be preserved in the private report after an earlier failure");
+  assert.equal(JSON.stringify(continuedReport).includes("PRIVATE_OIDC_TOKEN"), false, "the private report must not retain authentication material");
   assert.equal(continuedWrites[0].status, "PASS", "successful case output must remain unchanged");
   assert.equal(continuedWrites[2].status, "PASS", "a later successful case must still emit its PASS record");
   assert.deepEqual(
@@ -288,6 +344,10 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.match(workflow, /id-token:\s*write/);
   assert.match(workflow, /run-deployed-conversation-acceptance\.js/);
   assert.match(workflow, /needs:\s*verify/);
+  assert.match(workflow, /actions\/upload-artifact@v4/);
+  assert.match(workflow, /name:\s*junzan-real-guest-acceptance-\$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /if:\s*always\(\)/, "the private report must upload even when the deployed matrix exits 1");
+  assert.match(workflow, /TEST_ONLY_ACCEPTANCE_REPORT_DIR/);
   assert.doesNotMatch(workflow, /continue-on-error|forced success/i);
 
   const deployedRunnerSource = fs.readFileSync(path.join(__dirname, "../scripts/run-deployed-conversation-acceptance.js"), "utf8");

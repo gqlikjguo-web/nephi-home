@@ -13,8 +13,8 @@ function safeResult(eventId, traceId) {
     traceId,
     eventId,
     finalDecision: { action: "reply", reasonCode: "execution_answered" },
-    claimValidation: { ok: true, errors: [] },
-    finalResponse: { action: "reply", shouldReply: true, replyText: "Safe reply" },
+    claimValidation: { ok: true, errors: [], coveredTaskIds: ["parking"], missingTaskIds: [], unexpectedTaskIds: [] },
+    finalResponse: { action: "reply", shouldReply: true, replyText: "parking available" },
     taskResults: [{
       taskId: "parking",
       capability: "parking",

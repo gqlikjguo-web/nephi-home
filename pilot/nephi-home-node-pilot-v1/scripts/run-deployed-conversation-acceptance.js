@@ -178,6 +178,48 @@ function validateAcceptanceResult(result, expectation = {}) {
   for (const stage of requiredStages) if (!stages.has(stage)) throw new Error(`trace_stage_missing:${stage}`);
   return { action: result.finalDecision.action, reasonCode: result.finalDecision.reasonCode, claimValidationOk: result.claimValidation.ok };
 }
+
+function assessFinalResponseEvidence(result, expectation = {}) {
+  const reasons = [];
+  const replyText = result && result.finalResponse && typeof result.finalResponse.replyText === "string" ? result.finalResponse.replyText : "";
+  const action = result && result.finalDecision && result.finalDecision.action || "";
+  const claimValidation = result && result.claimValidation || {};
+  const answeredTasks = Array.isArray(result && result.taskResults) ? result.taskResults.filter((task) => task && task.status === "answered") : [];
+  const coveredTaskIds = new Set(Array.isArray(claimValidation.coveredTaskIds) ? claimValidation.coveredTaskIds : []);
+  const forbiddenText = [...FORBIDDEN_FINAL_TEXT, ...(expectation.forbidClaims || [])];
+  const unauthorizedCommitmentDetected = forbiddenText.some((value) => value && replyText.includes(value));
+
+  if (claimValidation.ok !== true || (claimValidation.errors || []).length || (claimValidation.missingTaskIds || []).length || (claimValidation.unexpectedTaskIds || []).length) {
+    reasons.push("claim_validation_does_not_prove_complete_coverage");
+  }
+  if (unauthorizedCommitmentDetected) reasons.push("unauthorized_commitment_detected");
+  if (action === "no_reply") {
+    if (replyText !== "") reasons.push("no_reply_contains_final_response_text");
+  } else if (!replyText.trim()) {
+    reasons.push("reply_text_required_for_final_action");
+  }
+
+  for (const task of answeredTasks) {
+    if (!task.dataSource || !task.dataSource.trim()) reasons.push("answered_task_data_source_unproven");
+    if (!task.facts || typeof task.facts !== "object" || Array.isArray(task.facts) || !Object.keys(task.facts).length) {
+      reasons.push("answered_task_fact_evidence_unavailable");
+    }
+    if (!coveredTaskIds.has(task.taskId)) reasons.push("answered_task_not_covered_by_claim_validator");
+  }
+
+  const uniqueReasons = [...new Set(reasons)];
+  const passed = uniqueReasons.length === 0;
+  return {
+    status: passed ? "PASS" : "FAIL",
+    completeAnswer: passed,
+    formalDataConsistent: passed,
+    omissionDetected: uniqueReasons.some((reason) => reason.includes("not_covered") || reason.includes("unavailable") || reason.includes("coverage") || reason.includes("reply_text")),
+    unsupportedGuessDetected: passed ? false : null,
+    offTopicDetected: passed ? false : null,
+    unauthorizedCommitmentDetected,
+    reasons: uniqueReasons
+  };
+}
 async function acceptanceRequest({ baseUrl, oidcToken, method = "POST", body, fetchImpl = globalThis.fetch }) {
   const response = await fetchImpl(`${String(baseUrl).replace(/\/$/, "")}/api/admin/test-only/conversation-acceptance`, {
     method,
@@ -252,6 +294,125 @@ function safeFailureEvidence(caseId, turnNumber, error, result, occurredAt) {
   };
 }
 
+function safeReportFacts(facts) {
+  try {
+    validateSafeFacts(facts);
+    return JSON.parse(JSON.stringify(facts && typeof facts === "object" && !Array.isArray(facts) ? facts : {}));
+  } catch {
+    return {};
+  }
+}
+
+function formalEvidenceForReport(result) {
+  return (result && Array.isArray(result.taskResults) ? result.taskResults : []).map((task) => ({
+    taskId: String(task && task.taskId || "").slice(0, 80),
+    capability: String(task && (task.capability || task.type) || "").slice(0, 80),
+    status: String(task && task.status || "").slice(0, 80),
+    reason: String(task && task.reason || "").slice(0, 160),
+    dataSource: String(task && task.dataSource || "").slice(0, 80),
+    facts: safeReportFacts(task && task.facts)
+  }));
+}
+
+function runtimeEvidenceForReport(result) {
+  const trace = result && Array.isArray(result.trace) ? result.trace : [];
+  const catalog = trace.find((entry) => entry && entry.stage === "property_catalog") || {};
+  const planner = trace.find((entry) => entry && entry.stage === "planner") || {};
+  const semanticContract = trace.find((entry) => entry && entry.stage === "semantic_contract") || {};
+  return {
+    providerType: String(catalog.providerType || "").slice(0, 40),
+    plannerParserSucceeded: planner.parserSucceeded === true,
+    semanticContractValidationPassed: semanticContract.validationPassed === true
+  };
+}
+
+function reportTurn({ turnNumber, turn, result, assessment, error, status }) {
+  const finalDecision = result && result.finalDecision || {};
+  const claimValidation = result && result.claimValidation || {};
+  const finalResponse = result && result.finalResponse || {};
+  return {
+    turn: turnNumber,
+    guestQuestion: String(turn && turn.messageText || ""),
+    status,
+    errorCode: error ? safeErrorCode(error) : "",
+    traceId: String(result && result.traceId || "").slice(0, 160),
+    runtimeEvidence: runtimeEvidenceForReport(result),
+    formalEvidence: formalEvidenceForReport(result),
+    finalDecision: {
+      action: String(finalDecision.action || "").slice(0, 40),
+      reasonCode: String(finalDecision.reasonCode || "").slice(0, 160)
+    },
+    claimValidation: {
+      ok: typeof claimValidation.ok === "boolean" ? claimValidation.ok : null,
+      errors: Array.isArray(claimValidation.errors) ? claimValidation.errors.map((value) => String(value).slice(0, 120)) : [],
+      coveredTaskIds: Array.isArray(claimValidation.coveredTaskIds) ? claimValidation.coveredTaskIds.map((value) => String(value).slice(0, 80)) : [],
+      missingTaskIds: Array.isArray(claimValidation.missingTaskIds) ? claimValidation.missingTaskIds.map((value) => String(value).slice(0, 80)) : []
+    },
+    finalResponse: {
+      action: String(finalResponse.action || "").slice(0, 40),
+      shouldReply: typeof finalResponse.shouldReply === "boolean" ? finalResponse.shouldReply : null,
+      replyText: typeof finalResponse.replyText === "string" ? finalResponse.replyText : ""
+    },
+    assessment
+  };
+}
+
+function markdownText(value) {
+  return String(value === null || value === undefined ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\|/g, "\\|")
+    .replace(/\r?\n/g, "<br>");
+}
+
+function acceptanceReportMarkdown(report) {
+  const lines = [
+    "# JunZan AI deployed real-guest acceptance report",
+    "",
+    `- Commit: ${markdownText(report.commit)}`,
+    `- Generated at: ${markdownText(report.generatedAt)}`,
+    `- PASS: ${Number(report.summary && report.summary.passCount) || 0}`,
+    `- FAIL: ${Number(report.summary && report.summary.failCount) || 0}`,
+    `- Not executable: ${Number(report.summary && report.summary.notExecutableCaseCount) || 0}`,
+    ""
+  ];
+  for (const item of report.cases || []) {
+    lines.push(`## ${markdownText(item.caseId)} — ${markdownText(item.status)}`, "");
+    for (const turn of item.turns || []) {
+      lines.push(
+        `### Turn ${turn.turn}`,
+        "",
+        `- Guest question: ${markdownText(turn.guestQuestion)}`,
+        `- Result: ${markdownText(turn.status)}`,
+        `- Formal evidence: ${markdownText(JSON.stringify(turn.formalEvidence || []))}`,
+        `- Actual FinalResponse: ${markdownText(turn.finalResponse && turn.finalResponse.replyText)}`,
+        `- Complete answer: ${markdownText(turn.assessment && turn.assessment.completeAnswer)}`,
+        `- Formal-data consistent: ${markdownText(turn.assessment && turn.assessment.formalDataConsistent)}`,
+        `- Omission detected: ${markdownText(turn.assessment && turn.assessment.omissionDetected)}`,
+        `- Unsupported guess detected: ${markdownText(turn.assessment && turn.assessment.unsupportedGuessDetected)}`,
+        `- Off-topic detected: ${markdownText(turn.assessment && turn.assessment.offTopicDetected)}`,
+        `- Unauthorized commitment detected: ${markdownText(turn.assessment && turn.assessment.unauthorizedCommitmentDetected)}`,
+        `- Reasons: ${markdownText((turn.assessment && turn.assessment.reasons || []).join(", "))}`,
+        ""
+      );
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function writeAcceptanceReport(report, outputDirectory) {
+  const directory = String(outputDirectory || "").trim();
+  if (!directory) throw new Error("acceptance_report_directory_required");
+  const resolvedDirectory = path.resolve(directory);
+  fs.mkdirSync(resolvedDirectory, { recursive: true });
+  const jsonPath = path.join(resolvedDirectory, "junzan-real-guest-acceptance-report.json");
+  const markdownPath = path.join(resolvedDirectory, "junzan-real-guest-acceptance-report.md");
+  fs.writeFileSync(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  fs.writeFileSync(markdownPath, acceptanceReportMarkdown(report), "utf8");
+  return { jsonPath, markdownPath };
+}
+
 function isRefreshableOidcRejection(error) {
   return Boolean(error
     && error.code === "acceptance_http_failed"
@@ -259,8 +420,9 @@ function isRefreshableOidcRejection(error) {
     && error.httpErrorCode === "ACCEPTANCE_OIDC_REJECTED");
 }
 
-async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidcToken, commit, fetchImpl = globalThis.fetch, now = () => new Date(), write = (value) => console.log(JSON.stringify(value)) }) {
+async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidcToken, commit, fetchImpl = globalThis.fetch, now = () => new Date(), write = (value) => console.log(JSON.stringify(value)), reportWriter = null }) {
   const failures = [];
+  const reportCases = [];
   let currentOidcToken = oidcToken;
   let passCount = 0;
   let partialCount = 0;
@@ -286,6 +448,7 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
     }
   }
   for (const item of ACCEPTANCE_MATRIX) {
+    const caseReport = { caseId: item.id, bucket: item.bucket || "", status: "", turns: [] };
     const conversationId = `gha-${commit.slice(0, 12)}-${item.id}-${crypto.randomUUID()}`;
     let firstRequest = null;
     let lastResult = null;
@@ -301,6 +464,15 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
       if (reasonCode) {
         notExecutableTurnCount += 1;
         caseSkipped = true;
+        caseReport.turns.push({
+          turn: index + 1,
+          guestQuestion: String(turn.messageText || ""),
+          status: NOT_EXECUTABLE_STATUS,
+          reasonCode,
+          formalEvidence: [],
+          finalResponse: { action: "", shouldReply: null, replyText: "" },
+          assessment: { status: NOT_EXECUTABLE_STATUS, completeAnswer: false, formalDataConsistent: false, omissionDetected: null, unsupportedGuessDetected: null, offTopicDetected: null, unauthorizedCommitmentDetected: null, reasons: [reasonCode] }
+        });
         write(safeNotExecutableEvidence(item.id, index + 1, reasonCode));
         continue;
       }
@@ -309,26 +481,51 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
       const eventId = `gha-${item.id}-${index + 1}-${crypto.randomUUID()}`;
       const request = { customerId: propertyId, conversationId, messageText: turn.messageText, eventId };
       let result = null;
+      let turnReported = false;
       try {
         result = await requestForCase(item.id, index + 1, { body: request });
-        validateAcceptanceResult(result, turn);
-        write(safeEvidence(item.id, index + 1, result));
         lastResult = result;
         if (!firstRequest) firstRequest = request;
+        validateAcceptanceResult(result, turn);
+        const assessment = assessFinalResponseEvidence(result, turn);
+        caseReport.turns.push(reportTurn({ turnNumber: index + 1, turn, result, assessment, status: assessment.status }));
+        turnReported = true;
+        if (assessment.status !== "PASS") {
+          const evidenceError = new Error(assessment.reasons[0] || "final_response_evidence_unproven");
+          evidenceError.code = assessment.reasons[0] || "final_response_evidence_unproven";
+          throw evidenceError;
+        }
+        write(safeEvidence(item.id, index + 1, result));
       } catch (error) {
+        if (!turnReported) {
+          const assessed = result ? assessFinalResponseEvidence(result, turn) : { status: "FAIL", completeAnswer: false, formalDataConsistent: false, omissionDetected: null, unsupportedGuessDetected: null, offTopicDetected: null, unauthorizedCommitmentDetected: null, reasons: [] };
+          const assessment = {
+            ...assessed,
+            status: "FAIL",
+            completeAnswer: false,
+            formalDataConsistent: false,
+            reasons: [...new Set([safeErrorCode(error), ...(assessed.reasons || [])])]
+          };
+          caseReport.turns.push(reportTurn({ turnNumber: index + 1, turn, result, assessment, error, status: "FAIL" }));
+        }
         const failure = safeFailureEvidence(item.id, index + 1, error, result, now());
         failures.push(failure);
         write(failure);
         caseFailed = true;
-        break;
       }
     }
     if (!caseExecuted) {
       notExecutableCaseCount += 1;
+      caseReport.status = NOT_EXECUTABLE_STATUS;
+      reportCases.push(caseReport);
       continue;
     }
     executableCaseCount += 1;
-    if (caseFailed) continue;
+    if (caseFailed) {
+      caseReport.status = "FAIL";
+      reportCases.push(caseReport);
+      continue;
+    }
     try {
       if (item.mode === "duplicate") {
         const duplicate = await requestForCase(item.id, item.turns.length, { body: firstRequest });
@@ -338,13 +535,20 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
         const cleared = await requestForCase(item.id, item.turns.length, { method: "DELETE", body: { customerId: propertyId, conversationId } });
         if (!cleared || cleared.cleared !== true) throw new Error("clear_state_contract_failed");
       }
-      if (caseSkipped) partialCount += 1;
-      else passCount += 1;
+      if (caseSkipped) {
+        partialCount += 1;
+        caseReport.status = "PARTIAL_NOT_EXECUTABLE";
+      } else {
+        passCount += 1;
+        caseReport.status = "PASS";
+      }
     } catch (error) {
       const failure = safeFailureEvidence(item.id, item.turns.length, error, lastResult, now());
       failures.push(failure);
       write(failure);
+      caseReport.status = "FAIL";
     }
+    reportCases.push(caseReport);
   }
   const summary = {
     caseCount: ACCEPTANCE_MATRIX.length,
@@ -353,14 +557,29 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
     executableTurnCount,
     passCount,
     partialCount,
-    failCount: failures.length,
+    failCount: reportCases.filter((item) => item.status === "FAIL").length,
     notExecutableCaseCount,
     notExecutableTurnCount
   };
+  const report = {
+    schemaVersion: 1,
+    commit,
+    generatedAt: now().toISOString(),
+    environment: {
+      runtime: "test-only-render",
+      propertyId,
+      requiredPlanner: "openai",
+      requiredProvider: "postgresql"
+    },
+    summary,
+    cases: reportCases
+  };
+  if (typeof reportWriter === "function") reportWriter(report);
   if (failures.length) {
     const error = new Error("deployed_acceptance_matrix_failed");
     error.code = "deployed_acceptance_matrix_failed";
     Object.assign(error, summary);
+    error.report = report;
     throw error;
   }
   return summary;
@@ -371,6 +590,8 @@ async function main(env = process.env) {
   if (env.GITHUB_REPOSITORY !== EXPECTED_REPOSITORY || env.GITHUB_REF !== EXPECTED_REF || env.GITHUB_WORKFLOW_REF !== EXPECTED_WORKFLOW_REF || env.GITHUB_EVENT_NAME !== "push") throw new Error("github_workflow_identity_mismatch");
   const baseUrl = String(env.TEST_ONLY_ACCEPTANCE_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, "");
   const propertyId = String(env.TEST_ONLY_ACCEPTANCE_PROPERTY_ID || "nephi_home").trim();
+  const reportDirectory = String(env.TEST_ONLY_ACCEPTANCE_REPORT_DIR || "").trim();
+  if (!reportDirectory) throw new Error("acceptance_report_directory_required");
   const health = await pollForDeployment({ baseUrl, expectedCommit: commit });
   console.log(JSON.stringify({ stage: "deployment-ready", status: health.status, testOnly: health.testOnly, commit: health.commit }));
   const oidcRequest = { requestUrl: env.ACTIONS_ID_TOKEN_REQUEST_URL, requestToken: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN };
@@ -380,7 +601,8 @@ async function main(env = process.env) {
     propertyId,
     oidcToken,
     refreshOidcToken: () => requestGithubOidcToken(oidcRequest),
-    commit
+    commit,
+    reportWriter: (report) => writeAcceptanceReport(report, reportDirectory)
   });
   console.log(JSON.stringify({ suite: "deployed-conversation-acceptance", ...summary, commit }));
 }
@@ -409,6 +631,8 @@ module.exports = {
   pollForDeployment,
   requestGithubOidcToken,
   validateAcceptanceResult,
+  assessFinalResponseEvidence,
+  writeAcceptanceReport,
   runAcceptanceMatrix,
   TEST_ONLY_ACCEPTANCE_AUDIENCE
 };

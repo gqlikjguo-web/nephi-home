@@ -48,4 +48,13 @@ jobs:
         env:
           TEST_ONLY_ACCEPTANCE_BASE_URL: https://nephi-home-node-pilot-test-only-btye.onrender.com
           TEST_ONLY_ACCEPTANCE_PROPERTY_ID: nephi_home
+          TEST_ONLY_ACCEPTANCE_REPORT_DIR: ${{ runner.temp }}/junzan-real-guest-acceptance
         run: node scripts/run-deployed-conversation-acceptance.js
+      - name: Upload private deployed acceptance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junzan-real-guest-acceptance-${{ github.sha }}
+          path: ${{ runner.temp }}/junzan-real-guest-acceptance
+          if-no-files-found: error
+          retention-days: 7
