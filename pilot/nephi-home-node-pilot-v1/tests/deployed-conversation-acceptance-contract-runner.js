@@ -119,6 +119,23 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.throws(() => validateAcceptanceResult({ ...safeResult, finalResponse: null }, { expectedActions: ["reply"] }), /final_response_required/);
   assert.throws(() => validateAcceptanceResult({ ...safeResult, taskResults: [{ ...safeResult.taskResults[0], facts: { ...safeResult.taskResults[0].facts, propertyId: "secret-scope" } }] }, { expectedActions: ["reply"] }), /unsafe_fact_key/);
   assert.throws(() => validateAcceptanceResult({ ...safeResult, taskResults: [{ ...safeResult.taskResults[0], facts: { availableInventory: [{ publicName: "401 雙人房", category: "room", capacity: 2, canonicalId: "room401" }] } }] }, { expectedActions: ["reply"] }), /unsafe_nested_fact_key/);
+  const pastDateResult = {
+    ...safeResult,
+    finalResponse: { action: "reply", shouldReply: true, replyText: "目前可詢問空房。" },
+    taskResults: [{ ...safeResult.taskResults[0], capability: "availability", type: "availability", dataSource: "availability_resolver" }],
+    trace: safeResult.trace.map((entry) => entry.stage === "canonical_request" ? { ...entry, items: [{ capability: "availability", temporalState: { checkIn: "2026-07-15", checkOut: "2026-07-16", nights: 1 } }] } : entry)
+  };
+  assert.throws(
+    () => validateAcceptanceResult(pastDateResult, { expectedActions: ["reply"], pastDatePolicy: "reject_if_resolved_past", evaluatedAt: new Date("2026-08-04T00:00:00.000Z") }),
+    /past_date_not_explicitly_rejected/,
+    "a resolved past date must never be treated as current availability"
+  );
+  assert.doesNotThrow(() => validateAcceptanceResult({
+    ...pastDateResult,
+    finalResponse: { action: "clarification", shouldReply: true, replyText: "這個日期已過，請提供新的入住日期。" },
+    finalDecision: { action: "clarification", reasonCode: "past_date" },
+    taskResults: [{ ...pastDateResult.taskResults[0], status: "needs_clarification", dataSource: "" }]
+  }, { expectedActions: ["clarification"], pastDatePolicy: "reject_if_resolved_past", evaluatedAt: new Date("2026-08-04T00:00:00.000Z"), requiredStages: ["planner", "validation", "semantic_contract", "final_decision"] }));
 
   async function capturePublicCaseLog(mode) {
     const originalMatrix = ACCEPTANCE_MATRIX.splice(0);

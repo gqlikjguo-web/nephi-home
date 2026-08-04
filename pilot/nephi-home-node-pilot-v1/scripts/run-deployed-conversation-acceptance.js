@@ -13,6 +13,7 @@ const NO_REPLY_TRACE_STAGES = ["planner", "validation", "semantic_contract", "fi
 const FORBIDDEN_FINAL_TEXT = ["一定有房", "已完成訂房"];
 
 const MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-fixed-matrix.json");
+const SUPPLEMENTAL_MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-supplemental-matrix.json");
 const NOT_EXECUTABLE_STATUS = "NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API";
 const OPERATOR_CONTEXT_CASES = new Map([
   ["rg-040-modify-guests-bed", "operator_prior_context_cannot_be_established"],
@@ -81,6 +82,31 @@ function loadAcceptanceMatrix(filePath = MATRIX_PATH) {
 }
 
 const ACCEPTANCE_MATRIX = loadAcceptanceMatrix();
+
+function loadSupplementalAcceptanceMatrix(filePath = SUPPLEMENTAL_MATRIX_PATH) {
+  const source = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (!source || !Array.isArray(source.cases)) throw new Error("supplemental_real_guest_matrix_cases_required");
+  const turnCount = source.cases.reduce((sum, item) => sum + (Array.isArray(item.turns) ? item.turns.length : 0), 0);
+  if (source.cases.length !== 24 || turnCount !== 29) throw new Error("supplemental_real_guest_matrix_fixed_count_mismatch");
+  return source.cases.map((item) => ({
+    id: item.id,
+    bucket: item.bucket,
+    sourceRef: item.sourceRef || source.source,
+    turns: item.turns.map((turn) => ({
+      ...(typeof turn.input === "string" ? { messageText: turn.input } : {}),
+      ...(turn.lineEvent ? { lineEvent: JSON.parse(JSON.stringify(turn.lineEvent)) } : {}),
+      expectedActions: turn.allowedActions,
+      expectedSemantic: turn.expectedSemantic || [],
+      expectedCapabilities: semanticCapabilityGroups(turn.expectedSemantic || []),
+      forbidClaims: turn.forbidClaims || [],
+      establishOperatorContext: turn.establishOperatorContext === true,
+      pastDatePolicy: turn.pastDatePolicy || ""
+    }))
+  }));
+}
+
+const SUPPLEMENTAL_ACCEPTANCE_MATRIX = loadSupplementalAcceptanceMatrix();
+const DEPLOYED_ACCEPTANCE_MATRIX = [...ACCEPTANCE_MATRIX, ...SUPPLEMENTAL_ACCEPTANCE_MATRIX];
 
 function delay(milliseconds) { return milliseconds > 0 ? new Promise((resolve) => setTimeout(resolve, milliseconds)) : Promise.resolve(); }
 function responseData(payload) { return payload && payload.ok === true && payload.data ? payload.data : payload; }
@@ -173,10 +199,31 @@ function validateAcceptanceResult(result, expectation = {}) {
   }
   if (semanticTags.has("date_range") && canonicalItems.length && !canonicalItems.some((item) => item.temporalState && item.temporalState.checkIn && item.temporalState.checkOut)) throw new Error("expected_date_range_missing");
   if (semanticTags.has("nights") && canonicalItems.length && !canonicalItems.some((item) => Number.isInteger(item.temporalState && item.temporalState.nights) && item.temporalState.nights > 0)) throw new Error("expected_nights_missing");
+  if (expectation.pastDatePolicy === "reject_if_resolved_past") {
+    const resolvedCheckIns = canonicalItems.map((item) => String(item && item.temporalState && item.temporalState.checkIn || "")).filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value));
+    const evaluatedDate = String(expectation.evaluatedAt instanceof Date ? expectation.evaluatedAt.toISOString() : expectation.evaluatedAt || "").slice(0, 10);
+    if (evaluatedDate && resolvedCheckIns.some((value) => value < evaluatedDate)) {
+      if (!/(已過|過去|日期.{0,6}過|無法查詢)/u.test(result.finalResponse.replyText)) throw new Error("past_date_not_explicitly_rejected");
+      if (result.taskResults.some((task) => task.status === "answered" && ["availability", "price", "total_price"].includes(task.capability || task.type))) throw new Error("past_date_formal_query_forbidden");
+    }
+  }
   const stages = new Set(result.trace.map((entry) => entry && entry.stage));
   const requiredStages = expectation.requiredStages || (result.finalDecision.action === "no_reply" ? NO_REPLY_TRACE_STAGES : result.finalDecision.action === "reply" && result.taskResults.some((task) => task.status === "answered") ? FORMAL_TRACE_STAGES : COMMON_TRACE_STAGES);
   for (const stage of requiredStages) if (!stages.has(stage)) throw new Error(`trace_stage_missing:${stage}`);
   return { action: result.finalDecision.action, reasonCode: result.finalDecision.reasonCode, claimValidationOk: result.claimValidation.ok };
+}
+
+function validateNativeAcceptanceResult(result, expectation = {}) {
+  if (!result || typeof result !== "object" || !result.traceId || !result.eventId) throw new Error("acceptance_evidence_ids_required");
+  const expectedType = String(expectation.lineEvent && expectation.lineEvent.message && expectation.lineEvent.message.type || "");
+  if (!result.nativeEvent || result.nativeEvent.type !== expectedType || result.nativeEvent.transport !== "shared_line_message_gate" || result.nativeEvent.engineInvoked !== false) throw new Error("native_line_transport_evidence_required");
+  if (!result.finalDecision || result.finalDecision.action !== "no_reply" || result.finalDecision.reasonCode !== "line_non_text_event_ignored") throw new Error("native_line_no_reply_decision_required");
+  if (!result.finalResponse || result.finalResponse.action !== "no_reply" || result.finalResponse.shouldReply !== false || result.finalResponse.replyText !== "") throw new Error("native_line_no_reply_response_required");
+  if (!result.claimValidation || result.claimValidation.ok !== true || result.claimValidation.notApplicable !== true) throw new Error("native_line_claim_validation_boundary_required");
+  if (!Array.isArray(result.taskResults) || result.taskResults.length || !Array.isArray(result.trace)) throw new Error("native_line_engine_must_not_run");
+  if (result.trace.some((entry) => entry && ["planner", "canonical_request", "query_plan", "executor"].includes(entry.stage))) throw new Error("native_line_engine_must_not_run");
+  if (!result.trace.some((entry) => entry && entry.stage === "line_transport" && entry.reasonCode === "line_non_text_event_ignored")) throw new Error("native_line_transport_trace_required");
+  return { action: "no_reply", reasonCode: "line_non_text_event_ignored", claimValidationOk: true };
 }
 
 function assessFinalResponseEvidence(result, expectation = {}) {
@@ -322,8 +369,28 @@ function runtimeEvidenceForReport(result) {
   return {
     providerType: String(catalog.providerType || "").slice(0, 40),
     plannerParserSucceeded: planner.parserSucceeded === true,
-    semanticContractValidationPassed: semanticContract.validationPassed === true
+    semanticContractValidationPassed: semanticContract.validationPassed === true,
+    planner: trace.filter((entry) => entry && ["planner", "planner_error"].includes(entry.stage)),
+    validation: trace.filter((entry) => entry && ["validation", "semantic_contract", "context_validation"].includes(entry.stage)),
+    canonicalRequest: trace.filter((entry) => entry && entry.stage === "canonical_request"),
+    conversationState: trace.filter((entry) => entry && ["context_execution", "state", "pending_request"].includes(entry.stage)),
+    queryPlan: trace.filter((entry) => entry && ["formal_request", "query_plan"].includes(entry.stage)),
+    resolverExecution: trace.filter((entry) => entry && entry.stage === "executor"),
+    transport: trace.filter((entry) => entry && entry.stage === "line_transport")
   };
+}
+
+function earliestFailureLayer(error) {
+  const code = safeErrorCode(error);
+  if (code === "acceptance_http_failed" || code.startsWith("native_line_")) return "line_transport";
+  if (code.startsWith("planner_") || code === "expected_capability_missing") return "planner";
+  if (code.startsWith("semantic_") || code.startsWith("trace_stage_missing")) return "validation";
+  if (code.startsWith("expected_room_scope") || code.startsWith("expected_bundle_scope") || code.startsWith("expected_date") || code.startsWith("expected_nights") || code.startsWith("past_date")) return "canonical_request";
+  if (code.includes("provider") || code.includes("data_source") || code.includes("fact_") || code.startsWith("unsafe_fact") || code.startsWith("unsafe_nested")) return "resolver_execution";
+  if (code.startsWith("unexpected_final_action")) return "final_decision";
+  if (code.startsWith("claim_") || code.includes("covered_by_claim") || code.includes("coverage")) return "claim_validator";
+  if (code.includes("final_response") || code.includes("reply_text") || code.includes("unauthorized_commitment") || code.includes("no_reply")) return "final_response";
+  return "acceptance_evidence";
 }
 
 function reportTurn({ turnNumber, turn, result, assessment, error, status }) {
@@ -333,8 +400,10 @@ function reportTurn({ turnNumber, turn, result, assessment, error, status }) {
   return {
     turn: turnNumber,
     guestQuestion: String(turn && turn.messageText || ""),
+    nativeEvent: turn && turn.lineEvent ? { type: String(turn.lineEvent.message && turn.lineEvent.message.type || "") } : null,
     status,
     errorCode: error ? safeErrorCode(error) : "",
+    earliestFailureLayer: error ? earliestFailureLayer(error) : "",
     traceId: String(result && result.traceId || "").slice(0, 160),
     runtimeEvidence: runtimeEvidenceForReport(result),
     formalEvidence: formalEvidenceForReport(result),
@@ -353,6 +422,7 @@ function reportTurn({ turnNumber, turn, result, assessment, error, status }) {
       shouldReply: typeof finalResponse.shouldReply === "boolean" ? finalResponse.shouldReply : null,
       replyText: typeof finalResponse.replyText === "string" ? finalResponse.replyText : ""
     },
+    operatorContext: result && result.operatorContext ? result.operatorContext : null,
     assessment
   };
 }
@@ -384,7 +454,10 @@ function acceptanceReportMarkdown(report) {
         `### Turn ${turn.turn}`,
         "",
         `- Guest question: ${markdownText(turn.guestQuestion)}`,
+        `- Native event: ${markdownText(turn.nativeEvent && turn.nativeEvent.type)}`,
         `- Result: ${markdownText(turn.status)}`,
+        `- Earliest failure layer: ${markdownText(turn.earliestFailureLayer)}`,
+        `- Planner / validation / canonical / state / query / resolver evidence: ${markdownText(JSON.stringify(turn.runtimeEvidence || {}))}`,
         `- Formal evidence: ${markdownText(JSON.stringify(turn.formalEvidence || []))}`,
         `- Actual FinalResponse: ${markdownText(turn.finalResponse && turn.finalResponse.replyText)}`,
         `- Complete answer: ${markdownText(turn.assessment && turn.assessment.completeAnswer)}`,
@@ -420,7 +493,7 @@ function isRefreshableOidcRejection(error) {
     && error.httpErrorCode === "ACCEPTANCE_OIDC_REJECTED");
 }
 
-async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidcToken, commit, fetchImpl = globalThis.fetch, now = () => new Date(), write = (value) => console.log(JSON.stringify(value)), reportWriter = null }) {
+async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidcToken, commit, matrix = ACCEPTANCE_MATRIX, fetchImpl = globalThis.fetch, now = () => new Date(), write = (value) => console.log(JSON.stringify(value)), reportWriter = null }) {
   const failures = [];
   const reportCases = [];
   let currentOidcToken = oidcToken;
@@ -430,7 +503,7 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
   let executableTurnCount = 0;
   let notExecutableCaseCount = 0;
   let notExecutableTurnCount = 0;
-  const turnCount = ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0);
+  const turnCount = matrix.reduce((sum, item) => sum + item.turns.length, 0);
   async function requestForCase(caseId, turnNumber, options) {
     try {
       return await acceptanceRequest({ baseUrl, oidcToken: currentOidcToken, fetchImpl, ...options });
@@ -447,7 +520,7 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
       return acceptanceRequest({ baseUrl, oidcToken: currentOidcToken, fetchImpl, ...options });
     }
   }
-  for (const item of ACCEPTANCE_MATRIX) {
+  for (const item of matrix) {
     const caseReport = { caseId: item.id, bucket: item.bucket || "", status: "", turns: [] };
     const conversationId = `gha-${commit.slice(0, 12)}-${item.id}-${crypto.randomUUID()}`;
     let firstRequest = null;
@@ -467,6 +540,7 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
         caseReport.turns.push({
           turn: index + 1,
           guestQuestion: String(turn.messageText || ""),
+          nativeEvent: turn.lineEvent ? { type: String(turn.lineEvent.message && turn.lineEvent.message.type || "") } : null,
           status: NOT_EXECUTABLE_STATUS,
           reasonCode,
           formalEvidence: [],
@@ -479,15 +553,24 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
       caseExecuted = true;
       executableTurnCount += 1;
       const eventId = `gha-${item.id}-${index + 1}-${crypto.randomUUID()}`;
-      const request = { customerId: propertyId, conversationId, messageText: turn.messageText, eventId };
+      const request = {
+        customerId: propertyId,
+        conversationId,
+        eventId,
+        ...(turn.lineEvent ? { lineEvent: turn.lineEvent } : { messageText: turn.messageText }),
+        ...(turn.establishOperatorContext ? { establishOperatorContext: true } : {})
+      };
       let result = null;
       let turnReported = false;
       try {
         result = await requestForCase(item.id, index + 1, { body: request });
         lastResult = result;
         if (!firstRequest) firstRequest = request;
-        validateAcceptanceResult(result, turn);
+        if (turn.lineEvent) validateNativeAcceptanceResult(result, turn);
+        else validateAcceptanceResult(result, { ...turn, ...(turn.pastDatePolicy ? { evaluatedAt: now() } : {}) });
+        if (turn.establishOperatorContext && (!result.operatorContext || result.operatorContext.established !== true || result.operatorContext.source !== "engine_final_response" || JSON.stringify(result.operatorContext.finalResponse) !== JSON.stringify(result.finalResponse))) throw new Error("operator_context_not_established_from_engine");
         const assessment = assessFinalResponseEvidence(result, turn);
+        if (turn.lineEvent) Object.assign(assessment, { status: "PASS", completeAnswer: true, formalDataConsistent: true, omissionDetected: false, unsupportedGuessDetected: false, offTopicDetected: false, unauthorizedCommitmentDetected: false, reasons: ["native_event_safely_ignored_at_line_transport"] });
         caseReport.turns.push(reportTurn({ turnNumber: index + 1, turn, result, assessment, status: assessment.status }));
         turnReported = true;
         if (assessment.status !== "PASS") {
@@ -551,7 +634,7 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
     reportCases.push(caseReport);
   }
   const summary = {
-    caseCount: ACCEPTANCE_MATRIX.length,
+    caseCount: matrix.length,
     turnCount,
     executableCaseCount,
     executableTurnCount,
@@ -602,6 +685,7 @@ async function main(env = process.env) {
     oidcToken,
     refreshOidcToken: () => requestGithubOidcToken(oidcRequest),
     commit,
+    matrix: DEPLOYED_ACCEPTANCE_MATRIX,
     reportWriter: (report) => writeAcceptanceReport(report, reportDirectory)
   });
   console.log(JSON.stringify({ suite: "deployed-conversation-acceptance", ...summary, commit }));
@@ -611,8 +695,8 @@ if (require.main === module) main().catch((error) => {
     suite: "deployed-conversation-acceptance",
     status: "FAIL",
     errorCode: safeErrorCode(error),
-    caseCount: Number.isInteger(error && error.caseCount) ? error.caseCount : ACCEPTANCE_MATRIX.length,
-    turnCount: Number.isInteger(error && error.turnCount) ? error.turnCount : ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0),
+    caseCount: Number.isInteger(error && error.caseCount) ? error.caseCount : DEPLOYED_ACCEPTANCE_MATRIX.length,
+    turnCount: Number.isInteger(error && error.turnCount) ? error.turnCount : DEPLOYED_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0),
     executableCaseCount: Number.isInteger(error && error.executableCaseCount) ? error.executableCaseCount : 0,
     executableTurnCount: Number.isInteger(error && error.executableTurnCount) ? error.executableTurnCount : 0,
     passCount: Number.isInteger(error && error.passCount) ? error.passCount : 0,
@@ -626,11 +710,15 @@ if (require.main === module) main().catch((error) => {
 
 module.exports = {
   ACCEPTANCE_MATRIX,
+  SUPPLEMENTAL_ACCEPTANCE_MATRIX,
+  DEPLOYED_ACCEPTANCE_MATRIX,
   loadAcceptanceMatrix,
+  loadSupplementalAcceptanceMatrix,
   NOT_EXECUTABLE_STATUS,
   pollForDeployment,
   requestGithubOidcToken,
   validateAcceptanceResult,
+  validateNativeAcceptanceResult,
   assessFinalResponseEvidence,
   writeAcceptanceReport,
   runAcceptanceMatrix,

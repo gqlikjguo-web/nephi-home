@@ -115,6 +115,40 @@ async function request(url, method, body, cookie = `nephi_admin_session=${adminT
     const generatedOne = await post("generated-1", "parking"); const generatedTwo = await post("generated-2", "parking");
     assert.notEqual(generatedOne.body.eventId, generatedTwo.body.eventId, "missing event IDs must receive distinct generated events");
 
+    const established = await request(running.url, "POST", { customerId: propertyId, conversationId: "operator-context", messageText: "parking", eventId: "operator-context-1", establishOperatorContext: true });
+    assert.equal(established.response.status, 200);
+    assert.deepEqual(established.body.operatorContext, {
+      established: true,
+      source: "engine_final_response",
+      eventId: "operator-context-1",
+      finalResponse: engineFinalResponses.get("operator-context-1")
+    }, "operator prior must be the Engine's actual response rather than directly written state");
+    const forbiddenStateInjection = await request(running.url, "POST", { customerId: propertyId, conversationId: "operator-context", messageText: "parking", eventId: "operator-context-2", conversationState: { tasks: [] } });
+    assert.equal(forbiddenStateInjection.response.status, 400, "the controlled endpoint must reject direct Conversation State injection");
+
+    const nativeConversationId = "native-events";
+    assert.equal(stateFor(nativeConversationId), null);
+    for (const nativeType of ["sticker", "image", "video", "file"]) {
+      const native = await request(running.url, "POST", {
+        customerId: propertyId,
+        conversationId: nativeConversationId,
+        eventId: `native-${nativeType}`,
+        lineEvent: { type: "message", message: { type: nativeType } }
+      });
+      assert.equal(native.response.status, 200, `${nativeType} must use the controlled native LINE event path`);
+      assert.equal(native.body.nativeEvent.type, nativeType);
+      assert.equal(native.body.nativeEvent.engineInvoked, false);
+      assert.equal(native.body.finalDecision.action, "no_reply");
+      assert.equal(native.body.finalDecision.reasonCode, "line_non_text_event_ignored");
+      assert.deepEqual(native.body.finalResponse, { action: "no_reply", shouldReply: false, replyText: "" });
+      assert.equal(native.body.claimValidation.ok, true);
+      assert.equal(native.body.claimValidation.notApplicable, true);
+      assert.equal(native.body.trace.some((entry) => entry.stage === "planner"), false, "native events must be filtered at LINE transport before Planner");
+    }
+    assert.equal(stateFor(nativeConversationId), null, "native events must not create or mutate Conversation State");
+    const disguisedText = await request(running.url, "POST", { customerId: propertyId, conversationId: "native-disguised", eventId: "native-text", lineEvent: { type: "message", message: { type: "text", text: "parking" } } });
+    assert.equal(disguisedText.response.status, 400, "native injection must not accept a text event through the non-text path");
+
     const clearA = await request(running.url, "DELETE", { customerId: propertyId, conversationId: "A" });
     assert.equal(clearA.response.status, 200); assert.equal(stateFor("A"), null); assert.ok(stateFor("B"), "clearing A must not affect B");
     const denied = await request(running.url, "POST", { customerId: propertyId, conversationId: "denied", messageText: "parking" }, "nephi_admin_session=not-admin");
@@ -168,6 +202,6 @@ async function request(url, method, body, cookie = `nephi_admin_session=${adminT
       const oidcRejected = await request(envRunning.url, "POST", { customerId: propertyId, conversationId: "env-oidc", messageText: "parking" }, "", "Bearer malformed-token");
       assert.equal(oidcRejected.response.status, 403, "the enabled runtime must wire the production OIDC verifier and fail closed");
     } finally { await envApp.stop(); }
-    console.log(JSON.stringify({ suite: "test-only-conversation-acceptance-api", caseCount: 24, passCount: 24, failCount: 0 }));
+    console.log(JSON.stringify({ suite: "test-only-conversation-acceptance-api", caseCount: 31, passCount: 31, failCount: 0 }));
   } finally { await app.stop(); fs.rmSync(temp, { recursive: true, force: true }); }
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });

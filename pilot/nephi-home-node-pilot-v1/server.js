@@ -31,6 +31,14 @@ const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provide
 const SAFE_PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const SAFE_CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
 const SAFE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const TEST_ONLY_NATIVE_LINE_MESSAGE_TYPES = new Set(["sticker", "image", "video", "file"]);
+
+function lineMessageEventDisposition(event) {
+  if (!event || event.type !== "message" || !event.message || !event.replyToken) return { accepted: false, engineInvoked: false, reasonCode: "line_message_event_invalid" };
+  if (event.message.type === "text") return { accepted: true, engineInvoked: true, reasonCode: "line_text_event" };
+  if (TEST_ONLY_NATIVE_LINE_MESSAGE_TYPES.has(event.message.type)) return { accepted: true, engineInvoked: false, reasonCode: "line_non_text_event_ignored" };
+  return { accepted: false, engineInvoked: false, reasonCode: "line_message_type_unsupported" };
+}
 
 function safeAcceptanceText(value, maxLength = 2000) {
   return String(value === undefined || value === null ? "" : value).slice(0, maxLength);
@@ -1022,19 +1030,45 @@ function createApp(options = {}) {
       const customerId = String(body.customerId || body.propertyId || "").trim();
       const conversationId = String(body.conversationId || "").trim();
       const messageText = String(body.messageText || "").trim();
-      if (!customerId || !conversationId || (!body.clear && !messageText)) throw new AppError(400, "ACCEPTANCE_INPUT_REQUIRED", "customerId, conversationId and messageText are required");
+      const lineEvent = body.lineEvent && typeof body.lineEvent === "object" ? body.lineEvent : null;
+      if (["conversationState", "state", "operatorText", "assistantText"].some((key) => Object.hasOwn(body, key))) throw new AppError(400, "ACCEPTANCE_STATE_INJECTION_FORBIDDEN", "Direct conversation state or operator text injection is forbidden");
+      if (!customerId || !conversationId || (!body.clear && !messageText && !lineEvent)) throw new AppError(400, "ACCEPTANCE_INPUT_REQUIRED", "customerId, conversationId and a text or native LINE event are required");
+      if (messageText && lineEvent) throw new AppError(400, "ACCEPTANCE_INPUT_AMBIGUOUS", "Use either messageText or lineEvent");
       if (!providers.customerSettings.getProperty(customerId)) throw new AppError(404, "UNKNOWN_CUSTOMER_ID", "Unknown test-only customerId");
       const conversationHash = crypto.createHash("sha256").update(conversationId).digest("hex").slice(0, 32);
       const channelId = `test-acceptance:${customerId}`;
       const lineUserId = `test-only-conversation:${conversationHash}`;
       if (body.clear) return { cleared: Boolean(providers.persistence.deleteConversationState(customerId, channelId, lineUserId)) };
       const eventId = String(body.eventId || `acceptance-${crypto.randomUUID()}`);
+      if (lineEvent) {
+        if (body.establishOperatorContext === true || Object.hasOwn(lineEvent, "source") || Object.hasOwn(lineEvent, "replyToken") || Object.hasOwn(lineEvent, "webhookEventId") || Object.hasOwn(lineEvent, "destination")) throw new AppError(400, "ACCEPTANCE_NATIVE_EVENT_INVALID", "Native event identity and context are server controlled");
+        const nativeType = String(lineEvent.message && lineEvent.message.type || "");
+        if (lineEvent.type !== "message" || !TEST_ONLY_NATIVE_LINE_MESSAGE_TYPES.has(nativeType)) throw new AppError(400, "ACCEPTANCE_NATIVE_EVENT_INVALID", "Only native sticker, image, video, or file events are accepted");
+        const controlledEvent = { type: "message", replyToken: "test-only-acceptance", source: { type: "user", userId: lineUserId }, webhookEventId: eventId, timestamp: now().getTime(), message: { type: nativeType } };
+        const disposition = lineMessageEventDisposition(controlledEvent);
+        if (!disposition.accepted || disposition.engineInvoked) throw new AppError(400, "ACCEPTANCE_NATIVE_EVENT_INVALID", "Native event must terminate at the LINE transport gate");
+        const claimed = await providers.persistence.claimMessageEvent(customerId, channelId, eventId, { lineUserId, eventTimestamp: now().toISOString(), guestMessage: "", replyType: "no_reply_v2", replyText: "", route: "line_non_text_event", decisionReason: disposition.reasonCode, humanHandoff: false, silentIgnore: true });
+        if (!claimed.claimed) return { duplicate: true, eventId };
+        const traceId = crypto.randomUUID();
+        const transportTrace = formatSafeTestOnlyConversationTrace({ traceId, propertyId: customerId, stage: "line_transport", decision: "no_reply", reasonCode: disposition.reasonCode, attempted: false, delivered: false });
+        await providers.persistence.updateMessageEvent(customerId, channelId, eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true });
+        return {
+          traceId,
+          eventId,
+          nativeEvent: { type: nativeType, transport: "shared_line_message_gate", engineInvoked: false },
+          finalDecision: { action: "no_reply", reasonCode: disposition.reasonCode, taskIds: [], missingFields: [], clarificationCandidates: [], reviewRequired: false, executionSummary: {} },
+          claimValidation: { ok: true, notApplicable: true, errors: [], coveredTaskIds: [], missingTaskIds: [], unexpectedTaskIds: [] },
+          finalResponse: { action: "no_reply", shouldReply: false, replyText: "" },
+          taskResults: [],
+          trace: [transportTrace]
+        };
+      }
       const claimed = await providers.persistence.claimMessageEvent(customerId, channelId, eventId, { lineUserId, eventTimestamp: now().toISOString(), guestMessage: messageText, replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
       if (!claimed.claimed) return { duplicate: true, eventId };
       const result = await root.engine.process({ customerId, channelId, lineUserId, eventId, eventTimestamp: now().toISOString(), messageText });
       const trace = acceptanceTraces.get(result.traceId) || [];
       acceptanceTraces.delete(result.traceId);
-      return {
+      const response = {
         traceId: result.traceId,
         eventId,
         finalDecision: safeAcceptanceFinalDecision(result.finalDecision),
@@ -1047,6 +1081,8 @@ function createApp(options = {}) {
         taskResults: result.taskResults.map(safeAcceptanceTaskResult),
         trace
       };
+      if (body.establishOperatorContext === true) response.operatorContext = { established: true, source: "engine_final_response", eventId, finalResponse: { action: result.finalResponse.action, shouldReply: result.finalResponse.shouldReply, replyText: result.finalResponse.replyText } };
+      return response;
     }
     : null;
   const claimEvent = (input) => providers.persistence.claimMessageEvent(input.customerId, input.channelId, input.eventId, { lineUserId: String(input.lineUserId || ""), eventTimestamp: input.eventTimestamp || "", guestMessage: String(input.messageText || ""), replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
@@ -1118,4 +1154,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createApp, formatSafeTestOnlyConversationTrace };
+module.exports = { createApp, formatSafeTestOnlyConversationTrace, lineMessageEventDisposition };
