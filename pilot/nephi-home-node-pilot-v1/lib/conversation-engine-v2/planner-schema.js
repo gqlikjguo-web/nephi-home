@@ -230,7 +230,7 @@ function validatePlannerOutput(value) {
 
 function applyPlannerSemanticContract(value, { catalog } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tasks)) return value;
-  const acceptedTasks = [], repairedTasks = [], rejectedTasks = [];
+  const acceptedTasks = [], repairedTasks = [], rejectedTasks = [], repairedRelations = [];
   let contextRelationCandidates = value.contextRelationCandidates;
   let tasks = value.tasks.map((original, index) => {
     let task = { ...original, eligibilityEvidence: normalizeEligibilityEvidence(original && original.eligibilityEvidence), entity: original && original.entity ? { ...original.entity } : original && original.entity };
@@ -311,12 +311,29 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
   const acknowledgementOnly = value.discourse
     && value.discourse.relation === "acknowledgement"
     && tasks.every((task) => task && task.type === "unknown");
+  if (acknowledgementOnly && Array.isArray(contextRelationCandidates)) {
+    const acknowledgementIndexes = new Set(tasks.map((task) => task.candidateIndex));
+    contextRelationCandidates = contextRelationCandidates.map((candidate) => {
+      if (!candidate || !acknowledgementIndexes.has(candidate.candidateIndex)
+        || !Array.isArray(candidate.candidateRequestCycleRefs)) return candidate;
+      if (candidate.kind !== "relation_uncertain"
+        || candidate.candidateRequestCycleRefs.length > 0) repairedRelations.push({
+        candidateIndex: candidate.candidateIndex,
+        reason: "acknowledgement_relation_normalization"
+      });
+      return {
+        ...candidate,
+        kind: "relation_uncertain",
+        candidateRequestCycleRefs: []
+      };
+    });
+  }
   return {
     ...value,
     tasks,
     contextRelationCandidates,
     shouldIgnore: acknowledgementOnly ? true : value.shouldIgnore,
-    semanticValidation: { acceptedTasks, repairedTasks, rejectedTasks }
+    semanticValidation: { acceptedTasks, repairedTasks, rejectedTasks, repairedRelations }
   };
 }
 

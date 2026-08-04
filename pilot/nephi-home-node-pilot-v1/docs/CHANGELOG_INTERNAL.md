@@ -212,3 +212,7 @@
 ## 2026-08-05 Planner-to-compiler contract normalization
 
 - Added property-catalog candidate recovery plus deterministic normalization for incompatible availability, amenity, and policy candidate shapes, preserving unresolved tasks as schema-valid, safely handled capabilities instead of degrading them to `unknown` or whole-message fallback.
+
+## 2026-08-05 Acknowledgement relation normalization
+
+- Normalized acknowledgement-only context relations to a non-mutating uncertain relation before context validation while retaining candidate and source-evidence validation, preventing safe no-reply turns from becoming handoffs.

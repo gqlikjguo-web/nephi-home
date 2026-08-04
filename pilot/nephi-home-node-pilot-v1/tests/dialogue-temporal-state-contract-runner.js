@@ -74,6 +74,7 @@ function plannerOutput(tasks, options = {}) {
     );
   }
   return {
+    ...(options.contextRelationKind ? { testContextRelationKind: options.contextRelationKind } : {}),
     schemaVersion: 2,
     discourse: { relation: options.relation || "new_request", confidence: 0.99 },
     stateOperations,
@@ -99,6 +100,8 @@ function bindPlanToSource(output, sourceEvents, contextSnapshot) {
     ? contextSnapshot.cycles.at(-1)
     : null;
   const referencesContext = ["continue", "modify", "answer_clarification"].includes(output.discourse.relation);
+  const forcedContextRelationKind = output.testContextRelationKind || "";
+  delete output.testContextRelationKind;
   output.tasks = output.tasks.map((item, index) => ({
     ...item,
     candidateIndex: index,
@@ -106,7 +109,7 @@ function bindPlanToSource(output, sourceEvents, contextSnapshot) {
   }));
   output.contextRelationCandidates = output.tasks.map((item) => ({
     candidateIndex: item.candidateIndex,
-    kind: item.type === "unknown"
+    kind: forcedContextRelationKind || (item.type === "unknown"
       ? "relation_uncertain"
       : output.discourse.relation === "modify"
         ? "modify_existing"
@@ -114,7 +117,7 @@ function bindPlanToSource(output, sourceEvents, contextSnapshot) {
           ? "supplement_existing"
           : output.discourse.relation === "acknowledgement"
             ? "relation_uncertain"
-            : "new_request",
+            : "new_request"),
     candidateRequestCycleRefs: referencesContext && contextCycle ? [contextCycle.requestCycleId] : [],
     evidenceRefs: [{
       eventId: source.eventId,
@@ -214,6 +217,26 @@ async function testAcknowledgementContradictions() {
   ], { relation: "acknowledgement", shouldIgnore: false }), "一般社交訊息", "ack-unknown");
   assert.equal(unknown.result.finalDecision.action, "no_reply");
   assert.equal(unknown.result.reviewCount, 0);
+
+  const invalidEndRelation = await processOne(plannerOutput([
+    task("unknown", "ack-invalid-end", {
+      sourceText: "Understood",
+      rawText: "Understood",
+      category: "other"
+    })
+  ], {
+    relation: "acknowledgement",
+    shouldIgnore: true,
+    contextRelationKind: "end_existing"
+  }), "Understood", "ack-invalid-end");
+  assert.equal(invalidEndRelation.result.finalDecision.action, "no_reply", JSON.stringify({
+    finalDecision: invalidEndRelation.result.finalDecision,
+    diagnostics: invalidEndRelation.diagnostics
+  }));
+  assert.equal(invalidEndRelation.result.reviewCount, 0);
+  const invalidEndContext = invalidEndRelation.diagnostics.find((item) => item.stage === "context_validation");
+  assert.deepEqual(invalidEndContext.rejectionReasons, []);
+  assert.equal(invalidEndContext.candidates[0].relationKind, "relation_uncertain");
 
   const policy = await processOne(plannerOutput([
     task("policy", "ack-policy", {
