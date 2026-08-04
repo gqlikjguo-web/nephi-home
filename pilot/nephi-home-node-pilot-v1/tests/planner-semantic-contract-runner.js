@@ -30,8 +30,8 @@ function plan(tasks) {
 const property = {
   propertyId: "property_alpha", displayName: "Alpha", timezone: "Asia/Taipei", rooms: [],
   businessProfile: { googleMapsUrl: "https://maps.app.goo.gl/AlphaLocation" },
-  commonAnswers: { parkingRule: "Alpha parking policy", bbqRule: "Alpha barbecue policy" },
-  semanticCatalog: { aliases: { location: ["directions"], parking: ["parking"], bbq: ["bbq"], pool: ["pool"] }, amenities: [{ id: "pool", name: "Pool", aliases: ["pool"], status: "confirmed_yes", answer: "Alpha pool hours" }] }
+  commonAnswers: { parkingRule: "Alpha parking policy", bbqRule: "Alpha barbecue policy", priceRule: "Prices depend on the requested stay." },
+  semanticCatalog: { aliases: { location: ["directions"], parking: ["parking"], bbq: ["bbq"], pool: ["pool"], price: ["room rate"] }, amenities: [{ id: "pool", name: "Pool", aliases: ["pool"], status: "confirmed_yes", answer: "Alpha pool hours" }] }
 };
 const catalog = buildPropertyCatalog(property);
 
@@ -63,10 +63,22 @@ function main() {
     assert.equal(result.item.canonicalRequest.resolverId, "property_catalog");
   }
 
+  const resolvedPrice = canonical(task({
+    taskId: "price-candidate",
+    type: "price",
+    category: "policy",
+    rawText: "cost",
+    canonicalCandidate: "price"
+  }));
+  assert.equal(resolvedPrice.semantic.tasks[0].type, "price", "a catalog-confirmed price candidate must survive a non-alias raw phrase");
+  assert.equal(resolvedPrice.semantic.tasks[0].entity.category, "other");
+  assert.equal(resolvedPrice.item.canonicalRequest.capability, "price");
+  assert.equal(resolvedPrice.item.canonicalRequest.resolverId, "availability_resolver");
+
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 6, passCount: 6, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 7, passCount: 7, failCount: 0 }));
 }
 
 main();

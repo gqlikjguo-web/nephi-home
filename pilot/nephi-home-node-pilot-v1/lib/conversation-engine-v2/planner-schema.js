@@ -58,19 +58,24 @@ function controlledRequestedOutputs(task) {
 function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
   const entity = task && task.entity;
   if (!catalog || !entity) return null;
-  const grounded = entity.rawText
+  const rawGrounded = entity.rawText
     ? resolveEntity(catalog, {
       category: "other",
       rawText: entity.rawText,
       canonicalCandidate: null
     })
-    : entity.canonicalCandidate
-      ? resolveEntity(catalog, {
+    : null;
+  const candidateGrounded = entity.canonicalCandidate
+    && (!rawGrounded || rawGrounded.status === "not_found")
+    ? resolveEntity(catalog, {
         category: "other",
         rawText: "",
         canonicalCandidate: entity.canonicalCandidate
       })
-      : null;
+    : null;
+  const grounded = rawGrounded && rawGrounded.status !== "not_found"
+    ? rawGrounded
+    : candidateGrounded || rawGrounded;
   const groundedEntity = grounded
     && grounded.status === "resolved"
     && grounded.entity;
