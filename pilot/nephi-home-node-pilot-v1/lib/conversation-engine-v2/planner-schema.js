@@ -130,6 +130,38 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
   };
 }
 
+function normalizedUngroundedTaskShape(task) {
+  const entity = task && task.entity;
+  if (!entity) return task;
+  if (task.type === "availability") {
+    const standaloneType = ["amenity", "activity", "room_feature"].includes(entity.category)
+      ? "amenity"
+      : ["policy", "payment", "cancellation", "check_in", "check_out"].includes(entity.category)
+        ? "policy"
+        : entity.category === "transport"
+          ? "property_fact"
+          : null;
+    if (standaloneType) return {
+      ...task,
+      type: standaloneType,
+      dependsOnStayContext: false,
+      stayCandidate: null
+    };
+  }
+  const exactDefinition = getCapabilityDefinition(task.type);
+  if (exactDefinition
+    && exactDefinition.resolverId === "property_catalog"
+    && !exactDefinition.acceptedEntityCategories.includes(entity.category)) {
+    const category = task.type === "policy"
+      ? "policy"
+      : task.type === "amenity"
+        ? "amenity"
+        : null;
+    if (category) return { ...task, entity: { ...entity, category } };
+  }
+  return task;
+}
+
 // Legacy planner state controls are accepted only for wire compatibility with
 // the existing planner provider.  They are discarded at the schema boundary:
 // no downstream component receives them as a state input.
@@ -159,7 +191,7 @@ function validatePlannerOutput(value) {
       if (!task || !Number.isInteger(task.candidateIndex) || task.candidateIndex < 0 || !text(task.taskId, 80) || !TASK_TYPES.has(task.type) || !text(task.sourceText, 500) || !task.sourceText.trim()
         || (task.detailIntent !== undefined && !DETAIL_INTENTS.has(task.detailIntent)) || !Array.isArray(task.requestedOutputs) || typeof task.dependsOnStayContext !== "boolean" || !confidence(task.confidence)
         || !eligibilityEvidence || typeof eligibilityEvidence !== "object" || Array.isArray(eligibilityEvidence) || !ELIGIBILITY_EVIDENCE_KINDS.has(eligibilityEvidence.kind) || !text(eligibilityEvidence.sourceText || "", 200)
-        || !entity || !ENTITY_CATEGORIES.has(entity.category) || !text(entity.rawText || "", 200) || (!entity.rawText && !["availability", "available_dates", "bundle_availability", "room_options", "capacity", "price", "total_price"].includes(task.type))
+        || !entity || !ENTITY_CATEGORIES.has(entity.category) || !text(entity.rawText || "", 200) || (!entity.rawText && !["availability", "available_dates", "bundle_availability", "room_options", "capacity", "price", "total_price", "amenity", "policy"].includes(task.type))
         || !(entity.canonicalCandidate === null || text(entity.canonicalCandidate, 120)) || !confidence(entity.confidence)
         || !Object.hasOwn(task, "stayCandidate")
         || (task.dependsOnStayContext && task.stayCandidate === null)
@@ -198,6 +230,16 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
         rejectedTasks.push({ taskId: task.taskId, index, reason: "property_catalog_entity_conflict" });
       } else {
         repairedTasks.push({ taskId: task.taskId, index, reason: "property_catalog_entity_grounding" });
+      }
+    }
+
+    if (!groundedTask) {
+      const normalizedTask = normalizedUngroundedTaskShape(task);
+      if (normalizedTask.type !== task.type
+        || normalizedTask.entity.category !== task.entity.category) {
+        task = normalizedTask;
+        entity = task.entity;
+        repairedTasks.push({ taskId: task.taskId, index, reason: "candidate_shape_normalization" });
       }
     }
 

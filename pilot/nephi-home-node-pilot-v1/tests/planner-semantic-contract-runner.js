@@ -1,15 +1,15 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { applyPlannerSemanticContract, plannerJsonSchema } = require("../lib/conversation-engine-v2/planner-schema");
+const { applyPlannerSemanticContract, plannerJsonSchema, validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
 const { canonicalizeExecutionItem } = require("../lib/conversation-engine-v2/canonicalizer");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 
 const eventTimestamp = Date.parse("2026-08-01T10:00:00+08:00");
 
-function task({ taskId, type = "property_fact", category = "other", rawText, canonicalCandidate = null, detailIntent = "general", requestedOutputs = ["answer"] }) {
+function task({ taskId, type = "property_fact", category = "other", rawText, sourceText = rawText, canonicalCandidate = null, detailIntent = "general", requestedOutputs = ["answer"] }) {
   return {
-    candidateIndex: 0, taskId, type, sourceText: rawText, detailIntent,
+    candidateIndex: 0, taskId, type, sourceText, detailIntent,
     requestedOutputs, eligibilityEvidence: { kind: "none", sourceText: "" },
     dependsOnStayContext: false,
     entity: { category, rawText, canonicalCandidate, confidence: 0.99 },
@@ -75,10 +75,45 @@ function main() {
   assert.equal(resolvedPrice.item.canonicalRequest.capability, "price");
   assert.equal(resolvedPrice.item.canonicalRequest.resolverId, "availability_resolver");
 
+  const standaloneAmenityAvailability = canonical(task({
+    taskId: "portable-cot-availability",
+    type: "availability",
+    category: "amenity",
+    rawText: "",
+    sourceText: "portable cot availability"
+  }));
+  assert.equal(standaloneAmenityAvailability.semantic.tasks[0].type, "amenity", "standalone amenity availability must compile as an amenity fact task");
+  assert.equal(standaloneAmenityAvailability.semantic.tasks[0].entity.category, "amenity");
+  assert.equal(validatePlannerOutput(standaloneAmenityAvailability.semantic).ok, true, "normalized generic amenity tasks must remain schema-valid");
+  assert.equal(standaloneAmenityAvailability.item.canonicalRequest.capability, "amenity");
+
+  const standalonePolicyAvailability = canonical(task({
+    taskId: "assisted-service-availability",
+    type: "availability",
+    category: "policy",
+    rawText: "assisted service"
+  }));
+  assert.equal(standalonePolicyAvailability.semantic.tasks[0].type, "policy", "standalone policy availability must compile as a policy fact task");
+  assert.equal(standalonePolicyAvailability.semantic.tasks[0].entity.category, "policy");
+  assert.equal(standalonePolicyAvailability.item.canonicalRequest.capability, "policy");
+
+  const amenityShapedPolicy = canonical(task({
+    taskId: "shared-equipment-hours",
+    type: "policy",
+    category: "amenity",
+    rawText: "",
+    sourceText: "shared equipment hours",
+    detailIntent: "usage_restrictions"
+  }));
+  assert.equal(amenityShapedPolicy.semantic.tasks[0].type, "policy");
+  assert.equal(amenityShapedPolicy.semantic.tasks[0].entity.category, "policy", "an ungrounded policy task must use a policy-compatible entity category");
+  assert.equal(validatePlannerOutput(amenityShapedPolicy.semantic).ok, true, "normalized generic policy tasks must remain schema-valid");
+  assert.equal(amenityShapedPolicy.item.canonicalRequest.capability, "policy");
+
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 7, passCount: 7, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 10, passCount: 10, failCount: 0 }));
 }
 
 main();

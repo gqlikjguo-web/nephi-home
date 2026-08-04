@@ -208,3 +208,7 @@
 - Added a dual-gated test-only acceptance route contract with existing platform-admin authorization plus commit-bound GitHub Actions OIDC verification.
 - Added allowlisted FinalResponse, FinalDecision, Claim Validator, task source/fact, and safe trace evidence without returning prompts, provider objects, or credentials.
 - Added a health-pinned, no-retry deployed conversation matrix job that runs only after the existing test-only CI verification succeeds.
+
+## 2026-08-05 Planner-to-compiler contract normalization
+
+- Added property-catalog candidate recovery plus deterministic normalization for incompatible availability, amenity, and policy candidate shapes, preserving unresolved tasks as schema-valid, safely handled capabilities instead of degrading them to `unknown` or whole-message fallback.
