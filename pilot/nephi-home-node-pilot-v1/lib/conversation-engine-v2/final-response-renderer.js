@@ -4,6 +4,7 @@ const { composeSection } = require("./controlled-composer");
 
 const SAFE_HANDOFF_TEXT = "這次有部分內容無法安全確認，我會請業者協助；您剛才的問題已經記錄。";
 const SAFE_CLARIFICATION_TEXT = "目前提供的資訊無法安全確認。";
+const SAFE_PAST_DATE_TEXT = "您提供的住宿日期已過，請改提供今天之後的入住日期。";
 const MISSING_FIELD_QUESTIONS = Object.freeze({
   checkIn: "請補充入住日期。",
   checkOut: "請補充退房日期。",
@@ -86,6 +87,13 @@ function buildFinalResponse({
     claimValidation
   );
   if (action === "clarification") {
+    if (finalDecision.reasonCode === "past_date") {
+      return {
+        action,
+        replyText: withinLimit([...answered, SAFE_PAST_DATE_TEXT], responsePlan),
+        shouldReply: true
+      };
+    }
     const questions = clarificationQuestions(finalDecision.missingFields);
     return {
       action,

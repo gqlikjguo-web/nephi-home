@@ -55,7 +55,7 @@ function controlledRequestedOutputs(task) {
   return task.requestedOutputs;
 }
 
-function groundedPropertyFactTask(task, catalog) {
+function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
   const entity = task && task.entity;
   if (!catalog || !entity) return null;
   const grounded = entity.rawText
@@ -64,23 +64,47 @@ function groundedPropertyFactTask(task, catalog) {
       rawText: entity.rawText,
       canonicalCandidate: null
     })
-    : null;
+    : entity.canonicalCandidate
+      ? resolveEntity(catalog, {
+        category: "other",
+        rawText: "",
+        canonicalCandidate: entity.canonicalCandidate
+      })
+      : null;
   const groundedEntity = grounded
     && grounded.status === "resolved"
     && grounded.entity;
   const resolved = groundedEntity || null;
-  const definition = resolved && getCapabilityDefinition(resolved.canonicalId);
+  const preferredType = resolved && (resolved.category === "transport"
+    ? "property_fact"
+    : resolved.category === "policy"
+      ? "policy"
+      : "amenity");
+  const exactDefinition = resolved && getCapabilityDefinition(resolved.canonicalId);
+  if (resolved && exactDefinition
+    && exactDefinition.resolverId === "availability_resolver"
+    && exactDefinition.riskLevel === "low"
+    && exactDefinition.responseMode === "answer") return {
+    ...task,
+    type: exactDefinition.capability,
+    detailIntent: task.detailIntent || "general",
+    requestedOutputs: [exactDefinition.capability],
+    dependsOnStayContext: true,
+    stayCandidate: task.stayCandidate || fallbackStayCandidate,
+    entity: {
+      ...entity,
+      rawText: "",
+      category: "other",
+      canonicalCandidate: null
+    }
+  };
+  const definition = resolved && (exactDefinition || getCapabilityDefinition(preferredType));
   if (!resolved || !definition
     || definition.resolverId !== "property_catalog"
     || definition.stayDependency !== false
     || definition.riskLevel !== "low"
     || definition.responseMode !== "answer"
     || !definition.acceptedEntityCategories.includes(resolved.category)) return null;
-  const preferredType = resolved.category === "transport"
-    ? "property_fact"
-    : resolved.category === "policy"
-      ? "policy"
-      : "amenity";
   const type = definition.acceptedCandidateTypes.includes(preferredType)
     ? preferredType
     : definition.acceptedCandidateTypes[0];
@@ -157,7 +181,7 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
     let entity = task && task.entity;
     if (!entity) return task;
 
-    const groundedTask = groundedPropertyFactTask(task, catalog);
+    const groundedTask = groundedPropertyFactTask(task, catalog, value.stay);
     if (groundedTask
       && (task.type !== groundedTask.type
         || task.entity.category !== groundedTask.entity.category

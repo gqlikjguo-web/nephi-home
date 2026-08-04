@@ -510,7 +510,7 @@ function statusForOutcome(outcome, readiness) {
     return "answered";
   }
   if (outcome.outcome === "not_ready") {
-    return outcome.readinessStatus === "missing_information"
+    return ["missing_information", "past_date"].includes(outcome.readinessStatus)
       && readiness.status === "missing"
       ? "pending"
       : "needs_human";

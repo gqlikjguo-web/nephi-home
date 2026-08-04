@@ -119,7 +119,7 @@ function resultForNotReady(formalRequest) {
   return {
     taskId: formalRequest.taskId, type: formalRequest.capability,
     formalRequestId: formalRequest.formalRequestId, requestCycleId: formalRequest.requestCycleId,
-    outcome: "not_ready", readinessStatus: readiness.status || "unsupported",
+    outcome: "not_ready", readinessStatus: readiness.reasonCode || readiness.status || "unsupported",
     missingFields: readiness.missingFields || [], invalidFields: readiness.invalidFields || [], conflictingFields: readiness.conflictingFields || [],
     facts: {}, resolverAttempted: false
   };
@@ -144,6 +144,10 @@ function readinessTaskType(capability) {
 }
 
 function canonicalReadiness(canonicalRequest, stay) {
+  const temporalReasonCode = canonicalRequest.temporalState.resolutionStatus === "unresolved"
+    && canonicalRequest.temporalState.repairReasonCode === "past_date"
+    ? "past_date"
+    : "";
   const readiness = evaluateTaskReadiness({
     taskType: readinessTaskType(canonicalRequest.capability),
     ...canonicalRequest.lodgingProduct,
@@ -160,7 +164,8 @@ function canonicalReadiness(canonicalRequest, stay) {
     knownFields: readiness.knownFields,
     missingFields: readiness.missingFields,
     invalidFields: readiness.invalidFields,
-    conflictingFields: []
+    conflictingFields: [],
+    reasonCode: temporalReasonCode
   };
   if (canonicalRequest.resolverId === "availability_resolver"
     && ["not_found", "ambiguous"].includes(canonicalRequest.canonicalEntity.status)

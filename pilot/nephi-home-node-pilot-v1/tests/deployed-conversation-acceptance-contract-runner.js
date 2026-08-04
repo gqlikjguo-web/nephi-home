@@ -136,6 +136,18 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     finalDecision: { action: "clarification", reasonCode: "past_date" },
     taskResults: [{ ...pastDateResult.taskResults[0], status: "needs_clarification", dataSource: "" }]
   }, { expectedActions: ["clarification"], pastDatePolicy: "reject_if_resolved_past", evaluatedAt: new Date("2026-08-04T00:00:00.000Z"), requiredStages: ["planner", "validation", "semantic_contract", "final_decision"] }));
+  const unresolvedPastDateResult = {
+    ...pastDateResult,
+    trace: safeResult.trace.map((entry) => entry.stage === "canonical_request" ? {
+      ...entry,
+      items: [{ capability: "availability", temporalState: { resolutionStatus: "unresolved", repairReasonCode: "past_date", expressionType: "absolute_date", checkIn: null, checkOut: null, nights: 1 } }]
+    } : entry)
+  };
+  assert.throws(
+    () => validateAcceptanceResult(unresolvedPastDateResult, { expectedActions: ["reply"], pastDatePolicy: "reject_if_resolved_past", evaluatedAt: new Date("2026-08-04T00:00:00.000Z") }),
+    /past_date_not_explicitly_rejected/,
+    "a canonically recognized past date must be rejected even though executable dates are intentionally removed"
+  );
 
   async function capturePublicCaseLog(mode) {
     const originalMatrix = ACCEPTANCE_MATRIX.splice(0);

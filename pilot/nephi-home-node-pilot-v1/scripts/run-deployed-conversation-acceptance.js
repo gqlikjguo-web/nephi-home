@@ -197,12 +197,16 @@ function validateAcceptanceResult(result, expectation = {}) {
   for (const roomNumber of ["301", "402"]) {
     if (semanticTags.has(`room_${roomNumber}`) && canonicalItems.length && !canonicalItems.some((item) => String(item.canonicalEntity && item.canonicalEntity.canonicalId || "").includes(roomNumber))) throw new Error(`expected_room_scope_missing:${roomNumber}`);
   }
-  if (semanticTags.has("date_range") && canonicalItems.length && !canonicalItems.some((item) => item.temporalState && item.temporalState.checkIn && item.temporalState.checkOut)) throw new Error("expected_date_range_missing");
+  if (semanticTags.has("date_range") && canonicalItems.length && !canonicalItems.some((item) => item.temporalState && (
+    item.temporalState.checkIn && item.temporalState.checkOut
+    || item.temporalState.repairReasonCode === "past_date" && item.temporalState.expressionType === "date_range"
+  ))) throw new Error("expected_date_range_missing");
   if (semanticTags.has("nights") && canonicalItems.length && !canonicalItems.some((item) => Number.isInteger(item.temporalState && item.temporalState.nights) && item.temporalState.nights > 0)) throw new Error("expected_nights_missing");
   if (expectation.pastDatePolicy === "reject_if_resolved_past") {
     const resolvedCheckIns = canonicalItems.map((item) => String(item && item.temporalState && item.temporalState.checkIn || "")).filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value));
     const evaluatedDate = String(expectation.evaluatedAt instanceof Date ? expectation.evaluatedAt.toISOString() : expectation.evaluatedAt || "").slice(0, 10);
-    if (evaluatedDate && resolvedCheckIns.some((value) => value < evaluatedDate)) {
+    const canonicalPastDate = canonicalItems.some((item) => item && item.temporalState && item.temporalState.repairReasonCode === "past_date");
+    if (canonicalPastDate || evaluatedDate && resolvedCheckIns.some((value) => value < evaluatedDate)) {
       if (!/(已過|過去|日期.{0,6}過|無法查詢)/u.test(result.finalResponse.replyText)) throw new Error("past_date_not_explicitly_rejected");
       if (result.taskResults.some((task) => task.status === "answered" && ["availability", "price", "total_price"].includes(task.capability || task.type))) throw new Error("past_date_formal_query_forbidden");
     }

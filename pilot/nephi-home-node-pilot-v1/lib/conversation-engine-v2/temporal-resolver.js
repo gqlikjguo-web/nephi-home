@@ -129,14 +129,14 @@ function weekend(raw, base, baseWeekday) {
 }
 
 function explicitNights(raw) {
-  const match = raw.match(/住([一二兩三四五六七八九十\d]+)晚/u);
+  const match = raw.match(/(?:(?:入住|住)([一二兩三四五六七八九十\d]+)[晚天]|([一二兩三四五六七八九十\d]+)晚)/u);
   if (!match) return null;
-  const nights = chineseInteger(match[1]);
+  const nights = chineseInteger(match[1] || match[2]);
   return Number.isInteger(nights) && nights >= 1 && nights <= 60 ? nights : null;
 }
 
 function expressionBeforeNights(raw) {
-  return raw.replace(/(?:入)?住[一二兩三四五六七八九十\d]+晚.*$/u, "");
+  return raw.replace(/(?:(?:入住|住)[一二兩三四五六七八九十\d]+[晚天]|[一二兩三四五六七八九十\d]+晚).*$/u, "");
 }
 
 function parseSingleExpression(raw, base, baseWeekday) {
@@ -155,7 +155,7 @@ function daysBetween(start, end) {
 }
 
 function compactRangeParts(raw) {
-  const slash = raw.match(/^(?:(\d{4})[/-])?(\d{1,2})[/-](\d{1,2})(?:日|號)?(?:-|~|～|到|至)(?:(\d{1,2})[/-])?(\d{1,2})(?:日|號)?$/u);
+  const slash = raw.match(/^(?:(\d{4})[/-])?(\d{1,2})[/-](\d{1,2})(?:日|號)?(?:-|\.|、|~|～|到|至)(?:(\d{1,2})[/-])?(\d{1,2})(?:日|號)?$/u);
   if (slash) {
     return {
       year: slash[1] ? Number(slash[1]) : null,
@@ -210,8 +210,23 @@ function compactDateRange(raw, base) {
 }
 
 function parseRange(raw, base, baseWeekday) {
-  const compact = compactDateRange(raw, base);
-  if (compact) return compact;
+  const duration = explicitNights(raw);
+  const inclusiveDayRange = duration ? null : raw.match(/^((?:(?:\d{4})[/-])?\d{1,2}[/-]\d{1,2}(?:日|號)?(?:-|\.|、|~|～|到|至)(?:(?:\d{1,2})[/-])?\d{1,2}(?:日|號)?)[一二兩三四五六七八九十\d]+天$/u);
+  const temporalExpression = duration
+    ? expressionBeforeNights(raw)
+    : inclusiveDayRange ? inclusiveDayRange[1] : raw;
+  const compact = compactDateRange(temporalExpression, base);
+  if (compact) return duration && compact.nights !== duration
+    ? { unresolvedReason: "temporal_range_invalid" }
+    : compact;
+  const labeled = temporalExpression.match(/^入住日期[:：]?(.+?)[,，]?退房日期[:：]?(.+)$/u);
+  if (labeled) {
+    const left = parseSingleExpression(normalizeText(labeled[1]), base, baseWeekday);
+    const right = parseSingleExpression(normalizeText(labeled[2]), base, baseWeekday);
+    if (!left || !right || !left.checkIn || !right.checkIn || right.checkIn <= left.checkIn) return { unresolvedReason: "temporal_range_invalid" };
+    const nights = daysBetween(left.checkIn, right.checkIn);
+    return { checkIn: left.checkIn, checkOut: right.checkIn, nights, expressionType: "date_range" };
+  }
   const between = raw.match(/^(.+?)(?:到|至)(.+)$/u);
   if (between) {
     const left = parseSingleExpression(normalizeText(between[1]), base, baseWeekday);
@@ -230,7 +245,7 @@ function parseRange(raw, base, baseWeekday) {
     if (right.checkIn <= left.checkIn) return { unresolvedReason: "temporal_range_invalid" };
     return { checkIn: left.checkIn, checkOut: right.checkIn, nights: daysBetween(left.checkIn, right.checkIn), expressionType: "date_range" };
   }
-  const nights = explicitNights(raw);
+  const nights = duration;
   if (nights) {
     const start = parseSingleExpression(expressionBeforeNights(raw), base, baseWeekday);
     if (!start || !start.checkIn) return { unresolvedReason: "temporal_expression_unrecognized" };
@@ -242,10 +257,10 @@ function parseRange(raw, base, baseWeekday) {
 function parseTemporalGrammarAtBase(raw, baseParts) {
   if (/下次.*有空.*週末/u.test(raw)) return { unresolvedReason: "temporal_expression_ambiguous" };
   const range = parseRange(raw, baseParts.key, baseParts.weekday);
-  if (range) return range.checkIn && range.checkIn < baseParts.key ? { unresolvedReason: "past_date" } : range;
+  if (range) return range.checkIn && range.checkIn < baseParts.key ? { ...range, unresolvedReason: "past_date" } : range;
   const single = parseSingleExpression(raw, baseParts.key, baseParts.weekday);
   if (!single) return { unresolvedReason: "temporal_expression_unrecognized" };
-  return single.checkIn < baseParts.key ? { unresolvedReason: "past_date" } : single;
+  return single.checkIn < baseParts.key ? { ...single, unresolvedReason: "past_date" } : single;
 }
 
 function parseTemporalGrammar(raw, eventTimestamp, timezone) {
@@ -496,7 +511,7 @@ function resolveCanonicalTemporal({
       expressionType: "none",
       checkIn: null,
       checkOut: null,
-      nights: null,
+      nights: Number.isInteger(plannerCandidate.nightsCandidate) ? plannerCandidate.nightsCandidate : null,
       searchRange: null,
       timezone,
       resolutionStatus: "absent",
@@ -527,14 +542,46 @@ function resolveCanonicalTemporal({
     }, { sourceEvidenceRefs: evidence });
   }
 
-  const parsed = parseTemporalGrammar(rawText, eventTimestamp, timezone);
-  if (parsed.unresolvedReason) {
+  const durationOnly = explicitNights(rawText);
+  if (durationOnly && !expressionBeforeNights(rawText)) {
     return withFieldMetadata({
       rawText,
-      expressionType: "ambiguous",
+      expressionType: "duration_only",
       checkIn: null,
       checkOut: null,
-      nights: null,
+      nights: durationOnly,
+      searchRange: null,
+      timezone,
+      resolutionStatus: "absent",
+      resolutionSource: "canonical_temporal_grammar",
+      repairReasonCode: "",
+      applicableTaskIds: taskIds,
+      ambiguity: null,
+      originalExpression: rawText
+    }, {
+      provenance: { nights: "explicit" },
+      ruleRefs: { nights: CANONICAL_TEMPORAL_RULE_REF },
+      sourceEvidenceRefs: evidence
+    });
+  }
+
+  const parsed = parseTemporalGrammar(rawText, eventTimestamp, timezone);
+  if (parsed.unresolvedReason) {
+    const unresolvedNights = parsed.unresolvedReason === "past_date"
+      ? Number.isInteger(parsed.nights)
+        ? parsed.nights
+        : Number.isInteger(plannerCandidate.nightsCandidate)
+          ? plannerCandidate.nightsCandidate
+          : Number.isInteger(defaultNights) ? defaultNights : null
+      : null;
+    return withFieldMetadata({
+      rawText,
+      expressionType: parsed.unresolvedReason === "past_date" && parsed.expressionType
+        ? parsed.expressionType
+        : "ambiguous",
+      checkIn: null,
+      checkOut: null,
+      nights: unresolvedNights,
       searchRange: null,
       timezone,
       resolutionStatus: "unresolved",
