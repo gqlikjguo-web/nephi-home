@@ -216,3 +216,4 @@
 ## 2026-08-05 Acknowledgement relation normalization
 
 - Normalized acknowledgement-only context relations to a non-mutating uncertain relation before context validation while retaining candidate and source-evidence validation, preventing safe no-reply turns from becoming handoffs.
+- Extended the same fail-closed no-reply boundary to unknown-only input containing no letters or numbers, using a general Unicode punctuation/symbol check after OpenAI planning and preserving Planner control for substantive text.

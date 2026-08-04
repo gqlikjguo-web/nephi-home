@@ -393,7 +393,7 @@ class ConversationEngineV2 {
       return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
     const semanticInputTasks = plannerOutput.tasks.map(plannerTaskTrace);
-    plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog });
+    plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog, sourceEvents });
     const validation = validatePlannerOutput(plannerOutput);
     this.trace(traceId, "validation", { ...plannerValidationTrace(plannerOutput, validation), semanticValidation: plannerOutput.semanticValidation, ...(!validation.ok ? { errorCategory: "local_contract_failure" } : {}) });
     this.trace(traceId, "semantic_contract", { inputTasks: semanticInputTasks, outputTasks: plannerOutput.tasks.map(plannerTaskTrace), shouldIgnore: plannerOutput.shouldIgnore, validationPassed: validation.ok, semanticValidation: plannerOutput.semanticValidation });

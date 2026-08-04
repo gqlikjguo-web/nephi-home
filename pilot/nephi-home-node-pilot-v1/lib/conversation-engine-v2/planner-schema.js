@@ -228,7 +228,14 @@ function validatePlannerOutput(value) {
   return { ok: errors.length === 0, errors };
 }
 
-function applyPlannerSemanticContract(value, { catalog } = {}) {
+function sourceEventsAreUnicodeNonSubstantive(sourceEvents) {
+  const messages = (Array.isArray(sourceEvents) ? sourceEvents : [])
+    .map((event) => String(event && event.messageText || "").trim())
+    .filter(Boolean);
+  return messages.length > 0 && messages.every((message) => /^[\p{P}\p{S}\s]+$/u.test(message));
+}
+
+function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tasks)) return value;
   const acceptedTasks = [], repairedTasks = [], rejectedTasks = [], repairedRelations = [];
   let contextRelationCandidates = value.contextRelationCandidates;
@@ -311,7 +318,10 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
   const acknowledgementOnly = value.discourse
     && value.discourse.relation === "acknowledgement"
     && tasks.every((task) => task && task.type === "unknown");
-  if (acknowledgementOnly && Array.isArray(contextRelationCandidates)) {
+  const nonSubstantiveUnknownOnly = tasks.every((task) => task && task.type === "unknown")
+    && sourceEventsAreUnicodeNonSubstantive(sourceEvents);
+  const silentOnly = acknowledgementOnly || nonSubstantiveUnknownOnly;
+  if (silentOnly && Array.isArray(contextRelationCandidates)) {
     const acknowledgementIndexes = new Set(tasks.map((task) => task.candidateIndex));
     contextRelationCandidates = contextRelationCandidates.map((candidate) => {
       if (!candidate || !acknowledgementIndexes.has(candidate.candidateIndex)
@@ -319,7 +329,9 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
       if (candidate.kind !== "relation_uncertain"
         || candidate.candidateRequestCycleRefs.length > 0) repairedRelations.push({
         candidateIndex: candidate.candidateIndex,
-        reason: "acknowledgement_relation_normalization"
+        reason: acknowledgementOnly
+          ? "acknowledgement_relation_normalization"
+          : "non_substantive_unicode_relation_normalization"
       });
       return {
         ...candidate,
@@ -332,7 +344,7 @@ function applyPlannerSemanticContract(value, { catalog } = {}) {
     ...value,
     tasks,
     contextRelationCandidates,
-    shouldIgnore: acknowledgementOnly ? true : value.shouldIgnore,
+    shouldIgnore: silentOnly ? true : value.shouldIgnore,
     semanticValidation: { acceptedTasks, repairedTasks, rejectedTasks, repairedRelations }
   };
 }

@@ -197,6 +197,25 @@ async function main() {
   assert.equal(ignoreCounters.availability || 0, 0);
   assert.equal(ignoreCounters.composer || 0, 0);
 
+  for (const [eventId, messageText] of [["punctuation-only", "！？…"], ["symbol-only", "✅"]]) {
+    const counters = {};
+    const runtime = createEngine(plan([
+      task({ taskId: eventId, type: "unknown", sourceText: messageText, category: "other", rawText: messageText })
+    ]), counters);
+    const result = await process(runtime.engine, eventId, messageText);
+    assert.equal(result.shouldReply, false, "Unicode punctuation or symbols without substantive text must not enter handoff");
+    assert.equal(result.noReply, true);
+    assert.equal(result.reviewCount, 0);
+    assert.equal(counters.availability || 0, 0);
+    assert.equal(counters.composer || 0, 0);
+  }
+
+  const substantiveUnknownRuntime = createEngine(plan([
+    task({ taskId: "substantive-unknown", type: "unknown", sourceText: "Price?", category: "other", rawText: "Price?" })
+  ]));
+  const substantiveUnknown = await process(substantiveUnknownRuntime.engine, "substantive-unknown", "Price?");
+  assert.equal(substantiveUnknown.shouldReply, true, "letters or numbers must remain Planner-controlled substantive input");
+
   const mixedCounters = {};
   const mixedRuntime = createEngine(plan([
     task({ taskId: "availability", type: "availability", sourceText: "明天有房嗎", category: "room", rawText: "unresolved lodging inventory" })
