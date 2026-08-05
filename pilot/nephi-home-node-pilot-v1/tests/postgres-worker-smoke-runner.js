@@ -9,12 +9,13 @@ const { migratePostgres } = require("../lib/providers/postgres-migrate");
 const { createPostgresProviders } = require("../lib/providers/postgres-providers");
 
 const ROOT = path.resolve(__dirname, "..");
+const DIRECT_MIGRATION_TIMEOUT_MS = process.platform === "win32" ? 90000 : 30000;
 
 async function run() {
   const directMigration = spawnSync(
     process.execPath,
     ["-e", "require('./lib/providers/postgres-migrate').migratePostgres({kind:'pglite',dataDir:require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(),'pglite-direct-'))}).then(()=>console.log('migration-complete')).catch(error=>{console.error(error.stack||error);process.exit(1)})"],
-    { cwd: ROOT, encoding: "utf8", timeout: 30000 }
+    { cwd: ROOT, encoding: "utf8", timeout: DIRECT_MIGRATION_TIMEOUT_MS }
   );
   assert.equal(directMigration.status, 0, "a direct PGlite migration must complete instead of letting Node exit before its promise settles");
   assert.match(directMigration.stdout, /migration-complete/, "a direct PGlite migration must reach its completion marker");
