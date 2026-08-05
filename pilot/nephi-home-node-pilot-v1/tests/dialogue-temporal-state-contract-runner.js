@@ -274,6 +274,38 @@ async function testAcknowledgementContradictions() {
   ], { relation: "acknowledgement", shouldIgnore: false }), "Operator assistance is required", "explicit-human-help");
   assert.equal(substantiveHumanHelp.result.finalDecision.action, "handoff", "a substantive human-help task must remain actionable when the Planner did not mark the turn ignorable");
 
+  const malformedIgnoredHumanHelpPlan = plannerOutput([
+    task("human_help", "malformed-ignored-human-help", {
+      sourceText: "Thanks",
+      rawText: "Thanks",
+      category: "other"
+    })
+  ], { relation: "acknowledgement", shouldIgnore: true });
+  malformedIgnoredHumanHelpPlan.tasks[0].entity.category = "";
+  const malformedIgnoredHumanHelp = await processOne(
+    malformedIgnoredHumanHelpPlan,
+    "Thanks",
+    "ack-malformed-human-help"
+  );
+  assert.equal(malformedIgnoredHumanHelp.result.finalDecision.action, "no_reply", "a malformed generic task must not override an explicit ignored-acknowledgement dialogue act before semantic compilation");
+  assert.equal(malformedIgnoredHumanHelp.result.reviewCount, 0);
+
+  const malformedIgnoredUnknownPlan = plannerOutput([
+    task("unknown", "malformed-ignored-unknown", {
+      sourceText: "OK emoji",
+      rawText: "OK emoji",
+      category: "other"
+    })
+  ], { relation: "acknowledgement", shouldIgnore: true });
+  malformedIgnoredUnknownPlan.tasks[0].entity.category = "";
+  const malformedIgnoredUnknown = await processOne(
+    malformedIgnoredUnknownPlan,
+    "OK emoji",
+    "ack-malformed-unknown"
+  );
+  assert.equal(malformedIgnoredUnknown.result.finalDecision.action, "no_reply", "a malformed unknown acknowledgement fragment must be normalized instead of escalating to handoff");
+  assert.equal(malformedIgnoredUnknown.result.reviewCount, 0);
+
   const policy = await processOne(plannerOutput([
     task("policy", "ack-policy", {
       sourceText: "一般社交訊息",

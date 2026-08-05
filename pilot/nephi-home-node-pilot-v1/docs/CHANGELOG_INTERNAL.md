@@ -237,3 +237,4 @@
 ## 2026-08-05 Ignored acknowledgement conflict normalization
 
 - Normalized a generic `human_help` task to a silent unknown only when the same Planner result explicitly marks the turn as an ignorable acknowledgement; substantive human-help requests remain fail-closed.
+- Extended that normalization to malformed generic `unknown`/`human_help` fragments before structural validation, using exact source-event evidence and controlled machine fields so an explicit ignored acknowledgement cannot become a whole-request handoff.

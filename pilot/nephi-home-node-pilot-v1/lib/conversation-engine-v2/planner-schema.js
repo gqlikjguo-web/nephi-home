@@ -247,6 +247,75 @@ function sourceEventsAreUnicodeNonSubstantive(sourceEvents) {
   return messages.length > 0 && messages.every((message) => /^[\p{P}\p{S}\s]+$/u.test(message));
 }
 
+function normalizeIgnoredAcknowledgementOutput(value, { sourceEvents } = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || !value.discourse || value.discourse.relation !== "acknowledgement"
+    || value.shouldIgnore !== true || !Array.isArray(value.tasks)) return value;
+  const sourceEvent = (Array.isArray(sourceEvents) ? sourceEvents : []).find((event) => {
+    const messageText = String(event && event.messageText || "");
+    return messageText.trim() && (String(event && event.eventId || "").trim() || String(event && event.messageRef || "").trim());
+  });
+  if (!sourceEvent) return value;
+  const messageText = String(sourceEvent.messageText || "");
+  const ignoredIndexes = new Set();
+  const ignoredCandidateIndexes = new Set();
+  const tasks = value.tasks.map((task, index) => {
+    if (!task || !["human_help", "unknown"].includes(task.type)
+      || ![undefined, "", "general"].includes(task.detailIntent)) return task;
+    ignoredIndexes.add(index);
+    if (Number.isInteger(task.candidateIndex) && task.candidateIndex >= 0) ignoredCandidateIndexes.add(task.candidateIndex);
+    const sourceText = text(task.sourceText, 500) && task.sourceText.trim()
+      ? task.sourceText
+      : messageText.slice(0, 500);
+    const taskConfidence = confidence(task.confidence)
+      ? task.confidence
+      : confidence(value.discourse.confidence) ? value.discourse.confidence : 0;
+    const entityConfidence = confidence(task.entity && task.entity.confidence)
+      ? task.entity.confidence
+      : taskConfidence;
+    return {
+      ...task,
+      candidateIndex: index,
+      taskId: text(task.taskId, 80) && task.taskId.trim() ? task.taskId : `acknowledgement-${index + 1}`,
+      type: "unknown",
+      sourceText,
+      detailIntent: "general",
+      requestedOutputs: ["answer"],
+      eligibilityEvidence: { kind: "none", sourceText: "" },
+      dependsOnStayContext: false,
+      entity: {
+        category: "other",
+        rawText: messageText.slice(0, 200),
+        canonicalCandidate: null,
+        confidence: entityConfidence
+      },
+      stayCandidate: null,
+      confidence: taskConfidence
+    };
+  });
+  if (!ignoredIndexes.size) return value;
+  const retainedCandidates = (Array.isArray(value.contextRelationCandidates) ? value.contextRelationCandidates : [])
+    .filter((candidate) => candidate && !ignoredCandidateIndexes.has(candidate.candidateIndex) && !ignoredIndexes.has(candidate.candidateIndex));
+  const normalizedCandidates = [...ignoredIndexes].map((candidateIndex) => ({
+    candidateIndex,
+    kind: "relation_uncertain",
+    candidateRequestCycleRefs: [],
+    evidenceRefs: [{
+      eventId: String(sourceEvent.eventId || "").trim(),
+      messageRef: String(sourceEvent.messageRef || "").trim(),
+      startOffset: 0,
+      endOffset: messageText.length,
+      quote: messageText
+    }]
+  }));
+  return {
+    ...value,
+    tasks,
+    contextRelationCandidates: [...retainedCandidates, ...normalizedCandidates]
+      .sort((left, right) => left.candidateIndex - right.candidateIndex)
+  };
+}
+
 function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tasks)) return value;
   const acceptedTasks = [], repairedTasks = [], rejectedTasks = [], repairedRelations = [];
@@ -388,4 +457,4 @@ function plannerJsonSchema() {
   };
 }
 
-module.exports = { validatePlannerOutput, applyPlannerSemanticContract, plannerJsonSchema, normalizeEligibilityEvidence, discardLegacyPlannerStateControls, TASK_TYPES };
+module.exports = { validatePlannerOutput, applyPlannerSemanticContract, plannerJsonSchema, normalizeEligibilityEvidence, normalizeIgnoredAcknowledgementOutput, discardLegacyPlannerStateControls, TASK_TYPES };
