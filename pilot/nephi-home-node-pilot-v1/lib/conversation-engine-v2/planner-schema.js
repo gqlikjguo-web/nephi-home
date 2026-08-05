@@ -545,6 +545,35 @@ function verifiedNewRequestEvidence(task, contextRelationCandidates, sourceEvent
   return candidate.evidenceRefs.map((evidenceRef) => evidenceRef.quote).join("\n");
 }
 
+function normalizeUnreferencedSameTurnSupplements(value, sourceEvents) {
+  const repairs = [];
+  if (!value || !value.discourse || value.discourse.relation !== "new_request"
+    || !Array.isArray(value.tasks) || !Array.isArray(value.contextRelationCandidates)) return { value, repairs };
+  const sourceMaps = sourceEventMaps(sourceEvents);
+  const taskCandidateIndexes = new Set(value.tasks
+    .map((task) => task && task.candidateIndex)
+    .filter((candidateIndex) => Number.isInteger(candidateIndex) && candidateIndex >= 0));
+  const verifiedCandidate = (candidate) => candidate
+    && taskCandidateIndexes.has(candidate.candidateIndex)
+    && Array.isArray(candidate.evidenceRefs)
+    && candidate.evidenceRefs.length > 0
+    && candidate.evidenceRefs.every((evidenceRef) => evidenceMatchesSource(evidenceRef, sourceMaps));
+  const hasVerifiedNewRequest = value.contextRelationCandidates.some((candidate) => verifiedCandidate(candidate)
+    && candidate.kind === "new_request"
+    && Array.isArray(candidate.candidateRequestCycleRefs)
+    && candidate.candidateRequestCycleRefs.length === 0);
+  if (!hasVerifiedNewRequest) return { value, repairs };
+  const contextRelationCandidates = value.contextRelationCandidates.map((candidate) => {
+    if (!verifiedCandidate(candidate)
+      || candidate.kind !== "supplement_existing"
+      || !Array.isArray(candidate.candidateRequestCycleRefs)
+      || candidate.candidateRequestCycleRefs.length !== 0) return candidate;
+    repairs.push({ candidateIndex: candidate.candidateIndex, reason: "unreferenced_same_turn_supplement" });
+    return { ...candidate, kind: "new_request", candidateRequestCycleRefs: [] };
+  });
+  return { value: { ...value, contextRelationCandidates }, repairs };
+}
+
 function isolatedCatalogTaskId(taskId, ordinal, usedTaskIds) {
   let candidateOrdinal = ordinal;
   while (candidateOrdinal <= 12) {
@@ -626,11 +655,13 @@ function isolateMergedUnknownCatalogTasks(value, catalog, sourceEvents) {
 function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tasks)) return value;
   const taskIdRepairs = Array.isArray(value[TASK_ID_REPAIRS]) ? value[TASK_ID_REPAIRS] : [];
+  const relationNormalization = normalizeUnreferencedSameTurnSupplements(value, sourceEvents);
+  value = relationNormalization.value;
   value = isolateMergedUnknownCatalogTasks(value, catalog, sourceEvents);
   const acceptedTasks = [], repairedTasks = [
     ...taskIdRepairs,
     ...value.isolatedTaskIndexes.map((index) => ({ taskId: value.tasks[index].taskId, index, reason: "merged_unknown_catalog_task_isolation" }))
-  ], rejectedTasks = [], repairedRelations = [];
+  ], rejectedTasks = [], repairedRelations = [...relationNormalization.repairs];
   let contextRelationCandidates = value.contextRelationCandidates;
   let tasks = value.tasks.map((original, index) => {
     let task = { ...original, eligibilityEvidence: normalizeEligibilityEvidence(original && original.eligibilityEvidence), entity: original && original.entity ? { ...original.entity } : original && original.entity };

@@ -90,3 +90,9 @@
 1. Local `npm test`, protected acceptance, Codex integrity, Constitution, runtime uniqueness, canonical golden, and `git diff --check` have passed. Create one root-cause commit and non-force push to `test-only/node-pilot-integration`.
 2. Require exact-commit Render health, a verified private artifact, and the complete 77-case / 90-turn real OpenAI + PostgreSQL matrix. `rg-001`, `rg-028`, and `rg-032` must individually return to PASS; compare every prior PASS case and turn against artifacts `8943541801`, `8942265827`, and `8937651304`.
 3. Preserve `rg-038`'s null temporal state and zero availability QueryPlan. If Release Gate remains unmet, continue with the new artifact's earliest shared failure layer, including the separate date-clarification task boundary, sensitive-access routing, and still-visible past-date/specification conflicts. Real LINE final acceptance remains blocked.
+
+## 2026-08-06 unreferenced same-turn supplement recovery
+
+1. Commit and non-force push the locally complete relation repair after final diff checks; local targeted tests, complete `npm test`, protected acceptance, Codex integrity, Constitution, runtime uniqueness, and canonical golden have passed.
+2. Require exact-commit Render health, a verified private artifact, and the complete 77-case / 90-turn real OpenAI + PostgreSQL matrix. `rg-014` must recover without changing any valid continuation or multi-cycle relation, and every prior PASS case and turn must be compared against artifact `8944853419`.
+3. Keep `rg-037` and `rgs-020` visible as prior-PASS regressions and treat `rg-028` as an incomplete apparent PASS until the formal 08:00-22:00 answer is actually grounded. Preserve `rg-038`'s null dates and zero QueryPlan, then continue from the next earliest shared failure layer without changing expected values or past-date policy.

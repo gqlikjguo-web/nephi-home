@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const { applyPlannerSemanticContract, normalizeDuplicateTaskIds, plannerJsonSchema, validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
 const { canonicalizeExecutionItem } = require("../lib/conversation-engine-v2/canonicalizer");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
+const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
 
 const eventTimestamp = Date.parse("2026-08-01T10:00:00+08:00");
 
@@ -408,6 +409,34 @@ function main() {
   });
   assert.equal(alreadyRepresented.tasks.length, 2, "an already represented catalog task must never be duplicated during isolation");
 
+  const sameTurnMessage = "Check one stay, two guests, and one supplied amenity.";
+  const sameTurnEvent = { eventId: "same-turn-event", messageRef: "", messageText: sameTurnMessage };
+  const sameTurnPlan = plan([
+    task({ taskId: "same-turn-stay", type: "availability", category: "room", rawText: "one stay", sourceText: sameTurnMessage }),
+    { ...task({ taskId: "same-turn-guests", type: "availability", category: "room", rawText: "two guests", sourceText: sameTurnMessage, detailIntent: "quantity" }), candidateIndex: 1 },
+    { ...task({ taskId: "same-turn-amenity", type: "amenity", category: "amenity", rawText: "supplied amenity", sourceText: sameTurnMessage }), candidateIndex: 2 }
+  ]);
+  sameTurnPlan.contextRelationCandidates.forEach((candidate) => {
+    candidate.evidenceRefs = [{ eventId: sameTurnEvent.eventId, messageRef: "", startOffset: 0, endOffset: sameTurnMessage.length, quote: sameTurnMessage }];
+    if (candidate.candidateIndex > 0) candidate.kind = "supplement_existing";
+  });
+  const repairedSameTurn = applyPlannerSemanticContract(sameTurnPlan, { catalog, sourceEvents: [sameTurnEvent] });
+  assert.deepEqual(repairedSameTurn.contextRelationCandidates.map((candidate) => candidate.kind), ["new_request", "new_request", "new_request"], "unreferenced same-message supplements in an explicit new request must remain independently executable new tasks");
+  assert.deepEqual(repairedSameTurn.semanticValidation.repairedRelations.map((item) => item.reason), ["unreferenced_same_turn_supplement", "unreferenced_same_turn_supplement"]);
+  assert.equal(validateUnderstandingContext(repairedSameTurn, { cycles: [] }, { sourceEvents: [sameTurnEvent] }).ok, true, "the repaired tasks must pass the strict context validator");
+  const continuationPlan = JSON.parse(JSON.stringify(sameTurnPlan));
+  continuationPlan.discourse.relation = "continue";
+  const retainedContinuation = applyPlannerSemanticContract(continuationPlan, { catalog, sourceEvents: [sameTurnEvent] });
+  assert.equal(retainedContinuation.contextRelationCandidates[1].kind, "supplement_existing", "a continuation must not be rewritten as a new request");
+  const referencedPlan = JSON.parse(JSON.stringify(sameTurnPlan));
+  referencedPlan.contextRelationCandidates[1].candidateRequestCycleRefs = ["missing-cycle"];
+  const retainedReference = applyPlannerSemanticContract(referencedPlan, { catalog, sourceEvents: [sameTurnEvent] });
+  assert.equal(retainedReference.contextRelationCandidates[1].kind, "supplement_existing", "the compiler must not discard a claimed cycle reference");
+  const unverifiedRelationPlan = JSON.parse(JSON.stringify(sameTurnPlan));
+  unverifiedRelationPlan.contextRelationCandidates[1].evidenceRefs[0].eventId = "wrong-event";
+  const retainedUnverifiedRelation = applyPlannerSemanticContract(unverifiedRelationPlan, { catalog, sourceEvents: [sameTurnEvent] });
+  assert.equal(retainedUnverifiedRelation.contextRelationCandidates[1].kind, "supplement_existing", "unverified evidence must remain fail-closed");
+
   const duplicateTaskIdPlan = plan([
     task({ taskId: "capacity", type: "capacity", category: "other", rawText: "group size" }),
     { ...task({ taskId: "policy", type: "policy", category: "policy", rawText: "breakfast" }), candidateIndex: 1 },
@@ -430,7 +459,7 @@ function main() {
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 22 + contradictoryFieldCaseCount, passCount: 22 + contradictoryFieldCaseCount, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 23 + contradictoryFieldCaseCount, passCount: 23 + contradictoryFieldCaseCount, failCount: 0 }));
 }
 
 main();

@@ -292,3 +292,7 @@
 
 - Unified availability- and amenity-shaped policy restrictions under the controlled policy capability, including registry-compatible entity repair.
 - Added unique current-property catalog grounding for a formal amenity alias contained in a verified Planner time-detail phrase, with ambiguity, evidence-binding, and protected-task fail-closed controls.
+
+## 2026-08-06 Same-turn relation recovery
+
+- Preserved independently executable tasks when a new-request Planner output mislabeled same-source sibling tasks as unreferenced supplements, while retaining strict cycle references for real continuations and modifications.

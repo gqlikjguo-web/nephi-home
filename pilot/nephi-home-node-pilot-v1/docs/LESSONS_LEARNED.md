@@ -272,3 +272,9 @@ Arbitrate only from schema-controlled fields. Preserve an agreeing stateful type
 OpenAI may classify the same property restriction as availability, amenity, or policy, and may place a formal alias inside a longer entity phrase. Treating candidate type or whole-string entity equality as the sole authority makes policy capability and formal facts disappear across otherwise equivalent outputs.
 
 Use the controlled detail intent before low-risk candidate shape, then require registry compatibility. A longer entity phrase may use catalog grounding only when the Planner phrase itself is source-bound, exactly one formal alias is present, and the task remains within a narrow public detail class. Ambiguous, unbound, or protected tasks must not be promoted.
+
+## 2026-08-06 -- A same-turn supplement still requires a real prior cycle
+
+OpenAI can split one new message into several correct tasks while marking later tasks as `supplement_existing` with an empty cycle-reference array. The relation is structurally impossible, and letting strict validation reject the whole turn loses unrelated grounded tasks.
+
+Normalize only the narrow contradiction in which the turn is explicitly new, a sibling establishes a verified current-source new request, and the supplement has no claimed cycle at all. Keep continuations, modifications, explicit references, and unverified evidence fail closed so relation recovery never invents dialogue history.

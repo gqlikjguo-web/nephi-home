@@ -393,3 +393,11 @@
 **Reason:** Deployed run `31037333449` showed the same policy questions arriving as `availability + room_or_bundle_restriction`, `amenity + usage_restrictions`, and catalog-grounded amenity restrictions. It also showed a KTV time task whose source-bound entity was `ktv 使用時間`; exact whole-string entity matching missed the formal `singing` FAQ and incorrectly hid its 08:00-22:00 answer behind handoff.
 
 **Constraint:** The compiler does not scan the complete guest message, add aliases, or use task IDs, case IDs, or acceptance text. Phrase grounding is limited to verified `new_request` evidence, time-detail tasks, low-risk `availability`/`amenity` candidates, current-property amenity/FAQ facts, and one uniquely owned alias. Ambiguous aliases, unbound Planner entity text, unresolved facts, acknowledgements, inventory readiness, `booking_request`, `human_help`, and `high_risk` remain fail closed.
+
+## D-041 -- Unreferenced same-turn supplements remain new requests
+
+**Decision:** When the Planner declares the turn itself to be a `new_request`, at least one task has a verified current-source `new_request` relation, and another task from the same source is labeled `supplement_existing` with no request-cycle reference, the semantic compiler normalizes only that unreferenced relation to `new_request`.
+
+**Reason:** Deployed run `31040750260` produced three independent tasks from one new guest message but labeled the latter two as supplements without a cycle reference. The strict context validator correctly rejected those impossible relations and discarded an otherwise grounded infant-supplies task, turning the complete turn into a generic handoff.
+
+**Constraint:** The repair requires source evidence to match the current event and does not apply to `continue`, `modify`, acknowledgement, `modify_existing`, `end_existing`, a relation carrying any request-cycle reference, or unverified evidence. It does not invent or select a prior cycle and does not change task capability, entity, temporal state, facts, or readiness.
