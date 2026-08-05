@@ -282,6 +282,25 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.equal(unstructuredTime.result.taskResults[0].facts.detailNeedsConfirmation, true, "a FAQ answer without a controlled clock time must not be promoted to an hours answer");
   assert.equal(unstructuredTime.result.taskResults[0].facts.detailProvided, false);
 
+  const mergedUnknownMessage = "我們想烤肉，也可以代訂食材嗎？";
+  const mergedUnknown = await execute({
+    currentProperty: alpha,
+    message: mergedUnknownMessage,
+    tasks: [task({
+      taskId: "merged-unknown",
+      type: "unknown",
+      sourceText: mergedUnknownMessage,
+      category: "other",
+      canonicalCandidate: null
+    })]
+  });
+  assert.deepEqual(canonicalCapabilities(mergedUnknown.diagnostics), ["unknown", "bbq"]);
+  assert.deepEqual(mergedUnknown.result.taskResults.map((item) => item.status), ["needs_human", "answered"]);
+  assert.match(mergedUnknown.result.replyText, /barbecue fee is 1,000 TWD/, "the formal catalog subtask must survive a merged unknown Planner task");
+  assert.equal(mergedUnknown.result.finalDecision.action, "reply");
+  assert.equal(mergedUnknown.result.claimValidation.ok, true);
+  assert.deepEqual(mergedUnknown.result.claimValidation.missingTaskIds, []);
+
   const location = await execute({
     currentProperty: alpha,
     message: "民宿在哪裡？",
@@ -352,7 +371,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.equal(unknown.result.replyText.includes("Alpha barbecue fact."), false);
   assert.equal(unknown.result.replyText.includes("Alpha pool fact."), false);
 
-  console.log(JSON.stringify({ caseCount: 12, passCount: 12, failCount: 0 }));
+  console.log(JSON.stringify({ caseCount: 13, passCount: 13, failCount: 0 }));
   console.log("property fact routing regression: PASS");
 })().catch((error) => {
   console.error(error.stack || error);

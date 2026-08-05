@@ -36,7 +36,7 @@ const property = {
     { knowledgeKey: "prepayment_help", question: "How is a prepayment deposit arranged?", answer: "Alpha prepayment FAQ." },
     { knowledgeKey: "transport", question: "What address transport can guests arrange?", answer: "Alpha transport FAQ." }
   ],
-  semanticCatalog: { aliases: { location: ["directions"], parking: ["parking"], bbq: ["bbq"], cancellation: ["cancel"], pool: ["pool"], price: ["room rate"] }, amenities: [{ id: "pool", name: "Pool", aliases: ["pool"], status: "confirmed_yes", answer: "Alpha pool hours" }] }
+  semanticCatalog: { aliases: { location: ["directions"], parking: ["parking"], bbq: ["bbq", "barbecue"], cancellation: ["cancel"], pool: ["pool"], price: ["room rate"] }, amenities: [{ id: "pool", name: "Pool", aliases: ["pool"], status: "confirmed_yes", answer: "Alpha pool hours" }] }
 };
 const catalog = buildPropertyCatalog(property);
 
@@ -188,10 +188,62 @@ function main() {
   assert.equal(protectedHumanAction.semantic.tasks[0].type, "human_help", "fragment grounding must never demote a human action to an answerable fact");
   assert.equal(protectedHumanAction.item.canonicalRequest.resolverId, "human_handoff");
 
+  const mergedMessage = "Can we use the barbecue, and can you arrange ingredients?";
+  const mergedUnknownPlan = plan([task({
+    taskId: "merged-unknown",
+    type: "unknown",
+    category: "other",
+    rawText: mergedMessage,
+    sourceText: mergedMessage
+  })]);
+  mergedUnknownPlan.contextRelationCandidates[0].evidenceRefs = [{
+    eventId: "merged-unknown-event",
+    messageRef: "",
+    startOffset: 0,
+    endOffset: mergedMessage.length,
+    quote: mergedMessage
+  }];
+  const isolatedMergedUnknown = applyPlannerSemanticContract(mergedUnknownPlan, {
+    catalog,
+    sourceEvents: [{ eventId: "merged-unknown-event", messageRef: "", messageText: mergedMessage }]
+  });
+  assert.equal(isolatedMergedUnknown.tasks.length, 2, "a merged unknown task must not erase a separately grounded property-catalog subtask");
+  assert.ok(isolatedMergedUnknown.tasks.some((item) => item.type === "unknown"), "the unresolved remainder must stay fail-closed");
+  assert.ok(isolatedMergedUnknown.tasks.some((item) => item.entity.canonicalCandidate === "bbq"), "the verified catalog mention must survive as an isolated task");
+  assert.equal(new Set(isolatedMergedUnknown.tasks.map((item) => item.candidateIndex)).size, 2, "isolated tasks must receive unique candidate indexes");
+  assert.equal(isolatedMergedUnknown.contextRelationCandidates.length, 2, "each isolated task must retain verified current-event evidence");
+  assert.equal(validatePlannerOutput(isolatedMergedUnknown).ok, true, "isolated tasks must remain a valid planner contract");
+  const unverifiedMergedUnknownPlan = JSON.parse(JSON.stringify(mergedUnknownPlan));
+  unverifiedMergedUnknownPlan.contextRelationCandidates[0].evidenceRefs[0].eventId = "wrong-event";
+  const unverifiedMergedUnknown = applyPlannerSemanticContract(unverifiedMergedUnknownPlan, {
+    catalog,
+    sourceEvents: [{ eventId: "merged-unknown-event", messageRef: "", messageText: mergedMessage }]
+  });
+  assert.equal(unverifiedMergedUnknown.tasks.length, 1, "catalog task isolation must not trust evidence that fails current-source validation");
+  const evidenceOnlyMentionPlan = JSON.parse(JSON.stringify(mergedUnknownPlan));
+  evidenceOnlyMentionPlan.tasks[0].entity.rawText = "ingredient arrangement";
+  const evidenceOnlyMention = applyPlannerSemanticContract(evidenceOnlyMentionPlan, {
+    catalog,
+    sourceEvents: [{ eventId: "merged-unknown-event", messageRef: "", messageText: mergedMessage }]
+  });
+  assert.equal(evidenceOnlyMention.tasks.length, 1, "the compiler must not infer business intent from message evidence when the Planner entity candidate does not contain the catalog concept");
+  const alreadyRepresentedPlan = plan([
+    task({ taskId: "explicit-barbecue", type: "policy", category: "policy", rawText: "barbecue" }),
+    { ...task({ taskId: "remaining-unknown", type: "unknown", category: "other", rawText: mergedMessage, sourceText: mergedMessage }), candidateIndex: 1 }
+  ]);
+  alreadyRepresentedPlan.contextRelationCandidates.forEach((candidate) => {
+    candidate.evidenceRefs = [{ eventId: "represented-event", messageRef: "", startOffset: 0, endOffset: mergedMessage.length, quote: mergedMessage }];
+  });
+  const alreadyRepresented = applyPlannerSemanticContract(alreadyRepresentedPlan, {
+    catalog,
+    sourceEvents: [{ eventId: "represented-event", messageRef: "", messageText: mergedMessage }]
+  });
+  assert.equal(alreadyRepresented.tasks.length, 2, "an already represented catalog task must never be duplicated during isolation");
+
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 17, passCount: 17, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 18, passCount: 18, failCount: 0 }));
 }
 
 main();

@@ -9,8 +9,9 @@ const ANCHORS = new Set(["message_time", "previous_check_in", "previous_check_ou
 const ELIGIBILITY_EVIDENCE_KINDS = new Set(["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
 const CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
 const { DETAIL_INTENTS } = require("./detail-intent");
-const { resolveEntity } = require("./entity-resolver");
+const { resolveEntity, mentionedPropertyFacts } = require("./entity-resolver");
 const { getCapabilityDefinition } = require("./capability-registry");
+const { sourceEventMaps, evidenceMatchesSource } = require("./understanding-validator");
 const PLANNER_OPERATION_PATHS = new Set([
   "*",
   "stay.dateExpression.rawText",
@@ -337,9 +338,101 @@ function normalizeIgnoredAcknowledgementOutput(value, { sourceEvents } = {}) {
   };
 }
 
+function verifiedNewRequestEvidence(task, contextRelationCandidates, sourceEvents) {
+  const candidates = (Array.isArray(contextRelationCandidates) ? contextRelationCandidates : [])
+    .filter((candidate) => candidate && candidate.candidateIndex === task.candidateIndex);
+  if (candidates.length !== 1) return "";
+  const candidate = candidates[0];
+  if (candidate.kind !== "new_request"
+    || !Array.isArray(candidate.candidateRequestCycleRefs) || candidate.candidateRequestCycleRefs.length !== 0
+    || !Array.isArray(candidate.evidenceRefs) || candidate.evidenceRefs.length === 0) return "";
+  const sourceMaps = sourceEventMaps(sourceEvents);
+  if (!candidate.evidenceRefs.every((evidenceRef) => evidenceMatchesSource(evidenceRef, sourceMaps))) return "";
+  return candidate.evidenceRefs.map((evidenceRef) => evidenceRef.quote).join("\n");
+}
+
+function isolatedCatalogTaskId(taskId, ordinal, usedTaskIds) {
+  let candidateOrdinal = ordinal;
+  while (candidateOrdinal <= 12) {
+    const suffix = `-catalog-${candidateOrdinal}`;
+    const candidate = `${String(taskId || "task").slice(0, Math.max(1, 80 - suffix.length))}${suffix}`;
+    if (!usedTaskIds.has(candidate)) return { taskId: candidate, nextOrdinal: candidateOrdinal + 1 };
+    candidateOrdinal += 1;
+  }
+  return null;
+}
+
+function isolateMergedUnknownCatalogTasks(value, catalog, sourceEvents) {
+  if (!catalog || !value || value.shouldIgnore === true
+    || value.discourse && value.discourse.relation === "acknowledgement"
+    || !Array.isArray(value.tasks) || value.tasks.length >= 12) return { ...value, isolatedTaskIndexes: [] };
+  const representedCanonicalIds = new Set(value.tasks.flatMap((task) => {
+    const canonicalCandidate = String(task && task.entity && task.entity.canonicalCandidate || "").trim();
+    if (canonicalCandidate) return [canonicalCandidate];
+    const resolved = task && task.entity ? resolveEntity(catalog, task.entity) : null;
+    return resolved && resolved.status === "resolved" ? [resolved.entity.canonicalId] : [];
+  }));
+  const tasks = [...value.tasks];
+  const contextRelationCandidates = Array.isArray(value.contextRelationCandidates)
+    ? [...value.contextRelationCandidates]
+    : value.contextRelationCandidates;
+  const isolatedTaskIndexes = [];
+  const usedTaskIds = new Set(tasks.map((task) => String(task && task.taskId || "")));
+  let nextCandidateIndex = Math.max(-1, ...tasks.map((task) => Number.isInteger(task && task.candidateIndex) ? task.candidateIndex : -1)) + 1;
+  let ordinal = 1;
+  for (const original of value.tasks) {
+    if (!original || original.type !== "unknown" || tasks.length >= 12) continue;
+    const evidenceText = verifiedNewRequestEvidence(original, value.contextRelationCandidates, sourceEvents);
+    const candidateText = String(original.entity && original.entity.rawText || "").trim();
+    if (!evidenceText || !candidateText) continue;
+    const relation = value.contextRelationCandidates.find((candidate) => candidate && candidate.candidateIndex === original.candidateIndex);
+    for (const { entity } of mentionedPropertyFacts(catalog, candidateText)) {
+      if (tasks.length >= 12 || representedCanonicalIds.has(entity.canonicalId)) continue;
+      const identity = isolatedCatalogTaskId(original.taskId, ordinal, usedTaskIds);
+      if (!identity) continue;
+      const candidateIndex = nextCandidateIndex;
+      nextCandidateIndex += 1;
+      const type = entity.sourceKind === "faq" || entity.category === "transport"
+        ? "property_fact"
+        : entity.category === "policy" ? "policy" : "amenity";
+      const syntheticTask = {
+        ...original,
+        candidateIndex,
+        taskId: identity.taskId,
+        type,
+        sourceText: String(original.sourceText || evidenceText).slice(0, 500),
+        detailIntent: "general",
+        requestedOutputs: ["answer"],
+        eligibilityEvidence: { kind: "none", sourceText: "" },
+        dependsOnStayContext: false,
+        entity: {
+          category: entity.category,
+          rawText: "",
+          canonicalCandidate: entity.canonicalId,
+          confidence: confidence(original.entity && original.entity.confidence) ? original.entity.confidence : original.confidence
+        },
+        stayCandidate: null
+      };
+      tasks.push(syntheticTask);
+      contextRelationCandidates.push({
+        ...relation,
+        candidateIndex,
+        candidateRequestCycleRefs: [],
+        evidenceRefs: relation.evidenceRefs.map((evidenceRef) => ({ ...evidenceRef }))
+      });
+      representedCanonicalIds.add(entity.canonicalId);
+      usedTaskIds.add(identity.taskId);
+      isolatedTaskIndexes.push(tasks.length - 1);
+      ordinal = identity.nextOrdinal;
+    }
+  }
+  return { ...value, tasks, contextRelationCandidates, isolatedTaskIndexes };
+}
+
 function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tasks)) return value;
-  const acceptedTasks = [], repairedTasks = [], rejectedTasks = [], repairedRelations = [];
+  value = isolateMergedUnknownCatalogTasks(value, catalog, sourceEvents);
+  const acceptedTasks = [], repairedTasks = value.isolatedTaskIndexes.map((index) => ({ taskId: value.tasks[index].taskId, index, reason: "merged_unknown_catalog_task_isolation" })), rejectedTasks = [], repairedRelations = [];
   let contextRelationCandidates = value.contextRelationCandidates;
   let tasks = value.tasks.map((original, index) => {
     let task = { ...original, eligibilityEvidence: normalizeEligibilityEvidence(original && original.eligibilityEvidence), entity: original && original.entity ? { ...original.entity } : original && original.entity };
@@ -452,8 +545,9 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
       };
     });
   }
+  const { isolatedTaskIndexes: _isolatedTaskIndexes, ...contractValue } = value;
   return {
-    ...value,
+    ...contractValue,
     tasks,
     contextRelationCandidates,
     shouldIgnore: silentOnly ? true : value.shouldIgnore,

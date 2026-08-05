@@ -24,3 +24,9 @@
 1. Independently review the local deployed-acceptance closure commit and complete diff.
 2. After explicit authorization, push and integrate it into `test-only/node-pilot-integration` without rewriting history.
 3. Require normal test-only CI, Render deployment of the exact commit, and the new OIDC-authenticated deployed conversation matrix to succeed before any real LINE acceptance.
+
+## 2026-08-05 active release-closure sequence
+
+1. Finish complete local verification for merged-unknown catalog task isolation, then create the next traceable commit and non-force push it to `test-only/node-pilot-integration`.
+2. Require exact-commit Render health, GitHub Actions OIDC, real OpenAI + PostgreSQL deployed acceptance, the private artifact, `rg-015` recovery, and no regression from the current 64 PASS cases.
+3. After that root is stable, continue from deployed evidence in order: date/CanonicalRequest failures (`rg-003`, `rg-006`, `rg-013`), multi-task price and room-scope preservation (`rg-037`, `rg-038`, `rg-039`), then controlled operator-context scope (`rgs-019`, `rgs-020`).

@@ -111,4 +111,4 @@ function validateUnderstandingContext(plannerOutput, snapshot, { sourceEvents = 
   return { ok: errors.length === 0, errors, relations };
 }
 
-module.exports = { validateUnderstandingContext, validEvidenceRef, evidenceMatchesSource };
+module.exports = { validateUnderstandingContext, validEvidenceRef, sourceEventMaps, evidenceMatchesSource };

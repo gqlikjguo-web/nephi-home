@@ -12,6 +12,40 @@ function uniqueEntities(entities) {
   for (const entity of entities) if (!byCanonicalId.has(entity.canonicalId)) byCanonicalId.set(entity.canonicalId, entity);
   return [...byCanonicalId.values()];
 }
+function regexEscape(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function mentionedAlias(sourceText, alias) {
+  const normalizedAlias = String(alias || "").normalize("NFKC").toLowerCase().trim();
+  const compactAlias = key(normalizedAlias);
+  if (!fragmentIsSpecificEnough(compactAlias)) return false;
+  const normalizedSource = String(sourceText || "").normalize("NFKC").toLowerCase();
+  if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(normalizedAlias)) {
+    return key(normalizedSource).includes(compactAlias);
+  }
+  const tokens = normalizedAlias.match(/[\p{L}\p{N}]+/gu) || [];
+  if (!tokens.length) return false;
+  const phrase = tokens.map(regexEscape).join("[^\\p{L}\\p{N}]+");
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${phrase}($|[^\\p{L}\\p{N}])`, "u").test(normalizedSource);
+}
+function mentionedPropertyFacts(catalog, sourceText) {
+  const facts = uniqueEntities([...(catalog && catalog.amenities || []), ...(catalog && catalog.policies || []), ...(catalog && catalog.faqs || [])]
+    .filter((item) => item && item.canonicalId && (item.answer || ["confirmed_yes", "confirmed_no"].includes(item.status))));
+  const aliasOwners = new Map();
+  for (const fact of facts) {
+    for (const alias of [fact.publicName, ...(fact.aliases || [])]) {
+      const aliasKey = key(alias);
+      if (!fragmentIsSpecificEnough(aliasKey)) continue;
+      if (!aliasOwners.has(aliasKey)) aliasOwners.set(aliasKey, new Set());
+      aliasOwners.get(aliasKey).add(fact.canonicalId);
+    }
+  }
+  return facts.flatMap((entity) => {
+    const mention = [entity.publicName, ...(entity.aliases || [])]
+      .filter((alias) => aliasOwners.get(key(alias)) && aliasOwners.get(key(alias)).size === 1)
+      .sort((left, right) => key(right).length - key(left).length)
+      .find((alias) => mentionedAlias(sourceText, alias));
+    return mention ? [{ entity, mention }] : [];
+  });
+}
 function resolveEntity(catalog, candidate = {}) {
   const expected = candidate.category;
   const entities = allEntities(catalog).filter((item) => expected === "room" ? ["room", "bundle"].includes(item.category) : expected === "amenity" ? ["amenity", "policy"].includes(item.category) : expected === "room_feature" ? item.category === "room" : expected === "activity" ? item.category === "amenity" : expected === "other" ? true : item.category === expected);
@@ -36,4 +70,4 @@ function resolveEntity(catalog, candidate = {}) {
   return { status: "not_found", candidates: [] };
 }
 
-module.exports = { resolveEntity };
+module.exports = { resolveEntity, mentionedPropertyFacts };

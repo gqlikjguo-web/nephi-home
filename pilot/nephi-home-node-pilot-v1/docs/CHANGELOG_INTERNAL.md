@@ -246,3 +246,7 @@
 ## 2026-08-05 Identified new-request evidence normalization
 
 - Rebuilt malformed Planner quote coordinates only when a `new_request` evidence reference uniquely identifies the current source event; invalid identifiers and all context-reuse relations remain fail-closed.
+
+## 2026-08-05 Merged-unknown catalog task isolation
+
+- Preserved a uniquely property-grounded subtask when OpenAI merges it into a broader unknown candidate, while retaining the unresolved remainder as fail-closed and requiring both verified current-event evidence and an AI-provided entity candidate before isolation.
