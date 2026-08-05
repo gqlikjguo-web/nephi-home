@@ -258,3 +258,7 @@
 ## 2026-08-05 Formal catalog category grounding
 
 - Allowed an exact property-catalog entity category to correct an incompatible Planner task type for non-general detail requests, while retaining a Planner type that is already compatible with the resolved formal category.
+
+## 2026-08-05 Safe temporal evidence projection
+
+- Preserved bounded Temporal Resolver `expressionType` and `repairReasonCode` fields in the test-only safe CanonicalRequest trace so deployed acceptance can distinguish a controlled past-date rejection from missing date understanding.

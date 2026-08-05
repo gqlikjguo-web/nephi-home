@@ -224,3 +224,9 @@ Acknowledgement normalization must also respect the task-level relation candidat
 Real OpenAI can identify the exact catalog entity while labeling its task with a different hospitality type, especially when a non-general detail intent is present. Preserving that incompatible task type can produce a resolved canonical entity together with capability `unknown`.
 
 For an exact property-scoped catalog resolution, the compiler may retain the Planner type only when its registered capability accepts the formal entity category and remains a low-risk property-catalog answer path. Otherwise the formal category selects the compatible controlled capability; unresolved or ambiguous entities remain fail-closed.
+
+## 2026-08-05 -- Safe evidence must retain the reason that makes an unresolved value valid
+
+A privacy-safe trace can keep dates redacted and still become semantically incomplete. The deployed Temporal Resolver correctly classified past date ranges, while CanonicalRequest trace projection retained only `unresolved` and null dates; acceptance could no longer distinguish deliberate rejection from parser loss.
+
+When an acceptance rule permits a controlled unresolved state, its bounded machine reason and expression class must survive the safe projection. Preserve only deterministic enum-like fields, keep source text and provenance excluded, and test both the required metadata and the privacy boundary.

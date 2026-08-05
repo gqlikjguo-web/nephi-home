@@ -269,6 +269,8 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       detailIntent: String(item && item.detailIntent || ""),
       temporalState: {
         resolutionStatus: String(item && item.temporalState && item.temporalState.resolutionStatus || ""),
+        expressionType: String(item && item.temporalState && item.temporalState.expressionType || "").slice(0, 80),
+        repairReasonCode: String(item && item.temporalState && item.temporalState.repairReasonCode || "").slice(0, 80),
         checkIn: String(item && item.temporalState && item.temporalState.checkIn || ""),
         checkOut: String(item && item.temporalState && item.temporalState.checkOut || ""),
         nights: Number.isInteger(item && item.temporalState && item.temporalState.nights)

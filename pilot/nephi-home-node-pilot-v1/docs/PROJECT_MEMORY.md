@@ -55,3 +55,12 @@
 - `rg-052` and the no-reply controls `rg-046` through `rg-049` passed both attempts. Neither real Planner run reproduced the prior acknowledgement-plus-new-request shape, so the new relation guard is locally and CI verified but its exact malformed OpenAI shape remains unobserved after deployment.
 - Attempt 1 exposed a known catalog-grounding regression in `rgs-010`: the formal `pets` entity resolved as a policy, but an incompatible amenity-shaped Planner type caused CanonicalRequest capability `unknown`. Attempt 2 passed through a different Planner shape; the compiler defect remains real and is the active repair.
 - Attempt 2 FAIL cases are `rg-001`, `rg-003`, `rg-006`, `rg-013`, `rg-038`, `rg-039`, `rg-051`, `rgs-019`, and `rgs-020`.
+
+## 2026-08-05 deployed acceptance run 30986959230
+
+- Commit `eb41d56d326a92e6c6782142bfbf17a6a45eb196` passed the complete verify job, and Render health reported that exact commit with `testOnly=true`.
+- Attempt 1 produced 62 PASS, 11 FAIL, and 4 non-executable cases. Artifact `8922860200` has digest `sha256:7f6e432c9d257f7ffd9352a270bd25396361e394fec5a96faab5bd270fcef47f`.
+- Attempt 2 produced 60 PASS, 13 FAIL, and 4 non-executable cases. Artifact `8923590609` has digest `sha256:a7d621d962938b8f2e5b6358c1dfa53c99201254c0b0f1e19836700936b9e987`.
+- `rgs-010` and `rgs-015` passed both attempts with formal `policy:pets` facts. Attempt 2 observed a real amenity-shaped `rgs-010` Planner task grounded to the policy capability, but its detail intent was `general`; the earlier non-general malformed shape remains covered by the deployed-motivated deterministic regression tests rather than a post-fix identical OpenAI sample.
+- Cross-attempt changes (`rg-028`, `rg-037`, `rg-051`, and `rgs-017`) came from different Planner outputs or timeout behavior; no trace shows the catalog-category guard rewriting an otherwise compatible formal task into a failure.
+- `rg-003` and `rg-006` repeatedly produced controlled `past_date` FinalResponses, but the safe deployed CanonicalRequest trace omitted the deterministic `expressionType` and `repairReasonCode`. That evidence-projection defect is the active isolated repair; `rg-013` may retain a later FinalDecision defect after the projection is restored.

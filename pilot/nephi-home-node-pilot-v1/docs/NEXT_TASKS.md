@@ -42,3 +42,9 @@
 1. Complete verification and deploy the repair that lets an exact formal property-catalog category correct an incompatible Planner task type for non-general detail requests.
 2. Require `rgs-010` and the existing `rgs-015` pet-policy control to pass without loss of formal facts, then rerun the complete deployed matrix.
 3. Continue from stable failures in attempt 2: `rg-001`, date projection and parsing (`rg-003`, `rg-006`, `rg-013`), multi-turn task preservation (`rg-038`, `rg-039`), sensitive access routing (`rg-051`), and operator-context scope (`rgs-019`, `rgs-020`).
+
+## 2026-08-05 safe temporal evidence projection
+
+1. Preserve the controlled CanonicalRequest `expressionType` and `repairReasonCode` in the allowlisted deployed safe trace, without exposing Planner text, raw date candidates, or temporal provenance.
+2. Re-run the trace privacy contract, deployed acceptance contract, all local gates, exact-commit Render deployment, and the complete real OpenAI + PostgreSQL matrix.
+3. Expect the projection repair to remove the false `expected_date_range_missing` result where a controlled `past_date/date_range` already exists. Keep any later FinalDecision or parsing failure, especially `rg-013`, visible as a separate root.

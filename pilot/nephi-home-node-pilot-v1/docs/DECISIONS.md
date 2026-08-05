@@ -337,3 +337,11 @@
 **Reason:** Real OpenAI emitted an amenity-shaped eligibility task with the exact `pets` candidate, while the formal catalog resolved that entity as policy. Preserving the incompatible amenity type produced CanonicalRequest capability `unknown` despite available formal data.
 
 **Constraint:** This rule cannot infer an entity or intent from guest keywords. Ambiguous and unresolved candidates remain fail-closed; high-risk, human-help, stay-dependent, and non-property resolvers cannot be promoted through this compatibility rule.
+
+## D-034 -- Safe CanonicalRequest trace retains controlled temporal disposition
+
+**Decision:** The deployed test-only CanonicalRequest trace includes the deterministic `expressionType` and `repairReasonCode` fields from Temporal Resolver alongside its existing resolved dates, nights, status, and timezone.
+
+**Reason:** Real deployed cases correctly rejected past date ranges, but the safe trace formatter discarded the two fields that distinguish a recognized past range from a missing date. The acceptance contract therefore reported `expected_date_range_missing` even when FinalDecision and FinalResponse had already enforced the past-date policy.
+
+**Constraint:** This changes evidence projection only. Raw guest text, Planner date candidates, temporal provenance, source evidence, identities, and secrets remain excluded; the projected strings are bounded and cannot become Resolver, decision, response, or data authority.

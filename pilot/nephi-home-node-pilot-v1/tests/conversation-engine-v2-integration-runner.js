@@ -179,7 +179,8 @@ function latestConditions(result) {
   ]);
   const safeCanonicalRequest = safeDiagnostics.find((item) => item.stage === "canonical_request");
   assert.deepEqual(safeCanonicalRequest.items[0].temporalState, {
-    resolutionStatus: "resolved", checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, timezone: "Asia/Taipei"
+    resolutionStatus: "resolved", expressionType: "absolute_date", repairReasonCode: "",
+    checkIn: "2026-08-06", checkOut: "2026-08-07", nights: 1, timezone: "Asia/Taipei"
   });
   assert.deepEqual(safeCanonicalRequest.items.map(({ taskId, capability, stayDependency, resolverId, evidenceRefCount }) => ({
     taskId, capability, stayDependency, resolverId, evidenceRefCount
@@ -247,7 +248,35 @@ function latestConditions(result) {
       propertyData: { rooms: "PRIVATE PROPERTY DATA" }
     }]
   });
-  const safeSerialized = JSON.stringify([...safeDiagnostics, rejectedTrace, hostileContextTrace, hostileTrace, hostileCanonicalTrace]);
+  const pastDateCanonicalTrace = formatSafeTestOnlyConversationTrace({
+    traceId: "past-date-trace",
+    propertyId: "p1",
+    stage: "canonical_request",
+    items: [{
+      taskId: "past-date-task",
+      capability: "availability",
+      temporalState: {
+        resolutionStatus: "unresolved",
+        expressionType: "date_range",
+        repairReasonCode: "past_date",
+        checkIn: null,
+        checkOut: null,
+        nights: 2,
+        timezone: "Asia/Taipei",
+        rawText: "PRIVATE GUEST MESSAGE"
+      }
+    }]
+  });
+  assert.deepEqual(pastDateCanonicalTrace.items[0].temporalState, {
+    resolutionStatus: "unresolved",
+    expressionType: "date_range",
+    repairReasonCode: "past_date",
+    checkIn: "",
+    checkOut: "",
+    nights: 2,
+    timezone: "Asia/Taipei"
+  });
+  const safeSerialized = JSON.stringify([...safeDiagnostics, rejectedTrace, hostileContextTrace, hostileTrace, hostileCanonicalTrace, pastDateCanonicalTrace]);
   for (const forbidden of ["PRIVATE EVIDENCE QUOTE", "PRIVATE GUEST MESSAGE", "PRIVATE EVENT ID", "PRIVATE MESSAGE REF", "PRIVATE PROPERTY DATA", "PRIVATE USER ID", "PRIVATE API KEY", "PRIVATE LINE TOKEN", "PRIVATE SIGNATURE", "maps.example.invalid"]) {
     assert.equal(safeSerialized.includes(forbidden), false, `safe trace leaked ${forbidden}`);
   }
