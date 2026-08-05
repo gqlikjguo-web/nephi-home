@@ -283,3 +283,7 @@
 ## 2026-08-06 Month-qualified weekday fail-closed recovery
 
 - Preserved an explicit month when OpenAI supplies only its contained weekday span, treating a non-unique month-plus-weekday constraint as unresolved before State, availability QueryPlan, PostgreSQL, and FinalResponse while leaving independent ready tasks executable.
+
+## 2026-08-06 Contradictory Planner capability preservation
+
+- Preserved controlled stateful pricing, inventory-output, policy-restriction, and unresolved property-fact semantics across contradictory OpenAI task shapes while retaining exact catalog, readiness, Unknown, and high-risk boundaries.

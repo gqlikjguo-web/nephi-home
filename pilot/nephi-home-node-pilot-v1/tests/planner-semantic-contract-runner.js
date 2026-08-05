@@ -7,13 +7,13 @@ const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property
 
 const eventTimestamp = Date.parse("2026-08-01T10:00:00+08:00");
 
-function task({ taskId, type = "property_fact", category = "other", rawText, sourceText = rawText, canonicalCandidate = null, detailIntent = "general", requestedOutputs = ["answer"] }) {
+function task({ taskId, type = "property_fact", category = "other", rawText, sourceText = rawText, canonicalCandidate = null, detailIntent = "general", requestedOutputs = ["answer"], dependsOnStayContext = false, stayCandidate = null }) {
   return {
     candidateIndex: 0, taskId, type, sourceText, detailIntent,
     requestedOutputs, eligibilityEvidence: { kind: "none", sourceText: "" },
-    dependsOnStayContext: false,
+    dependsOnStayContext,
     entity: { category, rawText, canonicalCandidate, confidence: 0.99 },
-    stayCandidate: null, confidence: 0.99
+    stayCandidate, confidence: 0.99
   };
 }
 
@@ -46,7 +46,104 @@ function canonical(taskValue) {
   return { semantic, item: canonicalizeExecutionItem({ item, relation: null, contextSnapshot: { cycles: [] }, catalog, guestMessage: taskValue.sourceText, eventTimestamp }) };
 }
 
+function assertContradictoryPlannerFieldsPreserveControlledCapability() {
+  const cases = [
+    ["stateful inventory type survives an incidental catalog entity", () => {
+      const result = canonical(task({
+        taskId: "stay-total",
+        type: "total_price",
+        category: "policy",
+        rawText: "pool",
+        canonicalCandidate: "pool",
+        requestedOutputs: ["total_price"],
+        dependsOnStayContext: true,
+        stayCandidate: {
+          dateExpression: { rawText: "", kind: "none", anchor: "none" },
+          checkInCandidate: null,
+          checkOutCandidate: null,
+          nightsCandidate: null,
+          guestCountCandidate: null
+        }
+      }));
+      assert.equal(result.semantic.tasks[0].type, "total_price");
+      assert.equal(result.semantic.tasks[0].entity.category, "other");
+      assert.equal(result.semantic.tasks[0].entity.canonicalCandidate, null);
+      assert.equal(result.item.canonicalRequest.capability, "total_price");
+    }],
+    ["unambiguous inventory output repairs an ungrounded low-risk task", () => {
+      const result = canonical(task({
+        taskId: "lodging-amount",
+        type: "policy",
+        category: "policy",
+        rawText: "quoted lodging amount",
+        requestedOutputs: ["price"]
+      }));
+      assert.equal(result.semantic.tasks[0].type, "price");
+      assert.equal(result.semantic.tasks[0].dependsOnStayContext, true);
+      assert.ok(result.semantic.tasks[0].stayCandidate);
+      assert.equal(result.item.canonicalRequest.capability, "price");
+    }],
+    ["controlled restriction detail repairs an availability-shaped property rule", () => {
+      const result = canonical(task({
+        taskId: "shared-area-rule",
+        type: "availability",
+        category: "room_feature",
+        rawText: "shared lounge",
+        detailIntent: "usage_restrictions",
+        requestedOutputs: ["usage_restrictions"]
+      }));
+      assert.equal(result.semantic.tasks[0].type, "policy");
+      assert.equal(result.item.canonicalRequest.capability, "policy");
+    }],
+    ["an unresolved property fact keeps its semantic capability while truth stays unknown", () => {
+      const result = canonical(task({
+        taskId: "unlisted-house-detail",
+        type: "property_fact",
+        category: "other",
+        rawText: "unlisted house detail",
+        detailIntent: "conditions"
+      }));
+      assert.equal(result.semantic.tasks[0].type, "property_fact");
+      assert.equal(result.item.canonicalRequest.capability, "property_fact");
+      assert.equal(result.item.canonicalRequest.canonicalEntity.status, "not_found");
+      assert.equal(result.item.canonicalRequest.resolverId, "property_catalog");
+    }],
+    ["a grounded catalog fact remains formal authority over a stray price output", () => {
+      const result = canonical(task({
+        taskId: "pool-rule",
+        type: "policy",
+        category: "policy",
+        rawText: "pool",
+        canonicalCandidate: "pool",
+        requestedOutputs: ["price"]
+      }));
+      assert.equal(result.semantic.tasks[0].type, "amenity");
+      assert.equal(result.semantic.tasks[0].entity.canonicalCandidate, "pool");
+      assert.equal(result.item.canonicalRequest.capability, "pool");
+    }],
+    ["protected human action ignores inventory-shaped output", () => {
+      const result = canonical(task({
+        taskId: "operator-action",
+        type: "human_help",
+        category: "other",
+        rawText: "operator action",
+        requestedOutputs: ["price"]
+      }));
+      assert.equal(result.semantic.tasks[0].type, "human_help");
+      assert.equal(result.item.canonicalRequest.resolverId, "human_handoff");
+    }]
+  ];
+  const failures = [];
+  for (const [name, check] of cases) {
+    try { check(); }
+    catch (error) { failures.push(new Error(`${name}: ${error.message}`)); }
+  }
+  if (failures.length) throw new AggregateError(failures, "contradictory Planner capability contract failed");
+  return cases.length;
+}
+
 function main() {
+  const contradictoryFieldCaseCount = assertContradictoryPlannerFieldsPreserveControlledCapability();
   const resolvedLocation = canonical(task({ taskId: "map", category: "transport", rawText: "directions" }));
   assert.equal(resolvedLocation.semantic.tasks[0].entity.canonicalCandidate, "location", "a uniquely property-catalog grounded transport entity must become location");
   assert.equal(resolvedLocation.item.canonicalRequest.capability, "location");
@@ -294,7 +391,7 @@ function main() {
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 22, passCount: 22, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 22 + contradictoryFieldCaseCount, passCount: 22 + contradictoryFieldCaseCount, failCount: 0 }));
 }
 
 main();

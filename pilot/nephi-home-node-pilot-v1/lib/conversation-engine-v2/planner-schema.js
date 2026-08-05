@@ -14,6 +14,19 @@ const { getCapabilityDefinition } = require("./capability-registry");
 const { sourceEventMaps, evidenceMatchesSource } = require("./understanding-validator");
 const TASK_ID_REPAIRS = Symbol("plannerTaskIdRepairs");
 const STATELESS_DUPLICATE_TASK_ID_TYPES = new Set(["amenity", "amenity_list", "policy", "property_fact"]);
+const INVENTORY_OUTPUT_TYPES = new Set(["price", "total_price"]);
+const INVENTORY_OUTPUT_REPAIRABLE_TYPES = new Set(["availability", "bundle_availability", "room_options", "amenity", "policy", "property_fact"]);
+const POLICY_DETAIL_INTENTS = new Set([
+  "latest_arrival_policy",
+  "early_arrival_policy",
+  "late_departure_policy",
+  "reservation_required",
+  "usage_restrictions",
+  "room_or_bundle_restriction",
+  "child_restrictions",
+  "seasonal_restrictions",
+  "weather_restrictions"
+]);
 const PLANNER_OPERATION_PATHS = new Set([
   "*",
   "stay.dateExpression.rawText",
@@ -56,6 +69,35 @@ function controlledRequestedOutputs(task) {
   if (task.entity && task.entity.category === "transport") return ["map_url"];
   if (["amenity", "policy", "property_fact"].includes(task.type)) return [task.detailIntent === "general" ? "answer" : task.detailIntent];
   return task.requestedOutputs;
+}
+
+function requestedInventoryType(task) {
+  const requestedOutputs = new Set(Array.isArray(task && task.requestedOutputs) ? task.requestedOutputs : []);
+  if (requestedOutputs.size !== 1) return null;
+  const [requested] = requestedOutputs;
+  return INVENTORY_OUTPUT_TYPES.has(requested) ? requested : null;
+}
+
+function normalizedInventoryTaskShape(task, type, fallbackStayCandidate = null) {
+  const entity = task && task.entity;
+  const inventoryEntity = entity && ["room", "bundle"].includes(entity.category)
+    ? entity
+    : { ...entity, category: "other", rawText: "", canonicalCandidate: null };
+  return {
+    ...task,
+    type,
+    requestedOutputs: [type],
+    dependsOnStayContext: true,
+    stayCandidate: task.stayCandidate || fallbackStayCandidate,
+    entity: inventoryEntity
+  };
+}
+
+function normalizedStatefulInventoryTaskShape(task, fallbackStayCandidate = null) {
+  const requestedType = requestedInventoryType(task);
+  if (!requestedType || task.type !== requestedType || task.dependsOnStayContext !== true
+    || !task.entity || ["room", "bundle", "other"].includes(task.entity.category)) return null;
+  return normalizedInventoryTaskShape(task, requestedType, fallbackStayCandidate);
 }
 
 function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
@@ -168,37 +210,33 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
   };
 }
 
-function normalizedUngroundedTaskShape(task) {
+function normalizedUngroundedTaskShape(task, fallbackStayCandidate = null) {
   const entity = task && task.entity;
   if (!entity) return task;
-  const requestedOutputs = new Set(Array.isArray(task.requestedOutputs) ? task.requestedOutputs : []);
-  const requestedInventoryType = requestedOutputs.size === 1
-    && requestedOutputs.has("total_price")
-    ? "total_price"
-    : requestedOutputs.size === 1 && requestedOutputs.has("price")
-      ? "price"
-      : null;
+  const requestedInventory = requestedInventoryType(task);
   if (task.type === "policy"
     && ["amenity", "activity", "room_feature"].includes(entity.category)
     && !entity.rawText && entity.canonicalCandidate === null) return {
     ...task,
     entity: { ...entity, category: "policy" }
   };
-  if (requestedInventoryType
-    && ["availability", "bundle_availability", "room_options"].includes(task.type)
-    && ["room", "bundle", "other"].includes(entity.category)) return {
-    ...task,
-    type: requestedInventoryType,
-    dependsOnStayContext: true
-  };
+  if (requestedInventory
+    && INVENTORY_OUTPUT_REPAIRABLE_TYPES.has(task.type)
+    && task.detailIntent === "general") return normalizedInventoryTaskShape(
+    task,
+    requestedInventory,
+    fallbackStayCandidate
+  );
   if (task.type === "availability") {
-    const standaloneType = ["amenity", "activity", "room_feature"].includes(entity.category)
-      ? "amenity"
-      : ["policy", "payment", "cancellation", "check_in", "check_out"].includes(entity.category)
-        ? "policy"
-        : entity.category === "transport"
-          ? "property_fact"
-          : null;
+    const standaloneType = POLICY_DETAIL_INTENTS.has(task.detailIntent)
+      ? "policy"
+      : ["amenity", "activity", "room_feature"].includes(entity.category)
+        ? "amenity"
+        : ["policy", "payment", "cancellation", "check_in", "check_out"].includes(entity.category)
+          ? "policy"
+          : entity.category === "transport"
+            ? "property_fact"
+            : null;
     if (standaloneType) return {
       ...task,
       type: standaloneType,
@@ -561,6 +599,13 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     let entity = task && task.entity;
     if (!entity) return task;
 
+    const statefulInventoryTask = normalizedStatefulInventoryTaskShape(task, value.stay);
+    if (statefulInventoryTask) {
+      task = statefulInventoryTask;
+      entity = task.entity;
+      repairedTasks.push({ taskId: task.taskId, index, reason: "stateful_inventory_capability_preservation" });
+    }
+
     const groundedTask = groundedPropertyFactTask(task, catalog, value.stay);
     if (groundedTask
       && (task.type !== groundedTask.type
@@ -577,7 +622,7 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     }
 
     if (!groundedTask) {
-      const normalizedTask = normalizedUngroundedTaskShape(task);
+      const normalizedTask = normalizedUngroundedTaskShape(task, value.stay);
       if (normalizedTask.type !== task.type
         || normalizedTask.entity.category !== task.entity.category) {
         task = normalizedTask;
@@ -592,11 +637,6 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
         task = { ...task, entity: { ...entity, category: "other", rawText: "", canonicalCandidate: null } };
         repairedTasks.push({ taskId: task.taskId, index, reason: "generic_availability_entity_unresolved" });
       }
-    }
-
-    if (task.type === "property_fact" && task.entity.category === "other" && task.entity.canonicalCandidate === null) {
-      rejectedTasks.push({ taskId: task.taskId, index, reason: "unresolved_property_fact" });
-      task = { ...task, type: "unknown", detailIntent: "general", requestedOutputs: ["answer"], entity: { ...task.entity, category: "other", canonicalCandidate: null } };
     }
 
     if (value.discourse && value.discourse.relation === "acknowledgement"

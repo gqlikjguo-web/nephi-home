@@ -260,3 +260,9 @@ Recover first from the task's verified source. Use the complete current message 
 OpenAI can emit a weekday-only temporal span even when the verified task source also contains an explicit month. Accepting the smaller span because it parses successfully converts a constrained calendar request into the next relative weekday and can trigger a real availability query for the wrong date.
 
 Temporal recovery must compare a Planner span with the deterministic grammar's broader source-grounded constraint even when the Planner fragment is independently parseable. If the full constraint still does not identify one date, keep CanonicalRequest and State dates empty, emit no stay-dependent QueryPlan, and ask for an exact date while allowing unrelated ready tasks in the same message to continue.
+
+## 2026-08-06 -- An incidental entity must not erase a controlled task capability
+
+Real Planner variation can keep the correct stateful task type while attaching a catalog entity from a condition in the same clause, or keep the correct requested output while emitting a generic low-risk type. Letting the entity always win can turn a total-price request into an unrelated facility policy; flattening an unresolved explicit property fact to generic unknown loses the Planner's safe semantic classification without making the truth any safer.
+
+Arbitrate only from schema-controlled fields. Preserve an agreeing stateful type, requested output, and stay dependency; let exact formal catalog grounding continue to govern stateless facts; use controlled restriction detail intents for policy shape; and keep missing property truth Unknown through the existing catalog resolver and handoff. Never repair these contradictions from task IDs, case IDs, guest keywords, or whole-message alias scans.

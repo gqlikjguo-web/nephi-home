@@ -521,6 +521,84 @@ async function parkingUnresolvablePlannerEntityUsesUniqueSourceAlias() {
   );
 }
 
+async function contradictoryPlannerFieldsPreserveControlledCapabilities() {
+  const currentProperty = property("property_capability_contract", "Capability Contract");
+  const statefulPrice = await execute({
+    currentProperty,
+    message: "Confirm the lodging total after excluding an optional facility.",
+    task: plannerTask({
+      taskId: "stateful-total",
+      type: "total_price",
+      sourceText: "Confirm the lodging total after excluding an optional facility.",
+      rawText: "pool",
+      category: "policy",
+      canonicalCandidate: "pool",
+      requestedOutputs: ["total_price"],
+      dependsOnStayContext: true,
+      stayCandidate: clone(EMPTY_STAY)
+    })
+  });
+  assert.equal(statefulPrice.stage("semantic_contract").outputTasks[0].type, "total_price");
+  assert.equal(statefulPrice.stage("canonical_request").items[0].capability, "total_price");
+  assert.equal(statefulPrice.stage("query_plan").count, 0, "a date-less total must clarify without querying availability");
+  assert.equal(statefulPrice.result.finalDecision.action, "clarification");
+
+  const outputGroundedPrice = await execute({
+    currentProperty,
+    message: "What is the lodging amount?",
+    task: plannerTask({
+      taskId: "output-grounded-price",
+      type: "policy",
+      sourceText: "What is the lodging amount?",
+      rawText: "quoted lodging amount",
+      category: "policy",
+      canonicalCandidate: null,
+      requestedOutputs: ["price"]
+    })
+  });
+  assert.equal(outputGroundedPrice.stage("semantic_contract").outputTasks[0].type, "price");
+  assert.equal(outputGroundedPrice.stage("canonical_request").items[0].capability, "price");
+  assert.equal(outputGroundedPrice.stage("query_plan").count, 0, "an unresolved lodging price must clarify before querying availability");
+  assert.equal(outputGroundedPrice.result.finalDecision.action, "clarification");
+
+  const propertyRule = await execute({
+    currentProperty,
+    message: "Are there restrictions on using the shared lounge?",
+    task: plannerTask({
+      taskId: "shared-rule",
+      type: "availability",
+      sourceText: "Are there restrictions on using the shared lounge?",
+      rawText: "shared lounge",
+      category: "room_feature",
+      canonicalCandidate: null,
+      detailIntent: "usage_restrictions",
+      requestedOutputs: ["usage_restrictions"]
+    })
+  });
+  assert.equal(propertyRule.stage("semantic_contract").outputTasks[0].type, "policy");
+  assert.equal(propertyRule.stage("canonical_request").items[0].capability, "policy");
+  assert.equal(propertyRule.stage("executor").results[0].status, "needs_human", "missing formal policy data must remain Unknown");
+  assert.equal(propertyRule.result.finalDecision.action, "handoff");
+
+  const unresolvedFact = await execute({
+    currentProperty,
+    message: "Please confirm an unlisted house detail.",
+    task: plannerTask({
+      taskId: "unlisted-fact",
+      type: "property_fact",
+      sourceText: "Please confirm an unlisted house detail.",
+      rawText: "unlisted house detail",
+      category: "other",
+      canonicalCandidate: null,
+      detailIntent: "conditions"
+    })
+  });
+  assert.equal(unresolvedFact.stage("semantic_contract").outputTasks[0].type, "property_fact");
+  assert.equal(unresolvedFact.stage("canonical_request").items[0].capability, "property_fact");
+  assert.equal(unresolvedFact.stage("executor").results[0].status, "needs_human", "an unresolved property fact must not become an answer");
+  assert.equal(unresolvedFact.result.finalDecision.action, "handoff");
+}
+
 async function locationFailureStageIsComposerFallbackState() {
   const currentProperty = property("property_location", "Location Lodge");
   const trace = await execute({
@@ -561,6 +639,7 @@ const cases = [
   ["deterministic fallback clears rejected Composer state", deterministicFallbackClearsRejectedComposerState],
   ["pool routing uses grounded property catalog", poolRoutingUsesGroundedPropertyCatalog],
   ["parking unresolvable Planner entity uses unique source alias", parkingUnresolvablePlannerEntityUsesUniqueSourceAlias],
+  ["contradictory Planner fields preserve controlled capabilities", contradictoryPlannerFieldsPreserveControlledCapabilities],
   ["location failure stage is Composer fallback state", locationFailureStageIsComposerFallbackState]
 ];
 

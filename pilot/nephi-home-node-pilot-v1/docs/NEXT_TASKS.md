@@ -78,3 +78,9 @@
 1. Finish the explicit protected-acceptance, Codex-integrity, Constitution, runtime-uniqueness, and diff gates for the shared Temporal Resolver repair, then create one root-cause commit and push it to `test-only/node-pilot-integration` without force.
 2. Require GitHub Actions success, exact-commit Render health with `testOnly=true`, a verified private artifact, and the complete 77-case / 90-turn real OpenAI + PostgreSQL matrix. `rg-038` must keep dates unresolved, execute no availability query, and ask for an exact date; all prior PASS turns must remain PASS.
 3. If the Release Gate is still unmet, continue from the new artifact's earliest common failure layer without changing expected values, past-date policy, non-executable scope, or acceptance thresholds. Real LINE final acceptance remains blocked until the test-only Release Gate passes.
+
+## 2026-08-06 contradictory Planner capability preservation
+
+1. Run the explicit protected-acceptance, Codex-integrity, Constitution, runtime-uniqueness, canonical-golden, and diff gates for the compiler repair, then create one root-cause commit and non-force push it to `test-only/node-pilot-integration`.
+2. Require exact-commit Render health and the complete real OpenAI + PostgreSQL matrix. Compare every case and turn against artifact `8942265827`; `rg-028`, `rg-032`, `rg-037`, and `rgs-008` must not be hidden by net score, and any new prior-PASS regression must be located before continuing.
+3. If the Release Gate is still unmet, continue from the newest artifact's earliest common failure layer. Keep `rg-038`'s temporal fail-closed behavior, all past-date and multi-cycle boundaries, unchanged expected values, and all non-executable cases visible; do not begin real LINE final acceptance early.
