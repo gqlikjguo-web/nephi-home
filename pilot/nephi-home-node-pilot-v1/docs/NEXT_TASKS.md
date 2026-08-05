@@ -30,3 +30,9 @@
 1. Finish complete local verification for merged-unknown catalog task isolation, then create the next traceable commit and non-force push it to `test-only/node-pilot-integration`.
 2. Require exact-commit Render health, GitHub Actions OIDC, real OpenAI + PostgreSQL deployed acceptance, the private artifact, `rg-015` recovery, and no regression from the current 64 PASS cases.
 3. After that root is stable, continue from deployed evidence in order: date/CanonicalRequest failures (`rg-003`, `rg-006`, `rg-013`), multi-task price and room-scope preservation (`rg-037`, `rg-038`, `rg-039`), then controlled operator-context scope (`rgs-019`, `rgs-020`).
+
+## 2026-08-05 regression closure after run 30976898838
+
+1. Deploy the substantive-acknowledgement relation preservation repair and require `rg-052` to return a controlled handoff instead of no-reply.
+2. Re-run all existing no-reply cases and the complete deployed matrix; retain no regression from the prior 64-PASS baseline.
+3. Continue the remaining real-Planner drift one contract at a time: `rg-032`, `rg-051`, `rgs-007`, and `rgs-017`, then the pre-existing date, room-scope, and operator-context failures.

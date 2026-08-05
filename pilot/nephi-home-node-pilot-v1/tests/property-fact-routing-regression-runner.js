@@ -95,10 +95,10 @@ function task({
   };
 }
 
-function plan(tasks, sourceEvent) {
+function plan(tasks, sourceEvent, { discourseRelation = "new_request", shouldIgnore = false } = {}) {
   return {
     schemaVersion: 2,
-    discourse: { relation: "new_request", confidence: 0.99 },
+    discourse: { relation: discourseRelation, confidence: 0.99 },
     stateOperations: [],
     stay: {
       dateExpression: { rawText: "", kind: "none", anchor: "none" },
@@ -126,12 +126,12 @@ function plan(tasks, sourceEvent) {
     ambiguities: [],
     missingInformation: [],
     needsHuman: false,
-    shouldIgnore: false,
+    shouldIgnore,
     reason: "property_fact_routing_regression"
   };
 }
 
-async function execute({ currentProperty, message, tasks }) {
+async function execute({ currentProperty, message, tasks, planOptions }) {
   const states = new Map();
   const diagnostics = [];
   const persistence = {
@@ -147,7 +147,7 @@ async function execute({ currentProperty, message, tasks }) {
   };
   const eventId = `${currentProperty.propertyId}-${tasks.map((item) => item.taskId).join("-")}`;
   const planner = {
-    classify: async (input) => plan(tasks, input.sourceEvents[0])
+    classify: async (input) => plan(tasks, input.sourceEvents[0], planOptions)
   };
   const engine = new ConversationEngineV2({
     planner,
@@ -301,6 +301,22 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.equal(mergedUnknown.result.claimValidation.ok, true);
   assert.deepEqual(mergedUnknown.result.claimValidation.missingTaskIds, []);
 
+  const substantiveAcknowledgement = await execute({
+    currentProperty: alpha,
+    message: "payment confirmation",
+    tasks: [task({
+      taskId: "payment-confirmation",
+      type: "unknown",
+      sourceText: "payment confirmation",
+      category: "other",
+      canonicalCandidate: null
+    })],
+    planOptions: { discourseRelation: "acknowledgement", shouldIgnore: false }
+  });
+  assert.deepEqual(canonicalCapabilities(substantiveAcknowledgement.diagnostics), ["unknown"]);
+  assert.equal(substantiveAcknowledgement.result.finalDecision.action, "handoff", "a substantive acknowledgement-labeled task must reach a controlled handoff instead of no_reply");
+  assert.notEqual(substantiveAcknowledgement.result.finalDecision.reasonCode, "no_reply_gate_hit");
+
   const location = await execute({
     currentProperty: alpha,
     message: "民宿在哪裡？",
@@ -371,7 +387,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.equal(unknown.result.replyText.includes("Alpha barbecue fact."), false);
   assert.equal(unknown.result.replyText.includes("Alpha pool fact."), false);
 
-  console.log(JSON.stringify({ caseCount: 13, passCount: 13, failCount: 0 }));
+  console.log(JSON.stringify({ caseCount: 14, passCount: 14, failCount: 0 }));
   console.log("property fact routing regression: PASS");
 })().catch((error) => {
   console.error(error.stack || error);

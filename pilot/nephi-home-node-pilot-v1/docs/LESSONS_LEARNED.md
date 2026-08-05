@@ -212,3 +212,9 @@ When replacing a persistent authority, migrate the complete graph first, make th
 OpenAI can understand a multi-part message differently across real runs: one run may emit a formal property task plus an unknown remainder, while another merges both into one unknown candidate. Treating that merged candidate as a single handoff erases an independently answerable formal fact.
 
 The contract compiler may isolate a subtask only from a sufficiently specific, unique property-catalog mention in the AI-provided entity candidate and only when its current-event evidence is valid. It must preserve the unknown remainder as fail-closed, avoid duplicating an already represented catalog task, and never infer business intent merely by scanning the whole guest message.
+
+## 2026-08-05 -- A dialogue label must not erase an explicit substantive task
+
+Real OpenAI output can label a payment-state notification as an acknowledgement while simultaneously emitting a task with a verified `new_request` relation. Treating the discourse label alone as silence converted a required controlled handoff into no-reply.
+
+Acknowledgement normalization must also respect the task-level relation candidate: only relation-uncertain generic tasks may use the acknowledgement-only silent path. A verified new-request task must continue through CanonicalRequest and controlled FinalDecision even when its exact business fact is unknown. Unicode-only punctuation remains a separate deterministic safety rule.

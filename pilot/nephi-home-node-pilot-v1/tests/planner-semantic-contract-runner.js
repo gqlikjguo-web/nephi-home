@@ -188,6 +188,23 @@ function main() {
   assert.equal(protectedHumanAction.semantic.tasks[0].type, "human_help", "fragment grounding must never demote a human action to an answerable fact");
   assert.equal(protectedHumanAction.item.canonicalRequest.resolverId, "human_handoff");
 
+  const substantiveAcknowledgement = plan([task({
+    taskId: "payment-confirmation",
+    type: "unknown",
+    category: "other",
+    rawText: "payment confirmation"
+  })]);
+  substantiveAcknowledgement.discourse = { relation: "acknowledgement", confidence: 0.95 };
+  substantiveAcknowledgement.shouldIgnore = false;
+  const retainedSubstantiveAcknowledgement = applyPlannerSemanticContract(substantiveAcknowledgement, { catalog });
+  assert.equal(retainedSubstantiveAcknowledgement.shouldIgnore, false, "an acknowledgement-labeled output with an explicit substantive task must not override shouldIgnore=false");
+  assert.equal(retainedSubstantiveAcknowledgement.tasks.length, 1, "the substantive task must survive acknowledgement relation normalization");
+  assert.equal(retainedSubstantiveAcknowledgement.contextRelationCandidates[0].kind, "new_request", "the task's request relation must survive when the Planner did not authorize silence");
+  const uncertainAcknowledgement = JSON.parse(JSON.stringify(substantiveAcknowledgement));
+  uncertainAcknowledgement.contextRelationCandidates[0].kind = "relation_uncertain";
+  const ignoredUncertainAcknowledgement = applyPlannerSemanticContract(uncertainAcknowledgement, { catalog });
+  assert.equal(ignoredUncertainAcknowledgement.shouldIgnore, true, "an acknowledgement with only relation-uncertain generic tasks remains safely silent");
+
   const mergedMessage = "Can we use the barbecue, and can you arrange ingredients?";
   const mergedUnknownPlan = plan([task({
     taskId: "merged-unknown",
@@ -243,7 +260,7 @@ function main() {
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 18, passCount: 18, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 20, passCount: 20, failCount: 0 }));
 }
 
 main();

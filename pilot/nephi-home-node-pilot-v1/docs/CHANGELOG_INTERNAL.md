@@ -250,3 +250,7 @@
 ## 2026-08-05 Merged-unknown catalog task isolation
 
 - Preserved a uniquely property-grounded subtask when OpenAI merges it into a broader unknown candidate, while retaining the unresolved remainder as fail-closed and requiring both verified current-event evidence and an AI-provided entity candidate before isolation.
+
+## 2026-08-05 Substantive acknowledgement preservation
+
+- Prevented an acknowledgement discourse label from forcing a task with a verified new-request relation into no-reply; relation-uncertain acknowledgements and deterministic Unicode-only fragments retain their existing silent path.

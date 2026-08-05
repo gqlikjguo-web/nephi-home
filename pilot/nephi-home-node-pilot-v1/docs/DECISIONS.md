@@ -39,6 +39,7 @@
 | D-029 | active | — |
 | D-030 | active | — |
 | D-031 | active | — |
+| D-032 | active | — |
 
 ## 舊標題到唯一 ID crosswalk
 
@@ -319,3 +320,11 @@
 **Reason:** Post-deployment acceptance must exercise the real test-only Planner, PostgreSQL providers, Engine, Claim Validator, and FinalResponse without storing a user password, LINE credential, Render credential, or reusable acceptance secret in GitHub Actions.
 
 **Constraint:** Request data cannot select identity claims or the deployment SHA. Failed OIDC verification is fail-closed, tokens are never logged or returned, and the response exposes only the Engine's unique FinalResponse plus allowlisted task facts and safe trace evidence. The deployed runner may poll health for the exact commit but never retries a failed conversation case.
+
+## D-032 -- Acknowledgement discourse is not sole silence authority
+
+**Decision:** The contract compiler may normalize an acknowledgement-only Planner result to silence only when every generic unknown task has one relation-uncertain candidate with no request-cycle reference. A task with a verified new-request relation remains substantive and proceeds through the controlled pipeline.
+
+**Reason:** Real OpenAI classified a payment-state notification as acknowledgement but also emitted a new-request task. The previous compiler overwrote that task-level relation and produced no-reply.
+
+**Constraint:** This rule cannot infer payment or any other business intent from guest keywords. Pure acknowledgement cases remain silent through their relation-uncertain task evidence, and Unicode-only punctuation remains governed by the separate deterministic non-substantive rule.

@@ -520,9 +520,16 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
   }
   const acknowledgementOnly = value.discourse
     && value.discourse.relation === "acknowledgement"
-    && tasks.every((task) => task
-      && task.type === "unknown"
-      && task.detailIntent === "general");
+    && tasks.every((task) => {
+      if (!task || task.type !== "unknown" || task.detailIntent !== "general"
+        || !Array.isArray(contextRelationCandidates)) return false;
+      const candidates = contextRelationCandidates.filter((candidate) => candidate
+        && candidate.candidateIndex === task.candidateIndex);
+      return candidates.length === 1
+        && candidates[0].kind === "relation_uncertain"
+        && Array.isArray(candidates[0].candidateRequestCycleRefs)
+        && candidates[0].candidateRequestCycleRefs.length === 0;
+    });
   const nonSubstantiveUnknownOnly = tasks.every((task) => task && task.type === "unknown")
     && sourceEventsAreUnicodeNonSubstantive(sourceEvents);
   const silentOnly = acknowledgementOnly || nonSubstantiveUnknownOnly;
