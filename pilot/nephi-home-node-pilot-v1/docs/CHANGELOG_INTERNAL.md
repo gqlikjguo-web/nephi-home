@@ -287,3 +287,8 @@
 ## 2026-08-06 Contradictory Planner capability preservation
 
 - Preserved controlled stateful pricing, inventory-output, policy-restriction, and unresolved property-fact semantics across contradictory OpenAI task shapes while retaining exact catalog, readiness, Unknown, and high-risk boundaries.
+
+## 2026-08-06 Source-bound detail capability normalization
+
+- Unified availability- and amenity-shaped policy restrictions under the controlled policy capability, including registry-compatible entity repair.
+- Added unique current-property catalog grounding for a formal amenity alias contained in a verified Planner time-detail phrase, with ambiguity, evidence-binding, and protected-task fail-closed controls.

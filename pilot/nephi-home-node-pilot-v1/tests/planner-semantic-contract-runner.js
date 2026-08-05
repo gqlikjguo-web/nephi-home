@@ -95,6 +95,45 @@ function assertContradictoryPlannerFieldsPreserveControlledCapability() {
       assert.equal(result.semantic.tasks[0].type, "policy");
       assert.equal(result.item.canonicalRequest.capability, "policy");
     }],
+    ["controlled restriction detail repairs an amenity-shaped property rule", () => {
+      const result = canonical(task({
+        taskId: "amenity-area-rule",
+        type: "amenity",
+        category: "amenity",
+        rawText: "shared conversation area",
+        detailIntent: "usage_restrictions",
+        requestedOutputs: ["usage_restrictions"]
+      }));
+      assert.equal(result.semantic.tasks[0].type, "policy");
+      assert.equal(result.item.canonicalRequest.capability, "policy");
+    }],
+    ["a room-scoped restriction receives a registry-compatible policy entity", () => {
+      const result = canonical(task({
+        taskId: "room-restriction",
+        type: "availability",
+        category: "room",
+        rawText: "double room adjustment",
+        detailIntent: "room_or_bundle_restriction",
+        requestedOutputs: ["room_or_bundle_restriction"]
+      }));
+      assert.equal(result.semantic.tasks[0].type, "policy");
+      assert.equal(result.semantic.tasks[0].entity.category, "policy");
+      assert.equal(result.item.canonicalRequest.capability, "policy");
+    }],
+    ["a grounded amenity restriction remains a policy question", () => {
+      const result = canonical(task({
+        taskId: "grounded-amenity-restriction",
+        type: "amenity",
+        category: "amenity",
+        rawText: "pool",
+        canonicalCandidate: "pool",
+        detailIntent: "usage_restrictions",
+        requestedOutputs: ["usage_restrictions"]
+      }));
+      assert.equal(result.semantic.tasks[0].type, "policy");
+      assert.equal(result.semantic.tasks[0].entity.canonicalCandidate, "pool");
+      assert.equal(result.item.canonicalRequest.capability, "policy");
+    }],
     ["an unresolved property fact keeps its semantic capability while truth stays unknown", () => {
       const result = canonical(task({
         taskId: "unlisted-house-detail",

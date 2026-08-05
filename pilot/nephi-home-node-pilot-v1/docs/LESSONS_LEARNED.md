@@ -266,3 +266,9 @@ Temporal recovery must compare a Planner span with the deterministic grammar's b
 Real Planner variation can keep the correct stateful task type while attaching a catalog entity from a condition in the same clause, or keep the correct requested output while emitting a generic low-risk type. Letting the entity always win can turn a total-price request into an unrelated facility policy; flattening an unresolved explicit property fact to generic unknown loses the Planner's safe semantic classification without making the truth any safer.
 
 Arbitrate only from schema-controlled fields. Preserve an agreeing stateful type, requested output, and stay dependency; let exact formal catalog grounding continue to govern stateless facts; use controlled restriction detail intents for policy shape; and keep missing property truth Unknown through the existing catalog resolver and handoff. Never repair these contradictions from task IDs, case IDs, guest keywords, or whole-message alias scans.
+
+## 2026-08-06 -- Detail intent must be stable across equivalent Planner shapes
+
+OpenAI may classify the same property restriction as availability, amenity, or policy, and may place a formal alias inside a longer entity phrase. Treating candidate type or whole-string entity equality as the sole authority makes policy capability and formal facts disappear across otherwise equivalent outputs.
+
+Use the controlled detail intent before low-risk candidate shape, then require registry compatibility. A longer entity phrase may use catalog grounding only when the Planner phrase itself is source-bound, exactly one formal alias is present, and the task remains within a narrow public detail class. Ambiguous, unbound, or protected tasks must not be promoted.

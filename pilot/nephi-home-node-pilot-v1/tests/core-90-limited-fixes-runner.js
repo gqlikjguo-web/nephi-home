@@ -54,8 +54,14 @@ function property(propertyId, label) {
         publicText: `${label} barbecue fact.`
       }
     ],
+    faqs: [{
+      knowledgeKey: "singing",
+      question: "Can guests use karaoke?",
+      answer: `${label} karaoke is available from 08:00 to 22:00.`
+    }],
     semanticCatalog: {
       aliases: {
+        singing: ["karaoke"],
         pool: ["戲水池", "游泳池", "pool"],
         parking: ["車位", "停車位", "parking"],
         bbq: ["烤肉", "bbq"],
@@ -597,6 +603,83 @@ async function contradictoryPlannerFieldsPreserveControlledCapabilities() {
   assert.equal(unresolvedFact.stage("canonical_request").items[0].capability, "property_fact");
   assert.equal(unresolvedFact.stage("executor").results[0].status, "needs_human", "an unresolved property fact must not become an answer");
   assert.equal(unresolvedFact.result.finalDecision.action, "handoff");
+
+  const sourceGroundedDetail = await execute({
+    currentProperty,
+    message: "Please confirm the karaoke operating time.",
+    task: plannerTask({
+      taskId: "source-grounded-detail",
+      type: "availability",
+      sourceText: "Please confirm the karaoke operating time.",
+      rawText: "karaoke operating time",
+      category: "amenity",
+      canonicalCandidate: null,
+      detailIntent: "time",
+      requestedOutputs: ["time"]
+    })
+  });
+  assert.equal(sourceGroundedDetail.stage("semantic_contract").outputTasks[0].type, "property_fact");
+  assert.equal(sourceGroundedDetail.stage("canonical_request").items[0].canonicalEntity.canonicalId, "singing");
+  assert.equal(sourceGroundedDetail.stage("executor").results[0].status, "answered");
+  assert.match(sourceGroundedDetail.result.finalResponse.replyText, /08:00.+22:00/);
+
+  const ambiguousProperty = property("property_ambiguous_detail", "Ambiguous Detail");
+  ambiguousProperty.propertyFacts.push(
+    { canonicalId: "first_clock", category: "amenity", status: "provided", publicText: "First clock: 08:00." },
+    { canonicalId: "second_clock", category: "amenity", status: "provided", publicText: "Second clock: 22:00." }
+  );
+  ambiguousProperty.semanticCatalog.aliases.first_clock = ["shared timer"];
+  ambiguousProperty.semanticCatalog.aliases.second_clock = ["shared timer"];
+  const ambiguousDetail = await execute({
+    currentProperty: ambiguousProperty,
+    message: "Please confirm the shared timer operating time.",
+    task: plannerTask({
+      taskId: "ambiguous-detail",
+      type: "availability",
+      sourceText: "Please confirm the shared timer operating time.",
+      rawText: "shared timer operating time",
+      category: "amenity",
+      canonicalCandidate: null,
+      detailIntent: "time",
+      requestedOutputs: ["time"]
+    })
+  });
+  assert.equal(ambiguousDetail.stage("canonical_request").items[0].canonicalEntity.canonicalId, null);
+  assert.notEqual(ambiguousDetail.stage("executor").results[0].status, "answered");
+
+  const unboundEntity = await execute({
+    currentProperty,
+    message: "Please confirm the leisure schedule.",
+    task: plannerTask({
+      taskId: "unbound-detail",
+      type: "availability",
+      sourceText: "Please confirm the leisure schedule.",
+      rawText: "karaoke operating time",
+      category: "amenity",
+      canonicalCandidate: null,
+      detailIntent: "time",
+      requestedOutputs: ["time"]
+    })
+  });
+  assert.equal(unboundEntity.stage("canonical_request").items[0].canonicalEntity.canonicalId, null);
+  assert.notEqual(unboundEntity.stage("executor").results[0].status, "answered");
+
+  const protectedTask = await execute({
+    currentProperty,
+    message: "Please have an operator handle the karaoke operating time.",
+    task: plannerTask({
+      taskId: "protected-detail",
+      type: "high_risk",
+      sourceText: "Please have an operator handle the karaoke operating time.",
+      rawText: "karaoke operating time",
+      category: "other",
+      canonicalCandidate: null,
+      detailIntent: "time",
+      requestedOutputs: ["handoff"]
+    })
+  });
+  assert.equal(protectedTask.stage("canonical_request").items[0].capability, "high_risk");
+  assert.equal(protectedTask.stage("canonical_request").items[0].resolverId, "human_handoff");
 }
 
 async function locationFailureStageIsComposerFallbackState() {

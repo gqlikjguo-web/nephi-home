@@ -84,3 +84,9 @@
 1. Run the explicit protected-acceptance, Codex-integrity, Constitution, runtime-uniqueness, canonical-golden, and diff gates for the compiler repair, then create one root-cause commit and non-force push it to `test-only/node-pilot-integration`.
 2. Require exact-commit Render health and the complete real OpenAI + PostgreSQL matrix. Compare every case and turn against artifact `8942265827`; `rg-028`, `rg-032`, `rg-037`, and `rgs-008` must not be hidden by net score, and any new prior-PASS regression must be located before continuing.
 3. If the Release Gate is still unmet, continue from the newest artifact's earliest common failure layer. Keep `rg-038`'s temporal fail-closed behavior, all past-date and multi-cycle boundaries, unchanged expected values, and all non-executable cases visible; do not begin real LINE final acceptance early.
+
+## 2026-08-06 source-bound detail capability normalization
+
+1. Local `npm test`, protected acceptance, Codex integrity, Constitution, runtime uniqueness, canonical golden, and `git diff --check` have passed. Create one root-cause commit and non-force push to `test-only/node-pilot-integration`.
+2. Require exact-commit Render health, a verified private artifact, and the complete 77-case / 90-turn real OpenAI + PostgreSQL matrix. `rg-001`, `rg-028`, and `rg-032` must individually return to PASS; compare every prior PASS case and turn against artifacts `8943541801`, `8942265827`, and `8937651304`.
+3. Preserve `rg-038`'s null temporal state and zero availability QueryPlan. If Release Gate remains unmet, continue with the new artifact's earliest shared failure layer, including the separate date-clarification task boundary, sensitive-access routing, and still-visible past-date/specification conflicts. Real LINE final acceptance remains blocked.

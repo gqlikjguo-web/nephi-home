@@ -100,7 +100,7 @@ function normalizedStatefulInventoryTaskShape(task, fallbackStayCandidate = null
   return normalizedInventoryTaskShape(task, requestedType, fallbackStayCandidate);
 }
 
-function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
+function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, verifiedSourceText = "") {
   const entity = task && task.entity;
   if (!catalog || !entity || ["booking_request", "human_help", "high_risk"].includes(task.type)) return null;
   const rawGrounded = entity.rawText
@@ -128,11 +128,25 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
         canonicalCandidate: entity.canonicalCandidate
       })
     : null;
+  const sourceBoundRaw = normalizedText(entity.rawText);
+  const verifiedSource = normalizedText(verifiedSourceText);
+  const mentionedFacts = ["availability", "amenity"].includes(task.type)
+    && ["time", "start_time", "end_time"].includes(task.detailIntent)
+    && sourceBoundRaw
+    && verifiedSource.includes(sourceBoundRaw)
+    ? mentionedPropertyFacts(catalog, entity.rawText)
+      .filter(({ entity: fact }) => fact && fact.category === "amenity")
+    : [];
+  const sourceMentionGrounded = mentionedFacts.length === 1
+    ? { status: "resolved", entity: mentionedFacts[0].entity }
+    : null;
   const grounded = rawGrounded && rawGrounded.status !== "not_found"
     ? rawGrounded
     : scopedRawGrounded && scopedRawGrounded.status !== "not_found"
       ? scopedRawGrounded
-      : candidateGrounded || scopedRawGrounded || rawGrounded;
+      : candidateGrounded && candidateGrounded.status !== "not_found"
+        ? candidateGrounded
+        : sourceMentionGrounded || candidateGrounded || scopedRawGrounded || rawGrounded;
   const groundedEntity = grounded
     && grounded.status === "resolved"
     && grounded.entity;
@@ -145,13 +159,18 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
     && plannerTypeDefinition.responseMode === "answer"
     && plannerTypeDefinition.acceptedCandidateTypes.includes(task.type)
     && plannerTypeDefinition.acceptedEntityCategories.includes(resolved.category));
-  const preferredType = resolved && (resolved.category === "transport" || resolved.sourceKind === "faq"
-    ? "property_fact"
-    : plannerTypeAcceptsResolvedEntity && task.detailIntent !== "general"
-      ? task.type
-    : resolved.category === "policy"
-      ? "policy"
-      : "amenity");
+  const policyRestriction = resolved
+    && ["availability", "amenity"].includes(task.type)
+    && POLICY_DETAIL_INTENTS.has(task.detailIntent);
+  const preferredType = resolved && (policyRestriction
+    ? "policy"
+    : resolved.category === "transport" || resolved.sourceKind === "faq"
+      ? "property_fact"
+      : plannerTypeAcceptsResolvedEntity && task.detailIntent !== "general"
+        ? task.type
+        : resolved.category === "policy"
+          ? "policy"
+          : "amenity");
   const exactDefinition = resolved && getCapabilityDefinition(resolved.canonicalId);
   if (resolved && exactDefinition
     && resolved.sourceKind !== "faq"
@@ -174,6 +193,7 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
   };
   const useExactPropertyDefinition = resolved && exactDefinition
     && resolved.sourceKind !== "faq"
+    && !policyRestriction
     && (task.detailIntent === "general" || !["policy", "property_fact"].includes(task.type))
     && exactDefinition.resolverId === "property_catalog"
     && exactDefinition.stayDependency === false
@@ -210,6 +230,24 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
   };
 }
 
+function normalizedPolicyRestrictionTaskShape(task) {
+  const entity = task && task.entity;
+  if (!entity || !["availability", "amenity"].includes(task.type)
+    || !POLICY_DETAIL_INTENTS.has(task.detailIntent)) return null;
+  const definition = getCapabilityDefinition("policy");
+  const policyEntity = definition.acceptedEntityCategories.includes(entity.category)
+    ? entity
+    : { ...entity, category: "policy", canonicalCandidate: null };
+  return {
+    ...task,
+    type: "policy",
+    requestedOutputs: [task.detailIntent],
+    dependsOnStayContext: false,
+    stayCandidate: null,
+    entity: policyEntity
+  };
+}
+
 function normalizedUngroundedTaskShape(task, fallbackStayCandidate = null) {
   const entity = task && task.entity;
   if (!entity) return task;
@@ -220,6 +258,8 @@ function normalizedUngroundedTaskShape(task, fallbackStayCandidate = null) {
     ...task,
     entity: { ...entity, category: "policy" }
   };
+  const policyRestrictionTask = normalizedPolicyRestrictionTaskShape(task);
+  if (policyRestrictionTask) return policyRestrictionTask;
   if (requestedInventory
     && INVENTORY_OUTPUT_REPAIRABLE_TYPES.has(task.type)
     && task.detailIntent === "general") return normalizedInventoryTaskShape(
@@ -228,9 +268,7 @@ function normalizedUngroundedTaskShape(task, fallbackStayCandidate = null) {
     fallbackStayCandidate
   );
   if (task.type === "availability") {
-    const standaloneType = POLICY_DETAIL_INTENTS.has(task.detailIntent)
-      ? "policy"
-      : ["amenity", "activity", "room_feature"].includes(entity.category)
+    const standaloneType = ["amenity", "activity", "room_feature"].includes(entity.category)
         ? "amenity"
         : ["policy", "payment", "cancellation", "check_in", "check_out"].includes(entity.category)
           ? "policy"
@@ -606,7 +644,8 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
       repairedTasks.push({ taskId: task.taskId, index, reason: "stateful_inventory_capability_preservation" });
     }
 
-    const groundedTask = groundedPropertyFactTask(task, catalog, value.stay);
+    const verifiedSourceText = verifiedNewRequestEvidence(task, value.contextRelationCandidates, sourceEvents);
+    const groundedTask = groundedPropertyFactTask(task, catalog, value.stay, verifiedSourceText);
     if (groundedTask
       && (task.type !== groundedTask.type
         || task.entity.category !== groundedTask.entity.category
