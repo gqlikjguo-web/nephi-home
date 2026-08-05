@@ -441,3 +441,11 @@
 **Reason:** Deployed artifact `8949414624` fixed the generic lodging-cost capability but regressed two prior PASS cases. One price task was rejected before semantic compilation because `dependsOnStayContext:true` and `stayCandidate:null` contradicted the local contract even though all dates were simply missing. A sensitive access request was classified as a low-risk unknown policy after the policy grammar was expanded.
 
 **Constraint:** Empty stay projection applies only to one explicitly stay-dependent task; it never copies one candidate across multiple tasks, and stateless null candidates remain null. The result still has empty dates, creates no availability QueryPlan, and reaches ordinary clarification. Sensitive access remains human handoff and cannot query the property catalog for a secret. The repair uses no Case ID, guest sentence, Chinese term, catalog alias, expected change, or formal answer.
+
+## D-047 -- Lodging arrangement intent remains a booking capability
+
+**Decision:** The real OpenAI Planner instructions and strict task schema define a request about how to arrange, proceed with, or make a lodging reservation as `booking_request`. The task remains stateless human handoff; stated dates, duration, guests, room, and bundle remain source evidence for deterministic canonical validation, but the booking task cannot query availability.
+
+**Reason:** Deployed artifact `8950072765` regressed a prior-PASS duration-only lodging-arrangement request from `availability` to `unknown`, even though Temporal Resolver recovered the verified two-night duration. The missing capability was therefore a Planner semantic-grammar gap, not a temporal parsing failure.
+
+**Constraint:** Duration alone never implies `booking_request`; semantic lodging-reservation intent is required. This rule adds no guest-language phrase, alias, Case ID, expected value, formal fact, or downstream answer. `availability` remains required for an inventory question, and non-lodging duration, property facts, policies, high-risk requests, ambiguity, past dates, and multi-cycle relations retain their existing boundaries.

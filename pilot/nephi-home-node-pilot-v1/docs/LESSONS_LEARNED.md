@@ -300,3 +300,9 @@ Define capability boundaries at generation time in language-independent domain t
 A model can choose the correct price type yet fail the local task contract by combining stay dependency with a null candidate when the guest supplied no dates. Rejecting that task before semantic compilation turns a safe missing-date clarification into a generic handoff. Normalize only the sole-task contradiction to the existing empty top-level stay; never project an unscoped stay across multiple tasks.
 
 Broadening a low-risk policy definition can also absorb credential-disclosure requests unless the high-risk exclusion is equally explicit. Define sensitive access as high-risk inside both instructions and schema, then retain registry-enforced human handoff. Complete deployed comparison is essential because fixing one synonym while regressing another capability or safety route is not progress.
+
+## 2026-08-06 -- Temporal evidence and request capability are independent contracts
+
+A deterministic temporal parser can correctly recover a stay duration while the Planner still emits `unknown`, leaving the request on a generic handoff path. Temporal correctness alone does not establish what the guest is asking the lodging operator to do.
+
+Define the semantic capability at the structured-generation boundary and keep its negative boundary explicit. A lodging reservation arrangement is a booking task, while an unrelated duration is not. Verify both the recovered temporal evidence and the resulting capability, QueryPlan, and FinalResponse in the complete deployed matrix.

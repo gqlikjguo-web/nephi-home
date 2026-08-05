@@ -316,3 +316,7 @@
 ## 2026-08-06 Structured Planner regression closure
 
 - Preserved a sole stay-dependent task with an empty structured stay candidate before validation, while keeping multi-task projection fail closed, and restored sensitive access disclosure to the high-risk human-handoff capability.
+
+## 2026-08-06 Structured lodging-arrangement grammar
+
+- Defined lodging reservation arrangement and booking-process requests as `booking_request` in both Planner instructions and strict schema, while explicitly forbidding duration-only promotion and availability execution.

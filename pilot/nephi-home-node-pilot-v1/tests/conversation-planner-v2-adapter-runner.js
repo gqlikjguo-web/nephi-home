@@ -20,9 +20,12 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(plannerInstructions, /type price.*requestedOutputs price.*dependsOnStayContext true/i, "generic and scoped monetary lodging requests must retain the inventory price contract");
   assert.match(plannerInstructions, /policy.*rules or conditions.*not.*monetary/i, "planner grammar must keep property rules separate from price requests");
   assert.match(plannerInstructions, /access credentials.*authentication secrets.*type high_risk.*never.*policy/i, "sensitive access disclosure must remain a high-risk handoff capability");
+  assert.match(plannerInstructions, /lodging (?:reservation|booking) (?:arrangement|process).*type booking_request/i, "lodging arrangement questions must remain a formal booking capability even when only a duration is stated");
+  assert.match(plannerInstructions, /duration alone.*must not.*booking_request/i, "a duration without lodging-reservation intent must not be promoted to a booking task");
   assert.match(plannerInstructions, /before returning.*verify.*substantive request.*matching task/i, "planner must self-check semantic task coverage before returning structured output");
   assert.match(taskSchema.properties.type.description, /monetary lodging.*price/i, "the strict task schema must carry the shared price-vs-policy grammar into structured generation");
   assert.match(taskSchema.properties.type.description, /access credentials.*high_risk/i, "the strict task schema must preserve sensitive-access routing");
+  assert.match(taskSchema.properties.type.description, /lodging (?:reservation|booking) (?:arrangement|process).*booking_request/i, "the strict task schema must preserve lodging arrangement intent");
   assert.match(taskSchema.properties.requestedOutputs.description, /price task.*price/i, "the strict task schema must keep price output coupled to a price task");
   assert.match(taskSchema.properties.stayCandidate.description, /dependsOnStayContext is true.*structured object.*empty candidate fields/i, "stay-dependent tasks must retain an explicit empty candidate when dates are missing");
   assert.match(plannerInstructions, /preserve every stated nights, guest count, and feature even when a date is missing/i);
