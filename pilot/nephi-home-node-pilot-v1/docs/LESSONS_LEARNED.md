@@ -254,3 +254,9 @@ Keep retries finite and category-gated, but validate the per-attempt budget agai
 OpenAI may correctly understand a date or duration while emitting a normalized span that is not an exact substring of the guest message. Rejecting that span without consulting the deterministic temporal grammar loses a valid task; scanning the entire message for every task instead leaks one room's date into another room's request cycle.
 
 Recover first from the task's verified source. Use the complete current message only for the sole stay-dependent task, preserve ambiguity and past-date failures, and rerun multi-cycle tests whenever shared stay projection changes.
+
+## 2026-08-06 -- A parseable temporal fragment must not erase a broader source constraint
+
+OpenAI can emit a weekday-only temporal span even when the verified task source also contains an explicit month. Accepting the smaller span because it parses successfully converts a constrained calendar request into the next relative weekday and can trigger a real availability query for the wrong date.
+
+Temporal recovery must compare a Planner span with the deterministic grammar's broader source-grounded constraint even when the Planner fragment is independently parseable. If the full constraint still does not identify one date, keep CanonicalRequest and State dates empty, emit no stay-dependent QueryPlan, and ask for an exact date while allowing unrelated ready tasks in the same message to continue.

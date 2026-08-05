@@ -279,3 +279,7 @@
 
 - Recovered uniquely parseable date ranges and stay durations when OpenAI emitted an absent, synthesized, or unparseable temporal span, while preserving past-date, invalid-range, and ambiguity failures.
 - Limited whole-message temporal projection to the sole stay-dependent task so one candidate's date cannot enter another request cycle; property-fact tasks remain temporally absent.
+
+## 2026-08-06 Month-qualified weekday fail-closed recovery
+
+- Preserved an explicit month when OpenAI supplies only its contained weekday span, treating a non-unique month-plus-weekday constraint as unresolved before State, availability QueryPlan, PostgreSQL, and FinalResponse while leaving independent ready tasks executable.

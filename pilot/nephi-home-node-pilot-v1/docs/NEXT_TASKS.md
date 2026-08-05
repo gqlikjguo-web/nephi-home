@@ -72,3 +72,9 @@
 1. Recover only unique deterministic date ranges or durations from verified task source; allow full-message recovery only for the sole stay-dependent task in the turn.
 2. Require `rg-013` and `rgs-017` to reach the intended controlled temporal state in real OpenAI + PostgreSQL deployment, while rerunning multi-cycle, mixed property-fact, invalid-date, ambiguity, and all prior PASS cases.
 3. Keep `rgs-019` and the first turn of `rgs-020` as visible specification conflicts while their fixture dates are in the past; do not change expected values, formal data, or past-date policy without explicit user approval. Continue next with the earliest deployed layer for `rg-038`, `rg-039`, and `rg-051`.
+
+## 2026-08-06 month-qualified weekday recovery
+
+1. Finish the explicit protected-acceptance, Codex-integrity, Constitution, runtime-uniqueness, and diff gates for the shared Temporal Resolver repair, then create one root-cause commit and push it to `test-only/node-pilot-integration` without force.
+2. Require GitHub Actions success, exact-commit Render health with `testOnly=true`, a verified private artifact, and the complete 77-case / 90-turn real OpenAI + PostgreSQL matrix. `rg-038` must keep dates unresolved, execute no availability query, and ask for an exact date; all prior PASS turns must remain PASS.
+3. If the Release Gate is still unmet, continue from the new artifact's earliest common failure layer without changing expected values, past-date policy, non-executable scope, or acceptance thresholds. Real LINE final acceptance remains blocked until the test-only Release Gate passes.

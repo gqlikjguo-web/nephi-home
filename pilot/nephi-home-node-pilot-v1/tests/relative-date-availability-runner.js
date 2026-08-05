@@ -276,6 +276,7 @@ async function runCase(testCase) {
       taskResults: clone(completed.result.taskResults),
       claimValidation: clone(completed.result.claimValidation),
       finalDecision: completed.result.finalDecision,
+      finalResponse: completed.result.finalResponse,
       lineCallCount: lineCalls.length
     };
   } finally {
@@ -319,7 +320,57 @@ function traceSummary(trace) {
   };
 }
 
+async function assertMonthWeekdayConstraintFailsClosed() {
+  const trace = await runCase({
+    id: "month-weekday-requires-exact-date",
+    message: "9月週二有房嗎？有車位嗎？",
+    availabilityText: "9月週二有房嗎？",
+    rawText: "週二",
+    kind: "weekday",
+    extras: ["parking"]
+  });
+  const canonical = trace.canonicalRequest.items.find((item) => item.capability === "availability");
+  assert.equal(canonical.temporalState.resolutionStatus, "unresolved", "a month-qualified weekday must not recover as an unrelated relative weekday");
+  assert.equal(canonical.temporalState.checkIn, null);
+  assert.equal(canonical.temporalState.checkOut, null);
+  const propertyFact = trace.canonicalRequest.items.find((item) => item.capability === "parking");
+  assert.equal(propertyFact.temporalState.resolutionStatus, "absent", "an independent property fact must not inherit the unresolved stay constraint");
+  const stateTask = trace.stateAfter.tasks.find((item) => item.taskType === "availability");
+  assert.equal(stateTask.checkIn, null, "an unresolved month-qualified weekday must not write a wrong date into State");
+  assert.equal(stateTask.checkOut, null, "an unresolved month-qualified weekday must not write a wrong checkout into State");
+  assert.equal(trace.formalRequest.items.find((item) => item.taskId === canonical.taskId).readiness, "missing_information");
+  assert.equal(trace.queryPlan.items.some((item) => item.capability === "availability"), false, "an unresolved month-qualified weekday must not create an availability QueryPlan");
+  assert.deepEqual(trace.queryDateRanges, [], "an unresolved month-qualified weekday must not query the availability provider");
+  const parkingResult = trace.taskResults.find((item) => item.taskId === propertyFact.taskId);
+  assert.equal(parkingResult.status, "answered", "an independent property fact must still be answered");
+  assert.equal(parkingResult.facts.source, "property_catalog");
+  assert.equal(trace.finalDecision.action, "clarification");
+  assert.equal(trace.finalResponse.action, "clarification");
+  assert.equal(trace.finalResponse.shouldReply, true);
+  assert.match(trace.finalResponse.replyText, /日期/u, "the controlled response must ask for an exact date");
+  assert.match(trace.finalResponse.replyText, /停車/u, "the controlled response must retain the independent property fact");
+  assert.doesNotMatch(trace.finalResponse.replyText, /有房|滿房/u, "the controlled response must not claim availability");
+  console.log(JSON.stringify({
+    suite: "month-weekday-temporal-fail-closed",
+    canonicalTemporal: {
+      rawText: canonical.temporalState.rawText,
+      resolutionStatus: canonical.temporalState.resolutionStatus,
+      repairReasonCode: canonical.temporalState.repairReasonCode,
+      checkIn: canonical.temporalState.checkIn,
+      checkOut: canonical.temporalState.checkOut
+    },
+    state: { checkIn: stateTask.checkIn, checkOut: stateTask.checkOut },
+    queryPlanCapabilities: trace.queryPlan.items.map((item) => item.capability),
+    availabilityQueryPlanCount: trace.queryPlan.items.filter((item) => item.capability === "availability").length,
+    availabilityQueryCount: trace.queryDateRanges.length,
+    propertyFactStatus: parkingResult.status,
+    finalDecision: trace.finalDecision,
+    finalResponse: trace.finalResponse
+  }, null, 2));
+}
+
 (async () => {
+  await assertMonthWeekdayConstraintFailsClosed();
   const traces = [];
   for (const testCase of CASES) traces.push(await runCase(testCase));
   console.log(JSON.stringify({

@@ -96,3 +96,11 @@
 - `rg-009` and turn 1 of `rgs-020` completed within the new bounded timeout; no OpenAI attempt timed out. `rg-001`, `rg-032`, and `rgs-007` also returned to PASS, while `rgs-017` regressed through a different duration span.
 - Remaining FAIL cases are `rg-013`, `rg-038`, `rg-039`, `rg-051`, `rgs-017`, `rgs-019`, and `rgs-020`. `rgs-019` and the first turn of `rgs-020` use dates that are now in the past and correctly receive the controlled past-date FinalResponse; their expected room-scope assertions conflict with the current formal date policy and remain unchanged.
 - The active isolated repair targets the Temporal Resolver boundary: recover a unique source-grounded range or duration from malformed Planner spans while preventing whole-message dates from crossing between multiple stay-dependent tasks.
+
+## 2026-08-06 deployed acceptance run 31022352540
+
+- Commit `1140e5040dd6825d5ba40fefc58fcc6a789cb68b` passed the complete GitHub Actions verify job; Render health reported `ready`, `testOnly=true`, and that exact commit.
+- The complete real OpenAI + PostgreSQL matrix produced 66 PASS, 1 partial-not-executable, 6 FAIL, and 4 non-executable cases across 77 cases / 90 turns. Artifact `8937651304` has verified digest `sha256:b59a7db7c9f186d6a1f50903cf8e2ff923ffadacd55ba9fb7cb8550f49679a35`.
+- Remaining FAIL cases are `rg-001`, `rg-038`, `rg-051`, `rgs-007`, `rgs-019`, and `rgs-020`. `rg-013`, `rgs-017`, and both later turns in the multi-cycle modification cases passed this deployed run.
+- In `rg-038` trace `a434a255-9b65-4e46-9ca8-96f8339a15aa`, OpenAI supplied the contained weekday span from an explicit month-plus-weekday request. Temporal recovery dropped the month, resolved `2026-08-08`, executed one PostgreSQL-backed availability plan, and incorrectly replied that the date was full.
+- The active local repair makes the shared temporal grammar retain the broader month constraint and fail closed when it does not identify one date. Its production-entry RED/GREEN proves null CanonicalRequest and State dates, zero availability QueryPlans and provider calls, a clarification FinalDecision/FinalResponse, and continued execution of an independent property fact in the same turn. Full local `npm test` passes; deployment evidence is pending the single root-cause commit.

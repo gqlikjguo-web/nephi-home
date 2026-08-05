@@ -128,6 +128,16 @@ function weekend(raw, base, baseWeekday) {
   return { checkIn, checkOut: addDays(checkIn, 1), nights: 1, expressionType: "weekend" };
 }
 
+function monthWeekdayConstraint(raw) {
+  const match = raw.match(/^(?:(\d{4})年)?(\d{1,2})月份?(?:的|每(?:個)?)?(?:週|星期|禮拜)([日天一二三四五六1-6])$/u);
+  if (!match) return null;
+  const month = Number(match[2]);
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    return { unresolvedReason: "temporal_range_invalid", expressionType: "month_weekday_constraint" };
+  }
+  return { unresolvedReason: "temporal_expression_ambiguous", expressionType: "month_weekday_constraint" };
+}
+
 function explicitNights(raw) {
   const match = raw.match(/(?:(?:入住|住)([一二兩三四五六七八九十\d]+)[晚天]|([一二兩三四五六七八九十\d]+)晚)/u);
   if (!match) return null;
@@ -256,6 +266,8 @@ function parseRange(raw, base, baseWeekday) {
 
 function parseTemporalGrammarAtBase(raw, baseParts) {
   if (/下次.*有空.*週末/u.test(raw)) return { unresolvedReason: "temporal_expression_ambiguous" };
+  const constrainedWeekday = monthWeekdayConstraint(raw);
+  if (constrainedWeekday) return constrainedWeekday;
   const range = parseRange(raw, baseParts.key, baseParts.weekday);
   if (range) return range.checkIn && range.checkIn < baseParts.key ? { ...range, unresolvedReason: "past_date" } : range;
   const single = parseSingleExpression(raw, baseParts.key, baseParts.weekday);
@@ -288,7 +300,8 @@ function inferTemporalSpanFromMessage(text, eventTimestamp, timezone) {
       if ((/\d/.test(rawText[0]) && /\d/.test(previous))
         || (/\d/.test(rawText[rawText.length - 1]) && /\d/.test(next))) continue;
       const parsed = parseTemporalGrammarAtBase(rawText, baseParts);
-      if ((!parsed.unresolvedReason || parsed.unresolvedReason === "past_date") && parsed.checkIn) {
+      if (((!parsed.unresolvedReason || parsed.unresolvedReason === "past_date") && parsed.checkIn)
+        || parsed.unresolvedReason === "temporal_expression_ambiguous") {
         candidates.push({ rawText, parsed, start, end });
       }
     }
@@ -633,10 +646,30 @@ function resolveCanonicalTemporal({
 
   if (!recoveredPlannerSpan) {
     const initialParsed = parseTemporalGrammar(rawText, eventTimestamp, timezone);
-    if (initialParsed.unresolvedReason === "temporal_expression_unrecognized") {
-      const inferred = inferGroundedSpan(false);
-      if (inferred && inferred.rawText && normalizeText(inferred.rawText) !== rawText) {
-        rawText = inferred.rawText;
+    const inferred = inferGroundedSpan(false);
+    if (inferred && inferred.ambiguity) {
+      return withFieldMetadata({
+        rawText: "",
+        expressionType: "ambiguous",
+        checkIn: null,
+        checkOut: null,
+        nights: null,
+        searchRange: null,
+        timezone,
+        resolutionStatus: "unresolved",
+        resolutionSource: "canonical_temporal_grammar",
+        repairReasonCode: inferred.ambiguity,
+        applicableTaskIds: taskIds,
+        ambiguity: inferred.ambiguity,
+        originalExpression: rawText
+      }, { sourceEvidenceRefs: evidence });
+    }
+    if (inferred && inferred.rawText) {
+      const inferredRawText = normalizeText(inferred.rawText);
+      const recoversUnrecognized = initialParsed.unresolvedReason === "temporal_expression_unrecognized";
+      const preservesBroaderConstraint = inferredRawText !== rawText && inferredRawText.includes(rawText);
+      if ((recoversUnrecognized || preservesBroaderConstraint) && inferredRawText !== rawText) {
+        rawText = inferredRawText;
         recoveredPlannerSpan = true;
       }
     }
