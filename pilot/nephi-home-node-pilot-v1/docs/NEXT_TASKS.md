@@ -114,3 +114,9 @@
 1. Complete local verification for the narrow time-detail source grounding, create one root-cause commit, and non-force push it. General source scanning and all ambiguity, price, temporal, and multi-cycle safety boundaries must remain green.
 2. Require exact-commit Render health, verified private artifact digest, and the complete 77-case / 90-turn matrix. `rg-028` must return the formal 08:00-22:00 answer without altering the independent soundproofing handoff or regressing any prior PASS case.
 3. Keep `rg-001`, `rg-037`, `rg-032`, `rgs-007`, `rg-038`, `rg-039`, `rg-051`, `rgs-019`, and `rgs-020` visible as separate unresolved layers, then continue from the earliest deterministic shared boundary.
+
+## 2026-08-06 structured Planner price grammar
+
+1. Run protected acceptance, Codex integrity, Constitution, runtime uniqueness, canonical golden, and `git diff --check`; then create one root-cause commit for the shared price-versus-policy generation contract and non-force push it to `test-only/node-pilot-integration`.
+2. Require exact-commit GitHub Actions success, Render `ready` with `testOnly=true`, a verified private artifact digest, and the complete 77-case / 90-turn real OpenAI + PostgreSQL matrix. `rgs-007` must expose canonical `price`, retain missing-date clarification, create no premature availability query, and return no invented amount; compare every prior PASS case and turn against artifact `8948576835`.
+3. If Release Gate remains unmet, continue from the new artifact's earliest failure layer. Keep `rg-038`'s unresolved dates and zero availability QueryPlan, `rg-039`'s past-date rejection, and `rgs-019` / `rgs-020` scope conflicts visible; do not begin real LINE acceptance early.

@@ -288,3 +288,9 @@ Use the provider's supported minimum-variance sampling setting without combining
 The complete deployment disproved the first recommendation for this runtime: `temperature: 0` still produced incompatible schema-valid capabilities and regressed three prior PASS cases. Sampling controls are not an acceptable correctness boundary here. Treat Planner output as untrusted semantic input and repair only contradictions that deterministic current-source evidence can prove.
 
 An evidence-bound task source is narrower than the complete guest message and can safely recover a missing time-detail entity only when one formal property fact is uniquely mentioned. The normalized entity must retain that exact source mention; otherwise a correct grounding can still fail the Planner schema because `property_fact` cannot carry an empty raw entity. Do not extend this rule to general empty entities: existing regression coverage proves that would silently infer catalog facts from broad message text.
+
+## 2026-08-06 -- Strict enums need semantic coupling inside generation
+
+A strict schema can require a valid task type and requested-output array while still allowing an internally inconsistent semantic choice. Repeated real OpenAI runs classified one generic lodging-cost intent as either inventory price or an unknown property policy, even though both outputs were structurally valid.
+
+Define capability boundaries at generation time in language-independent domain terms and repeat the essential coupling in the schema descriptions the model uses for Structured Outputs. Require a final task-coverage check, but continue to treat the result as untrusted input: this guidance must not add phrase aliases, decide formal truth, bypass readiness, or replace complete deployed regression evidence.

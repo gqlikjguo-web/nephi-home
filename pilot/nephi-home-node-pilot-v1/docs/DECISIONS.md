@@ -425,3 +425,11 @@
 **Reason:** Rollback run `31047883614` emitted the KTV-hours task as stateless `availability + time` with an empty entity even though its source span contained the property-scoped singing alias. The compiler therefore discarded the formal 08:00-22:00 answer and returned only the unrelated soundproofing handoff.
 
 **Constraint:** This applies only to `time`, `start_time`, or `end_time`, verified `new_request` evidence, one uniquely owned formal fact, no stay dependency, and no inventory output. General empty entities, multiple facts, unverified evidence, unrelated non-empty entities, price, booking, human-help, high-risk, continuation, and acknowledgement remain fail closed. It does not scan the complete guest message or add aliases.
+
+## D-045 -- Price capability grammar is part of structured Planner generation
+
+**Decision:** The real OpenAI Planner receives one shared semantic definition for monetary lodging requests in both its system instructions and the strict task schema. Generic or scoped monetary lodging amounts remain `price` with `requestedOutputs: ["price"]` and stay dependency; property rules and conditions remain `policy`. Before returning, the Planner must verify that every substantive request and stated subject has a matching task whose type and requested output agree.
+
+**Reason:** Five complete deployed artifacts showed the same fixed generic lodging-cost request produce `price` once and then `policy` four consecutive times. The runtime already handled the `price` shape correctly, while the strict schema only enumerated task types and therefore constrained JSON shape without defining the price-versus-policy semantics inside structured generation.
+
+**Constraint:** This is capability grammar, not a question-word lexicon. It adds no Chinese wording, alias, Case ID, expected value, catalog fact, deterministic answer, availability result, or downstream repair. Missing dates still fail closed through the existing Temporal Resolver and readiness boundary; OpenAI still cannot decide price, availability, policy truth, or customer-visible wording. Complete deployed acceptance remains required because prompt and schema guidance are not proof of semantic correctness.

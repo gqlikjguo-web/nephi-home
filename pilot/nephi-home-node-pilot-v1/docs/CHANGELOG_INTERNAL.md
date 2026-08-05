@@ -308,3 +308,7 @@
 ## 2026-08-06 Verified task-source time-detail grounding
 
 - Recovered one property-scoped formal fact from a verified time-detail task source when the Planner left its entity empty, while preserving general-source, ambiguity, inventory, unrelated-task, and high-risk fail-closed boundaries.
+
+## 2026-08-06 Structured Planner price grammar
+
+- Defined the shared price-versus-policy capability contract in both real OpenAI Planner instructions and strict task schema descriptions, including output-pair and task-coverage self-checks without adding guest-word aliases or downstream facts.
