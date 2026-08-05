@@ -42,6 +42,13 @@ function property(propertyId, label) {
         aliases: ["戲水池"]
       },
       {
+        canonicalId: "cancellation",
+        category: "policy",
+        status: "provided",
+        publicText: `${label} cancellation conditions.`,
+        aliases: ["cancellation"]
+      },
+      {
         canonicalId: "location",
         category: "location",
         status: "provided",
@@ -317,6 +324,24 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.equal(substantiveAcknowledgement.result.finalDecision.action, "handoff", "a substantive acknowledgement-labeled task must reach a controlled handoff instead of no_reply");
   assert.notEqual(substantiveAcknowledgement.result.finalDecision.reasonCode, "no_reply_gate_hit");
 
+  const policyCandidateWithAmenityShape = await execute({
+    currentProperty: alpha,
+    message: "cancellation conditions",
+    tasks: [task({
+      taskId: "policy-conditions",
+      type: "amenity",
+      sourceText: "cancellation conditions",
+      category: "policy",
+      canonicalCandidate: "cancellation",
+      detailIntent: "conditions",
+      requestedOutputs: ["conditions"]
+    })]
+  });
+  assert.deepEqual(canonicalCapabilities(policyCandidateWithAmenityShape.diagnostics), ["policy"]);
+  assert.equal(policyCandidateWithAmenityShape.result.finalDecision.action, "reply", "a catalog-resolved policy must remain answerable when Planner supplies an incompatible amenity-shaped type");
+  assert.equal(policyCandidateWithAmenityShape.result.claimValidation.ok, true);
+  assert.notEqual(policyCandidateWithAmenityShape.result.finalDecision.reasonCode, "unknown");
+
   const location = await execute({
     currentProperty: alpha,
     message: "民宿在哪裡？",
@@ -387,7 +412,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.equal(unknown.result.replyText.includes("Alpha barbecue fact."), false);
   assert.equal(unknown.result.replyText.includes("Alpha pool fact."), false);
 
-  console.log(JSON.stringify({ caseCount: 14, passCount: 14, failCount: 0 }));
+  console.log(JSON.stringify({ caseCount: 15, passCount: 15, failCount: 0 }));
   console.log("property fact routing regression: PASS");
 })().catch((error) => {
   console.error(error.stack || error);

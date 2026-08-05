@@ -218,3 +218,9 @@ The contract compiler may isolate a subtask only from a sufficiently specific, u
 Real OpenAI output can label a payment-state notification as an acknowledgement while simultaneously emitting a task with a verified `new_request` relation. Treating the discourse label alone as silence converted a required controlled handoff into no-reply.
 
 Acknowledgement normalization must also respect the task-level relation candidate: only relation-uncertain generic tasks may use the acknowledgement-only silent path. A verified new-request task must continue through CanonicalRequest and controlled FinalDecision even when its exact business fact is unknown. Unicode-only punctuation remains a separate deterministic safety rule.
+
+## 2026-08-05 -- Formal category must arbitrate incompatible Planner types
+
+Real OpenAI can identify the exact catalog entity while labeling its task with a different hospitality type, especially when a non-general detail intent is present. Preserving that incompatible task type can produce a resolved canonical entity together with capability `unknown`.
+
+For an exact property-scoped catalog resolution, the compiler may retain the Planner type only when its registered capability accepts the formal entity category and remains a low-risk property-catalog answer path. Otherwise the formal category selects the compatible controlled capability; unresolved or ambiguous entities remain fail-closed.

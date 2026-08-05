@@ -46,3 +46,12 @@
 - Real OpenAI + PostgreSQL acceptance produced 61 PASS, 12 FAIL, and 4 non-executable cases. The private artifact is `8918810222`, digest `sha256:b2d4ea025ec2acc07e114ec6c646f4a2c9bbafd4839baf7040461da7fdeeb93f`.
 - `rg-015` and `rg-037` improved, but `rg-032`, `rg-051`, `rg-052`, `rgs-007`, and `rgs-017` regressed from the prior PASS set. Trace comparison shows those five runs did not execute merged-unknown catalog isolation; they are independent real-Planner contract drift and remain failures.
 - The active repair targets `rg-052`: an acknowledgement-labeled Planner result whose task has a verified `new_request` relation must not be changed to no-reply by the contract compiler. Pure acknowledgement cases retain relation-uncertain task evidence, while Unicode-only punctuation remains covered by the separate deterministic non-substantive rule.
+
+## 2026-08-05 deployed acceptance run 30981512276
+
+- Commit `0863dac095bf87be08ea664c8da8f53d1565240f` passed the complete verify job, and Render health reported that exact commit with `testOnly=true`.
+- Attempt 1 produced 58 PASS, 15 FAIL, and 4 non-executable cases. Artifact `8920588490` has digest `sha256:68fd9ecb3e6e218b52fdb51fec9ec0e6c731ca48022f06c53047b5fd492e8643`.
+- Attempt 2 on the same commit produced 64 PASS, 9 FAIL, and 4 non-executable cases. Artifact `8921143672` has digest `sha256:873bcb66ec5a8149e51e5d560b51a87635ec2fec1c08a18accabd24a32c61c3d`.
+- `rg-052` and the no-reply controls `rg-046` through `rg-049` passed both attempts. Neither real Planner run reproduced the prior acknowledgement-plus-new-request shape, so the new relation guard is locally and CI verified but its exact malformed OpenAI shape remains unobserved after deployment.
+- Attempt 1 exposed a known catalog-grounding regression in `rgs-010`: the formal `pets` entity resolved as a policy, but an incompatible amenity-shaped Planner type caused CanonicalRequest capability `unknown`. Attempt 2 passed through a different Planner shape; the compiler defect remains real and is the active repair.
+- Attempt 2 FAIL cases are `rg-001`, `rg-003`, `rg-006`, `rg-013`, `rg-038`, `rg-039`, `rg-051`, `rgs-019`, and `rgs-020`.

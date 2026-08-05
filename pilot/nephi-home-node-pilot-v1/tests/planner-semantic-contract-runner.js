@@ -57,6 +57,21 @@ function main() {
   assert.notEqual(unresolvedTransport.item.canonicalRequest.capability, "location", "unresolved transport must not invoke the location capability");
   assert.equal(unresolvedTransport.item.canonicalRequest.canonicalEntity.status, "not_found");
 
+  const policyCandidateWithAmenityShape = canonical(task({
+    taskId: "policy-conditions",
+    type: "amenity",
+    category: "policy",
+    rawText: "",
+    sourceText: "cancellation conditions",
+    canonicalCandidate: "cancellation",
+    detailIntent: "conditions",
+    requestedOutputs: ["conditions"]
+  }));
+  assert.equal(policyCandidateWithAmenityShape.semantic.tasks[0].type, "policy", "a catalog-resolved policy must correct an incompatible amenity-shaped Planner type even for a non-general detail request");
+  assert.equal(policyCandidateWithAmenityShape.semantic.tasks[0].entity.category, "policy");
+  assert.equal(policyCandidateWithAmenityShape.item.canonicalRequest.capability, "policy");
+  assert.equal(policyCandidateWithAmenityShape.item.canonicalRequest.resolverId, "property_catalog");
+
   for (const [id, category, rawText, expectedCapability] of [
     ["parking", "amenity", "parking", "parking"],
     ["pool", "amenity", "pool", "pool"],
@@ -260,7 +275,7 @@ function main() {
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 20, passCount: 20, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 21, passCount: 21, failCount: 0 }));
 }
 
 main();

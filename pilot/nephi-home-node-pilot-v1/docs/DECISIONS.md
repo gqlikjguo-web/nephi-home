@@ -40,6 +40,7 @@
 | D-030 | active | — |
 | D-031 | active | — |
 | D-032 | active | — |
+| D-033 | active | — |
 
 ## 舊標題到唯一 ID crosswalk
 
@@ -328,3 +329,11 @@
 **Reason:** Real OpenAI classified a payment-state notification as acknowledgement but also emitted a new-request task. The previous compiler overwrote that task-level relation and produced no-reply.
 
 **Constraint:** This rule cannot infer payment or any other business intent from guest keywords. Pure acknowledgement cases remain silent through their relation-uncertain task evidence, and Unicode-only punctuation remains governed by the separate deterministic non-substantive rule.
+
+## D-033 -- Formal catalog category arbitrates incompatible task types
+
+**Decision:** After an exact property-scoped entity resolution, a non-general Planner task type is retained only when its registered capability accepts the resolved formal category and is a low-risk property-catalog answer path. Otherwise the resolved formal category selects the compatible controlled capability.
+
+**Reason:** Real OpenAI emitted an amenity-shaped eligibility task with the exact `pets` candidate, while the formal catalog resolved that entity as policy. Preserving the incompatible amenity type produced CanonicalRequest capability `unknown` despite available formal data.
+
+**Constraint:** This rule cannot infer an entity or intent from guest keywords. Ambiguous and unresolved candidates remain fail-closed; high-risk, human-help, stay-dependent, and non-property resolvers cannot be promoted through this compatibility rule.

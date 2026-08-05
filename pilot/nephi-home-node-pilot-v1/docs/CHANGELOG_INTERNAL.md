@@ -254,3 +254,7 @@
 ## 2026-08-05 Substantive acknowledgement preservation
 
 - Prevented an acknowledgement discourse label from forcing a task with a verified new-request relation into no-reply; relation-uncertain acknowledgements and deterministic Unicode-only fragments retain their existing silent path.
+
+## 2026-08-05 Formal catalog category grounding
+
+- Allowed an exact property-catalog entity category to correct an incompatible Planner task type for non-general detail requests, while retaining a Planner type that is already compatible with the resolved formal category.

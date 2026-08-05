@@ -93,9 +93,17 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
     && grounded.status === "resolved"
     && grounded.entity;
   const resolved = groundedEntity || null;
+  const plannerTypeDefinition = resolved && getCapabilityDefinition(task.type);
+  const plannerTypeAcceptsResolvedEntity = Boolean(plannerTypeDefinition
+    && plannerTypeDefinition.resolverId === "property_catalog"
+    && plannerTypeDefinition.stayDependency === false
+    && plannerTypeDefinition.riskLevel === "low"
+    && plannerTypeDefinition.responseMode === "answer"
+    && plannerTypeDefinition.acceptedCandidateTypes.includes(task.type)
+    && plannerTypeDefinition.acceptedEntityCategories.includes(resolved.category));
   const preferredType = resolved && (resolved.category === "transport" || resolved.sourceKind === "faq"
     ? "property_fact"
-    : ["amenity", "policy", "property_fact"].includes(task.type) && task.detailIntent !== "general"
+    : plannerTypeAcceptsResolvedEntity && task.detailIntent !== "general"
       ? task.type
     : resolved.category === "policy"
       ? "policy"
