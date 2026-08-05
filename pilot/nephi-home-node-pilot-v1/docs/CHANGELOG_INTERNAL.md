@@ -242,3 +242,7 @@
 ## 2026-08-05 Formal FAQ and structured-detail projection
 
 - Preserved property-authored FAQs as `property_fact` capabilities, retained policy semantics for detail questions about facilities, and projected time or currency details only when the property-authorized answer contains a controlled numeric time or money form.
+
+## 2026-08-05 Identified new-request evidence normalization
+
+- Rebuilt malformed Planner quote coordinates only when a `new_request` evidence reference uniquely identifies the current source event; invalid identifiers and all context-reuse relations remain fail-closed.

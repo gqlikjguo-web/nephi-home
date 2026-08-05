@@ -289,6 +289,46 @@ function latestConditions(result) {
   assert.equal(rejectedContextResult.finalDecision.action, "handoff");
   assert.equal(rejectedContextResult.finalDecision.reasonCode, "context_relation_invalid");
 
+  const identifiedNewRequestDiagnostics = [];
+  const identifiedNewRequestPlanner = {
+    classify: async (input) => {
+      const output = await explicitPlanner(planner).classify(input);
+      output.tasks[0] = { ...output.tasks[0], sourceText: "planner paraphrase absent from source" };
+      output.contextRelationCandidates[0].evidenceRefs[0] = {
+        eventId: input.sourceEvents[0].eventId,
+        messageRef: "",
+        startOffset: 999,
+        endOffset: 1000,
+        quote: "planner paraphrase absent from source"
+      };
+      return output;
+    }
+  };
+  const identifiedNewRequestEngine = new ConversationEngineV2({
+    planner: identifiedNewRequestPlanner,
+    persistence,
+    getProperty: () => property,
+    availabilityResolver,
+    listPriceOverrides: () => [],
+    onDiagnostic: (item) => identifiedNewRequestDiagnostics.push(item)
+  });
+  const identifiedNewRequestResult = await identifiedNewRequestEngine.process({
+    customerId: "p1",
+    channelId: "identified-new-request",
+    lineUserId: "identified-new-request-user",
+    eventId: "identified-new-request-event",
+    eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"),
+    messageText: "identified current source event"
+  });
+  assert.notEqual(
+    identifiedNewRequestResult.finalDecision.reasonCode,
+    "context_relation_invalid",
+    "a uniquely identified current-turn new request must normalize malformed Planner evidence to the exact source event"
+  );
+  const identifiedNewRequestContext = identifiedNewRequestDiagnostics.find((item) => item.stage === "context_validation");
+  assert.deepEqual(identifiedNewRequestContext.rejectionReasons, []);
+  assert.deepEqual(identifiedNewRequestContext.candidates[0].evidenceSourceMatches, [true]);
+
   const detailedDiagnostics = [];
   const detailedEngine = new ConversationEngineV2({ planner: explicitPlanner(planner), persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [], diagnosticDetail: true, onDiagnostic: (item) => detailedDiagnostics.push(item) });
   await detailedEngine.process({ customerId: "p1", channelId: "c1", lineUserId: "trace-user", eventId: "trace-event", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？" });

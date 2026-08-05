@@ -59,6 +59,31 @@ function uniqueIdentifiedSourceMatch(sourceText, evidenceRef, sourceEvents, iden
   return uniqueExactSourceMatch(sourceText, identified, sourceIdentifierCounts(identified));
 }
 
+function uniqueIdentifiedSourceEvidence(evidenceRef, sourceEvents, identifierCounts) {
+  const eventId = String(evidenceRef && evidenceRef.eventId || "").trim();
+  const messageRef = String(evidenceRef && evidenceRef.messageRef || "").trim();
+  if ((!eventId && !messageRef)
+    || (eventId && identifierCounts.eventIds.get(eventId) !== 1)
+    || (messageRef && identifierCounts.messageRefs.get(messageRef) !== 1)) return null;
+  const identified = (Array.isArray(sourceEvents) ? sourceEvents : []).filter((sourceEvent) => {
+    if (!sourceEvent || typeof sourceEvent !== "object") return false;
+    return (!eventId || String(sourceEvent.eventId || "").trim() === eventId)
+      && (!messageRef || String(sourceEvent.messageRef || "").trim() === messageRef);
+  });
+  if (identified.length !== 1) return null;
+  const sourceEvent = identified[0];
+  const messageText = String(sourceEvent.messageText || "");
+  if (!messageText) return null;
+  const endOffset = Math.min(messageText.length, 500);
+  return {
+    eventId: String(sourceEvent.eventId || "").trim(),
+    messageRef: String(sourceEvent.messageRef || "").trim(),
+    startOffset: 0,
+    endOffset,
+    quote: messageText.slice(0, endOffset)
+  };
+}
+
 function normalizePlannerEvidenceCoordinates(plannerOutput, sourceEvents) {
   if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput)
     || !Array.isArray(plannerOutput.tasks) || !Array.isArray(plannerOutput.contextRelationCandidates)) return plannerOutput;
@@ -80,7 +105,7 @@ function normalizePlannerEvidenceCoordinates(plannerOutput, sourceEvents) {
           evidenceRef,
           sourceEvents,
           identifierCounts
-        ))
+        ) || uniqueIdentifiedSourceEvidence(evidenceRef, sourceEvents, identifierCounts))
       : [];
     const canonicalEvidence = canonicalQuotedEvidence.length > 0 && canonicalQuotedEvidence.every(Boolean)
       ? canonicalQuotedEvidence
