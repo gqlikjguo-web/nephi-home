@@ -304,3 +304,7 @@
 ## 2026-08-06 Planner sampling rollback
 
 - Removed the explicit `temperature: 0` override after the complete deployed matrix introduced three prior-PASS Planner regressions; retained the full artifact evidence and moved the active repair boundary back to deterministic source-evidenced compiler normalization.
+
+## 2026-08-06 Verified task-source time-detail grounding
+
+- Recovered one property-scoped formal fact from a verified time-detail task source when the Planner left its entity empty, while preserving general-source, ambiguity, inventory, unrelated-task, and high-risk fail-closed boundaries.

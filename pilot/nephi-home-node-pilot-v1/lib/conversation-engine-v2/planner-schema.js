@@ -129,6 +129,7 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
       })
     : null;
   const sourceBoundRaw = normalizedText(entity.rawText);
+  const sourceBoundTask = normalizedText(task.sourceText);
   const verifiedSource = normalizedText(verifiedSourceText);
   const mentionedFacts = ["availability", "amenity"].includes(task.type)
     && ["time", "start_time", "end_time"].includes(task.detailIntent)
@@ -140,13 +141,33 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
   const sourceMentionGrounded = mentionedFacts.length === 1
     ? { status: "resolved", entity: mentionedFacts[0].entity }
     : null;
-  const grounded = rawGrounded && rawGrounded.status !== "not_found"
+  const rawInventoryGrounded = rawGrounded && (rawGrounded.status === "resolved"
+    ? ["room", "bundle"].includes(rawGrounded.entity && rawGrounded.entity.category)
+    : rawGrounded.status === "matched_set"
+      && Array.isArray(rawGrounded.entities)
+      && rawGrounded.entities.length > 0
+      && rawGrounded.entities.every((item) => item && ["room", "bundle"].includes(item.category)));
+  const inventoryOutputsRequested = (Array.isArray(task.requestedOutputs) ? task.requestedOutputs : [])
+    .some((output) => ["availability", "available_dates", "room_options", "bundle_availability", "capacity", "price", "total_price"].includes(output));
+  const taskSourceFacts = ["availability", "amenity"].includes(task.type)
+    && ["time", "start_time", "end_time"].includes(task.detailIntent)
+    && task.dependsOnStayContext === false
+    && !inventoryOutputsRequested
+    && sourceBoundTask
+    && verifiedSource.includes(sourceBoundTask)
+    && (!sourceBoundRaw || sourceBoundTask.includes(sourceBoundRaw) && rawInventoryGrounded)
+    ? mentionedPropertyFacts(catalog, task.sourceText)
+    : [];
+  const taskSourceMentionGrounded = taskSourceFacts.length === 1
+    ? { status: "resolved", entity: taskSourceFacts[0].entity }
+    : null;
+  const grounded = rawGrounded && rawGrounded.status === "resolved" && !rawInventoryGrounded
     ? rawGrounded
     : scopedRawGrounded && scopedRawGrounded.status !== "not_found"
       ? scopedRawGrounded
       : candidateGrounded && candidateGrounded.status !== "not_found"
         ? candidateGrounded
-        : sourceMentionGrounded || candidateGrounded || scopedRawGrounded || rawGrounded;
+        : taskSourceMentionGrounded || sourceMentionGrounded || candidateGrounded || scopedRawGrounded || rawGrounded;
   const groundedEntity = grounded
     && grounded.status === "resolved"
     && grounded.entity;
@@ -223,7 +244,7 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
     stayCandidate: null,
     entity: {
       ...entity,
-      rawText: entity.rawText,
+      rawText: grounded === taskSourceMentionGrounded ? taskSourceFacts[0].mention : entity.rawText,
       category: resolved.category,
       canonicalCandidate: resolved.canonicalId
     }

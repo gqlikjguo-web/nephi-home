@@ -417,3 +417,11 @@
 **Reason:** Complete deployed run `31045656667` on commit `cca314b339b061628efbd54e58121af93bab9695` fell from 66 PASS to 63 PASS. Prior-PASS `rg-001`, `rg-006`, and `rg-037` regressed at the Planner layer into incompatible but schema-valid capability shapes. The private artifact therefore disproved the proposed override as a safe release repair.
 
 **Constraint:** The rollback does not treat provider defaults as semantically stable. It restores the last code baseline, keeps every regression visible, and requires future repairs to normalize only source-evidenced contradictions in the controlled compiler without Case IDs, exact guest sentences, expected changes, or relaxed acceptance.
+
+## D-044 -- Verified task-source time detail may recover one formal fact
+
+**Decision:** A low-risk `availability` or `amenity` time-detail task with an empty entity may use its own verified current-event `sourceText` to resolve exactly one current-property formal fact. The exact catalog mention is retained in the normalized entity so the semantic output remains schema-valid and auditable.
+
+**Reason:** Rollback run `31047883614` emitted the KTV-hours task as stateless `availability + time` with an empty entity even though its source span contained the property-scoped singing alias. The compiler therefore discarded the formal 08:00-22:00 answer and returned only the unrelated soundproofing handoff.
+
+**Constraint:** This applies only to `time`, `start_time`, or `end_time`, verified `new_request` evidence, one uniquely owned formal fact, no stay dependency, and no inventory output. General empty entities, multiple facts, unverified evidence, unrelated non-empty entities, price, booking, human-help, high-risk, continuation, and acknowledgement remain fail closed. It does not scan the complete guest message or add aliases.

@@ -37,9 +37,24 @@ const property = {
     { knowledgeKey: "prepayment_help", question: "How is a prepayment deposit arranged?", answer: "Alpha prepayment FAQ." },
     { knowledgeKey: "transport", question: "What address transport can guests arrange?", answer: "Alpha transport FAQ." }
   ],
-  semanticCatalog: { aliases: { location: ["directions"], parking: ["parking"], bbq: ["bbq", "barbecue"], cancellation: ["cancel"], pool: ["pool"], price: ["room rate"] }, amenities: [{ id: "pool", name: "Pool", aliases: ["pool"], status: "confirmed_yes", answer: "Alpha pool hours" }] }
+  semanticCatalog: { aliases: { location: ["directions"], parking: ["parking"], bbq: ["bbq", "barbecue"], cancellation: ["cancel"], pool: ["pool"], price: ["room rate"], shared_cooking: ["shared kitchen"] }, amenities: [{ id: "pool", name: "Pool", aliases: ["pool"], status: "confirmed_yes", answer: "Alpha pool hours" }] }
 };
 const catalog = buildPropertyCatalog(property);
+
+function sourceBoundSemantic(taskValue, { message = taskValue.sourceText, eventId = "source-bound-event", evidenceEventId = eventId } = {}) {
+  const value = plan([taskValue]);
+  value.contextRelationCandidates[0].evidenceRefs = [{
+    eventId: evidenceEventId,
+    messageRef: "",
+    startOffset: 0,
+    endOffset: message.length,
+    quote: message
+  }];
+  return applyPlannerSemanticContract(value, {
+    catalog,
+    sourceEvents: [{ eventId, messageRef: "", messageText: message }]
+  });
+}
 
 function canonical(taskValue) {
   const semantic = applyPlannerSemanticContract(plan([taskValue]), { catalog });
@@ -297,6 +312,62 @@ function main() {
   assert.equal(faqFragment.semantic.tasks[0].entity.canonicalCandidate, "shared_cooking", "a unique Planner entity fragment must compile to the property-backed FAQ fact");
   assert.equal(faqFragment.item.canonicalRequest.capability, "property_fact", "a property-authored FAQ must retain property-fact semantics instead of being flattened into an amenity");
 
+  const sourceBoundTimeFact = sourceBoundSemantic(task({
+    taskId: "source-bound-hours",
+    type: "availability",
+    category: "other",
+    rawText: "",
+    sourceText: "pool schedule",
+    detailIntent: "time"
+  }));
+  assert.equal(sourceBoundTimeFact.tasks[0].entity.canonicalCandidate, "pool", "a verified task source with one formal fact must recover an empty time-detail entity");
+  assert.equal(sourceBoundTimeFact.tasks[0].type, "amenity");
+
+  const unverifiedSourceFact = sourceBoundSemantic(task({
+    taskId: "unverified-source",
+    type: "availability",
+    category: "other",
+    rawText: "",
+    sourceText: "pool schedule",
+    detailIntent: "time"
+  }), { evidenceEventId: "wrong-event" });
+  assert.equal(unverifiedSourceFact.tasks[0].entity.canonicalCandidate, null, "an unverified source must never ground a property fact");
+  assert.equal(unverifiedSourceFact.tasks[0].type, "availability");
+
+  const ambiguousSourceFact = sourceBoundSemantic(task({
+    taskId: "ambiguous-source",
+    type: "availability",
+    category: "other",
+    rawText: "",
+    sourceText: "pool and shared kitchen schedule",
+    detailIntent: "time"
+  }));
+  assert.equal(ambiguousSourceFact.tasks[0].entity.canonicalCandidate, null, "a task source naming multiple formal facts must remain unresolved");
+  assert.equal(ambiguousSourceFact.tasks[0].type, "availability");
+
+  const unrelatedEntitySourceFact = sourceBoundSemantic(task({
+    taskId: "unrelated-source-entity",
+    type: "amenity",
+    category: "room_feature",
+    rawText: "sound insulation",
+    sourceText: "pool schedule and sound insulation",
+    detailIntent: "conditions"
+  }));
+  assert.equal(unrelatedEntitySourceFact.tasks[0].entity.canonicalCandidate, null, "a catalog mention elsewhere in the same task source must not replace an unrelated non-empty entity");
+  assert.equal(unrelatedEntitySourceFact.tasks[0].type, "amenity");
+
+  const sourceBoundPrice = sourceBoundSemantic(task({
+    taskId: "source-bound-price",
+    type: "price",
+    category: "other",
+    rawText: "",
+    sourceText: "pool package amount",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true
+  }));
+  assert.equal(sourceBoundPrice.tasks[0].type, "price", "source-bound fact recovery must not erase an inventory price capability");
+  assert.equal(sourceBoundPrice.tasks[0].entity.canonicalCandidate, null);
+
   const amenityFeePolicy = canonical(task({
     taskId: "pool-fee-policy",
     type: "policy",
@@ -459,7 +530,7 @@ function main() {
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 23 + contradictoryFieldCaseCount, passCount: 23 + contradictoryFieldCaseCount, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 28 + contradictoryFieldCaseCount, passCount: 28 + contradictoryFieldCaseCount, failCount: 0 }));
 }
 
 main();

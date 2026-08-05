@@ -108,3 +108,9 @@
 1. Roll back the explicit Planner sampling override because artifact `8946684391` regressed prior-PASS `rg-001`, `rg-006`, and `rg-037`; run complete local verification, create one rollback commit, and non-force push it.
 2. Keep the rollback deployment separate and verify its exact SHA, private artifact digest, and complete 77-case / 90-turn matrix. Do not claim recovery from net score: compare every prior-PASS case and turn against artifact `8945791121`.
 3. Continue with the earliest deterministic shared failure layer using verified current-source evidence. Preserve temporal fail-closed behavior, especially `rg-038` null dates and zero QueryPlans, and require actual formal answers rather than apparent acceptance PASS states.
+
+## 2026-08-06 verified task-source time-detail grounding
+
+1. Complete local verification for the narrow time-detail source grounding, create one root-cause commit, and non-force push it. General source scanning and all ambiguity, price, temporal, and multi-cycle safety boundaries must remain green.
+2. Require exact-commit Render health, verified private artifact digest, and the complete 77-case / 90-turn matrix. `rg-028` must return the formal 08:00-22:00 answer without altering the independent soundproofing handoff or regressing any prior PASS case.
+3. Keep `rg-001`, `rg-037`, `rg-032`, `rgs-007`, `rg-038`, `rg-039`, `rg-051`, `rgs-019`, and `rgs-020` visible as separate unresolved layers, then continue from the earliest deterministic shared boundary.

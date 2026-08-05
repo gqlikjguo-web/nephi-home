@@ -77,6 +77,7 @@ function task({
   sourceText,
   category,
   canonicalCandidate,
+  rawText = sourceText,
   detailIntent = "general",
   requestedOutputs = ["answer"],
   dependsOnStayContext = false,
@@ -93,7 +94,7 @@ function task({
     dependsOnStayContext,
     entity: {
       category,
-      rawText: sourceText,
+      rawText,
       canonicalCandidate,
       confidence: 0.99
     },
@@ -186,9 +187,9 @@ async function execute({ currentProperty, message, tasks, planOptions }) {
 }
 
 function canonicalCapabilities(diagnostics) {
-  return diagnostics
-    .find((entry) => entry.stage === "canonical_request")
-    .items.map((item) => item.capability);
+  const canonical = diagnostics.find((entry) => entry.stage === "canonical_request");
+  assert.ok(canonical, `canonical_request missing: ${JSON.stringify(diagnostics.map((entry) => ({ stage: entry.stage, rejectionReasons: entry.rejectionReasons || [], tasks: entry.stage === "planner" ? entry.tasks : undefined })))}`);
+  return canonical.items.map((item) => item.capability);
 }
 
 function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate, candidateIndex = 0) {
@@ -255,6 +256,23 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   });
   assert.deepEqual(canonicalCapabilities(singingHours.diagnostics), ["property_fact"]);
   assert.match(singingHours.result.replyText, /08:00-22:00/, "a formal FAQ answer containing a controlled time range must be projected instead of falsely reported missing");
+
+  const sourceBoundSingingHours = await execute({
+    currentProperty: alpha,
+    message: "When can guests sing?",
+    tasks: [task({
+      taskId: "source-bound-singing-hours",
+      type: "availability",
+      sourceText: "When can guests sing?",
+      rawText: "",
+      category: "other",
+      canonicalCandidate: null,
+      detailIntent: "time"
+    })]
+  });
+  assert.deepEqual(canonicalCapabilities(sourceBoundSingingHours.diagnostics), ["property_fact"]);
+  assert.equal(sourceBoundSingingHours.result.taskResults[0].facts.source, "property_catalog");
+  assert.match(sourceBoundSingingHours.result.replyText, /08:00-22:00/);
 
   const bbqFee = await execute({
     currentProperty: alpha,
@@ -412,7 +430,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.equal(unknown.result.replyText.includes("Alpha barbecue fact."), false);
   assert.equal(unknown.result.replyText.includes("Alpha pool fact."), false);
 
-  console.log(JSON.stringify({ caseCount: 15, passCount: 15, failCount: 0 }));
+  console.log(JSON.stringify({ caseCount: 16, passCount: 16, failCount: 0 }));
   console.log("property fact routing regression: PASS");
 })().catch((error) => {
   console.error(error.stack || error);
