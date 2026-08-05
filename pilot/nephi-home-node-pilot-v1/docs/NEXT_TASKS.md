@@ -102,3 +102,9 @@
 1. Create one root-cause commit for `temperature: 0` plus its request-body RED/GREEN and non-force push it after final diff checks; complete local `npm test` and all explicit safety gates have passed.
 2. Require exact-commit Render health, a verified private artifact, and the complete 77-case / 90-turn real OpenAI + PostgreSQL matrix. Compare every case and turn against artifacts `8945791121`, `8944853419`, and `8943541801`; `rg-032` and `rgs-007` must not be hidden by net score.
 3. Lower sampling variance is not a Release Gate by itself. Require the formal 08:00-22:00 `rg-028` answer, preserve `rg-038`'s null dates and zero QueryPlan, keep `rgs-020` and all past-date conflicts visible, and continue with deterministic shared compiler boundaries if any capability drift remains.
+
+## 2026-08-06 sampling rollback and next shared boundary
+
+1. Roll back the explicit Planner sampling override because artifact `8946684391` regressed prior-PASS `rg-001`, `rg-006`, and `rg-037`; run complete local verification, create one rollback commit, and non-force push it.
+2. Keep the rollback deployment separate and verify its exact SHA, private artifact digest, and complete 77-case / 90-turn matrix. Do not claim recovery from net score: compare every prior-PASS case and turn against artifact `8945791121`.
+3. Continue with the earliest deterministic shared failure layer using verified current-source evidence. Preserve temporal fail-closed behavior, especially `rg-038` null dates and zero QueryPlans, and require actual formal answers rather than apparent acceptance PASS states.

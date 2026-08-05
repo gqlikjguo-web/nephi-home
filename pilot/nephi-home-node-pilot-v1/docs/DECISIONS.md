@@ -409,3 +409,11 @@
 **Reason:** Repeated complete deployed runs sent identical fixed guest inputs and the same strict schema to the same model, yet alternated among incompatible price, policy, amenity, room, and bundle task shapes. The existing prompt already explicitly distinguishes these capabilities. The official Responses API defines lower temperature as more focused and deterministic, and GPT-4.1 mini supports both Responses and Structured Outputs.
 
 **Constraint:** This does not change the model, prompt, schema, property catalog, formal data, retry count, retry categories, timeout, expected results, or downstream safety gates. Provider failures still follow the existing bounded retry and fail-closed path; lower variance is not treated as proof of semantic correctness, so every deployment still runs the complete real acceptance matrix.
+
+## D-043 -- Roll back the minimum-variance Planner sampling override
+
+**Decision:** Remove the test-only Planner's explicit `temperature: 0` override and restore the prior provider request while deterministic shared compiler boundaries are developed.
+
+**Reason:** Complete deployed run `31045656667` on commit `cca314b339b061628efbd54e58121af93bab9695` fell from 66 PASS to 63 PASS. Prior-PASS `rg-001`, `rg-006`, and `rg-037` regressed at the Planner layer into incompatible but schema-valid capability shapes. The private artifact therefore disproved the proposed override as a safe release repair.
+
+**Constraint:** The rollback does not treat provider defaults as semantically stable. It restores the last code baseline, keeps every regression visible, and requires future repairs to normalize only source-evidenced contradictions in the controlled compiler without Case IDs, exact guest sentences, expected changes, or relaxed acceptance.

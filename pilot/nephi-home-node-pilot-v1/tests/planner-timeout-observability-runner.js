@@ -145,8 +145,8 @@ async function main() {
   assert.equal(sentHeaders.length, 1);
   assert.match(sentHeaders[0]["X-Client-Request-Id"], UUID_PATTERN,
     "each provider attempt must send an independent X-Client-Request-Id");
-  assert.equal(sentBodies[0].temperature, 0,
-    "the production Planner must use the lowest-variance supported sampling mode");
+  assert.equal(Object.hasOwn(sentBodies[0], "temperature"), false,
+    "the production Planner must not rely on an unproven sampling override for semantic correctness");
   assert.equal(Object.hasOwn(sentBodies[0], "top_p"), false,
     "the Planner must not combine temperature with nucleus sampling");
   const successDiagnostic = success[PROVIDER_DIAGNOSTIC];

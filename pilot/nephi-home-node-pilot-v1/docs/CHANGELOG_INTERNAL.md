@@ -300,3 +300,7 @@
 ## 2026-08-06 Minimum-variance test-only Planner sampling
 
 - Set the real OpenAI test-only Planner to `temperature: 0` without `top_p`, retaining the existing model, prompt, strict schema, bounded retries, timeouts, and fail-closed behavior.
+
+## 2026-08-06 Planner sampling rollback
+
+- Removed the explicit `temperature: 0` override after the complete deployed matrix introduced three prior-PASS Planner regressions; retained the full artifact evidence and moved the active repair boundary back to deterministic source-evidenced compiler normalization.

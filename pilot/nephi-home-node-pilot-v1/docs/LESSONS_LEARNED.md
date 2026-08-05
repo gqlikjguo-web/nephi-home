@@ -284,3 +284,5 @@ Normalize only the narrow contradiction in which the turn is explicitly new, a s
 Structured Outputs guarantees the JSON shape, not that repeated classifications choose the same valid capability fields. When identical inputs alternate between price/policy or amenity/policy despite an explicit prompt, adding more case vocabulary downstream hides the provider-level cause.
 
 Use the provider's supported minimum-variance sampling setting without combining sampling controls, then keep the full deployed matrix as the semantic authority. Lower variance reduces drift; it does not authorize bypassing catalog grounding, readiness, safety, or regression checks.
+
+The complete deployment disproved the first recommendation for this runtime: `temperature: 0` still produced incompatible schema-valid capabilities and regressed three prior PASS cases. Sampling controls are not an acceptable correctness boundary here. Treat Planner output as untrusted semantic input and repair only contradictions that deterministic current-source evidence can prove.
