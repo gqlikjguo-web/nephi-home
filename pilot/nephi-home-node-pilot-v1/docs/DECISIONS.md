@@ -361,3 +361,11 @@
 **Reason:** Real OpenAI classified a full-width question mark as a new request whose unknown task was structurally invalid. Structural validation then produced a customer-visible handoff even though the source contained no substantive language.
 
 **Constraint:** The rule runs after OpenAI and decides no hospitality intent or fact. Any source containing a Unicode letter or number remains Planner-controlled. The normalized contract cannot execute a resolver, mutate a request cycle, create a review, or produce a reply.
+
+## D-037 -- Test-only Planner attempts use a bounded 30-second timeout
+
+**Decision:** The live test-only OpenAI Planner allows 30 seconds per provider attempt. A Planner round remains capped at two attempts with a finite deadline and the existing bounded retry delay.
+
+**Reason:** Deployed run `31008310498` recorded five OpenAI attempts that reached the exact 15-second client boundary: both attempts for `rg-009`, both attempts for turn 1 of `rgs-020`, and the first attempt for `rg-028`. No response body or provider request ID was available before those local aborts, while `rg-028` succeeded on its second request.
+
+**Constraint:** Only timeout, network, rate-limit, and provider-5xx failures may reach attempt two. Invalid requests, schema failures, parsing failures, structured-output failures, and non-429 4xx responses remain single-attempt fail-closed outcomes. This change does not alter Planner prompts, semantic compilation, formal facts, or FinalResponse behavior.

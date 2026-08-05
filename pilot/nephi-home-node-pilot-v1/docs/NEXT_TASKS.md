@@ -60,3 +60,9 @@
 1. Reproduce the deployed `rg-049` shape in which a pure punctuation source produced an invalid unknown candidate and `planner_schema_invalid` handoff.
 2. After OpenAI, normalize punctuation/symbol-only source events to one valid unknown no-reply contract using Unicode categories; discard unsupported task, stay, relation, and state claims.
 3. Prove that letters or numbers remain Planner-controlled, rerun prior acknowledgement/no-reply and multi-cycle PASS cases, then deploy the complete matrix without per-case retries.
+
+## 2026-08-05 bounded OpenAI Planner timeout
+
+1. Preserve the existing maximum of two provider attempts and the existing timeout/network/rate-limit/provider-5xx retry categories.
+2. Raise only the live test-only Planner attempt timeout from 15 to 30 seconds, retaining safe per-attempt diagnostics and a finite round deadline.
+3. Deploy and require `rg-009` plus turn 1 of `rgs-020` to complete the real OpenAI semantic path, while rerunning every prior PASS case and the complete matrix without case retries.

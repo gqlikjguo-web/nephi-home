@@ -242,3 +242,9 @@ Normalize only the stateless duplicate group and retain a negative test proving 
 A no-reply rule placed only after structural validation cannot protect punctuation-only input when OpenAI returns an invalid task shape. The validator fails first and routes to a generic handoff.
 
 Use a Unicode-category rule after OpenAI but before structural validation to create the smallest evidence-bound unknown contract. Discard all unsupported semantic and state fields, and retain a negative control proving that any letters or numbers stay under Planner authority.
+
+## 2026-08-05 -- A client timeout boundary can masquerade as semantic instability
+
+When multiple real OpenAI attempts end at the exact configured duration with no response body or provider request ID, the earliest failure is the client abort boundary rather than schema validation or the contract compiler.
+
+Keep retries finite and category-gated, but validate the per-attempt budget against deployed latency. A larger bounded attempt window is safer than adding semantic fallback behavior for requests that OpenAI never completed.

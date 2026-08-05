@@ -270,3 +270,7 @@
 ## 2026-08-05 Pure punctuation no-reply normalization
 
 - Added an after-OpenAI Unicode punctuation/symbol contract normalization so malformed non-substantive Planner candidates cannot enter customer-visible handoff.
+
+## 2026-08-05 Bounded test-only Planner timeout
+
+- Raised the test-only OpenAI Planner's per-attempt timeout from 15 to 30 seconds while retaining two attempts, category-gated retries, safe diagnostics, and a finite round deadline.

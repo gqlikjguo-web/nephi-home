@@ -8,6 +8,7 @@ const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic
 const RETRYABLE_ERROR_CATEGORIES = new Set(["timeout", "network", "rate_limit", "provider_5xx"]);
 const ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const MAX_PROVIDER_ATTEMPTS = 2;
+const DEFAULT_PROVIDER_TIMEOUT_MS = 30000;
 const DEFAULT_RETRY_DELAY_MS = 750;
 const MAX_RETRY_DELAY_MS = 1000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -196,7 +197,7 @@ function annotateProviderSuccess(output, firstAttemptErrorCategory, providerAtte
 }
 
 class TestOnlyOpenAiConversationPlanner {
-  constructor({ apiKey, model, fetchImpl = globalThis.fetch, timeoutMs = 15000, roundTimeoutMs, retryDelayMs = DEFAULT_RETRY_DELAY_MS, waitImpl = waitForRetry, nowMs = Date.now, requestIdFactory = crypto.randomUUID }) {
+  constructor({ apiKey, model, fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS, roundTimeoutMs, retryDelayMs = DEFAULT_RETRY_DELAY_MS, waitImpl = waitForRetry, nowMs = Date.now, requestIdFactory = crypto.randomUUID }) {
     if (!apiKey || !model) throw plannerFailure({ code: "planner_configuration_error", category: "unknown", model, providerAttemptCount: 0 });
     this.apiKey = apiKey;
     this.model = model;
@@ -315,6 +316,6 @@ class TestOnlyOpenAiConversationPlanner {
     throw plannerFailure({ code: "planner_unknown_error", category: "unknown", model: this.model });
   }
 }
-function createTestOnlyOpenAiConversationPlannerFromEnv({ env = process.env, fetchImpl = globalThis.fetch, timeoutMs = 15000 } = {}) { const apiKey = String(env.OPENAI_TEST_API_KEY || "").trim(), model = String(env.OPENAI_TEST_MODEL || "").trim(); return apiKey && model ? new TestOnlyOpenAiConversationPlanner({ apiKey, model, fetchImpl, timeoutMs }) : null; }
+function createTestOnlyOpenAiConversationPlannerFromEnv({ env = process.env, fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS } = {}) { const apiKey = String(env.OPENAI_TEST_API_KEY || "").trim(), model = String(env.OPENAI_TEST_MODEL || "").trim(); return apiKey && model ? new TestOnlyOpenAiConversationPlanner({ apiKey, model, fetchImpl, timeoutMs }) : null; }
 
 module.exports = { TestOnlyOpenAiConversationPlanner, createTestOnlyOpenAiConversationPlannerFromEnv, instructions };

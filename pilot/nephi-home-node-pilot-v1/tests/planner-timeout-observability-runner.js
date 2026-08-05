@@ -2,7 +2,8 @@
 
 const assert = require("node:assert/strict");
 const {
-  TestOnlyOpenAiConversationPlanner
+  TestOnlyOpenAiConversationPlanner,
+  createTestOnlyOpenAiConversationPlannerFromEnv
 } = require("../lib/providers/test-only-openai-conversation-planner");
 
 const PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic");
@@ -115,6 +116,24 @@ function assertSafeAttempt(attempt) {
 }
 
 async function main() {
+  const defaultTimeoutSuccess = await new TestOnlyOpenAiConversationPlanner({
+    apiKey: sensitive.apiKey,
+    model: "gpt-4.1-mini",
+    fetchImpl: async () => successResponse("req_provider_default_timeout")
+  }).classify(classifyInput());
+  assert.equal(defaultTimeoutSuccess[PROVIDER_DIAGNOSTIC].providerAttempts[0].timeoutMs, 30000,
+    "the live Planner default must allow a bounded 30-second provider attempt");
+
+  const envDefaultTimeoutSuccess = await createTestOnlyOpenAiConversationPlannerFromEnv({
+    env: {
+      OPENAI_TEST_API_KEY: sensitive.apiKey,
+      OPENAI_TEST_MODEL: "gpt-4.1-mini"
+    },
+    fetchImpl: async () => successResponse("req_provider_env_default_timeout")
+  }).classify(classifyInput());
+  assert.equal(envDefaultTimeoutSuccess[PROVIDER_DIAGNOSTIC].providerAttempts[0].timeoutMs, 30000,
+    "the live Planner environment factory must retain the bounded 30-second default");
+
   const sentHeaders = [];
   const success = await planner(async (_url, options) => {
     sentHeaders.push(options.headers);

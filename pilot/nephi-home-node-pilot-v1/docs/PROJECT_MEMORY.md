@@ -80,3 +80,11 @@
 - `rg-036` changed from FAIL to PASS and retained three tasks, but this OpenAI sample used three unique task IDs. It proves no deployed regression, not a second real duplicate-ID observation; the exact prior duplicate shape remains covered by deterministic RED/GREEN.
 - `rg-001`, `rgs-008`, and the first turns of `rgs-020` changed to PASS through different Planner outputs. `rg-049` regressed from PASS to FAIL because pure punctuation produced a structurally invalid unknown task and fell into `planner_schema_invalid`; this is the next active isolated repair.
 - `rgs-018` newly failed through Planner and relation drift, while `rg-013`, `rg-028`, `rg-038`, `rg-039`, `rg-051`, `rgs-007`, `rgs-019`, and the second turn of `rgs-020` remain unresolved roots.
+
+## 2026-08-05 deployed acceptance run 31008310498
+
+- Commit `6950b5aa5d195ed1e053c3e6b651d51c8599454f` passed the complete verify job; Render health reported HTTP 200, `ready`, `testOnly=true`, and that exact commit.
+- The complete real OpenAI + PostgreSQL matrix remained 63 PASS, 10 FAIL, and 4 non-executable cases. Artifact `8931837955` has digest `sha256:ef10e756beca7543109032e56af3f3804e791b1cedff6df45cd777a0afccf1f3`.
+- `rg-049` passed with a real OpenAI response that still classified `？` as a substantive malformed unknown request; the compiler normalized it to an evidence-bound unknown no-reply contract, produced `no_reply_gate_hit`, executed no resolver, and emitted an empty no-reply FinalResponse.
+- `rg-028` and `rgs-018` also returned to PASS through different Planner outputs. `rg-001`, `rg-009`, and `rg-032` regressed through Planner drift or provider timeout, so the overall count did not improve.
+- `rg-009` and turn 1 of `rgs-020` each exhausted two OpenAI attempts at the exact configured 15-second boundary. `rg-028` also timed out once at 15 seconds before its second attempt succeeded. The active isolated repair raises only the finite test-only Planner attempt limit to 30 seconds while retaining two attempts and the existing retry categories.
