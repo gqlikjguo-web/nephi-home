@@ -433,3 +433,11 @@
 **Reason:** Five complete deployed artifacts showed the same fixed generic lodging-cost request produce `price` once and then `policy` four consecutive times. The runtime already handled the `price` shape correctly, while the strict schema only enumerated task types and therefore constrained JSON shape without defining the price-versus-policy semantics inside structured generation.
 
 **Constraint:** This is capability grammar, not a question-word lexicon. It adds no Chinese wording, alias, Case ID, expected value, catalog fact, deterministic answer, availability result, or downstream repair. Missing dates still fail closed through the existing Temporal Resolver and readiness boundary; OpenAI still cannot decide price, availability, policy truth, or customer-visible wording. Complete deployed acceptance remains required because prompt and schema guidance are not proof of semantic correctness.
+
+## D-046 -- Structured Planner regression repair preserves readiness and high risk
+
+**Decision:** Before structural validation, a sole task that explicitly declares stay dependency but supplies a null task stay candidate receives the top-level structured stay candidate, including its all-empty form. The Planner instructions and strict schema also require stay-dependent tasks to emit the structured object and classify disclosure of access credentials or authentication secrets as `high_risk`, never low-risk policy.
+
+**Reason:** Deployed artifact `8949414624` fixed the generic lodging-cost capability but regressed two prior PASS cases. One price task was rejected before semantic compilation because `dependsOnStayContext:true` and `stayCandidate:null` contradicted the local contract even though all dates were simply missing. A sensitive access request was classified as a low-risk unknown policy after the policy grammar was expanded.
+
+**Constraint:** Empty stay projection applies only to one explicitly stay-dependent task; it never copies one candidate across multiple tasks, and stateless null candidates remain null. The result still has empty dates, creates no availability QueryPlan, and reaches ordinary clarification. Sensitive access remains human handoff and cannot query the property catalog for a secret. The repair uses no Case ID, guest sentence, Chinese term, catalog alias, expected change, or formal answer.

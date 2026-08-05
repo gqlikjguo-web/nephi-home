@@ -329,6 +329,29 @@ async function main() {
   const normalized = normalizePlannerOutput({ ...valid, tasks: [{ ...valid.tasks[0], detailIntent: "general" }, { ...valid.tasks[0], taskId: "t2", detailIntent: "free_text" }] });
   assert.equal(normalized.tasks.length, 2);
   assert.equal(normalized.tasks[1].detailIntent, "general");
+  const missingPriceStayCandidate = validPlannerOutput();
+  missingPriceStayCandidate.tasks[0] = {
+    ...missingPriceStayCandidate.tasks[0],
+    type: "price",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    entity: { category: "policy", rawText: "lodging rate", canonicalCandidate: "price", confidence: 1 },
+    stayCandidate: null
+  };
+  assert.equal(validatePlannerOutput(missingPriceStayCandidate).ok, false, "a stay-dependent task with a null candidate reproduces the deployed structural rejection");
+  const normalizedMissingPriceStay = normalizePlannerOutput(missingPriceStayCandidate);
+  assert.deepEqual(normalizedMissingPriceStay.tasks[0].stayCandidate, missingPriceStayCandidate.stay, "a sole stay-dependent task must receive the explicit empty top-level candidate before structural validation");
+  assert.equal(validatePlannerOutput(normalizedMissingPriceStay).ok, true, "the controlled single-task repair must restore a valid fail-closed Planner contract");
+  const statelessNullCandidate = normalizePlannerOutput(validPlannerOutput());
+  assert.equal(statelessNullCandidate.tasks[0].stayCandidate, null, "a stateless task must retain its null stay candidate");
+  const multipleMissingPriceStays = validPlannerOutput();
+  multipleMissingPriceStays.tasks = [
+    missingPriceStayCandidate.tasks[0],
+    { ...missingPriceStayCandidate.tasks[0], candidateIndex: 1, taskId: "second-price" }
+  ];
+  const normalizedMultipleMissingPriceStays = normalizePlannerOutput(multipleMissingPriceStays);
+  assert.equal(normalizedMultipleMissingPriceStays.tasks.every((task) => task.stayCandidate === null), true, "an empty top-level stay must not be projected across multiple request candidates");
+  assert.equal(validatePlannerOutput(normalizedMultipleMissingPriceStays).ok, false, "ambiguous multi-task null candidates must remain fail closed");
   const successfulPlannerTrace = formatSafeTestOnlyConversationTrace({
     traceId: "successful-planner-trace",
     propertyId: property.propertyId,

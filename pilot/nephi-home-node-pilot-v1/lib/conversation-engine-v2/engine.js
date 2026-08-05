@@ -131,6 +131,7 @@ function normalizePlannerOutput(plannerOutput, { eventTimestamp, timezone } = {}
   const topLevelDateExpressionPresent = Boolean(stay.dateExpression && stay.dateExpression.rawText);
   if (singleTask && (
     !Object.hasOwn(singleTask, "stayCandidate")
+    || singleTask.dependsOnStayContext === true && singleTask.stayCandidate === null
     || topLevelDateExpressionPresent && !taskDateExpressionPresent
   )) {
     output.tasks[0] = { ...output.tasks[0], stayCandidate: stay };

@@ -19,9 +19,12 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(plannerInstructions, /monetary lodging (?:amount|charge|rate)/i, "planner grammar must define price semantically instead of relying on question wording");
   assert.match(plannerInstructions, /type price.*requestedOutputs price.*dependsOnStayContext true/i, "generic and scoped monetary lodging requests must retain the inventory price contract");
   assert.match(plannerInstructions, /policy.*rules or conditions.*not.*monetary/i, "planner grammar must keep property rules separate from price requests");
+  assert.match(plannerInstructions, /access credentials.*authentication secrets.*type high_risk.*never.*policy/i, "sensitive access disclosure must remain a high-risk handoff capability");
   assert.match(plannerInstructions, /before returning.*verify.*substantive request.*matching task/i, "planner must self-check semantic task coverage before returning structured output");
   assert.match(taskSchema.properties.type.description, /monetary lodging.*price/i, "the strict task schema must carry the shared price-vs-policy grammar into structured generation");
+  assert.match(taskSchema.properties.type.description, /access credentials.*high_risk/i, "the strict task schema must preserve sensitive-access routing");
   assert.match(taskSchema.properties.requestedOutputs.description, /price task.*price/i, "the strict task schema must keep price output coupled to a price task");
+  assert.match(taskSchema.properties.stayCandidate.description, /dependsOnStayContext is true.*structured object.*empty candidate fields/i, "stay-dependent tasks must retain an explicit empty candidate when dates are missing");
   assert.match(plannerInstructions, /preserve every stated nights, guest count, and feature even when a date is missing/i);
   assert.match(plannerInstructions, /explicit calendar expression/i);
   assert.match(plannerInstructions, /direct requests for the property's location, address, map, or navigation/i, "planner must recognize direct property location requests");

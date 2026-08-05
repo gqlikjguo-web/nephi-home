@@ -294,3 +294,9 @@ An evidence-bound task source is narrower than the complete guest message and ca
 A strict schema can require a valid task type and requested-output array while still allowing an internally inconsistent semantic choice. Repeated real OpenAI runs classified one generic lodging-cost intent as either inventory price or an unknown property policy, even though both outputs were structurally valid.
 
 Define capability boundaries at generation time in language-independent domain terms and repeat the essential coupling in the schema descriptions the model uses for Structured Outputs. Require a final task-coverage check, but continue to treat the result as untrusted input: this guidance must not add phrase aliases, decide formal truth, bypass readiness, or replace complete deployed regression evidence.
+
+## 2026-08-06 -- Capability grammar must preserve conditional task shape and risk exclusions
+
+A model can choose the correct price type yet fail the local task contract by combining stay dependency with a null candidate when the guest supplied no dates. Rejecting that task before semantic compilation turns a safe missing-date clarification into a generic handoff. Normalize only the sole-task contradiction to the existing empty top-level stay; never project an unscoped stay across multiple tasks.
+
+Broadening a low-risk policy definition can also absorb credential-disclosure requests unless the high-risk exclusion is equally explicit. Define sensitive access as high-risk inside both instructions and schema, then retain registry-enforced human handoff. Complete deployed comparison is essential because fixing one synonym while regressing another capability or safety route is not progress.

@@ -120,3 +120,9 @@
 1. Run protected acceptance, Codex integrity, Constitution, runtime uniqueness, canonical golden, and `git diff --check`; then create one root-cause commit for the shared price-versus-policy generation contract and non-force push it to `test-only/node-pilot-integration`.
 2. Require exact-commit GitHub Actions success, Render `ready` with `testOnly=true`, a verified private artifact digest, and the complete 77-case / 90-turn real OpenAI + PostgreSQL matrix. `rgs-007` must expose canonical `price`, retain missing-date clarification, create no premature availability query, and return no invented amount; compare every prior PASS case and turn against artifact `8948576835`.
 3. If Release Gate remains unmet, continue from the new artifact's earliest failure layer. Keep `rg-038`'s unresolved dates and zero availability QueryPlan, `rg-039`'s past-date rejection, and `rgs-019` / `rgs-020` scope conflicts visible; do not begin real LINE acceptance early.
+
+## 2026-08-06 structured Planner regression repair
+
+1. Run all explicit safety gates, create one regression-repair commit, and non-force push it. Do not retain artifact `8949414624` as progress while `rg-051` or `rgs-009` is regressed.
+2. Require exact-SHA GitHub verify, Render `ready` with `testOnly=true`, verified private artifact digest, and the complete 77-case / 90-turn matrix. `rgs-007` and `rgs-009` must both be canonical price clarifications with zero premature QueryPlans, while `rg-051` must remain a high-risk human handoff. Compare every prior PASS turn against artifact `8948576835`.
+3. If no prior PASS regresses and Release Gate remains unmet, continue from the newest earliest failure layer among `rg-038`, `rg-039`, `rgs-019`, and `rgs-020`; retain all temporal and past-date safety and do not enter real LINE acceptance early.

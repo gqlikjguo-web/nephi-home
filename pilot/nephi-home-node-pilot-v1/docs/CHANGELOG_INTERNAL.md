@@ -312,3 +312,7 @@
 ## 2026-08-06 Structured Planner price grammar
 
 - Defined the shared price-versus-policy capability contract in both real OpenAI Planner instructions and strict task schema descriptions, including output-pair and task-coverage self-checks without adding guest-word aliases or downstream facts.
+
+## 2026-08-06 Structured Planner regression closure
+
+- Preserved a sole stay-dependent task with an empty structured stay candidate before validation, while keeping multi-task projection fail closed, and restored sensitive access disclosure to the high-risk human-handoff capability.
