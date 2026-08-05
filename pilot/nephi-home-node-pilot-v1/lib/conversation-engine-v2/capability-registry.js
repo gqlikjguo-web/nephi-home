@@ -54,7 +54,7 @@ const REGISTRY_BLUEPRINT = {
   policy: {
     capability: "policy",
     acceptedCandidateTypes: ["policy"],
-    acceptedEntityCategories: ["policy", "payment", "cancellation", "check_in", "check_out"],
+    acceptedEntityCategories: ["policy", "payment", "cancellation", "check_in", "check_out", "amenity", "activity", "room_feature"],
     stayDependency: false,
     requiredFields: [],
     resolverId: "property_catalog",
@@ -64,7 +64,7 @@ const REGISTRY_BLUEPRINT = {
   property_fact: {
     capability: "property_fact",
     acceptedCandidateTypes: ["property_fact"],
-    acceptedEntityCategories: ["transport", "check_in", "check_out", "other"],
+    acceptedEntityCategories: ["transport", "check_in", "check_out", "other", "amenity", "activity", "room_feature", "policy", "payment", "cancellation"],
     stayDependency: false,
     requiredFields: [],
     resolverId: "property_catalog",

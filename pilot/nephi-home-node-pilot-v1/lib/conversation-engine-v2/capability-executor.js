@@ -38,6 +38,19 @@ function catalogFactByCanonicalId(catalog, canonicalIds) {
     .find((item) => wanted.has(String(item.canonicalId || "").toLocaleLowerCase("en-US")) && item.status !== "unknown") || null;
 }
 
+function baseAnswerProvidesControlledDetail(entity, detailIntent) {
+  const answer = String(entity && entity.answer || "");
+  if (!answer) return false;
+  const intent = normalizeDetailIntent(detailIntent);
+  if (["time", "start_time", "end_time"].includes(intent)) {
+    return /(?:^|[^\d])(?:[01]?\d|2[0-3]):[0-5]\d(?:[^\d]|$)/u.test(answer);
+  }
+  if (intent === "fee") {
+    return /(?:NT\$|TWD|USD|JPY|RMB|CNY|\$|¥)\s*\d|\d[\d,]*(?:\.\d+)?\s*(?:TWD|USD|JPY|RMB|CNY|元|圓|塊)/iu.test(answer);
+  }
+  return false;
+}
+
 function executePropertyFactTask({ property, catalog, task, resolved }) {
   if (!resolved || resolved.status !== "resolved") return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "property_fact_unknown", facts: { subject: task.entity && task.entity.rawText || "question" }, review: true };
   const entity = resolved.entity;
@@ -47,6 +60,7 @@ function executePropertyFactTask({ property, catalog, task, resolved }) {
   if (Array.isArray(entity.applicableBundles) && entity.applicableBundles.some((bundle) => bundle.note)) return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", applicableBundles: entity.applicableBundles, source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: true } };
   const detail = catalogFactByCanonicalId(catalog, detailFactCandidates(entity.canonicalId, detailIntent));
   if (detail) return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: detail.status, answer: detail.answer || "", source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: true } };
+  if (baseAnswerProvidesControlledDetail(entity, detailIntent)) return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: true } };
   return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: entity.status, answer: includeBaseAnswer(detailIntent) ? entity.answer || "" : "", source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: false, detailNeedsConfirmation: true } };
 }
 
@@ -136,7 +150,8 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
       if (detailIntent === "general") return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", ...(entity.canonicalId === "location" ? { locationMapUrl: entity.answer || "" } : {}), ...(Array.isArray(entity.applicableBundles) ? { applicableBundles: entity.applicableBundles } : {}), source: "property_catalog", propertyId: property.propertyId, detailIntent }, resolverAttempted: false });
       if (Array.isArray(entity.applicableBundles) && entity.applicableBundles.some((bundle) => bundle.note)) return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", applicableBundles: entity.applicableBundles, source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: true }, resolverAttempted: false });
       const detail = catalogFactByCanonicalId(catalog, detailFactCandidates(entity.canonicalId, detailIntent));
-      return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: (detail || entity).status, answer: detail ? detail.answer || "" : includeBaseAnswer(detailIntent) ? entity.answer || "" : "", source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: Boolean(detail), detailNeedsConfirmation: !detail }, resolverAttempted: false });
+      const baseDetailProvided = baseAnswerProvidesControlledDetail(entity, detailIntent);
+      return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: (detail || entity).status, answer: detail ? detail.answer || "" : baseDetailProvided || includeBaseAnswer(detailIntent) ? entity.answer || "" : "", source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: Boolean(detail) || baseDetailProvided, detailNeedsConfirmation: !detail && !baseDetailProvided }, resolverAttempted: false });
     }
     if (resolverId === "availability_resolver" && queryPlan.capability === "available_dates") {
       if (!stay.searchRange || !stay.searchRange.from || !stay.searchRange.to) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "missing_search_range" });

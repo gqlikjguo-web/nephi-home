@@ -31,7 +31,7 @@ function property(propertyId, label) {
         canonicalId: "bbq",
         category: "policy",
         status: "provided",
-        publicText: `${label} barbecue fact.`,
+        publicText: `${label} barbecue fee is 1,000 TWD.`,
         aliases: ["烤肉"]
       },
       {
@@ -58,7 +58,8 @@ function property(propertyId, label) {
       },
       amenities: []
     },
-    commonAnswers: {}
+    commonAnswers: { bbqRule: `${label} barbecue fee is 1,000 TWD.` },
+    faqs: [{ knowledgeKey: "singing", question: "When can guests sing?", answer: `${label} singing hours are 08:00-22:00.` }]
   };
 }
 
@@ -69,6 +70,7 @@ function task({
   sourceText,
   category,
   canonicalCandidate,
+  detailIntent = "general",
   requestedOutputs = ["answer"],
   dependsOnStayContext = false,
   stayCandidate = null
@@ -78,7 +80,7 @@ function task({
     taskId,
     type,
     sourceText,
-    detailIntent: "general",
+    detailIntent,
     requestedOutputs,
     eligibilityEvidence: { kind: "none", sourceText: "" },
     dependsOnStayContext,
@@ -232,6 +234,54 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.equal(pool.result.taskResults[0].facts.source, "property_catalog");
   assert.equal(pool.result.finalDecision.action, "reply");
 
+  const singingHours = await execute({
+    currentProperty: alpha,
+    message: "singing hours",
+    tasks: [task({
+      taskId: "singing-hours",
+      type: "availability",
+      sourceText: "singing hours",
+      category: "amenity",
+      canonicalCandidate: "singing",
+      detailIntent: "time"
+    })]
+  });
+  assert.deepEqual(canonicalCapabilities(singingHours.diagnostics), ["property_fact"]);
+  assert.match(singingHours.result.replyText, /08:00-22:00/, "a formal FAQ answer containing a controlled time range must be projected instead of falsely reported missing");
+
+  const bbqFee = await execute({
+    currentProperty: alpha,
+    message: "barbecue fee",
+    tasks: [task({
+      taskId: "barbecue-fee",
+      type: "policy",
+      sourceText: "barbecue fee",
+      category: "policy",
+      canonicalCandidate: "bbq",
+      detailIntent: "fee"
+    })]
+  });
+  assert.deepEqual(canonicalCapabilities(bbqFee.diagnostics), ["policy"]);
+  assert.match(bbqFee.result.replyText, /1,000 TWD/, "a formal property rule containing a controlled currency amount must be projected instead of falsely reported missing");
+
+  const noDetailProperty = property("property_no_detail", "NoDetail");
+  noDetailProperty.propertyFacts.find((item) => item.canonicalId === "bbq").publicText = "A separate fee may apply.";
+  noDetailProperty.faqs.find((item) => item.knowledgeKey === "singing").answer = "Singing equipment is available.";
+  const unstructuredFee = await execute({
+    currentProperty: noDetailProperty,
+    message: "barbecue fee",
+    tasks: [task({ taskId: "unstructured-fee", type: "policy", sourceText: "barbecue fee", category: "policy", canonicalCandidate: "bbq", detailIntent: "fee" })]
+  });
+  assert.equal(unstructuredFee.result.taskResults[0].facts.detailNeedsConfirmation, true, "a free-text rule without a controlled currency amount must not be promoted to a fee answer");
+  assert.equal(unstructuredFee.result.taskResults[0].facts.detailProvided, false);
+  const unstructuredTime = await execute({
+    currentProperty: noDetailProperty,
+    message: "singing hours",
+    tasks: [task({ taskId: "unstructured-time", type: "availability", sourceText: "singing hours", category: "amenity", canonicalCandidate: "singing", detailIntent: "time" })]
+  });
+  assert.equal(unstructuredTime.result.taskResults[0].facts.detailNeedsConfirmation, true, "a FAQ answer without a controlled clock time must not be promoted to an hours answer");
+  assert.equal(unstructuredTime.result.taskResults[0].facts.detailProvided, false);
+
   const location = await execute({
     currentProperty: alpha,
     message: "民宿在哪裡？",
@@ -302,7 +352,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.equal(unknown.result.replyText.includes("Alpha barbecue fact."), false);
   assert.equal(unknown.result.replyText.includes("Alpha pool fact."), false);
 
-  console.log(JSON.stringify({ caseCount: 8, passCount: 8, failCount: 0 }));
+  console.log(JSON.stringify({ caseCount: 12, passCount: 12, failCount: 0 }));
   console.log("property fact routing regression: PASS");
 })().catch((error) => {
   console.error(error.stack || error);

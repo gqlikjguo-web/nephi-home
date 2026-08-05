@@ -106,6 +106,12 @@ function resolvedStandalonePropertyFactMatches(definition, task, entity) {
 }
 
 function selectCapabilityDefinition(task, entity) {
+  const semanticDetailDefinition = task.detailIntent !== "general"
+    && ["policy", "property_fact"].includes(task.type)
+    && getCapabilityDefinition(task.type);
+  if (semanticDetailDefinition && definitionMatches(semanticDetailDefinition, task, entity)) {
+    return semanticDetailDefinition;
+  }
   const entitySpecific = entity.canonicalId && getCapabilityDefinition(entity.canonicalId);
   if (entitySpecific && (
     definitionMatches(entitySpecific, task, entity)

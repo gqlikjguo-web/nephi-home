@@ -92,13 +92,17 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
     && grounded.status === "resolved"
     && grounded.entity;
   const resolved = groundedEntity || null;
-  const preferredType = resolved && (resolved.category === "transport"
+  const preferredType = resolved && (resolved.category === "transport" || resolved.sourceKind === "faq"
     ? "property_fact"
+    : ["amenity", "policy", "property_fact"].includes(task.type) && task.detailIntent !== "general"
+      ? task.type
     : resolved.category === "policy"
       ? "policy"
       : "amenity");
   const exactDefinition = resolved && getCapabilityDefinition(resolved.canonicalId);
   if (resolved && exactDefinition
+    && resolved.sourceKind !== "faq"
+    && task.detailIntent === "general"
     && exactDefinition.resolverId === "availability_resolver"
     && exactDefinition.riskLevel === "low"
     && exactDefinition.responseMode === "answer") return {
@@ -115,7 +119,18 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null) {
       canonicalCandidate: null
     }
   };
-  const definition = resolved && (exactDefinition || getCapabilityDefinition(preferredType));
+  const useExactPropertyDefinition = resolved && exactDefinition
+    && resolved.sourceKind !== "faq"
+    && (task.detailIntent === "general" || !["policy", "property_fact"].includes(task.type))
+    && exactDefinition.resolverId === "property_catalog"
+    && exactDefinition.stayDependency === false
+    && exactDefinition.riskLevel === "low"
+    && exactDefinition.responseMode === "answer"
+    && exactDefinition.acceptedCandidateTypes.includes(task.type)
+    && exactDefinition.acceptedEntityCategories.includes(resolved.category);
+  const definition = resolved && (useExactPropertyDefinition
+    ? exactDefinition
+    : getCapabilityDefinition(preferredType));
   if (!resolved || !definition
     || definition.resolverId !== "property_catalog"
     || definition.stayDependency !== false
@@ -152,6 +167,12 @@ function normalizedUngroundedTaskShape(task) {
     : requestedOutputs.size === 1 && requestedOutputs.has("price")
       ? "price"
       : null;
+  if (task.type === "policy"
+    && ["amenity", "activity", "room_feature"].includes(entity.category)
+    && !entity.rawText && entity.canonicalCandidate === null) return {
+    ...task,
+    entity: { ...entity, category: "policy" }
+  };
   if (requestedInventoryType
     && ["availability", "bundle_availability", "room_options"].includes(task.type)
     && ["room", "bundle", "other"].includes(entity.category)) return {

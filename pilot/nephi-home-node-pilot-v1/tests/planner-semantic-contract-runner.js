@@ -143,7 +143,19 @@ function main() {
     rawText: "kitchen"
   }));
   assert.equal(faqFragment.semantic.tasks[0].entity.canonicalCandidate, "shared_cooking", "a unique Planner entity fragment must compile to the property-backed FAQ fact");
-  assert.equal(faqFragment.item.canonicalRequest.capability, "amenity");
+  assert.equal(faqFragment.item.canonicalRequest.capability, "property_fact", "a property-authored FAQ must retain property-fact semantics instead of being flattened into an amenity");
+
+  const amenityFeePolicy = canonical(task({
+    taskId: "pool-fee-policy",
+    type: "policy",
+    category: "amenity",
+    rawText: "pool",
+    canonicalCandidate: "pool",
+    detailIntent: "fee"
+  }));
+  assert.equal(amenityFeePolicy.semantic.tasks[0].type, "policy", "a policy question about an amenity must retain the Planner semantic type");
+  assert.equal(amenityFeePolicy.semantic.tasks[0].entity.category, "amenity");
+  assert.equal(amenityFeePolicy.item.canonicalRequest.capability, "policy");
 
   const policyCandidateWithCrossCategoryFragment = canonical(task({
     taskId: "payment-candidate",
@@ -179,7 +191,7 @@ function main() {
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 16, passCount: 16, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 17, passCount: 17, failCount: 0 }));
 }
 
 main();
