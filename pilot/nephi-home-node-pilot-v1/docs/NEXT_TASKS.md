@@ -66,3 +66,9 @@
 1. Preserve the existing maximum of two provider attempts and the existing timeout/network/rate-limit/provider-5xx retry categories.
 2. Raise only the live test-only Planner attempt timeout from 15 to 30 seconds, retaining safe per-attempt diagnostics and a finite round deadline.
 3. Deploy and require `rg-009` plus turn 1 of `rgs-020` to complete the real OpenAI semantic path, while rerunning every prior PASS case and the complete matrix without case retries.
+
+## 2026-08-05 source-grounded temporal recovery
+
+1. Recover only unique deterministic date ranges or durations from verified task source; allow full-message recovery only for the sole stay-dependent task in the turn.
+2. Require `rg-013` and `rgs-017` to reach the intended controlled temporal state in real OpenAI + PostgreSQL deployment, while rerunning multi-cycle, mixed property-fact, invalid-date, ambiguity, and all prior PASS cases.
+3. Keep `rgs-019` and the first turn of `rgs-020` as visible specification conflicts while their fixture dates are in the past; do not change expected values, formal data, or past-date policy without explicit user approval. Continue next with the earliest deployed layer for `rg-038`, `rg-039`, and `rg-051`.

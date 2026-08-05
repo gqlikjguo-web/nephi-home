@@ -248,3 +248,9 @@ Use a Unicode-category rule after OpenAI but before structural validation to cre
 When multiple real OpenAI attempts end at the exact configured duration with no response body or provider request ID, the earliest failure is the client abort boundary rather than schema validation or the contract compiler.
 
 Keep retries finite and category-gated, but validate the per-attempt budget against deployed latency. A larger bounded attempt window is safer than adding semantic fallback behavior for requests that OpenAI never completed.
+
+## 2026-08-05 -- Temporal repair needs both source grounding and cycle cardinality
+
+OpenAI may correctly understand a date or duration while emitting a normalized span that is not an exact substring of the guest message. Rejecting that span without consulting the deterministic temporal grammar loses a valid task; scanning the entire message for every task instead leaks one room's date into another room's request cycle.
+
+Recover first from the task's verified source. Use the complete current message only for the sole stay-dependent task, preserve ambiguity and past-date failures, and rerun multi-cycle tests whenever shared stay projection changes.

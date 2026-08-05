@@ -142,7 +142,8 @@ function canonicalizeExecutionItem({
   contextSnapshot,
   catalog,
   guestMessage,
-  eventTimestamp
+  eventTimestamp,
+  allowSharedMessageInference = false
 }) {
   const plannerTask = item.task;
   const plannerStay = normalizedTaskStay(plannerTask);
@@ -168,6 +169,8 @@ function canonicalizeExecutionItem({
     sourceEvidenceRefs: evidenceRefs,
     approvedContext,
     allowContextReuse: Boolean(approvedContext),
+    allowSharedMessageInference: plannerTask.dependsOnStayContext === true
+      && allowSharedMessageInference,
     applicableTaskIds: [plannerTask.taskId]
   });
   const candidateEntity = plannerTask.entity;

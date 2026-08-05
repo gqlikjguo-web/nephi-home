@@ -190,6 +190,46 @@ assert.equal(past.resolutionStatus, "unresolved");
 assert.equal(past.checkIn, null);
 assert.equal(past.repairReasonCode, "past_date");
 
+const recoveredLabeledPastRange = resolveCanonicalTemporal({
+  guestMessage: "您好，我想訂房。\n入住日期：2026/07/06\n退房日期：2026/07/07\n請問還可以預訂嗎？",
+  candidateSourceText: "請問還可以預訂嗎？",
+  plannerCandidate: candidate("2026-07-06 至 2026-07-07", "range", "2026-07-06", "2026-07-07", 1),
+  eventTimestamp: Date.parse("2026-08-05T10:00:00+08:00"),
+  timezone: TIMEZONE,
+  defaultNights: 1,
+  allowSharedMessageInference: true,
+  applicableTaskIds: ["availability"]
+});
+assert.equal(recoveredLabeledPastRange.resolutionStatus, "unresolved");
+assert.equal(recoveredLabeledPastRange.expressionType, "date_range");
+assert.equal(recoveredLabeledPastRange.nights, 1);
+assert.equal(recoveredLabeledPastRange.repairReasonCode, "past_date");
+
+const recoveredDurationOnly = resolveCanonicalTemporal({
+  guestMessage: "我們想住兩天怎麼安排",
+  candidateSourceText: "我們想住兩天怎麼安排",
+  plannerCandidate: candidate("兩天", "range", null, null, 2),
+  eventTimestamp: EVENT_TIMESTAMP,
+  timezone: TIMEZONE,
+  applicableTaskIds: ["availability"]
+});
+assert.equal(recoveredDurationOnly.resolutionStatus, "absent");
+assert.equal(recoveredDurationOnly.expressionType, "duration_only");
+assert.equal(recoveredDurationOnly.nights, 2);
+assert.equal(recoveredDurationOnly.repairReasonCode, "planner_temporal_span_recovered");
+
+const ambiguousRecoveredSpan = resolveCanonicalTemporal({
+  guestMessage: "先看8/6，再看8/9",
+  candidateSourceText: "先看8/6，再看8/9",
+  plannerCandidate: candidate("2026-08-06 或 2026-08-09", "range"),
+  eventTimestamp: EVENT_TIMESTAMP,
+  timezone: TIMEZONE,
+  applicableTaskIds: ["availability"]
+});
+assert.equal(ambiguousRecoveredSpan.resolutionStatus, "unresolved");
+assert.equal(ambiguousRecoveredSpan.checkIn, null);
+assert.equal(ambiguousRecoveredSpan.checkOut, null);
+
 const staleConfirmedInputs = {
   stay: {
     checkIn: "2026-08-06",

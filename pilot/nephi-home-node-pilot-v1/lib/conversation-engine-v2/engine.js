@@ -483,13 +483,17 @@ class ConversationEngineV2 {
     this.trace(traceId, "context_execution", { items: executionItems.map((item) => ({ taskId: item.task.taskId, reasonCode: item.transition && item.transition.reasonCode || "", contextTaskId: item.transition && item.transition.contextTask && item.transition.contextTask.taskId || "", slotSources: item.transition && item.transition.slotSources || {} })) });
     const relationsByCandidateIndex = new Map(contextExecution.relations.map((relation) => [relation.candidateIndex, relation]));
     const candidateInputsByCandidateIndex = {};
+    const stayDependentTaskCount = executionItems.filter(
+      (item) => item.task && item.task.dependsOnStayContext === true
+    ).length;
     const canonicalItems = executionItems.map((item) => canonicalizeExecutionItem({
       item,
       relation: relationsByCandidateIndex.get(item.candidateIndex),
       contextSnapshot,
       catalog,
       guestMessage: input.messageText,
-      eventTimestamp: input.eventTimestamp
+      eventTimestamp: input.eventTimestamp,
+      allowSharedMessageInference: stayDependentTaskCount === 1
     }));
     for (const item of canonicalItems) {
       candidateInputsByCandidateIndex[item.candidateIndex] = item.stateInput;

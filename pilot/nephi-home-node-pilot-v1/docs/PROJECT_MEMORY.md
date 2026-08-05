@@ -88,3 +88,11 @@
 - `rg-049` passed with a real OpenAI response that still classified `？` as a substantive malformed unknown request; the compiler normalized it to an evidence-bound unknown no-reply contract, produced `no_reply_gate_hit`, executed no resolver, and emitted an empty no-reply FinalResponse.
 - `rg-028` and `rgs-018` also returned to PASS through different Planner outputs. `rg-001`, `rg-009`, and `rg-032` regressed through Planner drift or provider timeout, so the overall count did not improve.
 - `rg-009` and turn 1 of `rgs-020` each exhausted two OpenAI attempts at the exact configured 15-second boundary. `rg-028` also timed out once at 15 seconds before its second attempt succeeded. The active isolated repair raises only the finite test-only Planner attempt limit to 30 seconds while retaining two attempts and the existing retry categories.
+
+## 2026-08-05 deployed acceptance run 31016215442
+
+- Commit `1f8b19ed403fef19a672a491b96fdc291c301c51` passed the complete GitHub Actions verify job; Render health reported HTTP 200, `ready`, `testOnly=true`, and that exact commit.
+- The complete real OpenAI + PostgreSQL matrix produced 66 PASS, 7 FAIL, and 4 non-executable cases. Artifact `8935106408` has digest `sha256:cc9e31b4d892b7efaa791f5294d42c077df1c022a781dbebd1360545ca5de5b8`.
+- `rg-009` and turn 1 of `rgs-020` completed within the new bounded timeout; no OpenAI attempt timed out. `rg-001`, `rg-032`, and `rgs-007` also returned to PASS, while `rgs-017` regressed through a different duration span.
+- Remaining FAIL cases are `rg-013`, `rg-038`, `rg-039`, `rg-051`, `rgs-017`, `rgs-019`, and `rgs-020`. `rgs-019` and the first turn of `rgs-020` use dates that are now in the past and correctly receive the controlled past-date FinalResponse; their expected room-scope assertions conflict with the current formal date policy and remain unchanged.
+- The active isolated repair targets the Temporal Resolver boundary: recover a unique source-grounded range or duration from malformed Planner spans while preventing whole-message dates from crossing between multiple stay-dependent tasks.

@@ -274,3 +274,8 @@
 ## 2026-08-05 Bounded test-only Planner timeout
 
 - Raised the test-only OpenAI Planner's per-attempt timeout from 15 to 30 seconds while retaining two attempts, category-gated retries, safe diagnostics, and a finite round deadline.
+
+## 2026-08-05 Source-grounded temporal recovery
+
+- Recovered uniquely parseable date ranges and stay durations when OpenAI emitted an absent, synthesized, or unparseable temporal span, while preserving past-date, invalid-range, and ambiguity failures.
+- Limited whole-message temporal projection to the sole stay-dependent task so one candidate's date cannot enter another request cycle; property-fact tasks remain temporally absent.

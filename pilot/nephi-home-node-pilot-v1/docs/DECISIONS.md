@@ -369,3 +369,11 @@
 **Reason:** Deployed run `31008310498` recorded five OpenAI attempts that reached the exact 15-second client boundary: both attempts for `rg-009`, both attempts for turn 1 of `rgs-020`, and the first attempt for `rg-028`. No response body or provider request ID was available before those local aborts, while `rg-028` succeeded on its second request.
 
 **Constraint:** Only timeout, network, rate-limit, and provider-5xx failures may reach attempt two. Invalid requests, schema failures, parsing failures, structured-output failures, and non-429 4xx responses remain single-attempt fail-closed outcomes. This change does not alter Planner prompts, semantic compilation, formal facts, or FinalResponse behavior.
+
+## D-038 -- Temporal recovery is source-grounded and task-isolated
+
+**Decision:** When OpenAI supplies a temporal span that is absent, not present in the source message, or unparseable, Temporal Resolver may recover a uniquely parseable date range or stay duration from the task's verified source. It may inspect the complete current message only when the compiler is processing the sole stay-dependent task in that turn.
+
+**Reason:** Real deployed Planner output preserved the booking task and date semantics but synthesized a normalized date span that was not source-bound, causing `planner_temporal_span_invalid`; another run emitted `兩天` although the deterministic grammar requires the source-bound `住兩天` form. Blindly scanning the whole message for every stay task caused one candidate's date to leak into another request cycle.
+
+**Constraint:** Recovery uses only canonical temporal grammar and current-message evidence. Multiple distinct temporal meanings remain ambiguous, invalid ranges remain invalid, past dates remain `past_date`, property facts receive no stay projection, and multiple stay-dependent tasks cannot borrow an unscoped date from the whole message.

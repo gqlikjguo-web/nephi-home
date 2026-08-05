@@ -283,21 +283,85 @@ function inferTemporalSpanFromMessage(text, eventTimestamp, timezone) {
     const maxEnd = Math.min(message.length, start + 200);
     for (let end = start + 1; end <= maxEnd; end += 1) {
       const rawText = message.slice(start, end);
+      const previous = start > 0 ? message[start - 1] : "";
+      const next = end < message.length ? message[end] : "";
+      if ((/\d/.test(rawText[0]) && /\d/.test(previous))
+        || (/\d/.test(rawText[rawText.length - 1]) && /\d/.test(next))) continue;
       const parsed = parseTemporalGrammarAtBase(rawText, baseParts);
-      if (!parsed.unresolvedReason && parsed.checkIn) candidates.push({ rawText, parsed });
+      if ((!parsed.unresolvedReason || parsed.unresolvedReason === "past_date") && parsed.checkIn) {
+        candidates.push({ rawText, parsed, start, end });
+      }
     }
   }
   if (!candidates.length) return null;
-  const maxLength = Math.max(...candidates.map((candidate) => candidate.rawText.length));
-  const longest = candidates.filter((candidate) => candidate.rawText.length === maxLength);
-  const semanticKeys = new Set(longest.map((candidate) => JSON.stringify({
+  const maximal = candidates.filter((candidate) => !candidates.some((other) => (
+    other !== candidate
+    && other.start <= candidate.start
+    && other.end >= candidate.end
+    && (other.start < candidate.start || other.end > candidate.end)
+  )));
+  const semanticKeys = new Set(maximal.map((candidate) => JSON.stringify({
     checkIn: candidate.parsed.checkIn,
     checkOut: candidate.parsed.checkOut || null,
     nights: candidate.parsed.nights || null,
-    expressionType: candidate.parsed.expressionType
+    expressionType: candidate.parsed.expressionType,
+    unresolvedReason: candidate.parsed.unresolvedReason || ""
   })));
   if (semanticKeys.size !== 1) return { ambiguity: "temporal_expression_ambiguous" };
+  const maxLength = Math.max(...maximal.map((candidate) => candidate.rawText.length));
+  const longest = maximal.filter((candidate) => candidate.rawText.length === maxLength);
   return longest[0];
+}
+
+function inferDurationSpanFromMessage(text) {
+  const message = normalizeText(text);
+  if (!message) return null;
+  const candidates = [];
+  for (let start = 0; start < message.length; start += 1) {
+    const maxEnd = Math.min(message.length, start + 32);
+    for (let end = start + 1; end <= maxEnd; end += 1) {
+      const rawText = message.slice(start, end);
+      const nights = explicitNights(rawText);
+      if (Number.isInteger(nights) && /\p{L}/u.test(rawText) && !expressionBeforeNights(rawText)) {
+        candidates.push({ rawText, nights, expressionType: "duration_only", start, end });
+      }
+    }
+  }
+  if (!candidates.length) return null;
+  const minimal = candidates.filter((candidate) => !candidates.some((other) => (
+    other !== candidate
+    && other.start >= candidate.start
+    && other.end <= candidate.end
+    && (other.start > candidate.start || other.end < candidate.end)
+  )));
+  if (new Set(minimal.map((candidate) => candidate.nights)).size !== 1) {
+    return { ambiguity: "temporal_expression_ambiguous" };
+  }
+  const minLength = Math.min(...minimal.map((candidate) => candidate.rawText.length));
+  const shortest = minimal.filter((candidate) => candidate.rawText.length === minLength);
+  return shortest[0];
+}
+
+function inferGroundedTemporalSpan({ candidateSourceText, guestMessage, eventTimestamp, timezone }) {
+  const normalizedMessage = normalizeText(guestMessage);
+  const normalizedCandidateSource = normalizeText(candidateSourceText);
+  const sources = [];
+  if (normalizedCandidateSource && (!normalizedMessage || normalizedMessage.includes(normalizedCandidateSource))) {
+    sources.push(candidateSourceText);
+  }
+  if (normalizedMessage && !sources.some((source) => normalizeText(source) === normalizedMessage)) {
+    sources.push(guestMessage);
+  }
+  let ambiguity = null;
+  for (const source of sources) {
+    const temporal = inferTemporalSpanFromMessage(source, eventTimestamp, timezone);
+    if (temporal && temporal.rawText) return temporal;
+    if (temporal && temporal.ambiguity) ambiguity = temporal;
+    const duration = inferDurationSpanFromMessage(source);
+    if (duration && duration.rawText) return duration;
+    if (duration && duration.ambiguity) ambiguity = duration;
+  }
+  return ambiguity;
 }
 
 function sourceEvidenceRefs(values) {
@@ -437,20 +501,22 @@ function resolveCanonicalTemporal({
   sourceEvidenceRefs: evidence = [],
   approvedContext = null,
   allowContextReuse = false,
+  allowSharedMessageInference = false,
   applicableTaskIds = []
 } = {}) {
   const expression = plannerCandidate && plannerCandidate.dateExpression || {};
   let rawText = normalizeText(expression.rawText);
   let recoveredPlannerSpan = false;
   const taskIds = [...new Set((Array.isArray(applicableTaskIds) ? applicableTaskIds : []).map(String).filter(Boolean))];
+  const inferGroundedSpan = (allowGuestMessage = allowSharedMessageInference) => inferGroundedTemporalSpan({
+    candidateSourceText,
+    guestMessage: allowGuestMessage ? guestMessage : "",
+    eventTimestamp,
+    timezone
+  });
 
   if (!rawText) {
-    const normalizedMessage = normalizeText(guestMessage);
-    const normalizedCandidateSource = normalizeText(candidateSourceText);
-    const inferenceSource = normalizedCandidateSource && normalizedMessage.includes(normalizedCandidateSource)
-      ? candidateSourceText
-      : "";
-    const inferred = inferTemporalSpanFromMessage(inferenceSource, eventTimestamp, timezone);
+    const inferred = inferGroundedSpan();
     if (inferred && inferred.ambiguity) {
       return withFieldMetadata({
         rawText: "",
@@ -525,21 +591,55 @@ function resolveCanonicalTemporal({
 
   const normalizedMessage = normalizeText(guestMessage);
   if (normalizedMessage && !normalizedMessage.includes(rawText)) {
-    return withFieldMetadata({
-      rawText,
-      expressionType: "ambiguous",
-      checkIn: null,
-      checkOut: null,
-      nights: null,
-      searchRange: null,
-      timezone,
-      resolutionStatus: "unresolved",
-      resolutionSource: "canonical_temporal_grammar",
-      repairReasonCode: "planner_temporal_span_invalid",
-      applicableTaskIds: taskIds,
-      ambiguity: "planner_temporal_span_invalid",
-      originalExpression: rawText
-    }, { sourceEvidenceRefs: evidence });
+    const inferred = inferGroundedSpan();
+    if (inferred && inferred.ambiguity) {
+      return withFieldMetadata({
+        rawText: "",
+        expressionType: "ambiguous",
+        checkIn: null,
+        checkOut: null,
+        nights: null,
+        searchRange: null,
+        timezone,
+        resolutionStatus: "unresolved",
+        resolutionSource: "canonical_temporal_grammar",
+        repairReasonCode: inferred.ambiguity,
+        applicableTaskIds: taskIds,
+        ambiguity: inferred.ambiguity,
+        originalExpression: rawText
+      }, { sourceEvidenceRefs: evidence });
+    }
+    if (inferred && inferred.rawText) {
+      rawText = inferred.rawText;
+      recoveredPlannerSpan = true;
+    } else {
+      return withFieldMetadata({
+        rawText,
+        expressionType: "ambiguous",
+        checkIn: null,
+        checkOut: null,
+        nights: null,
+        searchRange: null,
+        timezone,
+        resolutionStatus: "unresolved",
+        resolutionSource: "canonical_temporal_grammar",
+        repairReasonCode: "planner_temporal_span_invalid",
+        applicableTaskIds: taskIds,
+        ambiguity: "planner_temporal_span_invalid",
+        originalExpression: rawText
+      }, { sourceEvidenceRefs: evidence });
+    }
+  }
+
+  if (!recoveredPlannerSpan) {
+    const initialParsed = parseTemporalGrammar(rawText, eventTimestamp, timezone);
+    if (initialParsed.unresolvedReason === "temporal_expression_unrecognized") {
+      const inferred = inferGroundedSpan(false);
+      if (inferred && inferred.rawText && normalizeText(inferred.rawText) !== rawText) {
+        rawText = inferred.rawText;
+        recoveredPlannerSpan = true;
+      }
+    }
   }
 
   const durationOnly = explicitNights(rawText);
@@ -554,7 +654,7 @@ function resolveCanonicalTemporal({
       timezone,
       resolutionStatus: "absent",
       resolutionSource: "canonical_temporal_grammar",
-      repairReasonCode: "",
+      repairReasonCode: recoveredPlannerSpan ? "planner_temporal_span_recovered" : "",
       applicableTaskIds: taskIds,
       ambiguity: null,
       originalExpression: rawText
