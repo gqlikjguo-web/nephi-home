@@ -48,3 +48,9 @@
 1. Preserve the controlled CanonicalRequest `expressionType` and `repairReasonCode` in the allowlisted deployed safe trace, without exposing Planner text, raw date candidates, or temporal provenance.
 2. Re-run the trace privacy contract, deployed acceptance contract, all local gates, exact-commit Render deployment, and the complete real OpenAI + PostgreSQL matrix.
 3. Expect the projection repair to remove the false `expected_date_range_missing` result where a controlled `past_date/date_range` already exists. Keep any later FinalDecision or parsing failure, especially `rg-013`, visible as a separate root.
+
+## 2026-08-05 duplicate Planner task-ID normalization
+
+1. Normalize repeated IDs only when every task in that duplicate group is a stateless property-catalog task, while preserving type, candidate index, evidence, relation, and task count.
+2. Keep duplicate IDs on availability, price, capacity, and other stateful tasks invalid because they identify request cycles; retain the existing multi-cycle rejection control.
+3. Deploy and require the real `rg-036` shape to retain all three tasks without `planner_schema_invalid`, while rerunning the complete matrix and all prior PASS cases.

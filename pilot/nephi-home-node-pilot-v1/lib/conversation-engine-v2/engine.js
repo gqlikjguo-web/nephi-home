@@ -2,7 +2,7 @@
 
 const crypto = require("node:crypto");
 
-const { validatePlannerOutput, applyPlannerSemanticContract, normalizeEligibilityEvidence, normalizeIgnoredAcknowledgementOutput, discardLegacyPlannerStateControls } = require("./planner-schema");
+const { validatePlannerOutput, applyPlannerSemanticContract, normalizeEligibilityEvidence, normalizeIgnoredAcknowledgementOutput, normalizeDuplicateTaskIds, discardLegacyPlannerStateControls } = require("./planner-schema");
 const { normalizeDetailIntent } = require("./detail-intent");
 const { buildPropertyCatalog } = require("./property-catalog");
 const {
@@ -370,6 +370,7 @@ class ConversationEngineV2 {
     plannerOutput = discardLegacyPlannerStateControls(plannerOutput);
     plannerOutput = normalizePlannerOutput(plannerOutput, { eventTimestamp: input.eventTimestamp, timezone: catalog.timezone });
     plannerOutput = normalizeIgnoredAcknowledgementOutput(plannerOutput, { sourceEvents });
+    plannerOutput = normalizeDuplicateTaskIds(plannerOutput);
     if (!plannerOutput) {
       this.trace(traceId, "validation", { acceptedTasks: [], rejectedTasks: [], rejectionReasons: ["planner_normalization_failed"], finalTasks: [], errorCategory: "local_contract_failure" });
       this.trace(traceId, "fallback", { reasonCode: "planner_normalization_failed", branch: "planner_normalization_guard" });

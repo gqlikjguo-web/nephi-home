@@ -12,6 +12,8 @@ const { DETAIL_INTENTS } = require("./detail-intent");
 const { resolveEntity, mentionedPropertyFacts } = require("./entity-resolver");
 const { getCapabilityDefinition } = require("./capability-registry");
 const { sourceEventMaps, evidenceMatchesSource } = require("./understanding-validator");
+const TASK_ID_REPAIRS = Symbol("plannerTaskIdRepairs");
+const STATELESS_DUPLICATE_TASK_ID_TYPES = new Set(["amenity", "amenity_list", "policy", "property_fact"]);
 const PLANNER_OPERATION_PATHS = new Set([
   "*",
   "stay.dateExpression.rawText",
@@ -277,6 +279,48 @@ function sourceEventsAreUnicodeNonSubstantive(sourceEvents) {
   return messages.length > 0 && messages.every((message) => /^[\p{P}\p{S}\s]+$/u.test(message));
 }
 
+function normalizeDuplicateTaskIds(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tasks)) return value;
+  const taskGroups = new Map();
+  for (const task of value.tasks) {
+    const taskId = task && typeof task.taskId === "string" ? task.taskId.trim() : "";
+    if (!taskId) continue;
+    if (!taskGroups.has(taskId)) taskGroups.set(taskId, []);
+    taskGroups.get(taskId).push(task);
+  }
+  const safelyRepairableTaskIds = new Set([...taskGroups]
+    .filter(([, tasks]) => tasks.length > 1 && tasks.every((task) => STATELESS_DUPLICATE_TASK_ID_TYPES.has(task.type)))
+    .map(([taskId]) => taskId));
+  const reservedTaskIds = new Set(value.tasks
+    .map((task) => task && typeof task.taskId === "string" ? task.taskId.trim() : "")
+    .filter(Boolean));
+  const usedTaskIds = new Set();
+  const repairs = [];
+  const tasks = value.tasks.map((task, index) => {
+    const originalTaskId = task && typeof task.taskId === "string" ? task.taskId.trim() : "";
+    if (!originalTaskId || !usedTaskIds.has(originalTaskId) || !safelyRepairableTaskIds.has(originalTaskId)) {
+      if (originalTaskId) usedTaskIds.add(originalTaskId);
+      return task;
+    }
+    const candidateIndex = Number.isInteger(task.candidateIndex) && task.candidateIndex >= 0
+      ? task.candidateIndex
+      : index;
+    let ordinal = 1;
+    let taskId = "";
+    do {
+      const suffix = `-candidate-${candidateIndex}${ordinal > 1 ? `-${ordinal}` : ""}`;
+      taskId = `${originalTaskId.slice(0, Math.max(1, 80 - suffix.length))}${suffix}`;
+      ordinal += 1;
+    } while (reservedTaskIds.has(taskId) || usedTaskIds.has(taskId));
+    usedTaskIds.add(taskId);
+    repairs.push({ taskId, index, reason: "duplicate_task_id_normalization" });
+    return { ...task, taskId };
+  });
+  const normalized = { ...value, tasks };
+  Object.defineProperty(normalized, TASK_ID_REPAIRS, { value: repairs, enumerable: false });
+  return normalized;
+}
+
 function normalizeIgnoredAcknowledgementOutput(value, { sourceEvents } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)
     || !value.discourse || value.discourse.relation !== "acknowledgement"
@@ -439,8 +483,12 @@ function isolateMergedUnknownCatalogTasks(value, catalog, sourceEvents) {
 
 function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tasks)) return value;
+  const taskIdRepairs = Array.isArray(value[TASK_ID_REPAIRS]) ? value[TASK_ID_REPAIRS] : [];
   value = isolateMergedUnknownCatalogTasks(value, catalog, sourceEvents);
-  const acceptedTasks = [], repairedTasks = value.isolatedTaskIndexes.map((index) => ({ taskId: value.tasks[index].taskId, index, reason: "merged_unknown_catalog_task_isolation" })), rejectedTasks = [], repairedRelations = [];
+  const acceptedTasks = [], repairedTasks = [
+    ...taskIdRepairs,
+    ...value.isolatedTaskIndexes.map((index) => ({ taskId: value.tasks[index].taskId, index, reason: "merged_unknown_catalog_task_isolation" }))
+  ], rejectedTasks = [], repairedRelations = [];
   let contextRelationCandidates = value.contextRelationCandidates;
   let tasks = value.tasks.map((original, index) => {
     let task = { ...original, eligibilityEvidence: normalizeEligibilityEvidence(original && original.eligibilityEvidence), entity: original && original.entity ? { ...original.entity } : original && original.entity };
@@ -587,4 +635,4 @@ function plannerJsonSchema() {
   };
 }
 
-module.exports = { validatePlannerOutput, applyPlannerSemanticContract, plannerJsonSchema, normalizeEligibilityEvidence, normalizeIgnoredAcknowledgementOutput, discardLegacyPlannerStateControls, TASK_TYPES };
+module.exports = { validatePlannerOutput, applyPlannerSemanticContract, plannerJsonSchema, normalizeEligibilityEvidence, normalizeIgnoredAcknowledgementOutput, normalizeDuplicateTaskIds, discardLegacyPlannerStateControls, TASK_TYPES };

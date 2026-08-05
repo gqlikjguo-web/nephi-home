@@ -262,3 +262,7 @@
 ## 2026-08-05 Safe temporal evidence projection
 
 - Preserved bounded Temporal Resolver `expressionType` and `repairReasonCode` fields in the test-only safe CanonicalRequest trace so deployed acceptance can distinguish a controlled past-date rejection from missing date understanding.
+
+## 2026-08-05 Stateless duplicate task-ID normalization
+
+- Added deterministic duplicate-ID repair for stateless property-catalog Planner tasks so one reused label cannot erase other valid tasks; stateful task-ID collisions remain rejected.

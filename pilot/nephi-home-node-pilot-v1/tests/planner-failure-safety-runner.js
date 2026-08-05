@@ -54,6 +54,46 @@ async function engineResult(output) {
   assert.equal(logs.at(-1).decisionReason, "planner_empty_output");
 }
 
+async function duplicateTaskIdsContinueThroughEngine() {
+  const output = validPlannerOutput();
+  const baseTask = output.tasks[0];
+  output.tasks = [
+    baseTask,
+    { ...baseTask, candidateIndex: 1, taskId: "policy" },
+    { ...baseTask, candidateIndex: 2, taskId: "policy" }
+  ];
+  output.contextRelationCandidates = output.tasks.map((task) => ({
+    candidateIndex: task.candidateIndex,
+    kind: "new_request",
+    candidateRequestCycleRefs: [],
+    evidenceRefs: [{ eventId: "test-event", messageRef: "", startOffset: 0, endOffset: 4, quote: "test" }]
+  }));
+  const diagnostics = [];
+  const engine = new ConversationEngineV2({
+    planner: { classify: async () => output },
+    persistence: plannerPersistence(),
+    getProperty: () => property,
+    availabilityResolver: () => ({ availabilityReliable: true, rooms: [] }),
+    listPriceOverrides: () => [],
+    onDiagnostic: (entry) => diagnostics.push(entry)
+  });
+  const result = await engine.process({
+    customerId: property.propertyId,
+    channelId: "test",
+    lineUserId: "guest",
+    eventId: "test-event",
+    eventTimestamp: 1,
+    messageText: "test"
+  });
+  assert.equal(result.finalDecision.action, "reply", "duplicate task IDs must not force the whole request into Planner fallback");
+  assert.notEqual(result.replyText, SAFE_HANDOFF_TEXT);
+  assert.equal(result.taskResults.length, 3, "every otherwise valid task must continue to execution");
+  assert.equal(new Set(result.taskResults.map((item) => item.taskId)).size, 3, "engine execution must receive unique normalized task IDs");
+  const semantic = diagnostics.find((entry) => entry.stage === "semantic_contract");
+  assert.equal(semantic.validationPassed, true);
+  assert.equal(semantic.semanticValidation.repairedTasks.filter((item) => item.reason === "duplicate_task_id_normalization").length, 1);
+}
+
 function invalidRelationOutput() {
   return {
     ...validPlannerOutput(),
@@ -277,6 +317,7 @@ async function plannerContractFailureDoesNotRetry() {
 
 async function main() {
   for (const output of [null, undefined, "not-an-object", { schemaVersion: 2 }]) await engineResult(output);
+  await duplicateTaskIdsContinueThroughEngine();
 
   const strict = plannerJsonSchema().properties.tasks.items;
   assert.ok(strict.required.includes("detailIntent"));

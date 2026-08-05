@@ -64,3 +64,11 @@
 - `rgs-010` and `rgs-015` passed both attempts with formal `policy:pets` facts. Attempt 2 observed a real amenity-shaped `rgs-010` Planner task grounded to the policy capability, but its detail intent was `general`; the earlier non-general malformed shape remains covered by the deployed-motivated deterministic regression tests rather than a post-fix identical OpenAI sample.
 - Cross-attempt changes (`rg-028`, `rg-037`, `rg-051`, and `rgs-017`) came from different Planner outputs or timeout behavior; no trace shows the catalog-category guard rewriting an otherwise compatible formal task into a failure.
 - `rg-003` and `rg-006` repeatedly produced controlled `past_date` FinalResponses, but the safe deployed CanonicalRequest trace omitted the deterministic `expressionType` and `repairReasonCode`. That evidence-projection defect is the active isolated repair; `rg-013` may retain a later FinalDecision defect after the projection is restored.
+
+## 2026-08-05 deployed acceptance run 30994404471
+
+- Commit `23d102fe3c666c72c0664e1165ea8c86f64d6bd7` passed the complete Linux verify job, including the exact `npm test`; Render health reported that commit with `testOnly=true`.
+- The complete real OpenAI + PostgreSQL matrix produced 62 PASS, 11 FAIL, and 4 non-executable cases. Artifact `8925912656` has digest `sha256:33011236a8ed006da3ddf13f2182709394b8a4a23c99fab3cee53224ca0616d5`.
+- `rg-003` and `rg-006` changed from false `expected_date_range_missing` failures to PASS because the safe CanonicalRequest trace now proves `past_date/date_range`; `rg-013` remained a real separate temporal-parse failure in this sample. `rg-032` and `rgs-017` also changed to PASS through different real Planner outputs.
+- `rg-036` and `rgs-008` changed from PASS to FAIL through Planner drift. `rg-036` exposed the next contract root: two otherwise valid policy tasks shared task ID `policy`, and structural validation discarded all three tasks as `planner_schema_invalid`.
+- The active repair normalizes duplicate task IDs only within stateless property-catalog task groups. Stateful availability, pricing, and capacity duplicates remain fail-closed because task IDs become request-cycle identities.

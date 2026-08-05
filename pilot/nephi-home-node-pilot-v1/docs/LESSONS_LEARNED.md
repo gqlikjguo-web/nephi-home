@@ -230,3 +230,9 @@ For an exact property-scoped catalog resolution, the compiler may retain the Pla
 A privacy-safe trace can keep dates redacted and still become semantically incomplete. The deployed Temporal Resolver correctly classified past date ranges, while CanonicalRequest trace projection retained only `unresolved` and null dates; acceptance could no longer distinguish deliberate rejection from parser loss.
 
 When an acceptance rule permits a controlled unresolved state, its bounded machine reason and expression class must survive the safe projection. Preserve only deterministic enum-like fields, keep source text and provenance excluded, and test both the required metadata and the privacy boundary.
+
+## 2026-08-05 -- Task-ID repairability depends on downstream authority
+
+A duplicate Planner task ID is not always the same defect. Stateless property-catalog tasks can be renamed deterministically from their candidate indexes without changing their meaning, but stateful availability or pricing IDs can become request-cycle identities.
+
+Normalize only the stateless duplicate group and retain a negative test proving that stateful duplicates still fail closed. A broad duplicate-ID repair can silently turn a validation rejection into unauthorized conversation state.

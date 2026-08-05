@@ -345,3 +345,11 @@
 **Reason:** Real deployed cases correctly rejected past date ranges, but the safe trace formatter discarded the two fields that distinguish a recognized past range from a missing date. The acceptance contract therefore reported `expected_date_range_missing` even when FinalDecision and FinalResponse had already enforced the past-date policy.
 
 **Constraint:** This changes evidence projection only. Raw guest text, Planner date candidates, temporal provenance, source evidence, identities, and secrets remain excluded; the projected strings are bounded and cannot become Resolver, decision, response, or data authority.
+
+## D-035 -- Duplicate task IDs are repaired only for stateless catalog tasks
+
+**Decision:** When all Planner tasks sharing an ID are stateless property-catalog tasks, the contract compiler keeps the first ID and deterministically gives later duplicates bounded candidate-index suffixes. The repair is recorded in semantic validation.
+
+**Reason:** Real OpenAI produced valid capacity, breakfast-policy, and cleaning-fee tasks but reused `policy` for the latter two. Rejecting the whole Planner output erased every task even though the duplicate catalog-task IDs were safely distinguishable by candidate index.
+
+**Constraint:** Availability, pricing, capacity, booking, human-help, high-risk, and unknown task-ID duplicates are not repaired. Their IDs can become state or request-cycle authority and therefore remain fail-closed. No task content, relation, evidence, capability, or catalog fact is inferred by this normalization.

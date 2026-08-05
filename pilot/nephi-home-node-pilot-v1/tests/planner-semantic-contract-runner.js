@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { applyPlannerSemanticContract, plannerJsonSchema, validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
+const { applyPlannerSemanticContract, normalizeDuplicateTaskIds, plannerJsonSchema, validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
 const { canonicalizeExecutionItem } = require("../lib/conversation-engine-v2/canonicalizer");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 
@@ -272,10 +272,29 @@ function main() {
   });
   assert.equal(alreadyRepresented.tasks.length, 2, "an already represented catalog task must never be duplicated during isolation");
 
+  const duplicateTaskIdPlan = plan([
+    task({ taskId: "capacity", type: "capacity", category: "other", rawText: "group size" }),
+    { ...task({ taskId: "policy", type: "policy", category: "policy", rawText: "breakfast" }), candidateIndex: 1 },
+    { ...task({ taskId: "policy", type: "policy", category: "policy", rawText: "cleaning fee", detailIntent: "fee" }), candidateIndex: 2 }
+  ]);
+  assert.deepEqual(validatePlannerOutput(duplicateTaskIdPlan).errors, ["tasks.taskId.duplicate"], "the deployed duplicate-id shape must begin structurally invalid");
+  const normalizedDuplicateTaskIds = normalizeDuplicateTaskIds(duplicateTaskIdPlan);
+  assert.equal(validatePlannerOutput(normalizedDuplicateTaskIds).ok, true, "duplicate Planner task IDs must be safely normalized before one task erases the others");
+  assert.deepEqual(normalizedDuplicateTaskIds.tasks.map((item) => item.type), ["capacity", "policy", "policy"], "task-ID normalization must preserve every substantive task");
+  assert.equal(new Set(normalizedDuplicateTaskIds.tasks.map((item) => item.taskId)).size, 3, "normalized task IDs must be unique");
+  assert.deepEqual(normalizedDuplicateTaskIds.contextRelationCandidates.map((item) => item.candidateIndex), [0, 1, 2], "task-ID normalization must not alter candidate relations");
+  const duplicateTaskIdSemantic = applyPlannerSemanticContract(normalizedDuplicateTaskIds, { catalog });
+  assert.equal(duplicateTaskIdSemantic.semanticValidation.repairedTasks.filter((item) => item.reason === "duplicate_task_id_normalization").length, 1, "the controlled repair must remain visible in semantic validation evidence");
+  const statefulDuplicateTaskIds = plan([
+    { ...task({ taskId: "availability", type: "availability", category: "room", rawText: "room a" }), candidateIndex: 0 },
+    { ...task({ taskId: "availability", type: "availability", category: "room", rawText: "room b" }), candidateIndex: 1 }
+  ]);
+  assert.equal(validatePlannerOutput(normalizeDuplicateTaskIds(statefulDuplicateTaskIds)).ok, false, "stateful duplicate task IDs must remain fail-closed because they become request-cycle identities");
+
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 21, passCount: 21, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 22, passCount: 22, failCount: 0 }));
 }
 
 main();
