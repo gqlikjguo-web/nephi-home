@@ -96,3 +96,9 @@
 1. Commit and non-force push the locally complete relation repair after final diff checks; local targeted tests, complete `npm test`, protected acceptance, Codex integrity, Constitution, runtime uniqueness, and canonical golden have passed.
 2. Require exact-commit Render health, a verified private artifact, and the complete 77-case / 90-turn real OpenAI + PostgreSQL matrix. `rg-014` must recover without changing any valid continuation or multi-cycle relation, and every prior PASS case and turn must be compared against artifact `8944853419`.
 3. Keep `rg-037` and `rgs-020` visible as prior-PASS regressions and treat `rg-028` as an incomplete apparent PASS until the formal 08:00-22:00 answer is actually grounded. Preserve `rg-038`'s null dates and zero QueryPlan, then continue from the next earliest shared failure layer without changing expected values or past-date policy.
+
+## 2026-08-06 minimum-variance Planner sampling
+
+1. Create one root-cause commit for `temperature: 0` plus its request-body RED/GREEN and non-force push it after final diff checks; complete local `npm test` and all explicit safety gates have passed.
+2. Require exact-commit Render health, a verified private artifact, and the complete 77-case / 90-turn real OpenAI + PostgreSQL matrix. Compare every case and turn against artifacts `8945791121`, `8944853419`, and `8943541801`; `rg-032` and `rgs-007` must not be hidden by net score.
+3. Lower sampling variance is not a Release Gate by itself. Require the formal 08:00-22:00 `rg-028` answer, preserve `rg-038`'s null dates and zero QueryPlan, keep `rgs-020` and all past-date conflicts visible, and continue with deterministic shared compiler boundaries if any capability drift remains.

@@ -401,3 +401,11 @@
 **Reason:** Deployed run `31040750260` produced three independent tasks from one new guest message but labeled the latter two as supplements without a cycle reference. The strict context validator correctly rejected those impossible relations and discarded an otherwise grounded infant-supplies task, turning the complete turn into a generic handoff.
 
 **Constraint:** The repair requires source evidence to match the current event and does not apply to `continue`, `modify`, acknowledgement, `modify_existing`, `end_existing`, a relation carrying any request-cycle reference, or unverified evidence. It does not invent or select a prior cycle and does not change task capability, entity, temporal state, facts, or readiness.
+
+## D-042 -- Test-only Planner uses minimum-variance supported sampling
+
+**Decision:** The real OpenAI test-only Planner sends `temperature: 0` on every Responses API request and does not set `top_p`.
+
+**Reason:** Repeated complete deployed runs sent identical fixed guest inputs and the same strict schema to the same model, yet alternated among incompatible price, policy, amenity, room, and bundle task shapes. The existing prompt already explicitly distinguishes these capabilities. The official Responses API defines lower temperature as more focused and deterministic, and GPT-4.1 mini supports both Responses and Structured Outputs.
+
+**Constraint:** This does not change the model, prompt, schema, property catalog, formal data, retry count, retry categories, timeout, expected results, or downstream safety gates. Provider failures still follow the existing bounded retry and fail-closed path; lower variance is not treated as proof of semantic correctness, so every deployment still runs the complete real acceptance matrix.

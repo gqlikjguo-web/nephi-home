@@ -135,14 +135,20 @@ async function main() {
     "the live Planner environment factory must retain the bounded 30-second default");
 
   const sentHeaders = [];
+  const sentBodies = [];
   const success = await planner(async (_url, options) => {
     sentHeaders.push(options.headers);
+    sentBodies.push(JSON.parse(options.body));
     return successResponse("req_provider_success");
   }).classify(classifyInput());
 
   assert.equal(sentHeaders.length, 1);
   assert.match(sentHeaders[0]["X-Client-Request-Id"], UUID_PATTERN,
     "each provider attempt must send an independent X-Client-Request-Id");
+  assert.equal(sentBodies[0].temperature, 0,
+    "the production Planner must use the lowest-variance supported sampling mode");
+  assert.equal(Object.hasOwn(sentBodies[0], "top_p"), false,
+    "the Planner must not combine temperature with nucleus sampling");
   const successDiagnostic = success[PROVIDER_DIAGNOSTIC];
   assert.ok(successDiagnostic, "a successful first attempt must retain safe attempt diagnostics");
   assert.equal(successDiagnostic.providerAttemptCount, 1);

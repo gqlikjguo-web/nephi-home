@@ -278,3 +278,9 @@ Use the controlled detail intent before low-risk candidate shape, then require r
 OpenAI can split one new message into several correct tasks while marking later tasks as `supplement_existing` with an empty cycle-reference array. The relation is structurally impossible, and letting strict validation reject the whole turn loses unrelated grounded tasks.
 
 Normalize only the narrow contradiction in which the turn is explicitly new, a sibling establishes a verified current-source new request, and the supplement has no claimed cycle at all. Keep continuations, modifications, explicit references, and unverified evidence fail closed so relation recovery never invents dialogue history.
+
+## 2026-08-06 -- A strict output schema does not make semantic sampling stable
+
+Structured Outputs guarantees the JSON shape, not that repeated classifications choose the same valid capability fields. When identical inputs alternate between price/policy or amenity/policy despite an explicit prompt, adding more case vocabulary downstream hides the provider-level cause.
+
+Use the provider's supported minimum-variance sampling setting without combining sampling controls, then keep the full deployed matrix as the semantic authority. Lower variance reduces drift; it does not authorize bypassing catalog grounding, readiness, safety, or regression checks.

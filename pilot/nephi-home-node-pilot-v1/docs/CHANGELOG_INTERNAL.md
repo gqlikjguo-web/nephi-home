@@ -296,3 +296,7 @@
 ## 2026-08-06 Same-turn relation recovery
 
 - Preserved independently executable tasks when a new-request Planner output mislabeled same-source sibling tasks as unreferenced supplements, while retaining strict cycle references for real continuations and modifications.
+
+## 2026-08-06 Minimum-variance test-only Planner sampling
+
+- Set the real OpenAI test-only Planner to `temperature: 0` without `top_p`, retaining the existing model, prompt, strict schema, bounded retries, timeouts, and fail-closed behavior.
