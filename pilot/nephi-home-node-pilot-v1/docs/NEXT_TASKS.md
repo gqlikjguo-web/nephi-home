@@ -54,3 +54,9 @@
 1. Normalize repeated IDs only when every task in that duplicate group is a stateless property-catalog task, while preserving type, candidate index, evidence, relation, and task count.
 2. Keep duplicate IDs on availability, price, capacity, and other stateful tasks invalid because they identify request cycles; retain the existing multi-cycle rejection control.
 3. Deploy and require the real `rg-036` shape to retain all three tasks without `planner_schema_invalid`, while rerunning the complete matrix and all prior PASS cases.
+
+## 2026-08-05 pure Unicode punctuation normalization
+
+1. Reproduce the deployed `rg-049` shape in which a pure punctuation source produced an invalid unknown candidate and `planner_schema_invalid` handoff.
+2. After OpenAI, normalize punctuation/symbol-only source events to one valid unknown no-reply contract using Unicode categories; discard unsupported task, stay, relation, and state claims.
+3. Prove that letters or numbers remain Planner-controlled, rerun prior acknowledgement/no-reply and multi-cycle PASS cases, then deploy the complete matrix without per-case retries.

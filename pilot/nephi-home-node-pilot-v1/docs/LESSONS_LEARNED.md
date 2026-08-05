@@ -236,3 +236,9 @@ When an acceptance rule permits a controlled unresolved state, its bounded machi
 A duplicate Planner task ID is not always the same defect. Stateless property-catalog tasks can be renamed deterministically from their candidate indexes without changing their meaning, but stateful availability or pricing IDs can become request-cycle identities.
 
 Normalize only the stateless duplicate group and retain a negative test proving that stateful duplicates still fail closed. A broad duplicate-ID repair can silently turn a validation rejection into unauthorized conversation state.
+
+## 2026-08-05 -- Non-substantive input must survive malformed Planner output safely
+
+A no-reply rule placed only after structural validation cannot protect punctuation-only input when OpenAI returns an invalid task shape. The validator fails first and routes to a generic handoff.
+
+Use a Unicode-category rule after OpenAI but before structural validation to create the smallest evidence-bound unknown contract. Discard all unsupported semantic and state fields, and retain a negative control proving that any letters or numbers stay under Planner authority.

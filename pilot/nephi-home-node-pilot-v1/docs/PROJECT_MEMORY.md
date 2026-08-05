@@ -72,3 +72,11 @@
 - `rg-003` and `rg-006` changed from false `expected_date_range_missing` failures to PASS because the safe CanonicalRequest trace now proves `past_date/date_range`; `rg-013` remained a real separate temporal-parse failure in this sample. `rg-032` and `rgs-017` also changed to PASS through different real Planner outputs.
 - `rg-036` and `rgs-008` changed from PASS to FAIL through Planner drift. `rg-036` exposed the next contract root: two otherwise valid policy tasks shared task ID `policy`, and structural validation discarded all three tasks as `planner_schema_invalid`.
 - The active repair normalizes duplicate task IDs only within stateless property-catalog task groups. Stateful availability, pricing, and capacity duplicates remain fail-closed because task IDs become request-cycle identities.
+
+## 2026-08-05 deployed acceptance run 31002137147
+
+- Commit `2c694f82b1294232330432b364f3016f59c7e1de` passed the complete GitHub Actions verify job; Render health reported HTTP 200, `ready`, `testOnly=true`, and that exact commit.
+- The complete real OpenAI + PostgreSQL matrix produced 63 PASS, 10 FAIL, and 4 non-executable cases. Artifact `8929108597` has digest `sha256:6aa6de5deb97132fc08915cb14990a09743ca348e5638231359cc67f06672afc`.
+- `rg-036` changed from FAIL to PASS and retained three tasks, but this OpenAI sample used three unique task IDs. It proves no deployed regression, not a second real duplicate-ID observation; the exact prior duplicate shape remains covered by deterministic RED/GREEN.
+- `rg-001`, `rgs-008`, and the first turns of `rgs-020` changed to PASS through different Planner outputs. `rg-049` regressed from PASS to FAIL because pure punctuation produced a structurally invalid unknown task and fell into `planner_schema_invalid`; this is the next active isolated repair.
+- `rgs-018` newly failed through Planner and relation drift, while `rg-013`, `rg-028`, `rg-038`, `rg-039`, `rg-051`, `rgs-007`, `rgs-019`, and the second turn of `rgs-020` remain unresolved roots.

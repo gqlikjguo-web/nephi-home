@@ -266,3 +266,7 @@
 ## 2026-08-05 Stateless duplicate task-ID normalization
 
 - Added deterministic duplicate-ID repair for stateless property-catalog Planner tasks so one reused label cannot erase other valid tasks; stateful task-ID collisions remain rejected.
+
+## 2026-08-05 Pure punctuation no-reply normalization
+
+- Added an after-OpenAI Unicode punctuation/symbol contract normalization so malformed non-substantive Planner candidates cannot enter customer-visible handoff.

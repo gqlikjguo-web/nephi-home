@@ -353,3 +353,11 @@
 **Reason:** Real OpenAI produced valid capacity, breakfast-policy, and cleaning-fee tasks but reused `policy` for the latter two. Rejecting the whole Planner output erased every task even though the duplicate catalog-task IDs were safely distinguishable by candidate index.
 
 **Constraint:** Availability, pricing, capacity, booking, human-help, high-risk, and unknown task-ID duplicates are not repaired. Their IDs can become state or request-cycle authority and therefore remain fail-closed. No task content, relation, evidence, capability, or catalog fact is inferred by this normalization.
+
+## D-036 -- Pure Unicode punctuation is normalized after OpenAI
+
+**Decision:** When every loaded source message contains only Unicode punctuation, symbols, or whitespace, the contract compiler discards the Planner's unsupported task, stay, relation, and state claims and emits one evidence-bound unknown acknowledgement contract for the no-reply gate.
+
+**Reason:** Real OpenAI classified a full-width question mark as a new request whose unknown task was structurally invalid. Structural validation then produced a customer-visible handoff even though the source contained no substantive language.
+
+**Constraint:** The rule runs after OpenAI and decides no hospitality intent or fact. Any source containing a Unicode letter or number remains Planner-controlled. The normalized contract cannot execute a resolver, mutate a request cycle, create a review, or produce a reply.

@@ -322,6 +322,72 @@ function normalizeDuplicateTaskIds(value) {
 }
 
 function normalizeIgnoredAcknowledgementOutput(value, { sourceEvents } = {}) {
+  if (sourceEventsAreUnicodeNonSubstantive(sourceEvents)) {
+    const sourceEvent = (Array.isArray(sourceEvents) ? sourceEvents : []).find((event) => {
+      const messageText = String(event && event.messageText || "");
+      return messageText.trim() && (String(event && event.eventId || "").trim() || String(event && event.messageRef || "").trim());
+    });
+    if (!sourceEvent) return value;
+    const messageText = String(sourceEvent.messageText || "").slice(0, 500);
+    const firstTask = value && typeof value === "object" && !Array.isArray(value) && Array.isArray(value.tasks)
+      ? value.tasks[0]
+      : null;
+    const discourseConfidence = confidence(value && value.discourse && value.discourse.confidence)
+      ? value.discourse.confidence
+      : 0;
+    const taskConfidence = confidence(firstTask && firstTask.confidence)
+      ? firstTask.confidence
+      : discourseConfidence;
+    const entityConfidence = confidence(firstTask && firstTask.entity && firstTask.entity.confidence)
+      ? firstTask.entity.confidence
+      : taskConfidence;
+    const taskId = text(firstTask && firstTask.taskId, 80) && firstTask.taskId.trim()
+      ? firstTask.taskId.trim()
+      : "non-substantive-1";
+    return {
+      ...(value && typeof value === "object" && !Array.isArray(value) ? value : {}),
+      schemaVersion: 2,
+      discourse: { relation: "acknowledgement", confidence: discourseConfidence },
+      stateOperations: [],
+      stay: {
+        dateExpression: { rawText: "", kind: "none", anchor: "none" },
+        checkInCandidate: null,
+        checkOutCandidate: null,
+        nightsCandidate: null,
+        guestCountCandidate: null
+      },
+      tasks: [{
+        candidateIndex: 0,
+        taskId,
+        type: "unknown",
+        sourceText: messageText,
+        detailIntent: "general",
+        requestedOutputs: ["answer"],
+        eligibilityEvidence: { kind: "none", sourceText: "" },
+        dependsOnStayContext: false,
+        entity: { category: "other", rawText: messageText.slice(0, 200), canonicalCandidate: null, confidence: entityConfidence },
+        stayCandidate: null,
+        confidence: taskConfidence
+      }],
+      contextRelationCandidates: [{
+        candidateIndex: 0,
+        kind: "relation_uncertain",
+        candidateRequestCycleRefs: [],
+        evidenceRefs: [{
+          eventId: String(sourceEvent.eventId || "").trim(),
+          messageRef: String(sourceEvent.messageRef || "").trim(),
+          startOffset: 0,
+          endOffset: messageText.length,
+          quote: messageText
+        }]
+      }],
+      ambiguities: [],
+      missingInformation: [],
+      needsHuman: false,
+      shouldIgnore: true,
+      reason: "non_substantive_unicode"
+    };
+  }
   if (!value || typeof value !== "object" || Array.isArray(value)
     || !value.discourse || value.discourse.relation !== "acknowledgement"
     || value.shouldIgnore !== true || !Array.isArray(value.tasks)) return value;

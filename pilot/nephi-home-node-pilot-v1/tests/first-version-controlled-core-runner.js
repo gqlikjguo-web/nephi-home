@@ -210,6 +210,17 @@ async function main() {
     assert.equal(counters.composer || 0, 0);
   }
 
+  const malformedPunctuationPlan = plan([
+    task({ taskId: "unknown_0", type: "unknown", sourceText: "？", category: "other", rawText: "" })
+  ]);
+  malformedPunctuationPlan.tasks[0].detailIntent = "missing_information";
+  malformedPunctuationPlan.missingInformation = ["Please describe the question."];
+  const malformedPunctuationRuntime = createEngine(malformedPunctuationPlan);
+  const malformedPunctuation = await process(malformedPunctuationRuntime.engine, "malformed-punctuation", "？");
+  assert.equal(malformedPunctuation.shouldReply, false, "pure Unicode punctuation must not become a handoff when the Planner candidate is structurally invalid");
+  assert.equal(malformedPunctuation.noReply, true);
+  assert.equal(malformedPunctuation.finalDecision.reasonCode, "no_reply_gate_hit");
+
   const substantiveUnknownRuntime = createEngine(plan([
     task({ taskId: "substantive-unknown", type: "unknown", sourceText: "Price?", category: "other", rawText: "Price?" })
   ]));
