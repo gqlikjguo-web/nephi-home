@@ -233,3 +233,7 @@
 ## 2026-08-05 Category-scoped fragment grounding
 
 - Prevented broad cross-category fragment matches from overriding exact Planner candidates, while retaining unique fragment repair inside the Planner-declared formal catalog category.
+
+## 2026-08-05 Ignored acknowledgement conflict normalization
+
+- Normalized a generic `human_help` task to a silent unknown only when the same Planner result explicitly marks the turn as an ignorable acknowledgement; substantive human-help requests remain fail-closed.

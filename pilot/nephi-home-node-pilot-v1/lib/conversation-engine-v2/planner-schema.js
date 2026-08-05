@@ -301,6 +301,14 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
       task = { ...task, type: "unknown", detailIntent: "general", requestedOutputs: ["answer"], entity: { ...task.entity, category: "other", canonicalCandidate: null } };
     }
 
+    if (value.discourse && value.discourse.relation === "acknowledgement"
+      && value.shouldIgnore === true
+      && task.type === "human_help"
+      && task.detailIntent === "general") {
+      rejectedTasks.push({ taskId: task.taskId, index, reason: "ignored_acknowledgement_human_help_conflict" });
+      task = { ...task, type: "unknown", requestedOutputs: ["answer"], entity: { ...task.entity, category: "other", canonicalCandidate: null } };
+    }
+
     if (task.detailIntent === "eligibility" && !hasExplicitEligibilityEvidence(task)) {
       task = { ...task, detailIntent: "general", eligibilityEvidence: { kind: "none", sourceText: "" } };
       repairedTasks.push({ taskId: task.taskId, index, reason: "eligibility_evidence_missing" });

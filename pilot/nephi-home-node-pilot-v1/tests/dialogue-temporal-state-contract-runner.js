@@ -250,6 +250,30 @@ async function testAcknowledgementContradictions() {
   assert.deepEqual(invalidEndContext.rejectionReasons, []);
   assert.equal(invalidEndContext.candidates[0].relationKind, "relation_uncertain");
 
+  const contradictoryHumanHelp = await processOne(plannerOutput([
+    task("human_help", "ack-human-help", {
+      sourceText: "Acknowledged",
+      rawText: "Acknowledged",
+      category: "other"
+    })
+  ], {
+    relation: "acknowledgement",
+    shouldIgnore: true,
+    contextRelationKind: "end_existing"
+  }), "Acknowledged", "ack-human-help");
+  assert.equal(contradictoryHumanHelp.result.finalDecision.action, "no_reply", "an ignored acknowledgement must not become a human handoff solely because its generic task type contradicts the Planner dialogue act");
+  const contradictorySemantic = contradictoryHumanHelp.diagnostics.find((item) => item.stage === "semantic_contract");
+  assert.deepEqual(contradictorySemantic.outputTasks.map((item) => item.type), ["unknown"]);
+
+  const substantiveHumanHelp = await processOne(plannerOutput([
+    task("human_help", "explicit-human-help", {
+      sourceText: "Operator assistance is required",
+      rawText: "Operator assistance",
+      category: "other"
+    })
+  ], { relation: "acknowledgement", shouldIgnore: false }), "Operator assistance is required", "explicit-human-help");
+  assert.equal(substantiveHumanHelp.result.finalDecision.action, "handoff", "a substantive human-help task must remain actionable when the Planner did not mark the turn ignorable");
+
   const policy = await processOne(plannerOutput([
     task("policy", "ack-policy", {
       sourceText: "一般社交訊息",
