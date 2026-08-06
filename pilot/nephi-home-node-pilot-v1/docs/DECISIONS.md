@@ -481,3 +481,11 @@
 **Reason:** Rollback artifact `8953248983` resolved the same formal pool subject through a FAQ-shaped raw match and a structured canonical candidate. The FAQ route changed a valid policy-shaped seasonal detail to generic `property_fact`, so CanonicalRequest lost the subject-compatible amenity/policy capability even though the formal subject and property query were correct.
 
 **Constraint:** Reconciliation requires two independently resolved entities with exactly equal canonical IDs and a canonical capability definition that is low-risk, stateless, answerable through `property_catalog`, and accepts the resolved entity category. It excludes room and bundle inventory, adds no subject alias or fact, and cannot create an availability QueryPlan. A conflicting canonical candidate cannot override raw evidence, and a property fact whose canonical ID collides with an inventory capability cannot inherit that stateful resolver.
+
+## D-052 -- Roll back duplicate-source formal reconciliation
+
+**Decision:** Remove the duplicate-source reconciliation experiment and its tests, restoring the runtime and test baseline from `7f9edf2a4ef6c055cf4bda0a67b03b625abfc0de` while retaining its deployed evidence.
+
+**Reason:** Complete artifact `8954260810` had three prior-PASS regressions versus rollback artifact `8953248983` and four versus stable artifact `8950072765`. Although `rg-022` returned PASS, its trace `be8980d3-f5f6-456b-baf6-2486bae35bdf` did not execute `duplicate_source_canonical_authority`; OpenAI directly produced a policy task with no canonical candidate. The repair executed on five other already-PASS cases, so the target result did not prove the experiment and the artifact failed the no-regression gate.
+
+**Constraint:** Do not retain a compiler experiment when its target deployed trace bypasses the repair. Any later solution to this failure layer must be demonstrated by target-trace execution and preserve every prior-PASS turn, not merely improve the aggregate count.

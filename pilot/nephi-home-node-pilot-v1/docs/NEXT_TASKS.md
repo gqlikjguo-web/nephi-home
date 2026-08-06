@@ -150,3 +150,9 @@
 1. Run complete local tests and all safety gates for the same-canonical-ID property-source reconciliation; create one root-cause commit and non-force push it.
 2. Require exact-SHA verify, Render `ready` with `testOnly=true`, verified private artifact digest, and complete 77-case / 90-turn acceptance. The target trace must expose a subject-compatible policy or amenity capability, remain property-catalog-only, and every prior-PASS turn from artifacts `8953248983`, `8951474217`, and `8950072765` must remain PASS.
 3. If stable, continue from the next earliest shared Planner layer among `rg-036`, `rg-038`, `rgs-019`, and `rgs-020`; preserve temporal ambiguity and past-date fail-closed behavior and keep real LINE blocked.
+
+## 2026-08-06 duplicate-source formal reconciliation rollback
+
+1. Verify runtime and tests are byte-equivalent to `7f9edf2a4ef6c055cf4bda0a67b03b625abfc0de`, run the complete local suite and all safety gates, create one rollback commit retaining run `31066678489` evidence, and non-force push it.
+2. Require exact-SHA GitHub verify, Render `ready` with `testOnly=true`, verified private artifact digest, and complete 77-case / 90-turn acceptance. All prior-PASS turns from artifacts `8953248983` and `8950072765` must recover before any new fix is retained.
+3. Continue from the newest rollback artifact's earliest common failure layer. No future repair may count `rg-022` as recovered unless its deployed trace executes the responsible deterministic boundary; preserve temporal ambiguity, past-date, multi-cycle, and real-LINE safety gates.

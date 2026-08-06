@@ -142,7 +142,6 @@ function plan(tasks, sourceEvent, { discourseRelation = "new_request", shouldIgn
 async function execute({ currentProperty, message, tasks, planOptions }) {
   const states = new Map();
   const diagnostics = [];
-  let availabilityQueryCount = 0;
   const persistence = {
     getConversationState: (propertyId, channelId, lineUserId) =>
       states.get(`${propertyId}:${channelId}:${lineUserId}`) || null,
@@ -164,15 +163,12 @@ async function execute({ currentProperty, message, tasks, planOptions }) {
     persistence,
     getProperty: (propertyId) =>
       propertyId === currentProperty.propertyId ? currentProperty : null,
-    availabilityResolver: (query) => {
-      availabilityQueryCount += 1;
-      return {
-        ...query,
-        availabilityReliable: true,
-        rooms: currentProperty.rooms,
-        lineUrl: ""
-      };
-    },
+    availabilityResolver: (query) => ({
+      ...query,
+      availabilityReliable: true,
+      rooms: currentProperty.rooms,
+      lineUrl: ""
+    }),
     availableDatesResolver: () => ({ status: "answered", dates: [] }),
     listPriceOverrides: () => [],
     now: NOW,
@@ -187,7 +183,7 @@ async function execute({ currentProperty, message, tasks, planOptions }) {
     eventTimestamp: EVENT_TIME,
     messageText: message
   });
-  return { result, diagnostics, availabilityQueryCount };
+  return { result, diagnostics };
 }
 
 function canonicalCapabilities(diagnostics) {
@@ -245,84 +241,6 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   );
   assert.equal(pool.result.taskResults[0].facts.source, "property_catalog");
   assert.equal(pool.result.finalDecision.action, "reply");
-
-  const duplicateSourcePoolProperty = property("property_duplicate_source_pool", "DuplicateSourcePool");
-  duplicateSourcePoolProperty.faqs.push({
-    knowledgeKey: "pool",
-    question: "When is the water feature open by season?",
-    answer: "Seasonal water-feature details require confirmation."
-  });
-  const duplicateSourcePool = await execute({
-    currentProperty: duplicateSourcePoolProperty,
-    message: "When is the water feature open by season?",
-    tasks: [task({
-      taskId: "duplicate-source-seasonal-policy",
-      type: "policy",
-      sourceText: "When is the water feature open by season?",
-      category: "amenity",
-      canonicalCandidate: "pool",
-      detailIntent: "seasonal_restrictions"
-    })]
-  });
-  assert.deepEqual(
-    canonicalCapabilities(duplicateSourcePool.diagnostics),
-    ["policy"],
-    "a verified policy-shaped detail must not lose its policy capability when raw text resolves a FAQ duplicate of the same canonical subject"
-  );
-  const duplicateSourceQueryPlan = duplicateSourcePool.diagnostics.find((entry) => entry.stage === "query_plan");
-  assert.equal(duplicateSourceQueryPlan.items.some((item) => item.operation === "availability"), false);
-  const duplicateSourceSemantic = duplicateSourcePool.diagnostics.find((entry) => entry.stage === "semantic_contract");
-  assert.ok(duplicateSourceSemantic.semanticValidation.repairedTasks.some((item) => item.reason === "duplicate_source_canonical_authority"), "the deployed trace must prove duplicate-source reconciliation actually executed");
-  assert.equal(duplicateSourcePool.result.finalDecision.action, "reply");
-
-  const conflictingDuplicateSource = await execute({
-    currentProperty: duplicateSourcePoolProperty,
-    message: "When is the water feature open by season?",
-    tasks: [task({
-      taskId: "conflicting-duplicate-source",
-      type: "policy",
-      sourceText: "When is the water feature open by season?",
-      category: "amenity",
-      canonicalCandidate: "bbq",
-      detailIntent: "seasonal_restrictions"
-    })]
-  });
-  const conflictingCanonical = conflictingDuplicateSource.diagnostics.find((entry) => entry.stage === "canonical_request");
-  assert.equal(conflictingCanonical.items[0].canonicalEntity.canonicalId, "pool", "a conflicting canonical candidate must not override the verified raw subject");
-  assert.equal(conflictingDuplicateSource.result.taskResults[0].facts.subject, "pool");
-
-  const inventoryCollisionProperty = property("property_inventory_capability_collision", "InventoryCollision");
-  inventoryCollisionProperty.propertyFacts.push({
-    canonicalId: "price",
-    category: "amenity",
-    status: "provided",
-    publicText: "The service charge is published at reception.",
-    aliases: ["service charge"]
-  });
-  inventoryCollisionProperty.faqs.push({
-    knowledgeKey: "price",
-    question: "What service charge details are published?",
-    answer: "Service-charge details are published at reception."
-  });
-  const inventoryCollision = await execute({
-    currentProperty: inventoryCollisionProperty,
-    message: "What service charge details are published?",
-    tasks: [task({
-      taskId: "inventory-capability-collision",
-      type: "property_fact",
-      sourceText: "What service charge details are published?",
-      category: "amenity",
-      canonicalCandidate: "price"
-    })]
-  });
-  assert.deepEqual(
-    canonicalCapabilities(inventoryCollision.diagnostics),
-    ["property_fact"],
-    "a duplicate property source must not inherit a stateful capability solely from a colliding canonical ID"
-  );
-  const inventoryCollisionQueryPlan = inventoryCollision.diagnostics.find((entry) => entry.stage === "query_plan");
-  assert.equal(inventoryCollisionQueryPlan.items.some((item) => item.operation === "availability"), false);
-  assert.equal(inventoryCollision.availabilityQueryCount, 0, "a property-only canonical collision must not query availability");
 
   const singingHours = await execute({
     currentProperty: alpha,
@@ -512,7 +430,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.equal(unknown.result.replyText.includes("Alpha barbecue fact."), false);
   assert.equal(unknown.result.replyText.includes("Alpha pool fact."), false);
 
-  console.log(JSON.stringify({ caseCount: 19, passCount: 19, failCount: 0 }));
+  console.log(JSON.stringify({ caseCount: 16, passCount: 16, failCount: 0 }));
   console.log("property fact routing regression: PASS");
 })().catch((error) => {
   console.error(error.stack || error);

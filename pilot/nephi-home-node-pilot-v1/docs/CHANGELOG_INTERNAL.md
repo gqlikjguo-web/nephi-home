@@ -336,3 +336,7 @@
 ## 2026-08-06 Duplicate-source formal authority
 
 - Preserved policy-shaped detail capability when raw and canonical property sources resolve the same formal subject, while retaining raw authority on conflicts and rejecting stateful capability-ID collisions.
+
+## 2026-08-06 Duplicate-source formal reconciliation rollback
+
+- Reverted the experiment after the target deployed PASS bypassed it and the complete artifact introduced prior-PASS regressions.

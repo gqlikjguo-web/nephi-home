@@ -324,3 +324,11 @@ For every stochastic-boundary fix, inspect the semantic repair reason in the tar
 The same canonical subject can exist in structured property facts and FAQ material. If raw text selects the FAQ copy while the canonical candidate selects the structured copy, routing by source kind alone can downgrade a valid policy-shaped detail to generic `property_fact`.
 
 Reconcile the duplicate only when both resolutions have the same canonical ID and that canonical definition is explicitly a stateless `property_catalog` capability. Keep the structured formal authority for task shape, keep raw authority when IDs conflict, exclude inventory entities, and verify the query remains property-catalog-only. Entity category alone is insufficient: a property fact can still collide with an inventory capability ID such as `price`, so the capability registry must guard the resolver boundary.
+
+## 2026-08-06 -- Entity category does not prove resolver safety
+
+A non-inventory property fact can use a canonical ID that collides with a stateful capability such as `price`. Room and bundle exclusions alone therefore do not protect the QueryPlan boundary. Any formal-source reconciliation must validate the canonical definition through the capability registry and require a stateless `property_catalog` resolver before it can influence task shape.
+
+## 2026-08-06 -- A second target bypass confirms the attribution gate
+
+Artifact `8954260810` again made the target pass through a fresh OpenAI task shape while the deterministic repair executed elsewhere. The target contained no canonical candidate and no repair marker, so its PASS was not evidence for the code change. When the same artifact also regresses prior-PASS turns, rollback is mandatory even if the local RED/GREEN and independent review are sound.
