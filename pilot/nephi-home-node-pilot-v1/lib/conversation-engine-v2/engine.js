@@ -169,6 +169,7 @@ const PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rat
 const PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
 const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic");
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const REPAIR_KINDS = new Set(["coverage_repair", "task_collection_repair", "semantic_repair"]);
 
 function safePlannerProviderErrorField(value, maxLength) {
   const text = String(value || "");
@@ -213,6 +214,7 @@ function safePlannerRetrySuccessDiagnostic(plannerOutput) {
     .map(safePlannerAttemptDiagnostic);
   if (!providerAttempts.length) return {};
   const retried = diagnostic.retryPerformed === true;
+  const repairLinks = privatePlannerRepairLinks(plannerOutput);
   return {
     providerAttemptCount: providerAttempts.length,
     firstAttemptErrorCategory: retried ? safePlannerErrorCategory(diagnostic.firstAttemptErrorCategory) : "",
@@ -233,8 +235,68 @@ function safePlannerRetrySuccessDiagnostic(plannerOutput) {
       coverageRepairSucceeded: diagnostic.coverageRepairSucceeded === true,
       coverageRepairFallback: diagnostic.coverageRepairFallback === true
     } : {}),
+    ...(repairLinks.length ? { repairProvenance: safeRepairProvenance(repairLinks) } : {}),
     providerAttempts
   };
+}
+
+function privatePlannerRepairLinks(plannerOutput) {
+  const diagnostic = plannerOutput && plannerOutput[PLANNER_PROVIDER_DIAGNOSTIC];
+  const tasks = Array.isArray(plannerOutput && plannerOutput.tasks) ? plannerOutput.tasks : [];
+  const taskCounts = new Map();
+  for (const task of tasks) {
+    const taskId = String(task && task.taskId || "");
+    if (taskId) taskCounts.set(taskId, (taskCounts.get(taskId) || 0) + 1);
+  }
+  const seenCorrelations = new Set();
+  const seenTasks = new Set();
+  const links = [];
+  for (const item of Array.isArray(diagnostic && diagnostic.repairLinks) ? diagnostic.repairLinks.slice(0, 24) : []) {
+    const taskId = String(item && item.taskId || "");
+    const kind = String(item && item.kind || "");
+    const correlationId = String(item && item.correlationId || "");
+    if (taskCounts.get(taskId) !== 1 || !REPAIR_KINDS.has(kind) || !UUID_PATTERN.test(correlationId)
+      || seenCorrelations.has(correlationId) || seenTasks.has(taskId)) return [];
+    seenCorrelations.add(correlationId);
+    seenTasks.add(taskId);
+    links.push({ taskId, kind, correlationId });
+  }
+  return links;
+}
+
+function semanticRepairLinks(plannerOutput, excludedTaskIds = new Set()) {
+  const tasks = Array.isArray(plannerOutput && plannerOutput.tasks) ? plannerOutput.tasks : [];
+  const taskCounts = new Map();
+  for (const task of tasks) {
+    const taskId = String(task && task.taskId || "");
+    if (taskId) taskCounts.set(taskId, (taskCounts.get(taskId) || 0) + 1);
+  }
+  const seen = new Set();
+  return (plannerOutput && plannerOutput.semanticValidation && Array.isArray(plannerOutput.semanticValidation.repairedTasks)
+    ? plannerOutput.semanticValidation.repairedTasks
+    : [])
+    .map((item) => String(item && item.taskId || ""))
+    .filter((taskId) => taskCounts.get(taskId) === 1 && !excludedTaskIds.has(taskId) && !seen.has(taskId) && seen.add(taskId))
+    .slice(0, 24)
+    .map((taskId) => ({ taskId, kind: "semantic_repair", correlationId: crypto.randomUUID() }));
+}
+
+function safeRepairProvenance(links) {
+  return (Array.isArray(links) ? links : []).slice(0, 24).map((item) => ({
+    kind: item.kind,
+    correlationId: item.correlationId
+  }));
+}
+
+function repairCorrelationMap(links) {
+  const output = new Map();
+  const correlations = new Set();
+  for (const item of Array.isArray(links) ? links : []) {
+    if (output.has(item.taskId) || correlations.has(item.correlationId)) return new Map();
+    output.set(item.taskId, item.correlationId);
+    correlations.add(item.correlationId);
+  }
+  return output;
 }
 
 function safePlannerErrorDiagnostic(error, planner) {
@@ -360,6 +422,7 @@ class ConversationEngineV2 {
       plannerOutput = null;
       this.trace(traceId, "planner_error", safePlannerErrorDiagnostic(error, this.planner));
     }
+    const providerRepairLinks = privatePlannerRepairLinks(plannerOutput);
     this.trace(traceId, "planner", {
       parserSucceeded,
       taskCount: plannerOutput && Array.isArray(plannerOutput.tasks) ? plannerOutput.tasks.length : 0,
@@ -412,8 +475,13 @@ class ConversationEngineV2 {
     const semanticInputTasks = plannerOutput.tasks.map(plannerTaskTrace);
     plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog, sourceEvents });
     const validation = validatePlannerOutput(plannerOutput);
-    this.trace(traceId, "validation", { ...plannerValidationTrace(plannerOutput, validation), semanticValidation: plannerOutput.semanticValidation, ...(!validation.ok ? { errorCategory: "local_contract_failure" } : {}) });
-    this.trace(traceId, "semantic_contract", { inputTasks: semanticInputTasks, outputTasks: plannerOutput.tasks.map(plannerTaskTrace), shouldIgnore: plannerOutput.shouldIgnore, validationPassed: validation.ok, semanticValidation: plannerOutput.semanticValidation });
+    const providerRepairTaskIds = new Set(providerRepairLinks.map((item) => item.taskId));
+    const semanticLinks = semanticRepairLinks(plannerOutput, providerRepairTaskIds);
+    const repairLinks = [...providerRepairLinks, ...semanticLinks];
+    const repairCorrelations = repairCorrelationMap(repairLinks);
+    const semanticRepairProvenance = safeRepairProvenance(semanticLinks);
+    this.trace(traceId, "validation", { ...plannerValidationTrace(plannerOutput, validation), semanticValidation: plannerOutput.semanticValidation, ...(semanticRepairProvenance.length ? { repairProvenance: semanticRepairProvenance } : {}), ...(!validation.ok ? { errorCategory: "local_contract_failure" } : {}) });
+    this.trace(traceId, "semantic_contract", { inputTasks: semanticInputTasks, outputTasks: plannerOutput.tasks.map(plannerTaskTrace), shouldIgnore: plannerOutput.shouldIgnore, validationPassed: validation.ok, semanticValidation: plannerOutput.semanticValidation, ...(semanticRepairProvenance.length ? { repairProvenance: semanticRepairProvenance } : {}) });
     if (!validation.ok) {
       this.trace(traceId, "fallback", { reasonCode: "planner_semantic_validation_failed", branch: "semantic_validation" });
       const finalDecision = decideFinal({ plannerFailure: "planner_semantic_validation_failed" });
@@ -514,7 +582,12 @@ class ConversationEngineV2 {
       candidateInputsByCandidateIndex[item.candidateIndex] = item.stateInput;
     }
     this.trace(traceId, "canonical_request", {
-      items: canonicalItems.map((item) => item.canonicalRequest)
+      items: canonicalItems.map((item) => {
+        const correlationId = repairCorrelations.get(String(item && item.canonicalRequest && item.canonicalRequest.taskId || ""));
+        return correlationId
+          ? { ...item.canonicalRequest, repairCorrelationId: correlationId }
+          : item.canonicalRequest;
+      })
     });
     this.trace(traceId, "temporal", {
       contextAction: contextExecution.contextDecision.action,

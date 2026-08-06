@@ -26,7 +26,7 @@ function plannerOutput(sourceEvent) {
     nightsCandidate: 1,
     guestCountCandidate: 2
   };
-  return {
+  const output = {
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
@@ -56,6 +56,26 @@ function plannerOutput(sourceEvent) {
     shouldIgnore: false,
     reason: "dual_user_trace_http_contract"
   };
+  Object.defineProperty(output, Symbol.for("junzan.plannerProviderDiagnostic"), {
+    enumerable: false,
+    value: {
+      providerAttemptCount: 1,
+      firstAttemptErrorCategory: "",
+      finalErrorCategory: "",
+      retryPerformed: false,
+      retrySucceeded: false,
+      coverageRepairPerformed: true,
+      coverageRepairSucceeded: true,
+      coverageRepairFallback: false,
+      repairLinks: [{
+        taskId: "availability-double",
+        kind: "coverage_repair",
+        correlationId: "feedface-feed-4ace-8eed-feedfacefeed"
+      }],
+      providerAttempts: [{ attemptNumber: 1 }]
+    }
+  });
+  return output;
 }
 
 function extendPersistence(providers) {
@@ -179,6 +199,12 @@ async function traceGet(baseUrl, propertyId = PROPERTY_ID, cookie = `nephi_admin
       assert.ok(record.stages[stage], `trace must include ${stage}`);
     }
     assert.equal(record.stages.canonical_request.items[0].temporalState.checkIn, "2026-08-06");
+    assert.deepEqual(record.stages.planner.repairProvenance, [{ kind: "coverage_repair", correlationId: "feedface-feed-4ace-8eed-feedfacefeed" }]);
+    assert.equal(record.stages.canonical_request.items[0].repairCorrelationId, record.stages.planner.repairProvenance[0].correlationId, "HTTP safe trace must preserve the engine-to-canonical opaque join");
+    const safeProvenance = JSON.stringify(record.stages.planner.repairProvenance);
+    for (const forbidden of [TARGET_MESSAGE, "availability-double", PROPERTY_ID, "room", "雙人房"]) {
+      assert.equal(safeProvenance.includes(forbidden), false, `HTTP safe provenance leaked forbidden value: ${forbidden}`);
+    }
     assert.equal(record.stages.temporal.items[0].resolutionSource, "canonical_temporal_grammar");
     assert.equal(record.stages.executor.resolverCalls.length, 1);
     assert.equal(record.stages.executor.resolverCalls[0].request.customerId, PROPERTY_ID);

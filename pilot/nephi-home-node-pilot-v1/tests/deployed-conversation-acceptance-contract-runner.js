@@ -435,11 +435,37 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.equal(targetedMatrix.reduce((sum, item) => sum + item.turns.length, 0), 18, "preflight must execute exactly the 18 previously failing turns");
   assert.equal(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: "" }).matrix.length, 77);
   assert.throws(() => acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: targetIds[0] }), /full_matrix_case_filter_forbidden/);
+  const correlationIdFor = (caseIndex, turnIndex) => `00000000-0000-4000-8000-${String(caseIndex * 10 + turnIndex + 1).padStart(12, "0")}`;
+  const repairTargetFor = (caseId, correlationId) => {
+    const byCase = {
+      "rg-003-price-nights": { capability: "price", canonicalEntity: { category: "property", canonicalId: "" } },
+      "rg-004-bundle-price": { capability: "price", canonicalEntity: { category: "bundle", canonicalId: "" } },
+      "rg-006-named-room-availability": { capability: "availability", canonicalEntity: { category: "room", canonicalId: "room_402" } },
+      "rg-013-booking-request-full": { capability: "availability", canonicalEntity: { category: "room", canonicalId: "room_301" } },
+      "rg-023-pool-fee": { capability: "amenity", canonicalEntity: { category: "amenity", canonicalId: "pool" } },
+      "rg-029-checkin-latest": { capability: "policy", canonicalEntity: { category: "policy", canonicalId: "check_in" } },
+      "rg-033-kitchen": { capability: "property_fact", canonicalEntity: { category: "amenity", canonicalId: "kitchen" } },
+      "rg-037-multi-pool-price-checkin": { capability: "amenity", canonicalEntity: { category: "amenity", canonicalId: "pool" } },
+      "rg-038-conversation-room-price-payment": { capability: "availability", canonicalEntity: { category: "room", canonicalId: "room_402" } },
+      "rg-039-conversation-booking-refund": { capability: "availability", canonicalEntity: { category: "room", canonicalId: "" } },
+      "rgs-003-bbq": { capability: "bbq", canonicalEntity: { category: "amenity", canonicalId: "bbq" } },
+      "rgs-005-parking": { capability: "parking", canonicalEntity: { category: "transport", canonicalId: "parking" } },
+      "rgs-010-pets": { capability: "policy", canonicalEntity: { category: "policy", canonicalId: "" } },
+      "rgs-014-bundle-price": { capability: "price", canonicalEntity: { category: "bundle", canonicalId: "" } },
+      "rgs-019-modify-room-mix": { capability: "bundle_availability", canonicalEntity: { category: "bundle", canonicalId: "" } },
+      "rgs-020-modify-date": {
+        capability: "availability",
+        canonicalEntity: { category: "room", canonicalId: "room_301" },
+        temporalState: { resolutionStatus: "resolved", checkIn: "2026-08-20", checkOut: "2026-08-21" }
+      }
+    };
+    return { ...byCase[caseId], repairCorrelationId: correlationId };
+  };
   const attributedReport = {
-    cases: targetIds.map((caseId) => ({
+    cases: targetIds.map((caseId, caseIndex) => ({
       caseId,
       status: "PASS",
-      turns: TARGET_PREFLIGHT_TURNS[caseId].map(() => ({
+      turns: TARGET_PREFLIGHT_TURNS[caseId].map((_turnNumber, turnIndex) => ({
         runtimeEvidence: {
           providerType: "postgresql",
           plannerParserSucceeded: true,
@@ -458,18 +484,31 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     }))
   };
   assert.throws(() => validateTargetPreflightAttribution(attributedReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "complete generic traces without the repaired boundary must not certify target attribution");
-  for (const item of attributedReport.cases) for (const turn of item.turns) {
-    turn.runtimeEvidence.canonicalRequest[0].items = [
-      { capability: "price", canonicalEntity: { canonicalId: "pool" } },
-      { capability: "availability", canonicalEntity: { canonicalId: "check_in" } },
-      { capability: "policy", canonicalEntity: { canonicalId: "parking" } },
-      { capability: "amenity", canonicalEntity: { canonicalId: "bbq" } },
-      { capability: "property_fact", canonicalEntity: { canonicalId: "kitchen" } }
-    ];
-    if (item.caseId === "rg-023-pool-fee") {
-      turn.runtimeEvidence.validation[0].semanticValidation.repairedTasks = [{ taskId: "pool-fee", reason: "property_catalog_entity_grounding" }];
-    } else {
-      Object.assign(turn.runtimeEvidence.planner[0], { coverageRepairPerformed: true, coverageRepairSucceeded: true, coverageRepairFallback: false });
+  for (let caseIndex = 0; caseIndex < attributedReport.cases.length; caseIndex += 1) {
+    const item = attributedReport.cases[caseIndex];
+    for (let turnIndex = 0; turnIndex < item.turns.length; turnIndex += 1) {
+      const turn = item.turns[turnIndex];
+      const correlationId = correlationIdFor(caseIndex, turnIndex);
+      const repairTarget = repairTargetFor(item.caseId, correlationId);
+      repairTarget.taskId = `target-${caseIndex}-${turnIndex}`;
+      turn.runtimeEvidence.canonicalRequest[0].items = [
+        repairTarget,
+        { capability: "price", canonicalEntity: { category: "property", canonicalId: "" } },
+        { capability: "availability", canonicalEntity: { category: "room", canonicalId: "check_in" } },
+        { capability: "policy", canonicalEntity: { category: "transport", canonicalId: "parking" } },
+        { capability: "amenity", canonicalEntity: { category: "amenity", canonicalId: "bbq" } },
+        { capability: "property_fact", canonicalEntity: { category: "amenity", canonicalId: "kitchen" } }
+      ];
+      if (item.caseId === "rg-023-pool-fee") {
+        turn.runtimeEvidence.validation[0].repairProvenance = [{ kind: "semantic_repair", correlationId }];
+      } else {
+        Object.assign(turn.runtimeEvidence.planner[0], {
+          coverageRepairPerformed: true,
+          coverageRepairSucceeded: true,
+          coverageRepairFallback: false,
+          repairProvenance: [{ kind: "coverage_repair", correlationId }]
+        });
+      }
     }
   }
   const attribution = validateTargetPreflightAttribution(attributedReport);
@@ -481,6 +520,50 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   const unprovenReport = JSON.parse(JSON.stringify(attributedReport));
   unprovenReport.cases[0].turns[0].runtimeEvidence.planner = [];
   assert.throws(() => validateTargetPreflightAttribution(unprovenReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/);
+  const unrelatedRepairReport = JSON.parse(JSON.stringify(attributedReport));
+  const unrelatedTurn = unrelatedRepairReport.cases[0].turns[0];
+  const unrelatedCorrelationId = unrelatedTurn.runtimeEvidence.planner[0].repairProvenance[0].correlationId;
+  delete unrelatedTurn.runtimeEvidence.canonicalRequest[0].items[0].repairCorrelationId;
+  unrelatedTurn.runtimeEvidence.canonicalRequest[0].items.push({ capability: "amenity", canonicalEntity: { category: "amenity", canonicalId: "unrelated" }, repairCorrelationId: unrelatedCorrelationId });
+  assert.throws(() => validateTargetPreflightAttribution(unrelatedRepairReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "an unrelated repaired task must not attribute matching canonical evidence from a different task");
+  const multiTaskReport = JSON.parse(JSON.stringify(attributedReport));
+  multiTaskReport.cases[0].turns[0].runtimeEvidence.canonicalRequest[0].items.push({ capability: "price", canonicalEntity: { category: "property", canonicalId: "" } });
+  assert.doesNotThrow(() => validateTargetPreflightAttribution(multiTaskReport), "only the directly correlated target task is allowed to prove a multi-task turn");
+  const taskCollectionReport = JSON.parse(JSON.stringify(attributedReport));
+  taskCollectionReport.cases[0].turns[0].runtimeEvidence.planner[0] = {
+    stage: "planner",
+    taskCollectionRepairPerformed: true,
+    preservedTaskCount: 1,
+    fallbackTaskCount: 1,
+    repairProvenance: taskCollectionReport.cases[0].turns[0].runtimeEvidence.planner[0].repairProvenance.map((entry) => ({ ...entry, kind: "task_collection_repair" }))
+  };
+  assert.doesNotThrow(() => validateTargetPreflightAttribution(taskCollectionReport), "task collection repair must join through the same opaque correlation ID");
+  const rg023MismatchReport = JSON.parse(JSON.stringify(attributedReport));
+  const rg023Turn = rg023MismatchReport.cases.find((item) => item.caseId === "rg-023-pool-fee").turns[0];
+  rg023Turn.runtimeEvidence.validation[0].repairProvenance[0].correlationId = "99999999-9999-4999-8999-999999999999";
+  assert.throws(() => validateTargetPreflightAttribution(rg023MismatchReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "rg-023 semantic repair must join the pool canonical evidence by the same opaque ID");
+  const duplicateProvenanceReport = JSON.parse(JSON.stringify(attributedReport));
+  duplicateProvenanceReport.cases[0].turns[0].runtimeEvidence.planner[0].repairProvenance.push({ ...duplicateProvenanceReport.cases[0].turns[0].runtimeEvidence.planner[0].repairProvenance[0] });
+  assert.throws(() => validateTargetPreflightAttribution(duplicateProvenanceReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "duplicate provenance IDs must fail closed");
+  const unknownCanonicalIdReport = JSON.parse(JSON.stringify(attributedReport));
+  unknownCanonicalIdReport.cases[0].turns[0].runtimeEvidence.canonicalRequest[0].items.push({ capability: "price", canonicalEntity: { category: "property", canonicalId: "" }, repairCorrelationId: "88888888-8888-4888-8888-888888888888" });
+  assert.throws(() => validateTargetPreflightAttribution(unknownCanonicalIdReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "unknown canonical repair IDs must fail closed");
+  const ambiguousCanonicalReport = JSON.parse(JSON.stringify(attributedReport));
+  ambiguousCanonicalReport.cases[0].turns[0].runtimeEvidence.canonicalRequest[0].items.push({ ...ambiguousCanonicalReport.cases[0].turns[0].runtimeEvidence.canonicalRequest[0].items[0] });
+  assert.throws(() => validateTargetPreflightAttribution(ambiguousCanonicalReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "one repair ID mapping to multiple canonical items must fail closed");
+  const conflictingKindReport = JSON.parse(JSON.stringify(attributedReport));
+  const conflictingEntry = conflictingKindReport.cases[0].turns[0].runtimeEvidence.planner[0].repairProvenance[0];
+  conflictingKindReport.cases[0].turns[0].runtimeEvidence.planner[0].repairProvenance.push({ ...conflictingEntry, kind: "task_collection_repair" });
+  assert.throws(() => validateTargetPreflightAttribution(conflictingKindReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "one repair ID claiming conflicting repair kinds must fail closed");
+  const conflictingCanonicalIdentityReport = JSON.parse(JSON.stringify(attributedReport));
+  const conflictingCanonicalTurn = conflictingCanonicalIdentityReport.cases[0].turns[0].runtimeEvidence;
+  const secondCorrelationId = "77777777-7777-4777-8777-777777777777";
+  conflictingCanonicalTurn.planner[0].repairProvenance.push({ kind: "coverage_repair", correlationId: secondCorrelationId });
+  conflictingCanonicalTurn.canonicalRequest[0].items.push({
+    ...conflictingCanonicalTurn.canonicalRequest[0].items[0],
+    repairCorrelationId: secondCorrelationId
+  });
+  assert.throws(() => validateTargetPreflightAttribution(conflictingCanonicalIdentityReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "one canonical task claiming different repair IDs must fail closed");
 
   const deployedRunnerSource = fs.readFileSync(path.join(__dirname, "../scripts/run-deployed-conversation-acceptance.js"), "utf8");
   assert.doesNotMatch(deployedRunnerSource, /require\([^)]*pglite|createPglite|fake planner/i);

@@ -6,6 +6,8 @@ const RETENTION_MS = 72 * 60 * 60 * 1000;
 const MAX_ARRAY_ITEMS = 50;
 const MAX_STRING_LENGTH = 1000;
 const TARGET_HASH_PATTERN = /^[a-f0-9]{64}$/;
+const OPAQUE_REPAIR_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SAFE_REPAIR_KINDS = new Set(["coverage_repair", "task_collection_repair", "semantic_repair"]);
 const TRACE_STAGES = new Set([
   "state_before",
   "planner",
@@ -36,7 +38,8 @@ const SAFE_KEYS = new Set([
   "roomIds", "memberRoomIds", "availableRoomIds", "availableBundleIds", "capacity", "quantity", "enabled",
   "blocked", "blockedDates", "availableDates", "dateFrom", "dateTo", "price", "totalPrice", "queryMode", "operation",
   "dateExpressionPresent", "expressionType", "repairReasonCode", "provenance", "ruleRefs", "fields", "produced",
-  "responseMode", "riskLevel", "stayDependency", "shouldReply", "attempted", "delivered", "deliveryErrorCode"
+  "responseMode", "riskLevel", "stayDependency", "shouldReply", "attempted", "delivered", "deliveryErrorCode",
+  "repairCorrelationId"
 ]);
 const BLOCKED_KEY_PATTERN = /(secret|token|password|credential|authorization|cookie|database.?url|line.?user|source.?text|evidence|prompt|email|phone|contact|address)/i;
 
@@ -82,6 +85,16 @@ function safePlannerMissingInformation(value) {
   });
 }
 
+function safeRepairProvenance(value) {
+  return (Array.isArray(value) ? value : []).slice(0, 24).flatMap((item) => {
+    const kind = String(item && item.kind || "");
+    const correlationId = String(item && item.correlationId || "");
+    return SAFE_REPAIR_KINDS.has(kind) && OPAQUE_REPAIR_ID_PATTERN.test(correlationId)
+      ? [{ kind, correlationId }]
+      : [];
+  });
+}
+
 function taskSummary(task) {
   return select(task || {}, [
     "taskId", "taskType", "type", "capability", "category", "productType", "productId", "roomType",
@@ -110,6 +123,7 @@ function diagnosticProjection(stage, entry) {
   if (stage === "planner") {
     return {
       ...select(entry, ["parserSucceeded", "taskCount", "discourse", "shouldIgnore", "failure", "failureCode", "providerAttemptCount", "firstAttemptErrorCategory", "finalErrorCategory", "retryPerformed", "retrySucceeded", "taskCollectionRepairPerformed", "preservedTaskCount", "fallbackTaskCount", "coverageRepairPerformed", "coverageRepairSucceeded", "coverageRepairFallback"]),
+      repairProvenance: safeRepairProvenance(entry && entry.repairProvenance),
       missingInformation: safePlannerMissingInformation(entry && entry.missingInformation),
       tasks: Array.isArray(entry.tasks) ? entry.tasks.map(taskSummary) : []
     };
@@ -120,7 +134,8 @@ function diagnosticProjection(stage, entry) {
       rejectedTasks: Array.isArray(entry.rejectedTasks) ? entry.rejectedTasks.map(taskSummary) : [],
       rejectionReasons: safeValue(entry.rejectionReasons || [], "rejectionReasons"),
       finalTasks: Array.isArray(entry.finalTasks) ? entry.finalTasks.map(taskSummary) : [],
-      ...select(entry, ["semanticValidation", "errorCategory"])
+      repairProvenance: safeRepairProvenance(entry && entry.repairProvenance),
+      ...select(entry, ["errorCategory"])
     };
   }
   if (stage === "context_validation") return select(entry, ["rejectionReasons", "candidates"]);

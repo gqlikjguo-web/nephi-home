@@ -389,13 +389,27 @@ function latestConditions(result) {
   const groundedPlanner = { classify: async () => ({
     schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-    tasks: [{ taskId: "parking", type: "amenity", sourceText: "有車位嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, confidence: 0.99 }],
+    tasks: [{ taskId: "parking", type: "policy", sourceText: "有車位嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "policy", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, confidence: 0.99 }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "known_fact"
   }) };
   const groundedDiagnostics = [];
   const groundedEngine = new ConversationEngineV2({ planner: explicitPlanner(groundedPlanner), composer: { compose: async () => ({ sections: [{ taskId: "parking", responseMode: "answer", text: "有一個停車位" }] }) }, persistence, getProperty: () => property, availabilityResolver, listPriceOverrides: () => [], onDiagnostic: (item) => groundedDiagnostics.push(item) });
   const groundedReply = await groundedEngine.process({ customerId: "p1", channelId: "c1", lineUserId: "grounded", eventId: "grounded", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "有車位嗎？" });
   assert.equal(groundedReply.replyText, "有一個停車位");
+  const groundedSemanticTrace = groundedDiagnostics.find((item) => item.stage === "semantic_contract");
+  const groundedCanonicalTrace = groundedDiagnostics.find((item) => item.stage === "canonical_request");
+  assert.equal(Array.isArray(groundedSemanticTrace.repairProvenance), true, "semantic compiler repair must emit opaque provenance");
+  assert.equal(groundedSemanticTrace.repairProvenance.length, 1);
+  assert.equal(groundedSemanticTrace.repairProvenance[0].kind, "semantic_repair");
+  assert.match(groundedSemanticTrace.repairProvenance[0].correlationId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.equal(groundedCanonicalTrace.items[0].repairCorrelationId, groundedSemanticTrace.repairProvenance[0].correlationId, "semantic repair and canonical evidence must share one opaque ID");
+  const groundedSafeDiagnostics = groundedDiagnostics.map(formatSafeTestOnlyConversationTrace).filter(Boolean);
+  const groundedSafeValidation = groundedSafeDiagnostics.find((item) => item.stage === "validation");
+  const groundedSafeSemantic = groundedSafeDiagnostics.find((item) => item.stage === "semantic_contract");
+  assert.deepEqual(groundedSafeValidation.repairProvenance, groundedSemanticTrace.repairProvenance, "validation must retain the semantic repair join in the safe trace");
+  assert.equal(Object.hasOwn(groundedSafeSemantic, "repairProvenance"), false, "semantic repair provenance must have exactly one authoritative safe stage");
+  assert.equal(groundedSafeDiagnostics.filter((item) => Array.isArray(item.repairProvenance)).length, 1, "engine-to-server projection must not duplicate semantic repair correlation IDs");
+  assert.equal(Object.hasOwn(groundedReply.taskResults[0], "repairCorrelationId"), false, "diagnostic provenance must not enter product task results");
   assert.equal(groundedDiagnostics.find((item) => item.stage === "composer").composerSource, "openai");
   assert.equal(groundedDiagnostics.find((item) => item.stage === "composer").fallbackOccurred, false);
   for (const [index, question] of ["有車位嗎？", "停車方便嗎？", "需要預約車位嗎？"].entries()) {

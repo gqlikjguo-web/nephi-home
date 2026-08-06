@@ -31,6 +31,7 @@ const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provide
 const SAFE_PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const SAFE_CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
 const SAFE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SAFE_REPAIR_KINDS = new Set(["coverage_repair", "task_collection_repair", "semantic_repair"]);
 const TEST_ONLY_NATIVE_LINE_MESSAGE_TYPES = new Set(["sticker", "image", "video", "file"]);
 
 function lineMessageEventDisposition(event) {
@@ -154,6 +155,16 @@ function safePlannerMissingInformation(value) {
   });
 }
 
+function safeRepairProvenance(value) {
+  return (Array.isArray(value) ? value : []).slice(0, 24).flatMap((item) => {
+    const kind = String(item && item.kind || "");
+    const correlationId = String(item && item.correlationId || "");
+    return SAFE_REPAIR_KINDS.has(kind) && SAFE_UUID_PATTERN.test(correlationId)
+      ? [{ kind, correlationId }]
+      : [];
+  });
+}
+
 function safePlannerErrorCategory(value, fallback = "unknown") {
   return SAFE_PLANNER_ERROR_CATEGORIES.has(value) ? value : fallback;
 }
@@ -225,6 +236,9 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
           coverageRepairSucceeded: details.coverageRepairSucceeded === true,
           coverageRepairFallback: details.coverageRepairFallback === true
         } : {}),
+        ...(safeRepairProvenance(details.repairProvenance).length ? {
+          repairProvenance: safeRepairProvenance(details.repairProvenance)
+        } : {}),
         providerAttempts
       } : {})
     };
@@ -260,6 +274,9 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
     rejectedTasks: (details.rejectedTasks || []).map((task) => ({ ...safePlannerTraceTask(task), reasons: (task.reasons || []).map(String) })),
     rejectionReasons: (details.rejectionReasons || []).map(String),
     finalTasks: (details.finalTasks || []).map(safePlannerTraceTask),
+    ...(safeRepairProvenance(details.repairProvenance).length ? {
+      repairProvenance: safeRepairProvenance(details.repairProvenance)
+    } : {}),
     ...(details.errorCategory === "local_contract_failure" ? { errorCategory: "local_contract_failure" } : {})
   };
   if (details.stage === "context_validation") return {
@@ -277,6 +294,9 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
     ...base,
     items: (details.items || []).map((item) => ({
       taskId: String(item && item.taskId || ""),
+      ...(SAFE_UUID_PATTERN.test(String(item && item.repairCorrelationId || "")) ? {
+        repairCorrelationId: String(item.repairCorrelationId)
+      } : {}),
       capability: String(item && item.capability || ""),
       canonicalEntity: {
         category: String(item && item.canonicalEntity && item.canonicalEntity.category || ""),
@@ -310,7 +330,13 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
   if (details.stage === "query_plan") return { ...base, count: safeDiagnosticCount(details.count), items: (details.items || []).map((item) => ({ taskId: String(item.taskId || ""), capability: String(item.capability || ""), operation: String(item.operation || "") })) };
   if (details.stage === "state") return { ...base, contextAction: String(details.contextAction || ""), revision: safeDiagnosticCount(details.revision), tasks: (details.tasks || []).map((item) => ({ taskId: String(item.taskId || ""), taskType: String(item.taskType || ""), status: String(item.status || ""), missingFields: (item.missingFields || []).map(String) })) };
   if (details.stage === "executor") return { ...base, results: (details.results || []).map((item) => ({ taskId: item.taskId || "", status: item.status || "", reason: item.reason || "", locationFactProvided: Boolean(item.locationFactProvided), factSource: item.factSource || "" })) };
-  if (details.stage === "semantic_contract") return { ...base, inputTasks: (details.inputTasks || []).map(safePlannerTraceTask), outputTasks: (details.outputTasks || []).map(safePlannerTraceTask), shouldIgnore: Boolean(details.shouldIgnore), validationPassed: Boolean(details.validationPassed), semanticValidation: details.semanticValidation || null };
+  if (details.stage === "semantic_contract") return {
+    ...base,
+    inputTasks: (details.inputTasks || []).map(safePlannerTraceTask),
+    outputTasks: (details.outputTasks || []).map(safePlannerTraceTask),
+    shouldIgnore: Boolean(details.shouldIgnore),
+    validationPassed: Boolean(details.validationPassed)
+  };
   if (details.stage === "no_reply_gate") return { ...base, shouldIgnore: Boolean(details.shouldIgnore), actionableTaskCount: Number(details.actionableTaskCount || 0), unknownTaskCount: Number(details.unknownTaskCount || 0), gateHit: Boolean(details.gateHit), reasonCode: String(details.reasonCode || "") };
   if (details.stage === "pending_request") return { ...base, action: String(details.action || ""), reasonCode: String(details.reasonCode || ""), capability: String(details.capability || ""), missingFields: (details.missingFields || []).map(String) };
   if (details.stage === "fallback") return { ...base, reasonCode: String(details.reasonCode || ""), branch: String(details.branch || "") };

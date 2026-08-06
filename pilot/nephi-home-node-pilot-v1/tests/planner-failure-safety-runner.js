@@ -380,11 +380,50 @@ async function main() {
     providerAttempts: [{ attemptNumber: 1 }, { attemptNumber: 2 }],
     coverageRepairPerformed: true,
     coverageRepairSucceeded: false,
-    coverageRepairFallback: true
+    coverageRepairFallback: true,
+    repairProvenance: [{
+      kind: "coverage_repair",
+      correlationId: "abcdefab-cdef-4abc-8def-abcdefabcdef",
+      taskId: "semantic-room-task",
+      canonicalId: "inventory-room-secret",
+      propertyId: property.propertyId,
+      sourceText: sensitive.guestMessage
+    }]
   });
   assert.equal(coverageRepairTrace.coverageRepairPerformed, true);
   assert.equal(coverageRepairTrace.coverageRepairSucceeded, false);
   assert.equal(coverageRepairTrace.coverageRepairFallback, true);
+  assert.deepEqual(coverageRepairTrace.repairProvenance, [{ kind: "coverage_repair", correlationId: "abcdefab-cdef-4abc-8def-abcdefabcdef" }], "server safe Planner trace must retain only bounded opaque provenance");
+  assert.equal(JSON.stringify(coverageRepairTrace.repairProvenance).includes("semantic-room-task"), false);
+  assert.equal(JSON.stringify(coverageRepairTrace.repairProvenance).includes("inventory-room-secret"), false);
+  assert.equal(JSON.stringify(coverageRepairTrace.repairProvenance).includes(property.propertyId), false);
+  const semanticContractPrivacyTrace = formatSafeTestOnlyConversationTrace({
+    traceId: "semantic-contract-privacy-trace",
+    propertyId: property.propertyId,
+    stage: "semantic_contract",
+    inputTasks: [],
+    outputTasks: [],
+    validationPassed: true,
+    semanticValidation: {
+      repairedTasks: [{ taskId: "semantic-room-task", reason: "property_catalog_entity_grounding" }]
+    },
+    repairProvenance: [{ kind: "semantic_repair", correlationId: "abcdefab-cdef-4abc-8def-abcdefabcdef" }]
+  });
+  assert.equal(Object.hasOwn(semanticContractPrivacyTrace, "semanticValidation"), false, "server safe semantic-contract trace must not project internal repaired task IDs");
+  assert.equal(Object.hasOwn(semanticContractPrivacyTrace, "repairProvenance"), false, "validation is the single authoritative safe stage for semantic repair provenance");
+  assert.equal(JSON.stringify(semanticContractPrivacyTrace).includes("semantic-room-task"), false);
+  const canonicalRepairTrace = formatSafeTestOnlyConversationTrace({
+    traceId: "canonical-repair-trace",
+    propertyId: property.propertyId,
+    stage: "canonical_request",
+    items: [{
+      taskId: "semantic-room-task",
+      repairCorrelationId: "abcdefab-cdef-4abc-8def-abcdefabcdef",
+      capability: "availability",
+      canonicalEntity: { category: "room", canonicalId: "inventory-room-secret", status: "resolved" }
+    }]
+  });
+  assert.equal(canonicalRepairTrace.items[0].repairCorrelationId, "abcdefab-cdef-4abc-8def-abcdefabcdef", "server safe canonical trace must preserve the opaque join ID");
   const inventoryPrivacyTrace = formatSafeTestOnlyConversationTrace({
     traceId: "inventory-privacy-trace",
     propertyId: property.propertyId,

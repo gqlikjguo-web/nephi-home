@@ -95,6 +95,14 @@ function recordsOf(persistence) {
     stage: "planner",
     parserSucceeded: true,
     taskCount: 1,
+    repairProvenance: [{
+      kind: "coverage_repair",
+      correlationId: "12345678-1234-4123-8123-123456789abc",
+      taskId: "availability-1",
+      propertyId: "nephi_home",
+      canonicalId: "room401",
+      sourceText: TARGET_MESSAGE
+    }],
     tasks: [{
       taskId: "availability-1",
       type: "availability",
@@ -125,7 +133,16 @@ function recordsOf(persistence) {
     stage: "validation",
     acceptedTasks: [{ taskId: "availability-1", type: "availability" }],
     rejectedTasks: [],
-    rejectionReasons: []
+    rejectionReasons: [],
+    semanticValidation: {
+      repairedTasks: [{ taskId: "semantic-pool-fee-task", reason: "property_catalog_entity_grounding" }]
+    },
+    repairProvenance: [{
+      kind: "semantic_repair",
+      correlationId: "87654321-4321-4321-8321-cba987654321",
+      taskId: "semantic-pool-fee-task",
+      canonicalId: "pool"
+    }]
   });
   trace.diagnostic({
     traceId: "trace-a",
@@ -134,10 +151,17 @@ function recordsOf(persistence) {
     stage: "canonical_request",
     items: [{
       taskId: "availability-1",
+      repairCorrelationId: "12345678-1234-4123-8123-123456789abc",
       capability: "availability",
       canonicalEntity: { category: "room", canonicalId: "room401", status: "resolved" },
       temporalState: { resolutionStatus: "resolved", checkIn: "2026-08-06", checkOut: "2026-08-07", timezone: "Asia/Taipei" },
       resolverId: "availability"
+    }, {
+      taskId: "semantic-pool-fee-task",
+      repairCorrelationId: "87654321-4321-4321-8321-cba987654321",
+      capability: "amenity",
+      canonicalEntity: { category: "amenity", canonicalId: "pool", status: "resolved" },
+      temporalState: { resolutionStatus: "resolved", checkIn: "", checkOut: "", timezone: "Asia/Taipei" }
     }]
   });
   trace.diagnostic({
@@ -175,10 +199,18 @@ function recordsOf(persistence) {
   assert.deepEqual(record.stages.state_before.pending, [{ taskId: "availability-1", missingFields: ["guestCount"] }]);
   assert.deepEqual(record.stages.state_before.tasks[0], { taskId: "availability-1", taskType: "availability", productType: "room", productId: "room401", checkIn: "2026-08-06", checkOut: "2026-08-07", missingFields: [], status: "pending" });
   assert.equal(record.stages.planner.parserSucceeded, true);
+  assert.deepEqual(record.stages.planner.repairProvenance, [{ kind: "coverage_repair", correlationId: "12345678-1234-4123-8123-123456789abc" }]);
+  assert.equal(record.stages.canonical_request.items[0].repairCorrelationId, "12345678-1234-4123-8123-123456789abc", "persisted safe trace must retain the opaque direct join");
+  assert.equal(JSON.stringify(record.stages.planner.repairProvenance).includes("availability-1"), false, "safe provenance must not project semantic Planner task IDs");
+  assert.equal(JSON.stringify(record.stages.planner.repairProvenance).includes("room401"), false, "safe provenance must not project inventory IDs");
+  assert.equal(JSON.stringify(record.stages.planner.repairProvenance).includes("nephi_home"), false, "safe provenance must not project property IDs");
   assert.equal(record.stages.planner.tasks[0].stayCandidate.checkInCandidate, "2026-08-06");
   assert.equal(record.stages.planner.tasks[0].entity.canonicalCandidate, "room401");
   assert.equal(Object.hasOwn(record.stages.planner.tasks[0].entity, "rawText"), false);
   assert.equal(record.stages.validation.rejectedTasks.length, 0);
+  assert.deepEqual(record.stages.validation.repairProvenance, [{ kind: "semantic_repair", correlationId: "87654321-4321-4321-8321-cba987654321" }]);
+  assert.equal(Object.hasOwn(record.stages.validation, "semanticValidation"), false, "safe validation trace must not expose semantic Planner task IDs");
+  assert.equal(record.stages.canonical_request.items[1].repairCorrelationId, record.stages.validation.repairProvenance[0].correlationId, "rg-023-style semantic repair must remain directly joinable to canonical evidence");
   assert.equal(record.stages.canonical_request.items[0].temporalState.timezone, "Asia/Taipei");
   assert.equal(record.stages.temporal.items[0].resolutionSource, "current_turn");
   assert.deepEqual(record.stages.executor.resolverCalls[0].response.rooms, [{ id: "room401", name: "401雙人房" }]);

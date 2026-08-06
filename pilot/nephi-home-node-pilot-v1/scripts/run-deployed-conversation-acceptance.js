@@ -769,6 +769,94 @@ function missingExpectedSemanticEvidence(result, expectation = {}) {
   return [...tags].filter((tag) => requirements.has(tag) && !requirements.get(tag)());
 }
 
+const OPAQUE_REPAIR_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const REPAIR_KINDS = new Set(["coverage_repair", "task_collection_repair", "semantic_repair"]);
+
+function canonicalRepairEvidenceMatchesExpectation(item, expectation = {}) {
+  const capability = String(item && item.capability || "");
+  const expectedCapabilities = Array.isArray(expectation.expectedCapabilities) ? expectation.expectedCapabilities : [];
+  const capabilityMatch = expectedCapabilities.some((alternatives) =>
+    Array.isArray(alternatives) && alternatives.includes(capability));
+  const semanticTags = new Set(Array.isArray(expectation.expectedSemantic) ? expectation.expectedSemantic : []);
+  const canonicalId = String(item && item.canonicalEntity && item.canonicalEntity.canonicalId || "").toLowerCase();
+  const category = String(item && item.canonicalEntity && item.canonicalEntity.category || "").toLowerCase();
+  const subjectMatches = [
+    ["pool", () => canonicalId === "pool"],
+    ["check_in", () => canonicalId === "check_in"],
+    ["parking", () => canonicalId === "parking"],
+    ["bbq", () => canonicalId === "bbq"],
+    ["kitchen", () => canonicalId === "kitchen"],
+    ["ktv", () => canonicalId === "ktv" || canonicalId === "singing"],
+    ["bundle", () => category === "bundle" || capability === "bundle_availability"]
+  ];
+  const numberedRoomTags = [...semanticTags].filter((tag) => /^room_\d+$/i.test(tag));
+  const roomShapeTags = [...semanticTags].filter((tag) =>
+    /(?:^|_)(?:room|rooms)(?:_|$)/i.test(tag) && !/^room_\d+$/i.test(tag));
+  const formalSubjectRequired = subjectMatches.some(([tag]) => semanticTags.has(tag))
+    || numberedRoomTags.length > 0
+    || roomShapeTags.length > 0;
+  const subjectMatch = subjectMatches.some(([tag, matches]) => semanticTags.has(tag) && matches())
+    || numberedRoomTags.some((tag) => canonicalId.includes(tag.slice(5)))
+    || roomShapeTags.length > 0 && category === "room";
+  if (formalSubjectRequired) return subjectMatch && (capabilityMatch || expectedCapabilities.length === 0);
+  if (capabilityMatch) return true;
+  const replacementDateExpected = [...semanticTags].some((tag) =>
+    ["replace_date_range", "clarify_existing_booking", "confirm_replacement_date"].includes(tag));
+  const temporalState = item && item.temporalState || {};
+  return expectedCapabilities.length === 0
+    && replacementDateExpected
+    && Boolean(temporalState.checkIn || temporalState.checkOut || temporalState.expressionType);
+}
+
+function directlyAttributedCanonicalEvidence(runtime, expectation) {
+  const provenance = [];
+  for (const entry of Array.isArray(runtime.planner) ? runtime.planner : []) {
+    for (const item of Array.isArray(entry && entry.repairProvenance) ? entry.repairProvenance : []) {
+      const kind = String(item && item.kind || "");
+      const sourceValid = kind === "coverage_repair"
+        ? entry.coverageRepairPerformed === true || entry.coverageRepairFallback === true
+        : kind === "task_collection_repair"
+          ? entry.taskCollectionRepairPerformed === true
+            && Number(entry.preservedTaskCount) >= 1
+            && Number(entry.fallbackTaskCount) >= 1
+          : false;
+      provenance.push({ kind, correlationId: String(item && item.correlationId || ""), sourceValid });
+    }
+  }
+  for (const entry of Array.isArray(runtime.validation) ? runtime.validation : []) {
+    for (const item of Array.isArray(entry && entry.repairProvenance) ? entry.repairProvenance : []) {
+      const kind = String(item && item.kind || "");
+      provenance.push({ kind, correlationId: String(item && item.correlationId || ""), sourceValid: kind === "semantic_repair" });
+    }
+  }
+  if (!provenance.length || provenance.length > 24) return null;
+  const provenanceIds = new Set();
+  for (const item of provenance) {
+    if (!item.sourceValid || !REPAIR_KINDS.has(item.kind) || !OPAQUE_REPAIR_ID_PATTERN.test(item.correlationId)
+      || provenanceIds.has(item.correlationId)) return null;
+    provenanceIds.add(item.correlationId);
+  }
+  const canonicalItems = (Array.isArray(runtime.canonicalRequest) ? runtime.canonicalRequest : [])
+    .flatMap((entry) => Array.isArray(entry && entry.items) ? entry.items : []);
+  const canonicalByCorrelation = new Map();
+  const correlationByCanonicalTask = new Map();
+  for (const item of canonicalItems) {
+    if (!Object.hasOwn(item || {}, "repairCorrelationId")) continue;
+    const correlationId = String(item && item.repairCorrelationId || "");
+    const taskId = String(item && item.taskId || "");
+    if (!OPAQUE_REPAIR_ID_PATTERN.test(correlationId) || !provenanceIds.has(correlationId)
+      || !taskId || canonicalByCorrelation.has(correlationId)
+      || correlationByCanonicalTask.has(taskId) && correlationByCanonicalTask.get(taskId) !== correlationId) return null;
+    canonicalByCorrelation.set(correlationId, item);
+    correlationByCanonicalTask.set(taskId, correlationId);
+  }
+  if (canonicalByCorrelation.size !== provenanceIds.size) return null;
+  const joined = provenance.map((item) => canonicalByCorrelation.get(item.correlationId));
+  return joined.some((item) => canonicalRepairEvidenceMatchesExpectation(item, expectation))
+    ? joined
+    : null;
+}
+
 function validateTargetPreflightAttribution(report) {
   const evidence = [];
   for (const caseId of TARGET_PREFLIGHT_CASE_IDS) {
@@ -785,18 +873,6 @@ function validateTargetPreflightAttribution(report) {
       const sourceCase = DEPLOYED_ACCEPTANCE_MATRIX.find((candidate) => candidate.id === caseId);
       const sourceTurnNumber = TARGET_PREFLIGHT_TURNS[caseId][turnIndex];
       const expectation = sourceCase && sourceCase.turns[sourceTurnNumber - 1];
-      const plannerEntries = Array.isArray(runtime.planner) ? runtime.planner : [];
-      const providerRepair = plannerEntries.find((entry) => entry && (
-        entry.coverageRepairPerformed === true
-          && (entry.coverageRepairSucceeded === true || entry.coverageRepairFallback === true)
-        || entry.taskCollectionRepairPerformed === true
-          && Number(entry.preservedTaskCount) >= 1
-          && Number(entry.fallbackTaskCount) >= 1
-      ));
-      const repairReasons = (Array.isArray(runtime.validation) ? runtime.validation : [])
-        .flatMap((entry) => entry && entry.semanticValidation && Array.isArray(entry.semanticValidation.repairedTasks)
-          ? entry.semanticValidation.repairedTasks.map((repair) => String(repair && repair.reason || ""))
-          : []);
       const expectedCapabilities = Array.isArray(expectation && expectation.expectedCapabilities) ? expectation.expectedCapabilities : [];
       const canonicalItems = (Array.isArray(runtime.canonicalRequest) ? runtime.canonicalRequest : [])
         .flatMap((entry) => Array.isArray(entry && entry.items) ? entry.items : []);
@@ -815,10 +891,13 @@ function validateTargetPreflightAttribution(report) {
             const definition = getCapabilityDefinition(capability);
             return operation === "availability_resolver" || definition && definition.resolverId === "availability_resolver";
           });
+      const directlyAttributedEvidence = directlyAttributedCanonicalEvidence(runtime, expectation || {});
       const intendedBoundaryProven = caseId === "rg-023-pool-fee"
-        ? repairReasons.includes("property_catalog_entity_grounding")
-          && canonicalItems.some((entry) => entry && entry.canonicalEntity && entry.canonicalEntity.canonicalId === "pool")
-        : Boolean(providerRepair);
+        ? Boolean(directlyAttributedEvidence
+          && directlyAttributedEvidence.some((entry) => entry
+            && entry.canonicalEntity
+            && entry.canonicalEntity.canonicalId === "pool"))
+        : Boolean(directlyAttributedEvidence);
       const completeTrace = runtime.providerType === "postgres"
         || runtime.providerType === "postgresql";
       if (!completeTrace

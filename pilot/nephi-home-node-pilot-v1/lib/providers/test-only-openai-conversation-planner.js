@@ -10,6 +10,7 @@ const PLANNER_PROVIDER = "openai";
 const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic");
 const COVERAGE_MERGE_DIAGNOSTIC = Symbol("coverageMergeDiagnostic");
 const TASK_COLLECTION_DIAGNOSTIC = Symbol("taskCollectionDiagnostic");
+const ADDITIVE_REPAIR_DIAGNOSTIC = Symbol("additiveRepairDiagnostic");
 const RETRYABLE_ERROR_CATEGORIES = new Set(["timeout", "network", "rate_limit", "provider_5xx"]);
 const ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const MAX_PROVIDER_ATTEMPTS = 2;
@@ -542,6 +543,7 @@ function sanitizePlannerTaskCollection(output, input) {
     Math.max(max, Number.isInteger(task && task.candidateIndex) ? task.candidateIndex : -1), -1) + 1;
   const tasks = [];
   const contextRelationCandidates = [];
+  const fallbackTaskIds = [];
   let fallbackCount = 0;
   let unscopedFallbackCount = 0;
   for (const task of output.tasks) {
@@ -561,6 +563,7 @@ function sanitizePlannerTaskCollection(output, input) {
     if (!fallback) continue;
     tasks.push(fallback.task);
     contextRelationCandidates.push(fallback.relation);
+    fallbackTaskIds.push(String(fallback.task.taskId || ""));
     nextCandidateIndex += 1;
     fallbackCount += 1;
     if (fallback.unscoped) unscopedFallbackCount += 1;
@@ -587,7 +590,11 @@ function sanitizePlannerTaskCollection(output, input) {
   if (!sanitizedStructural.ok || !sanitizedContext.ok) return output;
   Object.defineProperty(sanitized, TASK_COLLECTION_DIAGNOSTIC, {
     enumerable: false,
-    value: Object.freeze({ preservedTaskCount: validPairs.size, fallbackTaskCount: fallbackCount })
+    value: Object.freeze({
+      preservedTaskCount: validPairs.size,
+      fallbackTaskCount: fallbackCount,
+      taskIds: Object.freeze(fallbackTaskIds.filter(Boolean))
+    })
   });
   return sanitized;
 }
@@ -740,11 +747,13 @@ function ensureBroadDateClarification(output, input) {
   const usedTaskIds = new Set(tasks.map((task) => String(task && task.taskId || "")).filter(Boolean));
   let nextCandidateIndex = tasks.reduce((max, task) => Math.max(max, Number.isInteger(task && task.candidateIndex) ? task.candidateIndex : -1), -1) + 1;
   let added = false;
+  const addedTaskIds = [];
   for (const sourceTask of output.tasks) {
     const addition = broadDateClarificationAddition(output, input, tasks, contextRelationCandidates, nextCandidateIndex, usedTaskIds, sourceTask);
     if (!addition) continue;
     tasks.push(addition.task);
     contextRelationCandidates.push(addition.relation);
+    addedTaskIds.push(String(addition.task.taskId || ""));
     nextCandidateIndex += 1;
     added = true;
   }
@@ -752,6 +761,10 @@ function ensureBroadDateClarification(output, input) {
   const expanded = { ...output, tasks, contextRelationCandidates };
   const taskCollectionDiagnostic = output[TASK_COLLECTION_DIAGNOSTIC];
   if (taskCollectionDiagnostic) Object.defineProperty(expanded, TASK_COLLECTION_DIAGNOSTIC, { enumerable: false, value: taskCollectionDiagnostic });
+  Object.defineProperty(expanded, ADDITIVE_REPAIR_DIAGNOSTIC, {
+    enumerable: false,
+    value: Object.freeze(addedTaskIds.filter(Boolean))
+  });
   return expanded;
 }
 
@@ -764,6 +777,7 @@ function mergeCoverageRepair(firstOutput, repairOutput, input, missingCanonicalI
   let nextCandidateIndex = tasks.reduce((max, task) => Math.max(max, Number.isInteger(task && task.candidateIndex) ? task.candidateIndex : -1), -1) + 1;
   let repairedCount = 0;
   let fallbackUsed = false;
+  const addedTaskIds = [];
   const availableSlots = Math.max(0, MAX_MERGED_TASKS - Math.max(tasks.length, contextRelationCandidates.length));
   const individualLimit = missingCanonicalIds.length <= availableSlots
     ? missingCanonicalIds.length
@@ -796,6 +810,7 @@ function mergeCoverageRepair(firstOutput, repairOutput, input, missingCanonicalI
     if (!validMergedOutput(tentative, input)) continue;
     tasks.push(candidateTask);
     contextRelationCandidates.push(candidateRelation);
+    addedTaskIds.push(String(candidateTask.taskId || ""));
     if (verified && addition === verified) repairedCount += 1;
     nextCandidateIndex += 1;
   }
@@ -814,6 +829,7 @@ function mergeCoverageRepair(firstOutput, repairOutput, input, missingCanonicalI
       if (validMergedOutput(tentative, input)) {
         tasks.push(aggregate.task);
         contextRelationCandidates.push(aggregate.relation);
+        addedTaskIds.push(String(aggregate.task.taskId || ""));
         firstOutput = tentative;
         aggregateAccepted = true;
       }
@@ -828,11 +844,19 @@ function mergeCoverageRepair(firstOutput, repairOutput, input, missingCanonicalI
     enumerable: false,
     value: taskCollectionDiagnostic
   });
+  const additiveRepairTaskIds = Array.isArray(firstOutput[ADDITIVE_REPAIR_DIAGNOSTIC])
+    ? firstOutput[ADDITIVE_REPAIR_DIAGNOSTIC]
+    : [];
+  if (additiveRepairTaskIds.length) Object.defineProperty(merged, ADDITIVE_REPAIR_DIAGNOSTIC, {
+    enumerable: false,
+    value: additiveRepairTaskIds
+  });
   Object.defineProperty(merged, COVERAGE_MERGE_DIAGNOSTIC, {
     enumerable: false,
     value: Object.freeze({
       succeeded: repairedCount === missingCanonicalIds.length,
-      fallback: fallbackUsed || repairedCount !== missingCanonicalIds.length
+      fallback: fallbackUsed || repairedCount !== missingCanonicalIds.length,
+      taskIds: Object.freeze(addedTaskIds.filter(Boolean))
     })
   });
   return merged;
@@ -924,11 +948,44 @@ function annotateFailure(error, { providerAttemptCount, firstAttemptErrorCategor
   return error;
 }
 
+function privateRepairLinks(output) {
+  const taskCollection = output && output[TASK_COLLECTION_DIAGNOSTIC];
+  const coverageMerge = output && output[COVERAGE_MERGE_DIAGNOSTIC];
+  const additiveTaskIds = output && Array.isArray(output[ADDITIVE_REPAIR_DIAGNOSTIC])
+    ? output[ADDITIVE_REPAIR_DIAGNOSTIC]
+    : [];
+  const candidates = [
+    ...(taskCollection && Array.isArray(taskCollection.taskIds)
+      ? taskCollection.taskIds.map((taskId) => ({ taskId, kind: "task_collection_repair" }))
+      : []),
+    ...additiveTaskIds.map((taskId) => ({ taskId, kind: "coverage_repair" })),
+    ...(coverageMerge && Array.isArray(coverageMerge.taskIds)
+      ? coverageMerge.taskIds.map((taskId) => ({ taskId, kind: "coverage_repair" }))
+      : [])
+  ];
+  const seen = new Set();
+  return Object.freeze(candidates
+    .filter((item) => {
+      const taskId = String(item && item.taskId || "");
+      const key = `${item.kind}\0${taskId}`;
+      if (!taskId || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, MAX_MERGED_TASKS)
+    .map((item) => Object.freeze({
+      taskId: String(item.taskId),
+      kind: item.kind,
+      correlationId: crypto.randomUUID()
+    })));
+}
+
 function annotateProviderSuccess(output, firstAttemptErrorCategory, providerAttempts, coverageRepair = null) {
   if (!output || typeof output !== "object") return output;
   const attempts = Object.freeze((providerAttempts || []).slice(0, MAX_PROVIDER_ATTEMPTS).map(safeAttemptDiagnostic));
   const retried = Boolean(firstAttemptErrorCategory);
   const taskCollection = output[TASK_COLLECTION_DIAGNOSTIC];
+  const repairLinks = privateRepairLinks(output);
   Object.defineProperty(output, PLANNER_PROVIDER_DIAGNOSTIC, {
     configurable: false,
     enumerable: false,
@@ -949,6 +1006,7 @@ function annotateProviderSuccess(output, firstAttemptErrorCategory, providerAtte
         coverageRepairSucceeded: coverageRepair.succeeded === true,
         coverageRepairFallback: coverageRepair.fallback === true
       } : {}),
+      ...(repairLinks.length ? { repairLinks } : {}),
       providerAttempts: attempts
     }
   });

@@ -6,6 +6,7 @@ const { runtimeConfig } = require("../config/runtime");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { validatePlannerOutput, applyPlannerSemanticContract } = require("../lib/conversation-engine-v2/planner-schema");
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
+const OPAQUE_REPAIR_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const output = { schemaVersion: 2, discourse: { relation: "new_request", confidence: 1 }, stateOperations: [], stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, tasks: [{ taskId: "1", type: "property_fact", sourceText: "你好", requestedOutputs: ["greeting"], dependsOnStayContext: false, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 1 }, confidence: 1 }], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "greeting" };
 let requestBody;
@@ -78,6 +79,11 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(coverageDiagnostic.coverageRepairPerformed, true);
   assert.equal(coverageDiagnostic.coverageRepairSucceeded, true);
   assert.equal(coverageDiagnostic.coverageRepairFallback, false);
+  assert.equal(Array.isArray(coverageDiagnostic.repairLinks), true, "coverage repair must record private task-to-correlation provenance");
+  assert.deepEqual(coverageDiagnostic.repairLinks.map((item) => item.kind), ["coverage_repair"]);
+  assert.equal(coverageDiagnostic.repairLinks[0].taskId, coverageResult.tasks[1].taskId);
+  assert.match(coverageDiagnostic.repairLinks[0].correlationId, OPAQUE_REPAIR_ID);
+  assert.doesNotMatch(coverageDiagnostic.repairLinks[0].correlationId, /pool|price|coverage|property/i, "opaque repair IDs must not derive from semantic task data");
   const repairInput = JSON.parse(coverageBodies[1].input[1].content[0].text);
   assert.deepEqual(repairInput.coverageRepair.missingCanonicalIds, ["pool"]);
   assert.deepEqual(repairInput.coverageRepair.preservedTaskIds, ["price"]);
@@ -227,6 +233,13 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const resolvedLodgingResult = await resolvedLodgingPlanner.classify({ currentMessage: resolvedLodgingPrice.tasks[0].sourceText, currentMessages: [resolvedLodgingPrice.tasks[0].sourceText], sourceEvents: [{ eventId: "resolved-lodging", messageText: resolvedLodgingPrice.tasks[0].sourceText }], eventTimestamp: 1, catalog: lodgingCatalog, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(resolvedLodgingCalls, 1, "a resolved inventory subject must not spend a second provider call");
   assert.equal(resolvedLodgingResult.tasks.some((task) => ["availability", "bundle_availability"].includes(task.type)), true, "date clarification must not depend on a missing inventory subject");
+  const resolvedLodgingDiagnostic = resolvedLodgingResult[Symbol.for("junzan.plannerProviderDiagnostic")];
+  const recurringDateTask = resolvedLodgingResult.tasks.find((task) => ["availability", "bundle_availability"].includes(task.type));
+  assert.equal(Array.isArray(resolvedLodgingDiagnostic.repairLinks), true, "deterministic recurring-date repair must emit direct-join provenance");
+  assert.equal(resolvedLodgingDiagnostic.repairLinks.length, 1);
+  assert.equal(resolvedLodgingDiagnostic.repairLinks[0].kind, "coverage_repair");
+  assert.equal(resolvedLodgingDiagnostic.repairLinks[0].taskId, recurringDateTask.taskId);
+  assert.match(resolvedLodgingDiagnostic.repairLinks[0].correlationId, OPAQUE_REPAIR_ID);
   const mixedLodgingMessage = "7\u6708\u9031\u516d301\u50f9\u683c\uff0c\u53e6\u5916302\u660e\u5929\u6709\u7a7a\u55ce";
   const mixedLodgingOutput = JSON.parse(JSON.stringify(resolvedLodgingPrice));
   mixedLodgingOutput.tasks[0] = { ...mixedLodgingOutput.tasks[0], sourceText: "7\u6708\u9031\u516d301\u50f9\u683c", entity: { category: "room", rawText: "301", canonicalCandidate: "room301", confidence: 1 } };
@@ -357,6 +370,14 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(partialDiagnostic.taskCollectionRepairPerformed, true);
   assert.equal(partialDiagnostic.preservedTaskCount, 1);
   assert.equal(partialDiagnostic.fallbackTaskCount, 1);
+  assert.equal(Array.isArray(partialDiagnostic.repairLinks), true, "task collection repair must record private direct-join links");
+  assert.deepEqual(
+    new Set(partialDiagnostic.repairLinks.map((item) => item.taskId)),
+    new Set([partialResult.tasks[1].taskId]),
+    "task collection provenance must identify only the task actually replaced by repair, not a preserved sibling"
+  );
+  assert.ok(partialDiagnostic.repairLinks.every((item) => item.kind === "task_collection_repair" && OPAQUE_REPAIR_ID.test(item.correlationId)));
+  assert.equal(new Set(partialDiagnostic.repairLinks.map((item) => item.correlationId)).size, partialDiagnostic.repairLinks.length, "each affected task must have one unique per-turn correlation ID");
 
   const copiedSourceOutput = JSON.parse(JSON.stringify(partialOutput));
   copiedSourceOutput.tasks[1].sourceText = partialOutput.tasks[0].sourceText;

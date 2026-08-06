@@ -352,3 +352,10 @@
 ## 2026-08-06 Formal lodging coverage repair
 
 - Extended the bounded additive Planner repair to verified room types, positive room-number mentions, uniquely required whole-property bundles, facility usage conditions, and per-scope month-qualified recurring-date clarification; bounded removal polarity and accumulated-relation deduplication prevent excluded inventory and duplicate companions while safe repair attribution survives the deployed trace projection.
+
+## 2026-08-07 Direct deployed repair attribution
+
+- Bound collection, coverage, and semantic repair provenance to canonical evidence with fresh opaque UUID-v4 correlation IDs and exact task-local joins.
+- Made deployed target attribution fail closed for missing, unrelated, malformed, unknown, duplicate, conflicting, and one-to-many evidence, including `rg-023` pool grounding.
+- Restricted safe provenance to bounded kind/correlation pairs, removed raw semantic repair task IDs from server projection, and made `validation` the single safe semantic-provenance stage.
+- Preserved Planner behavior, formal CanonicalRequest objects, product responses, fixtures, acceptance matrix, and Product Baseline unchanged.
