@@ -162,3 +162,9 @@
 1. Run the remaining lodging, policy, temporal, ambiguity, past-date, multi-cycle, complete `npm test`, and all safety gates; create one root-cause commit and non-force push it.
 2. Require exact-SHA verify, Render `ready` with `testOnly=true`, verified private artifact digest, and complete 77-case / 90-turn acceptance. The `rg-006` target trace must contain `resolved_inventory_detail_scope_preservation`, retain the resolved room in CanonicalRequest and State, create no availability QueryPlan for a past date, and finish with explicit past-date clarification.
 3. Compare every prior-PASS turn against artifacts `8954889733`, `8953248983`, and `8950072765`. If stable and Release Gate remains unmet, continue from the next earliest common failure layer; keep real LINE blocked.
+
+## 2026-08-06 task-level Planner contract recovery
+
+1. Run the fresh complete local suite, protected acceptance, Codex integrity, Constitution, runtime uniqueness, canonical golden, and `git diff --check`; retain the final Reviewer Ready verdict, then create one root-cause commit and non-force push it to `test-only/node-pilot-integration`.
+2. Require exact-SHA GitHub verify and Render `ready` with `testOnly=true`. Run the exact 18 previously failing turns in `target_preflight`; every turn must PASS with executed repair attribution, expected canonical capability/subject, and no premature availability query.
+3. Only after preflight succeeds, run the complete 77-case / 90-turn real OpenAI + PostgreSQL matrix without case retries. Compare every prior-PASS turn against artifact `8962416807`; do not accept net-score improvement with any prior-PASS regression or target trace that bypasses the repair. If the Release Gate remains unmet, continue from the newest artifact's earliest common failure layer. Real LINE stays blocked.

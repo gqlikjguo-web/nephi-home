@@ -344,3 +344,7 @@
 ## 2026-08-06 Resolved lodging detail-scope preservation
 
 - Prevented policy-shaped detail drift from erasing a uniquely resolved room or bundle inventory scope while retaining temporal and query-readiness gates.
+
+## 2026-08-06 Task-level Planner contract recovery
+
+- Preserved valid Planner siblings across local contract defects, added source-isolated task handoffs and bounded additive formal-subject coverage repair, removed local/temporal failures from provider retry, and made targeted deployed attribution require executed repair evidence plus expected semantics.

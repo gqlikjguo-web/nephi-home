@@ -717,6 +717,77 @@ function main() {
   assert.notEqual(sourceBoundAmenityFee.tasks[0].type, "price", "a stateless amenity fee must never be promoted into lodging price");
   assert.notEqual(sourceBoundAmenityFee.tasks[0].entity.category, "bundle");
 
+  const poolFeeMessage = "What is the fee for the pool?";
+  const malformedPoolFee = sourceBoundSemantic(task({
+    taskId: "malformed-pool-fee",
+    type: "price",
+    category: "policy",
+    rawText: "pool",
+    sourceText: poolFeeMessage,
+    canonicalCandidate: "pool",
+    detailIntent: "general",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  }), { message: poolFeeMessage, catalogOverride: sourceBoundInventoryCatalog });
+  assert.notEqual(malformedPoolFee.tasks[0].type, "price", "a formal property-fact subject must not be erased merely because the Planner used the lodging-price capability");
+  assert.equal(malformedPoolFee.tasks[0].entity.canonicalCandidate, "pool", "the exact formal pool subject must survive semantic normalization");
+  assert.equal(malformedPoolFee.tasks[0].dependsOnStayContext, false, "a property-catalog fee question must not require lodging dates");
+
+  const blankRawPoolFee = sourceBoundSemantic(task({
+    taskId: "blank-raw-pool-fee",
+    type: "price",
+    category: "policy",
+    rawText: "",
+    sourceText: poolFeeMessage,
+    canonicalCandidate: "pool",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  }), { message: poolFeeMessage, catalogOverride: sourceBoundInventoryCatalog });
+  assert.notEqual(blankRawPoolFee.tasks[0].type, "price", "verified task evidence, not Planner rawText, must retain a unique formal property subject");
+  assert.equal(blankRawPoolFee.tasks[0].entity.canonicalCandidate, "pool");
+
+  const combinedMessage = "What is the lodging amount, and what is the fee for the pool?";
+  const combinedPriceTask = task({
+    taskId: "combined-price",
+    type: "price",
+    category: "policy",
+    rawText: "pool",
+    sourceText: combinedMessage,
+    canonicalCandidate: "pool",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  });
+  const combinedPoolTask = task({ taskId: "combined-pool", type: "amenity", category: "amenity", rawText: "pool", sourceText: combinedMessage, canonicalCandidate: "pool" });
+  combinedPoolTask.candidateIndex = 1;
+  const combinedPlan = plan([combinedPriceTask, combinedPoolTask]);
+  combinedPlan.contextRelationCandidates.forEach((relation) => {
+    relation.evidenceRefs = [{ eventId: "combined", messageRef: "", startOffset: 0, endOffset: combinedMessage.length, quote: combinedMessage }];
+  });
+  const combinedSemantic = applyPlannerSemanticContract(combinedPlan, { catalog: sourceBoundInventoryCatalog, sourceEvents: [{ eventId: "combined", messageRef: "", messageText: combinedMessage }] });
+  assert.equal(combinedSemantic.tasks.find((item) => item.taskId === "combined-price").type, "price", "a separately represented formal subject must not erase the preserved lodging-price task");
+  assert.equal(combinedSemantic.tasks.find((item) => item.taskId === "combined-pool").entity.canonicalCandidate, "pool");
+
   const multiTaskMessage = "Garden Suite A has a feature. Confirm the lodging amount.";
   const multiTaskPlan = plan([
     task({

@@ -17,6 +17,7 @@ const {
   validateWorkflowIdentity,
   acceptanceMatrixForMode,
   validateTargetPreflightAttribution,
+  TARGET_PREFLIGHT_TURNS,
   TEST_ONLY_ACCEPTANCE_AUDIENCE
 } = require("../scripts/run-deployed-conversation-acceptance");
 
@@ -414,9 +415,9 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.match(workflow, /TEST_ONLY_ACCEPTANCE_REPORT_DIR/);
   assert.doesNotMatch(workflow, /continue-on-error|forced success/i);
 
-  const targetIds = ["rg-026-ktv-availability", "rg-037-multi-pool-price-checkin"];
+  const targetIds = Object.keys(TARGET_PREFLIGHT_TURNS);
   const selected = selectAcceptanceMatrix({ matrix: DEPLOYED_ACCEPTANCE_MATRIX, caseIds: targetIds });
-  assert.deepEqual(selected.map((item) => item.id), targetIds, "target preflight must select only the two deployed cases in requested order");
+  assert.deepEqual(selected.map((item) => item.id), targetIds, "target preflight must select only the requested deployed cases in order");
   assert.throws(() => selectAcceptanceMatrix({ matrix: DEPLOYED_ACCEPTANCE_MATRIX, caseIds: [] }), /acceptance_case_ids_required/);
   assert.throws(() => selectAcceptanceMatrix({ matrix: DEPLOYED_ACCEPTANCE_MATRIX, caseIds: [" "] }), /acceptance_case_id_blank/);
   assert.throws(() => selectAcceptanceMatrix({ matrix: DEPLOYED_ACCEPTANCE_MATRIX, caseIds: [targetIds[0], targetIds[0]] }), /acceptance_case_id_duplicate/);
@@ -429,20 +430,22 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.doesNotThrow(() => validateWorkflowIdentity({ ...trustedIdentity, GITHUB_EVENT_NAME: "workflow_dispatch" }));
   assert.doesNotThrow(() => validateWorkflowIdentity({ ...trustedIdentity, GITHUB_EVENT_NAME: "push" }));
   assert.throws(() => validateWorkflowIdentity({ ...trustedIdentity, GITHUB_EVENT_NAME: "pull_request" }), /github_workflow_identity_mismatch/);
-  assert.deepEqual(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "target_preflight", TEST_ONLY_ACCEPTANCE_CASE_IDS: targetIds.join(",") }).matrix.map((item) => item.id), targetIds);
+  const targetedMatrix = acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "target_preflight", TEST_ONLY_ACCEPTANCE_CASE_IDS: targetIds.join(",") }).matrix;
+  assert.deepEqual(targetedMatrix.map((item) => item.id), targetIds);
+  assert.equal(targetedMatrix.reduce((sum, item) => sum + item.turns.length, 0), 18, "preflight must execute exactly the 18 previously failing turns");
   assert.equal(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: "" }).matrix.length, 77);
   assert.throws(() => acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: targetIds[0] }), /full_matrix_case_filter_forbidden/);
   const attributedReport = {
     cases: targetIds.map((caseId) => ({
       caseId,
       status: "PASS",
-      turns: [{
+      turns: TARGET_PREFLIGHT_TURNS[caseId].map(() => ({
         runtimeEvidence: {
           providerType: "postgresql",
           plannerParserSucceeded: true,
           semanticContractValidationPassed: true,
           planner: [{ stage: "planner" }],
-          validation: [{ stage: "semantic_contract", semanticValidation: { repairedTasks: [{ taskId: `${caseId}-task`, reason: caseId === targetIds[0] ? "source_bound_inventory_feature_capability" : "source_bound_inventory_scope_preservation" }] } }],
+          validation: [{ stage: "semantic_contract", semanticValidation: { repairedTasks: [] } }],
           canonicalRequest: [{ stage: "canonical_request", items: [{}] }],
           conversationState: [{ stage: "state" }],
           queryPlan: [{ stage: "query_plan", count: 1 }],
@@ -451,14 +454,32 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
         claimValidation: { ok: true },
         finalDecision: { action: "reply" },
         finalResponse: { replyText: "verified" }
-      }]
+      }))
     }))
   };
+  assert.throws(() => validateTargetPreflightAttribution(attributedReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "complete generic traces without the repaired boundary must not certify target attribution");
+  for (const item of attributedReport.cases) for (const turn of item.turns) {
+    turn.runtimeEvidence.canonicalRequest[0].items = [
+      { capability: "price", canonicalEntity: { canonicalId: "pool" } },
+      { capability: "availability", canonicalEntity: { canonicalId: "check_in" } },
+      { capability: "policy", canonicalEntity: { canonicalId: "parking" } },
+      { capability: "amenity", canonicalEntity: { canonicalId: "bbq" } },
+      { capability: "property_fact", canonicalEntity: { canonicalId: "kitchen" } }
+    ];
+    if (item.caseId === "rg-023-pool-fee") {
+      turn.runtimeEvidence.validation[0].semanticValidation.repairedTasks = [{ taskId: "pool-fee", reason: "property_catalog_entity_grounding" }];
+    } else {
+      Object.assign(turn.runtimeEvidence.planner[0], { coverageRepairPerformed: true, coverageRepairSucceeded: true, coverageRepairFallback: false });
+    }
+  }
   const attribution = validateTargetPreflightAttribution(attributedReport);
   assert.equal(attribution.status, "TARGET_PASS_ATTRIBUTION_PROVEN");
-  assert.deepEqual(attribution.cases.map((item) => item.postgresqlQueryCount), [1, 1]);
+  assert.equal(attribution.cases.reduce((sum, item) => sum + item.completeTurnCount, 0), 18);
+  const prematureQueryReport = JSON.parse(JSON.stringify(attributedReport));
+  prematureQueryReport.cases[0].turns[0].runtimeEvidence.queryPlan[0].items = [{ capability: "price", operation: "availability" }];
+  assert.throws(() => validateTargetPreflightAttribution(prematureQueryReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "a real availability capability operation must invalidate pending-turn attribution");
   const unprovenReport = JSON.parse(JSON.stringify(attributedReport));
-  unprovenReport.cases[0].turns[0].runtimeEvidence.validation[0].semanticValidation.repairedTasks = [];
+  unprovenReport.cases[0].turns[0].runtimeEvidence.planner = [];
   assert.throws(() => validateTargetPreflightAttribution(unprovenReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/);
 
   const deployedRunnerSource = fs.readFileSync(path.join(__dirname, "../scripts/run-deployed-conversation-acceptance.js"), "utf8");

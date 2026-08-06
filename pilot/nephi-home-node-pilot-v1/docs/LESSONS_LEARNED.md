@@ -338,3 +338,9 @@ Artifact `8954260810` again made the target pass through a fresh OpenAI task sha
 A restriction-shaped detail intent can describe a lodging inventory request without turning the room or bundle itself into a property policy. When the current catalog uniquely resolves the Planner's lodging entity, changing that task to `policy` discards formal scope and can override a more important temporal rejection with an unrelated property-data handoff.
 
 Treat uniquely resolved lodging identity as stronger evidence than detail-intent drift. Keep unresolved or ambiguous lodging mentions fail closed, retain existing property-policy normalization for non-inventory entities, and expose a semantic repair reason so deployed attribution is testable.
+
+## 2026-08-06 -- Whole-response Planner retry can destroy valid sibling work
+
+A parseable structured response can contain both usable tasks and one local contract defect. Retrying the complete prompt treats deterministic local validation as provider transport failure, lets a second stochastic sample overwrite the first, and can turn several grounded guest questions into one generic handoff.
+
+Preserve independently valid task/relation pairs byte-for-byte and isolate only the invalid sibling. Source isolation must compare canonical event identity and overlapping intervals, not raw reference strings. A missing-subject supplement must be additive, exclude FAQ-only substring matches, and never let a whole-message task or incompatible canonical candidate claim unrelated formal subjects. Deployed target attribution must require the responsible repair marker and expected semantic result, not merely a complete trace with PASS status.

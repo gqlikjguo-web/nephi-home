@@ -102,7 +102,7 @@ function diagnosticProjection(stage, entry) {
   if (stage === "state_before") return stateBeforeProjection(entry);
   if (stage === "planner") {
     return {
-      ...select(entry, ["parserSucceeded", "taskCount", "discourse", "shouldIgnore", "missingInformation", "failure", "failureCode", "providerAttemptCount", "firstAttemptErrorCategory", "finalErrorCategory", "retryPerformed", "retrySucceeded"]),
+      ...select(entry, ["parserSucceeded", "taskCount", "discourse", "shouldIgnore", "missingInformation", "failure", "failureCode", "providerAttemptCount", "firstAttemptErrorCategory", "finalErrorCategory", "retryPerformed", "retrySucceeded", "taskCollectionRepairPerformed", "preservedTaskCount", "fallbackTaskCount", "coverageRepairPerformed", "coverageRepairSucceeded", "coverageRepairFallback"]),
       tasks: Array.isArray(entry.tasks) ? entry.tasks.map(taskSummary) : []
     };
   }

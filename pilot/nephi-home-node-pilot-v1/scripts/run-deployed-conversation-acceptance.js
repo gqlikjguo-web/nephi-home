@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { TEST_ONLY_ACCEPTANCE_AUDIENCE, EXPECTED_REPOSITORY, EXPECTED_REF, EXPECTED_WORKFLOW_REF } = require("../lib/test-only-acceptance-oidc");
+const { getCapabilityDefinition } = require("../lib/conversation-engine-v2/capability-registry");
 
 const DEFAULT_BASE_URL = "https://nephi-home-node-pilot-test-only-btye.onrender.com";
 const SAFE_FACT_KEYS = new Set(["subject", "status", "answer", "locationMapUrl", "detailIntent", "availability", "checkIn", "checkOut", "detailProvided", "detailNeedsConfirmation", "amenities", "availableDates", "range", "availableInventory", "applicableBundles", "prices"]);
@@ -107,11 +108,25 @@ function loadSupplementalAcceptanceMatrix(filePath = SUPPLEMENTAL_MATRIX_PATH) {
 
 const SUPPLEMENTAL_ACCEPTANCE_MATRIX = loadSupplementalAcceptanceMatrix();
 const DEPLOYED_ACCEPTANCE_MATRIX = [...ACCEPTANCE_MATRIX, ...SUPPLEMENTAL_ACCEPTANCE_MATRIX];
-const TARGET_PREFLIGHT_CASE_IDS = Object.freeze(["rg-026-ktv-availability", "rg-037-multi-pool-price-checkin"]);
-const TARGET_REPAIR_REASONS = Object.freeze({
-  "rg-026-ktv-availability": "source_bound_inventory_feature_capability",
-  "rg-037-multi-pool-price-checkin": "source_bound_inventory_scope_preservation"
+const TARGET_PREFLIGHT_TURNS = Object.freeze({
+  "rg-003-price-nights": [1],
+  "rg-004-bundle-price": [1],
+  "rg-006-named-room-availability": [1],
+  "rg-013-booking-request-full": [1],
+  "rg-023-pool-fee": [1],
+  "rg-029-checkin-latest": [1],
+  "rg-033-kitchen": [1],
+  "rg-037-multi-pool-price-checkin": [1],
+  "rg-038-conversation-room-price-payment": [1],
+  "rg-039-conversation-booking-refund": [1],
+  "rgs-003-bbq": [1],
+  "rgs-005-parking": [1],
+  "rgs-010-pets": [1],
+  "rgs-014-bundle-price": [1],
+  "rgs-019-modify-room-mix": [1],
+  "rgs-020-modify-date": [1, 2, 3]
 });
+const TARGET_PREFLIGHT_CASE_IDS = Object.freeze(Object.keys(TARGET_PREFLIGHT_TURNS));
 
 function selectAcceptanceMatrix({ matrix = DEPLOYED_ACCEPTANCE_MATRIX, caseIds } = {}) {
   if (!Array.isArray(caseIds) || caseIds.length === 0) throw new Error("acceptance_case_ids_required");
@@ -141,9 +156,14 @@ function acceptanceMatrixForMode(env) {
   }
   if (mode !== "target_preflight") throw new Error("acceptance_mode_invalid");
   const rawIds = String(env.TEST_ONLY_ACCEPTANCE_CASE_IDS || "").split(",");
-  const matrix = selectAcceptanceMatrix({ caseIds: rawIds });
+  const selected = selectAcceptanceMatrix({ caseIds: rawIds });
+  const matrix = selected.map((item) => ({
+    ...item,
+    turns: TARGET_PREFLIGHT_TURNS[item.id].map((turnNumber) => item.turns[turnNumber - 1])
+  }));
   if (matrix.length !== TARGET_PREFLIGHT_CASE_IDS.length
-    || matrix.some((item, index) => item.id !== TARGET_PREFLIGHT_CASE_IDS[index])) {
+    || matrix.some((item, index) => item.id !== TARGET_PREFLIGHT_CASE_IDS[index] || item.turns.some((turn) => !turn))
+    || matrix.reduce((sum, item) => sum + item.turns.length, 0) !== 18) {
     throw new Error("target_preflight_case_set_mismatch");
   }
   return { mode, matrix };
@@ -756,16 +776,49 @@ function validateTargetPreflightAttribution(report) {
     if (!item || item.status !== "PASS" || !Array.isArray(item.turns) || !item.turns.length) {
       throw Object.assign(new Error("TARGET_PASS_ATTRIBUTION_UNPROVEN"), { code: "TARGET_PASS_ATTRIBUTION_UNPROVEN" });
     }
-    const expectedReason = TARGET_REPAIR_REASONS[caseId];
-    let markerTaskId = "";
-    let postgresqlQueryCount = 0;
-    for (const turn of item.turns) {
+    const expectedTurnCount = TARGET_PREFLIGHT_TURNS[caseId].length;
+    if (item.turns.length !== expectedTurnCount) throw Object.assign(new Error("TARGET_PASS_ATTRIBUTION_UNPROVEN"), { code: "TARGET_PASS_ATTRIBUTION_UNPROVEN" });
+    let completeTurnCount = 0;
+    for (let turnIndex = 0; turnIndex < item.turns.length; turnIndex += 1) {
+      const turn = item.turns[turnIndex];
       const runtime = turn.runtimeEvidence || {};
-      const semanticEntries = Array.isArray(runtime.validation) ? runtime.validation.filter((entry) => entry && entry.stage === "semantic_contract") : [];
-      const repairedTasks = semanticEntries.flatMap((entry) => entry.semanticValidation && Array.isArray(entry.semanticValidation.repairedTasks) ? entry.semanticValidation.repairedTasks : []);
-      const repair = repairedTasks.find((candidate) => candidate && candidate.reason === expectedReason);
-      if (repair) markerTaskId = String(repair.taskId || "").slice(0, 80);
-      postgresqlQueryCount += (runtime.queryPlan || []).filter((entry) => entry && entry.stage === "query_plan").reduce((sum, entry) => sum + (Number.isInteger(entry.count) ? entry.count : 0), 0);
+      const sourceCase = DEPLOYED_ACCEPTANCE_MATRIX.find((candidate) => candidate.id === caseId);
+      const sourceTurnNumber = TARGET_PREFLIGHT_TURNS[caseId][turnIndex];
+      const expectation = sourceCase && sourceCase.turns[sourceTurnNumber - 1];
+      const plannerEntries = Array.isArray(runtime.planner) ? runtime.planner : [];
+      const providerRepair = plannerEntries.find((entry) => entry && (
+        entry.coverageRepairPerformed === true
+          && (entry.coverageRepairSucceeded === true || entry.coverageRepairFallback === true)
+        || entry.taskCollectionRepairPerformed === true
+          && Number(entry.preservedTaskCount) >= 1
+          && Number(entry.fallbackTaskCount) >= 1
+      ));
+      const repairReasons = (Array.isArray(runtime.validation) ? runtime.validation : [])
+        .flatMap((entry) => entry && entry.semanticValidation && Array.isArray(entry.semanticValidation.repairedTasks)
+          ? entry.semanticValidation.repairedTasks.map((repair) => String(repair && repair.reason || ""))
+          : []);
+      const expectedCapabilities = Array.isArray(expectation && expectation.expectedCapabilities) ? expectation.expectedCapabilities : [];
+      const canonicalItems = (Array.isArray(runtime.canonicalRequest) ? runtime.canonicalRequest : [])
+        .flatMap((entry) => Array.isArray(entry && entry.items) ? entry.items : []);
+      const actualCapabilities = new Set(canonicalItems.map((entry) => String(entry && entry.capability || "")).filter(Boolean));
+      const capabilityMissing = expectedCapabilities.some((alternatives) =>
+        !alternatives.some((capability) => actualCapabilities.has(capability)));
+      const semanticMissing = missingExpectedSemanticEvidence({ trace: runtime.canonicalRequest || [] }, expectation || {});
+      const requiresNoAvailabilityQuery = Array.isArray(expectation && expectation.expectedActions)
+        && expectation.expectedActions.includes("clarification")
+        && (expectation.expectedSemantic || []).some((tag) => ["availability", "date_clarification", "price", "total_price", "holiday_price"].includes(tag));
+      const prematureAvailabilityQuery = requiresNoAvailabilityQuery
+        && (runtime.queryPlan || []).flatMap((entry) => Array.isArray(entry && entry.items) ? entry.items : [])
+          .some((entry) => {
+            const operation = String(entry && entry.operation || "");
+            const capability = operation === "availability_resolver" ? String(entry && entry.capability || "") : operation;
+            const definition = getCapabilityDefinition(capability);
+            return operation === "availability_resolver" || definition && definition.resolverId === "availability_resolver";
+          });
+      const intendedBoundaryProven = caseId === "rg-023-pool-fee"
+        ? repairReasons.includes("property_catalog_entity_grounding")
+          && canonicalItems.some((entry) => entry && entry.canonicalEntity && entry.canonicalEntity.canonicalId === "pool")
+        : Boolean(providerRepair);
       const completeTrace = runtime.providerType === "postgres"
         || runtime.providerType === "postgresql";
       if (!completeTrace
@@ -778,12 +831,16 @@ function validateTargetPreflightAttribution(report) {
         || !(runtime.resolverExecution || []).length
         || !turn.claimValidation || turn.claimValidation.ok !== true
         || !turn.finalDecision || !turn.finalDecision.action
-        || !turn.finalResponse || typeof turn.finalResponse.replyText !== "string") {
+        || !turn.finalResponse || typeof turn.finalResponse.replyText !== "string"
+        || !intendedBoundaryProven
+        || capabilityMissing
+        || semanticMissing.length
+        || prematureAvailabilityQuery) {
         throw Object.assign(new Error("TARGET_PASS_ATTRIBUTION_UNPROVEN"), { code: "TARGET_PASS_ATTRIBUTION_UNPROVEN" });
       }
+      completeTurnCount += 1;
     }
-    if (!markerTaskId || postgresqlQueryCount < 1) throw Object.assign(new Error("TARGET_PASS_ATTRIBUTION_UNPROVEN"), { code: "TARGET_PASS_ATTRIBUTION_UNPROVEN" });
-    evidence.push({ caseId, repairReason: expectedReason, markerTaskId, postgresqlQueryCount, traceStatus: "complete" });
+    evidence.push({ caseId, completeTurnCount, providerType: "postgresql", traceStatus: "complete", repairAttribution: "proven" });
   }
   return { status: "TARGET_PASS_ATTRIBUTION_PROVEN", cases: evidence };
 }
@@ -835,6 +892,7 @@ module.exports = {
   SUPPLEMENTAL_ACCEPTANCE_MATRIX,
   DEPLOYED_ACCEPTANCE_MATRIX,
   TARGET_PREFLIGHT_CASE_IDS,
+  TARGET_PREFLIGHT_TURNS,
   loadAcceptanceMatrix,
   loadSupplementalAcceptanceMatrix,
   NOT_EXECUTABLE_STATUS,

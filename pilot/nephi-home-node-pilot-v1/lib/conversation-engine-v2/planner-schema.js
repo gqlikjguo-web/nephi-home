@@ -94,7 +94,7 @@ function normalizedInventoryTaskShape(task, type, fallbackStayCandidate = null) 
   };
 }
 
-function normalizedStatefulInventoryTaskShape(task, fallbackStayCandidate = null, catalog = null, verifiedSourceText = "") {
+function normalizedStatefulInventoryTaskShape(task, fallbackStayCandidate = null, catalog = null, verifiedSourceText = "", formalPropertyRepresentedBySibling = false) {
   const requestedType = requestedInventoryType(task);
   if (!requestedType || task.type !== requestedType || task.dependsOnStayContext !== true
     || !task.entity || ["room", "bundle", "other"].includes(task.entity.category)) return null;
@@ -104,6 +104,22 @@ function normalizedStatefulInventoryTaskShape(task, fallbackStayCandidate = null
   const sourceBoundEntity = inventoryMentions.length === 1
     ? inventoryMentions[0]
     : null;
+  const formalMentions = !sourceBoundEntity && verifiedSourceText
+    ? mentionedPropertyFacts(catalog, verifiedSourceText)
+    : [];
+  const formalPropertyEntity = formalMentions.length === 1 && task.entity.canonicalCandidate
+    ? resolveEntity(catalog, {
+        category: "other",
+        rawText: "",
+        canonicalCandidate: task.entity.canonicalCandidate
+      })
+    : null;
+  if (formalPropertyEntity
+    && formalPropertyEntity.status === "resolved"
+    && formalPropertyEntity.entity
+    && formalPropertyEntity.entity.canonicalId === formalMentions[0].entity.canonicalId
+    && !["room", "bundle"].includes(formalPropertyEntity.entity.category)
+    && !formalPropertyRepresentedBySibling) return null;
   const normalized = normalizedInventoryTaskShape(sourceBoundEntity ? {
     ...task,
     entity: {
@@ -420,7 +436,7 @@ function validatePlannerOutput(value) {
   });
   const expression = value.stay && value.stay.dateExpression;
   if (!expression || !text(expression.rawText || "", 200) || !DATE_KINDS.has(expression.kind) || !ANCHORS.has(expression.anchor)) errors.push("stay.dateExpression");
-  if (!Array.isArray(value.tasks) || value.tasks.length < 1 || value.tasks.length > 12) errors.push("tasks");
+  if (!Array.isArray(value.tasks) || value.tasks.length < 1 || value.tasks.length > 24) errors.push("tasks");
   else {
     const taskIds = new Set();
     value.tasks.forEach((task, index) => {
@@ -647,6 +663,20 @@ function verifiedNewRequestEvidence(task, contextRelationCandidates, sourceEvent
   return taskSourceText;
 }
 
+function sourceBoundFormalPropertyId(task, contextRelationCandidates, sourceEvents, catalog) {
+  const verifiedSourceText = verifiedNewRequestEvidence(task, contextRelationCandidates, sourceEvents);
+  if (!verifiedSourceText || !task || !task.entity) return null;
+  const mentions = mentionedPropertyFacts(catalog, verifiedSourceText);
+  if (mentions.length !== 1) return null;
+  const resolved = resolveEntity(catalog, task.entity);
+  const definition = getCapabilityDefinition(task.type);
+  if (!resolved || resolved.status !== "resolved" || !resolved.entity
+    || resolved.entity.canonicalId !== mentions[0].entity.canonicalId
+    || !definition || definition.resolverId !== "property_catalog" || definition.stayDependency !== false
+    || definition.riskLevel !== "low" || definition.responseMode !== "answer") return null;
+  return resolved.entity.canonicalId;
+}
+
 function normalizeUnreferencedSameTurnSupplements(value, sourceEvents) {
   const repairs = [];
   if (!value || !value.discourse || value.discourse.relation !== "new_request"
@@ -765,6 +795,10 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     ...value.isolatedTaskIndexes.map((index) => ({ taskId: value.tasks[index].taskId, index, reason: "merged_unknown_catalog_task_isolation" }))
   ], rejectedTasks = [], repairedRelations = [...relationNormalization.repairs];
   let contextRelationCandidates = value.contextRelationCandidates;
+  const formalPropertyIdsByCandidate = new Map(value.tasks.map((task) => [
+    task && task.candidateIndex,
+    sourceBoundFormalPropertyId(task, value.contextRelationCandidates, sourceEvents, catalog)
+  ]));
   let tasks = value.tasks.map((original, index) => {
     let task = { ...original, eligibilityEvidence: normalizeEligibilityEvidence(original && original.eligibilityEvidence), entity: original && original.entity ? { ...original.entity } : original && original.entity };
     if (task.dependsOnStayContext === true) task.stayCandidate = authoritativeStayCandidate(task.stayCandidate, value.stay);
@@ -781,7 +815,10 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
       repairedTasks.push({ taskId: task.taskId, index, reason: sourceBoundFeatureReason });
     }
 
-    const statefulInventoryTask = normalizedStatefulInventoryTaskShape(task, value.stay, catalog, verifiedSourceText);
+    const candidateFormalId = task.entity && task.entity.canonicalCandidate;
+    const formalPropertyRepresentedBySibling = Boolean(candidateFormalId && [...formalPropertyIdsByCandidate.entries()]
+      .some(([candidateIndex, formalId]) => candidateIndex !== task.candidateIndex && formalId === candidateFormalId));
+    const statefulInventoryTask = normalizedStatefulInventoryTaskShape(task, value.stay, catalog, verifiedSourceText, formalPropertyRepresentedBySibling);
     if (statefulInventoryTask) {
       const statefulInventoryReason = statefulInventoryTask[INVENTORY_SCOPE_REPAIR_REASON];
       delete statefulInventoryTask[INVENTORY_SCOPE_REPAIR_REASON];

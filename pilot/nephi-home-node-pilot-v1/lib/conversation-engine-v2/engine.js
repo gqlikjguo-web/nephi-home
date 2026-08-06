@@ -219,6 +219,20 @@ function safePlannerRetrySuccessDiagnostic(plannerOutput) {
     finalErrorCategory: "",
     retryPerformed: retried,
     retrySucceeded: retried && diagnostic.retrySucceeded === true,
+    ...(diagnostic.taskCollectionRepairPerformed === true ? {
+      taskCollectionRepairPerformed: true,
+      preservedTaskCount: Number.isInteger(diagnostic.preservedTaskCount)
+        ? Math.max(0, Math.min(diagnostic.preservedTaskCount, 24))
+        : 0,
+      fallbackTaskCount: Number.isInteger(diagnostic.fallbackTaskCount)
+        ? Math.max(0, Math.min(diagnostic.fallbackTaskCount, 24))
+        : 0
+    } : {}),
+    ...(diagnostic.coverageRepairPerformed === true || diagnostic.coverageRepairFallback === true ? {
+      coverageRepairPerformed: diagnostic.coverageRepairPerformed === true,
+      coverageRepairSucceeded: diagnostic.coverageRepairSucceeded === true,
+      coverageRepairFallback: diagnostic.coverageRepairFallback === true
+    } : {}),
     providerAttempts
   };
 }
