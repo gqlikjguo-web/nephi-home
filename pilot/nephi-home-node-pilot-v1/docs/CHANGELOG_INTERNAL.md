@@ -332,3 +332,7 @@
 ## 2026-08-06 Stateful catalog-isolation rollback
 
 - Reverted the compiler repair after complete deployed acceptance neither exercised it on the target recoveries nor preserved prior-PASS behavior.
+
+## 2026-08-06 Duplicate-source formal authority
+
+- Preserved policy-shaped detail capability when raw and canonical property sources resolve the same formal subject, while retaining raw authority on conflicts and rejecting stateful capability-ID collisions.

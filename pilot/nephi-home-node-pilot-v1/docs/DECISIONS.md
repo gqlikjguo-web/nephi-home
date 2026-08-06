@@ -473,3 +473,11 @@
 **Reason:** Complete deployed artifact `8952679740` contained five prior-PASS turn regressions versus rollback artifact `8951474217` and four versus stable artifact `8950072765`. The apparent recovery of `rg-024` and `rgs-018` did not execute `stateful_inventory_catalog_task_isolation`; it came from different OpenAI outputs. The new repair instead fired on three generic price requests, so the deployment did not prove the intended root and failed the no-regression gate.
 
 **Constraint:** Deterministic local RED/GREEN is necessary but not sufficient for this stochastic Planner boundary. No compiler repair may be retained when the complete artifact introduces prior-PASS regressions and the target deployed traces do not exercise the repair. Future work must begin from the newest deployed failure evidence and preserve every prior-PASS turn.
+
+## D-051 -- Reconcile duplicate formal sources only when canonical identity agrees
+
+**Decision:** When raw Planner evidence resolves one property-catalog source and the Planner canonical candidate resolves another formal source with the same canonical ID, the semantic compiler uses the canonical formal authority for task-shape routing. If the IDs disagree, verified raw evidence remains authoritative.
+
+**Reason:** Rollback artifact `8953248983` resolved the same formal pool subject through a FAQ-shaped raw match and a structured canonical candidate. The FAQ route changed a valid policy-shaped seasonal detail to generic `property_fact`, so CanonicalRequest lost the subject-compatible amenity/policy capability even though the formal subject and property query were correct.
+
+**Constraint:** Reconciliation requires two independently resolved entities with exactly equal canonical IDs and a canonical capability definition that is low-risk, stateless, answerable through `property_catalog`, and accepts the resolved entity category. It excludes room and bundle inventory, adds no subject alias or fact, and cannot create an availability QueryPlan. A conflicting canonical candidate cannot override raw evidence, and a property fact whose canonical ID collides with an inventory capability cannot inherit that stateful resolver.

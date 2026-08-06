@@ -13,6 +13,7 @@ const { resolveEntity, mentionedPropertyFacts } = require("./entity-resolver");
 const { getCapabilityDefinition } = require("./capability-registry");
 const { sourceEventMaps, evidenceMatchesSource } = require("./understanding-validator");
 const TASK_ID_REPAIRS = Symbol("plannerTaskIdRepairs");
+const PROPERTY_GROUNDING_REPAIR_REASON = Symbol("propertyGroundingRepairReason");
 const STATELESS_DUPLICATE_TASK_ID_TYPES = new Set(["amenity", "amenity_list", "policy", "property_fact"]);
 const INVENTORY_OUTPUT_TYPES = new Set(["price", "total_price"]);
 const INVENTORY_OUTPUT_REPAIRABLE_TYPES = new Set(["availability", "bundle_availability", "room_options", "amenity", "policy", "property_fact"]);
@@ -119,14 +120,38 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
         canonicalCandidate: null
       })
     : null;
-  const candidateGrounded = entity.canonicalCandidate
-    && (!rawGrounded || rawGrounded.status === "not_found")
-    && (!scopedRawGrounded || scopedRawGrounded.status === "not_found")
+  const canonicalGrounded = entity.canonicalCandidate
     ? resolveEntity(catalog, {
         category: "other",
         rawText: "",
         canonicalCandidate: entity.canonicalCandidate
       })
+    : null;
+  const candidateGrounded = canonicalGrounded
+    && (!rawGrounded || rawGrounded.status === "not_found")
+    && (!scopedRawGrounded || scopedRawGrounded.status === "not_found")
+    ? canonicalGrounded
+    : null;
+  const canonicalDefinition = canonicalGrounded
+    && canonicalGrounded.status === "resolved"
+    && canonicalGrounded.entity
+    ? getCapabilityDefinition(canonicalGrounded.entity.canonicalId)
+    : null;
+  const consistentCanonicalGrounded = canonicalGrounded
+    && canonicalGrounded.status === "resolved"
+    && canonicalGrounded.entity
+    && !["room", "bundle"].includes(canonicalGrounded.entity.category)
+    && canonicalDefinition
+    && canonicalDefinition.resolverId === "property_catalog"
+    && canonicalDefinition.stayDependency === false
+    && canonicalDefinition.riskLevel === "low"
+    && canonicalDefinition.responseMode === "answer"
+    && canonicalDefinition.acceptedEntityCategories.includes(canonicalGrounded.entity.category)
+    && [rawGrounded, scopedRawGrounded].some((item) => item
+      && item.status === "resolved"
+      && item.entity
+      && item.entity.canonicalId === canonicalGrounded.entity.canonicalId)
+    ? canonicalGrounded
     : null;
   const sourceBoundRaw = normalizedText(entity.rawText);
   const sourceBoundTask = normalizedText(task.sourceText);
@@ -161,13 +186,15 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
   const taskSourceMentionGrounded = taskSourceFacts.length === 1
     ? { status: "resolved", entity: taskSourceFacts[0].entity }
     : null;
-  const grounded = rawGrounded && rawGrounded.status === "resolved" && !rawInventoryGrounded
-    ? rawGrounded
-    : scopedRawGrounded && scopedRawGrounded.status !== "not_found"
-      ? scopedRawGrounded
-      : candidateGrounded && candidateGrounded.status !== "not_found"
-        ? candidateGrounded
-        : taskSourceMentionGrounded || sourceMentionGrounded || candidateGrounded || scopedRawGrounded || rawGrounded;
+  const grounded = consistentCanonicalGrounded || (
+    rawGrounded && rawGrounded.status === "resolved" && !rawInventoryGrounded
+      ? rawGrounded
+      : scopedRawGrounded && scopedRawGrounded.status !== "not_found"
+        ? scopedRawGrounded
+        : candidateGrounded && candidateGrounded.status !== "not_found"
+          ? candidateGrounded
+          : taskSourceMentionGrounded || sourceMentionGrounded || candidateGrounded || scopedRawGrounded || rawGrounded
+  );
   const groundedEntity = grounded
     && grounded.status === "resolved"
     && grounded.entity;
@@ -200,6 +227,7 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
     && exactDefinition.riskLevel === "low"
     && exactDefinition.responseMode === "answer") return {
     ...task,
+    [PROPERTY_GROUNDING_REPAIR_REASON]: consistentCanonicalGrounded ? "duplicate_source_canonical_authority" : "",
     type: exactDefinition.capability,
     detailIntent: task.detailIntent || "general",
     requestedOutputs: [exactDefinition.capability],
@@ -237,6 +265,7 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
   const detailIntent = task.detailIntent || "general";
   return {
     ...task,
+    [PROPERTY_GROUNDING_REPAIR_REASON]: consistentCanonicalGrounded ? "duplicate_source_canonical_authority" : "",
     type,
     detailIntent,
     requestedOutputs: resolved.category === "transport" ? ["map_url"] : [detailIntent === "general" ? "answer" : detailIntent],
@@ -698,18 +727,23 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
 
     const verifiedSourceText = verifiedNewRequestEvidence(task, value.contextRelationCandidates, sourceEvents);
     const groundedTask = groundedPropertyFactTask(task, catalog, value.stay, verifiedSourceText);
-    if (groundedTask
+    const groundingRepairReason = groundedTask && groundedTask[PROPERTY_GROUNDING_REPAIR_REASON];
+    const groundingChanged = groundedTask
       && (task.type !== groundedTask.type
         || task.entity.category !== groundedTask.entity.category
         || task.entity.rawText !== groundedTask.entity.rawText
-        || task.entity.canonicalCandidate !== groundedTask.entity.canonicalCandidate)) {
+        || task.entity.canonicalCandidate !== groundedTask.entity.canonicalCandidate);
+    if (groundingChanged) {
       task = groundedTask;
+      delete task[PROPERTY_GROUNDING_REPAIR_REASON];
       entity = task.entity;
       if (task.type === "unknown") {
         rejectedTasks.push({ taskId: task.taskId, index, reason: "property_catalog_entity_conflict" });
       } else {
-        repairedTasks.push({ taskId: task.taskId, index, reason: "property_catalog_entity_grounding" });
+        repairedTasks.push({ taskId: task.taskId, index, reason: groundingRepairReason || "property_catalog_entity_grounding" });
       }
+    } else if (groundingRepairReason) {
+      repairedTasks.push({ taskId: task.taskId, index, reason: groundingRepairReason });
     }
 
     if (!groundedTask) {

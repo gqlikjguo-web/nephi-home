@@ -318,3 +318,9 @@ Do not repair this class of residual Planner drift by adding another broad promp
 A deterministic compiler repair can be locally correct while a later OpenAI sample makes the target cases pass through unrelated task shapes. Counting those PASS results as proof would be a false attribution, especially when the repair actually executes on different generic requests.
 
 For every stochastic-boundary fix, inspect the semantic repair reason in the target deployed traces. If the target did not exercise the repair and the complete artifact contains prior-PASS regressions, reject and roll back the commit. Preserve raw evidence over conflicting canonical candidates and deduplicate unresolved subjects across categories in any future version of this approach.
+
+## 2026-08-06 -- Duplicate catalog sources can erase a valid capability
+
+The same canonical subject can exist in structured property facts and FAQ material. If raw text selects the FAQ copy while the canonical candidate selects the structured copy, routing by source kind alone can downgrade a valid policy-shaped detail to generic `property_fact`.
+
+Reconcile the duplicate only when both resolutions have the same canonical ID and that canonical definition is explicitly a stateless `property_catalog` capability. Keep the structured formal authority for task shape, keep raw authority when IDs conflict, exclude inventory entities, and verify the query remains property-catalog-only. Entity category alone is insufficient: a property fact can still collide with an inventory capability ID such as `price`, so the capability registry must guard the resolver boundary.
