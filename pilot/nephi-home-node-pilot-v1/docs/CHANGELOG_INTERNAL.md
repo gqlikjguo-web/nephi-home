@@ -348,3 +348,7 @@
 ## 2026-08-06 Task-level Planner contract recovery
 
 - Preserved valid Planner siblings across local contract defects, added source-isolated task handoffs and bounded additive formal-subject coverage repair, removed local/temporal failures from provider retry, and made targeted deployed attribution require executed repair evidence plus expected semantics.
+
+## 2026-08-06 Formal lodging coverage repair
+
+- Extended the bounded additive Planner repair to verified room types, positive room-number mentions, uniquely required whole-property bundles, facility usage conditions, and per-scope month-qualified recurring-date clarification; bounded removal polarity and accumulated-relation deduplication prevent excluded inventory and duplicate companions while safe repair attribution survives the deployed trace projection.

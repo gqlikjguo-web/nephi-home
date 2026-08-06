@@ -370,6 +370,33 @@ async function main() {
     assert.equal(JSON.stringify(successfulPlannerTrace).includes(forbidden), false, `successful Planner trace leaked ${forbidden}`);
   }
 
+  const coverageRepairTrace = formatSafeTestOnlyConversationTrace({
+    traceId: "coverage-repair-trace",
+    propertyId: property.propertyId,
+    stage: "planner",
+    parserSucceeded: true,
+    taskCount: 2,
+    tasks: valid.tasks,
+    providerAttempts: [{ attemptNumber: 1 }, { attemptNumber: 2 }],
+    coverageRepairPerformed: true,
+    coverageRepairSucceeded: false,
+    coverageRepairFallback: true
+  });
+  assert.equal(coverageRepairTrace.coverageRepairPerformed, true);
+  assert.equal(coverageRepairTrace.coverageRepairSucceeded, false);
+  assert.equal(coverageRepairTrace.coverageRepairFallback, true);
+  const inventoryPrivacyTrace = formatSafeTestOnlyConversationTrace({
+    traceId: "inventory-privacy-trace",
+    propertyId: property.propertyId,
+    stage: "planner",
+    parserSucceeded: true,
+    taskCount: 1,
+    tasks: valid.tasks,
+    missingInformation: ["formal_subject:room_internal_secret", "formal_subject_coverage_overflow"]
+  });
+  assert.equal(JSON.stringify(inventoryPrivacyTrace).includes("room_internal_secret"), false, "safe diagnostics must not expose inventory canonical IDs");
+  assert.equal(inventoryPrivacyTrace.missingInformation.includes("formal_subject_coverage_required"), true);
+
   await plannerRetrySuccess({
     name: "timeout-then-success",
     firstFailure: () => {

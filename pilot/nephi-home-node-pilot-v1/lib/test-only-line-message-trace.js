@@ -75,6 +75,13 @@ function select(source, keys) {
   return output;
 }
 
+function safePlannerMissingInformation(value) {
+  return (Array.isArray(value) ? value : []).slice(0, 20).map((item) => {
+    const text = boundedString(item).slice(0, 200);
+    return /^formal_subject:/i.test(text) ? "formal_subject_coverage_required" : text;
+  });
+}
+
 function taskSummary(task) {
   return select(task || {}, [
     "taskId", "taskType", "type", "capability", "category", "productType", "productId", "roomType",
@@ -102,7 +109,8 @@ function diagnosticProjection(stage, entry) {
   if (stage === "state_before") return stateBeforeProjection(entry);
   if (stage === "planner") {
     return {
-      ...select(entry, ["parserSucceeded", "taskCount", "discourse", "shouldIgnore", "missingInformation", "failure", "failureCode", "providerAttemptCount", "firstAttemptErrorCategory", "finalErrorCategory", "retryPerformed", "retrySucceeded", "taskCollectionRepairPerformed", "preservedTaskCount", "fallbackTaskCount", "coverageRepairPerformed", "coverageRepairSucceeded", "coverageRepairFallback"]),
+      ...select(entry, ["parserSucceeded", "taskCount", "discourse", "shouldIgnore", "failure", "failureCode", "providerAttemptCount", "firstAttemptErrorCategory", "finalErrorCategory", "retryPerformed", "retrySucceeded", "taskCollectionRepairPerformed", "preservedTaskCount", "fallbackTaskCount", "coverageRepairPerformed", "coverageRepairSucceeded", "coverageRepairFallback"]),
+      missingInformation: safePlannerMissingInformation(entry && entry.missingInformation),
       tasks: Array.isArray(entry.tasks) ? entry.tasks.map(taskSummary) : []
     };
   }

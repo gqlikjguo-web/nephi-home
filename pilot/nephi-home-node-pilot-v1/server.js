@@ -147,6 +147,13 @@ function safeDiagnosticCount(value) {
   return Number.isInteger(count) && count >= 0 ? count : 0;
 }
 
+function safePlannerMissingInformation(value) {
+  return (Array.isArray(value) ? value : []).slice(0, 20).map((item) => {
+    const text = String(item || "").slice(0, 200);
+    return /^formal_subject:/i.test(text) ? "formal_subject_coverage_required" : text;
+  });
+}
+
 function safePlannerErrorCategory(value, fallback = "unknown") {
   return SAFE_PLANNER_ERROR_CATEGORIES.has(value) ? value : fallback;
 }
@@ -200,7 +207,7 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       taskCount: Number(details.taskCount || 0),
       discourse: details.discourse || null,
       shouldIgnore: Boolean(details.shouldIgnore),
-      missingInformation: (details.missingInformation || []).map(String),
+      missingInformation: safePlannerMissingInformation(details.missingInformation),
       tasks: (details.tasks || []).map(safePlannerTraceTask),
       ...(providerAttempts.length ? {
         providerAttemptCount: providerAttempts.length,
@@ -208,6 +215,16 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
         finalErrorCategory: details.retrySucceeded === true || details.retryPerformed !== true ? "" : safePlannerErrorCategory(details.finalErrorCategory),
         retryPerformed: Boolean(details.retryPerformed),
         retrySucceeded: Boolean(details.retrySucceeded),
+        ...(details.taskCollectionRepairPerformed === true ? {
+          taskCollectionRepairPerformed: true,
+          preservedTaskCount: Math.min(safeDiagnosticCount(details.preservedTaskCount), 24),
+          fallbackTaskCount: Math.min(safeDiagnosticCount(details.fallbackTaskCount), 24)
+        } : {}),
+        ...(details.coverageRepairPerformed === true || details.coverageRepairFallback === true ? {
+          coverageRepairPerformed: details.coverageRepairPerformed === true,
+          coverageRepairSucceeded: details.coverageRepairSucceeded === true,
+          coverageRepairFallback: details.coverageRepairFallback === true
+        } : {}),
         providerAttempts
       } : {})
     };

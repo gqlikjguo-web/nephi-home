@@ -2,7 +2,7 @@
 
 const crypto = require("node:crypto");
 const { plannerJsonSchema, validatePlannerOutput } = require("../conversation-engine-v2/planner-schema");
-const { mentionedPropertyFacts, resolveEntity } = require("../conversation-engine-v2/entity-resolver");
+const { mentionedPropertyFacts, mentionedInventoryEntities, resolveEntity } = require("../conversation-engine-v2/entity-resolver");
 const { getCapabilityDefinition } = require("../conversation-engine-v2/capability-registry");
 const { validateUnderstandingContext, sourceEventMaps, evidenceMatchesSource } = require("../conversation-engine-v2/understanding-validator");
 const RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -150,8 +150,20 @@ function compatibleFormalSubjectShape(task, item, input) {
   const sourceBoundFeeDrift = ["price", "total_price"].includes(task.type)
     && !["room", "bundle", "other"].includes(task.entity.category)
     && taskFormalMentions.length === 1
-    && taskFormalMentions[0].entity.canonicalId === item.entity.canonicalId;
+    && taskFormalMentions[0].entity.canonicalId === item.entity.canonicalId
+    && !formalSubjectIsUsageCondition(String(task.sourceText || ""), String(item.mention || ""));
   return Boolean(propertyCatalogCompatible || sourceBoundFeeDrift);
+}
+
+function formalSubjectIsUsageCondition(sourceText, mention) {
+  const normalized = String(sourceText || "").normalize("NFKC").toLowerCase();
+  const subject = String(mention || "").normalize("NFKC").toLowerCase();
+  const index = subject ? normalized.indexOf(subject) : -1;
+  if (index < 0) return false;
+  const prefix = normalized.slice(Math.max(0, index - 16), index);
+  const suffix = normalized.slice(index + subject.length, index + subject.length + 24);
+  return /(?:not\s+(?:using?|use)|without|do\s+not\s+use|don't\s+use)(?:\s+the)?\s*$|(?:\u4e0d\s*(?:\u4f7f\u7528|\u7528)|\u6c92\s*(?:\u4f7f\u7528|\u7528)|\u7121\s*(?:\u4f7f\u7528|\u7528))\s*$/iu.test(prefix)
+    || /^\s*(?:will\s+not\s+be\s+used|is\s+not\s+(?:being\s+)?used|won't\s+be\s+used|not\s+(?:used|being\s+used)|\u4e0d\s*(?:\u6703\s*)?(?:\u4f7f\u7528|\u7528)|\u6c92\s*(?:\u6709\s*)?(?:\u4f7f\u7528|\u7528)|\u7121\s*(?:\u4f7f\u7528|\u7528))/iu.test(suffix);
 }
 
 function representedFormalSubjectId(output, input, task) {
@@ -179,6 +191,114 @@ function representedFormalSubjectId(output, input, task) {
 function representedCanonicalIds(output, input) {
   if (!output || !Array.isArray(output.tasks)) return new Set();
   return new Set(output.tasks.map((task) => representedFormalSubjectId(output, input, task)).filter(Boolean));
+}
+
+function normalizedMentionText(value) {
+  return String(value || "").normalize("NFKC").toLowerCase();
+}
+
+function containsStandaloneMention(sourceText, mention) {
+  const source = normalizedMentionText(sourceText);
+  const value = normalizedMentionText(mention).trim();
+  if (!value) return false;
+  if (/[^\x00-\x7f]/u.test(value)) return source.includes(value);
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, "u").test(source);
+}
+
+function standaloneMentionOffsets(sourceText, mention) {
+  const source = normalizedMentionText(sourceText);
+  const value = normalizedMentionText(mention).trim();
+  if (!value) return [];
+  const offsets = [];
+  let fromIndex = 0;
+  while (fromIndex <= source.length - value.length) {
+    const index = source.indexOf(value, fromIndex);
+    if (index < 0) break;
+    const left = index > 0 ? source[index - 1] : "";
+    const right = index + value.length < source.length ? source[index + value.length] : "";
+    const standalone = /[^\x00-\x7f]/u.test(value)
+      || (!/[\p{L}\p{N}]/u.test(left) && !/[\p{L}\p{N}]/u.test(right));
+    if (standalone) offsets.push(index);
+    fromIndex = index + Math.max(value.length, 1);
+  }
+  return offsets;
+}
+
+function positiveInventoryMention(sourceText, mention) {
+  const source = normalizedMentionText(sourceText);
+  const value = normalizedMentionText(mention).trim();
+  return standaloneMentionOffsets(source, value).some((index) => {
+    const prefix = source.slice(Math.max(0, index - 24), index);
+    const suffix = source.slice(index + value.length, Math.min(source.length, index + value.length + 24));
+    const removedBefore = /(?:不要(?:房間|房型|住)?|不用(?:房間|房型)?|不住(?:房間|房型)?|取消(?:房間|房型)?|移除(?:房間|房型)?|排除(?:房間|房型)?|\b(?:(?:do\s+not|don't|not|no|without|exclude|remove|drop)(?:\s+(?:use|book|stay(?:\s+in)?))?(?:\s+(?:the\s+)?(?:room|unit))?))\s*$/iu.test(prefix);
+    const removedAfter = /^\s*(?:(?:不要|不用|不住|取消|移除|排除)|(?:is\s+not\s+wanted|not\s+wanted|remove|exclude|drop)\b)/iu.test(suffix);
+    return !removedBefore && !removedAfter;
+  });
+}
+
+function inventoryCoverageItems(output, input) {
+  const catalog = input && input.catalog || {};
+  const sourceText = String(input && input.currentMessage || "");
+  const byId = new Map();
+  for (const item of mentionedInventoryEntities(catalog, sourceText)) {
+    if (item && item.entity && item.entity.canonicalId && positiveInventoryMention(sourceText, item.mention)) {
+      byId.set(item.entity.canonicalId, { ...item, kind: "inventory" });
+    }
+  }
+  const inventory = Array.isArray(catalog.rooms) ? catalog.rooms : [];
+  for (const entity of inventory) {
+    const labels = [String(entity.type || ""), ...(String(entity.publicName || "").match(/\d{3,}/g) || [])]
+      .filter((value) => value && containsStandaloneMention(sourceText, value) && positiveInventoryMention(sourceText, value));
+    if (entity && entity.canonicalId && labels.length && !byId.has(entity.canonicalId)) {
+      byId.set(entity.canonicalId, { entity, mention: labels.sort((left, right) => right.length - left.length)[0], kind: "inventory" });
+    }
+  }
+  const structuredGuestCounts = [output && output.stay, ...(Array.isArray(output && output.tasks) ? output.tasks.map((task) => task && task.stayCandidate) : [])]
+    .map((stay) => Number(stay && stay.guestCountCandidate))
+    .filter((value) => Number.isInteger(value) && value >= 1 && value <= 100);
+  const rangeMatch = sourceText.match(/(\d{1,3})\s*(?:-|~|\u5230|\u81f3)\s*(\d{1,3})\s*(?:\u4eba|\u4f4d|\u540d|guests?|people)/iu);
+  const singleMatch = sourceText.match(/(\d{1,3})\s*(?:\u4eba|\u4f4d|\u540d|guests?|people)/iu);
+  const textualGuestCount = rangeMatch ? Number(rangeMatch[2]) : singleMatch ? Number(singleMatch[1]) : null;
+  const guestCount = Math.max(0, ...structuredGuestCounts, Number.isInteger(textualGuestCount) ? textualGuestCount : 0);
+  const rooms = inventory.filter((entity) => entity && entity.category === "room" && Number(entity.capacity) > 0);
+  const bundles = inventory.filter((entity) => entity && entity.category === "bundle" && Number(entity.capacity) >= guestCount);
+  const maxRoomCapacity = Math.max(0, ...rooms.map((entity) => Number(entity.capacity) || 0));
+  const soleWholePropertyBundle = bundles.length === 1
+    && rooms.length > 0
+    && new Set(bundles[0].memberRoomIds || []).size === rooms.length
+    && rooms.every((room) => (bundles[0].memberRoomIds || []).includes(room.canonicalId));
+  if (guestCount > maxRoomCapacity && soleWholePropertyBundle && !byId.has(bundles[0].canonicalId)) {
+    const mention = String(rangeMatch && rangeMatch[0] || singleMatch && singleMatch[0] || sourceText).trim();
+    if (mention) byId.set(bundles[0].canonicalId, { entity: bundles[0], mention, kind: "capacity_bundle" });
+  }
+  return [...byId.values()];
+}
+
+function relationForTask(output, input, task) {
+  const relations = Array.isArray(output && output.contextRelationCandidates)
+    ? output.contextRelationCandidates.filter((candidate) => candidate && candidate.candidateIndex === task.candidateIndex)
+    : [];
+  if (relations.length !== 1) return null;
+  const relation = relations[0];
+  const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
+  const taskSourceText = String(task && task.sourceText || "").trim();
+  if (!taskSourceText || !String(input && input.currentMessage || "").includes(taskSourceText)
+    || !Array.isArray(relation.candidateRequestCycleRefs)
+    || !Array.isArray(relation.evidenceRefs) || relation.evidenceRefs.length < 1
+    || !relation.evidenceRefs.every((ref) => evidenceMatchesSource(ref, sourceMaps))
+    || !relation.evidenceRefs.some((ref) => evidenceBindsCurrentTask(ref, input, taskSourceText))) return null;
+  return relation;
+}
+
+function representedInventoryIds(output, input) {
+  const represented = new Set();
+  for (const task of Array.isArray(output && output.tasks) ? output.tasks : []) {
+    if (!relationForTask(output, input, task)) continue;
+    const resolved = task && task.entity ? resolveEntity(input.catalog, task.entity) : null;
+    if (resolved && resolved.status === "resolved" && resolved.entity && ["room", "bundle"].includes(resolved.entity.category)) represented.add(resolved.entity.canonicalId);
+  }
+  return represented;
 }
 
 function resolvedEvidenceSource(ref, sourceMaps) {
@@ -219,16 +339,18 @@ function taskClaimsCoverageMention(output, input, item) {
   });
 }
 
-function coveragePropertyFacts(output, input) {
-  return mentionedPropertyFacts(input && input.catalog, String(input && input.currentMessage || ""))
+function coverageSubjects(output, input) {
+  const facts = mentionedPropertyFacts(input && input.catalog, String(input && input.currentMessage || ""))
     .filter((item) => item && item.entity && item.entity.sourceKind !== "faq")
-    .filter((item) => !taskClaimsCoverageMention(output, input, item));
+    .filter((item) => !taskClaimsCoverageMention(output, input, item))
+    .map((item) => ({ ...item, kind: "property_fact" }));
+  return [...facts, ...inventoryCoverageItems(output, input)];
 }
 
 function missingFormalSubjectIds(output, input) {
   if (!input || !input.catalog) return [];
-  const represented = representedCanonicalIds(output, input);
-  return [...new Set(coveragePropertyFacts(output, input)
+  const represented = new Set([...representedCanonicalIds(output, input), ...representedInventoryIds(output, input)]);
+  return [...new Set(coverageSubjects(output, input)
     .map((item) => item && item.entity && item.entity.canonicalId)
     .filter((id) => id && !represented.has(id)))].sort();
 }
@@ -247,11 +369,25 @@ function uniqueTaskId(preferred, usedTaskIds) {
 
 function verifiedRepairCandidate(output, input, canonicalId) {
   if (!output || !Array.isArray(output.tasks)) return null;
+  const coverageItem = coverageSubjects(output, input).find((item) => item && item.entity && item.entity.canonicalId === canonicalId)
+    || coverageSubjects(null, input).find((item) => item && item.entity && item.entity.canonicalId === canonicalId);
   for (const task of output.tasks) {
-    const binding = boundFormalTask(output, input, task);
+    const formalBinding = boundFormalTask(output, input, task);
+    const relation = relationForTask(output, input, task);
+    const resolved = task && task.entity ? resolveEntity(input.catalog, task.entity) : null;
+    const catalogCandidate = (input.catalog && Array.isArray(input.catalog.rooms) ? input.catalog.rooms : [])
+      .find((entity) => entity && entity.canonicalId === canonicalId
+        && String(task && task.entity && task.entity.canonicalCandidate || "") === canonicalId
+        && task && task.entity && task.entity.category === entity.category);
+    const inventoryBinding = coverageItem && coverageItem.kind !== "property_fact" && relation
+      && String(task.sourceText || "").includes(String(coverageItem.mention || ""))
+      && (resolved && resolved.status === "resolved" && resolved.entity && resolved.entity.canonicalId === canonicalId || catalogCandidate)
+      ? { canonicalId, task, relation }
+      : null;
+    const binding = formalBinding || inventoryBinding;
     const definition = binding && getCapabilityDefinition(task.type);
     if (binding && binding.canonicalId === canonicalId
-      && definition && definition.resolverId === "property_catalog" && definition.stayDependency === false
+      && definition && ["property_catalog", "availability_resolver"].includes(definition.resolverId)
       && definition.riskLevel === "low" && definition.responseMode === "answer"
       && definition.acceptedCandidateTypes.includes(task.type)
       && definition.acceptedEntityCategories.includes(binding.task.entity.category)) return { task: binding.task, relation: binding.relation };
@@ -260,8 +396,7 @@ function verifiedRepairCandidate(output, input, canonicalId) {
 }
 
 function safeCoverageHandoff(input, canonicalId, candidateIndex, taskId) {
-  const mention = mentionedPropertyFacts(input.catalog, String(input.currentMessage || ""))
-    .find((item) => item && item.entity && item.entity.canonicalId === canonicalId);
+  const mention = coverageSubjects(null, input).find((item) => item && item.entity && item.entity.canonicalId === canonicalId);
   if (!mention || !String(mention.mention || "")) return null;
   const sourceEvent = (input.sourceEvents || []).find((event) => {
     const messageText = String(event && event.messageText || "");
@@ -464,8 +599,8 @@ function validMergedOutput(output, input) {
     }).ok;
 }
 
-function overflowCoverageHandoff(output, canonicalId) {
-  const marker = `formal_subject:${String(canonicalId || "unknown")}`.slice(0, 120);
+function overflowCoverageHandoff(output) {
+  const marker = "formal_subject_coverage_overflow";
   const missingInformation = [...new Set([...(Array.isArray(output.missingInformation) ? output.missingInformation : []), marker])];
   return { ...output, missingInformation, needsHuman: true };
 }
@@ -503,8 +638,121 @@ function aggregateCoverageHandoff(input, canonicalIds, candidateIndex, taskId) {
         quote: sourceText
       }]
     },
-    missingInformation: canonicalIds.map((canonicalId) => `formal_subject:${canonicalId}`.slice(0, 120))
+    missingInformation: ["formal_subject_coverage_overflow"]
   };
+}
+
+function monthQualifiedRecurringDate(value) {
+  const text = String(value || "").normalize("NFKC").toLowerCase();
+  const month = /(?:\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b|\d{1,2}\s*\u6708)/iu;
+  const recurringDay = /(?:\b(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|weekend)s?\b|\u9031[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u65e5\u5929]|\u661f\u671f[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u65e5\u5929])/iu;
+  return month.test(text) && recurringDay.test(text);
+}
+
+function taskInventoryScope(task, input) {
+  const resolved = task && task.entity ? resolveEntity(input && input.catalog, task.entity) : null;
+  if (resolved && resolved.status === "resolved" && resolved.entity && resolved.entity.canonicalId) {
+    return `resolved:${resolved.entity.canonicalId}`;
+  }
+  if (resolved && resolved.status === "matched_set" && Array.isArray(resolved.entities)) {
+    return `matched_set:${resolved.entities.map((entity) => entity && entity.canonicalId).filter(Boolean).sort().join(",")}`;
+  }
+  const entity = task && task.entity || {};
+  return `unresolved:${String(entity.category || "").trim()}:${normalizedMentionText(entity.rawText).trim()}:${String(entity.canonicalCandidate || "").trim()}`;
+}
+
+function recurringDateScope(task) {
+  const stay = task && task.stayCandidate || {};
+  const expression = stay.dateExpression || {};
+  return JSON.stringify({
+    kind: String(expression.kind || ""),
+    rawText: normalizedMentionText(expression.rawText).trim(),
+    anchor: expression.anchor || null,
+    checkInCandidate: stay.checkInCandidate || null,
+    checkOutCandidate: stay.checkOutCandidate || null
+  });
+}
+
+function relationsShareExactScope(left, right, input) {
+  if (!left || !right || left.kind !== right.kind) return false;
+  if (JSON.stringify(left.candidateRequestCycleRefs || []) !== JSON.stringify(right.candidateRequestCycleRefs || [])) return false;
+  const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
+  const sourceEvents = Array.isArray(input && input.sourceEvents) ? input.sourceEvents : [];
+  const evidenceKey = (ref) => {
+    const source = resolvedEvidenceSource(ref, sourceMaps);
+    return JSON.stringify([
+      sourceEvents.indexOf(source),
+      Number(ref && ref.startOffset),
+      Number(ref && ref.endOffset),
+      String(ref && ref.quote || "")
+    ]);
+  };
+  const leftRefs = Array.isArray(left.evidenceRefs) ? left.evidenceRefs.map(evidenceKey).sort() : [];
+  const rightRefs = Array.isArray(right.evidenceRefs) ? right.evidenceRefs.map(evidenceKey).sort() : [];
+  return leftRefs.length > 0 && JSON.stringify(leftRefs) === JSON.stringify(rightRefs);
+}
+
+function alreadyHasSameDateClarification(input, tasks, contextRelationCandidates, sourceTask, sourceRelation) {
+  const availabilityTypes = ["availability", "available_dates", "room_options", "bundle_availability"];
+  const accumulatedOutput = { tasks, contextRelationCandidates };
+  return tasks.some((task) => {
+    if (!availabilityTypes.includes(task && task.type)
+      || String(task.sourceText || "") !== String(sourceTask.sourceText || "")
+      || taskInventoryScope(task, input) !== taskInventoryScope(sourceTask, input)
+      || recurringDateScope(task) !== recurringDateScope(sourceTask)) return false;
+    const relation = relationForTask(accumulatedOutput, input, task);
+    return relationsShareExactScope(relation, sourceRelation, input);
+  });
+}
+
+function broadDateClarificationAddition(firstOutput, input, tasks, contextRelationCandidates, candidateIndex, usedTaskIds, sourceTask) {
+  if (Math.max(tasks.length, contextRelationCandidates.length) >= MAX_MERGED_TASKS) return null;
+  const stay = sourceTask && sourceTask.stayCandidate;
+  const eligible = ["price", "total_price"].includes(sourceTask && sourceTask.type)
+    && sourceTask.entity && ["room", "bundle"].includes(sourceTask.entity.category)
+    && stay && stay.dateExpression && ["weekday", "weekend"].includes(stay.dateExpression.kind)
+    && !stay.checkInCandidate && !stay.checkOutCandidate
+    && monthQualifiedRecurringDate(stay.dateExpression.rawText);
+  if (!eligible) return null;
+  const relation = sourceTask && relationForTask(firstOutput, input, sourceTask);
+  if (!sourceTask || !relation) return null;
+  if (alreadyHasSameDateClarification(input, tasks, contextRelationCandidates, sourceTask, relation)) return null;
+  const task = {
+    ...sourceTask,
+    candidateIndex,
+    taskId: uniqueTaskId(`coverage-date-clarification-${String(sourceTask.taskId || "price")}`, usedTaskIds),
+    type: sourceTask.entity.category === "bundle" ? "bundle_availability" : "availability",
+    requestedOutputs: ["availability"]
+  };
+  const candidateRelation = {
+    ...relation,
+    candidateIndex,
+    evidenceRefs: relation.evidenceRefs.map((ref) => ({ ...ref }))
+  };
+  const tentative = { ...firstOutput, tasks: [...tasks, task], contextRelationCandidates: [...contextRelationCandidates, candidateRelation] };
+  return validMergedOutput(tentative, input) ? { task, relation: candidateRelation } : null;
+}
+
+function ensureBroadDateClarification(output, input) {
+  if (!output || !Array.isArray(output.tasks) || !Array.isArray(output.contextRelationCandidates)) return output;
+  const tasks = output.tasks.map((task) => ({ ...task }));
+  const contextRelationCandidates = output.contextRelationCandidates.map((candidate) => ({ ...candidate }));
+  const usedTaskIds = new Set(tasks.map((task) => String(task && task.taskId || "")).filter(Boolean));
+  let nextCandidateIndex = tasks.reduce((max, task) => Math.max(max, Number.isInteger(task && task.candidateIndex) ? task.candidateIndex : -1), -1) + 1;
+  let added = false;
+  for (const sourceTask of output.tasks) {
+    const addition = broadDateClarificationAddition(output, input, tasks, contextRelationCandidates, nextCandidateIndex, usedTaskIds, sourceTask);
+    if (!addition) continue;
+    tasks.push(addition.task);
+    contextRelationCandidates.push(addition.relation);
+    nextCandidateIndex += 1;
+    added = true;
+  }
+  if (!added) return output;
+  const expanded = { ...output, tasks, contextRelationCandidates };
+  const taskCollectionDiagnostic = output[TASK_COLLECTION_DIAGNOSTIC];
+  if (taskCollectionDiagnostic) Object.defineProperty(expanded, TASK_COLLECTION_DIAGNOSTIC, { enumerable: false, value: taskCollectionDiagnostic });
+  return expanded;
 }
 
 function mergeCoverageRepair(firstOutput, repairOutput, input, missingCanonicalIds) {
@@ -571,7 +819,7 @@ function mergeCoverageRepair(firstOutput, repairOutput, input, missingCanonicalI
       }
     }
     if (!aggregateAccepted) {
-      for (const canonicalId of aggregateCanonicalIds) firstOutput = overflowCoverageHandoff(firstOutput, canonicalId);
+      firstOutput = overflowCoverageHandoff(firstOutput);
     }
   }
   const merged = { ...firstOutput, tasks, contextRelationCandidates };
@@ -804,7 +1052,7 @@ class TestOnlyOpenAiConversationPlanner {
       try {
         const result = await this.requestOnce(input, attempt, Math.min(this.timeoutMs, remainingMs));
         providerAttempts.push(result.attemptDiagnostic);
-        const firstOutput = sanitizePlannerTaskCollection(result.output, input);
+        const firstOutput = ensureBroadDateClarification(sanitizePlannerTaskCollection(result.output, input), input);
         const missingCanonicalIds = missingFormalSubjectIds(firstOutput, input);
         if (missingCanonicalIds.length && attempt === 1) {
           const repairInput = {
