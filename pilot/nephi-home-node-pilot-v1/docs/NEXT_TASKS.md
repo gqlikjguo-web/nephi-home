@@ -139,8 +139,8 @@
 2. Require exact-SHA GitHub verify, Render `ready` with `testOnly=true`, private artifact digest verification, and the complete 77-case / 90-turn matrix. All prior PASS cases and turns from artifact `8950072765` must recover before proceeding.
 3. After rollback stability is proved, repair `rgs-017` only through deterministic verified-source compiler evidence with explicit non-lodging, property, high-risk, context, ambiguity, and past-date negative controls. Real LINE final acceptance remains blocked.
 
-## 2026-08-06 stateful catalog-subject isolation
+## 2026-08-06 stateful catalog-isolation rollback
 
-1. Run protected acceptance, Codex integrity, Constitution, runtime uniqueness, canonical golden, and `git diff --check`; create one root-cause commit and non-force push it.
-2. Require exact-SHA GitHub verify, Render `ready` with `testOnly=true`, verified private artifact digest, and the complete 77-case / 90-turn matrix. `rg-024` and `rgs-018` must recover their amenity/policy/property capability without an early availability query, and every prior PASS case and turn from artifacts `8951474217` and `8950072765` must remain PASS.
-3. If stable, continue with the newest earliest failure layer. Treat `rgs-017` as unresolved until the deterministic compiler proves it, retain `rg-038` month-weekday fail-closed behavior, and preserve all past-date, relation, ambiguity, and real-LINE gates.
+1. Verify runtime and tests are byte-equivalent to commit `32ff2fe1bf7ee80f444fa595ee7e2eb43ce627a1`, run the complete local suite and safety gates, create one rollback commit retaining run `31062128940` evidence, and non-force push it.
+2. Require exact-SHA GitHub verify, Render `ready` with `testOnly=true`, verified private artifact digest, and the complete 77-case / 90-turn matrix. Compare every prior-PASS turn against artifacts `8951474217` and `8950072765`; do not retain any apparent target recovery unless its deployed trace proves the responsible repair executed.
+3. After rollback stability, continue from the newest earliest common failure layer. `rg-038`, `rg-039`, `rgs-017`, `rgs-019`, and `rgs-020` remain unresolved until complete deployed evidence proves otherwise; real LINE final acceptance remains blocked.

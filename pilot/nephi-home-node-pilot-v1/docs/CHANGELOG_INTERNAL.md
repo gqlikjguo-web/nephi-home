@@ -327,4 +327,8 @@
 
 ## 2026-08-06 Source-bound stateful catalog isolation
 
-- Preserved a verified stateless property subject that OpenAI merged into a lodging-price task before controlled price normalization erases the incompatible entity, with exact-catalog, unresolved, duplicate, and evidence-binding safeguards.
+- Tested a deterministic compiler repair that isolated verified stateless subjects before price normalization, including raw/canonical conflict and unresolved-subject deduplication safeguards.
+
+## 2026-08-06 Stateful catalog-isolation rollback
+
+- Reverted the compiler repair after complete deployed acceptance neither exercised it on the target recoveries nor preserved prior-PASS behavior.

@@ -313,10 +313,8 @@ An instruction that makes one duration-only lodging request a booking capability
 
 Do not repair this class of residual Planner drift by adding another broad prompt rule. Recover only from verified source and already-structured evidence at a deterministic compiler boundary, and retain negative controls for property facts, policies, context modifications, ambiguity, and past dates. Roll back whenever the complete artifact introduces any prior-PASS regression.
 
-## 2026-08-06 -- Preserving a stateful capability must not erase its stateless subject
+## 2026-08-06 -- A deployed recovery is not evidence unless the repair executed
 
-A contradictory Planner task can contain two useful controlled signals: a stateful lodging-price output and a stateless property entity. Normalizing the task to a valid price shape by clearing the entity preserves one request but silently discards the other.
+A deterministic compiler repair can be locally correct while a later OpenAI sample makes the target cases pass through unrelated task shapes. Counting those PASS results as proof would be a false attribution, especially when the repair actually executes on different generic requests.
 
-Before destructive shape normalization, isolate only a source-bound stateless entity from verified current-event evidence. Keep the original price readiness, deduplicate already represented entities, query only the property catalog for the isolated task, and leave unsupported fees unresolved. This retains coverage without turning an entity mention into a fact or an availability query.
-
-Raw evidence and a Planner canonical candidate can disagree. Ground the isolated subject from raw evidence first, never append both formal entities, and deduplicate unresolved subjects independently of the Planner category; otherwise the repair can manufacture an unsupported second answer.
+For every stochastic-boundary fix, inspect the semantic repair reason in the target deployed traces. If the target did not exercise the repair and the complete artifact contains prior-PASS regressions, reject and roll back the commit. Preserve raw evidence over conflicting canonical candidates and deduplicate unresolved subjects across categories in any future version of this approach.
