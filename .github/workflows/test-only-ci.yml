@@ -5,9 +5,19 @@ on:
     branches: [test-only/node-pilot-integration]
   pull_request:
     branches: [test-only/node-pilot-integration]
+  workflow_dispatch:
+    inputs:
+      acceptance_mode:
+        description: Deployed acceptance mode
+        required: true
+        type: choice
+        options:
+          - target_preflight
+          - full_matrix
 
 jobs:
   verify:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,8 +40,7 @@ jobs:
       - run: npm test
 
   deployed-acceptance:
-    if: github.event_name == 'push'
-    needs: verify
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -48,13 +57,15 @@ jobs:
         env:
           TEST_ONLY_ACCEPTANCE_BASE_URL: https://nephi-home-node-pilot-test-only-btye.onrender.com
           TEST_ONLY_ACCEPTANCE_PROPERTY_ID: nephi_home
-          TEST_ONLY_ACCEPTANCE_REPORT_DIR: ${{ runner.temp }}/junzan-real-guest-acceptance
+          TEST_ONLY_ACCEPTANCE_MODE: ${{ inputs.acceptance_mode }}
+          TEST_ONLY_ACCEPTANCE_CASE_IDS: ${{ inputs.acceptance_mode == 'target_preflight' && 'rg-026-ktv-availability,rg-037-multi-pool-price-checkin' || '' }}
+          TEST_ONLY_ACCEPTANCE_REPORT_DIR: ${{ runner.temp }}/junzan-${{ inputs.acceptance_mode }}-${{ github.sha }}
         run: node scripts/run-deployed-conversation-acceptance.js
       - name: Upload private deployed acceptance report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: junzan-real-guest-acceptance-${{ github.sha }}
-          path: ${{ runner.temp }}/junzan-real-guest-acceptance
+          name: junzan-${{ inputs.acceptance_mode }}-${{ github.sha }}
+          path: ${{ runner.temp }}/junzan-${{ inputs.acceptance_mode }}-${{ github.sha }}
           if-no-files-found: error
           retention-days: 7

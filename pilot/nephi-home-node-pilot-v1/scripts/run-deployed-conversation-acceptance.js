@@ -107,6 +107,47 @@ function loadSupplementalAcceptanceMatrix(filePath = SUPPLEMENTAL_MATRIX_PATH) {
 
 const SUPPLEMENTAL_ACCEPTANCE_MATRIX = loadSupplementalAcceptanceMatrix();
 const DEPLOYED_ACCEPTANCE_MATRIX = [...ACCEPTANCE_MATRIX, ...SUPPLEMENTAL_ACCEPTANCE_MATRIX];
+const TARGET_PREFLIGHT_CASE_IDS = Object.freeze(["rg-026-ktv-availability", "rg-037-multi-pool-price-checkin"]);
+const TARGET_REPAIR_REASONS = Object.freeze({
+  "rg-026-ktv-availability": "source_bound_inventory_feature_capability",
+  "rg-037-multi-pool-price-checkin": "source_bound_inventory_scope_preservation"
+});
+
+function selectAcceptanceMatrix({ matrix = DEPLOYED_ACCEPTANCE_MATRIX, caseIds } = {}) {
+  if (!Array.isArray(caseIds) || caseIds.length === 0) throw new Error("acceptance_case_ids_required");
+  const normalized = caseIds.map((value) => String(value));
+  if (normalized.some((value) => !value.trim())) throw new Error("acceptance_case_id_blank");
+  const trimmed = normalized.map((value) => value.trim());
+  if (new Set(trimmed).size !== trimmed.length) throw new Error("acceptance_case_id_duplicate");
+  const byId = new Map(matrix.map((item) => [item.id, item]));
+  for (const id of trimmed) if (!byId.has(id)) throw new Error(`acceptance_case_id_unknown:${id}`);
+  return trimmed.map((id) => byId.get(id));
+}
+
+function validateWorkflowIdentity(env) {
+  if (env.GITHUB_REPOSITORY !== EXPECTED_REPOSITORY
+    || env.GITHUB_REF !== EXPECTED_REF
+    || env.GITHUB_WORKFLOW_REF !== EXPECTED_WORKFLOW_REF
+    || !["push", "workflow_dispatch"].includes(env.GITHUB_EVENT_NAME)) {
+    throw new Error("github_workflow_identity_mismatch");
+  }
+}
+
+function acceptanceMatrixForMode(env) {
+  const mode = String(env.TEST_ONLY_ACCEPTANCE_MODE || "").trim();
+  if (mode === "full_matrix") {
+    if (String(env.TEST_ONLY_ACCEPTANCE_CASE_IDS || "").trim()) throw new Error("full_matrix_case_filter_forbidden");
+    return { mode, matrix: DEPLOYED_ACCEPTANCE_MATRIX };
+  }
+  if (mode !== "target_preflight") throw new Error("acceptance_mode_invalid");
+  const rawIds = String(env.TEST_ONLY_ACCEPTANCE_CASE_IDS || "").split(",");
+  const matrix = selectAcceptanceMatrix({ caseIds: rawIds });
+  if (matrix.length !== TARGET_PREFLIGHT_CASE_IDS.length
+    || matrix.some((item, index) => item.id !== TARGET_PREFLIGHT_CASE_IDS[index])) {
+    throw new Error("target_preflight_case_set_mismatch");
+  }
+  return { mode, matrix };
+}
 
 function delay(milliseconds) { return milliseconds > 0 ? new Promise((resolve) => setTimeout(resolve, milliseconds)) : Promise.resolve(); }
 function responseData(payload) { return payload && payload.ok === true && payload.data ? payload.data : payload; }
@@ -497,7 +538,7 @@ function isRefreshableOidcRejection(error) {
     && error.httpErrorCode === "ACCEPTANCE_OIDC_REJECTED");
 }
 
-async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidcToken, commit, matrix = ACCEPTANCE_MATRIX, fetchImpl = globalThis.fetch, now = () => new Date(), write = (value) => console.log(JSON.stringify(value)), reportWriter = null }) {
+async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidcToken, commit, matrix = ACCEPTANCE_MATRIX, fetchImpl = globalThis.fetch, now = () => new Date(), write = (value) => console.log(JSON.stringify(value)), reportWriter = null, reportFinalizer = null }) {
   const failures = [];
   const reportCases = [];
   let currentOidcToken = oidcToken;
@@ -661,6 +702,16 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
     summary,
     cases: reportCases
   };
+  if (!failures.length && typeof reportFinalizer === "function") {
+    try {
+      report.attribution = reportFinalizer(report);
+    } catch (error) {
+      report.attribution = { status: safeErrorCode(error) };
+      if (typeof reportWriter === "function") reportWriter(report);
+      Object.assign(error, summary, { report });
+      throw error;
+    }
+  }
   if (typeof reportWriter === "function") reportWriter(report);
   if (failures.length) {
     const error = new Error("deployed_acceptance_matrix_failed");
@@ -671,10 +722,50 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
   }
   return summary;
 }
+
+function validateTargetPreflightAttribution(report) {
+  const evidence = [];
+  for (const caseId of TARGET_PREFLIGHT_CASE_IDS) {
+    const item = (report.cases || []).find((candidate) => candidate.caseId === caseId);
+    if (!item || item.status !== "PASS" || !Array.isArray(item.turns) || !item.turns.length) {
+      throw Object.assign(new Error("TARGET_PASS_ATTRIBUTION_UNPROVEN"), { code: "TARGET_PASS_ATTRIBUTION_UNPROVEN" });
+    }
+    const expectedReason = TARGET_REPAIR_REASONS[caseId];
+    let markerTaskId = "";
+    let postgresqlQueryCount = 0;
+    for (const turn of item.turns) {
+      const runtime = turn.runtimeEvidence || {};
+      const semanticEntries = Array.isArray(runtime.validation) ? runtime.validation.filter((entry) => entry && entry.stage === "semantic_contract") : [];
+      const repairedTasks = semanticEntries.flatMap((entry) => entry.semanticValidation && Array.isArray(entry.semanticValidation.repairedTasks) ? entry.semanticValidation.repairedTasks : []);
+      const repair = repairedTasks.find((candidate) => candidate && candidate.reason === expectedReason);
+      if (repair) markerTaskId = String(repair.taskId || "").slice(0, 80);
+      postgresqlQueryCount += (runtime.queryPlan || []).filter((entry) => entry && entry.stage === "query_plan").reduce((sum, entry) => sum + (Number.isInteger(entry.count) ? entry.count : 0), 0);
+      const completeTrace = runtime.providerType === "postgres"
+        || runtime.providerType === "postgresql";
+      if (!completeTrace
+        || runtime.plannerParserSucceeded !== true
+        || !(runtime.planner || []).length
+        || runtime.semanticContractValidationPassed !== true
+        || !(runtime.canonicalRequest || []).length
+        || !(runtime.conversationState || []).length
+        || !(runtime.queryPlan || []).length
+        || !(runtime.resolverExecution || []).length
+        || !turn.claimValidation || turn.claimValidation.ok !== true
+        || !turn.finalDecision || !turn.finalDecision.action
+        || !turn.finalResponse || typeof turn.finalResponse.replyText !== "string") {
+        throw Object.assign(new Error("TARGET_PASS_ATTRIBUTION_UNPROVEN"), { code: "TARGET_PASS_ATTRIBUTION_UNPROVEN" });
+      }
+    }
+    if (!markerTaskId || postgresqlQueryCount < 1) throw Object.assign(new Error("TARGET_PASS_ATTRIBUTION_UNPROVEN"), { code: "TARGET_PASS_ATTRIBUTION_UNPROVEN" });
+    evidence.push({ caseId, repairReason: expectedReason, markerTaskId, postgresqlQueryCount, traceStatus: "complete" });
+  }
+  return { status: "TARGET_PASS_ATTRIBUTION_PROVEN", cases: evidence };
+}
 async function main(env = process.env) {
   const commit = String(env.GITHUB_SHA || "").trim().toLowerCase();
   if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error("github_sha_required");
-  if (env.GITHUB_REPOSITORY !== EXPECTED_REPOSITORY || env.GITHUB_REF !== EXPECTED_REF || env.GITHUB_WORKFLOW_REF !== EXPECTED_WORKFLOW_REF || env.GITHUB_EVENT_NAME !== "push") throw new Error("github_workflow_identity_mismatch");
+  validateWorkflowIdentity(env);
+  const acceptance = acceptanceMatrixForMode(env);
   const baseUrl = String(env.TEST_ONLY_ACCEPTANCE_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, "");
   const propertyId = String(env.TEST_ONLY_ACCEPTANCE_PROPERTY_ID || "nephi_home").trim();
   const reportDirectory = String(env.TEST_ONLY_ACCEPTANCE_REPORT_DIR || "").trim();
@@ -689,10 +780,11 @@ async function main(env = process.env) {
     oidcToken,
     refreshOidcToken: () => requestGithubOidcToken(oidcRequest),
     commit,
-    matrix: DEPLOYED_ACCEPTANCE_MATRIX,
+    matrix: acceptance.matrix,
+    reportFinalizer: acceptance.mode === "target_preflight" ? validateTargetPreflightAttribution : null,
     reportWriter: (report) => writeAcceptanceReport(report, reportDirectory)
   });
-  console.log(JSON.stringify({ suite: "deployed-conversation-acceptance", ...summary, commit }));
+  console.log(JSON.stringify({ suite: "deployed-conversation-acceptance", mode: acceptance.mode, ...summary, commit }));
 }
 if (require.main === module) main().catch((error) => {
   console.error(JSON.stringify({
@@ -716,6 +808,7 @@ module.exports = {
   ACCEPTANCE_MATRIX,
   SUPPLEMENTAL_ACCEPTANCE_MATRIX,
   DEPLOYED_ACCEPTANCE_MATRIX,
+  TARGET_PREFLIGHT_CASE_IDS,
   loadAcceptanceMatrix,
   loadSupplementalAcceptanceMatrix,
   NOT_EXECUTABLE_STATUS,
@@ -726,5 +819,9 @@ module.exports = {
   assessFinalResponseEvidence,
   writeAcceptanceReport,
   runAcceptanceMatrix,
+  selectAcceptanceMatrix,
+  validateWorkflowIdentity,
+  acceptanceMatrixForMode,
+  validateTargetPreflightAttribution,
   TEST_ONLY_ACCEPTANCE_AUDIENCE
 };

@@ -6,12 +6,17 @@ const os = require("node:os");
 const path = require("node:path");
 const {
   ACCEPTANCE_MATRIX,
+  DEPLOYED_ACCEPTANCE_MATRIX,
   pollForDeployment,
   requestGithubOidcToken,
   validateAcceptanceResult,
   assessFinalResponseEvidence,
   writeAcceptanceReport,
   runAcceptanceMatrix,
+  selectAcceptanceMatrix,
+  validateWorkflowIdentity,
+  acceptanceMatrixForMode,
+  validateTargetPreflightAttribution,
   TEST_ONLY_ACCEPTANCE_AUDIENCE
 } = require("../scripts/run-deployed-conversation-acceptance");
 
@@ -370,14 +375,66 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.doesNotMatch(gatewayService, /TEST_ONLY_ACCEPTANCE_ENABLED/);
 
   const workflow = fs.readFileSync(path.join(root, ".github/workflows/test-only-ci.yml"), "utf8");
+  assert.match(workflow, /workflow_dispatch:/, "manual deployed acceptance must be explicitly dispatchable");
+  assert.match(workflow, /target_preflight/);
+  assert.match(workflow, /full_matrix/);
+  assert.match(workflow, /verify:\s*\r?\n\s*if:\s*github\.event_name != 'workflow_dispatch'/, "manual acceptance must not repeat verify");
+  assert.match(workflow, /deployed-acceptance:\s*\r?\n\s*if:\s*github\.event_name == 'workflow_dispatch'/, "push and pull request must not start deployed acceptance");
   assert.match(workflow, /id-token:\s*write/);
   assert.match(workflow, /run-deployed-conversation-acceptance\.js/);
-  assert.match(workflow, /needs:\s*verify/);
+  assert.doesNotMatch(workflow, /deployed-acceptance:[\s\S]*?needs:\s*verify/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
-  assert.match(workflow, /name:\s*junzan-real-guest-acceptance-\$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /name:\s*junzan-\$\{\{ inputs\.acceptance_mode \}\}-\$\{\{ github\.sha \}\}/);
   assert.match(workflow, /if:\s*always\(\)/, "the private report must upload even when the deployed matrix exits 1");
   assert.match(workflow, /TEST_ONLY_ACCEPTANCE_REPORT_DIR/);
   assert.doesNotMatch(workflow, /continue-on-error|forced success/i);
+
+  const targetIds = ["rg-026-ktv-availability", "rg-037-multi-pool-price-checkin"];
+  const selected = selectAcceptanceMatrix({ matrix: DEPLOYED_ACCEPTANCE_MATRIX, caseIds: targetIds });
+  assert.deepEqual(selected.map((item) => item.id), targetIds, "target preflight must select only the two deployed cases in requested order");
+  assert.throws(() => selectAcceptanceMatrix({ matrix: DEPLOYED_ACCEPTANCE_MATRIX, caseIds: [] }), /acceptance_case_ids_required/);
+  assert.throws(() => selectAcceptanceMatrix({ matrix: DEPLOYED_ACCEPTANCE_MATRIX, caseIds: [" "] }), /acceptance_case_id_blank/);
+  assert.throws(() => selectAcceptanceMatrix({ matrix: DEPLOYED_ACCEPTANCE_MATRIX, caseIds: [targetIds[0], targetIds[0]] }), /acceptance_case_id_duplicate/);
+  assert.throws(() => selectAcceptanceMatrix({ matrix: DEPLOYED_ACCEPTANCE_MATRIX, caseIds: ["rg-999-unknown"] }), /acceptance_case_id_unknown/);
+  const trustedIdentity = {
+    GITHUB_REPOSITORY: "gqlikjguo-web/nephi-home",
+    GITHUB_REF: "refs/heads/test-only/node-pilot-integration",
+    GITHUB_WORKFLOW_REF: "gqlikjguo-web/nephi-home/.github/workflows/test-only-ci.yml@refs/heads/test-only/node-pilot-integration"
+  };
+  assert.doesNotThrow(() => validateWorkflowIdentity({ ...trustedIdentity, GITHUB_EVENT_NAME: "workflow_dispatch" }));
+  assert.doesNotThrow(() => validateWorkflowIdentity({ ...trustedIdentity, GITHUB_EVENT_NAME: "push" }));
+  assert.throws(() => validateWorkflowIdentity({ ...trustedIdentity, GITHUB_EVENT_NAME: "pull_request" }), /github_workflow_identity_mismatch/);
+  assert.deepEqual(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "target_preflight", TEST_ONLY_ACCEPTANCE_CASE_IDS: targetIds.join(",") }).matrix.map((item) => item.id), targetIds);
+  assert.equal(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: "" }).matrix.length, 77);
+  assert.throws(() => acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: targetIds[0] }), /full_matrix_case_filter_forbidden/);
+  const attributedReport = {
+    cases: targetIds.map((caseId) => ({
+      caseId,
+      status: "PASS",
+      turns: [{
+        runtimeEvidence: {
+          providerType: "postgresql",
+          plannerParserSucceeded: true,
+          semanticContractValidationPassed: true,
+          planner: [{ stage: "planner" }],
+          validation: [{ stage: "semantic_contract", semanticValidation: { repairedTasks: [{ taskId: `${caseId}-task`, reason: caseId === targetIds[0] ? "source_bound_inventory_feature_capability" : "source_bound_inventory_scope_preservation" }] } }],
+          canonicalRequest: [{ stage: "canonical_request", items: [{}] }],
+          conversationState: [{ stage: "state" }],
+          queryPlan: [{ stage: "query_plan", count: 1 }],
+          resolverExecution: [{ stage: "executor" }]
+        },
+        claimValidation: { ok: true },
+        finalDecision: { action: "reply" },
+        finalResponse: { replyText: "verified" }
+      }]
+    }))
+  };
+  const attribution = validateTargetPreflightAttribution(attributedReport);
+  assert.equal(attribution.status, "TARGET_PASS_ATTRIBUTION_PROVEN");
+  assert.deepEqual(attribution.cases.map((item) => item.postgresqlQueryCount), [1, 1]);
+  const unprovenReport = JSON.parse(JSON.stringify(attributedReport));
+  unprovenReport.cases[0].turns[0].runtimeEvidence.validation[0].semanticValidation.repairedTasks = [];
+  assert.throws(() => validateTargetPreflightAttribution(unprovenReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/);
 
   const deployedRunnerSource = fs.readFileSync(path.join(__dirname, "../scripts/run-deployed-conversation-acceptance.js"), "utf8");
   assert.doesNotMatch(deployedRunnerSource, /require\([^)]*pglite|createPglite|fake planner/i);
