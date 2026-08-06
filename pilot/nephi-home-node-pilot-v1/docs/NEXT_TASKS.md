@@ -156,3 +156,9 @@
 1. Verify runtime and tests are byte-equivalent to `7f9edf2a4ef6c055cf4bda0a67b03b625abfc0de`, run the complete local suite and all safety gates, create one rollback commit retaining run `31066678489` evidence, and non-force push it.
 2. Require exact-SHA GitHub verify, Render `ready` with `testOnly=true`, verified private artifact digest, and complete 77-case / 90-turn acceptance. All prior-PASS turns from artifacts `8953248983` and `8950072765` must recover before any new fix is retained.
 3. Continue from the newest rollback artifact's earliest common failure layer. No future repair may count `rg-022` as recovered unless its deployed trace executes the responsible deterministic boundary; preserve temporal ambiguity, past-date, multi-cycle, and real-LINE safety gates.
+
+## 2026-08-06 resolved lodging detail-scope preservation
+
+1. Run the remaining lodging, policy, temporal, ambiguity, past-date, multi-cycle, complete `npm test`, and all safety gates; create one root-cause commit and non-force push it.
+2. Require exact-SHA verify, Render `ready` with `testOnly=true`, verified private artifact digest, and complete 77-case / 90-turn acceptance. The `rg-006` target trace must contain `resolved_inventory_detail_scope_preservation`, retain the resolved room in CanonicalRequest and State, create no availability QueryPlan for a past date, and finish with explicit past-date clarification.
+3. Compare every prior-PASS turn against artifacts `8954889733`, `8953248983`, and `8950072765`. If stable and Release Gate remains unmet, continue from the next earliest common failure layer; keep real LINE blocked.

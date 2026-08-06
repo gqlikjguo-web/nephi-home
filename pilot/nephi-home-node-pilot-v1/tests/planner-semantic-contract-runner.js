@@ -56,10 +56,10 @@ function sourceBoundSemantic(taskValue, { message = taskValue.sourceText, eventI
   });
 }
 
-function canonical(taskValue) {
-  const semantic = applyPlannerSemanticContract(plan([taskValue]), { catalog });
+function canonical(taskValue, catalogOverride = catalog) {
+  const semantic = applyPlannerSemanticContract(plan([taskValue]), { catalog: catalogOverride });
   const item = { candidateIndex: 0, requestCycleId: semantic.tasks[0].taskId, task: semantic.tasks[0], transition: { approvedProduct: { productType: "any", productId: null, roomTypeId: null, bundleId: null } } };
-  return { semantic, item: canonicalizeExecutionItem({ item, relation: null, contextSnapshot: { cycles: [] }, catalog, guestMessage: taskValue.sourceText, eventTimestamp }) };
+  return { semantic, item: canonicalizeExecutionItem({ item, relation: null, contextSnapshot: { cycles: [] }, catalog: catalogOverride, guestMessage: taskValue.sourceText, eventTimestamp }) };
 }
 
 function assertContradictoryPlannerFieldsPreserveControlledCapability() {
@@ -135,6 +135,43 @@ function assertContradictoryPlannerFieldsPreserveControlledCapability() {
       assert.equal(result.semantic.tasks[0].type, "policy");
       assert.equal(result.semantic.tasks[0].entity.category, "policy");
       assert.equal(result.item.canonicalRequest.capability, "policy");
+    }],
+    ["a resolved lodging room is not erased by restriction-shaped detail drift", () => {
+      const roomCatalog = buildPropertyCatalog({
+        ...property,
+        rooms: [{
+          id: "inventory-room-a",
+          name: "Inventory Room A",
+          type: "family",
+          capacity: 4,
+          enabled: true
+        }]
+      });
+      const result = canonical(task({
+        taskId: "resolved-room-restriction-drift",
+        type: "availability",
+        category: "room",
+        rawText: "Inventory Room A",
+        sourceText: "Inventory Room A 7/20",
+        canonicalCandidate: "inventory-room-a",
+        detailIntent: "room_or_bundle_restriction",
+        requestedOutputs: ["availability"],
+        dependsOnStayContext: true,
+        stayCandidate: {
+          dateExpression: { rawText: "7/20", kind: "absolute", anchor: "message_time" },
+          checkInCandidate: "2026-07-20",
+          checkOutCandidate: null,
+          nightsCandidate: 1,
+          guestCountCandidate: null
+        }
+      }), roomCatalog);
+      assert.equal(result.semantic.tasks[0].type, "availability", "a formally resolved room must keep its inventory capability");
+      assert.equal(result.semantic.tasks[0].entity.category, "room");
+      assert.equal(result.semantic.tasks[0].entity.canonicalCandidate, "inventory-room-a");
+      assert.equal(result.item.canonicalRequest.capability, "availability");
+      assert.equal(result.item.canonicalRequest.canonicalEntity.canonicalId, "inventory-room-a");
+      assert.equal(result.item.canonicalRequest.temporalState.repairReasonCode, "past_date", "preserved inventory scope must retain temporal fail-closed authority");
+      assert.ok(result.semantic.semanticValidation.repairedTasks.some((item) => item.reason === "resolved_inventory_detail_scope_preservation"), "the deployed semantic trace must prove the inventory-scope guard executed");
     }],
     ["a grounded amenity restriction remains a policy question", () => {
       const result = canonical(task({

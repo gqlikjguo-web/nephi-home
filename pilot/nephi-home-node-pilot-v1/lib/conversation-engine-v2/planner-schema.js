@@ -13,6 +13,7 @@ const { resolveEntity, mentionedPropertyFacts } = require("./entity-resolver");
 const { getCapabilityDefinition } = require("./capability-registry");
 const { sourceEventMaps, evidenceMatchesSource } = require("./understanding-validator");
 const TASK_ID_REPAIRS = Symbol("plannerTaskIdRepairs");
+const INVENTORY_SCOPE_REPAIR_REASON = Symbol("inventoryScopeRepairReason");
 const STATELESS_DUPLICATE_TASK_ID_TYPES = new Set(["amenity", "amenity_list", "policy", "property_fact"]);
 const INVENTORY_OUTPUT_TYPES = new Set(["price", "total_price"]);
 const INVENTORY_OUTPUT_REPAIRABLE_TYPES = new Set(["availability", "bundle_availability", "room_options", "amenity", "policy", "property_fact"]);
@@ -251,10 +252,22 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
   };
 }
 
-function normalizedPolicyRestrictionTaskShape(task) {
+function normalizedPolicyRestrictionTaskShape(task, catalog = null) {
   const entity = task && task.entity;
   if (!entity || !["availability", "amenity"].includes(task.type)
     || !POLICY_DETAIL_INTENTS.has(task.detailIntent)) return null;
+  const resolvedInventory = task.type === "availability"
+    && catalog
+    && ["room", "bundle"].includes(entity.category)
+    ? resolveEntity(catalog, entity)
+    : null;
+  if (resolvedInventory
+    && resolvedInventory.status === "resolved"
+    && resolvedInventory.entity
+    && resolvedInventory.entity.category === entity.category) return {
+    ...task,
+    [INVENTORY_SCOPE_REPAIR_REASON]: "resolved_inventory_detail_scope_preservation"
+  };
   const definition = getCapabilityDefinition("policy");
   const policyEntity = definition.acceptedEntityCategories.includes(entity.category)
     ? entity
@@ -269,7 +282,7 @@ function normalizedPolicyRestrictionTaskShape(task) {
   };
 }
 
-function normalizedUngroundedTaskShape(task, fallbackStayCandidate = null) {
+function normalizedUngroundedTaskShape(task, fallbackStayCandidate = null, catalog = null) {
   const entity = task && task.entity;
   if (!entity) return task;
   const requestedInventory = requestedInventoryType(task);
@@ -279,7 +292,7 @@ function normalizedUngroundedTaskShape(task, fallbackStayCandidate = null) {
     ...task,
     entity: { ...entity, category: "policy" }
   };
-  const policyRestrictionTask = normalizedPolicyRestrictionTaskShape(task);
+  const policyRestrictionTask = normalizedPolicyRestrictionTaskShape(task, catalog);
   if (policyRestrictionTask) return policyRestrictionTask;
   if (requestedInventory
     && INVENTORY_OUTPUT_REPAIRABLE_TYPES.has(task.type)
@@ -713,12 +726,18 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     }
 
     if (!groundedTask) {
-      const normalizedTask = normalizedUngroundedTaskShape(task, value.stay);
+      const normalizedTask = normalizedUngroundedTaskShape(task, value.stay, catalog);
+      const inventoryScopeRepairReason = normalizedTask[INVENTORY_SCOPE_REPAIR_REASON];
+      delete normalizedTask[INVENTORY_SCOPE_REPAIR_REASON];
       if (normalizedTask.type !== task.type
         || normalizedTask.entity.category !== task.entity.category) {
         task = normalizedTask;
         entity = task.entity;
         repairedTasks.push({ taskId: task.taskId, index, reason: "candidate_shape_normalization" });
+      } else if (inventoryScopeRepairReason) {
+        task = normalizedTask;
+        entity = task.entity;
+        repairedTasks.push({ taskId: task.taskId, index, reason: inventoryScopeRepairReason });
       }
     }
 

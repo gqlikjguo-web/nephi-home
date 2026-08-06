@@ -489,3 +489,11 @@
 **Reason:** Complete artifact `8954260810` had three prior-PASS regressions versus rollback artifact `8953248983` and four versus stable artifact `8950072765`. Although `rg-022` returned PASS, its trace `be8980d3-f5f6-456b-baf6-2486bae35bdf` did not execute `duplicate_source_canonical_authority`; OpenAI directly produced a policy task with no canonical candidate. The repair executed on five other already-PASS cases, so the target result did not prove the experiment and the artifact failed the no-regression gate.
 
 **Constraint:** Do not retain a compiler experiment when its target deployed trace bypasses the repair. Any later solution to this failure layer must be demonstrated by target-trace execution and preserve every prior-PASS turn, not merely improve the aggregate count.
+
+## D-053 -- Preserve uniquely resolved lodging scope across detail-intent drift
+
+**Decision:** An availability-shaped task whose room or bundle entity uniquely resolves in the current property catalog retains its inventory capability and entity scope even when the Planner emits a policy-shaped restriction detail intent. The semantic trace records `resolved_inventory_detail_scope_preservation` whenever this guard executes.
+
+**Reason:** Rollback artifact `8954889733` showed a prior-PASS named-room availability request where the Planner supplied the formal room entity but changed only `detailIntent` to `room_or_bundle_restriction`. Generic policy normalization then erased the resolved room, executed a property query, and overrode the correct temporal fail-closed response.
+
+**Constraint:** Preservation requires exact catalog resolution to the same lodging category. Unresolved or matched-set room and bundle mentions remain subject to existing policy normalization, and no room, bundle, alias, date, fact, or answer is synthesized. Past dates, ambiguity, incomplete dates, and query-readiness rules remain authoritative, so no availability query may execute until the full stay is ready.

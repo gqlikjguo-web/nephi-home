@@ -340,3 +340,7 @@
 ## 2026-08-06 Duplicate-source formal reconciliation rollback
 
 - Reverted the experiment after the target deployed PASS bypassed it and the complete artifact introduced prior-PASS regressions.
+
+## 2026-08-06 Resolved lodging detail-scope preservation
+
+- Prevented policy-shaped detail drift from erasing a uniquely resolved room or bundle inventory scope while retaining temporal and query-readiness gates.

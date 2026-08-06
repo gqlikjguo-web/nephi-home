@@ -332,3 +332,9 @@ A non-inventory property fact can use a canonical ID that collides with a statef
 ## 2026-08-06 -- A second target bypass confirms the attribution gate
 
 Artifact `8954260810` again made the target pass through a fresh OpenAI task shape while the deterministic repair executed elsewhere. The target contained no canonical candidate and no repair marker, so its PASS was not evidence for the code change. When the same artifact also regresses prior-PASS turns, rollback is mandatory even if the local RED/GREEN and independent review are sound.
+
+## 2026-08-06 -- Detail intent must not erase formal lodging identity
+
+A restriction-shaped detail intent can describe a lodging inventory request without turning the room or bundle itself into a property policy. When the current catalog uniquely resolves the Planner's lodging entity, changing that task to `policy` discards formal scope and can override a more important temporal rejection with an unrelated property-data handoff.
+
+Treat uniquely resolved lodging identity as stronger evidence than detail-intent drift. Keep unresolved or ambiguous lodging mentions fail closed, retain existing property-policy normalization for non-inventory entities, and expose a semantic repair reason so deployed attribution is testable.
