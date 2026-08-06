@@ -324,3 +324,7 @@
 ## 2026-08-06 Lodging-arrangement grammar rollback
 
 - Reverted the broad Planner booking-process grammar after complete deployed acceptance exposed prior-PASS amenity, room-feature, context, and past-date regressions.
+
+## 2026-08-06 Source-bound stateful catalog isolation
+
+- Preserved a verified stateless property subject that OpenAI merged into a lodging-price task before controlled price normalization erases the incompatible entity, with exact-catalog, unresolved, duplicate, and evidence-binding safeguards.

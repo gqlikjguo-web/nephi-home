@@ -312,3 +312,11 @@ Define the semantic capability at the structured-generation boundary and keep it
 An instruction that makes one duration-only lodging request a booking capability can also absorb date modifications and turn a controlled past-date clarification into a stateless human handoff. It can simultaneously perturb unrelated room-feature and amenity task shapes because the change affects the model's complete capability distribution.
 
 Do not repair this class of residual Planner drift by adding another broad prompt rule. Recover only from verified source and already-structured evidence at a deterministic compiler boundary, and retain negative controls for property facts, policies, context modifications, ambiguity, and past dates. Roll back whenever the complete artifact introduces any prior-PASS regression.
+
+## 2026-08-06 -- Preserving a stateful capability must not erase its stateless subject
+
+A contradictory Planner task can contain two useful controlled signals: a stateful lodging-price output and a stateless property entity. Normalizing the task to a valid price shape by clearing the entity preserves one request but silently discards the other.
+
+Before destructive shape normalization, isolate only a source-bound stateless entity from verified current-event evidence. Keep the original price readiness, deduplicate already represented entities, query only the property catalog for the isolated task, and leave unsupported fees unresolved. This retains coverage without turning an entity mention into a fact or an availability query.
+
+Raw evidence and a Planner canonical candidate can disagree. Ground the isolated subject from raw evidence first, never append both formal entities, and deduplicate unresolved subjects independently of the Planner category; otherwise the repair can manufacture an unsupported second answer.

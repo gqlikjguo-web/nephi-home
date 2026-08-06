@@ -94,6 +94,70 @@ async function duplicateTaskIdsContinueThroughEngine() {
   assert.equal(semantic.semanticValidation.repairedTasks.filter((item) => item.reason === "duplicate_task_id_normalization").length, 1);
 }
 
+async function mergedPriceEntitySurvivesThroughEngine() {
+  const messageText = "What is the lodging charge, and is the pool service included?";
+  const output = validPlannerOutput();
+  output.stay = { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null };
+  output.tasks = [{
+    candidateIndex: 0,
+    taskId: "priced-amenity",
+    type: "price",
+    sourceText: messageText,
+    detailIntent: "general",
+    requestedOutputs: ["price"],
+    eligibilityEvidence: { kind: "none", sourceText: "" },
+    dependsOnStayContext: true,
+    entity: { category: "amenity", rawText: "pool service", canonicalCandidate: "pool", confidence: 1 },
+    stayCandidate: output.stay,
+    confidence: 1
+  }];
+  output.contextRelationCandidates = [{
+    candidateIndex: 0,
+    kind: "new_request",
+    candidateRequestCycleRefs: [],
+    evidenceRefs: [{ eventId: "priced-amenity-event", messageRef: "", startOffset: 0, endOffset: messageText.length, quote: messageText }]
+  }];
+  const diagnostics = [];
+  let availabilityQueryCount = 0;
+  const engine = new ConversationEngineV2({
+    planner: { classify: async () => output },
+    persistence: plannerPersistence(),
+    getProperty: () => ({
+      ...property,
+      semanticCatalog: {
+        aliases: { pool: ["pool service"] },
+        amenities: [{ id: "pool", name: "Pool", aliases: ["pool service"], status: "confirmed_yes", answer: "Pool access is formally available." }]
+      }
+    }),
+    availabilityResolver: () => { availabilityQueryCount += 1; return { availabilityReliable: true, rooms: [] }; },
+    listPriceOverrides: () => [],
+    onDiagnostic: (entry) => diagnostics.push(entry)
+  });
+  const result = await engine.process({
+    customerId: property.propertyId,
+    channelId: "test",
+    lineUserId: "guest",
+    eventId: "priced-amenity-event",
+    eventTimestamp: Date.parse("2026-08-06T10:00:00+08:00"),
+    messageText,
+    sourceEvents: [{ eventId: "priced-amenity-event", messageRef: "", messageText }]
+  });
+  assert.ok(result.taskResults.some((item) => (item.capability || item.type) === "price" && item.status === "needs_clarification"), "lodging price must retain missing-date readiness");
+  const propertyTask = result.taskResults.find((item) => ["pool", "amenity"].includes(item.capability || item.type));
+  assert.equal(propertyTask.status, "answered", "the source-bound formal amenity must execute independently");
+  assert.equal(propertyTask.facts.detailIntent, "fee");
+  assert.equal(propertyTask.facts.detailProvided, false, "a missing formal amenity fee must remain explicitly unavailable");
+  assert.equal(availabilityQueryCount, 0, "missing lodging dates must never execute availability while the independent property fact remains answerable");
+  const queryPlan = diagnostics.find((entry) => entry.stage === "query_plan");
+  assert.equal(queryPlan.items.some((item) => item.operation === "availability"), false);
+  assert.equal(queryPlan.items.some((item) => item.operation === "property_catalog"), true);
+  const semantic = diagnostics.find((entry) => entry.stage === "semantic_contract");
+  assert.ok(semantic.semanticValidation.repairedTasks.some((item) => item.reason === "stateful_inventory_catalog_task_isolation"));
+  assert.equal(result.finalDecision.action, "clarification");
+  assert.match(result.replyText, /費用目前沒有正式資料/);
+  assert.equal(result.replyText.includes("Pool access is formally available"), false, "a general amenity answer must not be substituted for a missing formal fee");
+}
+
 function invalidRelationOutput() {
   return {
     ...validPlannerOutput(),
@@ -318,6 +382,7 @@ async function plannerContractFailureDoesNotRetry() {
 async function main() {
   for (const output of [null, undefined, "not-an-object", { schemaVersion: 2 }]) await engineResult(output);
   await duplicateTaskIdsContinueThroughEngine();
+  await mergedPriceEntitySurvivesThroughEngine();
 
   const strict = plannerJsonSchema().properties.tasks.items;
   assert.ok(strict.required.includes("detailIntent"));

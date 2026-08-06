@@ -480,6 +480,139 @@ function main() {
   });
   assert.equal(alreadyRepresented.tasks.length, 2, "an already represented catalog task must never be duplicated during isolation");
 
+  const emptyStayCandidate = {
+    dateExpression: { rawText: "", kind: "none", anchor: "none" },
+    checkInCandidate: null,
+    checkOutCandidate: null,
+    nightsCandidate: null,
+    guestCountCandidate: null
+  };
+  const pricedAmenityMessage = "What is the lodging charge, and is the pool service included?";
+  const pricedAmenityPlan = plan([task({
+    taskId: "priced-amenity",
+    type: "price",
+    category: "amenity",
+    rawText: "pool service",
+    sourceText: pricedAmenityMessage,
+    canonicalCandidate: "pool",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: emptyStayCandidate
+  })]);
+  pricedAmenityPlan.contextRelationCandidates[0].evidenceRefs = [{
+    eventId: "priced-amenity-event",
+    messageRef: "",
+    startOffset: 0,
+    endOffset: pricedAmenityMessage.length,
+    quote: pricedAmenityMessage
+  }];
+  const isolatedPricedAmenity = applyPlannerSemanticContract(pricedAmenityPlan, {
+    catalog,
+    sourceEvents: [{ eventId: "priced-amenity-event", messageRef: "", messageText: pricedAmenityMessage }]
+  });
+  assert.equal(isolatedPricedAmenity.tasks.length, 2, "a source-bound stateless entity attached to lodging price must survive as an independent task");
+  assert.ok(isolatedPricedAmenity.tasks.some((item) => item.type === "price" && item.entity.category === "other"), "the controlled lodging-price task must survive entity isolation");
+  assert.ok(isolatedPricedAmenity.tasks.some((item) => item.type === "amenity" && item.entity.canonicalCandidate === "pool"), "the formal stateless subject must survive before price normalization erases its entity");
+  assert.ok(isolatedPricedAmenity.semanticValidation.repairedTasks.some((item) => item.reason === "stateful_inventory_catalog_task_isolation"), "stateful catalog isolation must remain visible in semantic evidence");
+  assert.equal(validatePlannerOutput(isolatedPricedAmenity).ok, true, "isolated price and property tasks must remain a valid Planner contract");
+
+  const conflictingCanonicalPlan = JSON.parse(JSON.stringify(pricedAmenityPlan));
+  conflictingCanonicalPlan.tasks[0].entity.rawText = "pool";
+  conflictingCanonicalPlan.tasks[0].entity.canonicalCandidate = "bbq";
+  conflictingCanonicalPlan.tasks[0].sourceText = "pool";
+  conflictingCanonicalPlan.contextRelationCandidates[0].evidenceRefs = [{ eventId: "conflicting-canonical-event", messageRef: "", startOffset: 0, endOffset: 4, quote: "pool" }];
+  const conflictingCanonical = applyPlannerSemanticContract(conflictingCanonicalPlan, {
+    catalog,
+    sourceEvents: [{ eventId: "conflicting-canonical-event", messageRef: "", messageText: "pool" }]
+  });
+  const conflictingSubjects = conflictingCanonical.tasks.filter((item) => item.type === "amenity");
+  assert.equal(conflictingSubjects.length, 1, "a conflicting Planner canonical candidate must not synthesize a second catalog subject");
+  assert.equal(conflictingSubjects[0].entity.canonicalCandidate, "pool", "verified raw evidence must remain authoritative over a conflicting canonical candidate");
+
+  const pricedRawFactMessage = "What is the lodging charge, and can guests use the shared kitchen?";
+  const pricedRawFactPlan = plan([task({
+    taskId: "priced-raw-fact",
+    type: "price",
+    category: "room_feature",
+    rawText: "shared kitchen",
+    sourceText: pricedRawFactMessage,
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: emptyStayCandidate
+  })]);
+  pricedRawFactPlan.contextRelationCandidates[0].evidenceRefs = [{ eventId: "priced-raw-fact-event", messageRef: "", startOffset: 0, endOffset: pricedRawFactMessage.length, quote: pricedRawFactMessage }];
+  const isolatedPricedRawFact = applyPlannerSemanticContract(pricedRawFactPlan, {
+    catalog,
+    sourceEvents: [{ eventId: "priced-raw-fact-event", messageRef: "", messageText: pricedRawFactMessage }]
+  });
+  assert.equal(isolatedPricedRawFact.tasks.length, 2, "a verified raw catalog subject attached to price must be isolated without scanning unrelated message text");
+  assert.ok(isolatedPricedRawFact.tasks.some((item) => item.entity.canonicalCandidate === "shared_cooking"));
+
+  const unresolvedFeatureMessage = "What is the lodging charge, and is a rollaway sleeping option allowed?";
+  const unresolvedFeaturePlan = plan([task({
+    taskId: "priced-unresolved-feature",
+    type: "price",
+    category: "room_feature",
+    rawText: "rollaway sleeping option",
+    sourceText: unresolvedFeatureMessage,
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: emptyStayCandidate
+  })]);
+  unresolvedFeaturePlan.contextRelationCandidates[0].evidenceRefs = [{ eventId: "unresolved-feature-event", messageRef: "", startOffset: 0, endOffset: unresolvedFeatureMessage.length, quote: unresolvedFeatureMessage }];
+  const isolatedUnresolvedFeature = applyPlannerSemanticContract(unresolvedFeaturePlan, {
+    catalog,
+    sourceEvents: [{ eventId: "unresolved-feature-event", messageRef: "", messageText: unresolvedFeatureMessage }]
+  });
+  const unresolvedFeatureTask = isolatedUnresolvedFeature.tasks.find((item) => item.type === "amenity");
+  assert.ok(unresolvedFeatureTask, "a source-bound unsupported room feature must survive as an unresolved property task rather than being erased");
+  assert.equal(unresolvedFeatureTask.entity.canonicalCandidate, null);
+  assert.equal(unresolvedFeatureTask.entity.rawText, "rollaway sleeping option");
+
+  const duplicateRawPlan = plan([
+    task({ taskId: "explicit-rollaway", type: "amenity", category: "amenity", rawText: "rollaway sleeping option", sourceText: unresolvedFeatureMessage }),
+    { ...unresolvedFeaturePlan.tasks[0], candidateIndex: 1 }
+  ]);
+  duplicateRawPlan.contextRelationCandidates.forEach((candidate) => {
+    candidate.evidenceRefs = [{ eventId: "duplicate-raw-event", messageRef: "", startOffset: 0, endOffset: unresolvedFeatureMessage.length, quote: unresolvedFeatureMessage }];
+  });
+  const duplicateRaw = applyPlannerSemanticContract(duplicateRawPlan, {
+    catalog,
+    sourceEvents: [{ eventId: "duplicate-raw-event", messageRef: "", messageText: unresolvedFeatureMessage }]
+  });
+  assert.equal(duplicateRaw.tasks.length, 2, "the same unresolved source subject must not be duplicated across Planner categories");
+
+  const unverifiedPricedAmenityPlan = JSON.parse(JSON.stringify(pricedAmenityPlan));
+  unverifiedPricedAmenityPlan.contextRelationCandidates[0].evidenceRefs[0].eventId = "wrong-event";
+  const unverifiedPricedAmenity = applyPlannerSemanticContract(unverifiedPricedAmenityPlan, {
+    catalog,
+    sourceEvents: [{ eventId: "priced-amenity-event", messageRef: "", messageText: pricedAmenityMessage }]
+  });
+  assert.equal(unverifiedPricedAmenity.tasks.length, 1, "stateful catalog isolation must reject evidence that is not bound to the current source");
+
+  const unboundPricedAmenityPlan = JSON.parse(JSON.stringify(pricedAmenityPlan));
+  const priceOnlyMessage = "What is the lodging charge?";
+  unboundPricedAmenityPlan.tasks[0].sourceText = priceOnlyMessage;
+  unboundPricedAmenityPlan.contextRelationCandidates[0].evidenceRefs = [{ eventId: "price-only-event", messageRef: "", startOffset: 0, endOffset: priceOnlyMessage.length, quote: priceOnlyMessage }];
+  const unboundPricedAmenity = applyPlannerSemanticContract(unboundPricedAmenityPlan, {
+    catalog,
+    sourceEvents: [{ eventId: "price-only-event", messageRef: "", messageText: priceOnlyMessage }]
+  });
+  assert.equal(unboundPricedAmenity.tasks.length, 1, "an entity candidate absent from verified source must not create a property task");
+
+  const explicitlyRepresentedPricedAmenityPlan = plan([
+    task({ taskId: "explicit-pool", type: "amenity", category: "amenity", rawText: "pool service", sourceText: pricedAmenityMessage, canonicalCandidate: "pool" }),
+    { ...pricedAmenityPlan.tasks[0], candidateIndex: 1 }
+  ]);
+  explicitlyRepresentedPricedAmenityPlan.contextRelationCandidates.forEach((candidate) => {
+    candidate.evidenceRefs = [{ eventId: "explicit-priced-amenity-event", messageRef: "", startOffset: 0, endOffset: pricedAmenityMessage.length, quote: pricedAmenityMessage }];
+  });
+  const explicitlyRepresentedPricedAmenity = applyPlannerSemanticContract(explicitlyRepresentedPricedAmenityPlan, {
+    catalog,
+    sourceEvents: [{ eventId: "explicit-priced-amenity-event", messageRef: "", messageText: pricedAmenityMessage }]
+  });
+  assert.equal(explicitlyRepresentedPricedAmenity.tasks.length, 2, "a separately represented property task must not be duplicated from an incidental price entity");
+
   const sameTurnMessage = "Check one stay, two guests, and one supplied amenity.";
   const sameTurnEvent = { eventId: "same-turn-event", messageRef: "", messageText: sameTurnMessage };
   const sameTurnPlan = plan([
@@ -530,7 +663,7 @@ function main() {
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 28 + contradictoryFieldCaseCount, passCount: 28 + contradictoryFieldCaseCount, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 36 + contradictoryFieldCaseCount, passCount: 36 + contradictoryFieldCaseCount, failCount: 0 }));
 }
 
 main();

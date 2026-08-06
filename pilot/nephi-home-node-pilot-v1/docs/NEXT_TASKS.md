@@ -138,3 +138,9 @@
 1. Complete local verification of the exact code rollback, create one rollback commit that retains artifact `8950851806` evidence, and non-force push it. Do not retain the isolated `rgs-017` improvement while any prior PASS or past-date behavior regresses.
 2. Require exact-SHA GitHub verify, Render `ready` with `testOnly=true`, private artifact digest verification, and the complete 77-case / 90-turn matrix. All prior PASS cases and turns from artifact `8950072765` must recover before proceeding.
 3. After rollback stability is proved, repair `rgs-017` only through deterministic verified-source compiler evidence with explicit non-lodging, property, high-risk, context, ambiguity, and past-date negative controls. Real LINE final acceptance remains blocked.
+
+## 2026-08-06 stateful catalog-subject isolation
+
+1. Run protected acceptance, Codex integrity, Constitution, runtime uniqueness, canonical golden, and `git diff --check`; create one root-cause commit and non-force push it.
+2. Require exact-SHA GitHub verify, Render `ready` with `testOnly=true`, verified private artifact digest, and the complete 77-case / 90-turn matrix. `rg-024` and `rgs-018` must recover their amenity/policy/property capability without an early availability query, and every prior PASS case and turn from artifacts `8951474217` and `8950072765` must remain PASS.
+3. If stable, continue with the newest earliest failure layer. Treat `rgs-017` as unresolved until the deterministic compiler proves it, retain `rg-038` month-weekday fail-closed behavior, and preserve all past-date, relation, ambiguity, and real-LINE gates.
