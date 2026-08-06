@@ -449,3 +449,11 @@
 **Reason:** Deployed artifact `8950072765` regressed a prior-PASS duration-only lodging-arrangement request from `availability` to `unknown`, even though Temporal Resolver recovered the verified two-night duration. The missing capability was therefore a Planner semantic-grammar gap, not a temporal parsing failure.
 
 **Constraint:** Duration alone never implies `booking_request`; semantic lodging-reservation intent is required. This rule adds no guest-language phrase, alias, Case ID, expected value, formal fact, or downstream answer. `availability` remains required for an inventory question, and non-lodging duration, property facts, policies, high-risk requests, ambiguity, past dates, and multi-cycle relations retain their existing boundaries.
+
+## D-048 -- Roll back lodging-arrangement Planner grammar
+
+**Decision:** Remove the added Planner instruction and schema description that forced lodging-arrangement and booking-process requests to `booking_request`, restoring the exact structured-generation contract from commit `4844df1751452c5da01902828708b3328d58ba19`.
+
+**Reason:** Complete deployed artifact `8950851806` improved the duration-only arrangement case but regressed three prior-PASS cases and four prior-PASS turns. Two past-date modification turns were converted to stateless `booking_request` handoffs and no longer explicitly rejected past dates. The new prompt rule therefore failed the release safety boundary.
+
+**Constraint:** No net-score improvement can justify a prior-PASS or past-date regression. Future recovery of the duration-only request must be deterministic, source-evidenced, and narrower than changing general OpenAI capability generation; it must preserve policies, amenities, room features, context relations, and temporal rejection.

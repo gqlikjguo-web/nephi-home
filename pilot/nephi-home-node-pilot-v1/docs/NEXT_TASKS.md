@@ -132,3 +132,9 @@
 1. Create one root-cause commit for the shared lodging-arrangement / booking-process structured grammar and non-force push it; local targeted tests, complete `npm test`, protected acceptance, Codex integrity, Constitution, runtime uniqueness, and diff checks pass.
 2. Require exact-SHA GitHub verify, Render `ready` with `testOnly=true`, verified private artifact digest, and the complete 77-case / 90-turn matrix. `rgs-017` must retain canonical `duration_only` with two nights and expose `booking_request` or another accepted booking capability without an availability query; every prior PASS turn must be compared against artifact `8950072765` and stable artifact `8948576835`.
 3. If no prior PASS regresses and Release Gate remains unmet, continue from the newest earliest failure layer among `rg-038`, `rg-039`, `rgs-019`, and `rgs-020`. Preserve month-plus-weekday fail-closed behavior, past-date rejection, multi-cycle authority, unchanged expected values, and the real-LINE block.
+
+## 2026-08-06 lodging-arrangement grammar rollback
+
+1. Complete local verification of the exact code rollback, create one rollback commit that retains artifact `8950851806` evidence, and non-force push it. Do not retain the isolated `rgs-017` improvement while any prior PASS or past-date behavior regresses.
+2. Require exact-SHA GitHub verify, Render `ready` with `testOnly=true`, private artifact digest verification, and the complete 77-case / 90-turn matrix. All prior PASS cases and turns from artifact `8950072765` must recover before proceeding.
+3. After rollback stability is proved, repair `rgs-017` only through deterministic verified-source compiler evidence with explicit non-lodging, property, high-risk, context, ambiguity, and past-date negative controls. Real LINE final acceptance remains blocked.

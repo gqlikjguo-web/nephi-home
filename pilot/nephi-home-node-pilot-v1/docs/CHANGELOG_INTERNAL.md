@@ -320,3 +320,7 @@
 ## 2026-08-06 Structured lodging-arrangement grammar
 
 - Defined lodging reservation arrangement and booking-process requests as `booking_request` in both Planner instructions and strict schema, while explicitly forbidding duration-only promotion and availability execution.
+
+## 2026-08-06 Lodging-arrangement grammar rollback
+
+- Reverted the broad Planner booking-process grammar after complete deployed acceptance exposed prior-PASS amenity, room-feature, context, and past-date regressions.

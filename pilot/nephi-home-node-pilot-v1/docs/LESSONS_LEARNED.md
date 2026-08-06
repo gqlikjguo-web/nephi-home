@@ -306,3 +306,9 @@ Broadening a low-risk policy definition can also absorb credential-disclosure re
 A deterministic temporal parser can correctly recover a stay duration while the Planner still emits `unknown`, leaving the request on a generic handoff path. Temporal correctness alone does not establish what the guest is asking the lodging operator to do.
 
 Define the semantic capability at the structured-generation boundary and keep its negative boundary explicit. A lodging reservation arrangement is a booking task, while an unrelated duration is not. Verify both the recovered temporal evidence and the resulting capability, QueryPlan, and FinalResponse in the complete deployed matrix.
+
+## 2026-08-06 -- Booking-process prompt expansion can erase temporal safety
+
+An instruction that makes one duration-only lodging request a booking capability can also absorb date modifications and turn a controlled past-date clarification into a stateless human handoff. It can simultaneously perturb unrelated room-feature and amenity task shapes because the change affects the model's complete capability distribution.
+
+Do not repair this class of residual Planner drift by adding another broad prompt rule. Recover only from verified source and already-structured evidence at a deterministic compiler boundary, and retain negative controls for property facts, policies, context modifications, ambiguity, and past dates. Roll back whenever the complete artifact introduces any prior-PASS regression.
