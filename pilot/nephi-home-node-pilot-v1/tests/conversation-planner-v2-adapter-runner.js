@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const { TestOnlyOpenAiConversationPlanner } = require("../lib/providers/test-only-openai-conversation-planner");
 const { TestOnlyOpenAiControlledComposer } = require("../lib/providers/test-only-openai-controlled-composer");
 const { runtimeConfig } = require("../config/runtime");
+const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 
 const output = { schemaVersion: 2, discourse: { relation: "new_request", confidence: 1 }, stateOperations: [], stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, tasks: [{ taskId: "1", type: "property_fact", sourceText: "你好", requestedOutputs: ["greeting"], dependsOnStayContext: false, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 1 }, confidence: 1 }], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "greeting" };
 let requestBody;
@@ -38,6 +39,44 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(requestBody.input[0].content[0].text, /replace or remove a prior stay or room condition/i, "planner must express multi-turn replacement through the formal context relation");
   assert.match(requestBody.input[0].content[0].text, /new_request must have zero request-cycle references/i, "planner must not attach stale state to a new request");
   assert.equal(JSON.stringify(requestBody).includes("test-key"), false);
+  const coverageCatalog = buildPropertyCatalog({
+    propertyId: "coverage-property",
+    displayName: "Coverage Property",
+    timezone: "Asia/Taipei",
+    rooms: [],
+    commonAnswers: {},
+    faqs: [{ knowledgeKey: "pool", question: "戲水池", answer: "正式戲水池資料" }],
+    semanticCatalog: { aliases: { pool: ["戲水池"] } }
+  });
+  const omittedPool = JSON.parse(JSON.stringify(output));
+  omittedPool.tasks[0] = { ...omittedPool.tasks[0], taskId: "price", type: "price", sourceText: "想問價格", requestedOutputs: ["price"], dependsOnStayContext: true, entity: { category: "bundle", rawText: "包棟", canonicalCandidate: null, confidence: 1 }, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null } };
+  const completePool = JSON.parse(JSON.stringify(omittedPool));
+  completePool.tasks.push({ candidateIndex: 1, taskId: "pool", type: "amenity", sourceText: "有戲水池嗎", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "戲水池", canonicalCandidate: "pool", confidence: 1 }, stayCandidate: null, confidence: 1 });
+  let coverageCalls = 0;
+  const coverageBodies = [];
+  const coveragePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async (_url, options) => {
+    coverageCalls += 1;
+    coverageBodies.push(JSON.parse(options.body));
+    return { ok: true, json: async () => ({ output_text: JSON.stringify(coverageCalls === 1 ? omittedPool : completePool) }) };
+  } });
+  const coverageResult = await coveragePlanner.classify({ currentMessage: "想問價格，也想確認有戲水池嗎", currentMessages: ["想問價格，也想確認有戲水池嗎"], sourceEvents: [{ eventId: "coverage", messageText: "想問價格，也想確認有戲水池嗎" }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(coverageCalls, 2, "an omitted exact formal subject must receive one bounded Planner repair attempt");
+  assert.equal(coverageResult.tasks.some((task) => task.entity.canonicalCandidate === "pool"), true);
+  assert.deepEqual(JSON.parse(coverageBodies[1].input[1].content[0].text).coverageRepair.missingCanonicalIds, ["pool"]);
+  const missingTaskDate = JSON.parse(JSON.stringify(omittedPool));
+  missingTaskDate.tasks[0] = { ...missingTaskDate.tasks[0], sourceText: "7/20想問價格" };
+  const completeTaskDate = JSON.parse(JSON.stringify(missingTaskDate));
+  completeTaskDate.tasks[0].stayCandidate = { dateExpression: { rawText: "7/20", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2026-07-20", checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null };
+  let temporalCalls = 0;
+  const temporalBodies = [];
+  const temporalPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async (_url, options) => {
+    temporalCalls += 1;
+    temporalBodies.push(JSON.parse(options.body));
+    return { ok: true, json: async () => ({ output_text: JSON.stringify(temporalCalls === 1 ? missingTaskDate : completeTaskDate) }) };
+  } });
+  await temporalPlanner.classify({ currentMessage: "7/20想問價格", currentMessages: ["7/20想問價格"], sourceEvents: [{ eventId: "temporal", messageText: "7/20想問價格" }], eventTimestamp: Date.parse("2026-08-06T08:00:00Z"), catalog: { propertyId: "temporal-property", rooms: [], policies: [], amenities: [], transportFacts: [], aliases: {} }, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(temporalCalls, 2, "a stay-dependent task must retain a date explicitly present in its own sourceText");
+  assert.deepEqual(JSON.parse(temporalBodies[1].input[1].content[0].text).coverageRepair.temporalTaskIds, ["price"]);
   assert.equal(runtimeConfig({ TEST_ONLY_CONVERSATION_ENGINE_V2: "true" }).testOnlyConversationEngineV2, true);
   assert.equal(runtimeConfig({}).testOnlyConversationEngineV2, false);
   let composerRequest;

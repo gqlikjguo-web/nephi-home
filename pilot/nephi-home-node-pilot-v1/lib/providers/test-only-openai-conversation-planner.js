@@ -2,10 +2,12 @@
 
 const crypto = require("node:crypto");
 const { plannerJsonSchema } = require("../conversation-engine-v2/planner-schema");
+const { mentionedPropertyFacts, resolveEntity } = require("../conversation-engine-v2/entity-resolver");
+const { inferExplicitTemporalExpression } = require("../conversation-engine-v2/temporal-resolver");
 const RESPONSES_URL = "https://api.openai.com/v1/responses";
 const PLANNER_PROVIDER = "openai";
 const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic");
-const RETRYABLE_ERROR_CATEGORIES = new Set(["timeout", "network", "rate_limit", "provider_5xx"]);
+const RETRYABLE_ERROR_CATEGORIES = new Set(["timeout", "network", "rate_limit", "provider_5xx", "local_contract_failure"]);
 const ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const MAX_PROVIDER_ATTEMPTS = 2;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 30000;
@@ -93,6 +95,34 @@ function structuredOutputFailed(payload) {
   return (Array.isArray(payload.output) ? payload.output : []).some((item) =>
     (Array.isArray(item && item.content) ? item.content : []).some((part) => part && part.type === "refusal")
   );
+}
+
+function missingFormalSubjectIds(output, input) {
+  if (!output || !Array.isArray(output.tasks) || !input || !input.catalog) return [];
+  const message = String(input.currentMessage || "");
+  const mentioned = mentionedPropertyFacts(input.catalog, message);
+  const represented = new Set(output.tasks.flatMap((task) => {
+    const candidate = String(task && task.entity && task.entity.canonicalCandidate || "").trim();
+    if (candidate) return [candidate];
+    const resolved = task && task.entity ? resolveEntity(input.catalog, task.entity) : null;
+    return resolved && resolved.status === "resolved" ? [resolved.entity.canonicalId] : [];
+  }));
+  return [...new Set(mentioned.map((item) => item && item.entity && item.entity.canonicalId).filter((id) => id && !represented.has(id)))].sort();
+}
+
+function plannerCoverageRepair(output, input) {
+  const missingCanonicalIds = missingFormalSubjectIds(output, input);
+  const temporalTaskIds = !output || !Array.isArray(output.tasks) ? [] : output.tasks.filter((task) => {
+    if (!task || task.dependsOnStayContext !== true) return false;
+    const explicit = inferExplicitTemporalExpression(task.sourceText);
+    if (!explicit) return false;
+    const candidateRaw = String(task.stayCandidate && task.stayCandidate.dateExpression && task.stayCandidate.dateExpression.rawText || "").normalize("NFKC").replace(/\s+/g, "");
+    return candidateRaw !== explicit.rawText;
+  }).map((task) => String(task.taskId || "")).filter(Boolean);
+  return {
+    ...(missingCanonicalIds.length ? { missingCanonicalIds } : {}),
+    ...(temporalTaskIds.length ? { temporalTaskIds: [...new Set(temporalTaskIds)].sort() } : {})
+  };
 }
 
 function plannerFailure({ code, category, status = 0, timeout = false, model = "", name = "Error", providerErrorType = "", providerErrorCode = "", providerErrorParam = "", providerAttemptCount = 1, firstAttemptErrorCategory = category, finalErrorCategory = category, retryPerformed = false, retrySucceeded = false, retryable = false, responseBodyPresent = false, parsedOutputPresent = false }) {
@@ -231,7 +261,7 @@ class TestOnlyOpenAiConversationPlanner {
     let output;
     let failure;
     try {
-      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] } }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerJsonSchema() } } }) });
+      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] }, ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {}) }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerJsonSchema() } } }) });
       const status = Number(response.status || response.statusCode || 0);
       httpStatus = Number.isInteger(status) ? status : 0;
       providerRequestId = safeResponseRequestId(response);
@@ -255,6 +285,12 @@ class TestOnlyOpenAiConversationPlanner {
         parsedOutputPresent = true;
       }
       catch { throw plannerFailure({ code: "planner_parse_error", category: "json_parse", status, model: this.model, name: "SyntaxError", responseBodyPresent: true, parsedOutputPresent: true }); }
+      const coverageRepair = plannerCoverageRepair(output, input);
+      if (Object.keys(coverageRepair).length) {
+        const error = plannerFailure({ code: "planner_substantive_coverage_incomplete", category: "local_contract_failure", status, model: this.model, retryable: true, responseBodyPresent: true, parsedOutputPresent: true });
+        error.coverageRepair = coverageRepair;
+        throw error;
+      }
     } catch (error) {
       if (error && error.safePlannerFailure) failure = error;
       else if (error && error.name === "AbortError") failure = plannerFailure({ code: "planner_timeout", category: "timeout", timeout: true, model: this.model, name: "AbortError", retryable: true });
@@ -288,6 +324,7 @@ class TestOnlyOpenAiConversationPlanner {
     // Use the wall clock for the live deadline. `nowMs` is reserved for safe
     // diagnostic timestamps and is deliberately injectable in contract tests.
     const deadlineMs = Date.now() + this.roundTimeoutMs;
+    let requestInput = input;
     for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
       const remainingMs = Math.floor(deadlineMs - Date.now());
       if (remainingMs <= 0) {
@@ -295,7 +332,7 @@ class TestOnlyOpenAiConversationPlanner {
         throw annotateFailure(timeoutError, { providerAttemptCount: providerAttempts.length, firstAttemptErrorCategory, retryPerformed: providerAttempts.length > 1, providerAttempts });
       }
       try {
-        const result = await this.requestOnce(input, attempt, Math.min(this.timeoutMs, remainingMs));
+        const result = await this.requestOnce(requestInput, attempt, Math.min(this.timeoutMs, remainingMs));
         providerAttempts.push(result.attemptDiagnostic);
         return annotateProviderSuccess(result.output, firstAttemptErrorCategory, providerAttempts);
       } catch (error) {
@@ -306,6 +343,7 @@ class TestOnlyOpenAiConversationPlanner {
           && Boolean(error && error.retryable)
           && RETRYABLE_ERROR_CATEGORIES.has(errorCategory);
         if (shouldRetry) {
+          if (error && error.coverageRepair) requestInput = { ...input, coverageRepair: error.coverageRepair };
           await this.waitImpl(this.retryDelayMs);
           continue;
         }

@@ -40,11 +40,11 @@ jobs:
       - run: npm test
 
   deployed-acceptance:
-    if: github.event_name == 'workflow_dispatch' && always() && needs.verify.result == 'skipped' || github.event_name == 'push' && always() && needs.verify.result == 'success' && contains(github.event.head_commit.message, '[target-preflight]')
+    if: github.event_name == 'workflow_dispatch' && always() && needs.verify.result == 'skipped' || github.event_name == 'push' && always() && needs.verify.result == 'success' && (contains(github.event.head_commit.message, '[target-preflight]') || contains(github.event.head_commit.message, '[full-matrix]'))
     needs: [verify]
     runs-on: ubuntu-latest
     env:
-      ACCEPTANCE_MODE: ${{ github.event_name == 'push' && 'target_preflight' || inputs.acceptance_mode }}
+      ACCEPTANCE_MODE: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[full-matrix]') && 'full_matrix' || github.event_name == 'push' && 'target_preflight' || inputs.acceptance_mode }}
     permissions:
       contents: read
       id-token: write
@@ -72,11 +72,11 @@ jobs:
           path: ${{ runner.temp }}/junzan-${{ env.ACCEPTANCE_MODE }}-${{ github.sha }}
           if-no-files-found: error
           retention-days: 7
-      - name: Upload private target preflight report
+      - name: Upload private push acceptance report
         if: always() && github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
-          name: junzan-target_preflight-${{ github.sha }}
-          path: ${{ runner.temp }}/junzan-target_preflight-${{ github.sha }}
+          name: junzan-${{ env.ACCEPTANCE_MODE }}-${{ github.sha }}
+          path: ${{ runner.temp }}/junzan-${{ env.ACCEPTANCE_MODE }}-${{ github.sha }}
           if-no-files-found: error
           retention-days: 7

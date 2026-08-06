@@ -120,6 +120,31 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   const multiCapabilityResult = { ...safeResult, taskResults: [...safeResult.taskResults, { taskId: "bbq", capability: "policy", type: "policy", status: "answered", reason: "", dataSource: "property_catalog", facts: { subject: "烤肉", answer: "依規範使用。" } }] };
   assert.equal(validateAcceptanceResult(multiCapabilityResult, { expectedActions: ["reply"], expectedCapabilities: [["parking", "amenity"], ["bbq", "policy"]] }).action, "reply");
   assert.throws(() => validateAcceptanceResult(safeResult, { expectedActions: ["reply"], expectedCapabilities: [["parking", "amenity"], ["bbq", "policy"]] }), /expected_capability_missing/);
+  const incompleteMultiQuestion = {
+    ...safeResult,
+    finalDecision: { action: "clarification", reasonCode: "missing_information" },
+    finalResponse: { action: "clarification", shouldReply: true, replyText: "15:00\n請補充入住日期。" },
+    taskResults: [
+      { ...safeResult.taskResults[0], taskId: "price", capability: "price", type: "price", status: "needs_clarification", dataSource: "", facts: {} },
+      { ...safeResult.taskResults[0], taskId: "check-in", capability: "policy", type: "policy", facts: { subject: "入住", status: "confirmed_yes", answer: "15:00" } }
+    ],
+    claimValidation: { ok: true, errors: [], coveredTaskIds: ["price", "check-in"], missingTaskIds: [], unexpectedTaskIds: [] },
+    trace: safeResult.trace.map((entry) => entry.stage === "canonical_request" ? {
+      ...entry,
+      items: [
+        { taskId: "price", capability: "price", canonicalEntity: { category: "bundle", canonicalId: "bundle-a", status: "resolved" } },
+        { taskId: "check-in", capability: "policy", canonicalEntity: { category: "policy", canonicalId: "check_in", status: "resolved" } }
+      ]
+    } : entry)
+  };
+  assert.throws(
+    () => validateAcceptanceResult(incompleteMultiQuestion, { expectedActions: ["clarification"], expectedSemantic: ["price", "pool", "check_in"] }),
+    /expected_semantic_evidence_missing:pool/,
+    "one generic policy task must not make an omitted pool question pass"
+  );
+  const incompleteAssessment = assessFinalResponseEvidence(incompleteMultiQuestion, { expectedSemantic: ["price", "pool", "check_in"] });
+  assert.equal(incompleteAssessment.status, "FAIL", "an omitted explicit semantic subject must not be reported as a complete answer");
+  assert.ok(incompleteAssessment.reasons.includes("expected_semantic_evidence_missing:pool"));
   assert.throws(() => validateAcceptanceResult({ ...safeResult, finalResponse: { ...safeResult.finalResponse, replyText: "一定有房，已完成訂房" } }, { expectedActions: ["reply"] }), /unsafe_final_response/);
   assert.throws(() => validateAcceptanceResult({ ...safeResult, finalResponse: null }, { expectedActions: ["reply"] }), /final_response_required/);
   assert.throws(() => validateAcceptanceResult({ ...safeResult, taskResults: [{ ...safeResult.taskResults[0], facts: { ...safeResult.taskResults[0].facts, propertyId: "secret-scope" } }] }, { expectedActions: ["reply"] }), /unsafe_fact_key/);

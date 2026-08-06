@@ -234,6 +234,8 @@ function validateAcceptanceResult(result, expectation = {}) {
   }
   if (expectation.expectedDataSource && !result.taskResults.some((task) => task.dataSource === expectation.expectedDataSource)) throw new Error(`expected_data_source_missing:${expectation.expectedDataSource}`);
   const semanticTags = new Set(expectation.expectedSemantic || []);
+  const missingSemanticEvidence = missingExpectedSemanticEvidence(result, expectation);
+  if (missingSemanticEvidence.length) throw new Error(`expected_semantic_evidence_missing:${missingSemanticEvidence.join("|")}`);
   if (semanticTags.has("bundle") && canonicalItems.length && !canonicalItems.some((item) => item.capability === "bundle_availability" || item.canonicalEntity && item.canonicalEntity.category === "bundle")) throw new Error("expected_bundle_scope_missing");
   for (const roomNumber of ["301", "402"]) {
     if (semanticTags.has(`room_${roomNumber}`) && canonicalItems.length && !canonicalItems.some((item) => String(item.canonicalEntity && item.canonicalEntity.canonicalId || "").includes(roomNumber))) throw new Error(`expected_room_scope_missing:${roomNumber}`);
@@ -280,6 +282,7 @@ function assessFinalResponseEvidence(result, expectation = {}) {
   const coveredTaskIds = new Set(Array.isArray(claimValidation.coveredTaskIds) ? claimValidation.coveredTaskIds : []);
   const forbiddenText = [...FORBIDDEN_FINAL_TEXT, ...(expectation.forbidClaims || [])];
   const unauthorizedCommitmentDetected = forbiddenText.some((value) => value && replyText.includes(value));
+  reasons.push(...missingExpectedSemanticEvidence(result, expectation).map((tag) => `expected_semantic_evidence_missing:${tag}`));
 
   if (claimValidation.ok !== true || (claimValidation.errors || []).length || (claimValidation.missingTaskIds || []).length || (claimValidation.unexpectedTaskIds || []).length) {
     reasons.push("claim_validation_does_not_prove_complete_coverage");
@@ -428,7 +431,7 @@ function runtimeEvidenceForReport(result) {
 function earliestFailureLayer(error) {
   const code = safeErrorCode(error);
   if (code === "acceptance_http_failed" || code.startsWith("native_line_")) return "line_transport";
-  if (code.startsWith("planner_") || code === "expected_capability_missing") return "planner";
+  if (code.startsWith("planner_") || code === "expected_capability_missing" || code.startsWith("expected_semantic_evidence_missing")) return "planner";
   if (code.startsWith("semantic_") || code.startsWith("trace_stage_missing")) return "validation";
   if (code.startsWith("expected_room_scope") || code.startsWith("expected_bundle_scope") || code.startsWith("expected_date") || code.startsWith("expected_nights") || code.startsWith("past_date")) return "canonical_request";
   if (code.includes("provider") || code.includes("data_source") || code.includes("fact_") || code.startsWith("unsafe_fact") || code.startsWith("unsafe_nested")) return "resolver_execution";
@@ -721,6 +724,29 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
     throw error;
   }
   return summary;
+}
+
+function missingExpectedSemanticEvidence(result, expectation = {}) {
+  const tags = new Set(expectation.expectedSemantic || []);
+  const tasks = Array.isArray(result && result.taskResults) ? result.taskResults : [];
+  const canonicalItems = Array.isArray(result && result.trace)
+    ? result.trace.filter((entry) => entry && entry.stage === "canonical_request").flatMap((entry) => Array.isArray(entry.items) ? entry.items : [])
+    : [];
+  const capabilities = new Set([
+    ...tasks.flatMap((task) => [task && task.capability, task && task.type].filter(Boolean)),
+    ...canonicalItems.map((item) => item && item.capability).filter(Boolean)
+  ]);
+  const canonicalIds = new Set(canonicalItems.map((item) => String(item && item.canonicalEntity && item.canonicalEntity.canonicalId || "")).filter(Boolean));
+  const requirements = new Map([
+    ["price", () => capabilities.has("price") || capabilities.has("total_price")],
+    ["total_price", () => capabilities.has("total_price") || capabilities.has("price")],
+    ["pool", () => capabilities.has("pool") || canonicalIds.has("pool")],
+    ["check_in", () => canonicalIds.has("check_in")],
+    ["parking", () => capabilities.has("parking") || canonicalIds.has("parking")],
+    ["bbq", () => capabilities.has("bbq") || canonicalIds.has("bbq")],
+    ["ktv", () => canonicalIds.has("ktv") || canonicalIds.has("singing")]
+  ]);
+  return [...tags].filter((tag) => requirements.has(tag) && !requirements.get(tag)());
 }
 
 function validateTargetPreflightAttribution(report) {
