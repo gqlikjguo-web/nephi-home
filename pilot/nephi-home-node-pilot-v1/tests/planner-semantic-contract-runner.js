@@ -41,7 +41,7 @@ const property = {
 };
 const catalog = buildPropertyCatalog(property);
 
-function sourceBoundSemantic(taskValue, { message = taskValue.sourceText, eventId = "source-bound-event", evidenceEventId = eventId } = {}) {
+function sourceBoundSemantic(taskValue, { message = taskValue.sourceText, eventId = "source-bound-event", evidenceEventId = eventId, catalogOverride = catalog } = {}) {
   const value = plan([taskValue]);
   value.contextRelationCandidates[0].evidenceRefs = [{
     eventId: evidenceEventId,
@@ -51,7 +51,7 @@ function sourceBoundSemantic(taskValue, { message = taskValue.sourceText, eventI
     quote: message
   }];
   return applyPlannerSemanticContract(value, {
-    catalog,
+    catalog: catalogOverride,
     sourceEvents: [{ eventId, messageRef: "", messageText: message }]
   });
 }
@@ -346,8 +346,8 @@ function main() {
     category: "amenity",
     rawText: "kitchen"
   }));
-  assert.equal(faqFragment.semantic.tasks[0].entity.canonicalCandidate, "shared_cooking", "a unique Planner entity fragment must compile to the property-backed FAQ fact");
-  assert.equal(faqFragment.item.canonicalRequest.capability, "property_fact", "a property-authored FAQ must retain property-fact semantics instead of being flattened into an amenity");
+  assert.equal(faqFragment.semantic.tasks[0].entity.canonicalCandidate, null, "a FAQ fragment must not recover a formal property fact");
+  assert.equal(faqFragment.item.canonicalRequest.capability, "amenity", "an unresolved FAQ fragment must retain the Planner capability and fail closed");
 
   const sourceBoundTimeFact = sourceBoundSemantic(task({
     taskId: "source-bound-hours",
@@ -404,6 +404,349 @@ function main() {
   }));
   assert.equal(sourceBoundPrice.tasks[0].type, "price", "source-bound fact recovery must not erase an inventory price capability");
   assert.equal(sourceBoundPrice.tasks[0].entity.canonicalCandidate, null);
+
+  const sourceBoundInventoryCatalog = buildPropertyCatalog({
+    ...property,
+    rooms: [
+      { id: "inventory-room-a", name: "Garden Family Room", type: "family", description: "Deep soaking tub", capacity: 4, enabled: true },
+      { id: "inventory-bundle-a", name: "Courtyard Group Lodge", type: "whole house", inventoryType: "bundle", capacity: 10, enabled: true }
+    ]
+  });
+  const sourceBoundTypoBundleMessage = "We want Courtyard Group Lodgd; confirm the lodging amount when the shared activity is not used.";
+  const sourceBoundTypoBundlePrice = sourceBoundSemantic(task({
+    taskId: "source-bound-typo-bundle-price",
+    type: "price",
+    category: "policy",
+    rawText: "shared activity",
+    sourceText: sourceBoundTypoBundleMessage,
+    canonicalCandidate: "pool",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "8/20", kind: "absolute", anchor: "message_time" },
+      checkInCandidate: "2026-08-20",
+      checkOutCandidate: null,
+      nightsCandidate: 1,
+      guestCountCandidate: null
+    }
+  }), { message: sourceBoundTypoBundleMessage, catalogOverride: sourceBoundInventoryCatalog });
+  assert.equal(sourceBoundTypoBundlePrice.tasks[0].entity.category, "bundle", "one-character guest drift may recover only a unique formal inventory name");
+  assert.equal(sourceBoundTypoBundlePrice.tasks[0].entity.canonicalCandidate, "inventory-bundle-a");
+  const genericTypeCatalog = buildPropertyCatalog({
+    ...property,
+    rooms: [{ id: "generic-suite-a", name: "Garden Suite A", type: "suite", capacity: 2, enabled: true }]
+  });
+  const genericTypeMessage = "The lodging amount is quite uncertain.";
+  const genericTypePrice = sourceBoundSemantic(task({
+    taskId: "generic-type-price",
+    type: "price",
+    category: "policy",
+    rawText: "lodging amount",
+    sourceText: genericTypeMessage,
+    canonicalCandidate: "price",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "8/20", kind: "absolute", anchor: "message_time" },
+      checkInCandidate: "2026-08-20",
+      checkOutCandidate: null,
+      nightsCandidate: 1,
+      guestCountCandidate: null
+    }
+  }), { message: genericTypeMessage, catalogOverride: genericTypeCatalog });
+  assert.equal(genericTypePrice.tasks[0].entity.category, "other", "one-substitution recovery must never use a short generic room type inside an unrelated word");
+  assert.equal(genericTypePrice.tasks[0].entity.canonicalCandidate, null);
+  const sourceBoundFaqCatalog = buildPropertyCatalog({
+    ...property,
+    rooms: [{ id: "faq-room-a", name: "Garden Family Room", type: "family", capacity: 4, enabled: true }],
+    faqs: [{ knowledgeKey: "bathing_fixture", question: "Which rooms include a deep soaking tub?", answer: "The formal room record must decide this detail." }]
+  });
+  const sourceBoundFaqFeatureMessage = "Does Garden Family Room include Deep soaking tub?";
+  const sourceBoundFaqFeature = sourceBoundSemantic(task({
+    taskId: "source-bound-faq-room-feature",
+    type: "availability",
+    category: "room",
+    rawText: "Garden Family Room",
+    sourceText: sourceBoundFaqFeatureMessage,
+    canonicalCandidate: "faq-room-a",
+    requestedOutputs: ["availability"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  }), { message: sourceBoundFaqFeatureMessage, catalogOverride: sourceBoundFaqCatalog });
+  assert.equal(sourceBoundFaqFeature.tasks[0].type, "availability", "an FAQ fragment must not recover a room-feature capability");
+  assert.equal(sourceBoundFaqFeature.tasks[0].entity.canonicalCandidate, "faq-room-a");
+  const unrelatedFaqCatalog = buildPropertyCatalog({
+    ...property,
+    rooms: [{ id: "unrelated-faq-room", name: "Garden Family Room", type: "family", capacity: 4, enabled: true }],
+    faqs: [{ knowledgeKey: "garden_access", question: "Is there garden access?", answer: "Garden access depends on the formal property record." }]
+  });
+  const unrelatedFaqMessage = "Is Garden Family Room available?";
+  const unrelatedFaqAvailability = sourceBoundSemantic(task({
+    taskId: "unrelated-faq-availability",
+    type: "availability",
+    category: "room",
+    rawText: "Garden Family Room",
+    sourceText: unrelatedFaqMessage,
+    canonicalCandidate: "unrelated-faq-room",
+    requestedOutputs: ["availability"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  }), { message: unrelatedFaqMessage, catalogOverride: unrelatedFaqCatalog });
+  assert.equal(unrelatedFaqAvailability.tasks[0].type, "availability", "one shared ordinary word with a formal FAQ must not erase room availability");
+  const ambiguousSourceBoundFaqCatalog = buildPropertyCatalog({
+    ...property,
+    rooms: [{ id: "ambiguous-faq-room", name: "Garden Family Room", type: "family", capacity: 4, enabled: true }],
+    faqs: [
+      { knowledgeKey: "room_bathing_fixture", question: "Which rooms include a deep soaking tub?", answer: "Room fixture record." },
+      { knowledgeKey: "suite_bathing_fixture", question: "Which suites include a deep soaking tub?", answer: "Suite fixture record." }
+    ]
+  });
+  const ambiguousSourceBoundFaqFeature = sourceBoundSemantic(task({
+    taskId: "ambiguous-source-bound-faq-room-feature",
+    type: "availability",
+    category: "room",
+    rawText: "Garden Family Room",
+    sourceText: sourceBoundFaqFeatureMessage,
+    canonicalCandidate: "ambiguous-faq-room",
+    requestedOutputs: ["availability"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  }), { message: sourceBoundFaqFeatureMessage, catalogOverride: ambiguousSourceBoundFaqCatalog });
+  assert.equal(ambiguousSourceBoundFaqFeature.tasks[0].type, "availability", "tied formal fact fragments must remain fail-closed");
+  const sourceBoundFeatureMessage = "Does Garden Family Room include Deep soaking tub?";
+  const sourceBoundFeature = sourceBoundSemantic(task({
+    taskId: "source-bound-room-feature",
+    type: "availability",
+    category: "room",
+    rawText: "Garden Family Room",
+    sourceText: sourceBoundFeatureMessage,
+    canonicalCandidate: "inventory-room-a",
+    requestedOutputs: ["availability"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  }), { message: sourceBoundFeatureMessage, catalogOverride: sourceBoundInventoryCatalog });
+  assert.equal(sourceBoundFeature.tasks[0].type, "amenity", "a verified formal room-feature mention without stay intent must not become a room-availability request");
+  assert.equal(sourceBoundFeature.tasks[0].entity.category, "amenity");
+  assert.equal(sourceBoundFeature.tasks[0].entity.rawText, "Garden Family Room", "feature recovery must preserve the guest's room subject instead of asserting that another room's feature applies");
+  assert.equal(sourceBoundFeature.tasks[0].entity.canonicalCandidate, null, "feature recovery must remain formally unknown when the requested room has no matching formal feature");
+  assert.ok(sourceBoundFeature.semanticValidation.repairedTasks.some((item) => item.reason === "source_bound_inventory_feature_capability"));
+
+  const datedFeatureAvailability = sourceBoundSemantic(task({
+    taskId: "dated-room-feature-availability",
+    type: "availability",
+    category: "room",
+    rawText: "Garden Family Room",
+    sourceText: "Is Garden Family Room with Deep soaking tub available on 8/20?",
+    canonicalCandidate: "inventory-room-a",
+    requestedOutputs: ["availability"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "8/20", kind: "absolute", anchor: "message_time" },
+      checkInCandidate: "2026-08-20",
+      checkOutCandidate: null,
+      nightsCandidate: 1,
+      guestCountCandidate: null
+    }
+  }), { message: "Is Garden Family Room with Deep soaking tub available on 8/20?", catalogOverride: sourceBoundInventoryCatalog });
+  assert.equal(datedFeatureAvailability.tasks[0].type, "availability", "an explicit stay constraint must keep a feature-filtered inventory request stateful");
+  assert.equal(datedFeatureAvailability.tasks[0].entity.canonicalCandidate, "inventory-room-a");
+
+  const unverifiedRoomFeature = sourceBoundSemantic(task({
+    taskId: "unverified-room-feature",
+    type: "availability",
+    category: "room",
+    rawText: "Garden Family Room",
+    sourceText: sourceBoundFeatureMessage,
+    canonicalCandidate: "inventory-room-a",
+    requestedOutputs: ["availability"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  }), { message: sourceBoundFeatureMessage, evidenceEventId: "wrong-event", catalogOverride: sourceBoundInventoryCatalog });
+  assert.equal(unverifiedRoomFeature.tasks[0].type, "availability", "unverified text must never change an inventory capability");
+
+  const topLevelDatedFeaturePlan = plan([task({
+    taskId: "top-level-dated-room-feature",
+    type: "availability",
+    category: "room",
+    rawText: "Garden Family Room",
+    sourceText: sourceBoundFeatureMessage,
+    canonicalCandidate: "inventory-room-a",
+    requestedOutputs: ["availability"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  })]);
+  topLevelDatedFeaturePlan.stay = {
+    dateExpression: { rawText: "8/20", kind: "absolute", anchor: "message_time" },
+    checkInCandidate: "2026-08-20",
+    checkOutCandidate: null,
+    nightsCandidate: 1,
+    guestCountCandidate: null
+  };
+  topLevelDatedFeaturePlan.contextRelationCandidates[0].evidenceRefs = [{
+    eventId: "top-level-dated-event",
+    messageRef: "",
+    startOffset: 0,
+    endOffset: sourceBoundFeatureMessage.length,
+    quote: sourceBoundFeatureMessage
+  }];
+  const topLevelDatedFeature = applyPlannerSemanticContract(topLevelDatedFeaturePlan, {
+    catalog: sourceBoundInventoryCatalog,
+    sourceEvents: [{ eventId: "top-level-dated-event", messageRef: "", messageText: sourceBoundFeatureMessage }]
+  });
+  assert.equal(topLevelDatedFeature.tasks[0].type, "availability", "an empty task stay object must not mask a populated top-level stay authority");
+  assert.equal(topLevelDatedFeature.tasks[0].entity.canonicalCandidate, "inventory-room-a");
+
+  const sourceBoundBundleMessage = "We want Courtyard Group Lodge; confirm the lodging amount when the shared activity is not used.";
+  const sourceBoundBundlePrice = sourceBoundSemantic(task({
+    taskId: "source-bound-bundle-price",
+    type: "price",
+    category: "policy",
+    rawText: "shared activity",
+    sourceText: sourceBoundBundleMessage,
+    canonicalCandidate: "pool",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "8/20", kind: "absolute", anchor: "message_time" },
+      checkInCandidate: "2026-08-20",
+      checkOutCandidate: null,
+      nightsCandidate: 1,
+      guestCountCandidate: null
+    }
+  }), { message: sourceBoundBundleMessage, catalogOverride: sourceBoundInventoryCatalog });
+  assert.equal(sourceBoundBundlePrice.tasks[0].type, "price");
+  assert.equal(sourceBoundBundlePrice.tasks[0].entity.category, "bundle", "a verified unique catalog bundle must scope an explicitly stateful lodging-price task");
+  assert.equal(sourceBoundBundlePrice.tasks[0].entity.canonicalCandidate, "inventory-bundle-a");
+  assert.ok(sourceBoundBundlePrice.semanticValidation.repairedTasks.some((item) => item.reason === "source_bound_inventory_scope_preservation"));
+
+  const unverifiedBundlePrice = sourceBoundSemantic(task({
+    taskId: "unverified-bundle-price",
+    type: "price",
+    category: "policy",
+    rawText: "shared activity",
+    sourceText: sourceBoundBundleMessage,
+    canonicalCandidate: "pool",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "8/20", kind: "absolute", anchor: "message_time" },
+      checkInCandidate: "2026-08-20",
+      checkOutCandidate: null,
+      nightsCandidate: 1,
+      guestCountCandidate: null
+    }
+  }), { message: sourceBoundBundleMessage, evidenceEventId: "wrong-event", catalogOverride: sourceBoundInventoryCatalog });
+  assert.equal(unverifiedBundlePrice.tasks[0].entity.category, "other", "unverified source text must leave a contradictory stateful entity ungrounded");
+  assert.equal(unverifiedBundlePrice.tasks[0].entity.canonicalCandidate, null);
+
+  const ambiguousInventoryCatalog = buildPropertyCatalog({
+    ...property,
+    rooms: [
+      { id: "inventory-bundle-east", name: "East Group Lodge", type: "whole house east", inventoryType: "bundle", capacity: 8, enabled: true },
+      { id: "inventory-bundle-west", name: "West Group Lodge", type: "whole house west", inventoryType: "bundle", capacity: 8, enabled: true }
+    ]
+  });
+  const ambiguousBundleMessage = "Compare East Group Lodge and West Group Lodge lodging amounts.";
+  const ambiguousBundlePrice = sourceBoundSemantic(task({
+    taskId: "ambiguous-source-bound-bundle-price",
+    type: "price",
+    category: "policy",
+    rawText: "shared activity",
+    sourceText: ambiguousBundleMessage,
+    canonicalCandidate: "pool",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "8/20", kind: "absolute", anchor: "message_time" },
+      checkInCandidate: "2026-08-20",
+      checkOutCandidate: null,
+      nightsCandidate: 1,
+      guestCountCandidate: null
+    }
+  }), { message: ambiguousBundleMessage, catalogOverride: ambiguousInventoryCatalog });
+  assert.equal(ambiguousBundlePrice.tasks[0].entity.category, "other", "multiple formal inventory mentions must not choose a lodging scope");
+  assert.equal(ambiguousBundlePrice.tasks[0].entity.canonicalCandidate, null);
+
+  const sourceBoundAmenityFee = sourceBoundSemantic(task({
+    taskId: "source-bound-amenity-fee",
+    type: "policy",
+    category: "amenity",
+    rawText: "pool",
+    sourceText: sourceBoundBundleMessage,
+    canonicalCandidate: "pool",
+    detailIntent: "fee",
+    requestedOutputs: ["fee"],
+    dependsOnStayContext: false
+  }), { message: sourceBoundBundleMessage, catalogOverride: sourceBoundInventoryCatalog });
+  assert.notEqual(sourceBoundAmenityFee.tasks[0].type, "price", "a stateless amenity fee must never be promoted into lodging price");
+  assert.notEqual(sourceBoundAmenityFee.tasks[0].entity.category, "bundle");
+
+  const multiTaskMessage = "Garden Suite A has a feature. Confirm the lodging amount.";
+  const multiTaskPlan = plan([
+    task({
+      taskId: "multi-task-price",
+      type: "price",
+      category: "policy",
+      rawText: "lodging amount",
+      sourceText: "Confirm the lodging amount.",
+      canonicalCandidate: "price",
+      requestedOutputs: ["price"],
+      dependsOnStayContext: true,
+      stayCandidate: {
+        dateExpression: { rawText: "8/20", kind: "absolute", anchor: "message_time" },
+        checkInCandidate: "2026-08-20",
+        checkOutCandidate: null,
+        nightsCandidate: 1,
+        guestCountCandidate: null
+      }
+    }),
+    { ...task({ taskId: "multi-task-feature", type: "amenity", category: "room_feature", rawText: "feature", sourceText: "Garden Suite A has a feature." }), candidateIndex: 1 }
+  ]);
+  multiTaskPlan.contextRelationCandidates.forEach((candidate) => {
+    candidate.evidenceRefs = [{ eventId: "multi-task-event", messageRef: "", startOffset: 0, endOffset: multiTaskMessage.length, quote: multiTaskMessage }];
+  });
+  const isolatedMultiTask = applyPlannerSemanticContract(multiTaskPlan, {
+    catalog: genericTypeCatalog,
+    sourceEvents: [{ eventId: "multi-task-event", messageRef: "", messageText: multiTaskMessage }]
+  });
+  assert.equal(isolatedMultiTask.tasks[0].entity.category, "other", "one task must not borrow a different task clause's room scope from the complete evidence quote");
+  assert.equal(isolatedMultiTask.tasks[0].entity.canonicalCandidate, null);
 
   const amenityFeePolicy = canonical(task({
     taskId: "pool-fee-policy",
@@ -567,7 +910,7 @@ function main() {
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 28 + contradictoryFieldCaseCount, passCount: 28 + contradictoryFieldCaseCount, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 42 + contradictoryFieldCaseCount, passCount: 42 + contradictoryFieldCaseCount, failCount: 0 }));
 }
 
 main();

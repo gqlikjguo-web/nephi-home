@@ -9,7 +9,7 @@ const ANCHORS = new Set(["message_time", "previous_check_in", "previous_check_ou
 const ELIGIBILITY_EVIDENCE_KINDS = new Set(["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
 const CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
 const { DETAIL_INTENTS } = require("./detail-intent");
-const { resolveEntity, mentionedPropertyFacts } = require("./entity-resolver");
+const { resolveEntity, mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures } = require("./entity-resolver");
 const { getCapabilityDefinition } = require("./capability-registry");
 const { sourceEventMaps, evidenceMatchesSource } = require("./understanding-validator");
 const TASK_ID_REPAIRS = Symbol("plannerTaskIdRepairs");
@@ -89,16 +89,81 @@ function normalizedInventoryTaskShape(task, type, fallbackStayCandidate = null) 
     type,
     requestedOutputs: [type],
     dependsOnStayContext: true,
-    stayCandidate: task.stayCandidate || fallbackStayCandidate,
+    stayCandidate: authoritativeStayCandidate(task.stayCandidate, fallbackStayCandidate),
     entity: inventoryEntity
   };
 }
 
-function normalizedStatefulInventoryTaskShape(task, fallbackStayCandidate = null) {
+function normalizedStatefulInventoryTaskShape(task, fallbackStayCandidate = null, catalog = null, verifiedSourceText = "") {
   const requestedType = requestedInventoryType(task);
   if (!requestedType || task.type !== requestedType || task.dependsOnStayContext !== true
     || !task.entity || ["room", "bundle", "other"].includes(task.entity.category)) return null;
-  return normalizedInventoryTaskShape(task, requestedType, fallbackStayCandidate);
+  const inventoryMentions = catalog && verifiedSourceText
+    ? mentionedInventoryEntities(catalog, verifiedSourceText)
+    : [];
+  const sourceBoundEntity = inventoryMentions.length === 1
+    ? inventoryMentions[0]
+    : null;
+  const normalized = normalizedInventoryTaskShape(sourceBoundEntity ? {
+    ...task,
+    entity: {
+      ...task.entity,
+      rawText: sourceBoundEntity.mention,
+      category: sourceBoundEntity.entity.category,
+      canonicalCandidate: sourceBoundEntity.entity.canonicalId
+    }
+  } : task, requestedType, fallbackStayCandidate);
+  if (sourceBoundEntity) Object.defineProperty(normalized, INVENTORY_SCOPE_REPAIR_REASON, {
+    value: "source_bound_inventory_scope_preservation",
+    enumerable: false,
+    configurable: true
+  });
+  return normalized;
+}
+
+function authoritativeStayCandidate(taskStayCandidate, topLevelStayCandidate) {
+  if (stayCandidateHasInventoryScope(taskStayCandidate)) return taskStayCandidate;
+  if (stayCandidateHasInventoryScope(topLevelStayCandidate)) return topLevelStayCandidate;
+  return taskStayCandidate || topLevelStayCandidate;
+}
+
+function stayCandidateHasInventoryScope(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const expression = value.dateExpression;
+  return Boolean(expression && (String(expression.rawText || "").trim() || expression.kind !== "none")
+    || value.checkInCandidate !== null && value.checkInCandidate !== undefined
+    || value.checkOutCandidate !== null && value.checkOutCandidate !== undefined
+    || value.nightsCandidate !== null && value.nightsCandidate !== undefined
+    || value.guestCountCandidate !== null && value.guestCountCandidate !== undefined);
+}
+
+function normalizedSourceBoundInventoryFeatureTaskShape(task, fallbackStayCandidate = null, catalog = null, verifiedSourceText = "") {
+  const entity = task && task.entity;
+  if (!entity || task.type !== "availability" || task.detailIntent !== "general"
+    || !["room", "bundle"].includes(entity.category)
+    || !catalog || !verifiedSourceText
+    || stayCandidateHasInventoryScope(task.stayCandidate)
+    || stayCandidateHasInventoryScope(fallbackStayCandidate)) return null;
+  const featureMentions = mentionedInventoryFeatures(catalog, verifiedSourceText);
+  if (featureMentions.length !== 1) return null;
+  const normalized = {
+    ...task,
+    type: "amenity",
+    requestedOutputs: ["answer"],
+    dependsOnStayContext: false,
+    stayCandidate: null,
+    entity: {
+      ...entity,
+      category: "amenity",
+      canonicalCandidate: null
+    }
+  };
+  Object.defineProperty(normalized, INVENTORY_SCOPE_REPAIR_REASON, {
+    value: "source_bound_inventory_feature_capability",
+    enumerable: false,
+    configurable: true
+  });
+  return normalized;
 }
 
 function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, verifiedSourceText = "") {
@@ -205,7 +270,7 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
     detailIntent: task.detailIntent || "general",
     requestedOutputs: [exactDefinition.capability],
     dependsOnStayContext: true,
-    stayCandidate: task.stayCandidate || fallbackStayCandidate,
+    stayCandidate: authoritativeStayCandidate(task.stayCandidate, fallbackStayCandidate),
     entity: {
       ...entity,
       rawText: "",
@@ -576,7 +641,10 @@ function verifiedNewRequestEvidence(task, contextRelationCandidates, sourceEvent
     || !Array.isArray(candidate.evidenceRefs) || candidate.evidenceRefs.length === 0) return "";
   const sourceMaps = sourceEventMaps(sourceEvents);
   if (!candidate.evidenceRefs.every((evidenceRef) => evidenceMatchesSource(evidenceRef, sourceMaps))) return "";
-  return candidate.evidenceRefs.map((evidenceRef) => evidenceRef.quote).join("\n");
+  const evidenceText = candidate.evidenceRefs.map((evidenceRef) => evidenceRef.quote).join("\n");
+  const taskSourceText = String(task && task.sourceText || "").trim();
+  if (!taskSourceText || !normalizedText(evidenceText).includes(normalizedText(taskSourceText))) return "";
+  return taskSourceText;
 }
 
 function normalizeUnreferencedSameTurnSupplements(value, sourceEvents) {
@@ -699,17 +767,29 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
   let contextRelationCandidates = value.contextRelationCandidates;
   let tasks = value.tasks.map((original, index) => {
     let task = { ...original, eligibilityEvidence: normalizeEligibilityEvidence(original && original.eligibilityEvidence), entity: original && original.entity ? { ...original.entity } : original && original.entity };
+    if (task.dependsOnStayContext === true) task.stayCandidate = authoritativeStayCandidate(task.stayCandidate, value.stay);
     let entity = task && task.entity;
     if (!entity) return task;
 
-    const statefulInventoryTask = normalizedStatefulInventoryTaskShape(task, value.stay);
-    if (statefulInventoryTask) {
-      task = statefulInventoryTask;
+    const verifiedSourceText = verifiedNewRequestEvidence(task, value.contextRelationCandidates, sourceEvents);
+    const sourceBoundFeatureTask = normalizedSourceBoundInventoryFeatureTaskShape(task, value.stay, catalog, verifiedSourceText);
+    if (sourceBoundFeatureTask) {
+      const sourceBoundFeatureReason = sourceBoundFeatureTask[INVENTORY_SCOPE_REPAIR_REASON];
+      delete sourceBoundFeatureTask[INVENTORY_SCOPE_REPAIR_REASON];
+      task = sourceBoundFeatureTask;
       entity = task.entity;
-      repairedTasks.push({ taskId: task.taskId, index, reason: "stateful_inventory_capability_preservation" });
+      repairedTasks.push({ taskId: task.taskId, index, reason: sourceBoundFeatureReason });
     }
 
-    const verifiedSourceText = verifiedNewRequestEvidence(task, value.contextRelationCandidates, sourceEvents);
+    const statefulInventoryTask = normalizedStatefulInventoryTaskShape(task, value.stay, catalog, verifiedSourceText);
+    if (statefulInventoryTask) {
+      const statefulInventoryReason = statefulInventoryTask[INVENTORY_SCOPE_REPAIR_REASON];
+      delete statefulInventoryTask[INVENTORY_SCOPE_REPAIR_REASON];
+      task = statefulInventoryTask;
+      entity = task.entity;
+      repairedTasks.push({ taskId: task.taskId, index, reason: statefulInventoryReason || "stateful_inventory_capability_preservation" });
+    }
+
     const groundedTask = groundedPropertyFactTask(task, catalog, value.stay, verifiedSourceText);
     if (groundedTask
       && (task.type !== groundedTask.type

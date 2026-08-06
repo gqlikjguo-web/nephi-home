@@ -55,18 +55,16 @@ const fragmentBetaCatalog = buildPropertyCatalog({
   faqs: [{ knowledgeKey: "shared_cooking", question: "Is the kitchen available to room guests?", answer: "Beta kitchen policy." }]
 });
 const groundedFragment = resolveEntity(fragmentAlphaCatalog, { category: "amenity", rawText: "kitchen", canonicalCandidate: null });
-assert.equal(groundedFragment.status, "resolved", "a unique property-catalog question fragment must resolve");
-assert.equal(groundedFragment.entity.canonicalId, "shared_cooking");
-assert.equal(groundedFragment.entity.answer, "Alpha kitchen policy.", "fragment grounding must remain property-scoped"); cases += 1;
+assert.equal(groundedFragment.status, "not_found", "a FAQ question fragment must not resolve"); cases += 1;
 assert.equal(resolveEntity(fragmentAlphaCatalog, { category: "other", rawText: "kitchen", canonicalCandidate: null }).status, "not_found", "cross-category searches must not promote fragments"); cases += 1;
-assert.equal(resolveEntity(fragmentBetaCatalog, { category: "amenity", rawText: "kitchen", canonicalCandidate: null }).entity.answer, "Beta kitchen policy."); cases += 1;
+assert.equal(resolveEntity(fragmentBetaCatalog, { category: "amenity", rawText: "kitchen", canonicalCandidate: null }).status, "not_found"); cases += 1;
 const compactFragmentCatalog = buildPropertyCatalog({
   propertyId: "fragment_compact",
   displayName: "Fragment Compact",
   rooms: [],
   faqs: [{ knowledgeKey: "shared_cooking", question: "房客可使用共用廚房嗎？", answer: "Compact-script kitchen policy." }]
 });
-assert.equal(resolveEntity(compactFragmentCatalog, { category: "amenity", rawText: "廚房", canonicalCandidate: null }).entity.canonicalId, "shared_cooking"); cases += 1;
+assert.equal(resolveEntity(compactFragmentCatalog, { category: "amenity", rawText: "廚房", canonicalCandidate: null }).status, "not_found"); cases += 1;
 assert.equal(resolveEntity(fragmentAlphaCatalog, { category: "amenity", rawText: "use", canonicalCandidate: null }).status, "not_found", "short Latin fragments must not be promoted"); cases += 1;
 assert.equal(resolveEntity(fragmentAlphaCatalog, { category: "amenity", rawText: "guest kitchen request", canonicalCandidate: null }).status, "not_found", "a long Planner phrase containing a catalog fragment must not be reverse-matched"); cases += 1;
 assert.equal(resolveEntity(alphaCatalog, { category: "room", rawText: "Doubl", canonicalCandidate: null }).status, "not_found", "inventory entities must not use fragment matching"); cases += 1;
@@ -80,7 +78,7 @@ const ambiguousFragmentCatalog = buildPropertyCatalog({
   ]
 });
 const ambiguousFragment = resolveEntity(ambiguousFragmentCatalog, { category: "amenity", rawText: "kitchen", canonicalCandidate: null });
-assert.equal(ambiguousFragment.status, "ambiguous", "a fragment shared by multiple property facts must fail closed"); cases += 1;
+assert.equal(ambiguousFragment.status, "not_found", "shared FAQ fragments must fail closed without candidates"); cases += 1;
 const recent = run(alpha, alphaCatalog, [{ taskId: "recent", type: "available_dates", entity: { category: "other", rawText: "", canonicalCandidate: null } }], { ...request, stay: { ...request.stay, searchRange: { from: "2026-07-18", to: "2026-07-20" } } })[0]; assert.equal(recent.status, "answered"); assert.equal(recent.facts.availableDates[0], "2026-07-18"); cases += 1;
 const multi = run(alpha, alphaCatalog, [{ taskId: "stay", type: "availability", entity: { category: "room", rawText: "Double", canonicalCandidate: null } }, { taskId: "parking", type: "amenity", entity: { category: "amenity", rawText: "parking", canonicalCandidate: "parking" } }, { taskId: "bbq", type: "policy", entity: { category: "policy", rawText: "bbq", canonicalCandidate: "bbq" } }, { taskId: "checkin", type: "policy", entity: { category: "policy", rawText: "checkin", canonicalCandidate: "check_in" } }, { taskId: "unknown", type: "amenity", entity: { category: "amenity", rawText: "unknown amenity", canonicalCandidate: null } }]);
 assert.deepEqual(multi.map((item) => item.status), ["answered", "answered", "answered", "answered", "needs_human"]); const reply = composeControlledReply(buildApprovedPlan({ propertyId: alpha.propertyId, taskResults: multi })); for (const expected of ["A1", "A2", "Alpha parking.", "Alpha barbecue.", "Alpha check-in."]) assert.ok(reply.includes(expected)); assert.ok(reply.includes("unknown amenity")); cases += 1;
