@@ -2,7 +2,7 @@
 
 const crypto = require("node:crypto");
 const { plannerJsonSchema, validatePlannerOutput } = require("../conversation-engine-v2/planner-schema");
-const { mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures, resolveEntity } = require("../conversation-engine-v2/entity-resolver");
+const { mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures, mentionedFaqSubjects, resolveEntity } = require("../conversation-engine-v2/entity-resolver");
 const { getCapabilityDefinition } = require("../conversation-engine-v2/capability-registry");
 const { validateUnderstandingContext, sourceEventMaps, evidenceMatchesSource } = require("../conversation-engine-v2/understanding-validator");
 const RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -244,7 +244,7 @@ function inventoryCoverageItems(output, input) {
   const byId = new Map();
   for (const item of mentionedInventoryEntities(catalog, sourceText)) {
     if (item && item.entity && item.entity.canonicalId && positiveInventoryMention(sourceText, item.mention)) {
-      byId.set(item.entity.canonicalId, { ...item, kind: "inventory" });
+      byId.set(item.entity.canonicalId, { ...item, kind: "inventory", grounding: "entity_alias" });
     }
   }
   const inventory = Array.isArray(catalog.rooms) ? catalog.rooms : [];
@@ -252,7 +252,8 @@ function inventoryCoverageItems(output, input) {
     const labels = [String(entity.type || ""), ...(String(entity.publicName || "").match(/\d{3,}/g) || [])]
       .filter((value) => value && containsStandaloneMention(sourceText, value) && positiveInventoryMention(sourceText, value));
     if (entity && entity.canonicalId && labels.length && !byId.has(entity.canonicalId)) {
-      byId.set(entity.canonicalId, { entity, mention: labels.sort((left, right) => right.length - left.length)[0], kind: "inventory" });
+      const mention = labels.sort((left, right) => right.length - left.length)[0];
+      byId.set(entity.canonicalId, { entity, mention, kind: "inventory", grounding: /\d{3,}/.test(mention) ? "inventory_identifier" : "inventory_type" });
     }
   }
   const structuredGuestCounts = [output && output.stay, ...(Array.isArray(output && output.tasks) ? output.tasks.map((task) => task && task.stayCandidate) : [])]
@@ -345,7 +346,11 @@ function coverageSubjects(output, input) {
     .filter((item) => item && item.entity && item.entity.sourceKind !== "faq")
     .filter((item) => !taskClaimsCoverageMention(output, input, item))
     .map((item) => ({ ...item, kind: "property_fact" }));
-  return [...facts, ...inventoryCoverageItems(output, input)];
+  const faqSubjects = mentionedFaqSubjects(input && input.catalog, String(input && input.currentMessage || ""))
+    .filter((item) => item && item.entity)
+    .filter((item) => !taskClaimsCoverageMention(output, input, item))
+    .map((item) => ({ ...item, kind: "faq_subject" }));
+  return [...facts, ...faqSubjects, ...inventoryCoverageItems(output, input)];
 }
 
 function missingFormalSubjectIds(output, input) {
@@ -380,7 +385,7 @@ function verifiedRepairCandidate(output, input, canonicalId) {
       .find((entity) => entity && entity.canonicalId === canonicalId
         && String(task && task.entity && task.entity.canonicalCandidate || "") === canonicalId
         && task && task.entity && task.entity.category === entity.category);
-    const inventoryBinding = coverageItem && coverageItem.kind !== "property_fact" && relation
+    const inventoryBinding = coverageItem && ["inventory", "capacity_bundle"].includes(coverageItem.kind) && relation
       && String(task.sourceText || "").includes(String(coverageItem.mention || ""))
       && (resolved && resolved.status === "resolved" && resolved.entity && resolved.entity.canonicalId === canonicalId || catalogCandidate)
       ? { canonicalId, task, relation }
@@ -411,9 +416,11 @@ function safeCoverageSubject(firstOutput, input, canonicalId, candidateIndex, ta
   const sourceEvent = uniqueCurrentMessageSourceEvent(input);
   if (sourceEvent && !String(sourceEvent.messageText || "").includes(item.mention)) return null;
   if (!sourceEvent) return null;
-  const inventory = item.kind !== "property_fact";
+  const inventory = ["inventory", "capacity_bundle"].includes(item.kind);
   const taskType = inventory
     ? item.entity.category === "bundle" ? "bundle_availability" : "availability"
+    : item.entity.sourceKind === "faq"
+      ? "property_fact"
     : item.entity.category === "amenity" ? "amenity" : "property_fact";
   const definition = getCapabilityDefinition(taskType);
   if (!definition || definition.riskLevel !== "low" || definition.responseMode !== "answer"
@@ -462,6 +469,78 @@ function safeCoverageSubject(firstOutput, input, canonicalId, candidateIndex, ta
       }]
     }
   };
+}
+
+function deterministicCoverageItem(item) {
+  return item && (item.kind === "capacity_bundle"
+    || item.kind === "inventory" && ["entity_alias", "inventory_identifier"].includes(item.grounding));
+}
+
+function taskDirectlyRepresentsCoverageItem(output, input, item) {
+  const canonicalId = String(item && item.entity && item.entity.canonicalId || "");
+  const mention = String(item && item.mention || "");
+  if (!canonicalId || !mention) return false;
+  return (output.tasks || []).some((task) => {
+    const taskType = String(task && task.type || "");
+    const candidateId = String(task && task.entity && task.entity.canonicalCandidate || "");
+    const sourceText = String(task && task.sourceText || "");
+    const acceptedType = ["availability", "bundle_availability", "room_options"].includes(taskType);
+    return acceptedType && candidateId === canonicalId && sourceText.includes(mention)
+      && Boolean(relationForTask(output, input, task));
+  });
+}
+
+function ensureCatalogGroundedCoverage(output, input) {
+  if (!output || !Array.isArray(output.tasks) || !Array.isArray(output.contextRelationCandidates)) return output;
+  const uniqueItems = new Map();
+  for (const item of coverageSubjects(output, input).filter(deterministicCoverageItem)) {
+    const canonicalId = String(item && item.entity && item.entity.canonicalId || "");
+    if (canonicalId && !uniqueItems.has(canonicalId)) uniqueItems.set(canonicalId, item);
+  }
+  if (!uniqueItems.size) return output;
+  const tasks = output.tasks.map((task) => ({ ...task }));
+  const contextRelationCandidates = output.contextRelationCandidates.map((relation) => ({ ...relation }));
+  const usedTaskIds = new Set(tasks.map((task) => String(task && task.taskId || "")).filter(Boolean));
+  const represented = new Set([...representedCanonicalIds(output, input), ...representedInventoryIds(output, input)]);
+  let nextCandidateIndex = tasks.reduce((max, task) =>
+    Math.max(max, Number.isInteger(task && task.candidateIndex) ? task.candidateIndex : -1), -1) + 1;
+  const addedTaskIds = [];
+  for (const [canonicalId, item] of uniqueItems) {
+    if (Math.max(tasks.length, contextRelationCandidates.length) >= MAX_MERGED_TASKS) break;
+    if (represented.has(canonicalId) || taskDirectlyRepresentsCoverageItem(output, input, item)) continue;
+    const addition = safeCoverageSubject(output, input, canonicalId, nextCandidateIndex, uniqueTaskId(crypto.randomUUID(), usedTaskIds));
+    if (!addition || !addition.canonicalCoverage) continue;
+    const tentative = {
+      ...output,
+      tasks: [...tasks, addition.task],
+      contextRelationCandidates: [...contextRelationCandidates, addition.relation]
+    };
+    if (!validMergedOutput(tentative, input)) continue;
+    tasks.push(addition.task);
+    contextRelationCandidates.push(addition.relation);
+    addedTaskIds.push(addition.task.taskId);
+    represented.add(canonicalId);
+    nextCandidateIndex += 1;
+  }
+  if (!addedTaskIds.length) return output;
+  const expanded = { ...output, tasks, contextRelationCandidates };
+  const taskCollectionDiagnostic = output[TASK_COLLECTION_DIAGNOSTIC];
+  if (taskCollectionDiagnostic) Object.defineProperty(expanded, TASK_COLLECTION_DIAGNOSTIC, { enumerable: false, value: taskCollectionDiagnostic });
+  const existingTaskIds = Array.isArray(output[ADDITIVE_REPAIR_DIAGNOSTIC]) ? output[ADDITIVE_REPAIR_DIAGNOSTIC] : [];
+  const coverageMergeDiagnostic = output[COVERAGE_MERGE_DIAGNOSTIC];
+  if (coverageMergeDiagnostic) {
+    const completed = missingFormalSubjectIds(expanded, input).length === 0;
+    Object.defineProperty(expanded, COVERAGE_MERGE_DIAGNOSTIC, {
+      enumerable: false,
+      value: Object.freeze({
+        ...coverageMergeDiagnostic,
+        succeeded: coverageMergeDiagnostic.succeeded || completed,
+        taskIds: Object.freeze([...new Set([...(coverageMergeDiagnostic.taskIds || []), ...addedTaskIds])])
+      })
+    });
+  }
+  Object.defineProperty(expanded, ADDITIVE_REPAIR_DIAGNOSTIC, { enumerable: false, value: Object.freeze([...new Set([...existingTaskIds, ...addedTaskIds])]) });
+  return expanded;
 }
 
 function safeCoverageHandoff(input, canonicalId, candidateIndex, taskId) {
@@ -782,7 +861,7 @@ function broadDateClarificationAddition(firstOutput, input, tasks, contextRelati
   const eligible = ["price", "total_price"].includes(sourceTask && sourceTask.type)
     && sourceTask.entity && ["room", "bundle"].includes(sourceTask.entity.category)
     && !stay.checkInCandidate && !stay.checkOutCandidate
-    && monthQualifiedRecurringDate(stay.dateExpression.rawText);
+    && (monthQualifiedRecurringDate(stay.dateExpression.rawText) || monthQualifiedRecurringDate(sourceTask.sourceText));
   if (!eligible) return null;
   const relation = sourceTask && relationForTask(firstOutput, input, sourceTask);
   if (!sourceTask || !relation) return null;
@@ -1257,16 +1336,16 @@ class TestOnlyOpenAiConversationPlanner {
           try {
             const repairResult = await this.requestOnce(repairInput, 2, Math.min(this.timeoutMs, Math.max(1, Math.floor(deadlineMs - Date.now()))));
             providerAttempts.push(repairResult.attemptDiagnostic);
-            const merged = mergeCoverageRepair(firstOutput, repairResult.output, input, missingCanonicalIds);
+            const merged = ensureCatalogGroundedCoverage(mergeCoverageRepair(firstOutput, repairResult.output, input, missingCanonicalIds), input);
             const coverage = merged[COVERAGE_MERGE_DIAGNOSTIC];
             return annotateProviderSuccess(merged, "", providerAttempts, { performed: true, succeeded: coverage.succeeded, fallback: coverage.fallback });
           } catch (repairError) {
             providerAttempts.push(...(Array.isArray(repairError && repairError.providerAttempts) ? repairError.providerAttempts : []));
-            const merged = mergeCoverageRepair(firstOutput, null, input, missingCanonicalIds);
+            const merged = ensureCatalogGroundedCoverage(mergeCoverageRepair(firstOutput, null, input, missingCanonicalIds), input);
             return annotateProviderSuccess(merged, "", providerAttempts, { performed: true, succeeded: false, fallback: true });
           }
         }
-        if (missingCanonicalIds.length) return annotateProviderSuccess(mergeCoverageRepair(firstOutput, null, input, missingCanonicalIds), firstAttemptErrorCategory, providerAttempts, { performed: false, succeeded: false, fallback: true });
+        if (missingCanonicalIds.length) return annotateProviderSuccess(ensureCatalogGroundedCoverage(mergeCoverageRepair(firstOutput, null, input, missingCanonicalIds), input), firstAttemptErrorCategory, providerAttempts, { performed: false, succeeded: false, fallback: true });
         return annotateProviderSuccess(firstOutput, firstAttemptErrorCategory, providerAttempts);
       } catch (error) {
         providerAttempts.push(...(Array.isArray(error && error.providerAttempts) ? error.providerAttempts : []));

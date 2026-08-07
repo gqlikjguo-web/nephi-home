@@ -8,6 +8,7 @@ const { validatePlannerOutput, applyPlannerSemanticContract } = require("../lib/
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
 const { canonicalizeExecutionItem } = require("../lib/conversation-engine-v2/canonicalizer");
 const OPAQUE_REPAIR_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const { mentionedFaqSubjects } = require("../lib/conversation-engine-v2/entity-resolver");
 
 const output = { schemaVersion: 2, discourse: { relation: "new_request", confidence: 1 }, stateOperations: [], stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, tasks: [{ taskId: "1", type: "property_fact", sourceText: "你好", requestedOutputs: ["greeting"], dependsOnStayContext: false, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 1 }, confidence: 1 }], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "greeting" };
 let requestBody;
@@ -249,6 +250,13 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const alternateDateResult = await alternateDatePlanner.classify({ currentMessage: alternateDateShape.tasks[0].sourceText, currentMessages: [alternateDateShape.tasks[0].sourceText], sourceEvents: [{ eventId: "resolved-lodging", messageText: alternateDateShape.tasks[0].sourceText }], eventTimestamp: 1, catalog: lodgingCatalog, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(alternateDateCalls, 1);
   assert.equal(alternateDateResult.tasks.some((task) => ["availability", "bundle_availability"].includes(task.type)), true, "verified month-qualified recurring evidence must survive a legal Planner date-kind drift");
+  const omittedDateShape = JSON.parse(JSON.stringify(resolvedLodgingPrice));
+  omittedDateShape.tasks[0].stayCandidate.dateExpression = { rawText: "", kind: "none", anchor: "none" };
+  let omittedDateCalls = 0;
+  const omittedDatePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((omittedDateCalls += 1) && omittedDateShape) }) }) });
+  const omittedDateResult = await omittedDatePlanner.classify({ currentMessage: omittedDateShape.tasks[0].sourceText, currentMessages: [omittedDateShape.tasks[0].sourceText], sourceEvents: [{ eventId: "resolved-lodging", messageText: omittedDateShape.tasks[0].sourceText }], eventTimestamp: 1, catalog: lodgingCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(omittedDateCalls, 1, "catalog-grounded recurring-date coverage must not spend the bounded provider supplement call");
+  assert.equal(omittedDateResult.tasks.some((task) => ["availability", "bundle_availability"].includes(task.type)), true, "verified recurring evidence in the current message must survive an omitted Planner date expression");
   const mixedLodgingMessage = "7\u6708\u9031\u516d301\u50f9\u683c\uff0c\u53e6\u5916302\u660e\u5929\u6709\u7a7a\u55ce";
   const mixedLodgingOutput = JSON.parse(JSON.stringify(resolvedLodgingPrice));
   mixedLodgingOutput.tasks[0] = { ...mixedLodgingOutput.tasks[0], sourceText: "7\u6708\u9031\u516d301\u50f9\u683c", entity: { category: "room", rawText: "301", canonicalCandidate: "room301", confidence: 1 } };
@@ -322,6 +330,15 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const numberedResult = await numberedPlanner.classify({ currentMessage: numberedMessage, currentMessages: [numberedMessage], sourceEvents: [{ eventId: "numbered-coverage", messageText: numberedMessage }], eventTimestamp: 1, catalog: lodgingCatalog, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(numberedCalls, 2, "room numbers stated beside a bundle must receive additive inventory coverage");
   assert.deepEqual(new Set(numberedResult.tasks.map((task) => task.entity && task.entity.canonicalCandidate).filter(Boolean)), new Set(["whole-house", "room301", "room302"]));
+  let numberedFallbackCalls = 0;
+  const numberedFallbackPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((numberedFallbackCalls += 1) && numberedFirst) }) }) });
+  const numberedFallbackResult = await numberedFallbackPlanner.classify({ currentMessage: numberedMessage, currentMessages: [numberedMessage], sourceEvents: [{ eventId: "numbered-coverage", messageText: numberedMessage }], eventTimestamp: 1, catalog: lodgingCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(numberedFallbackCalls, 2, "explicit inventory coverage remains bounded to one supplement call when the second legal shape repeats the omission");
+  assert.deepEqual(new Set(numberedFallbackResult.tasks.map((task) => task.entity && task.entity.canonicalCandidate).filter(Boolean)), new Set(["whole-house", "room301", "room302"]), "explicit inventory siblings must survive a repeated omission from the second Planner output");
+  const numberedFallbackDiagnostic = numberedFallbackResult[Symbol.for("junzan.plannerProviderDiagnostic")];
+  assert.equal(numberedFallbackDiagnostic.repairLinks.filter((link) => ["room301", "room302"].some((id) => numberedFallbackResult.tasks.some((task) => task.taskId === link.taskId && task.entity.canonicalCandidate === id))).length, 2, "each deterministic inventory sibling must retain its own direct repair provenance");
+  assert.equal(numberedFallbackDiagnostic.coverageRepairSucceeded, true, "post-merge deterministic room coverage must report the completed canonical coverage truthfully");
+
 
   const capacityMessage = "3/6-3/7 \u4eba\u6578\u5927\u69826-8\u4eba";
   const capacityFirst = JSON.parse(JSON.stringify(numberedFirst));
@@ -346,9 +363,23 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(capacityFallbackTask.stayCandidate.checkInCandidate, null, "deterministic inventory coverage must not copy an unrelated top-level stay");
   assert.match(capacityFallbackTask.taskId, OPAQUE_REPAIR_ID, "deterministic coverage task IDs must be opaque");
   const capacityFallbackDiagnostic = capacityFallbackResult[Symbol.for("junzan.plannerProviderDiagnostic")];
+  assert.equal(capacityFallbackDiagnostic.coverageRepairSucceeded, true, "post-merge deterministic bundle coverage must report the completed canonical coverage truthfully");
   const capacityFallbackLink = capacityFallbackDiagnostic.repairLinks.find((link) => link.taskId === capacityFallbackTask.taskId);
   assert.match(capacityFallbackLink.correlationId, OPAQUE_REPAIR_ID, "deterministic coverage provenance must directly join to the repaired task");
   const featureMessage = "double room with bathtub";
+  const multiCapacityFirst = JSON.parse(JSON.stringify(capacityFirst));
+  multiCapacityFirst.tasks = ["availability-alpha", "availability-beta", "availability-gamma"].map((taskId, candidateIndex) => ({ ...capacityFirst.tasks[0], taskId, candidateIndex }));
+  multiCapacityFirst.contextRelationCandidates = multiCapacityFirst.tasks.map((task) => ({ ...capacityFirst.contextRelationCandidates[0], candidateIndex: task.candidateIndex }));
+  let multiCapacityCalls = 0;
+  const multiCapacityPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((multiCapacityCalls += 1) && multiCapacityFirst) }) }) });
+  const multiCapacityResult = await multiCapacityPlanner.classify({ currentMessage: capacityMessage, currentMessages: [capacityMessage], sourceEvents: [{ eventId: "capacity-coverage", messageText: capacityMessage }], eventTimestamp: 1, catalog: lodgingCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(multiCapacityCalls, 2);
+  assert.equal(multiCapacityResult.tasks.some((task) => task.type === "bundle_availability" && task.entity.canonicalCandidate === "whole-house"), true, "a unique capacity bundle must survive when several legal unresolved siblings are preserved");
+  assert.deepEqual(multiCapacityResult.tasks.slice(0, 3).map((task) => task.taskId), ["availability-alpha", "availability-beta", "availability-gamma"], "capacity coverage must not consume or rewrite legal siblings");
+  const multiCapacitySemantic = applyPlannerSemanticContract(multiCapacityResult, { catalog: lodgingCatalog, sourceEvents: [{ eventId: "capacity-coverage", messageText: capacityMessage }] });
+  const multiCapacityTask = multiCapacitySemantic.tasks.find((task) => task.entity && task.entity.canonicalCandidate === "whole-house");
+  assert.equal(Boolean(multiCapacityTask), true, "the trusted bundle scope must survive Semantic");
+
   const featureCatalog = buildPropertyCatalog({
     propertyId: "feature-coverage-property",
     timezone: "Asia/Taipei",
@@ -386,6 +417,146 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(canonicalFeature.canonicalEntity.category, "room_feature", "Canonical must preserve the trusted semantic category");
   assert.equal(canonicalFeature.canonicalEntity.canonicalId, "beta-room", "a unique catalog feature mapping is trusted canonical evidence, not an inferred lodging product");
   assert.equal(canonicalFeature.lodgingProduct.productType, "any", "unresolved feature coverage must remain fail closed for lodging scope");
+  const faqFeatureMessage = "I need a double room with a soaking tub";
+  const faqFeatureCatalog = buildPropertyCatalog({
+    propertyId: "faq-feature-coverage-property",
+    timezone: "Asia/Taipei",
+    rooms: [
+      { id: "alpha-room", name: "Alpha double room", type: "double room", capacity: 2, enabled: true },
+      { id: "beta-room", name: "Beta double room", type: "double room", capacity: 2, enabled: true }
+    ],
+    faqs: [{ knowledgeKey: "bathing_fixture_info", question: "Which rooms include a soaking tub?", answer: "Beta double room includes a soaking tub." }],
+    commonAnswers: {}
+  });
+  const faqFeatureFirst = JSON.parse(JSON.stringify(featureFirst));
+  faqFeatureFirst.tasks[0] = { ...faqFeatureFirst.tasks[0], taskId: "faq-feature-availability", sourceText: faqFeatureMessage, entity: { category: "room", rawText: "double room", canonicalCandidate: null, confidence: 1 } };
+  faqFeatureFirst.contextRelationCandidates[0].evidenceRefs = [{ eventId: "faq-feature-coverage", messageRef: "", startOffset: 0, endOffset: faqFeatureMessage.length, quote: faqFeatureMessage }];
+  let faqFeatureCalls = 0;
+  const faqFeaturePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((faqFeatureCalls += 1) && faqFeatureFirst) }) }) });
+  const faqFeatureResult = await faqFeaturePlanner.classify({ currentMessage: faqFeatureMessage, currentMessages: [faqFeatureMessage], sourceEvents: [{ eventId: "faq-feature-coverage", messageText: faqFeatureMessage }], eventTimestamp: 1, catalog: faqFeatureCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  const faqFeatureTask = faqFeatureResult.tasks.find((task) => task.type === "property_fact" && task.entity && task.entity.canonicalCandidate === "bathing_fixture_info");
+  assert.equal(Boolean(faqFeatureTask), true, "a subject uniquely present in the guest message and a formal FAQ question and answer must retain an independent sibling");
+  assert.equal(faqFeatureResult.tasks.some((task) => task.taskId === "faq-feature-availability"), true, "FAQ coverage must not consume a legal lodging sibling");
+  const faqFeatureDiagnostic = faqFeatureResult[Symbol.for("junzan.plannerProviderDiagnostic")];
+  assert.equal(faqFeatureDiagnostic.repairLinks.some((link) => link.taskId === faqFeatureTask.taskId && link.kind === "coverage_repair"), true, "catalog-compiled FAQ coverage must retain direct repair provenance");
+  const faqFeatureSemantic = applyPlannerSemanticContract(faqFeatureResult, { catalog: faqFeatureCatalog, sourceEvents: [{ eventId: "faq-feature-coverage", messageText: faqFeatureMessage }] });
+  const faqFeatureSemanticTask = faqFeatureSemantic.tasks.find((task) => task.taskId === faqFeatureTask.taskId);
+  const faqFeatureCanonical = canonicalizeExecutionItem({
+    item: { candidateIndex: faqFeatureSemanticTask.candidateIndex, requestCycleId: faqFeatureSemanticTask.taskId, task: faqFeatureSemanticTask, transition: { approvedProduct: { productType: "any" } } },
+    relation: faqFeatureSemantic.contextRelationCandidates.find((candidate) => candidate.candidateIndex === faqFeatureSemanticTask.candidateIndex),
+    contextSnapshot: { cycles: [] }, catalog: faqFeatureCatalog, guestMessage: faqFeatureMessage, eventTimestamp: 1
+  }).canonicalRequest;
+  assert.equal(faqFeatureCanonical.capability, "property_fact", "the repaired FAQ subject must survive Semantic as formal canonical evidence");
+  assert.equal(faqFeatureCanonical.canonicalEntity.canonicalId, "bathing_fixture_info");
+  assert.equal(faqFeatureCanonical.lodgingProduct.productType, "any", "a FAQ feature must not guess one lodging product");
+
+  for (const casePreservingMessage of ["I need a double room with a Soaking Tub", "I need a double room with a SOAKING TUB"]) {
+    const casePreservingHit = mentionedFaqSubjects(faqFeatureCatalog, casePreservingMessage)[0];
+    assert.equal(Boolean(casePreservingHit), true, "a controlled FAQ subject alias must match case-insensitively");
+    assert.equal(casePreservingHit.mention, casePreservingMessage.slice(casePreservingHit.startOffset, casePreservingHit.endOffset), "FAQ evidence must preserve the exact guest-source substring and offsets");
+    const casePreservingFirst = JSON.parse(JSON.stringify(faqFeatureFirst));
+    casePreservingFirst.tasks[0] = { ...casePreservingFirst.tasks[0], sourceText: casePreservingMessage };
+    casePreservingFirst.contextRelationCandidates[0].evidenceRefs = [{ eventId: "faq-case-coverage", messageRef: "", startOffset: 0, endOffset: casePreservingMessage.length, quote: casePreservingMessage }];
+    let casePreservingCalls = 0;
+    const casePreservingPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((casePreservingCalls += 1) && casePreservingFirst) }) }) });
+    const casePreservingResult = await casePreservingPlanner.classify({ currentMessage: casePreservingMessage, currentMessages: [casePreservingMessage], sourceEvents: [{ eventId: "faq-case-coverage", messageText: casePreservingMessage }], eventTimestamp: 1, catalog: faqFeatureCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+    const casePreservingTask = casePreservingResult.tasks.find((task) => task.entity && task.entity.canonicalCandidate === "bathing_fixture_info");
+    assert.equal(Boolean(casePreservingTask), true, "case drift must not prevent deterministic FAQ coverage");
+    const casePreservingDiagnostic = casePreservingResult[Symbol.for("junzan.plannerProviderDiagnostic")];
+    assert.equal((casePreservingDiagnostic.repairLinks || []).some((link) => link.taskId === casePreservingTask.taskId && link.kind === "coverage_repair"), true, "case-preserving FAQ coverage must retain direct repair provenance");
+  }
+
+
+
+  const boundaryFaqMessage = "poolside parking, is the pool open?";
+  const boundaryFaqCatalog = buildPropertyCatalog({
+    propertyId: "boundary-faq-property", timezone: "Asia/Taipei",
+    rooms: [{ id: "base-room", name: "Base room", type: "double room", capacity: 2, enabled: true }],
+    faqs: [{ knowledgeKey: "pool_open", question: "Is the pool open?", answer: "The pool is open." }], commonAnswers: {}
+  });
+  const boundaryFaqHit = mentionedFaqSubjects(boundaryFaqCatalog, boundaryFaqMessage)[0];
+  assert.equal(boundaryFaqHit.startOffset, boundaryFaqMessage.lastIndexOf("pool"), "controlled FAQ evidence must bind to the independent word, not an earlier identifier prefix");
+  assert.equal(boundaryFaqHit.mention, "pool");
+  const boundaryFaqFirst = JSON.parse(JSON.stringify(faqFeatureFirst));
+  boundaryFaqFirst.tasks[0] = { ...boundaryFaqFirst.tasks[0], sourceText: boundaryFaqMessage };
+  boundaryFaqFirst.contextRelationCandidates[0].evidenceRefs = [{ eventId: "faq-boundary-coverage", messageRef: "", startOffset: 0, endOffset: boundaryFaqMessage.length, quote: boundaryFaqMessage }];
+  let boundaryFaqCalls = 0;
+  const boundaryFaqPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((boundaryFaqCalls += 1) && boundaryFaqFirst) }) }) });
+  const boundaryFaqResult = await boundaryFaqPlanner.classify({ currentMessage: boundaryFaqMessage, currentMessages: [boundaryFaqMessage], sourceEvents: [{ eventId: "faq-boundary-coverage", messageText: boundaryFaqMessage }], eventTimestamp: 1, catalog: boundaryFaqCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  const boundaryFaqTask = boundaryFaqResult.tasks.find((task) => task.entity && task.entity.canonicalCandidate === "pool_open");
+  assert.equal(Boolean(boundaryFaqTask), true, "an independent controlled FAQ subject must create coverage despite an earlier identifier prefix");
+  assert.equal((boundaryFaqResult[Symbol.for("junzan.plannerProviderDiagnostic")].repairLinks || []).some((link) => link.taskId === boundaryFaqTask.taskId && link.kind === "coverage_repair"), true, "boundary-safe FAQ coverage must retain direct repair provenance");
+
+  const ambiguousFaqCatalog = buildPropertyCatalog({
+    propertyId: "ambiguous-faq-feature-property",
+    timezone: "Asia/Taipei",
+    rooms: [{ id: "only-room", name: "Only room", type: "double room", capacity: 2, enabled: true }],
+    faqs: [
+      { knowledgeKey: "fixture_alpha", question: "Does the room include a soaking tub?", answer: "The room includes a soaking tub." },
+      { knowledgeKey: "fixture_beta", question: "When is the soaking tub available?", answer: "The soaking tub is available during the stay." }
+    ],
+    commonAnswers: {}
+  });
+  let ambiguousFaqCalls = 0;
+  const ambiguousFaqPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((ambiguousFaqCalls += 1) && faqFeatureFirst) }) }) });
+  const ambiguousFaqResult = await ambiguousFaqPlanner.classify({ currentMessage: faqFeatureMessage, currentMessages: [faqFeatureMessage], sourceEvents: [{ eventId: "faq-feature-coverage", messageText: faqFeatureMessage }], eventTimestamp: 1, catalog: ambiguousFaqCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(ambiguousFaqResult.tasks.some((task) => task.entity && ["fixture_alpha", "fixture_beta"].includes(task.entity.canonicalCandidate)), false, "one source subject shared by multiple formal FAQs must remain fail closed");
+  const inventoryOnlyFaqCatalog = buildPropertyCatalog({
+    propertyId: "inventory-only-faq-property",
+    timezone: "Asia/Taipei",
+    rooms: [
+      { id: "base-room", name: "Base room", type: "double room", capacity: 2, enabled: true },
+      { id: "full-property", name: "Full-property bundle", type: "bundle", capacity: 2, enabled: true, inventoryType: "bundle", memberRoomIds: ["base-room"] }
+    ],
+    faqs: [{ knowledgeKey: "bundle_equipment", question: "What equipment comes with the full-property bundle?", answer: "The full-property bundle includes games." }],
+    commonAnswers: {}
+  });
+  assert.deepEqual(mentionedFaqSubjects(inventoryOnlyFaqCatalog, "I need the full-property bundle"), [], "an inventory label alone must not be reinterpreted as the subject of a related FAQ");
+
+  const genericPredicateFaqCatalog = buildPropertyCatalog({
+    propertyId: "generic-predicate-faq-property",
+    timezone: "Asia/Taipei",
+    rooms: [{ id: "base-room", name: "Base room", type: "double room", capacity: 2, enabled: true }],
+    faqs: [
+      { knowledgeKey: "parking", question: "Is parking available?", answer: "Parking is available." },
+      { knowledgeKey: "breakfast", question: "Is breakfast provided?", answer: "Breakfast is provided." },
+      { knowledgeKey: "games", question: "Are games included?", answer: "Games are included." },
+      { knowledgeKey: "parking_zh", question: "????????", answer: "???????" }
+    ],
+    commonAnswers: {}
+  });
+  assert.deepEqual(mentionedFaqSubjects(genericPredicateFaqCatalog, "Is WiFi available?"), [], "a generic availability predicate must not identify an unrelated FAQ subject");
+  assert.deepEqual(mentionedFaqSubjects(genericPredicateFaqCatalog, "Are towels provided?"), [], "a generic provision predicate must not identify an unrelated FAQ subject");
+  assert.deepEqual(mentionedFaqSubjects(genericPredicateFaqCatalog, "Are meals included?"), [], "a generic inclusion predicate must not identify an unrelated FAQ subject");
+  assert.deepEqual(mentionedFaqSubjects(genericPredicateFaqCatalog, "???????"), [], "a compact-script generic predicate must not identify an unrelated FAQ subject");
+
+  const predicateOnlyFaqCases = [
+    { canonicalId: "parking_allowed", question: "Is parking allowed?", answer: "Parking is allowed.", message: "Is late checkout allowed?" },
+    { canonicalId: "charging_supported", question: "Is EV charging supported?", answer: "EV charging is supported.", message: "Is Apple Pay supported?" },
+    { canonicalId: "pool_accessible", question: "Is the pool accessible?", answer: "The pool is accessible.", message: "Is the rooftop accessible?" },
+    { canonicalId: "parking_used", question: "Can parking be used?", answer: "Parking can be used.", message: "Can Apple Pay be used?" },
+    { canonicalId: "parking_cost", question: "Does parking cost extra?", answer: "Parking can cost extra.", message: "Does breakfast cost extra?" }
+  ];
+  for (const predicateCase of predicateOnlyFaqCases) {
+    const predicateCatalog = buildPropertyCatalog({
+      propertyId: `predicate-only-${predicateCase.canonicalId}`,
+      timezone: "Asia/Taipei",
+      rooms: [{ id: "base-room", name: "Base room", type: "double room", capacity: 2, enabled: true }],
+      faqs: [{ knowledgeKey: predicateCase.canonicalId, question: predicateCase.question, answer: predicateCase.answer }],
+      commonAnswers: {}
+    });
+    assert.deepEqual(mentionedFaqSubjects(predicateCatalog, predicateCase.message), [], "an unregistered single-word predicate must not identify a FAQ subject");
+    const predicateFirst = JSON.parse(JSON.stringify(faqFeatureFirst));
+    predicateFirst.tasks[0] = { ...predicateFirst.tasks[0], sourceText: predicateCase.message };
+    predicateFirst.contextRelationCandidates[0].evidenceRefs = [{ eventId: "predicate-only", messageRef: "", startOffset: 0, endOffset: predicateCase.message.length, quote: predicateCase.message }];
+    let predicateCalls = 0;
+    const predicatePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((predicateCalls += 1) && predicateFirst) }) }) });
+    const predicateResult = await predicatePlanner.classify({ currentMessage: predicateCase.message, currentMessages: [predicateCase.message], sourceEvents: [{ eventId: "predicate-only", messageText: predicateCase.message }], eventTimestamp: 1, catalog: predicateCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+    assert.equal(predicateResult.tasks.some((task) => task.entity && task.entity.canonicalCandidate === predicateCase.canonicalId), false, "predicate-only overlap must not create a FAQ coverage task");
+    const predicateDiagnostic = predicateResult[Symbol.for("junzan.plannerProviderDiagnostic")];
+    assert.equal((predicateDiagnostic.repairLinks || []).some((link) => predicateResult.tasks.some((task) => task.taskId === link.taskId && task.entity && task.entity.canonicalCandidate === predicateCase.canonicalId)), false, "predicate-only overlap must not create joinable repair provenance");
+  }
+
   let duplicateFeatureCalls = 0;
   const duplicateFeaturePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((duplicateFeatureCalls += 1) && featureFirst) }) }) });
   const duplicateFeatureResult = await duplicateFeaturePlanner.classify({ currentMessage: featureMessage, currentMessages: [featureMessage], sourceEvents: [{ eventId: "feature-old", messageText: featureMessage }, { eventId: "feature-current", messageText: featureMessage }], eventTimestamp: 1, catalog: featureCatalog, contextSnapshot: { scope: {}, cycles: [] } });

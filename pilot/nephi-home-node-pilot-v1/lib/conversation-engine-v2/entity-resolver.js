@@ -88,6 +88,48 @@ function mentionedInventoryEntities(catalog, sourceText) {
     return mention ? [{ entity, mention }] : [];
   });
 }
+const CONTROLLED_FAQ_SUBJECT_ALIASES = Object.freeze([
+  "\u6232\u6c34\u6c60", "splash pool", "\u6e38\u6cf3\u6c60", "swimming pool", "pool",
+  "\u6d74\u7f38", "bathtub", "soaking tub"
+]);
+
+function controlledFaqMention(sourceText, alias) {
+  const source = String(sourceText || "");
+  const tokens = String(alias).match(/[\p{L}\p{N}]+/gu) || [];
+  const compact = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(alias);
+  const body = compact
+    ? regexEscape(String(alias)) : tokens.map(regexEscape).join("[^\\p{L}\\p{N}]+");
+  if (!body) return null;
+  const pattern = compact ? `(${body})` : `(^|[^\\p{L}\\p{N}])(${body})($|[^\\p{L}\\p{N}])`;
+  const match = new RegExp(pattern, "iu").exec(source);
+  if (!match) return null;
+  const captureIndex = compact ? 1 : 2;
+  const mention = match[captureIndex];
+  const leading = compact ? "" : match[1];
+  const startOffset = match.index + leading.length;
+  return { mention, normalized: mention.normalize("NFKC").toLowerCase(), startOffset, endOffset: startOffset + mention.length };
+}
+
+
+function mentionedFaqSubjects(catalog, sourceText) {
+  const entities = uniqueEntities(catalog && catalog.faqs || [])
+    .filter((entity) => entity && entity.canonicalId && entity.answer);
+  const matches = new Map();
+  for (const alias of CONTROLLED_FAQ_SUBJECT_ALIASES) {
+    const mention = controlledFaqMention(sourceText, alias);
+    if (!mention) continue;
+    const owners = entities.filter((entity) =>
+      mentionedAlias(entity.publicName, alias) && mentionedAlias(entity.answer, alias));
+    if (owners.length !== 1) continue;
+    const entity = owners[0];
+    const existing = matches.get(entity.canonicalId);
+    if (!existing || key(alias).length > key(existing.mention).length) {
+      matches.set(entity.canonicalId, { entity, ...mention });
+    }
+  }
+  return [...matches.values()];
+}
+
 function mentionedInventoryFeatures(catalog, sourceText) {
   const features = new Map();
   for (const entity of catalog && catalog.rooms || []) {
@@ -125,4 +167,4 @@ function resolveEntity(catalog, candidate = {}) {
   return { status: "not_found", candidates: [] };
 }
 
-module.exports = { resolveEntity, mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures };
+module.exports = { resolveEntity, mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures, mentionedFaqSubjects };
