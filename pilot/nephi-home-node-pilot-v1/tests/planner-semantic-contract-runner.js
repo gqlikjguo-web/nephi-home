@@ -349,6 +349,89 @@ function main() {
   assert.equal(faqFragment.semantic.tasks[0].entity.canonicalCandidate, null, "a FAQ fragment must not recover a formal property fact");
   assert.equal(faqFragment.item.canonicalRequest.capability, "amenity", "an unresolved FAQ fragment must retain the Planner capability and fail closed");
 
+  const registeredFaqCatalog = buildPropertyCatalog({
+    propertyId: "registered-faq-property",
+    timezone: "Asia/Taipei",
+    rooms: [],
+    commonAnswers: {},
+    faqs: [{ knowledgeKey: "pool", question: "What is the pool fee?", answer: "Confirmed pool policy." }],
+    semanticCatalog: { aliases: { pool: ["pool"] } }
+  });
+  const registeredFaqSource = "What is the pool fee";
+  const registeredFaqSemantic = sourceBoundSemantic(task({
+    taskId: "registered-faq-fee-drift",
+    type: "price",
+    category: "policy",
+    rawText: "fee",
+    sourceText: registeredFaqSource,
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }
+  }), { message: registeredFaqSource, catalogOverride: registeredFaqCatalog });
+  const registeredFaqTask = registeredFaqSemantic.tasks[0];
+  assert.equal(registeredFaqTask.type, "property_fact", "a fee-shaped drift may normalize only to a registered low-risk FAQ capability");
+  assert.equal(registeredFaqTask.entity.canonicalCandidate, "pool");
+  const registeredFaqCanonical = canonicalizeExecutionItem({ item: { candidateIndex: 0, requestCycleId: registeredFaqTask.taskId, task: registeredFaqTask, transition: { approvedProduct: { productType: "any" } } }, relation: registeredFaqSemantic.contextRelationCandidates[0], contextSnapshot: { cycles: [] }, catalog: registeredFaqCatalog, guestMessage: registeredFaqSource, eventTimestamp }).canonicalRequest;
+  assert.equal(registeredFaqCanonical.capability, "pool", "registered FAQ normalization must produce the target canonical subject on the same task");
+  assert.equal(registeredFaqCanonical.canonicalEntity.canonicalId, "pool");
+  assert.equal(registeredFaqSemantic.semanticValidation.repairedTasks.some((repair) => repair.taskId === registeredFaqTask.taskId && repair.reason === "registered_faq_capability_grounding"), true);
+  const mixedRegisteredSource = "What is the lodging price and pool fee";
+  const mixedPriceTask = task({ taskId: "mixed-lodging-price", type: "price", category: "policy", rawText: "fee", sourceText: mixedRegisteredSource, requestedOutputs: ["price"], dependsOnStayContext: true, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null } });
+  const mixedPoolTask = task({ taskId: "mixed-pool", type: "property_fact", category: "amenity", rawText: "pool", sourceText: "pool fee", canonicalCandidate: "pool" });
+  mixedPoolTask.candidateIndex = 1;
+  const mixedRegisteredPlan = plan([mixedPriceTask, mixedPoolTask]);
+  mixedRegisteredPlan.contextRelationCandidates = [
+    { candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "mixed-registered", messageRef: "", startOffset: 0, endOffset: mixedRegisteredSource.length, quote: mixedRegisteredSource }] },
+    { candidateIndex: 1, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "mixed-registered", messageRef: "", startOffset: mixedRegisteredSource.indexOf("pool fee"), endOffset: mixedRegisteredSource.length, quote: "pool fee" }] }
+  ];
+  const mixedRegisteredSemantic = applyPlannerSemanticContract(mixedRegisteredPlan, { catalog: registeredFaqCatalog, sourceEvents: [{ eventId: "mixed-registered", messageText: mixedRegisteredSource }] });
+  assert.equal(mixedRegisteredSemantic.tasks.find((item) => item.taskId === "mixed-lodging-price").type, "price", "a source-bound FAQ sibling must not erase the legal lodging-price sibling");
+  assert.equal(mixedRegisteredSemantic.tasks.find((item) => item.taskId === "mixed-pool").entity.canonicalCandidate, "pool");
+
+  const conflictingRegisteredSemantic = sourceBoundSemantic(task({
+    taskId: "conflicting-registered-faq",
+    type: "price", category: "policy", rawText: "fee", canonicalCandidate: "bbq", sourceText: registeredFaqSource,
+    requestedOutputs: ["price"], dependsOnStayContext: true,
+    stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }
+  }), { message: registeredFaqSource, catalogOverride: registeredFaqCatalog });
+  assert.equal(conflictingRegisteredSemantic.tasks[0].type, "price", "a conflicting canonical candidate must block registered FAQ grounding");
+
+  const multiRegisteredCatalog = buildPropertyCatalog({
+    propertyId: "multi-registered-faq-property", timezone: "Asia/Taipei", rooms: [], commonAnswers: {},
+    faqs: [
+      { knowledgeKey: "pool", question: "Pool fee information", answer: "Pool policy." },
+      { knowledgeKey: "bbq", question: "Barbecue fee information", answer: "BBQ policy." }
+    ],
+    semanticCatalog: { aliases: { pool: ["pool"], bbq: ["barbecue"] } }
+  });
+  const multiRegisteredSource = "pool fee and barbecue fee";
+  const multiRegisteredSemantic = sourceBoundSemantic(task({
+    taskId: "multi-registered-faq", type: "price", category: "policy", rawText: "fee", sourceText: multiRegisteredSource,
+    requestedOutputs: ["price"], dependsOnStayContext: true,
+    stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }
+  }), { message: multiRegisteredSource, catalogOverride: multiRegisteredCatalog });
+  assert.equal(multiRegisteredSemantic.tasks[0].type, "price", "multiple registered FAQ subjects must remain ambiguous and fail closed");
+  assert.equal(multiRegisteredSemantic.tasks[0].entity.canonicalCandidate, null);
+  const selectedMultiSemantic = sourceBoundSemantic(task({
+    taskId: "selected-multi-registered-faq", type: "price", category: "policy", rawText: "fee", sourceText: multiRegisteredSource, canonicalCandidate: "pool",
+    requestedOutputs: ["price"], dependsOnStayContext: true,
+    stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }
+  }), { message: multiRegisteredSource, catalogOverride: multiRegisteredCatalog });
+  assert.equal(selectedMultiSemantic.tasks[0].type, "price", "a Planner candidate must not collapse a multi-FAQ source into one subject");
+
+  const multiSiblingPrice = task({ taskId: "multi-sibling-price", type: "price", category: "policy", rawText: "fee", sourceText: multiRegisteredSource, requestedOutputs: ["price"], dependsOnStayContext: true, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null } });
+  const multiSiblingPool = task({ taskId: "multi-sibling-pool", type: "property_fact", category: "amenity", rawText: "pool", sourceText: "pool fee", canonicalCandidate: "pool" });
+  multiSiblingPool.candidateIndex = 1;
+  const multiSiblingPlan = plan([multiSiblingPrice, multiSiblingPool]);
+  multiSiblingPlan.contextRelationCandidates = [
+    { candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "multi-sibling", messageRef: "", startOffset: 0, endOffset: multiRegisteredSource.length, quote: multiRegisteredSource }] },
+    { candidateIndex: 1, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "multi-sibling", messageRef: "", startOffset: 0, endOffset: "pool fee".length, quote: "pool fee" }] }
+  ];
+  const multiSiblingSemantic = applyPlannerSemanticContract(multiSiblingPlan, { catalog: multiRegisteredCatalog, sourceEvents: [{ eventId: "multi-sibling", messageText: multiRegisteredSource }] });
+  assert.equal(multiSiblingSemantic.tasks.find((item) => item.taskId === "multi-sibling-price").type, "price", "one sibling must not collapse the remaining multi-FAQ source into another subject");
+  assert.equal(multiSiblingSemantic.tasks.find((item) => item.taskId === "multi-sibling-pool").entity.canonicalCandidate, "pool");
+
+
   const sourceBoundTimeFact = sourceBoundSemantic(task({
     taskId: "source-bound-hours",
     type: "availability",

@@ -182,6 +182,46 @@ function normalizedSourceBoundInventoryFeatureTaskShape(task, fallbackStayCandid
   return normalized;
 }
 
+
+function registeredFaqCapabilityTask(task, catalog, verifiedSourceText = "", siblingFormalIds = new Set()) {
+  if (!task || !task.entity || !catalog
+    || !["price", "total_price"].includes(task.type)
+    || ["room", "bundle", "other"].includes(task.entity.category)
+    || task.dependsOnStayContext !== true
+    || !(task.requestedOutputs || []).some((output) => ["price", "total_price"].includes(output))) return null;
+  const sourceText = String(task.sourceText || "").trim();
+  const verifiedSource = normalizedText(verifiedSourceText);
+  if (!sourceText || !verifiedSource || verifiedSource !== normalizedText(sourceText)) return null;
+  const candidates = mentionedPropertyFacts(catalog, sourceText).filter(({ entity }) => {
+    const definition = entity && getCapabilityDefinition(entity.canonicalId);
+    return entity && entity.sourceKind === "faq" && definition && definition.resolverId === "property_catalog"
+      && definition.stayDependency === false
+      && definition.riskLevel === "low"
+      && definition.responseMode === "answer";
+  });
+  if (candidates.length !== 1) return null;
+  const { entity: resolved, mention } = candidates[0];
+  const candidateId = String(task.entity.canonicalCandidate || "").trim();
+  if (candidateId && candidateId !== resolved.canonicalId || siblingFormalIds.has(resolved.canonicalId)) return null;
+  const definition = getCapabilityDefinition(resolved.canonicalId);
+  const type = ["property_fact", "amenity", "policy"].find((candidateType) => definition.acceptedCandidateTypes.includes(candidateType)
+    && definition.acceptedEntityCategories.includes(resolved.category));
+  if (!type) return null;
+  return {
+    ...task,
+    type,
+    detailIntent: "general",
+    requestedOutputs: ["answer"],
+    dependsOnStayContext: false,
+    stayCandidate: null,
+    entity: {
+      ...task.entity,
+      category: resolved.category,
+      rawText: mention,
+      canonicalCandidate: resolved.canonicalId
+    }
+  };
+}
 function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, verifiedSourceText = "") {
   const entity = task && task.entity;
   if (!catalog || !entity || ["booking_request", "human_help", "high_risk"].includes(task.type)) return null;
@@ -813,6 +853,16 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
       task = sourceBoundFeatureTask;
       entity = task.entity;
       repairedTasks.push({ taskId: task.taskId, index, reason: sourceBoundFeatureReason });
+    }
+
+    const siblingFormalIds = new Set([...formalPropertyIdsByCandidate.entries()]
+      .filter(([candidateIndex, formalId]) => candidateIndex !== task.candidateIndex && formalId)
+      .map(([, formalId]) => formalId));
+    const registeredFaqTask = registeredFaqCapabilityTask(task, catalog, verifiedSourceText, siblingFormalIds);
+    if (registeredFaqTask) {
+      task = registeredFaqTask;
+      entity = task.entity;
+      repairedTasks.push({ taskId: task.taskId, index, reason: "registered_faq_capability_grounding" });
     }
 
     const candidateFormalId = task.entity && task.entity.canonicalCandidate;

@@ -166,6 +166,37 @@ function assertCatalogGroundingContracts() {
   assert.equal(priceGrounded.tasks[0].entity.category, "other");
 }
 
+
+function assertCanonicalLodgingScopeContracts() {
+  const catalog = buildPropertyCatalog({
+    propertyId: "p",
+    timezone: "Asia/Taipei",
+    rooms: [
+      { id: "alpha-room", name: "Alpha room", type: "double", capacity: 2, enabled: true },
+      { id: "beta-room", name: "Beta room", type: "double", capacity: 2, enabled: true }
+    ],
+    commonAnswers: {},
+    semanticCatalog: { aliases: { "alpha-room": ["Alpha room"], "beta-room": ["Beta room"] } }
+  });
+  const canonicalize = (entity) => canonicalizeExecutionItem({
+    item: {
+      candidateIndex: 0,
+      requestCycleId: "cycle",
+      task: { ...plannerTask({ taskId: "scope", sourceText: "Alpha room", type: "availability", ...entity }), requestedOutputs: ["availability"], dependsOnStayContext: true, stayCandidate: stay() },
+      transition: { approvedProduct: { productType: "any" } }
+    },
+    relation: null,
+    contextSnapshot: { cycles: [] },
+    catalog,
+    guestMessage: "Alpha room",
+    eventTimestamp: EVENT_TIMESTAMP
+  }).canonicalRequest;
+  const resolved = canonicalize({ category: "room", rawText: "Alpha room", canonicalCandidate: "alpha-room" });
+  assert.deepEqual(resolved.lodgingProduct, { productType: "room_type", productId: "alpha-room", roomTypeId: "alpha-room", bundleId: null }, "Canonical must preserve a uniquely resolved lodging scope from the same task");
+  const ambiguous = canonicalize({ category: "room", rawText: "double", canonicalCandidate: null });
+  assert.deepEqual(ambiguous.lodgingProduct, { productType: "any", productId: null, roomTypeId: null, bundleId: null }, "Canonical must not invent one lodging scope from an ambiguous candidate");
+}
 assertTemporalContracts();
 assertCatalogGroundingContracts();
-console.log(JSON.stringify({ suite: "common-root-contract-regression", passCount: 9, failCount: 0 }));
+assertCanonicalLodgingScopeContracts();
+console.log(JSON.stringify({ suite: "common-root-contract-regression", passCount: 11, failCount: 0 }));

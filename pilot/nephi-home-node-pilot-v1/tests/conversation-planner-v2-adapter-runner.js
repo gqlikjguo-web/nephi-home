@@ -6,6 +6,7 @@ const { runtimeConfig } = require("../config/runtime");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { validatePlannerOutput, applyPlannerSemanticContract } = require("../lib/conversation-engine-v2/planner-schema");
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
+const { canonicalizeExecutionItem } = require("../lib/conversation-engine-v2/canonicalizer");
 const OPAQUE_REPAIR_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const output = { schemaVersion: 2, discourse: { relation: "new_request", confidence: 1 }, stateOperations: [], stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, tasks: [{ taskId: "1", type: "property_fact", sourceText: "你好", requestedOutputs: ["greeting"], dependsOnStayContext: false, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 1 }, confidence: 1 }], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "greeting" };
@@ -125,6 +126,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.deepEqual(contradictoryWholeMessageResult.tasks[0], contradictoryWholeMessagePrice.tasks[0], "coverage repair must preserve the lodging-price task despite its contradictory canonical candidate");
   assert.equal(contradictoryWholeMessageResult.tasks.length, 2);
 
+
   const multiFormalText = "Ask the fee for the pool and confirm parking";
   const multiFormalCatalog = buildPropertyCatalog({
     propertyId: "multi-formal-property",
@@ -240,6 +242,13 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(resolvedLodgingDiagnostic.repairLinks[0].kind, "coverage_repair");
   assert.equal(resolvedLodgingDiagnostic.repairLinks[0].taskId, recurringDateTask.taskId);
   assert.match(resolvedLodgingDiagnostic.repairLinks[0].correlationId, OPAQUE_REPAIR_ID);
+  const alternateDateShape = JSON.parse(JSON.stringify(resolvedLodgingPrice));
+  alternateDateShape.tasks[0].stayCandidate.dateExpression.kind = "absolute";
+  let alternateDateCalls = 0;
+  const alternateDatePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((alternateDateCalls += 1) && alternateDateShape) }) }) });
+  const alternateDateResult = await alternateDatePlanner.classify({ currentMessage: alternateDateShape.tasks[0].sourceText, currentMessages: [alternateDateShape.tasks[0].sourceText], sourceEvents: [{ eventId: "resolved-lodging", messageText: alternateDateShape.tasks[0].sourceText }], eventTimestamp: 1, catalog: lodgingCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(alternateDateCalls, 1);
+  assert.equal(alternateDateResult.tasks.some((task) => ["availability", "bundle_availability"].includes(task.type)), true, "verified month-qualified recurring evidence must survive a legal Planner date-kind drift");
   const mixedLodgingMessage = "7\u6708\u9031\u516d301\u50f9\u683c\uff0c\u53e6\u5916302\u660e\u5929\u6709\u7a7a\u55ce";
   const mixedLodgingOutput = JSON.parse(JSON.stringify(resolvedLodgingPrice));
   mixedLodgingOutput.tasks[0] = { ...mixedLodgingOutput.tasks[0], sourceText: "7\u6708\u9031\u516d301\u50f9\u683c", entity: { category: "room", rawText: "301", canonicalCandidate: "room301", confidence: 1 } };
@@ -317,6 +326,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const capacityMessage = "3/6-3/7 \u4eba\u6578\u5927\u69826-8\u4eba";
   const capacityFirst = JSON.parse(JSON.stringify(numberedFirst));
   capacityFirst.tasks[0] = { ...capacityFirst.tasks[0], taskId: "capacity-availability", sourceText: capacityMessage, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 1 }, stayCandidate: { dateExpression: { rawText: "3/6-3/7", kind: "range", anchor: "message_time" }, checkInCandidate: "2026-03-06", checkOutCandidate: "2026-03-07", nightsCandidate: 1, guestCountCandidate: 8 } };
+  capacityFirst.stay = { dateExpression: { rawText: "2099-01-01", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2099-01-01", checkOutCandidate: "2099-01-02", nightsCandidate: 1, guestCountCandidate: 1 };
   capacityFirst.contextRelationCandidates = [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "capacity-coverage", messageRef: "", startOffset: 0, endOffset: capacityMessage.length, quote: capacityMessage }] }];
   const capacityRepair = JSON.parse(JSON.stringify(capacityFirst));
   capacityRepair.tasks[0] = { ...capacityFirst.tasks[0], taskId: "whole-house", type: "bundle_availability", sourceText: "6-8\u4eba", requestedOutputs: ["availability"], entity: { category: "bundle", rawText: "\u5305\u68df", canonicalCandidate: "whole-house", confidence: 1 } };
@@ -327,10 +337,76 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const capacityScopeResult = await capacityScopePlanner.classify({ currentMessage: capacityMessage, currentMessages: [capacityMessage], sourceEvents: [{ eventId: "capacity-coverage", messageText: capacityMessage }], eventTimestamp: 1, catalog: lodgingCatalog, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(capacityScopeCalls, 2, "a guest count above every individual room capacity must preserve the uniquely eligible bundle scope");
   assert.equal(capacityScopeResult.tasks.some((task) => task.entity && task.entity.canonicalCandidate === "whole-house"), true);
+  let capacityFallbackCalls = 0;
+  const capacityFallbackPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((capacityFallbackCalls += 1) && capacityFirst) }) }) });
+  const capacityFallbackResult = await capacityFallbackPlanner.classify({ currentMessage: capacityMessage, currentMessages: [capacityMessage], sourceEvents: [{ eventId: "capacity-coverage", messageText: capacityMessage }], eventTimestamp: 1, catalog: lodgingCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(capacityFallbackCalls, 2, "the bounded provider repair remains limited to one supplement call");
+  assert.equal(capacityFallbackResult.tasks.some((task) => task.type === "bundle_availability" && task.entity && task.entity.canonicalCandidate === "whole-house"), true, "a uniquely catalog-grounded capacity scope must survive an unusable second Planner shape");
+  const capacityFallbackTask = capacityFallbackResult.tasks.find((task) => task.type === "bundle_availability" && task.entity && task.entity.canonicalCandidate === "whole-house");
+  assert.equal(capacityFallbackTask.stayCandidate.checkInCandidate, null, "deterministic inventory coverage must not copy an unrelated top-level stay");
+  assert.match(capacityFallbackTask.taskId, OPAQUE_REPAIR_ID, "deterministic coverage task IDs must be opaque");
+  const capacityFallbackDiagnostic = capacityFallbackResult[Symbol.for("junzan.plannerProviderDiagnostic")];
+  const capacityFallbackLink = capacityFallbackDiagnostic.repairLinks.find((link) => link.taskId === capacityFallbackTask.taskId);
+  assert.match(capacityFallbackLink.correlationId, OPAQUE_REPAIR_ID, "deterministic coverage provenance must directly join to the repaired task");
+  const featureMessage = "double room with bathtub";
+  const featureCatalog = buildPropertyCatalog({
+    propertyId: "feature-coverage-property",
+    timezone: "Asia/Taipei",
+    rooms: [
+      { id: "alpha-room", name: "Alpha double room", type: "double room", capacity: 2, enabled: true },
+      { id: "beta-room", name: "Beta double room", type: "double room", shortFeature: "bathtub", capacity: 2, enabled: true }
+    ],
+    commonAnswers: {},
+    semanticCatalog: { aliases: { "alpha-room": ["Alpha"], "beta-room": ["Beta"] } }
+  });
+  const featureFirst = JSON.parse(JSON.stringify(lodgingPriceOutput));
+  featureFirst.tasks[0] = { ...featureFirst.tasks[0], taskId: "feature-availability", type: "availability", sourceText: featureMessage, requestedOutputs: ["availability"], entity: { category: "room", rawText: "double room", canonicalCandidate: null, confidence: 1 } };
+  featureFirst.contextRelationCandidates[0].evidenceRefs = [{ eventId: "feature-coverage", messageRef: "", startOffset: 0, endOffset: featureMessage.length, quote: featureMessage }];
+  let featureCalls = 0;
+  const featurePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((featureCalls += 1) && featureFirst) }) }) });
+  const featureResult = await featurePlanner.classify({ currentMessage: featureMessage, currentMessages: [featureMessage], sourceEvents: [{ eventId: "feature-coverage", messageText: featureMessage }], eventTimestamp: 1, catalog: featureCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(featureCalls, 2);
+  assert.equal(featureResult.tasks.some((task) => task.taskId === "feature-availability"), true, "the legal availability sibling must survive feature coverage");
+  const featureTask = featureResult.tasks.find((task) => task.type === "property_fact" && task.sourceText === "bathtub");
+  assert.equal(Boolean(featureTask), true, "a catalog-recognized lodging feature must retain its own semantic subject");
+  assert.equal(featureTask.entity.canonicalCandidate, null, "feature coverage must not guess one inventory entity");
+  assert.equal(featureResult.contextRelationCandidates.find((relation) => relation.candidateIndex === featureTask.candidateIndex).evidenceRefs[0].quote, "bathtub");
+  const featureDiagnostic = featureResult[Symbol.for("junzan.plannerProviderDiagnostic")];
+  const featureLink = featureDiagnostic.repairLinks.find((link) => link.taskId === featureTask.taskId);
+  assert.equal(featureLink.kind, "coverage_repair");
+  assert.match(featureLink.correlationId, OPAQUE_REPAIR_ID, "feature provenance must directly join to its canonical evidence task");
+  const semanticFeatureResult = applyPlannerSemanticContract(featureResult, { catalog: featureCatalog });
+  const semanticFeatureTask = semanticFeatureResult.tasks.find((task) => task.taskId === featureTask.taskId);
+  const canonicalFeature = canonicalizeExecutionItem({
+    item: { candidateIndex: semanticFeatureTask.candidateIndex, requestCycleId: semanticFeatureTask.taskId, task: semanticFeatureTask, transition: { approvedProduct: { productType: "any" } } },
+    relation: semanticFeatureResult.contextRelationCandidates.find((candidate) => candidate.candidateIndex === semanticFeatureTask.candidateIndex),
+    contextSnapshot: { cycles: [] }, catalog: featureCatalog, guestMessage: featureMessage, eventTimestamp: 1
+  }).canonicalRequest;
+  assert.equal(canonicalFeature.capability, "property_fact", "feature semantic coverage must remain canonically representable");
+  assert.equal(canonicalFeature.canonicalEntity.category, "room_feature", "Canonical must preserve the trusted semantic category");
+  assert.equal(canonicalFeature.canonicalEntity.canonicalId, "beta-room", "a unique catalog feature mapping is trusted canonical evidence, not an inferred lodging product");
+  assert.equal(canonicalFeature.lodgingProduct.productType, "any", "unresolved feature coverage must remain fail closed for lodging scope");
+  let duplicateFeatureCalls = 0;
+  const duplicateFeaturePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((duplicateFeatureCalls += 1) && featureFirst) }) }) });
+  const duplicateFeatureResult = await duplicateFeaturePlanner.classify({ currentMessage: featureMessage, currentMessages: [featureMessage], sourceEvents: [{ eventId: "feature-old", messageText: featureMessage }, { eventId: "feature-current", messageText: featureMessage }], eventTimestamp: 1, catalog: featureCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(duplicateFeatureCalls, 2);
+  assert.equal(duplicateFeatureResult.tasks.some((item) => item.type === "property_fact" && item.sourceText === "bathtub"), false, "duplicate source events must not authorize feature canonical evidence");
+  assert.equal(duplicateFeatureResult.tasks.some((item) => item.entity && ["alpha-room", "beta-room"].includes(item.entity.canonicalCandidate)), false, "duplicate source events must not authorize inventory canonical evidence");
+
+
   assert.deepEqual(incompleteResult.tasks[0], omittedPool.tasks[0], "an incomplete second attempt must not erase the first valid task");
-  assert.equal(incompleteResult.tasks.some((task) => task.type === "human_help" && task.sourceText.includes("戲水池")), true, "an unrepaired substantive subject must become an explicit scoped handoff task");
-  assert.deepEqual(validatePlannerOutput(incompleteResult).errors, [], "the scoped handoff fallback must remain structurally executable beside preserved tasks");
+  assert.equal(incompleteResult.tasks.filter((task) => task.type === "amenity").map((task) => task.entity && task.entity.canonicalCandidate).includes("pool"), true, "a uniquely catalog-grounded low-risk subject must remain canonically representable after an unusable second Planner shape");
+  assert.deepEqual(validatePlannerOutput(incompleteResult).errors, [], "the deterministic subject fallback must remain structurally executable beside preserved tasks");
   assert.equal(incompleteResult[Symbol.for("junzan.plannerProviderDiagnostic")].coverageRepairFallback, true);
+  let duplicateCoverageCalls = 0;
+  const duplicateCoverageMessage = wholeMessageText;
+  const duplicateCoverageOutput = JSON.parse(JSON.stringify(wholeMessagePrice));
+  duplicateCoverageOutput.contextRelationCandidates[0].evidenceRefs = [{ eventId: "coverage-current", messageRef: "", startOffset: 0, endOffset: duplicateCoverageMessage.length, quote: duplicateCoverageMessage }];
+  const duplicateCoveragePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify((duplicateCoverageCalls += 1) && duplicateCoverageOutput) }) }) });
+  const duplicateCoverageResult = await duplicateCoveragePlanner.classify({ currentMessage: duplicateCoverageMessage, currentMessages: [duplicateCoverageMessage], sourceEvents: [{ eventId: "coverage-old", messageText: duplicateCoverageMessage }, { eventId: "coverage-current", messageText: duplicateCoverageMessage }], eventTimestamp: 1, catalog: wholeMessageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(duplicateCoverageCalls, 2);
+  assert.equal(duplicateCoverageResult.tasks.map((item) => item.entity && item.entity.canonicalCandidate).includes("pool"), false, "duplicate source events must not authorize deterministic formal coverage");
+
 
   const partialMessage = "Ask the lodging price; arrange an unsupported request";
   const partialOutput = JSON.parse(JSON.stringify(omittedPool));
@@ -492,7 +568,9 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     return { ok: true, json: async () => ({ output_text: JSON.stringify(mismatchedEvidenceCalls === 1 ? omittedPool : mismatchedEvidencePool) }) };
   } });
   const mismatchedEvidenceResult = await mismatchedEvidencePlanner.classify({ currentMessage: "想問價格，也想確認有戲水池嗎", currentMessages: ["想問價格，也想確認有戲水池嗎"], sourceEvents: [{ eventId: "coverage", messageText: "想問價格，也想確認有戲水池嗎" }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
-  assert.equal(mismatchedEvidenceResult.tasks[1].type, "human_help", "repair evidence for another clause must not authorize a formal-subject task");
+  assert.equal(mismatchedEvidenceResult.tasks[1].type, "amenity", "provider evidence for another clause must be ignored in favor of independently grounded coverage");
+  assert.equal(mismatchedEvidenceResult.tasks[1].entity.canonicalCandidate, "pool");
+  assert.equal(mismatchedEvidenceResult.contextRelationCandidates[1].evidenceRefs[0].quote, "戲水池", "deterministic coverage must bind the canonical subject to its own exact source span");
   assert.deepEqual(mismatchedEvidenceResult.tasks[0], omittedPool.tasks[0]);
 
   const invalidRelationPool = JSON.parse(JSON.stringify(repairedPool));
@@ -505,7 +583,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   } });
   const invalidRelationInput = { currentMessage: "想問價格，也想確認有戲水池嗎", currentMessages: ["想問價格，也想確認有戲水池嗎"], sourceEvents: [{ eventId: "coverage", messageText: "想問價格，也想確認有戲水池嗎" }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } };
   const invalidRelationResult = await invalidRelationPlanner.classify(invalidRelationInput);
-  assert.equal(invalidRelationResult.tasks[1].type, "human_help", "a repair with an invented cycle must be discarded for a scoped handoff");
+  assert.equal(invalidRelationResult.tasks[1].type, "amenity", "a repair with an invented cycle must be discarded before independent canonical coverage is compiled");
   assert.equal(validateUnderstandingContext(invalidRelationResult, invalidRelationInput.contextSnapshot, { sourceEvents: invalidRelationInput.sourceEvents }).ok, true, "repair fallback must preserve the complete context contract");
 
   const wrongTaskCanonical = JSON.parse(JSON.stringify(omittedPool));
@@ -529,7 +607,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   } });
   const capacityResult = await capacityPlanner.classify(invalidRelationInput);
   assert.equal(capacityResult.tasks.length, 13, "bounded additive merge must retain all preserved tasks and add an executable scoped handoff");
-  assert.equal(capacityResult.tasks[12].type, "human_help");
+  assert.equal(capacityResult.tasks[12].type, "amenity");
   assert.equal(capacityResult.tasks.slice(0, 12).every((taskValue, index) => taskValue.taskId === `price-${index}`), true);
   assert.deepEqual(validatePlannerOutput(capacityResult).errors, []);
 
@@ -563,8 +641,8 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     return { ok: true, json: async () => ({ output_text: JSON.stringify(elevenTaskOutput) }) };
   } });
   const twoSubjectResult = await twoSubjectPlanner.classify(twoSubjectInput);
-  assert.equal(twoSubjectResult.tasks.length, 13, "both missing subjects must become executable scoped handoffs without evicting eleven tasks");
-  assert.equal(twoSubjectResult.tasks.slice(11).every((taskValue) => taskValue.type === "human_help"), true);
+  assert.equal(twoSubjectResult.tasks.length, 13, "both missing subjects must become executable canonical siblings without evicting eleven tasks");
+  assert.deepEqual(new Set(twoSubjectResult.tasks.slice(11).map((taskValue) => taskValue.entity.canonicalCandidate)), new Set(["pool", "parking"]));
   assert.deepEqual(validatePlannerOutput(twoSubjectResult).errors, []);
 
   const blankRawPool = JSON.parse(JSON.stringify(repairedPool));

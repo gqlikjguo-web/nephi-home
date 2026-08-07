@@ -66,7 +66,7 @@ function canonicalEntity(catalog, candidate, taskType) {
   if (resolved && resolved.status === "resolved" && resolved.entity) {
     return {
       status: "resolved",
-      category: resolved.entity.category || candidate.category || "other",
+      category: candidate.category === "room_feature" ? "room_feature" : resolved.entity.category || candidate.category || "other",
       canonicalId: String(resolved.entity.canonicalId),
       canonicalSet: [],
       rawText: String(candidate.rawText || "")
@@ -136,6 +136,22 @@ function confirmedInventory(entity) {
   };
 }
 
+
+function lodgingProductForCanonicalScope(reducerProduct, entity) {
+  const approved = createLodgingProduct(reducerProduct || { productType: "any" });
+  if (approved.productType !== "any") return approved;
+  const inventory = confirmedInventory(entity);
+  if (!inventory) return approved;
+  return createLodgingProduct(inventory.mode === "bundle_only" ? {
+    productType: "bundle",
+    productId: inventory.entityId,
+    bundleId: inventory.entityId
+  } : {
+    productType: "room_type",
+    productId: inventory.entityId,
+    roomTypeId: inventory.entityId
+  });
+}
 function canonicalizeExecutionItem({
   item,
   relation,
@@ -181,7 +197,7 @@ function canonicalizeExecutionItem({
     taskId: plannerTask.taskId,
     capability: definition.capability,
     canonicalEntity: entity,
-    lodgingProduct: createLodgingProduct(reducerProduct || { productType: "any" }),
+    lodgingProduct: lodgingProductForCanonicalScope(reducerProduct, entity),
     detailIntent: plannerTask.detailIntent || "general",
     temporalState,
     stayDependency: definition.stayDependency,

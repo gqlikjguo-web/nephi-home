@@ -2,7 +2,7 @@
 
 const crypto = require("node:crypto");
 const { plannerJsonSchema, validatePlannerOutput } = require("../conversation-engine-v2/planner-schema");
-const { mentionedPropertyFacts, mentionedInventoryEntities, resolveEntity } = require("../conversation-engine-v2/entity-resolver");
+const { mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures, resolveEntity } = require("../conversation-engine-v2/entity-resolver");
 const { getCapabilityDefinition } = require("../conversation-engine-v2/capability-registry");
 const { validateUnderstandingContext, sourceEventMaps, evidenceMatchesSource } = require("../conversation-engine-v2/understanding-validator");
 const RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -395,16 +395,80 @@ function verifiedRepairCandidate(output, input, canonicalId) {
   }
   return null;
 }
+function uniqueCurrentMessageSourceEvent(input) {
+  const currentMessage = String(input && input.currentMessage || "");
+  const matches = (input && Array.isArray(input.sourceEvents) ? input.sourceEvents : []).filter((event) => event
+    && String(event.messageText || "") === currentMessage
+    && (String(event.eventId || "") || String(event.messageRef || "")));
+  return matches.length === 1 ? matches[0] : null;
+}
+
+
+function safeCoverageSubject(firstOutput, input, canonicalId, candidateIndex, taskId) {
+  const item = coverageSubjects(null, input)
+    .find((candidate) => candidate && candidate.entity && candidate.entity.canonicalId === canonicalId);
+  if (!item || !item.entity || !String(item.mention || "")) return null;
+  const sourceEvent = uniqueCurrentMessageSourceEvent(input);
+  if (sourceEvent && !String(sourceEvent.messageText || "").includes(item.mention)) return null;
+  if (!sourceEvent) return null;
+  const inventory = item.kind !== "property_fact";
+  const taskType = inventory
+    ? item.entity.category === "bundle" ? "bundle_availability" : "availability"
+    : item.entity.category === "amenity" ? "amenity" : "property_fact";
+  const definition = getCapabilityDefinition(taskType);
+  if (!definition || definition.riskLevel !== "low" || definition.responseMode !== "answer"
+    || !["property_catalog", "availability_resolver"].includes(definition.resolverId)
+    || !definition.acceptedCandidateTypes.includes(taskType)
+    || !definition.acceptedEntityCategories.includes(item.entity.category)) return null;
+  const messageText = String(sourceEvent.messageText || "");
+  const startOffset = messageText.indexOf(item.mention);
+  const sourceBoundStayTasks = inventory && firstOutput && Array.isArray(firstOutput.tasks)
+    ? firstOutput.tasks.filter((task) => task && task.stayCandidate
+      && String(task.sourceText || "").trim() === String(item.mention || "").trim()
+      && relationForTask(firstOutput, input, task))
+    : [];
+  const emptyStay = { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null };
+  const stayCandidate = inventory ? JSON.parse(JSON.stringify(sourceBoundStayTasks.length === 1 ? sourceBoundStayTasks[0].stayCandidate : emptyStay)) : null;
+  return {
+    canonicalCoverage: true,
+    task: {
+      candidateIndex,
+      taskId,
+      type: taskType,
+      sourceText: item.mention,
+      detailIntent: "general",
+      requestedOutputs: [inventory ? "availability" : "answer"],
+      eligibilityEvidence: { kind: "none", sourceText: "" },
+      dependsOnStayContext: inventory,
+      entity: {
+        category: item.entity.category,
+        rawText: item.mention,
+        canonicalCandidate: canonicalId,
+        confidence: 1
+      },
+      stayCandidate,
+      confidence: 1
+    },
+    relation: {
+      candidateIndex,
+      kind: "new_request",
+      candidateRequestCycleRefs: [],
+      evidenceRefs: [{
+        eventId: String(sourceEvent.eventId || ""),
+        messageRef: String(sourceEvent.messageRef || ""),
+        startOffset,
+        endOffset: startOffset + item.mention.length,
+        quote: item.mention
+      }]
+    }
+  };
+}
 
 function safeCoverageHandoff(input, canonicalId, candidateIndex, taskId) {
   const mention = coverageSubjects(null, input).find((item) => item && item.entity && item.entity.canonicalId === canonicalId);
   if (!mention || !String(mention.mention || "")) return null;
-  const sourceEvent = (input.sourceEvents || []).find((event) => {
-    const messageText = String(event && event.messageText || "");
-    return messageText === String(input.currentMessage || "")
-      && messageText.includes(mention.mention)
-      && (String(event.eventId || "") || String(event.messageRef || ""));
-  });
+  const sourceEvent = uniqueCurrentMessageSourceEvent(input);
+  if (sourceEvent && !String(sourceEvent.messageText || "").includes(mention.mention)) return null;
   if (!sourceEvent) return null;
   const messageText = String(sourceEvent.messageText || "");
   const startOffset = messageText.indexOf(mention.mention);
@@ -717,7 +781,6 @@ function broadDateClarificationAddition(firstOutput, input, tasks, contextRelati
   const stay = sourceTask && sourceTask.stayCandidate;
   const eligible = ["price", "total_price"].includes(sourceTask && sourceTask.type)
     && sourceTask.entity && ["room", "bundle"].includes(sourceTask.entity.category)
-    && stay && stay.dateExpression && ["weekday", "weekend"].includes(stay.dateExpression.kind)
     && !stay.checkInCandidate && !stay.checkOutCandidate
     && monthQualifiedRecurringDate(stay.dateExpression.rawText);
   if (!eligible) return null;
@@ -740,6 +803,74 @@ function broadDateClarificationAddition(firstOutput, input, tasks, contextRelati
   return validMergedOutput(tentative, input) ? { task, relation: candidateRelation } : null;
 }
 
+
+function ensureInventoryFeatureCoverage(output, input) {
+  if (!output || !Array.isArray(output.tasks) || !Array.isArray(output.contextRelationCandidates)) return output;
+  const currentMessage = String(input && input.currentMessage || "");
+  const sourceEvent = uniqueCurrentMessageSourceEvent(input);
+  if (!sourceEvent) return output;
+  const tasks = output.tasks.map((task) => ({ ...task }));
+  const contextRelationCandidates = output.contextRelationCandidates.map((relation) => ({ ...relation }));
+  const usedTaskIds = new Set(tasks.map((task) => String(task && task.taskId || "")).filter(Boolean));
+  let nextCandidateIndex = tasks.reduce((max, task) => Math.max(max, Number.isInteger(task && task.candidateIndex) ? task.candidateIndex : -1), -1) + 1;
+  const addedTaskIds = [];
+  for (const feature of mentionedInventoryFeatures(input && input.catalog, currentMessage)) {
+    if (Math.max(tasks.length, contextRelationCandidates.length) >= MAX_MERGED_TASKS) break;
+    const featureText = String(feature && feature.feature || "");
+    const startOffset = currentMessage.toLocaleLowerCase().indexOf(featureText.toLocaleLowerCase());
+    if (!featureText || startOffset < 0) continue;
+    const sourceText = currentMessage.slice(startOffset, startOffset + featureText.length);
+    const represented = tasks.some((task) => ["amenity", "policy", "property_fact"].includes(task && task.type)
+      && String(task && task.sourceText || "").toLocaleLowerCase().includes(sourceText.toLocaleLowerCase()));
+    if (represented) continue;
+    const task = {
+      candidateIndex: nextCandidateIndex,
+      taskId: uniqueTaskId(crypto.randomUUID(), usedTaskIds),
+      type: "property_fact",
+      sourceText,
+      detailIntent: "general",
+      requestedOutputs: ["answer"],
+      eligibilityEvidence: { kind: "none", sourceText: "" },
+      dependsOnStayContext: false,
+      entity: {
+        category: "room_feature",
+        rawText: sourceText,
+        canonicalCandidate: null,
+        confidence: 1
+      },
+      stayCandidate: null,
+      confidence: 1
+    };
+    const relation = {
+      candidateIndex: nextCandidateIndex,
+      kind: "new_request",
+      candidateRequestCycleRefs: [],
+      evidenceRefs: [{
+        eventId: String(sourceEvent.eventId || ""),
+        messageRef: String(sourceEvent.messageRef || ""),
+        startOffset,
+        endOffset: startOffset + sourceText.length,
+        quote: sourceText
+      }]
+    };
+    const tentative = { ...output, tasks: [...tasks, task], contextRelationCandidates: [...contextRelationCandidates, relation] };
+    if (!validMergedOutput(tentative, input)) continue;
+    tasks.push(task);
+    contextRelationCandidates.push(relation);
+    addedTaskIds.push(task.taskId);
+    nextCandidateIndex += 1;
+  }
+  if (!addedTaskIds.length) return output;
+  const expanded = { ...output, tasks, contextRelationCandidates };
+  const taskCollectionDiagnostic = output[TASK_COLLECTION_DIAGNOSTIC];
+  if (taskCollectionDiagnostic) Object.defineProperty(expanded, TASK_COLLECTION_DIAGNOSTIC, { enumerable: false, value: taskCollectionDiagnostic });
+  const existingTaskIds = Array.isArray(output[ADDITIVE_REPAIR_DIAGNOSTIC]) ? output[ADDITIVE_REPAIR_DIAGNOSTIC] : [];
+  Object.defineProperty(expanded, ADDITIVE_REPAIR_DIAGNOSTIC, {
+    enumerable: false,
+    value: Object.freeze([...new Set([...existingTaskIds, ...addedTaskIds])])
+  });
+  return expanded;
+}
 function ensureBroadDateClarification(output, input) {
   if (!output || !Array.isArray(output.tasks) || !Array.isArray(output.contextRelationCandidates)) return output;
   const tasks = output.tasks.map((task) => ({ ...task }));
@@ -786,21 +917,24 @@ function mergeCoverageRepair(firstOutput, repairOutput, input, missingCanonicalI
   const aggregateCanonicalIds = missingCanonicalIds.slice(individualLimit);
   for (const canonicalId of individualCanonicalIds) {
     const verified = verifiedRepairCandidate(repairOutput, input, canonicalId);
-    if (!verified) fallbackUsed = true;
-    let addition = verified || safeCoverageHandoff(
-      input,
-      canonicalId,
-      nextCandidateIndex,
-      uniqueTaskId(`coverage-handoff-${canonicalId}`, usedTaskIds)
-    );
+    let addition = verified;
+    let canonicalCoverage = Boolean(verified);
+    if (!addition) {
+      fallbackUsed = true;
+      addition = safeCoverageSubject(firstOutput, input, canonicalId, nextCandidateIndex, uniqueTaskId(crypto.randomUUID(), usedTaskIds));
+      canonicalCoverage = Boolean(addition && addition.canonicalCoverage);
+    }
+    if (!addition) addition = safeCoverageHandoff(input, canonicalId, nextCandidateIndex, uniqueTaskId(crypto.randomUUID(), usedTaskIds));
     if (!addition) continue;
     let taskId = verified ? uniqueTaskId(addition.task.taskId, usedTaskIds) : addition.task.taskId;
     let candidateTask = { ...addition.task, candidateIndex: nextCandidateIndex, taskId };
     let candidateRelation = { ...addition.relation, candidateIndex: nextCandidateIndex };
     let tentative = { ...firstOutput, tasks: [...tasks, candidateTask], contextRelationCandidates: [...contextRelationCandidates, candidateRelation] };
-    if (!validMergedOutput(tentative, input) && verified) {
+    if (!validMergedOutput(tentative, input)) {
       fallbackUsed = true;
-      addition = safeCoverageHandoff(input, canonicalId, nextCandidateIndex, uniqueTaskId(`coverage-handoff-${canonicalId}`, usedTaskIds));
+      addition = safeCoverageSubject(firstOutput, input, canonicalId, nextCandidateIndex, uniqueTaskId(crypto.randomUUID(), usedTaskIds));
+      canonicalCoverage = Boolean(addition && addition.canonicalCoverage);
+      if (!addition) addition = safeCoverageHandoff(input, canonicalId, nextCandidateIndex, uniqueTaskId(crypto.randomUUID(), usedTaskIds));
       if (!addition) continue;
       taskId = addition.task.taskId;
       candidateTask = { ...addition.task, candidateIndex: nextCandidateIndex, taskId };
@@ -811,7 +945,7 @@ function mergeCoverageRepair(firstOutput, repairOutput, input, missingCanonicalI
     tasks.push(candidateTask);
     contextRelationCandidates.push(candidateRelation);
     addedTaskIds.push(String(candidateTask.taskId || ""));
-    if (verified && addition === verified) repairedCount += 1;
+    if (canonicalCoverage) repairedCount += 1;
     nextCandidateIndex += 1;
   }
   if (aggregateCanonicalIds.length) {
@@ -1110,7 +1244,7 @@ class TestOnlyOpenAiConversationPlanner {
       try {
         const result = await this.requestOnce(input, attempt, Math.min(this.timeoutMs, remainingMs));
         providerAttempts.push(result.attemptDiagnostic);
-        const firstOutput = ensureBroadDateClarification(sanitizePlannerTaskCollection(result.output, input), input);
+        const firstOutput = ensureInventoryFeatureCoverage(ensureBroadDateClarification(sanitizePlannerTaskCollection(result.output, input), input), input);
         const missingCanonicalIds = missingFormalSubjectIds(firstOutput, input);
         if (missingCanonicalIds.length && attempt === 1) {
           const repairInput = {
