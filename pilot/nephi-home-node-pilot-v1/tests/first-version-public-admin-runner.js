@@ -29,6 +29,14 @@ function property(propertyId, name, lineUrl) {
   };
 }
 
+const SEED_BASE_NOW = "2035-04-21T00:00:01.000Z";
+const seedNow = () => new Date(SEED_BASE_NOW);
+function seedDate(offsetDays) {
+  const date = seedNow();
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
+}
+
 (async () => {
   const guestScript = fs.readFileSync(path.join(__dirname, "../public/assets/guest.js"), "utf8");
   const adminScript = fs.readFileSync(path.join(__dirname, "../public/assets/admin.js"), "utf8");
@@ -53,6 +61,10 @@ function property(propertyId, name, lineUrl) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-public-admin-"));
   const seedFile = path.join(temp, "seed.json");
   const dataFile = path.join(temp, "data.json");
+  const firstMondayOffset = (8 - seedNow().getUTCDay()) % 7;
+  const checkInDate = seedDate(firstMondayOffset);
+  const checkOutDate = seedDate(firstMondayOffset + 1);
+  const multiNightCheckOutDate = seedDate(firstMondayOffset + 2);
   fs.writeFileSync(seedFile, JSON.stringify({
     testOnly: true,
     homestays: [{
@@ -72,7 +84,7 @@ function property(propertyId, name, lineUrl) {
       name: "另一間旅宿",
       lineUrl: "https://lin.ee/otherOfficial",
       rooms: [{ id: "other", name: "另一間房", type: "other", capacity: 2, enabled: true, mondayThursdayPrice: 1000 }],
-      availability: { "2026-08-06": { other: "available" } }
+      availability: { [checkInDate]: { other: "available" } }
     }, {
       customerId: "bundle_home",
       name: "包棟測試旅宿",
@@ -83,7 +95,7 @@ function property(propertyId, name, lineUrl) {
     }],
     messageLogs: { nephi_home: [], other_home: [] }
   }));
-  const app = createApp({ providers: createJsonProviders({ dataFile, seedFile }), adminAuthRequired: false });
+  const app = createApp({ providers: createJsonProviders({ dataFile, seedFile, now: seedNow }), adminAuthRequired: false });
   const running = await app.start(0, "127.0.0.1");
   try {
     const metadata = await json(`${running.url}/api/public/property?slug=nephihome`);
@@ -106,26 +118,26 @@ function property(propertyId, name, lineUrl) {
     assert.equal(invalid.response.status, 404);
     assert.equal(invalid.body.error.message, "此查房連結無效，請重新由民宿官方連結進入。");
 
-    app.providers.customerSettings.listRoomPriceOverrides = () => [{ roomId: "room301", date: "2026-08-06", price: 2500, currency: "TWD" }];
-    const availability = await json(`${running.url}/api/public/availability?slug=nephihome&checkIn=2026-08-06&checkOut=2026-08-07&guests=2`);
+    app.providers.customerSettings.listRoomPriceOverrides = () => [{ roomId: "room301", date: checkInDate, price: 2500, currency: "TWD" }];
+    const availability = await json(`${running.url}/api/public/availability?slug=nephihome&checkIn=${checkInDate}&checkOut=${checkOutDate}&guests=2`);
     assert.equal(availability.response.status, 200);
     assert.equal(availability.body.data.propertyName, "尼腓的家");
     assert.equal(Object.hasOwn(availability.body.data, "propertyId"), false, "public availability must not expose internal propertyId");
     assert.deepEqual(availability.body.data.rooms.map((item) => item.id), ["room301", "room302", "room401", "room402"], "public availability must use the slug-resolved property only");
     assert.equal(availability.body.data.rooms.find((item) => item.id === "room301").price, 2500, "a date-specific price must override the base weekday price");
-    assert.deepEqual(availability.body.data.rooms.find((item) => item.id === "room301").nightlyPrices, [{ date: "2026-08-06", price: 2500 }], "public result must expose the formal nightly price used for the stay");
+    assert.deepEqual(availability.body.data.rooms.find((item) => item.id === "room301").nightlyPrices, [{ date: checkInDate, price: 2500 }], "public result must expose the formal nightly price used for the stay");
     assert.equal(availability.body.data.rooms.find((item) => item.id === "room302").price, 3000, "the matching weekday base price must be used when there is no date override");
     assert.equal(availability.body.data.rooms.find((item) => item.id === "room302").name, "家庭房", "public results must retain the formal property room name");
-    assert.deepEqual(availability.body.data.rooms.find((item) => item.id === "room301"), { id: "room301", displayName: "陽光客房", name: "陽光客房", roomCode: "R-A", capacity: 2, highlights: ["採光佳", "安靜"], price: 2500, nightlyPrices: [{ date: "2026-08-06", price: 2500 }], currency: "TWD" }, "public cards must use the complete formal room presentation data");
+    assert.deepEqual(availability.body.data.rooms.find((item) => item.id === "room301"), { id: "room301", displayName: "陽光客房", name: "陽光客房", roomCode: "R-A", capacity: 2, highlights: ["採光佳", "安靜"], price: 2500, nightlyPrices: [{ date: checkInDate, price: 2500 }], currency: "TWD" }, "public cards must use the complete formal room presentation data");
     assert.equal(availability.body.data.lineUrl, "https://lin.ee/nephiOfficial", "public results must retain the current property's validated LINE URL");
     assert.equal(JSON.stringify(availability.body).includes("note"), false, "admin notes must never be public data");
 
-    app.service.setDay({ customerId: "nephi_home", date: "2026-08-07", roomId: "room301", status: "closed" });
-    const multiNight = await json(`${running.url}/api/public/availability?slug=nephihome&checkIn=2026-08-06&checkOut=2026-08-08&guests=2`);
+    app.service.setDay({ customerId: "nephi_home", date: checkOutDate, roomId: "room301", status: "closed" });
+    const multiNight = await json(`${running.url}/api/public/availability?slug=nephihome&checkIn=${checkInDate}&checkOut=${multiNightCheckOutDate}&guests=2`);
     assert.equal(multiNight.response.status, 200);
     assert.equal(multiNight.body.data.rooms.some((item) => item.id === "room301"), false, "a room closed on any night must not be shown for the full stay");
-    assert.equal(multiNight.body.data.checkInDate, "2026-08-06");
-    assert.equal(multiNight.body.data.checkOutDate, "2026-08-08");
+    assert.equal(multiNight.body.data.checkInDate, checkInDate);
+    assert.equal(multiNight.body.data.checkOutDate, multiNightCheckOutDate);
 
     const roomUpdate = await fetch(`${running.url}/api/room-pricing`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", rooms: [{ roomTypeId: "room301", roomCode: "A-01", displayName: "更新客房", capacity: 3, highlights: [" 陽台 ", "陽台", "浴缸"], enabled: true, mondayThursdayPrice: 2100, fridayPrice: 2300, saturdayHolidayPrice: 2900, sundayPrice: 2200 }] }) });
     assert.equal(roomUpdate.status, 200, "admin must save complete room data through the existing property-scoped route");
@@ -152,8 +164,8 @@ function property(propertyId, name, lineUrl) {
   const alpha = property("alpha_home", "Alpha", "https://lin.ee/alpha");
   const beta = property("beta_home", "Beta", "https://lin.ee/beta");
   const rows = new Map([
-    ["alpha_home", { date: "2026-08-06", double: "available", family: "available", bundle: "available" }],
-    ["beta_home", { date: "2026-08-06", double: "available", family: "available", bundle: "closed" }]
+    ["alpha_home", { date: checkInDate, double: "available", family: "available", bundle: "available" }],
+    ["beta_home", { date: checkInDate, double: "available", family: "available", bundle: "closed" }]
   ]);
   const service = createMvpService({
     customerSettings: { getProperty: (id) => id === "alpha_home" ? alpha : id === "beta_home" ? beta : null, listProperties: () => [alpha, beta] },
@@ -164,16 +176,16 @@ function property(propertyId, name, lineUrl) {
     },
     persistence: {}
   });
-  const search = () => service.searchAvailability({ customerId: "alpha_home", checkIn: "2026-08-06", checkOut: "2026-08-07", queryMode: "bundle_only" });
+  const search = () => service.searchAvailability({ customerId: "alpha_home", checkIn: checkInDate, checkOut: checkOutDate, queryMode: "bundle_only" });
   assert.deepEqual(search().rooms.map((room) => room.id), ["bundle"], "manual bundle availability plus all member rooms must make the bundle available");
-  service.setDay({ customerId: "alpha_home", date: "2026-08-06", roomId: "bundle", status: "closed" });
+  service.setDay({ customerId: "alpha_home", date: checkInDate, roomId: "bundle", status: "closed" });
   assert.equal(rows.get("alpha_home").double, "available", "closing a bundle must not close member rooms");
   assert.deepEqual(search().rooms.map((room) => room.id), [], "manual bundle close must hide only that bundle");
-  service.setDay({ customerId: "alpha_home", date: "2026-08-06", roomId: "bundle", status: "available" });
-  service.setDay({ customerId: "alpha_home", date: "2026-08-06", roomId: "double", status: "closed" });
+  service.setDay({ customerId: "alpha_home", date: checkInDate, roomId: "bundle", status: "available" });
+  service.setDay({ customerId: "alpha_home", date: checkInDate, roomId: "double", status: "closed" });
   assert.deepEqual(search().rooms.map((room) => room.id), [], "a closed member room must make the bundle unavailable");
-  service.setDay({ customerId: "alpha_home", date: "2026-08-06", roomId: "double", status: "available" });
+  service.setDay({ customerId: "alpha_home", date: checkInDate, roomId: "double", status: "available" });
   assert.deepEqual(search().rooms.map((room) => room.id), ["bundle"], "a manually-open bundle must recover once every member is available");
-  assert.equal(service.searchAvailability({ customerId: "beta_home", checkIn: "2026-08-06", checkOut: "2026-08-07", queryMode: "bundle_only" }).rooms.length, 0, "bundle availability must remain property-scoped");
+  assert.equal(service.searchAvailability({ customerId: "beta_home", checkIn: checkInDate, checkOut: checkOutDate, queryMode: "bundle_only" }).rooms.length, 0, "bundle availability must remain property-scoped");
   console.log("first version public admin: PASS");
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
