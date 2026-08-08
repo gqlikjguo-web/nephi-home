@@ -8,6 +8,8 @@ const MAX_STRING_LENGTH = 1000;
 const TARGET_HASH_PATTERN = /^[a-f0-9]{64}$/;
 const OPAQUE_REPAIR_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_REPAIR_KINDS = new Set(["coverage_repair", "task_collection_repair", "semantic_repair"]);
+const SAFE_SEMANTIC_LEDGER_BOUNDARY_STAGES = new Set(["raw_parsed_output", "compile_before", "compile_after", "validate"]);
+const SAFE_SEMANTIC_LEDGER_FAILURE_CODES = new Set(["candidate_object", "candidate_id", "candidate_count_limit", "semantic_kind", "capability", "canonical_identity", "property_catalog_identity", "identity_alignment", "evidence_refs", "lodging_scope", "lodging_scope_conflict", "temporal_candidate"]);
 const TRACE_STAGES = new Set([
   "state_before",
   "planner",
@@ -95,6 +97,18 @@ function safeRepairProvenance(value) {
   });
 }
 
+function safeSemanticLedgerBoundaries(value) {
+  return (Array.isArray(value) ? value : []).slice(0, 4).flatMap((item) => {
+    const stage = String(item && item.stage || "");
+    if (!SAFE_SEMANTIC_LEDGER_BOUNDARY_STAGES.has(stage)) return [];
+    const count = (field) => Number.isInteger(item && item[field]) ? Math.max(0, Math.min(item[field], 24)) : 0;
+    const failureCodes = [...new Set((Array.isArray(item && item.failureCodes) ? item.failureCodes : [])
+      .map(String)
+      .filter((code) => SAFE_SEMANTIC_LEDGER_FAILURE_CODES.has(code)))].sort();
+    return [{ stage, candidateCount: count("candidateCount"), validCandidateCount: count("validCandidateCount"), invalidCandidateCount: count("invalidCandidateCount"), ownershipCount: count("ownershipCount"), failureCodes }];
+  });
+}
+
 function taskSummary(task) {
   return select(task || {}, [
     "taskId", "taskType", "type", "capability", "category", "productType", "productId", "roomType",
@@ -124,6 +138,7 @@ function diagnosticProjection(stage, entry) {
     return {
       ...select(entry, ["parserSucceeded", "taskCount", "discourse", "shouldIgnore", "failure", "failureCode", "providerAttemptCount", "firstAttemptErrorCategory", "finalErrorCategory", "retryPerformed", "retrySucceeded", "taskCollectionRepairPerformed", "preservedTaskCount", "fallbackTaskCount", "coverageRepairPerformed", "coverageRepairSucceeded", "coverageRepairFallback"]),
       repairProvenance: safeRepairProvenance(entry && entry.repairProvenance),
+      semanticLedgerBoundaries: safeSemanticLedgerBoundaries(entry && entry.semanticLedgerBoundaries),
       missingInformation: safePlannerMissingInformation(entry && entry.missingInformation),
       tasks: Array.isArray(entry.tasks) ? entry.tasks.map(taskSummary) : []
     };

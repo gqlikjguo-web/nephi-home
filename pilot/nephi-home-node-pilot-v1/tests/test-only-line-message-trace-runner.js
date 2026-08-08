@@ -103,6 +103,10 @@ function recordsOf(persistence) {
       canonicalId: "room401",
       sourceText: TARGET_MESSAGE
     }],
+    semanticLedgerBoundaries: [
+      { stage: "raw_parsed_output", candidateCount: 1, validCandidateCount: 1, invalidCandidateCount: 0, ownershipCount: 0, failureCodes: [], sourceText: TARGET_MESSAGE },
+      { stage: "compile_after", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs", "unapproved_code"] }
+    ],
     tasks: [{
       taskId: "availability-1",
       type: "availability",
@@ -200,6 +204,10 @@ function recordsOf(persistence) {
   assert.deepEqual(record.stages.state_before.tasks[0], { taskId: "availability-1", taskType: "availability", productType: "room", productId: "room401", checkIn: "2026-08-06", checkOut: "2026-08-07", missingFields: [], status: "pending" });
   assert.equal(record.stages.planner.parserSucceeded, true);
   assert.deepEqual(record.stages.planner.repairProvenance, [{ kind: "coverage_repair", correlationId: "12345678-1234-4123-8123-123456789abc" }]);
+  assert.deepEqual(record.stages.planner.semanticLedgerBoundaries, [
+    { stage: "raw_parsed_output", candidateCount: 1, validCandidateCount: 1, invalidCandidateCount: 0, ownershipCount: 0, failureCodes: [] },
+    { stage: "compile_after", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs"] }
+  ]);
   assert.equal(record.stages.canonical_request.items[0].repairCorrelationId, "12345678-1234-4123-8123-123456789abc", "persisted safe trace must retain the opaque direct join");
   assert.equal(JSON.stringify(record.stages.planner.repairProvenance).includes("availability-1"), false, "safe provenance must not project semantic Planner task IDs");
   assert.equal(JSON.stringify(record.stages.planner.repairProvenance).includes("room401"), false, "safe provenance must not project inventory IDs");
