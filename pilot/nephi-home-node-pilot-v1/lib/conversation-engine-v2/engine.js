@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 
 const { validatePlannerOutput, applyPlannerSemanticContract, normalizeEligibilityEvidence, normalizeIgnoredAcknowledgementOutput, normalizeDuplicateTaskIds, discardLegacyPlannerStateControls } = require("./planner-schema");
+const { compileSemanticCandidates } = require("./semantic-candidate-contract");
 const { normalizeDetailIntent } = require("./detail-intent");
 const { buildPropertyCatalog } = require("./property-catalog");
 const {
@@ -460,6 +461,9 @@ class ConversationEngineV2 {
       this.traceContexts.delete(traceId);
       return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
+    const semanticInputTasks = plannerOutput.tasks.map(plannerTaskTrace);
+    plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog, sourceEvents });
+    plannerOutput = compileSemanticCandidates(plannerOutput, { catalog, sourceEvents }, { synthesizeMissingCandidates: true });
     const structuralValidation = validatePlannerOutput(plannerOutput);
     if (!structuralValidation.ok) {
       this.trace(traceId, "validation", { ...plannerValidationTrace(plannerOutput, structuralValidation), errorCategory: "local_contract_failure" });
@@ -472,8 +476,6 @@ class ConversationEngineV2 {
       this.traceContexts.delete(traceId);
       return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
-    const semanticInputTasks = plannerOutput.tasks.map(plannerTaskTrace);
-    plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog, sourceEvents });
     const validation = validatePlannerOutput(plannerOutput);
     const providerRepairTaskIds = new Set(providerRepairLinks.map((item) => item.taskId));
     const semanticLinks = semanticRepairLinks(plannerOutput, providerRepairTaskIds);

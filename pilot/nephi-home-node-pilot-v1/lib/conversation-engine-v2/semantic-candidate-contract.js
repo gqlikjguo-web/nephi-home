@@ -72,10 +72,34 @@ function compilerEvidenceOverlaps(left, right, sourceMaps) {
     && left.startOffset < right.endOffset && right.startOffset < left.endOffset;
 }
 
-function compileSemanticCandidates(output, input) {
-  if (!output || !Array.isArray(output.semanticCandidates) || !Array.isArray(output.tasks)) return output;
+function compileSemanticCandidates(output, input, { synthesizeMissingCandidates = false } = {}) {
+  if (!output || !Array.isArray(output.tasks)) return output;
+  const rawCandidates = Array.isArray(output.semanticCandidates)
+    ? output.semanticCandidates
+    : synthesizeMissingCandidates
+      ? output.tasks.map((task) => {
+        const relation = (output.contextRelationCandidates || []).find((item) => item && item.candidateIndex === task.candidateIndex);
+        const canonicalIdentity = task && task.entity && task.entity.canonicalCandidate;
+        const propertyCatalogIdentity = catalogIdentities(input && input.catalog).has(String(canonicalIdentity || ""))
+          ? canonicalIdentity
+          : null;
+        const temporalCandidate = task && task.dependsOnStayContext
+          ? (task.stayCandidate && task.stayCandidate.dateExpression) || (output.stay && output.stay.dateExpression)
+          : null;
+        return {
+          semanticKind: "capability",
+          capability: task && task.type,
+          canonicalIdentityCandidate: canonicalIdentity || null,
+          evidenceRefs: relation && relation.evidenceRefs,
+          lodgingScopeCandidate: null,
+          temporalSemanticCandidate: temporalCandidate || null,
+          propertyCatalogIdentity
+        };
+      })
+      : null;
+  if (!rawCandidates) return output;
   const scopeIds = new Map();
-  const candidates = output.semanticCandidates.slice(0, MAX_CANDIDATES).map((rawCandidate, index) => {
+  const candidates = rawCandidates.slice(0, MAX_CANDIDATES).map((rawCandidate, index) => {
     const rawScope = rawCandidate && rawCandidate.lodgingScopeCandidate;
     const scope = rawScope && typeof rawScope === "object" && !Array.isArray(rawScope)
       ? { bundleCanonicalCandidate: rawScope.bundleCanonicalCandidate, roomCanonicalCandidates: rawScope.roomCanonicalCandidates, guestCountCandidate: rawScope.guestCountCandidate }
