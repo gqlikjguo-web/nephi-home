@@ -462,8 +462,11 @@ class ConversationEngineV2 {
       return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
     const semanticInputTasks = plannerOutput.tasks.map(plannerTaskTrace);
-    plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog, sourceEvents });
-    plannerOutput = compileSemanticCandidates(plannerOutput, { catalog, sourceEvents }, { synthesizeMissingCandidates: true });
+    const requiresSemanticLedgerSynthesis = !Array.isArray(plannerOutput.semanticCandidates);
+    if (requiresSemanticLedgerSynthesis) {
+      plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog, sourceEvents });
+      plannerOutput = compileSemanticCandidates(plannerOutput, { catalog, sourceEvents }, { synthesizeMissingCandidates: true });
+    }
     const structuralValidation = validatePlannerOutput(plannerOutput);
     if (!structuralValidation.ok) {
       this.trace(traceId, "validation", { ...plannerValidationTrace(plannerOutput, structuralValidation), errorCategory: "local_contract_failure" });
@@ -476,6 +479,7 @@ class ConversationEngineV2 {
       this.traceContexts.delete(traceId);
       return { ...finalResponse, noReply: !finalResponse.shouldReply, taskResults: [], reviewCount: 1, claimValidation, reviewIds: [item.reviewId].filter(Boolean), finalDecision, finalResponse, traceId };
     }
+    if (!requiresSemanticLedgerSynthesis) plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog, sourceEvents });
     const validation = validatePlannerOutput(plannerOutput);
     const providerRepairTaskIds = new Set(providerRepairLinks.map((item) => item.taskId));
     const semanticLinks = semanticRepairLinks(plannerOutput, providerRepairTaskIds);
