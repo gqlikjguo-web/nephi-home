@@ -24,7 +24,7 @@ function baseOutput() {
     stay: { dateExpression: { rawText: "2026-08-20", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2026-08-20", checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: 2 },
     tasks: [{ candidateIndex: 0, taskId: "availability", type: "availability", sourceText: message, detailIntent: "general", requestedOutputs: ["availability"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true, entity: { category: "room", rawText: "Garden Suite A", canonicalCandidate: "garden-suite-a", confidence: 1 }, stayCandidate: { dateExpression: { rawText: "2026-08-20", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2026-08-20", checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: 2 }, confidence: 1 }],
     contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: refs }],
-    semanticCandidates: [{ semanticKind: "lodging_scope", capability: "availability", canonicalIdentityCandidate: "garden-suite-a", evidenceRefs: refs, lodgingScopeCandidate: { bundleCanonicalCandidate: null, roomCanonicalCandidates: ["garden-suite-a"], guestCountCandidate: 2 }, temporalSemanticCandidate: { rawText: "2026-08-20", kind: "absolute", anchor: "message_time" }, propertyCatalogIdentity: "garden-suite-a" }],
+    semanticCandidates: [{ semanticKind: "lodging_scope", capability: "availability", canonicalIdentityCandidate: "garden-suite-a", provenanceRelationCandidateIndexes: [0], evidenceRefs: refs.map((ref) => ({ ...ref })), lodgingScopeCandidate: { bundleCanonicalCandidate: null, roomCanonicalCandidates: ["garden-suite-a"], guestCountCandidate: 2 }, temporalSemanticCandidate: { rawText: "2026-08-20", kind: "absolute", anchor: "message_time" }, propertyCatalogIdentity: "garden-suite-a" }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "availability"
   };
 }
@@ -45,14 +45,24 @@ function main() {
 
   const invalidEvidence = baseOutput();
   invalidEvidence.semanticCandidates[0].evidenceRefs[0] = { ...evidenceRefs[0], quote: "invented evidence" };
-  assert.equal(validateSemanticCandidates(compileSemanticCandidates(invalidEvidence, input), input).invalidCandidateIds.length, 1, "compiler must leave source-unverifiable evidence for validator fail-closed handling");
+  const provenanceCompiled = compileSemanticCandidates(invalidEvidence, input);
+  assert.deepEqual(provenanceCompiled.semanticCandidates[0].evidenceRefs, evidenceRefs, "compiler must replace model coordinates only with the explicitly referenced verified relation evidence");
+  assert.equal(validateSemanticCandidates(provenanceCompiled, input).invalidCandidateIds.length, 0, "verified provenance must preserve strict source validation");
+
+  const missingProvenance = baseOutput();
+  delete missingProvenance.semanticCandidates[0].provenanceRelationCandidateIndexes;
+  assert.equal(validateSemanticCandidates(compileSemanticCandidates(missingProvenance, input), input).invalidCandidateIds.length, 1, "missing provenance must remain fail-closed");
+  const unknownProvenance = baseOutput();
+  unknownProvenance.semanticCandidates[0].provenanceRelationCandidateIndexes = [99];
+  assert.equal(validateSemanticCandidates(compileSemanticCandidates(unknownProvenance, input), input).invalidCandidateIds.length, 1, "unknown provenance must remain fail-closed");
 
   const multiTask = baseOutput();
-  multiTask.tasks.push({ ...multiTask.tasks[0], candidateIndex: 1, taskId: "availability-followup", sourceText: "Is Garden Suite A still available?" });
-  multiTask.contextRelationCandidates.push({ candidateIndex: 1, kind: "continue", candidateRequestCycleRefs: ["cycle-1"], evidenceRefs: multiTask.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })) });
+  multiTask.tasks.push({ ...multiTask.tasks[0], candidateIndex: 1, taskId: "policy-followup", type: "policy", sourceText: message });
+  multiTask.contextRelationCandidates.push({ candidateIndex: 1, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: multiTask.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })) });
+  multiTask.semanticCandidates.push({ semanticKind: "capability", capability: "policy", canonicalIdentityCandidate: "policy", provenanceRelationCandidateIndexes: [1], evidenceRefs: [], lodgingScopeCandidate: null, temporalSemanticCandidate: null, propertyCatalogIdentity: null });
   const multiCompiled = compileSemanticCandidates(multiTask, input);
   assert.equal(multiCompiled.tasks.length, 2, "compiler preserves multi-turn task decomposition");
-  assert.equal(multiCompiled.contextRelationCandidates[1].kind, "continue", "compiler does not alter context relations");
+  assert.equal(multiCompiled.contextRelationCandidates[1].kind, "new_request", "compiler does not alter context relations");
   assert.equal(multiCompiled.tasks.every((task) => task.semanticCandidateIds.length === 1), true, "compiler establishes task ownership for every compatible task");
 
   console.log(JSON.stringify({ suite: "semantic-candidate-ledger-compiler", caseCount: 11, passCount: 11, failCount: 0 }));

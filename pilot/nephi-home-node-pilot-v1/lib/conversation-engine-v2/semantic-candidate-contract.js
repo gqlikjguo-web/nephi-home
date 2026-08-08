@@ -1,7 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
-const { evidenceMatchesSource, sourceEventMaps, evidenceRefsFailureCodes } = require("./understanding-validator");
+const { validateUnderstandingContext, evidenceMatchesSource, sourceEventMaps, evidenceRefsFailureCodes } = require("./understanding-validator");
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SEMANTIC_KINDS = new Set(["capability", "catalog_subject", "temporal_pattern", "lodging_scope"]);
@@ -90,7 +90,7 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
           semanticKind: "capability",
           capability: task && task.type,
           canonicalIdentityCandidate: canonicalIdentity || null,
-          evidenceRefs: relation && relation.evidenceRefs,
+          provenanceRelationCandidateIndexes: relation ? [relation.candidateIndex] : [],
           lodgingScopeCandidate: null,
           temporalSemanticCandidate: temporalCandidate || null,
           propertyCatalogIdentity
@@ -98,7 +98,12 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
       })
       : null;
   if (!rawCandidates) return output;
+  const context = validateUnderstandingContext(output, input && input.contextSnapshot || { scope: {}, cycles: [] }, { sourceEvents: input && input.sourceEvents || [] });
+  const verifiedRelations = context.ok
+    ? new Map(context.relations.map((relation) => [relation.candidateIndex, relation.evidenceRefs.map((ref) => ({ ...ref }))]))
+    : new Map();
   const scopeIds = new Map();
+  const candidateProvenanceIndexes = new Map();
   const candidates = rawCandidates.slice(0, MAX_CANDIDATES).map((rawCandidate, index) => {
     const rawScope = rawCandidate && rawCandidate.lodgingScopeCandidate;
     const scope = rawScope && typeof rawScope === "object" && !Array.isArray(rawScope)
@@ -107,16 +112,27 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
     const scopeSignature = scope === null ? "" : JSON.stringify(stableValue(scope));
     const scopeId = scope === null ? null : (scopeIds.get(scopeSignature) || deterministicUuid(`scope:${scopeSignature}`));
     if (scope !== null) scopeIds.set(scopeSignature, scopeId);
+    const provenance = rawCandidate && rawCandidate.provenanceRelationCandidateIndexes;
+    const provenanceIndexes = Array.isArray(provenance) && provenance.length >= 1 && provenance.length <= 12
+      && provenance.every((value) => Number.isInteger(value) && value >= 0)
+      && new Set(provenance).size === provenance.length
+      ? provenance
+      : [];
+    const evidenceRefs = provenanceIndexes.length && provenanceIndexes.every((candidateIndex) => verifiedRelations.has(candidateIndex))
+      ? provenanceIndexes.flatMap((candidateIndex) => verifiedRelations.get(candidateIndex).map((ref) => ({ ...ref })))
+      : [];
     const payload = {
       semanticKind: rawCandidate && rawCandidate.semanticKind,
       capability: rawCandidate && rawCandidate.capability,
       canonicalIdentityCandidate: rawCandidate && rawCandidate.canonicalIdentityCandidate,
-      evidenceRefs: rawCandidate && rawCandidate.evidenceRefs,
+      evidenceRefs,
       lodgingScopeCandidate: scope,
       temporalSemanticCandidate: rawCandidate && rawCandidate.temporalSemanticCandidate,
       propertyCatalogIdentity: rawCandidate && rawCandidate.propertyCatalogIdentity
     };
-    return { ...payload, candidateId: deterministicUuid(`candidate:${JSON.stringify(stableValue(payload))}`), lodgingScopeCandidate: scope === null ? null : { scopeId, ...scope } };
+    const candidateId = deterministicUuid(`candidate:${JSON.stringify(stableValue(payload))}`);
+    candidateProvenanceIndexes.set(candidateId, provenanceIndexes);
+    return { ...payload, candidateId, lodgingScopeCandidate: scope === null ? null : { scopeId, ...scope } };
   });
   const validCandidates = validateSemanticCandidates({ semanticCandidates: candidates }, input).validCandidates;
   const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
@@ -124,6 +140,7 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
     const relation = (output.contextRelationCandidates || []).find((item) => item && item.candidateIndex === task.candidateIndex);
     const matching = validCandidates.filter((candidate) => compilerCompatibleCapability(task && task.type, candidate.capability)
       && (!candidate.propertyCatalogIdentity || String(task && task.entity && task.entity.canonicalCandidate || "") === candidate.propertyCatalogIdentity)
+      && candidateProvenanceIndexes.get(candidate.candidateId).includes(task && task.candidateIndex)
       && relation && validEvidenceRefs(relation.evidenceRefs, input)
       && candidate.evidenceRefs.every((candidateRef) => relation.evidenceRefs.some((taskRef) => compilerEvidenceOverlaps(candidateRef, taskRef, sourceMaps))));
     const scopes = [...new Set(matching.map((candidate) => String(candidate.lodgingScopeCandidate && candidate.lodgingScopeCandidate.scopeId || "")))];

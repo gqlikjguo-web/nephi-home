@@ -1048,6 +1048,10 @@ function plannerProviderJsonSchema() {
   const candidateSchema = schema.properties.semanticCandidates.items;
   candidateSchema.required = candidateSchema.required.filter((field) => field !== "candidateId");
   delete candidateSchema.properties.candidateId;
+  candidateSchema.required = candidateSchema.required.filter((field) => field !== "evidenceRefs");
+  delete candidateSchema.properties.evidenceRefs;
+  candidateSchema.required.push("provenanceRelationCandidateIndexes");
+  candidateSchema.properties.provenanceRelationCandidateIndexes = { type: "array", minItems: 1, maxItems: 12, description: "Explicit semantic provenance only. List each contextRelationCandidates candidateIndex whose already-verified evidence span represents this semantic candidate. Do not calculate source coordinates for semanticCandidates.", items: { type: "integer", minimum: 0 } };
   const scopeSchema = candidateSchema.properties.lodgingScopeCandidate;
   scopeSchema.required = scopeSchema.required.filter((field) => field !== "scopeId");
   delete scopeSchema.properties.scopeId;
