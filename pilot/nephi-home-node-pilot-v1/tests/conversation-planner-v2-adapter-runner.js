@@ -5,6 +5,7 @@ const { TestOnlyOpenAiControlledComposer } = require("../lib/providers/test-only
 const { runtimeConfig } = require("../config/runtime");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { validatePlannerOutput, applyPlannerSemanticContract } = require("../lib/conversation-engine-v2/planner-schema");
+const { compileSemanticCandidates, validateSemanticCandidates, semanticCandidateDiagnosticSummary } = require("../lib/conversation-engine-v2/semantic-candidate-contract");
 const { encodeFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 const POOL_CANDIDATE_ID = "71000000-0000-4000-8000-000000000001";
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
@@ -29,6 +30,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(requestBody.text.format.schema.properties.tasks.minItems, 1);
   const plannerInstructions = requestBody.input[0].content[0].text;
   const taskSchema = requestBody.text.format.schema.properties.tasks.items;
+  const semanticEvidenceSchema = requestBody.text.format.schema.properties.semanticCandidates.items.properties.evidenceRefs.items;
   assert.match(plannerInstructions, /monetary lodging (?:amount|charge|rate)/i, "planner grammar must define price semantically instead of relying on question wording");
   assert.match(plannerInstructions, /type price.*requestedOutputs price.*dependsOnStayContext true/i, "generic and scoped monetary lodging requests must retain the inventory price contract");
   assert.match(plannerInstructions, /policy.*rules or conditions.*not.*monetary/i, "planner grammar must keep property rules separate from price requests");
@@ -51,7 +53,52 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(requestBody.input[0].content[0].text, /price or total price/i, "planner must distinguish pricing from availability and policy");
   assert.match(requestBody.input[0].content[0].text, /replace or remove a prior stay or room condition/i, "planner must express multi-turn replacement through the formal context relation");
   assert.match(requestBody.input[0].content[0].text, /new_request must have zero request-cycle references/i, "planner must not attach stale state to a new request");
+  assert.match(plannerInstructions, /EvidenceRefs are a source-coordinate contract/i, "planner must receive the validator's source-coordinate evidence contract");
+  assert.match(plannerInstructions, /at least one non-empty eventId or messageRef/i, "planner must receive the source identity requirement");
+  assert.match(plannerInstructions, /0-based UTF-16 JavaScript string index inclusive.*endOffset is exclusive/i, "planner must receive exact JavaScript offset semantics");
+  assert.match(plannerInstructions, /messageText\.slice\(startOffset, endOffset\)/i, "planner must receive exact quote reconstruction semantics");
+  assert.match(semanticEvidenceSchema.description, /source-bound evidence coordinate/i, "the provider schema must describe source-bound evidence");
+  assert.match(semanticEvidenceSchema.properties.startOffset.description, /0-based UTF-16 JavaScript string offset, inclusive/i, "the provider schema must define offset origin and inclusivity");
+  assert.match(semanticEvidenceSchema.properties.endOffset.description, /exclusive, greater than startOffset/i, "the provider schema must define the end boundary");
+  assert.match(semanticEvidenceSchema.properties.quote.description, /messageText\.slice\(startOffset, endOffset\)/i, "the provider schema must define exact quote equality");
   assert.equal(JSON.stringify(requestBody).includes("test-key"), false);
+  const rawEvidenceMessage = "Ask about the lodging policy.";
+  const rawEvidenceInput = {
+    currentMessage: rawEvidenceMessage,
+    currentMessages: [rawEvidenceMessage],
+    sourceEvents: [{ eventId: "raw-evidence-event", messageRef: "raw-evidence-message", messageText: rawEvidenceMessage }],
+    catalog: { propertyId: "raw-evidence-property", rooms: [], amenities: [], policies: [], faqs: [], propertyFacts: [], transportFacts: [] }
+  };
+  const validRawEvidenceCandidate = {
+    semanticKind: "capability",
+    capability: "policy",
+    canonicalIdentityCandidate: "policy",
+    evidenceRefs: [{ eventId: "raw-evidence-event", messageRef: "raw-evidence-message", startOffset: 0, endOffset: rawEvidenceMessage.length, quote: rawEvidenceMessage }],
+    lodgingScopeCandidate: null,
+    temporalSemanticCandidate: null,
+    propertyCatalogIdentity: null
+  };
+  const validRawEvidenceOutput = { tasks: [], semanticCandidates: [validRawEvidenceCandidate] };
+  assert.deepEqual(semanticCandidateDiagnosticSummary(validRawEvidenceOutput, rawEvidenceInput, { raw: true }), {
+    candidateCount: 1,
+    validCandidateCount: 1,
+    invalidCandidateCount: 0,
+    ownershipCount: 0,
+    failureCodes: []
+  }, "a raw semantic candidate with exact source coordinates must be accepted before compilation");
+  assert.equal(validateSemanticCandidates(compileSemanticCandidates(validRawEvidenceOutput, rawEvidenceInput), rawEvidenceInput).validCandidates.length, 1, "the exact raw evidence contract must remain valid after deterministic compilation");
+  const invalidRawEvidenceOutput = {
+    tasks: [],
+    semanticCandidates: [{ ...validRawEvidenceCandidate, evidenceRefs: [{ ...validRawEvidenceCandidate.evidenceRefs[0], quote: "paraphrased policy request" }] }]
+  };
+  assert.deepEqual(semanticCandidateDiagnosticSummary(invalidRawEvidenceOutput, rawEvidenceInput, { raw: true }), {
+    candidateCount: 1,
+    validCandidateCount: 0,
+    invalidCandidateCount: 1,
+    ownershipCount: 0,
+    failureCodes: ["evidence_refs"]
+  }, "a raw semantic candidate with a non-slice quote must fail closed as evidence_refs");
+  assert.deepEqual(validateSemanticCandidates(compileSemanticCandidates(invalidRawEvidenceOutput, rawEvidenceInput), rawEvidenceInput).invalidFailureCodes, ["evidence_refs"], "deterministic compilation must not repair or hide invalid raw evidence");
   const coverageCatalog = buildPropertyCatalog({
     propertyId: "coverage-property",
     displayName: "Coverage Property",
