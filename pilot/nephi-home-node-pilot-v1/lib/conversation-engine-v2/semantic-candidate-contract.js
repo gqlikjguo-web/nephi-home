@@ -152,6 +152,7 @@ function validateSemanticCandidates(output, input) {
   }
   const validCandidates = [];
   const invalidCandidateIds = [];
+  const invalidFailureCodes = new Set();
   for (const candidate of output.semanticCandidates.slice(0, MAX_CANDIDATES)) {
     const candidateId = String(candidate && candidate.candidateId || "");
     const catalogIdentity = candidate && candidate.propertyCatalogIdentity;
@@ -167,12 +168,57 @@ function validateSemanticCandidates(output, input) {
       && !(candidate.lodgingScopeCandidate && conflictingScopeIds.has(candidate.lodgingScopeCandidate.scopeId))
       && validTemporalCandidate(candidate.temporalSemanticCandidate));
     if (valid) validCandidates.push(candidate);
-    else if (candidateId) invalidCandidateIds.push(candidateId);
+    else {
+      for (const code of semanticCandidateFailureCodes(candidate, identities, counts, conflictingScopeIds, input, { requireCandidateId: true })) invalidFailureCodes.add(code);
+      if (candidateId) invalidCandidateIds.push(candidateId);
+    }
   }
   if (output.semanticCandidates.length > MAX_CANDIDATES) {
     invalidCandidateIds.push(...output.semanticCandidates.slice(MAX_CANDIDATES).map((item) => String(item && item.candidateId || "")).filter(Boolean));
+    invalidFailureCodes.add("candidate_count_limit");
   }
-  return { present: true, validCandidates, invalidCandidateIds: [...new Set(invalidCandidateIds)] };
+  return { present: true, validCandidates, invalidCandidateIds: [...new Set(invalidCandidateIds)], invalidFailureCodes: [...invalidFailureCodes].sort() };
+}
+
+function semanticCandidateFailureCodes(candidate, identities, counts, conflictingScopeIds, input, { requireCandidateId }) {
+  const codes = [];
+  const candidateId = String(candidate && candidate.candidateId || "");
+  const catalogIdentity = candidate && candidate.propertyCatalogIdentity;
+  const canonicalIdentity = candidate && candidate.canonicalIdentityCandidate;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return ["candidate_object"];
+  if (requireCandidateId && (!UUID_PATTERN.test(candidateId) || counts.get(candidateId) !== 1)) codes.push("candidate_id");
+  if (!SEMANTIC_KINDS.has(candidate.semanticKind)) codes.push("semantic_kind");
+  if (!CAPABILITIES.has(candidate.capability)) codes.push("capability");
+  if (!(canonicalIdentity === null || typeof canonicalIdentity === "string" && canonicalIdentity.length <= 120)) codes.push("canonical_identity");
+  if (!(catalogIdentity === null || typeof catalogIdentity === "string" && identities.has(catalogIdentity))) codes.push("property_catalog_identity");
+  if (catalogIdentity && canonicalIdentity !== catalogIdentity) codes.push("identity_alignment");
+  if (!validEvidenceRefs(candidate.evidenceRefs, input)) codes.push("evidence_refs");
+  if (!validLodgingScope(candidate.lodgingScopeCandidate, identities)) codes.push("lodging_scope");
+  if (candidate.lodgingScopeCandidate && conflictingScopeIds.has(candidate.lodgingScopeCandidate.scopeId)) codes.push("lodging_scope_conflict");
+  if (!validTemporalCandidate(candidate.temporalSemanticCandidate)) codes.push("temporal_candidate");
+  return codes;
+}
+
+function semanticCandidateDiagnosticSummary(output, input, { raw = false } = {}) {
+  const candidates = Array.isArray(output && output.semanticCandidates) ? output.semanticCandidates.slice(0, MAX_CANDIDATES) : [];
+  const identities = catalogIdentities(input && input.catalog);
+  const counts = new Map();
+  for (const candidate of candidates) {
+    const candidateId = String(candidate && candidate.candidateId || "");
+    counts.set(candidateId, (counts.get(candidateId) || 0) + 1);
+  }
+  const ledger = raw ? null : validateSemanticCandidates(output, input);
+  const rawFailureCodes = raw ? [...new Set(candidates.flatMap((candidate) =>
+    semanticCandidateFailureCodes(candidate, identities, counts, new Set(), input, { requireCandidateId: false })))].sort() : [];
+  const ownershipCount = (Array.isArray(output && output.tasks) ? output.tasks : [])
+    .reduce((count, task) => count + (Array.isArray(task && task.semanticCandidateIds) ? task.semanticCandidateIds.length : 0), 0);
+  return Object.freeze({
+    candidateCount: candidates.length,
+    validCandidateCount: raw ? Math.max(0, candidates.length - (rawFailureCodes.length ? candidates.length : 0)) : ledger.validCandidates.length,
+    invalidCandidateCount: raw ? (rawFailureCodes.length ? candidates.length : 0) : ledger.invalidCandidateIds.length,
+    ownershipCount: Math.min(ownershipCount, MAX_CANDIDATES),
+    failureCodes: Object.freeze(raw ? rawFailureCodes : (ledger.invalidFailureCodes || []))
+  });
 }
 
 function evidenceSource(ref, sourceMaps) {
@@ -229,6 +275,7 @@ module.exports = {
   SEMANTIC_KINDS,
   compileSemanticCandidates,
   validateSemanticCandidates,
+  semanticCandidateDiagnosticSummary,
   missingSemanticCandidates,
   verifiedRepairTask
 };

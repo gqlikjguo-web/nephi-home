@@ -2,7 +2,7 @@
 
 const crypto = require("node:crypto");
 const { plannerProviderJsonSchema, validatePlannerOutput, applyPlannerSemanticContract } = require("../conversation-engine-v2/planner-schema");
-const { compileSemanticCandidates, validateSemanticCandidates, missingSemanticCandidates, verifiedRepairTask } = require("../conversation-engine-v2/semantic-candidate-contract");
+const { compileSemanticCandidates, validateSemanticCandidates, semanticCandidateDiagnosticSummary, missingSemanticCandidates, verifiedRepairTask } = require("../conversation-engine-v2/semantic-candidate-contract");
 const { mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures, mentionedFaqSubjects, resolveEntity } = require("../conversation-engine-v2/entity-resolver");
 const { getCapabilityDefinition } = require("../conversation-engine-v2/capability-registry");
 const { validateUnderstandingContext, sourceEventMaps, evidenceMatchesSource } = require("../conversation-engine-v2/understanding-validator");
@@ -12,6 +12,7 @@ const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic
 const COVERAGE_MERGE_DIAGNOSTIC = Symbol("coverageMergeDiagnostic");
 const TASK_COLLECTION_DIAGNOSTIC = Symbol("taskCollectionDiagnostic");
 const ADDITIVE_REPAIR_DIAGNOSTIC = Symbol("additiveRepairDiagnostic");
+const SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC = Symbol("semanticLedgerBoundaryDiagnostic");
 const RETRYABLE_ERROR_CATEGORIES = new Set(["timeout", "network", "rate_limit", "provider_5xx"]);
 const ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const MAX_PROVIDER_ATTEMPTS = 2;
@@ -1308,6 +1309,7 @@ function annotateProviderSuccess(output, firstAttemptErrorCategory, providerAtte
   const retried = Boolean(firstAttemptErrorCategory);
   const taskCollection = output[TASK_COLLECTION_DIAGNOSTIC];
   const repairLinks = privateRepairLinks(output);
+  const semanticLedgerBoundaries = output[SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC];
   Object.defineProperty(output, PLANNER_PROVIDER_DIAGNOSTIC, {
     configurable: false,
     enumerable: false,
@@ -1329,6 +1331,7 @@ function annotateProviderSuccess(output, firstAttemptErrorCategory, providerAtte
         coverageRepairFallback: coverageRepair.fallback === true
       } : {}),
       ...(repairLinks.length ? { repairLinks } : {}),
+      ...(Array.isArray(semanticLedgerBoundaries) ? { semanticLedgerBoundaries } : {}),
       providerAttempts: attempts
     }
   });
@@ -1432,13 +1435,25 @@ class TestOnlyOpenAiConversationPlanner {
       try {
         const result = await this.requestOnce(input, attempt, Math.min(this.timeoutMs, remainingMs));
         providerAttempts.push(result.attemptDiagnostic);
+        const semanticLedgerBoundaries = [
+          Object.freeze({ stage: "raw_parsed_output", ...semanticCandidateDiagnosticSummary(result.output, input, { raw: true }) }),
+          Object.freeze({ stage: "compile_before", ...semanticCandidateDiagnosticSummary(result.output, input, { raw: true }) })
+        ];
         const compiledOutput = compileSemanticCandidates(result.output, input);
+        semanticLedgerBoundaries.push(Object.freeze({ stage: "compile_after", ...semanticCandidateDiagnosticSummary(compiledOutput, input) }));
         const sanitized = sanitizePlannerTaskCollection(compiledOutput, input);
         const sanitizedOutput = copyPlannerDiagnostics(sanitized, compileSemanticCandidates(sanitized, input));
         const ledger = validateSemanticCandidates(sanitizedOutput, input);
+        semanticLedgerBoundaries.push(Object.freeze({ stage: "validate", ...semanticCandidateDiagnosticSummary(sanitizedOutput, input) }));
         const firstOutput = ledger.present
           ? failClosedSemanticCandidates(sanitizedOutput, ledger.validCandidates, ledger.invalidCandidateIds)
           : sanitizedOutput;
+        Object.defineProperty(firstOutput, SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC, {
+          configurable: false,
+          enumerable: false,
+          writable: false,
+          value: Object.freeze(semanticLedgerBoundaries)
+        });
         const replaceInvalidSemanticLedger = ledger.present
           && ledger.invalidCandidateIds.length > 0
           && ledger.validCandidates.length === 0

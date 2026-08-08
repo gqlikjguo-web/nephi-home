@@ -171,6 +171,8 @@ const PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "Type
 const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic");
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const REPAIR_KINDS = new Set(["coverage_repair", "task_collection_repair", "semantic_repair"]);
+const SEMANTIC_LEDGER_BOUNDARY_STAGES = new Set(["raw_parsed_output", "compile_before", "compile_after", "validate"]);
+const SEMANTIC_LEDGER_FAILURE_CODES = new Set(["candidate_object", "candidate_id", "candidate_count_limit", "semantic_kind", "capability", "canonical_identity", "property_catalog_identity", "identity_alignment", "evidence_refs", "lodging_scope", "lodging_scope_conflict", "temporal_candidate"]);
 
 function safePlannerProviderErrorField(value, maxLength) {
   const text = String(value || "");
@@ -216,6 +218,7 @@ function safePlannerRetrySuccessDiagnostic(plannerOutput) {
   if (!providerAttempts.length) return {};
   const retried = diagnostic.retryPerformed === true;
   const repairLinks = privatePlannerRepairLinks(plannerOutput);
+  const semanticLedgerBoundaries = safeSemanticLedgerBoundaries(diagnostic.semanticLedgerBoundaries);
   return {
     providerAttemptCount: providerAttempts.length,
     firstAttemptErrorCategory: retried ? safePlannerErrorCategory(diagnostic.firstAttemptErrorCategory) : "",
@@ -237,8 +240,21 @@ function safePlannerRetrySuccessDiagnostic(plannerOutput) {
       coverageRepairFallback: diagnostic.coverageRepairFallback === true
     } : {}),
     ...(repairLinks.length ? { repairProvenance: safeRepairProvenance(repairLinks) } : {}),
+    ...(semanticLedgerBoundaries.length ? { semanticLedgerBoundaries } : {}),
     providerAttempts
   };
+}
+
+function safeSemanticLedgerBoundaries(value) {
+  return (Array.isArray(value) ? value : []).slice(0, 4).flatMap((entry) => {
+    const stage = String(entry && entry.stage || "");
+    if (!SEMANTIC_LEDGER_BOUNDARY_STAGES.has(stage)) return [];
+    const count = (field) => Number.isInteger(entry && entry[field]) ? Math.max(0, Math.min(entry[field], 24)) : 0;
+    const failureCodes = [...new Set((Array.isArray(entry && entry.failureCodes) ? entry.failureCodes : [])
+      .map(String)
+      .filter((code) => SEMANTIC_LEDGER_FAILURE_CODES.has(code)))].sort();
+    return [{ stage, candidateCount: count("candidateCount"), validCandidateCount: count("validCandidateCount"), invalidCandidateCount: count("invalidCandidateCount"), ownershipCount: count("ownershipCount"), failureCodes }];
+  });
 }
 
 function privatePlannerRepairLinks(plannerOutput) {
