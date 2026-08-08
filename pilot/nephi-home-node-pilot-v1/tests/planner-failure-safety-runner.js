@@ -229,6 +229,11 @@ function providerResponse(status, body, providerRequestId = "") {
 
 function successfulProviderResponse(providerRequestId = "") {
   const output = validPlannerOutput();
+  output.tasks = output.tasks.map(({ semanticCandidateIds, lodgingScopeId, ...task }) => task);
+  output.semanticCandidates = output.semanticCandidates.map(({ candidateId, evidenceRefs, ...candidate }) => ({
+    ...candidate,
+    provenanceRelationCandidateIndexes: [0]
+  }));
   output.tasks[0] = {
     ...output.tasks[0],
     sourceText: "test",
