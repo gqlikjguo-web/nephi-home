@@ -10,8 +10,9 @@ const path = require("node:path");
 const { createApp } = require("../server");
 const { runtimeConfig } = require("../config/runtime");
 const { createJsonProviders } = require("../lib/providers/json-providers");
+const { TestOnlyOpenAiConversationPlanner } = require("../lib/providers/test-only-openai-conversation-planner");
 const { sessionTokenHash } = require("../lib/admin-auth");
-const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
+const { migrateFakePlannerOutput, encodeFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const propertyId = "demo_homestay_a";
 const adminToken = "test-only-platform-admin-token";
@@ -51,6 +52,65 @@ function plannerOutputUnchecked({ sourceEvents, currentMessage }) {
   return { ...base, tasks: [task], contextRelationCandidates: [relation(source)] };
 }
 
+const SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE = "semantic diagnostic";
+const SEMANTIC_LEDGER_DIAGNOSTIC_CANDIDATE_ID = "70000000-0000-4000-8000-000000000001";
+const semanticLedgerDiagnosticProvider = new TestOnlyOpenAiConversationPlanner({
+  apiKey: "test-only-local-key",
+  model: "test-only-local-model",
+  retryDelayMs: 0,
+  fetchImpl: async () => ({
+    ok: true,
+    json: async () => ({ output_text: encodeFakePlannerOutput({
+      schemaVersion: 2,
+      discourse: { relation: "new_request", confidence: 1 },
+      stateOperations: [],
+      stay: stay(),
+      tasks: [{
+        taskId: "policy",
+        candidateIndex: 0,
+        type: "policy",
+        sourceText: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE,
+        requestedOutputs: ["answer"],
+        eligibilityEvidence: { kind: "none", sourceText: "" },
+        dependsOnStayContext: false,
+        entity: { category: "policy", rawText: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE, canonicalCandidate: null, confidence: 1 },
+        confidence: 1,
+        semanticCandidateIds: [SEMANTIC_LEDGER_DIAGNOSTIC_CANDIDATE_ID],
+        lodgingScopeId: null
+      }],
+      contextRelationCandidates: [{
+        candidateIndex: 0,
+        kind: "new_request",
+        candidateRequestCycleRefs: [],
+        evidenceRefs: [{ eventId: "semantic-ledger-event", messageRef: "semantic-ledger-message", startOffset: 0, endOffset: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE.length, quote: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE }]
+      }],
+      semanticCandidates: [{
+        candidateId: SEMANTIC_LEDGER_DIAGNOSTIC_CANDIDATE_ID,
+        semanticKind: "capability",
+        capability: "policy",
+        canonicalIdentityCandidate: "policy",
+        evidenceRefs: [],
+        lodgingScopeCandidate: null,
+        temporalSemanticCandidate: null,
+        propertyCatalogIdentity: null
+      }],
+      ambiguities: [],
+      missingInformation: [],
+      needsHuman: false,
+      shouldIgnore: false,
+      reason: "semantic_ledger_diagnostic_fixture"
+    }) })
+  })
+});
+
+const plannerWithSemanticLedgerDiagnostic = {
+  classify(input) {
+    return input.currentMessage === SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE
+      ? semanticLedgerDiagnosticProvider.classify(input)
+      : plannerOutput(input);
+  }
+};
+
 async function request(url, method, body, cookie = `nephi_admin_session=${adminToken}`, authorization = "") {
   const response = await fetch(`${url}/api/admin/test-only/conversation-acceptance`, { method, headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}), ...(authorization ? { authorization } : {}) }, body: JSON.stringify(body) });
   const payload = await response.json();
@@ -64,7 +124,7 @@ async function request(url, method, body, cookie = `nephi_admin_session=${adminT
   const sessions = new Map([[sessionTokenHash(adminToken), { propertyId, username: "platform", userId: "platform-user" }]]);
   providers.persistence.getAdminSession = (tokenHash) => sessions.get(tokenHash) || null;
   providers.onboarding = { isPlatformAdmin: (_propertyId, username, userId) => username === "platform" && userId === "platform-user" };
-  const app = createApp({ providers, adminAuthRequired: true, testOnlyEnvironment: true, testOnlyAcceptanceEnabled: true, now, testOnlyOverrides: { planner: { classify: plannerOutput } } });
+  const app = createApp({ providers, adminAuthRequired: true, testOnlyEnvironment: true, testOnlyAcceptanceEnabled: true, now, testOnlyOverrides: { planner: plannerWithSemanticLedgerDiagnostic } });
   const engineFinalResponses = new Map();
   const originalEngineProcess = app.conversationEngineV2.process.bind(app.conversationEngineV2);
   app.conversationEngineV2.process = async (input) => {
@@ -104,6 +164,19 @@ async function request(url, method, body, cookie = `nephi_admin_session=${adminT
     const timeout = await post("timeout", "planner timeout", "timeout-1");
     const plannerError = timeout.body.trace.find((entry) => entry.stage === "planner_error");
     assert.ok(plannerError && plannerError.timeout && plannerError.retryPerformed && plannerError.providerAttemptCount === 2, "planner timeout/retry summaries must be safely traced");
+    const semanticLedgerDiagnostic = await post("semantic-ledger", SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE, "semantic-ledger-1");
+    const semanticLedgerPlannerTrace = semanticLedgerDiagnostic.body.trace.find((entry) => entry.stage === "planner");
+    assert.equal(semanticLedgerDiagnostic.response.status, 200);
+    assert.equal(semanticLedgerPlannerTrace.parserSucceeded, true);
+    assert.equal(semanticLedgerPlannerTrace.providerAttemptCount, 1);
+    assert.equal(semanticLedgerPlannerTrace.retryPerformed, false);
+    assert.deepEqual(semanticLedgerPlannerTrace.semanticLedgerBoundaries, [
+      { stage: "raw_parsed_output", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 1, failureCodes: ["evidence_refs"] },
+      { stage: "compile_before", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 1, failureCodes: ["evidence_refs"] },
+      { stage: "compile_after", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs"] },
+      { stage: "validate", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs"] }
+    ], "provider diagnostic must survive Engine, safe formatting, captureSafeTrace, and acceptance trace projection");
+    assert.equal(JSON.stringify(semanticLedgerPlannerTrace).includes(SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE), false, "acceptance planner trace must not retain fixture message text");
 
     await post("B", "need dates", "b-1");
     assert.notDeepEqual(stateFor("A"), stateFor("B"), "conversation IDs must be isolated");

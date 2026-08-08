@@ -27,6 +27,8 @@ const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const SAFE_PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
 const SAFE_PLANNER_ERROR_CODES = new Set(["planner_authentication_error", "planner_model_not_found", "planner_rate_limit", "planner_provider_error", "planner_http_error", "planner_timeout", "planner_parse_error", "planner_empty_response", "planner_structured_output_error", "planner_network_error", "planner_configuration_error", "planner_unknown_error"]);
+const SAFE_SEMANTIC_LEDGER_BOUNDARY_STAGES = new Set(["raw_parsed_output", "compile_before", "compile_after", "validate"]);
+const SAFE_SEMANTIC_LEDGER_FAILURE_CODES = new Set(["candidate_object", "candidate_id", "candidate_count_limit", "semantic_kind", "capability", "canonical_identity", "property_catalog_identity", "identity_alignment", "evidence_refs", "lodging_scope", "lodging_scope_conflict", "temporal_candidate"]);
 const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "unknown"]);
 const SAFE_PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const SAFE_CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
@@ -165,6 +167,18 @@ function safeRepairProvenance(value) {
   });
 }
 
+function safeSemanticLedgerBoundaries(value) {
+  return (Array.isArray(value) ? value : []).slice(0, 4).flatMap((item) => {
+    const stage = String(item && item.stage || "");
+    if (!SAFE_SEMANTIC_LEDGER_BOUNDARY_STAGES.has(stage)) return [];
+    const count = (field) => Math.min(safeDiagnosticCount(item && item[field]), 24);
+    const failureCodes = [...new Set((Array.isArray(item && item.failureCodes) ? item.failureCodes : [])
+      .map(String)
+      .filter((code) => SAFE_SEMANTIC_LEDGER_FAILURE_CODES.has(code)))].sort();
+    return [{ stage, candidateCount: count("candidateCount"), validCandidateCount: count("validCandidateCount"), invalidCandidateCount: count("invalidCandidateCount"), ownershipCount: count("ownershipCount"), failureCodes }];
+  });
+}
+
 function safePlannerErrorCategory(value, fallback = "unknown") {
   return SAFE_PLANNER_ERROR_CATEGORIES.has(value) ? value : fallback;
 }
@@ -238,6 +252,9 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
         } : {}),
         ...(safeRepairProvenance(details.repairProvenance).length ? {
           repairProvenance: safeRepairProvenance(details.repairProvenance)
+        } : {}),
+        ...(safeSemanticLedgerBoundaries(details.semanticLedgerBoundaries).length ? {
+          semanticLedgerBoundaries: safeSemanticLedgerBoundaries(details.semanticLedgerBoundaries)
         } : {}),
         providerAttempts
       } : {})
