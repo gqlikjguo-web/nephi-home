@@ -12,6 +12,7 @@ const { createApp } = require("../server");
 
 const ROOT = path.resolve(__dirname, "..");
 const MIGRATION = path.join(ROOT, "migrations", "020_inventory_availability_authority.sql");
+const AUTHORITY_MIGRATION = "020_inventory_availability_authority.sql";
 const PROPERTY_ID = "legacy_property";
 const OTHER_PROPERTY_ID = "other_property";
 
@@ -29,16 +30,25 @@ async function seedConflictingAuthority(connection) {
       await client.query("INSERT INTO bundle_offer_members(property_id,bundle_id,room_id,position) VALUES($1,'bundle_all',$2,$3)", [PROPERTY_ID, roomId, position]);
     }
     await client.query("INSERT INTO availability_days(property_id,stay_date,room301,room302,room401,room402,whole_house) VALUES ($1,'2026-08-05','closed','closed','available','available','closed'),($1,'2026-08-06','closed','closed','available','available','closed'),($1,'2026-08-07','available','available','available','available','available')", [PROPERTY_ID]);
-    await client.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES ($1,'bundle_all','2026-08-05','closed',0),($1,'room301','2026-08-05','closed',0),($1,'room302','2026-08-05','closed',0),($1,'room401','2026-08-05','closed',0),($1,'room402','2026-08-05','closed',0),($1,'room401','2026-08-06','closed',0),($1,'room402','2026-08-06','closed',0),($1,'room301','2026-08-07','closed',0),($1,'room302','2026-08-07','closed',0),($1,'room401','2026-08-07','closed',0),($1,'room402','2026-08-07','closed',0),($2,'other_room','2026-08-06','available',1)", [PROPERTY_ID, OTHER_PROPERTY_ID]);
+    await client.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES ($1,'bundle_all','2026-08-05','closed',0),($1,'room301','2026-08-05','closed',0),($1,'room302','2026-08-05','closed',0),($1,'room401','2026-08-05','closed',0),($1,'room402','2026-08-05','closed',0),($1,'room301','2026-08-06','available',1),($1,'room401','2026-08-06','closed',0),($1,'room402','2026-08-06','closed',0),($1,'room301','2026-08-07','closed',0),($1,'room302','2026-08-07','closed',0),($1,'room401','2026-08-07','closed',0),($1,'room402','2026-08-07','closed',0),($2,'other_room','2026-08-06','available',1)", [PROPERTY_ID, OTHER_PROPERTY_ID]);
   } finally {
     await client.close();
   }
 }
 
-async function applyAuthorityMigration(connection) {
+async function markAuthorityMigrationPending(connection) {
   const client = await openPostgres(connection);
   try {
-    await client.exec(fs.readFileSync(MIGRATION, "utf8"));
+    await client.query("DELETE FROM schema_migrations WHERE filename=$1", [AUTHORITY_MIGRATION]);
+  } finally {
+    await client.close();
+  }
+}
+
+async function appliedMigration(connection, filename) {
+  const client = await openPostgres(connection);
+  try {
+    return (await client.query("SELECT filename,applied_at::text applied_at FROM schema_migrations WHERE filename=$1", [filename])).rows[0] || null;
   } finally {
     await client.close();
   }
@@ -66,16 +76,21 @@ function assertRuntimeUsesOneAuthority() {
   assert.doesNotMatch(getRows, /\b(?:availability_days|bundle_availability_days)\b/, "active availability reads must not merge a second runtime authority");
   const migration = fs.readFileSync(MIGRATION, "utf8");
   assert.doesNotMatch(migration, /nephi_home|2026-08-0[5-7]|room(?:301|302|401|402)/, "authority migration must be property-, date-, and room-neutral");
+  assert.match(migration, /ON CONFLICT\s*\(\s*property_id\s*,\s*inventory_id\s*,\s*stay_date\s*\)\s*DO NOTHING/i, "legacy conversion must only fill absent normalized rows");
+  assert.doesNotMatch(migration, /DO UPDATE SET/i, "legacy conversion must never overwrite normalized authority rows");
+  const runner = fs.readFileSync(path.join(ROOT, "lib", "providers", "postgres-migrate.js"), "utf8");
+  assert.match(runner, /client\.transaction\(/, "migration runner must retain one database session for each migration transaction");
+  assert.match(runner, /LOCK TABLE schema_migrations IN EXCLUSIVE MODE/, "migration runner must serialize concurrent startups before checking the ledger");
 }
 
 function assertConsistentResults(service) {
   const adminRows = service.getMonth(PROPERTY_ID, 2026, 8).rows.filter((row) => row.date >= "2026-08-05" && row.date <= "2026-08-07");
   assert.deepEqual(adminRows.map((row) => [row.date, row.room301, row.room302, row.room401, row.room402, row.bundle_all]), [
-    ["2026-08-05", "closed", "closed", "available", "available", "closed"],
-    ["2026-08-06", "closed", "closed", "available", "available", "closed"],
-    ["2026-08-07", "available", "available", "available", "available", "available"]
+    ["2026-08-05", "closed", "closed", "closed", "closed", "closed"],
+    ["2026-08-06", "available", "closed", "closed", "closed", "closed"],
+    ["2026-08-07", "closed", "closed", "closed", "closed", "closed"]
   ]);
-  const expected = [["room401","room402"],["room401","room402"],["room301","room302","room401","room402","bundle_all"]];
+  const expected = [[],["room301"],[]];
   for (const [index, date] of ["2026-08-05","2026-08-06","2026-08-07"].entries()) {
     const frontend = service.searchAvailability({ customerId: PROPERTY_ID, checkIn: date, checkOut: `2026-08-0${6 + index}`, guests: 2, roomType: "all", queryMode: "any" });
     const lineResolver = service.searchAvailability({ customerId: PROPERTY_ID, checkIn: date, checkOut: `2026-08-0${6 + index}`, guests: 2, roomType: "all", queryMode: "any" });
@@ -93,10 +108,14 @@ async function run() {
   try {
     await migratePostgres(connection);
     await seedConflictingAuthority(connection);
-    await applyAuthorityMigration(connection);
+    await markAuthorityMigrationPending(connection);
+    await migratePostgres(connection);
     const first = await normalizedSnapshot(connection);
-    await applyAuthorityMigration(connection);
+    const firstApplied = await appliedMigration(connection, AUTHORITY_MIGRATION);
+    assert.ok(firstApplied, "successful authority migration must be recorded in the migration ledger");
+    await migratePostgres(connection);
     assert.deepEqual(await normalizedSnapshot(connection), first, "the one-time authority migration must be idempotent");
+    assert.deepEqual(await appliedMigration(connection, AUTHORITY_MIGRATION), firstApplied, "second startup must not re-run an applied authority migration");
     assert.equal(first.filter((row) => row.propertyId === PROPERTY_ID).length, 15, "all room and bundle dates must be initialized before any toggle");
     assert.deepEqual(first.filter((row) => row.propertyId === OTHER_PROPERTY_ID), [{ propertyId: OTHER_PROPERTY_ID, inventoryId: "other_room", date: "2026-08-06", status: "available", remaining: 1 }], "another property must remain unchanged");
 
@@ -108,7 +127,7 @@ async function run() {
     const frontendResponse = await fetch(`${running.url}/api/public/availability?slug=legacyproperty&checkIn=2026-08-06&checkOut=2026-08-07&guests=2&queryMode=any&roomType=all`);
     const frontendPayload = await frontendResponse.json();
     assert.equal(frontendResponse.status, 200, "the untouched public frontend's first request must succeed");
-    assert.deepEqual(frontendPayload.data.rooms.map((room) => room.id), ["room401", "room402"]);
+    assert.deepEqual(frontendPayload.data.rooms.map((room) => room.id), ["room301"]);
     assert.deepEqual(frontendPayload.data.bundles, []);
     const adminResponse = await fetch(`${running.url}/api/availability/month?propertyId=${PROPERTY_ID}&year=2026&month=8`);
     const adminPayload = await adminResponse.json();

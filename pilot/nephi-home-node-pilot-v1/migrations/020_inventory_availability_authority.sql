@@ -16,10 +16,7 @@ SELECT
   status,
   CASE WHEN status = 'available' THEN 1 ELSE 0 END
 FROM legacy_room_status
-ON CONFLICT(property_id, inventory_id, stay_date) DO UPDATE SET
-  status = EXCLUDED.status,
-  remaining = EXCLUDED.remaining,
-  updated_at = now();
+ON CONFLICT(property_id, inventory_id, stay_date) DO NOTHING;
 
 WITH legacy_dates AS (
   SELECT property_id, stay_date
@@ -55,7 +52,4 @@ SELECT
   status,
   CASE WHEN status = 'available' THEN 1 ELSE 0 END
 FROM bundle_status
-ON CONFLICT(property_id, inventory_id, stay_date) DO UPDATE SET
-  status = EXCLUDED.status,
-  remaining = EXCLUDED.remaining,
-  updated_at = now();
+ON CONFLICT(property_id, inventory_id, stay_date) DO NOTHING;
