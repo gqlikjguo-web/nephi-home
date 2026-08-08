@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { createPendingRequest, pendingFromResults } = require("../lib/conversation-engine-v2/pending-request");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const property = {
   propertyId: "pending_contract_property",
@@ -61,7 +62,7 @@ function withExplicitRelations(output, sourceEvents, contextSnapshot) {
     : output.discourse.relation === "acknowledgement"
       ? "relation_uncertain"
       : "new_request";
-  return {
+  return migrateFakePlannerOutput({
     ...output,
     tasks: output.tasks.map((item, candidateIndex) => ({
       ...item,
@@ -72,9 +73,9 @@ function withExplicitRelations(output, sourceEvents, contextSnapshot) {
       candidateIndex,
       kind: relationKind,
       candidateRequestCycleRefs: relationKind === "new_request" ? [] : [contextSnapshot.cycles[0].requestCycleId],
-      evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
+      evidenceRefs: [{ eventId: source.eventId, messageRef: source.messageRef || "", startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
     }))
-  };
+  });
 }
 
 function persistenceMemory() {

@@ -7,6 +7,7 @@ const { ConversationEngineV2Coordinator } = require("../lib/conversation-engine-
 const { emptyStateV2 } = require("../lib/conversation-engine-v2/state-reducer");
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
 const { normalizePlannerEvidenceCoordinates } = require("../lib/conversation-engine-v2/evidence-normalizer");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const scope = {
   propertyId: "relation-evidence-property",
@@ -67,6 +68,35 @@ function snapshot() {
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
+function withFakeSemanticLedger(output, events) {
+  const migrated = clone(output);
+  const hadRelations = Object.prototype.hasOwnProperty.call(migrated, "contextRelationCandidates");
+  const originalRelations = hadRelations ? clone(migrated.contextRelationCandidates) : undefined;
+  const availableEvents = Array.isArray(events) && events.length > 0 ? events : sourceEvents;
+
+  migrated.contextRelationCandidates = (migrated.tasks || []).map((item, index) => {
+    const source = availableEvents[index] || availableEvents[0];
+    return {
+      candidateIndex: item.candidateIndex,
+      relation: "new_request",
+      targetKind: "new_request",
+      candidateRequestCycleRefs: [],
+      evidenceRefs: [{
+        eventId: source.eventId,
+        messageRef: source.messageRef,
+        startOffset: 0,
+        endOffset: source.messageText.length,
+        quote: source.messageText
+      }]
+    };
+  });
+
+  migrateFakePlannerOutput(migrated);
+  if (hadRelations) migrated.contextRelationCandidates = originalRelations;
+  else delete migrated.contextRelationCandidates;
+  return migrated;
+}
+
 function protectedState({ cycleStatus = "active", cycleExpiry = "2026-07-25T00:00:00.000Z", stateScope = scope } = {}) {
   const state = emptyStateV2(stateScope);
   state.requestCycles = [{ requestCycleId: "cycle-a", requestKind: "policy", status: cycleStatus,
@@ -81,7 +111,7 @@ async function processRejectedCase({ name, output, priorState = protectedState()
   const diagnostics = [];
   let resolverCalls = 0;
   const engine = new ConversationEngineV2({
-    planner: { classify: async () => output },
+    planner: { classify: async () => withFakeSemanticLedger(output, events) },
     persistence: {
       getConversationState: () => clone(persisted),
       setConversationState: (_propertyId, _channelId, _userId, state) => { persisted = clone(state); },
@@ -278,7 +308,7 @@ async function main() {
   const burstStateBefore = clone(burstState);
   let burstResolverCalls = 0;
   const burstEngine = new ConversationEngineV2({
-    planner: { classify: async () => burstPlanner },
+    planner: { classify: async ({ sourceEvents: plannerEvents } = {}) => withFakeSemanticLedger(burstPlanner, plannerEvents || burstEvents) },
     persistence: {
       getConversationState: () => clone(burstState),
       setConversationState: (_propertyId, _channelId, _userId, state) => { burstState = clone(state); },

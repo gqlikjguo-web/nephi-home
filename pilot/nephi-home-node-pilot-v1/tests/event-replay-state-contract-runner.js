@@ -11,10 +11,11 @@ const {
   ConversationEngineV2
 } = require("../lib/conversation-engine-v2/engine");
 const { JsonFileRepository } = require("../lib/json-repository");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 function parkingPlan(sourceEvents) {
   const source = sourceEvents[0];
-  return {
+  return migrateFakePlannerOutput({
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 1 },
     stateOperations: [],
@@ -49,6 +50,7 @@ function parkingPlan(sourceEvents) {
       candidateRequestCycleRefs: [],
       evidenceRefs: [{
         eventId: source.eventId,
+        messageRef: source.messageRef || "",
         startOffset: 0,
         endOffset: source.messageText.length,
         quote: source.messageText
@@ -59,7 +61,7 @@ function parkingPlan(sourceEvents) {
     needsHuman: false,
     shouldIgnore: false,
     reason: "event replay integration"
-  };
+  });
 }
 
 (async () => {

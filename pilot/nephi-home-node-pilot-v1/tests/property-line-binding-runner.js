@@ -9,6 +9,7 @@ const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const { createLineBindingService } = require("../lib/line-binding-service");
 const { sessionTokenHash } = require("../lib/admin-auth");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const encryptionKey = crypto.randomBytes(32).toString("base64");
 const secretA = "channel-a-signing-secret";
@@ -51,7 +52,7 @@ function memoryBindingProvider() {
 
 function planParking(sourceEvent = {}) {
   const sourceText = String(sourceEvent.messageText || "Parking?");
-  return {
+  return migrateFakePlannerOutput({
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
@@ -70,7 +71,7 @@ function planParking(sourceEvent = {}) {
     }],
     contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: String(sourceEvent.eventId || ""), startOffset: 0, endOffset: sourceText.length, quote: sourceText }] }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "line_binding_test"
-  };
+  });
 }
 
 function signed(secret, payload) {

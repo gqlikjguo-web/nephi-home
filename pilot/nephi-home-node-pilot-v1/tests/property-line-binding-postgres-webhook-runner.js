@@ -8,6 +8,7 @@ const { createApp } = require("../server");
 const { createLineBindingService } = require("../lib/line-binding-service");
 const { migratePostgres } = require("../lib/providers/postgres-migrate");
 const { createProviders } = require("../lib/providers/provider-factory");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 const { openPostgres } = require("../lib/providers/postgres-client");
 
 const secretA = "postgres-webhook-secret-a";
@@ -17,7 +18,7 @@ const tokenB = "postgres-webhook-token-b";
 
 function planParking(sourceEvent = {}) {
   const sourceText = String(sourceEvent.messageText || "Parking?");
-  return {
+  return migrateFakePlannerOutput({
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
@@ -25,7 +26,7 @@ function planParking(sourceEvent = {}) {
     tasks: [{ candidateIndex: 0, taskId: "parking", type: "amenity", sourceText, detailIntent: "general", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: false, entity: { category: "amenity", rawText: "parking", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }],
     contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: String(sourceEvent.eventId || ""), startOffset: 0, endOffset: sourceText.length, quote: sourceText }] }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "postgres_webhook_e2e"
-  };
+  });
 }
 
 function signed(secret, payload) {

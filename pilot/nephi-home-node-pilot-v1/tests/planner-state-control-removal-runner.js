@@ -6,12 +6,13 @@ const path = require("node:path");
 
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { emptyStateV2 } = require("../lib/conversation-engine-v2/state-reducer");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const property = { propertyId: "property-a", timezone: "Asia/Taipei", rooms: [], commonAnswers: {} };
 const scope = { propertyId: "property-a", channelId: "channel-a", lineUserId: "user-a", now: "2026-07-24T00:00:00.000Z" };
 
 function plan({ relation = "new_request", refs = [], stateOperations = [] } = {}) {
-  return {
+  return migrateFakePlannerOutput({
     schemaVersion: 2,
     discourse: { relation, confidence: 1 },
     stateOperations,
@@ -34,13 +35,13 @@ function plan({ relation = "new_request", refs = [], stateOperations = [] } = {}
       entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 1 },
       confidence: 1
     }],
-    contextRelationCandidates: [{ candidateIndex: 0, kind: relation === "new_request" ? "new_request" : "supplement_existing", candidateRequestCycleRefs: refs, evidenceRefs: [{ eventId: "event-a", startOffset: 0, endOffset: 4, quote: "test" }] }],
+    contextRelationCandidates: [{ candidateIndex: 0, kind: relation === "new_request" ? "new_request" : "supplement_existing", candidateRequestCycleRefs: refs, evidenceRefs: [{ eventId: "event-a", messageRef: "", startOffset: 0, endOffset: 4, quote: "test" }] }],
     ambiguities: [],
     missingInformation: [],
     needsHuman: false,
     shouldIgnore: false,
     reason: "test"
-  };
+  });
 }
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }

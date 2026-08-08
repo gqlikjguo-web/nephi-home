@@ -12,6 +12,7 @@ const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-pl
 const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
 const { buildFinalDecision } = require("../lib/conversation-engine-v2/final-decision");
 const { buildFinalResponse } = require("../lib/conversation-engine-v2/final-response-renderer");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 function decision(type, approvedTaskResults, overrides = {}) {
   return {
@@ -39,7 +40,7 @@ function plannerOutput({ shouldIgnore = false, tasks = [], sourceEvent = {} } = 
     ...item,
     stayCandidate: item.dependsOnStayContext ? { ...stay } : null
   }));
-  return {
+  return migrateFakePlannerOutput({
     schemaVersion: 2,
     discourse: { relation: shouldIgnore ? "acknowledgement" : "new_request", confidence: 0.99 },
     stateOperations: [],
@@ -56,7 +57,7 @@ function plannerOutput({ shouldIgnore = false, tasks = [], sourceEvent = {} } = 
     needsHuman: false,
     shouldIgnore,
     reason: shouldIgnore ? "acknowledgement" : "test"
-  };
+  });
 }
 
 function task(taskId, type, rawText, canonicalCandidate = null) {

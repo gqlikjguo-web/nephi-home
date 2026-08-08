@@ -1,0 +1,140 @@
+"use strict";
+
+const { evidenceMatchesSource, sourceEventMaps } = require("./understanding-validator");
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SEMANTIC_KINDS = new Set(["capability", "catalog_subject", "temporal_pattern", "lodging_scope"]);
+const CAPABILITIES = new Set(["availability", "available_dates", "room_options", "bundle_availability", "capacity", "price", "total_price", "amenity", "amenity_list", "policy", "property_fact", "booking_request", "human_help", "high_risk", "unknown"]);
+const DATE_KINDS = new Set(["absolute", "relative", "weekday", "weekend", "range", "contextual", "none"]);
+const ANCHORS = new Set(["message_time", "previous_check_in", "previous_check_out", "none"]);
+const MAX_CANDIDATES = 24;
+
+function catalogIdentities(catalog) {
+  return new Set(["rooms", "amenities", "policies", "faqs"]
+    .flatMap((key) => Array.isArray(catalog && catalog[key]) ? catalog[key] : [])
+    .map((entity) => String(entity && entity.canonicalId || "").trim())
+    .filter(Boolean));
+}
+
+function validEvidenceRefs(refs, input) {
+  if (!Array.isArray(refs) || refs.length < 1 || refs.length > 12) return false;
+  const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
+  return refs.every((ref) => ref && evidenceMatchesSource(ref, sourceMaps));
+}
+
+function validTemporalCandidate(value) {
+  return value === null || Boolean(value && typeof value === "object" && !Array.isArray(value)
+    && typeof value.rawText === "string" && value.rawText.length <= 200
+    && DATE_KINDS.has(value.kind) && ANCHORS.has(value.anchor));
+}
+
+function validLodgingScope(value, identities) {
+  if (value === null) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value) || !UUID_PATTERN.test(String(value.scopeId || ""))) return false;
+  const bundle = value.bundleCanonicalCandidate;
+  const rooms = value.roomCanonicalCandidates;
+  const guests = value.guestCountCandidate;
+  return (bundle === null || typeof bundle === "string" && identities.has(bundle))
+    && Array.isArray(rooms) && rooms.length <= 12 && new Set(rooms).size === rooms.length
+    && rooms.every((id) => typeof id === "string" && identities.has(id))
+    && (guests === null || Number.isInteger(guests) && guests >= 1 && guests <= 100);
+}
+
+function validateSemanticCandidates(output, input) {
+  if (!output || !Array.isArray(output.semanticCandidates)) return { present: false, validCandidates: [], invalidCandidateIds: [] };
+  const identities = catalogIdentities(input && input.catalog);
+  const counts = new Map();
+  for (const candidate of output.semanticCandidates) {
+    const id = String(candidate && candidate.candidateId || "");
+    counts.set(id, (counts.get(id) || 0) + 1);
+  }
+  const scopeSignatures = new Map();
+  const conflictingScopeIds = new Set();
+  for (const candidate of output.semanticCandidates) {
+    const scope = candidate && candidate.lodgingScopeCandidate;
+    if (!scope || !UUID_PATTERN.test(String(scope.scopeId || ""))) continue;
+    const signature = JSON.stringify(scope);
+    if (scopeSignatures.has(scope.scopeId) && scopeSignatures.get(scope.scopeId) !== signature) conflictingScopeIds.add(scope.scopeId);
+    else scopeSignatures.set(scope.scopeId, signature);
+  }
+  const validCandidates = [];
+  const invalidCandidateIds = [];
+  for (const candidate of output.semanticCandidates.slice(0, MAX_CANDIDATES)) {
+    const candidateId = String(candidate && candidate.candidateId || "");
+    const catalogIdentity = candidate && candidate.propertyCatalogIdentity;
+    const canonicalIdentity = candidate && candidate.canonicalIdentityCandidate;
+    const valid = Boolean(candidate && typeof candidate === "object" && !Array.isArray(candidate)
+      && UUID_PATTERN.test(candidateId) && counts.get(candidateId) === 1
+      && SEMANTIC_KINDS.has(candidate.semanticKind) && CAPABILITIES.has(candidate.capability)
+      && (canonicalIdentity === null || typeof canonicalIdentity === "string" && canonicalIdentity.length <= 120)
+      && (catalogIdentity === null || typeof catalogIdentity === "string" && identities.has(catalogIdentity))
+      && (!catalogIdentity || canonicalIdentity === catalogIdentity)
+      && validEvidenceRefs(candidate.evidenceRefs, input)
+      && validLodgingScope(candidate.lodgingScopeCandidate, identities)
+      && !(candidate.lodgingScopeCandidate && conflictingScopeIds.has(candidate.lodgingScopeCandidate.scopeId))
+      && validTemporalCandidate(candidate.temporalSemanticCandidate));
+    if (valid) validCandidates.push(candidate);
+    else if (candidateId) invalidCandidateIds.push(candidateId);
+  }
+  if (output.semanticCandidates.length > MAX_CANDIDATES) {
+    invalidCandidateIds.push(...output.semanticCandidates.slice(MAX_CANDIDATES).map((item) => String(item && item.candidateId || "")).filter(Boolean));
+  }
+  return { present: true, validCandidates, invalidCandidateIds: [...new Set(invalidCandidateIds)] };
+}
+
+function evidenceSource(ref, sourceMaps) {
+  const byEvent = ref && ref.eventId ? sourceMaps.byEventId.get(String(ref.eventId)) : null;
+  const byMessage = ref && ref.messageRef ? sourceMaps.byMessageRef.get(String(ref.messageRef)) : null;
+  if (byEvent && byMessage && byEvent !== byMessage) return null;
+  return byEvent || byMessage || null;
+}
+
+function evidenceOverlaps(left, right, sourceMaps) {
+  const source = evidenceSource(left, sourceMaps);
+  if (!source || source !== evidenceSource(right, sourceMaps)) return false;
+  return Number.isInteger(left.startOffset) && Number.isInteger(left.endOffset)
+    && Number.isInteger(right.startOffset) && Number.isInteger(right.endOffset)
+    && left.startOffset < right.endOffset && right.startOffset < left.endOffset;
+}
+
+function compatibleCapability(taskType, capability) {
+  if (taskType === capability) return true;
+  return new Set([taskType, capability]).size === 2
+    && [taskType, capability].every((value) => ["availability", "bundle_availability"].includes(value));
+}
+
+function taskOwnsCandidate(output, input, task, candidate) {
+  if (!task || !Array.isArray(task.semanticCandidateIds) || !task.semanticCandidateIds.includes(candidate.candidateId)
+    || !compatibleCapability(task.type, candidate.capability)) return false;
+  if (candidate.propertyCatalogIdentity
+    && String(task.entity && task.entity.canonicalCandidate || "") !== candidate.propertyCatalogIdentity) return false;
+  const scopeId = String(candidate.lodgingScopeCandidate && candidate.lodgingScopeCandidate.scopeId || "");
+  if (String(task.lodgingScopeId || "") !== scopeId) return false;
+  const relations = (output.contextRelationCandidates || []).filter((relation) => relation && relation.candidateIndex === task.candidateIndex);
+  if (relations.length !== 1 || !validEvidenceRefs(relations[0].evidenceRefs, input)) return false;
+  const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
+  return candidate.evidenceRefs.every((candidateRef) =>
+    relations[0].evidenceRefs.some((taskRef) => evidenceOverlaps(candidateRef, taskRef, sourceMaps)));
+}
+
+function missingSemanticCandidates(output, input, candidates) {
+  return candidates.filter((candidate) => !(output.tasks || []).some((task) => taskOwnsCandidate(output, input, task, candidate)));
+}
+
+function verifiedRepairTask(repairOutput, input, candidate) {
+  if (!repairOutput || !Array.isArray(repairOutput.tasks)) return null;
+  const matches = repairOutput.tasks.filter((task) => Array.isArray(task && task.semanticCandidateIds)
+    && task.semanticCandidateIds.length === 1 && task.semanticCandidateIds[0] === candidate.candidateId
+    && taskOwnsCandidate(repairOutput, input, task, candidate));
+  if (matches.length !== 1) return null;
+  const relations = (repairOutput.contextRelationCandidates || []).filter((relation) => relation && relation.candidateIndex === matches[0].candidateIndex);
+  return relations.length === 1 ? { task: matches[0], relation: relations[0] } : null;
+}
+
+module.exports = {
+  MAX_CANDIDATES,
+  SEMANTIC_KINDS,
+  validateSemanticCandidates,
+  missingSemanticCandidates,
+  verifiedRepairTask
+};

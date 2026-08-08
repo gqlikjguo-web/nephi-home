@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const EVENT_TIMESTAMP = Date.parse("2026-07-23T10:30:00Z");
 const property = {
@@ -127,7 +128,7 @@ function bindPlanToSource(output, sourceEvents, contextSnapshot) {
       quote: source.messageText
     }]
   }));
-  return output;
+  return migrateFakePlannerOutput(output);
 }
 
 function memory() {

@@ -7,6 +7,7 @@ const { validateFriendlyProperty } = require("../lib/friendly-property-import");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { resolveEntity } = require("../lib/conversation-engine-v2/entity-resolver");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, "../fixtures/nephi-home-property.json"), "utf8"));
 const property = validateFriendlyProperty(fixture);
@@ -70,11 +71,11 @@ const planner = { classify: async ({ sourceEvents }) => {
   });
   const source = sourceEvents[0];
   const tasks = output.tasks.map((item, candidateIndex) => ({ ...item, candidateIndex }));
-  return {
+  return migrateFakePlannerOutput({
     ...output,
     tasks,
-    contextRelationCandidates: tasks.map((item) => ({ candidateIndex: item.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }] }))
-  };
+    contextRelationCandidates: tasks.map((item) => ({ candidateIndex: item.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: source.eventId, messageRef: source.messageRef || "", startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }] }))
+  });
 } };
 const memory = new Map();
 const engine = new ConversationEngineV2({

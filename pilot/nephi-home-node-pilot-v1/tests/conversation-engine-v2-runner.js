@@ -10,6 +10,7 @@ const { executeTasks } = require("../lib/conversation-engine-v2/capability-execu
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
 const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
 const { validateClaims } = require("../lib/conversation-engine-v2/claim-validator");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 function buildApprovedPlan(options) {
   return buildResponsePlan(options);
@@ -26,11 +27,11 @@ function plan(overrides = {}) {
     ...overrides
   };
   const tasks = (output.tasks || []).map((task, candidateIndex) => ({ ...task, candidateIndex }));
-  return {
+  return migrateFakePlannerOutput({
     ...output,
     tasks,
-    contextRelationCandidates: output.contextRelationCandidates || tasks.map((task) => ({ candidateIndex: task.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "fixture", startOffset: 0, endOffset: 1, quote: "x" }] }))
-  };
+    contextRelationCandidates: output.contextRelationCandidates || tasks.map((task) => ({ candidateIndex: task.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "fixture", messageRef: "", startOffset: 0, endOffset: 1, quote: "x" }] }))
+  });
 }
 
 const property = {

@@ -6,6 +6,7 @@ const providerFixture = require(
 const {
   ConversationEngineV2
 } = require("../lib/conversation-engine-v2/engine");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const EVENT_TIMESTAMP = Date.parse("2026-07-30T15:00:00+08:00");
 const NOW = () => new Date("2026-07-30T07:00:00.000Z");
@@ -108,7 +109,7 @@ function plan({
 
 function withEventEvidence(output, sourceEvents) {
   const source = sourceEvents[0];
-  return {
+  return migrateFakePlannerOutput({
     ...clone(output),
     contextRelationCandidates: output.contextRelationCandidates.map(
       (relation) => ({
@@ -116,12 +117,13 @@ function withEventEvidence(output, sourceEvents) {
         evidenceRefs: relation.evidenceRefs.map((evidence) => ({
           ...evidence,
           eventId: source.eventId,
+          messageRef: source.messageRef || "",
           endOffset: source.messageText.length,
           quote: source.messageText
         }))
       })
     )
-  };
+  });
 }
 
 function harness(plans) {

@@ -8,6 +8,7 @@ const path = require("node:path");
 const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const secret = "phase7-channel-secret";
 const propertyId = "demo_homestay_a";
@@ -38,6 +39,7 @@ function plannerFor(kind) {
           quote: source.messageText
         }]
       });
+      const finalize = (value) => migrateFakePlannerOutput(value);
       const base = {
         schemaVersion: 2,
         discourse: { relation: "new_request", confidence: 0.99 },
@@ -74,13 +76,13 @@ function plannerFor(kind) {
           },
           confidence: 0.99
         };
-        return {
+        return finalize({
           ...base,
           discourse: { relation: "acknowledgement", confidence: 0.99 },
           shouldIgnore: true,
           tasks: [task],
           contextRelationCandidates: [relation(0)]
-        };
+        });
       }
       if (kind === "clarification") {
         const task = {
@@ -99,11 +101,11 @@ function plannerFor(kind) {
           },
           confidence: 0.99
         };
-        return {
+        return finalize({
           ...base,
           tasks: [task],
           contextRelationCandidates: [relation(0)]
-        };
+        });
       }
       if (kind === "handoff") {
         const task = {
@@ -124,12 +126,12 @@ function plannerFor(kind) {
           },
           confidence: 0.99
         };
-        return {
+        return finalize({
           ...base,
           needsHuman: true,
           tasks: [task],
           contextRelationCandidates: [relation(0)]
-        };
+        });
       }
       const task = {
         taskId: "parking",
@@ -149,11 +151,11 @@ function plannerFor(kind) {
         },
         confidence: 0.99
       };
-      return {
+      return finalize({
         ...base,
         tasks: [task],
         contextRelationCandidates: [relation(0)]
-      };
+      });
     }
   };
 }

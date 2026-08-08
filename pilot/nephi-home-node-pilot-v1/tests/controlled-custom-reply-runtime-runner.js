@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const NOW = () => new Date("2026-07-30T04:00:00.000Z");
 const EVENT_TIMESTAMP = Date.parse("2026-07-30T12:00:00+08:00");
@@ -52,7 +53,7 @@ function task(taskId, type, sourceText, category, canonicalCandidate, candidateI
   };
 }
 function plan(tasks, sourceEvent) {
-  return {
+  return migrateFakePlannerOutput({
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
@@ -72,7 +73,7 @@ function plan(tasks, sourceEvent) {
     needsHuman: false,
     shouldIgnore: false,
     reason: "controlled_custom_reply_test"
-  };
+  });
 }
 function persistence() {
   const states = new Map();

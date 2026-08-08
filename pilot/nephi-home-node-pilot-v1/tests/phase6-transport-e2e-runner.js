@@ -7,6 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
 
 const secret = "phase6-channel-secret";
@@ -19,18 +20,19 @@ function plannerFor(kind) {
   return { classify: async ({ sourceEvents }) => {
     const source = sourceEvents[0];
     const relation = (candidateIndex) => ({ candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }] });
+    const finalize = (value) => migrateFakePlannerOutput(value);
     const base = { schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [], stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "test" };
     if (kind === "handoff") throw new Error("planner failure");
     if (kind === "no_reply") {
       const task = { taskId: "ack", candidateIndex: 0, type: "unknown", sourceText: "acknowledgement", detailIntent: "general", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: false, stayCandidate: null, entity: { category: "other", rawText: "acknowledgement", canonicalCandidate: null, confidence: 0.99 }, confidence: 0.99 };
-      return { ...base, discourse: { relation: "acknowledgement", confidence: 0.99 }, shouldIgnore: true, tasks: [task], contextRelationCandidates: [relation(0)] };
+      return finalize({ ...base, discourse: { relation: "acknowledgement", confidence: 0.99 }, shouldIgnore: true, tasks: [task], contextRelationCandidates: [relation(0)] });
     }
     if (kind === "clarification") {
       const task = { taskId: "availability", candidateIndex: 0, type: "availability", sourceText: "availability", requestedOutputs: ["availability"], dependsOnStayContext: true, stayCandidate: base.stay, entity: { category: "room", rawText: "", canonicalCandidate: null, confidence: 0.99 }, confidence: 0.99 };
-      return { ...base, tasks: [task], contextRelationCandidates: [relation(0)] };
+      return finalize({ ...base, tasks: [task], contextRelationCandidates: [relation(0)] });
     }
     const task = { taskId: "parking", candidateIndex: 0, type: "amenity", sourceText: "parking", requestedOutputs: ["answer"], dependsOnStayContext: false, stayCandidate: null, entity: { category: "amenity", rawText: "parking", canonicalCandidate: "parking", confidence: 0.99 }, confidence: 0.99 };
-    return { ...base, tasks: [task], contextRelationCandidates: [relation(0)] };
+    return finalize({ ...base, tasks: [task], contextRelationCandidates: [relation(0)] });
   } };
 }
 

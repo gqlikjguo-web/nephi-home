@@ -17,6 +17,7 @@ const ADMIN_TOKEN = "trace-admin-session";
 const LINE_SECRET = "test-only-line-secret";
 const LINE_TOKEN = "test-only-line-token";
 const NOW = "2026-08-01T12:00:00.000Z";
+const TRACE_CANDIDATE_ID = "7e000000-0000-4000-8000-000000000001";
 
 function plannerOutput(sourceEvent) {
   const stay = {
@@ -35,6 +36,8 @@ function plannerOutput(sourceEvent) {
       candidateIndex: 0,
       taskId: "availability-double",
       type: "availability",
+      semanticCandidateIds: [TRACE_CANDIDATE_ID],
+      lodgingScopeId: null,
       sourceText: TARGET_MESSAGE,
       detailIntent: "general",
       requestedOutputs: ["availability"],
@@ -44,6 +47,17 @@ function plannerOutput(sourceEvent) {
       stayCandidate: stay,
       confidence: 0.99
     }],
+    semanticCandidates: [{
+      candidateId: TRACE_CANDIDATE_ID,
+      semanticKind: "capability",
+      capability: "availability",
+      canonicalIdentityCandidate: "availability",
+      evidenceRefs: [{ eventId: sourceEvent.eventId, messageRef: "", startOffset: 0, endOffset: TARGET_MESSAGE.length, quote: TARGET_MESSAGE }],
+      lodgingScopeCandidate: null,
+      temporalSemanticCandidate: stay.dateExpression,
+      propertyCatalogIdentity: null
+    }],
+
     contextRelationCandidates: [{
       candidateIndex: 0,
       kind: "new_request",

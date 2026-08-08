@@ -12,6 +12,7 @@ const { TestOnlyOpenAiConversationPlanner } = require("../lib/providers/test-onl
 const { createApp, formatSafeTestOnlyConversationTrace } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const property = { propertyId: "demo_homestay_a", timezone: "Asia/Taipei", rooms: [], commonAnswers: { checkInTime: "15:00" } };
 const sensitive = {
@@ -24,7 +25,7 @@ const sensitive = {
 const model = "gpt-4.1-mini";
 
 function validPlannerOutput() {
-  return {
+  return migrateFakePlannerOutput({
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 1 },
     stateOperations: [],
@@ -36,7 +37,7 @@ function validPlannerOutput() {
     needsHuman: false,
     shouldIgnore: false,
     reason: "test"
-  };
+  });
 }
 
 async function engineResult(output) {
@@ -68,6 +69,7 @@ async function duplicateTaskIdsContinueThroughEngine() {
     candidateRequestCycleRefs: [],
     evidenceRefs: [{ eventId: "test-event", messageRef: "", startOffset: 0, endOffset: 4, quote: "test" }]
   }));
+  migrateFakePlannerOutput(output);
   const diagnostics = [];
   const engine = new ConversationEngineV2({
     planner: { classify: async () => output },

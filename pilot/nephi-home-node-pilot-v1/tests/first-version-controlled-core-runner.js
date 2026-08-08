@@ -11,6 +11,7 @@ const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-l
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { applyPlannerSemanticContract } = require("../lib/conversation-engine-v2/planner-schema");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const property = {
   propertyId: "controlled_core_property",
@@ -83,15 +84,15 @@ function plan(tasks, { shouldIgnore = false, relation = "new_request", dateText 
 
 function withExplicitRelations(output, sourceEvents) {
   const source = sourceEvents[0];
-  return {
+  return migrateFakePlannerOutput({
     ...output,
     contextRelationCandidates: output.tasks.map((item) => ({
       candidateIndex: item.candidateIndex,
       kind: "new_request",
       candidateRequestCycleRefs: [],
-      evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
+      evidenceRefs: [{ eventId: source.eventId, messageRef: source.messageRef || "", startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
     }))
-  };
+  });
 }
 
 function memory() {
@@ -109,7 +110,10 @@ function memory() {
 function createEngine(plannerOutput, counters = {}) {
   const persistence = memory();
   const engine = new ConversationEngineV2({
-    planner: { classify: async ({ sourceEvents }) => withExplicitRelations(plannerOutput, sourceEvents) },
+    planner: { classify: async ({ sourceEvents }) => {
+      counters.planner = (counters.planner || 0) + 1;
+      return withExplicitRelations(plannerOutput, sourceEvents);
+    } },
     composer: { compose: async () => { counters.composer = (counters.composer || 0) + 1; return null; } },
     persistence,
     getProperty: () => property,
@@ -208,6 +212,7 @@ async function main() {
     assert.equal(result.reviewCount, 0);
     assert.equal(counters.availability || 0, 0);
     assert.equal(counters.composer || 0, 0);
+    assert.equal(counters.planner, 1, "punctuation normalization must not add a Planner or repair call");
   }
 
   const malformedPunctuationPlan = plan([
@@ -220,7 +225,6 @@ async function main() {
   assert.equal(malformedPunctuation.shouldReply, false, "pure Unicode punctuation must not become a handoff when the Planner candidate is structurally invalid");
   assert.equal(malformedPunctuation.noReply, true);
   assert.equal(malformedPunctuation.finalDecision.reasonCode, "no_reply_gate_hit");
-
   const substantiveUnknownRuntime = createEngine(plan([
     task({ taskId: "substantive-unknown", type: "unknown", sourceText: "Price?", category: "other", rawText: "Price?" })
   ]));
@@ -281,4 +285,15 @@ async function main() {
   console.log("first-version controlled core: PASS");
 }
 
-main().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
+async function run(mainFunction = main) {
+  try {
+    await mainFunction();
+  } catch (error) {
+    console.error(error.stack || error);
+    globalThis.process.exitCode = 1;
+  }
+}
+
+if (require.main === module) void run();
+
+module.exports = { run };

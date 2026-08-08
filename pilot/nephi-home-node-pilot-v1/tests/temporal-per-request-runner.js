@@ -7,6 +7,7 @@ const assert = require("node:assert/strict");
 
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { emptyStateV2 } = require("../lib/conversation-engine-v2/state-reducer");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 const { resolveTemporalExpression } = require("../lib/conversation-engine-v2/temporal-resolver");
 
 const NOW = "2026-07-24T00:00:00.000Z";
@@ -86,7 +87,7 @@ function availabilityTask(candidateIndex, roomId, stayCandidate) {
 function plan(tasks, relations) {
   return (sourceEvents) => {
     const source = sourceEvents[0];
-    return {
+    return migrateFakePlannerOutput({
       schemaVersion: 2,
       discourse: { relation: "new_request", confidence: 1 }, stateOperations: [],
       stay: stay(), tasks,
@@ -94,10 +95,10 @@ function plan(tasks, relations) {
         candidateIndex: relation.candidateIndex,
         kind: relation.kind,
         candidateRequestCycleRefs: relation.refs || [],
-        evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
+        evidenceRefs: [{ eventId: source.eventId, messageRef: source.messageRef || "", startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
       })),
       ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "temporal per request test"
-    };
+    });
   };
 }
 function inputs(roomId, checkIn, checkOut, nights, guests) {

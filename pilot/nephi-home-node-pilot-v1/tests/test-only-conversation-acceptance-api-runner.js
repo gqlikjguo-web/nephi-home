@@ -11,6 +11,7 @@ const { createApp } = require("../server");
 const { runtimeConfig } = require("../config/runtime");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const { sessionTokenHash } = require("../lib/admin-auth");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const propertyId = "demo_homestay_a";
 const adminToken = "test-only-platform-admin-token";
@@ -20,7 +21,8 @@ function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function stay(checkIn = null) { return { dateExpression: { rawText: checkIn || "", kind: checkIn ? "absolute" : "none", anchor: checkIn ? "message_time" : "none" }, checkInCandidate: checkIn, checkOutCandidate: null, nightsCandidate: checkIn ? 1 : null, guestCountCandidate: null }; }
 function relation(source, kind = "new_request", refs = [], candidateIndex = 0) { return { candidateIndex, kind, candidateRequestCycleRefs: refs, evidenceRefs: [{ eventId: source.eventId, messageRef: "", startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }] }; }
 function planTask({ taskId, type, sourceText, dependsOnStayContext, canonicalCandidate = null, category = "other", stayCandidate = null }) { return { candidateIndex: 0, taskId, type, sourceText, detailIntent: "general", requestedOutputs: [type === "availability" ? "availability" : "answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext, stayCandidate, entity: { category, rawText: canonicalCandidate || "", canonicalCandidate, confidence: 0.99 }, confidence: 0.99 }; }
-function plannerOutput({ sourceEvents, currentMessage }) {
+function plannerOutput(input) { return migrateFakePlannerOutput(plannerOutputUnchecked(input)); }
+function plannerOutputUnchecked({ sourceEvents, currentMessage }) {
   const source = sourceEvents[0];
   const base = { schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [], stay: stay(), ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "test_only_acceptance_fixture" };
   if (currentMessage === "planner timeout") { const error = new Error("test planner timeout"); Object.assign(error, { name: "AbortError", timeout: true, retryPerformed: true, retrySucceeded: false, retryable: true, providerAttemptCount: 2, firstAttemptErrorCategory: "timeout", finalErrorCategory: "timeout", providerAttempts: [{ attempt: 1, timeout: true, timeoutMs: 10, errorCategory: "timeout" }, { attempt: 2, timeout: true, timeoutMs: 10, errorCategory: "timeout" }] }); throw error; }

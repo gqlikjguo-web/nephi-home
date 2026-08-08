@@ -8,6 +8,7 @@ const { createApp } = require("../server");
 const { createMvpService } = require("../lib/mvp-service");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const PROPERTY_ID = "golden_property_alpha";
 const TIMEZONE = "Asia/Taipei";
@@ -111,7 +112,7 @@ function plannerOutputFor(testCase, sourceEvent) {
       confidence: 0.99
     };
   })];
-  return {
+  return migrateFakePlannerOutput({
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
@@ -134,7 +135,7 @@ function plannerOutputFor(testCase, sourceEvent) {
     needsHuman: false,
     shouldIgnore: false,
     reason: "relative_date_production_replay"
-  };
+  });
 }
 
 function seed() {

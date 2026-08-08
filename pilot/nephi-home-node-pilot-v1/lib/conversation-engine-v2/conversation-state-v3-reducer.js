@@ -397,12 +397,13 @@ function decideContextExecutionV3({
         }];
       }
     }
+    const requestedCycleId = String(task.lodgingScopeId || task.taskId);
     const repeatedTaskId = state.tasks.some(
-      (candidate) => candidate.taskId === task.taskId
+      (candidate) => candidate.taskId === requestedCycleId
     );
     const newRequestCycleId = repeatedTaskId
-      ? `${task.taskId}#${Number(state.revision || 0) + 1}-${task.candidateIndex}`
-      : task.taskId;
+      ? `${requestedCycleId}#${Number(state.revision || 0) + 1}-${task.candidateIndex}`
+      : requestedCycleId;
     return [{
       candidateIndex: task.candidateIndex,
       requestCycleId: relation && relation.requestCycleId

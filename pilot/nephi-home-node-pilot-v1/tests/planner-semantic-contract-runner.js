@@ -5,6 +5,7 @@ const { applyPlannerSemanticContract, normalizeDuplicateTaskIds, plannerJsonSche
 const { canonicalizeExecutionItem } = require("../lib/conversation-engine-v2/canonicalizer");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const eventTimestamp = Date.parse("2026-08-01T10:00:00+08:00");
 
@@ -19,13 +20,13 @@ function task({ taskId, type = "property_fact", category = "other", rawText, sou
 }
 
 function plan(tasks) {
-  return {
+  return migrateFakePlannerOutput({
     schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
     tasks, contextRelationCandidates: tasks.map((item) => ({ candidateIndex: item.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [] })),
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "semantic_contract_test"
-  };
+  });
 }
 
 const property = {

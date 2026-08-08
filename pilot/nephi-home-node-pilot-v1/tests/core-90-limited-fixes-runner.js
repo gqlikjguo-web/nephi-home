@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const EVENT_TIMESTAMP = Date.parse("2026-07-29T10:00:00+08:00");
 const NOW = () => new Date("2026-07-29T02:00:00.000Z");
@@ -107,7 +108,7 @@ function plannerTask({
 }
 
 function plan(task, sourceEvent) {
-  return {
+  return migrateFakePlannerOutput({
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
@@ -130,7 +131,7 @@ function plan(task, sourceEvent) {
     needsHuman: false,
     shouldIgnore: false,
     reason: "core_90_limited_regression"
-  };
+  });
 }
 
 function memoryPersistence() {

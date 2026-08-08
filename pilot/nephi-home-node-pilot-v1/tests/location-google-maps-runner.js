@@ -9,6 +9,7 @@ const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
 const { instructions } = require("../lib/providers/test-only-openai-conversation-planner");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 function plan(relation = "new_request") {
   return { schemaVersion: 2, discourse: { relation, confidence: 1 }, stateOperations: [], stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, tasks: [{ candidateIndex: 0, taskId: "location", type: "property_fact", sourceText: "location request", detailIntent: "general", requestedOutputs: ["map_url"], dependsOnStayContext: false, entity: { category: "transport", rawText: "location", canonicalCandidate: relation === "continue" ? null : "location", confidence: 1 }, confidence: 1 }], contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "fixture", startOffset: 0, endOffset: 1, quote: "x" }] }], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "location" };
@@ -18,7 +19,7 @@ function withExplicitRelation(output, sourceEvents, contextSnapshot) {
   const source = sourceEvents[0];
   const kind = output.discourse.relation === "continue" ? "supplement_existing" : "new_request";
   const cycle = contextSnapshot.cycles[0] && contextSnapshot.cycles[0].requestCycleId;
-  return { ...output, contextRelationCandidates: output.tasks.map((task) => {
+  return migrateFakePlannerOutput({ ...output, contextRelationCandidates: output.tasks.map((task) => {
     const taskStart = source.messageText.indexOf(task.sourceText);
     const startOffset = taskStart >= 0 ? taskStart : 0;
     const quote = taskStart >= 0 ? task.sourceText : source.messageText;
@@ -28,12 +29,13 @@ function withExplicitRelation(output, sourceEvents, contextSnapshot) {
       candidateRequestCycleRefs: kind === "new_request" ? [] : cycle ? [cycle] : [],
       evidenceRefs: [{
         eventId: source.eventId,
+        messageRef: source.messageRef || "",
         startOffset,
         endOffset: startOffset + quote.length,
         quote
       }]
     };
-  }) };
+  }) });
 }
 
 function memory() {

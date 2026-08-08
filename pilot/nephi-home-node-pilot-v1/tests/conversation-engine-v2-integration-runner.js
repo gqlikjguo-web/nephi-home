@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { composeSection } = require("../lib/conversation-engine-v2/controlled-composer");
 const { formatSafeTestOnlyConversationTrace } = require("../server");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const states = new Map(), logs = [];
 const persistence = {
@@ -17,11 +18,11 @@ function explicitPlanner(basePlanner) {
       const output = await basePlanner.classify(input);
       const source = input.sourceEvents[0];
       const tasks = output.tasks.map((task, candidateIndex) => ({ ...task, candidateIndex }));
-      return {
+      return migrateFakePlannerOutput({
         ...output,
         tasks,
         contextRelationCandidates: tasks.map((task) => ({ candidateIndex: task.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }] }))
-      };
+      });
     }
   };
 }
@@ -530,7 +531,7 @@ function latestConditions(result) {
     classify: async (input) => {
       const output = await multiTaskPlanner.classify(input);
       const tasks = output.tasks.map((task, candidateIndex) => ({ ...task, candidateIndex }));
-      return {
+      const migrated = migrateFakePlannerOutput({
         ...output,
         tasks,
         contextRelationCandidates: tasks.map((task) => ({
@@ -539,7 +540,14 @@ function latestConditions(result) {
           candidateRequestCycleRefs: [],
           evidenceRefs: [{ eventId: "planner-invented-event", messageRef: "", startOffset: 999, endOffset: 1000, quote: "planner mismatch" }]
         }))
-      };
+      });
+      const source = input.sourceEvents[0];
+      for (const task of migrated.tasks) {
+        const startOffset = source.messageText.indexOf(task.sourceText);
+        const candidate = migrated.semanticCandidates.find((item) => task.semanticCandidateIds.includes(item.candidateId));
+        candidate.evidenceRefs = [{ eventId: source.eventId, messageRef: "", startOffset, endOffset: startOffset + task.sourceText.length, quote: task.sourceText }];
+      }
+      return migrated;
     }
   };
   const multiTaskDiagnostics = [];

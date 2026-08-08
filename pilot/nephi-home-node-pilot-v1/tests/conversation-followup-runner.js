@@ -4,18 +4,19 @@ const assert = require("node:assert/strict");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
 const { instructions } = require("../lib/providers/test-only-openai-conversation-planner");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 function plan({ relation, type, category, sourceText, topic = null, detailIntent = "general", eligibilityEvidence = { kind: "none", sourceText: "" } }) {
-  return {
+  return migrateFakePlannerOutput({
     schemaVersion: 2,
     discourse: { relation, confidence: 1 },
     stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
     tasks: [{ candidateIndex: 0, taskId: "question", type, sourceText, detailIntent, requestedOutputs: [detailIntent === "eligibility" ? "eligibility" : "answer"], eligibilityEvidence, dependsOnStayContext: false,
       entity: { category, rawText: sourceText, canonicalCandidate: topic, confidence: 1 }, confidence: 1 }],
-    contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "fixture", startOffset: 0, endOffset: 1, quote: "x" }] }],
+    contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "fixture", messageRef: "", startOffset: 0, endOffset: 1, quote: "x" }] }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: relation
-  };
+  });
 }
 
 function withExplicitRelation(output, sourceEvents, contextSnapshot) {
@@ -23,15 +24,15 @@ function withExplicitRelation(output, sourceEvents, contextSnapshot) {
   const relation = output.discourse.relation;
   const kind = ["continue", "answer_clarification"].includes(relation) ? "supplement_existing" : relation === "modify" ? "modify_existing" : relation === "end" ? "end_existing" : "new_request";
   const cycle = contextSnapshot.cycles[0] && contextSnapshot.cycles[0].requestCycleId;
-  return {
+  return migrateFakePlannerOutput({
     ...output,
     contextRelationCandidates: output.tasks.map((task) => ({
       candidateIndex: task.candidateIndex,
       kind,
       candidateRequestCycleRefs: kind === "new_request" ? [] : cycle ? [cycle] : [],
-      evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
+      evidenceRefs: [{ eventId: source.eventId, messageRef: source.messageRef || "", startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
     }))
-  };
+  });
 }
 
 function property(propertyId, overrides = {}) {

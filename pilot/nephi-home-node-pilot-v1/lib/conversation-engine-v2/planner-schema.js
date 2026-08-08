@@ -8,6 +8,8 @@ const DATE_KINDS = new Set(["absolute", "relative", "weekday", "weekend", "range
 const ANCHORS = new Set(["message_time", "previous_check_in", "previous_check_out", "none"]);
 const ELIGIBILITY_EVIDENCE_KINDS = new Set(["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
 const CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
+const SEMANTIC_KINDS = new Set(["capability", "catalog_subject", "temporal_pattern", "lodging_scope"]);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const { DETAIL_INTENTS } = require("./detail-intent");
 const { resolveEntity, mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures } = require("./entity-resolver");
 const { getCapabilityDefinition } = require("./capability-registry");
@@ -65,6 +67,31 @@ function validStayCandidate(value) {
     && (value.checkOutCandidate === null || text(value.checkOutCandidate, 40))
     && (value.nightsCandidate === null || Number.isInteger(value.nightsCandidate) && value.nightsCandidate >= 1 && value.nightsCandidate <= 60)
     && (value.guestCountCandidate === null || Number.isInteger(value.guestCountCandidate) && value.guestCountCandidate >= 1 && value.guestCountCandidate <= 100));
+}
+function validEvidenceRefShape(ref) {
+  return Boolean(ref && typeof ref === "object" && !Array.isArray(ref)
+    && text(ref.eventId || "", 120) && text(ref.messageRef || "", 120)
+    && Number.isInteger(ref.startOffset) && ref.startOffset >= 0
+    && Number.isInteger(ref.endOffset) && ref.endOffset >= ref.startOffset
+    && text(ref.quote, 500) && ref.quote.length > 0);
+}
+function validSemanticCandidateShape(candidate) {
+  const scope = candidate && candidate.lodgingScopeCandidate;
+  const temporal = candidate && candidate.temporalSemanticCandidate;
+  return Boolean(candidate && typeof candidate === "object" && !Array.isArray(candidate)
+    && UUID_PATTERN.test(String(candidate.candidateId || ""))
+    && SEMANTIC_KINDS.has(candidate.semanticKind) && TASK_TYPES.has(candidate.capability)
+    && (candidate.canonicalIdentityCandidate === null || text(candidate.canonicalIdentityCandidate, 120))
+    && Array.isArray(candidate.evidenceRefs) && candidate.evidenceRefs.length >= 1 && candidate.evidenceRefs.every(validEvidenceRefShape)
+    && (candidate.propertyCatalogIdentity === null || text(candidate.propertyCatalogIdentity, 120))
+    && (scope === null || scope && typeof scope === "object" && !Array.isArray(scope)
+      && UUID_PATTERN.test(String(scope.scopeId || ""))
+      && (scope.bundleCanonicalCandidate === null || text(scope.bundleCanonicalCandidate, 120))
+      && Array.isArray(scope.roomCanonicalCandidates) && scope.roomCanonicalCandidates.length <= 12
+      && scope.roomCanonicalCandidates.every((id) => text(id, 120))
+      && (scope.guestCountCandidate === null || Number.isInteger(scope.guestCountCandidate) && scope.guestCountCandidate >= 1 && scope.guestCountCandidate <= 100))
+    && (temporal === null || temporal && typeof temporal === "object" && !Array.isArray(temporal)
+      && text(temporal.rawText || "", 200) && DATE_KINDS.has(temporal.kind) && ANCHORS.has(temporal.anchor)));
 }
 function controlledRequestedOutputs(task) {
   if (task.entity && task.entity.category === "transport") return ["map_url"];
@@ -494,9 +521,33 @@ function validatePlannerOutput(value) {
         if (taskIds.has(task.taskId)) errors.push("tasks.taskId.duplicate");
         taskIds.add(task.taskId);
       }
+      if (!Array.isArray(task && task.semanticCandidateIds) || task.semanticCandidateIds.length < 1 || task.semanticCandidateIds.length > 24
+          || task.semanticCandidateIds.some((id) => !UUID_PATTERN.test(String(id || "")))
+          || !(task.lodgingScopeId === null || UUID_PATTERN.test(String(task.lodgingScopeId || "")))) errors.push('tasks.' + index + '.semanticCandidates');
     });
   }
   if (!Array.isArray(value.ambiguities)) errors.push("ambiguities");
+  const semanticCandidatesValid = Array.isArray(value.semanticCandidates) && value.semanticCandidates.length >= 1 && value.semanticCandidates.length <= 24
+    && value.semanticCandidates.every(validSemanticCandidateShape);
+  if (!semanticCandidatesValid) errors.push("semanticCandidates");
+  else {
+    if (new Set(value.semanticCandidates.map((candidate) => candidate.candidateId)).size !== value.semanticCandidates.length) errors.push("semanticCandidates.candidateId.duplicate");
+    const scopeSignatures = new Map();
+    for (const candidate of value.semanticCandidates) {
+      const scope = candidate.lodgingScopeCandidate;
+      if (!scope) continue;
+      const signature = JSON.stringify(scope);
+      if (scopeSignatures.has(scope.scopeId) && scopeSignatures.get(scope.scopeId) !== signature) errors.push("semanticCandidates.lodgingScope.conflict");
+      else scopeSignatures.set(scope.scopeId, signature);
+    }
+    const knownCandidateIds = new Set(value.semanticCandidates.map((candidate) => candidate.candidateId));
+    for (const task of value.tasks || []) {
+      if (task && task.lodgingScopeId !== null && !scopeSignatures.has(task.lodgingScopeId)) errors.push("tasks.lodgingScopeId.orphan");
+      if (task && Array.isArray(task.semanticCandidateIds) && task.semanticCandidateIds.some((candidateId) => !knownCandidateIds.has(candidateId)))
+        errors.push("tasks.semanticCandidateIds.unknown");
+    }
+  }
+
   if (!Array.isArray(value.missingInformation)) errors.push("missingInformation");
   if (!Array.isArray(value.contextRelationCandidates) || value.contextRelationCandidates.some((item) => !item || !Number.isInteger(item.candidateIndex) || item.candidateIndex < 0 || !CONTEXT_RELATION_KINDS.has(item.kind) || !Array.isArray(item.candidateRequestCycleRefs) || !Array.isArray(item.evidenceRefs))) errors.push("contextRelationCandidates");
   if (typeof value.needsHuman !== "boolean" || typeof value.shouldIgnore !== "boolean" || !text(value.reason, 120)) errors.push("safety");
@@ -554,66 +605,26 @@ function normalizeDuplicateTaskIds(value) {
 
 function normalizeIgnoredAcknowledgementOutput(value, { sourceEvents } = {}) {
   if (sourceEventsAreUnicodeNonSubstantive(sourceEvents)) {
-    const sourceEvent = (Array.isArray(sourceEvents) ? sourceEvents : []).find((event) => {
-      const messageText = String(event && event.messageText || "");
-      return messageText.trim() && (String(event && event.eventId || "").trim() || String(event && event.messageRef || "").trim());
-    });
+    if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tasks)) return value;
+    const sourceEvent = (Array.isArray(sourceEvents) ? sourceEvents : []).find((event) => String(event && event.messageText || "").trim());
     if (!sourceEvent) return value;
     const messageText = String(sourceEvent.messageText || "").slice(0, 500);
-    const firstTask = value && typeof value === "object" && !Array.isArray(value) && Array.isArray(value.tasks)
-      ? value.tasks[0]
-      : null;
-    const discourseConfidence = confidence(value && value.discourse && value.discourse.confidence)
-      ? value.discourse.confidence
-      : 0;
-    const taskConfidence = confidence(firstTask && firstTask.confidence)
-      ? firstTask.confidence
-      : discourseConfidence;
-    const entityConfidence = confidence(firstTask && firstTask.entity && firstTask.entity.confidence)
-      ? firstTask.entity.confidence
-      : taskConfidence;
-    const taskId = text(firstTask && firstTask.taskId, 80) && firstTask.taskId.trim()
-      ? firstTask.taskId.trim()
-      : "non-substantive-1";
+    const tasks = value.tasks.map((task) => {
+      if (!task || typeof task !== "object" || Array.isArray(task)) return task;
+      const sourceText = text(task.sourceText, 500) && task.sourceText.trim() ? task.sourceText : messageText;
+      const entity = task.entity && typeof task.entity === "object" && !Array.isArray(task.entity)
+        ? {
+          ...task.entity,
+          rawText: text(task.entity.rawText || "", 200) && task.entity.rawText.trim()
+            ? task.entity.rawText
+            : messageText.slice(0, 200)
+        }
+        : task.entity;
+      return { ...task, sourceText, entity };
+    });
     return {
-      ...(value && typeof value === "object" && !Array.isArray(value) ? value : {}),
-      schemaVersion: 2,
-      discourse: { relation: "acknowledgement", confidence: discourseConfidence },
-      stateOperations: [],
-      stay: {
-        dateExpression: { rawText: "", kind: "none", anchor: "none" },
-        checkInCandidate: null,
-        checkOutCandidate: null,
-        nightsCandidate: null,
-        guestCountCandidate: null
-      },
-      tasks: [{
-        candidateIndex: 0,
-        taskId,
-        type: "unknown",
-        sourceText: messageText,
-        detailIntent: "general",
-        requestedOutputs: ["answer"],
-        eligibilityEvidence: { kind: "none", sourceText: "" },
-        dependsOnStayContext: false,
-        entity: { category: "other", rawText: messageText.slice(0, 200), canonicalCandidate: null, confidence: entityConfidence },
-        stayCandidate: null,
-        confidence: taskConfidence
-      }],
-      contextRelationCandidates: [{
-        candidateIndex: 0,
-        kind: "relation_uncertain",
-        candidateRequestCycleRefs: [],
-        evidenceRefs: [{
-          eventId: String(sourceEvent.eventId || "").trim(),
-          messageRef: String(sourceEvent.messageRef || "").trim(),
-          startOffset: 0,
-          endOffset: messageText.length,
-          quote: messageText
-        }]
-      }],
-      ambiguities: [],
-      missingInformation: [],
+      ...value,
+      tasks,
       needsHuman: false,
       shouldIgnore: true,
       reason: "non_substantive_unicode"
@@ -1003,7 +1014,7 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
 
 function plannerJsonSchema() {
   const stringEnum = (values) => ({ type: "string", enum: [...values] });
-  return {
+  const schema = {
     type: "object", additionalProperties: false,
     required: ["schemaVersion", "discourse", "stateOperations", "stay", "tasks", "contextRelationCandidates", "ambiguities", "missingInformation", "needsHuman", "shouldIgnore", "reason"],
     properties: {
@@ -1016,6 +1027,16 @@ function plannerJsonSchema() {
       ambiguities: { type: "array", items: { type: "string", maxLength: 300 } }, missingInformation: { type: "array", items: { type: "string", maxLength: 120 } }, needsHuman: { type: "boolean" }, shouldIgnore: { type: "boolean" }, reason: { type: "string", maxLength: 120 }
     }
   };
+  schema.required.splice(5, 0, "semanticCandidates");
+  const taskSchema = schema.properties.tasks.items;
+  taskSchema.required.push("semanticCandidateIds", "lodgingScopeId");
+  taskSchema.properties.semanticCandidateIds = { type: "array", maxItems: 24, items: { type: "string", pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" } };
+  taskSchema.properties.semanticCandidateIds.minItems = 1;
+  taskSchema.properties.lodgingScopeId = { type: ["string", "null"], pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" };
+  const evidenceRefSchema = { type: "object", additionalProperties: false, required: ["eventId", "messageRef", "startOffset", "endOffset", "quote"], properties: { eventId: { type: "string", maxLength: 120 }, messageRef: { type: "string", maxLength: 120 }, startOffset: { type: "integer", minimum: 0 }, endOffset: { type: "integer", minimum: 0 }, quote: { type: "string", minLength: 1, maxLength: 500 } } };
+  schema.properties.semanticCandidates = { type: "array", maxItems: 24, items: { type: "object", additionalProperties: false, required: ["candidateId", "semanticKind", "capability", "canonicalIdentityCandidate", "evidenceRefs", "lodgingScopeCandidate", "temporalSemanticCandidate", "propertyCatalogIdentity"], properties: { candidateId: { type: "string", pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" }, semanticKind: stringEnum(SEMANTIC_KINDS), capability: stringEnum(TASK_TYPES), canonicalIdentityCandidate: { type: ["string", "null"], maxLength: 120 }, evidenceRefs: { type: "array", minItems: 1, maxItems: 12, items: evidenceRefSchema }, lodgingScopeCandidate: { type: ["object", "null"], additionalProperties: false, required: ["scopeId", "bundleCanonicalCandidate", "roomCanonicalCandidates", "guestCountCandidate"], properties: { scopeId: { type: "string", pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" }, bundleCanonicalCandidate: { type: ["string", "null"], maxLength: 120 }, roomCanonicalCandidates: { type: "array", maxItems: 12, items: { type: "string", maxLength: 120 } }, guestCountCandidate: { type: ["integer", "null"], minimum: 1, maximum: 100 } } }, temporalSemanticCandidate: { type: ["object", "null"], additionalProperties: false, required: ["rawText", "kind", "anchor"], properties: { rawText: { type: "string", maxLength: 200 }, kind: stringEnum(DATE_KINDS), anchor: stringEnum(ANCHORS) } }, propertyCatalogIdentity: { type: ["string", "null"], maxLength: 120 } } } };
+  schema.properties.semanticCandidates.minItems = 1;
+  return schema;
 }
 
 module.exports = { validatePlannerOutput, applyPlannerSemanticContract, plannerJsonSchema, normalizeEligibilityEvidence, normalizeIgnoredAcknowledgementOutput, normalizeDuplicateTaskIds, discardLegacyPlannerStateControls, TASK_TYPES };

@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const MESSAGE = "民宿在哪裡？";
 const EVENT_TIMESTAMP = Date.parse("2026-07-27T10:00:00+08:00");
@@ -49,7 +50,7 @@ function property(propertyId, label, mapUrl) {
 }
 
 function locationPlan(sourceEvent, topLevelStay) {
-  return {
+  return migrateFakePlannerOutput({
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
@@ -89,7 +90,7 @@ function locationPlan(sourceEvent, topLevelStay) {
     needsHuman: false,
     shouldIgnore: false,
     reason: "location_readiness_regression"
-  };
+  });
 }
 
 function memoryPersistence() {

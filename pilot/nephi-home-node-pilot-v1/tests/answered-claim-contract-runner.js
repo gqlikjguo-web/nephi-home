@@ -12,6 +12,7 @@ const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-pl
 const { composeSection } = require("../lib/conversation-engine-v2/controlled-composer");
 const { validateClaims } = require("../lib/conversation-engine-v2/claim-validator");
 const { buildFinalDecision } = require("../lib/conversation-engine-v2/final-decision");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const PROPERTY_ID = "demo_homestay_a";
 const FIXED_NOW = "2026-07-17T10:00:00+08:00";
@@ -170,7 +171,7 @@ function plannerFor(testCase) {
         ...clone(task),
         candidateIndex
       }));
-      return {
+      return migrateFakePlannerOutput({
         schemaVersion: 2,
         discourse: { relation: "new_request", confidence: 0.99 },
         stateOperations: [],
@@ -193,7 +194,7 @@ function plannerFor(testCase) {
         needsHuman: false,
         shouldIgnore: false,
         reason: "answered_claim_contract"
-      };
+      });
     }
   };
 }

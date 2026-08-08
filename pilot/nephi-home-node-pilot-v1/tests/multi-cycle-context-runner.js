@@ -12,6 +12,7 @@ const {
   createConversationTaskV3,
   readConversationStateV3
 } = require("../lib/conversation-contracts/conversation-state-v3");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const scope = { propertyId: "multi-property", channelId: "multi-channel", lineUserId: "multi-user", now: "2026-07-24T00:00:00.000Z", eventId: "multi-event" };
 const task = (candidateIndex, taskId, canonicalCandidate) => ({ candidateIndex, taskId, type: "policy", sourceText: taskId, detailIntent: "general", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "policy", rawText: taskId, canonicalCandidate, confidence: 1 }, confidence: 1 });
@@ -95,17 +96,17 @@ function engineTask(candidateIndex, taskId, type, canonicalCandidate, stayCandid
 function enginePlan({ tasks, relations, dateText = "", checkInCandidate = null, guests = null, missingInformation = [], shouldIgnore = false }) {
   return (sourceEvents) => {
     const source = sourceEvents[0];
-    return {
+    return migrateFakePlannerOutput({
       schemaVersion: 2,
       discourse: { relation: "new_request", confidence: 1 }, stateOperations: [],
       stay: { dateExpression: { rawText: dateText, kind: dateText ? "absolute" : "none", anchor: dateText ? "message_time" : "none" }, checkInCandidate, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: guests },
       tasks,
       contextRelationCandidates: relations.map((relation) => ({
         candidateIndex: relation.candidateIndex, kind: relation.kind, candidateRequestCycleRefs: relation.refs || [],
-        evidenceRefs: [{ eventId: source.eventId, startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
+        evidenceRefs: [{ eventId: source.eventId, messageRef: source.messageRef || "", startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
       })),
       ambiguities: [], missingInformation, needsHuman: false, shouldIgnore, reason: "multi-cycle engine test"
-    };
+    });
   };
 }
 function engineHarness(initial = {}) {

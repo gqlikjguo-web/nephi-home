@@ -11,6 +11,7 @@ const { createPendingRequest } = require("../lib/conversation-engine-v2/pending-
 const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const { createLineBindingService } = require("../lib/line-binding-service");
+const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const NOW = "2026-07-23T02:00:00.000Z";
 const EVENT_TIME = Date.parse("2026-07-23T10:00:00+08:00");
@@ -105,7 +106,7 @@ function bindPlanToSource(output, sourceEvents) {
     candidateRequestCycleRefs: [],
     evidenceRefs: [{ eventId: source.eventId, messageRef: source.messageRef || "", startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
   }));
-  return output;
+  return migrateFakePlannerOutput(output);
 }
 
 function memory() {
