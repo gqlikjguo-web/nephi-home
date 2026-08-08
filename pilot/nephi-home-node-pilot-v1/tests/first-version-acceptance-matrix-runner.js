@@ -7,7 +7,6 @@
  */
 const assert = require("node:assert/strict");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
-const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const EVENT_TIME = Date.parse("2026-07-17T10:00:00+08:00");
 
@@ -104,7 +103,7 @@ function withExplicitRelations(plannerOutput, sourceEvents) {
   const source = (sourceEvents || [])[0] || {};
   const messageText = String(source.messageText || "");
   const tasks = (plannerOutput.tasks || []).map((task, candidateIndex) => ({ ...task, candidateIndex }));
-  return migrateFakePlannerOutput({
+  return {
     ...plannerOutput,
     tasks,
     contextRelationCandidates: tasks.map((task) => ({
@@ -119,7 +118,7 @@ function withExplicitRelations(plannerOutput, sourceEvents) {
         quote: messageText
       }]
     }))
-  });
+  };
 }
 
 // `message` is acceptance data.  The planner is deterministic by design so

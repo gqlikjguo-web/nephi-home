@@ -220,12 +220,16 @@ async function classifySequence({ first, repair, plannerInput }) {
   });
   const repaired = await classifySequence({ first, repair, plannerInput: input(message, eventId, propertyCatalog) });
   assert.equal(repaired.calls, 2, "one missing structured candidate must trigger exactly one repair call");
-  assert.deepEqual(repaired.result.tasks[0], firstPriceTask, "the first legal sibling must survive byte-for-byte");
+  const { semanticCandidateIds: _firstIds, lodgingScopeId: _firstScope, ...firstTaskSemantics } = repaired.result.tasks[0];
+  const { semanticCandidateIds: _expectedIds, lodgingScopeId: _expectedScope, ...expectedFirstTaskSemantics } = firstPriceTask;
+  assert.deepEqual(firstTaskSemantics, expectedFirstTaskSemantics, "the first legal sibling semantics must survive compiler ownership allocation");
+  assert.equal(repaired.result.tasks[0].semanticCandidateIds.length, 1);
   assert.equal(repaired.result.tasks[1].entity.canonicalCandidate, "water_feature");
-  assert.deepEqual(repaired.result.tasks[1].semanticCandidateIds, [IDS.facility]);
+  assert.equal(repaired.result.tasks[1].semanticCandidateIds.length, 1);
   const repairPayload = JSON.parse(repaired.bodies[1].input[1].content[0].text).coverageRepair;
-  assert.deepEqual(repairPayload.missingCandidateIds, [IDS.facility]);
-  assert.deepEqual(repairPayload.missingSemanticCandidates, [facilityCandidate]);
+  assert.deepEqual(repairPayload.missingCandidateIds, repaired.result.semanticCandidates.filter((candidate) => candidate.propertyCatalogIdentity === "water_feature").map((candidate) => candidate.candidateId));
+  const { candidateId: _facilityCandidateId, ...facilitySemantics } = facilityCandidate;
+  assert.deepEqual(repairPayload.missingSemanticCandidates.map(({ candidateId, ...candidate }) => candidate), [facilitySemantics]);
   assert.equal(Object.hasOwn(repairPayload, "missingCanonicalIds"), false, "repair must not be driven by text-derived canonical IDs");
 
   const alternateMessage = "Please tell me whether the cooling area may be used.";
@@ -328,7 +332,7 @@ async function classifySequence({ first, repair, plannerInput }) {
   const emptyState = { schemaVersion: 3, revision: 0, scope: { propertyId: "semantic-contract-property", channel: "test", userId: "user" }, tasks: [] };
   const execution = decideContextExecutionV3({ state: emptyState, relations: validation.relations, plannerTasks: lodging.result.tasks, catalog: propertyCatalog, now: "2026-01-01T00:00:00.000Z" });
   assert.equal(new Set(execution.executionItems.map((item) => item.requestCycleId)).size, 1, "one lodging scope must create one request cycle");
-  assert.equal(execution.executionItems[0].requestCycleId, IDS.scope);
+  assert.equal(execution.executionItems[0].requestCycleId, lodging.result.tasks[0].lodgingScopeId, "adapter-allocated scope must be the execution cycle identity");
 
   const stateWithScope = {
     schemaVersion: 3,
@@ -384,7 +388,7 @@ async function classifySequence({ first, repair, plannerInput }) {
     relations: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: facilityEvidence }]
   });
   const ambiguous = await classifySequence({ first: ambiguousFirst, repair: ambiguousRepair, plannerInput: input(message, eventId, propertyCatalog) });
-  assert.equal(ambiguous.calls, 2);
+  assert.equal(ambiguous.calls, 1, "duplicate semantic payloads fail closed before repair rather than relying on model-issued IDs");
   assert.equal(ambiguous.result.tasks.length, 1, "one task claiming multiple missing IDs must not be ambiguously joined");
   assert.equal(ambiguous.result.needsHuman, true, "ambiguous repair ownership must fail closed");
 

@@ -1039,4 +1039,18 @@ function plannerJsonSchema() {
   return schema;
 }
 
-module.exports = { validatePlannerOutput, applyPlannerSemanticContract, plannerJsonSchema, normalizeEligibilityEvidence, normalizeIgnoredAcknowledgementOutput, normalizeDuplicateTaskIds, discardLegacyPlannerStateControls, TASK_TYPES };
+function plannerProviderJsonSchema() {
+  const schema = JSON.parse(JSON.stringify(plannerJsonSchema()));
+  const taskSchema = schema.properties.tasks.items;
+  taskSchema.required = taskSchema.required.filter((field) => field !== "semanticCandidateIds" && field !== "lodgingScopeId");
+  delete taskSchema.properties.semanticCandidateIds;
+  delete taskSchema.properties.lodgingScopeId;
+  const candidateSchema = schema.properties.semanticCandidates.items;
+  candidateSchema.required = candidateSchema.required.filter((field) => field !== "candidateId");
+  delete candidateSchema.properties.candidateId;
+  const scopeSchema = candidateSchema.properties.lodgingScopeCandidate;
+  scopeSchema.required = scopeSchema.required.filter((field) => field !== "scopeId");
+  delete scopeSchema.properties.scopeId;
+  return schema;
+}
+module.exports = { validatePlannerOutput, applyPlannerSemanticContract, plannerJsonSchema, plannerProviderJsonSchema, normalizeEligibilityEvidence, normalizeIgnoredAcknowledgementOutput, normalizeDuplicateTaskIds, discardLegacyPlannerStateControls, TASK_TYPES };

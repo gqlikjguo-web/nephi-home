@@ -61,37 +61,43 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     faqs: [{ knowledgeKey: "pool", question: "戲水池", answer: "正式戲水池資料" }],
     semanticCatalog: { aliases: { pool: ["戲水池"] } }
   });
+  const coverageMessage = "Ask for the lodging price and confirm the pool.";
+  const priceSourceText = "lodging price";
+  const poolSourceText = "pool";
+  const coverageEvidence = (sourceText) => [{ eventId: "coverage", messageRef: "coverage-message", startOffset: coverageMessage.indexOf(sourceText), endOffset: coverageMessage.indexOf(sourceText) + sourceText.length, quote: sourceText }];
   const omittedPool = JSON.parse(JSON.stringify(output));
-  omittedPool.tasks[0] = { ...omittedPool.tasks[0], candidateIndex: 0, taskId: "price", type: "price", sourceText: "想問價格", detailIntent: "general", requestedOutputs: ["price"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true, entity: { category: "bundle", rawText: "包棟", canonicalCandidate: null, confidence: 1 }, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null } };
-  omittedPool.contextRelationCandidates = [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "coverage", messageRef: "", startOffset: 0, endOffset: 4, quote: "想問價格" }] }];
-  omittedPool.semanticCandidates = [{
-    candidateId: POOL_CANDIDATE_ID,
-    semanticKind: "catalog_subject",
-    capability: "amenity",
-    canonicalIdentityCandidate: "pool",
-    evidenceRefs: [{ eventId: "coverage", messageRef: "", startOffset: 9, endOffset: 14, quote: "?????" }],
-    lodgingScopeCandidate: null,
-    temporalSemanticCandidate: null,
-    propertyCatalogIdentity: "pool"
-  }];
+  omittedPool.tasks[0] = { ...omittedPool.tasks[0], candidateIndex: 0, taskId: "price", type: "price", sourceText: priceSourceText, detailIntent: "general", requestedOutputs: ["price"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: true, entity: { category: "bundle", rawText: "", canonicalCandidate: null, confidence: 1 }, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null } };
+  omittedPool.contextRelationCandidates = [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: coverageEvidence(priceSourceText) }];
+  omittedPool.semanticCandidates = [
+    { semanticKind: "capability", capability: "price", canonicalIdentityCandidate: "price", evidenceRefs: coverageEvidence(priceSourceText), lodgingScopeCandidate: null, temporalSemanticCandidate: null, propertyCatalogIdentity: null },
+    { semanticKind: "catalog_subject", capability: "amenity", canonicalIdentityCandidate: "pool", evidenceRefs: coverageEvidence(poolSourceText), lodgingScopeCandidate: null, temporalSemanticCandidate: null, propertyCatalogIdentity: "pool" }
+  ];
   const repairedPool = JSON.parse(JSON.stringify(output));
-  repairedPool.tasks[0] = { ...repairedPool.tasks[0], candidateIndex: 0, taskId: "pool", type: "amenity", sourceText: "有戲水池嗎", detailIntent: "general", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: false, entity: { category: "amenity", rawText: "戲水池", canonicalCandidate: "pool", confidence: 1 }, stayCandidate: null };
+  repairedPool.tasks[0] = { ...repairedPool.tasks[0], candidateIndex: 0, taskId: "pool", type: "amenity", sourceText: poolSourceText, detailIntent: "general", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: false, entity: { category: "amenity", rawText: poolSourceText, canonicalCandidate: "pool", confidence: 1 }, stayCandidate: null };
   const repairedPoolCanonicalIdentity = repairedPool.tasks[0].entity.canonicalCandidate;
-  repairedPool.tasks[0].semanticCandidateIds = [POOL_CANDIDATE_ID];
-  repairedPool.tasks[0].lodgingScopeId = null;
-  repairedPool.contextRelationCandidates = [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "coverage", messageRef: "", startOffset: 9, endOffset: 14, quote: "有戲水池嗎" }] }];
-  omittedPool.semanticCandidates[0].evidenceRefs = repairedPool.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
-  let coverageCalls = 0;
+  repairedPool.contextRelationCandidates = [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: coverageEvidence(poolSourceText) }];
+  repairedPool.semanticCandidates = [JSON.parse(JSON.stringify(omittedPool.semanticCandidates[1]))];  let coverageCalls = 0;
   const coverageBodies = [];
   const coveragePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async (_url, options) => {
     coverageCalls += 1;
     coverageBodies.push(JSON.parse(options.body));
     return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(coverageCalls === 1 ? omittedPool : repairedPool) }) };
   } });
-  const coverageResult = await coveragePlanner.classify({ currentMessage: "想問價格，也想確認有戲水池嗎", currentMessages: ["想問價格，也想確認有戲水池嗎"], sourceEvents: [{ eventId: "coverage", messageText: "想問價格，也想確認有戲水池嗎" }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  const coverageResult = await coveragePlanner.classify({ currentMessage: coverageMessage, currentMessages: [coverageMessage], sourceEvents: [{ eventId: "coverage", messageRef: "coverage-message", messageText: coverageMessage }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(coverageCalls, 2, "one bounded repair attempt may fill a missing formal subject");
   assert.equal(coverageResult.tasks.length, 2, "repair must merge with rather than replace the first valid task collection");
-  assert.deepEqual(coverageResult.tasks[0], omittedPool.tasks[0], "the first attempt's valid price task must survive byte-for-byte");
+  const { semanticCandidateIds: priceTaskCandidateIds, lodgingScopeId: priceTaskScopeId, ...priceTaskSemantics } = coverageResult.tasks[0];
+  assert.deepEqual(priceTaskSemantics, omittedPool.tasks[0], "coverage repair must preserve every first-round price-task semantic field");
+  const priceCandidate = coverageResult.semanticCandidates.find((candidate) => candidate.capability === "price"
+    && candidate.canonicalIdentityCandidate === "price"
+    && candidate.propertyCatalogIdentity === null
+    && JSON.stringify(candidate.evidenceRefs) === JSON.stringify(omittedPool.semanticCandidates[0].evidenceRefs));
+  const poolCandidate = coverageResult.semanticCandidates.find((candidate) => candidate.propertyCatalogIdentity === "pool");
+  assert.ok(priceCandidate, "the compiled ledger must retain the first-round price semantic candidate");
+  assert.ok(poolCandidate, "the repair ledger must retain the pool semantic candidate");
+  assert.deepEqual(priceTaskCandidateIds, [priceCandidate.candidateId], "the price task must own exactly its compiled price candidate");
+  assert.equal(priceTaskCandidateIds.includes(poolCandidate.candidateId), false, "the pool repair candidate must not take ownership of the price task");
+  assert.equal(priceTaskScopeId, null, "an unscoped price task must remain explicitly unscoped");
   assert.equal(coverageResult.tasks[1].entity.canonicalCandidate, "pool");
   assert.deepEqual(validatePlannerOutput(coverageResult).errors, [], "the task-level merge must remain a valid Planner contract");
   const coverageDiagnostic = coverageResult[Symbol.for("junzan.plannerProviderDiagnostic")];
@@ -107,9 +113,11 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(coverageDiagnostic.repairLinks[0].correlationId, OPAQUE_REPAIR_ID);
   assert.doesNotMatch(coverageDiagnostic.repairLinks[0].correlationId, /pool|price|coverage|property/i, "opaque repair IDs must not derive from semantic task data");
   const repairInput = JSON.parse(coverageBodies[1].input[1].content[0].text);
-  assert.deepEqual(repairInput.coverageRepair.missingCandidateIds, [POOL_CANDIDATE_ID]);
+  assert.equal(coverageResult.semanticCandidates.some((candidate) => candidate.candidateId === poolCandidate.candidateId), true, "the missing pool candidate must exist in the compiled ledger");
+  assert.notEqual(poolCandidate.candidateId, priceCandidate.candidateId, "the missing pool candidate must not be the price candidate");
+  assert.deepEqual(repairInput.coverageRepair.missingCandidateIds, [poolCandidate.candidateId], "coverage repair must request exactly the compiled pool candidate that first-round tasks do not own");
   assert.equal(repairInput.coverageRepair.missingSemanticCandidates[0].propertyCatalogIdentity, "pool");
-  assert.deepEqual(repairInput.coverageRepair.missingSemanticCandidates[0].evidenceRefs, omittedPool.semanticCandidates.find((candidate) => candidate.candidateId === POOL_CANDIDATE_ID).evidenceRefs);
+  assert.deepEqual(repairInput.coverageRepair.missingSemanticCandidates[0].evidenceRefs, poolCandidate.evidenceRefs, "coverage repair must retain the compiled pool candidate evidence exactly");
   assert.deepEqual(repairInput.coverageRepair.preservedTaskIds, ["price"]);
 
   const wholeMessageText = "Ask the lodging price and confirm the pool";
@@ -125,10 +133,12 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const wholeMessagePrice = JSON.parse(JSON.stringify(omittedPool));
   wholeMessagePrice.tasks[0] = { ...wholeMessagePrice.tasks[0], sourceText: wholeMessageText, entity: { ...wholeMessagePrice.tasks[0].entity, rawText: "lodging" } };
   wholeMessagePrice.contextRelationCandidates = [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "whole-message", messageRef: "", startOffset: 0, endOffset: wholeMessageText.length, quote: wholeMessageText }] }];
+  wholeMessagePrice.semanticCandidates.find((candidate) => candidate.capability === "price" && candidate.canonicalIdentityCandidate === "price").evidenceRefs = wholeMessagePrice.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
   const wholeMessagePool = JSON.parse(JSON.stringify(repairedPool));
   wholeMessagePool.tasks[0] = { ...wholeMessagePool.tasks[0], sourceText: wholeMessageText, entity: { ...wholeMessagePool.tasks[0].entity, rawText: "pool", canonicalCandidate: "pool" } };
   wholeMessagePool.contextRelationCandidates = [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "whole-message", messageRef: "", startOffset: 0, endOffset: wholeMessageText.length, quote: wholeMessageText }] }];
-  wholeMessagePrice.semanticCandidates.find((candidate) => candidate.candidateId === POOL_CANDIDATE_ID).evidenceRefs = wholeMessagePool.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
+  wholeMessagePool.semanticCandidates[0].evidenceRefs = wholeMessagePool.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
+  wholeMessagePrice.semanticCandidates.find((candidate) => candidate.propertyCatalogIdentity === "pool" && candidate.capability === "amenity").evidenceRefs = wholeMessagePool.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
   let wholeMessageCalls = 0;
   const wholeMessagePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => {
     wholeMessageCalls += 1;
@@ -137,7 +147,15 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const wholeMessageResult = await wholeMessagePlanner.classify({ currentMessage: wholeMessageText, currentMessages: [wholeMessageText], sourceEvents: [{ eventId: "whole-message", messageText: wholeMessageText }], eventTimestamp: 1, catalog: wholeMessageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(wholeMessageCalls, 2, "a whole-message price task must not suppress an omitted independent formal subject");
   assert.equal(wholeMessageResult.tasks.length, 2);
-  assert.deepEqual(wholeMessageResult.tasks[1], { ...wholeMessagePool.tasks[0], candidateIndex: 1 }, "the additive result may only remap the verified repair task's collection index");
+  const { semanticCandidateIds: wholePoolTaskCandidateIds, lodgingScopeId: wholePoolTaskScopeId, ...wholePoolTaskSemantics } = wholeMessageResult.tasks[1];
+  assert.deepEqual(wholePoolTaskSemantics, { ...wholeMessagePool.tasks[0], candidateIndex: 1 }, "coverage repair may only add bookkeeping to the verified pool task");
+  const wholePoolCandidate = wholeMessageResult.semanticCandidates.find((candidate) => candidate.capability === "amenity"
+    && candidate.canonicalIdentityCandidate === "pool"
+    && candidate.propertyCatalogIdentity === "pool"
+    && JSON.stringify(candidate.evidenceRefs) === JSON.stringify(wholeMessagePool.contextRelationCandidates[0].evidenceRefs));
+  assert.ok(wholePoolCandidate, "the repair pool candidate must exist in the compiled ledger");
+  assert.deepEqual(wholePoolTaskCandidateIds, [wholePoolCandidate.candidateId], "the repaired pool task must own exactly its compiled pool candidate");
+  assert.equal(wholePoolTaskScopeId, null, "the repaired unscoped pool task must remain explicitly unscoped");
   const contradictoryWholeMessagePrice = JSON.parse(JSON.stringify(wholeMessagePrice));
   contradictoryWholeMessagePrice.tasks[0].entity.canonicalCandidate = "pool";
   let contradictoryWholeMessageCalls = 0;
@@ -147,7 +165,15 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   } });
   const contradictoryWholeMessageResult = await contradictoryWholeMessagePlanner.classify({ currentMessage: wholeMessageText, currentMessages: [wholeMessageText], sourceEvents: [{ eventId: "whole-message", messageText: wholeMessageText }], eventTimestamp: 1, catalog: wholeMessageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(contradictoryWholeMessageCalls, 2, "an incompatible pool canonical candidate on a lodging-price task must not suppress the independent pool sibling");
-  assert.deepEqual(contradictoryWholeMessageResult.tasks[0], contradictoryWholeMessagePrice.tasks[0], "coverage repair must preserve the lodging-price task despite its contradictory canonical candidate");
+  const { semanticCandidateIds: contradictoryPriceCandidateIds, lodgingScopeId: contradictoryPriceScopeId, ...contradictoryPriceSemantics } = contradictoryWholeMessageResult.tasks[0];
+  assert.deepEqual(contradictoryPriceSemantics, contradictoryWholeMessagePrice.tasks[0], "coverage repair must preserve the contradictory price-task semantics");
+  const contradictoryPriceCandidate = contradictoryWholeMessageResult.semanticCandidates.find((candidate) => candidate.capability === "price"
+    && candidate.canonicalIdentityCandidate === "price"
+    && candidate.propertyCatalogIdentity === null
+    && JSON.stringify(candidate.evidenceRefs) === JSON.stringify(wholeMessagePrice.contextRelationCandidates[0].evidenceRefs));
+  assert.ok(contradictoryPriceCandidate, "the contradictory price task must retain its compiled price candidate");
+  assert.deepEqual(contradictoryPriceCandidateIds, [contradictoryPriceCandidate.candidateId]);
+  assert.equal(contradictoryPriceScopeId, null);
   assert.equal(contradictoryWholeMessageResult.tasks.length, 2);
 
 
@@ -178,36 +204,23 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   ];
   let multiFormalCalls = 0;
   multiFormalPrice.semanticCandidates = [
-    {
-      candidateId: POOL_CANDIDATE_ID,
-      semanticKind: "catalog_subject",
-      capability: "amenity",
-      canonicalIdentityCandidate: "pool",
-      evidenceRefs: multiFormalRepair.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })),
-      lodgingScopeCandidate: null,
-      temporalSemanticCandidate: null,
-      propertyCatalogIdentity: "pool"
-    },
-    {
-      candidateId: PARKING_CANDIDATE_ID,
-      semanticKind: "catalog_subject",
-      capability: "amenity",
-      canonicalIdentityCandidate: "parking",
-      evidenceRefs: multiFormalRepair.contextRelationCandidates[1].evidenceRefs.map((ref) => ({ ...ref })),
-      lodgingScopeCandidate: null,
-      temporalSemanticCandidate: null,
-      propertyCatalogIdentity: "parking"
-    }
+    { semanticKind: "capability", capability: "price", canonicalIdentityCandidate: "price", evidenceRefs: multiFormalPrice.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })), lodgingScopeCandidate: null, temporalSemanticCandidate: null, propertyCatalogIdentity: null },
+    { semanticKind: "catalog_subject", capability: "amenity", canonicalIdentityCandidate: "pool", evidenceRefs: multiFormalRepair.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })), lodgingScopeCandidate: null, temporalSemanticCandidate: null, propertyCatalogIdentity: "pool" },
+    { semanticKind: "catalog_subject", capability: "amenity", canonicalIdentityCandidate: "parking", evidenceRefs: multiFormalRepair.contextRelationCandidates[1].evidenceRefs.map((ref) => ({ ...ref })), lodgingScopeCandidate: null, temporalSemanticCandidate: null, propertyCatalogIdentity: "parking" }
   ];
-  multiFormalRepair.tasks[0].semanticCandidateIds = [POOL_CANDIDATE_ID];
-  multiFormalRepair.tasks[1].semanticCandidateIds = [PARKING_CANDIDATE_ID];
+  multiFormalRepair.semanticCandidates = multiFormalPrice.semanticCandidates.slice(1).map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));
   const multiFormalPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => {
     multiFormalCalls += 1;
     return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(multiFormalCalls === 1 ? multiFormalPrice : multiFormalRepair) }) };
   } });
   const multiFormalResult = await multiFormalPlanner.classify({ currentMessage: multiFormalText, currentMessages: [multiFormalText], sourceEvents: [{ eventId: "multi-formal", messageText: multiFormalText }], eventTimestamp: 1, catalog: multiFormalCatalog, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(multiFormalCalls, 2);
-  assert.deepEqual(multiFormalResult.tasks[0], multiFormalPrice.tasks[0]);
+  const { semanticCandidateIds: multiFormalPriceCandidateIds, lodgingScopeId: multiFormalPriceScopeId, ...multiFormalPriceSemantics } = multiFormalResult.tasks[0];
+  assert.deepEqual(multiFormalPriceSemantics, multiFormalPrice.tasks[0], "multi-formal repair must preserve first-round price-task semantics");
+  const multiFormalPriceCandidate = multiFormalResult.semanticCandidates.find((candidate) => candidate.capability === "price" && candidate.canonicalIdentityCandidate === "price" && candidate.propertyCatalogIdentity === null);
+  assert.ok(multiFormalPriceCandidate, "multi-formal ledger must retain the raw price semantic candidate");
+  assert.deepEqual(multiFormalPriceCandidateIds, [multiFormalPriceCandidate.candidateId]);
+  assert.equal(multiFormalPriceScopeId, null);
   assert.deepEqual(new Set(multiFormalResult.tasks.slice(1).map((task) => task.entity.canonicalCandidate)), new Set(["pool", "parking"]), "one fee-drift task must not suppress another formal subject in the same source");
 
   let incompleteCalls = 0;
@@ -215,7 +228,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     incompleteCalls += 1;
     return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(incompleteCalls === 1 ? omittedPool : repairedPool) }) };
   } });
-  const incompleteResult = await incompletePlanner.classify({ currentMessage: "想問價格，也想確認有戲水池嗎", currentMessages: ["想問價格，也想確認有戲水池嗎"], sourceEvents: [{ eventId: "coverage", messageText: "想問價格，也想確認有戲水池嗎" }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  const incompleteResult = await incompletePlanner.classify({ currentMessage: coverageMessage, currentMessages: [coverageMessage], sourceEvents: [{ eventId: "coverage", messageRef: "coverage-message", messageText: coverageMessage }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(incompleteCalls, 2);
   const conditionalPoolMessage = "not using the pool, is the lodging price 7000";
   const conditionalPoolPrice = JSON.parse(JSON.stringify(wholeMessagePrice));
@@ -224,7 +237,9 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const conditionalPoolRepair = JSON.parse(JSON.stringify(repairedPool));
   conditionalPoolRepair.tasks[0] = { ...conditionalPoolRepair.tasks[0], sourceText: "not using the pool", entity: { ...conditionalPoolRepair.tasks[0].entity, rawText: "pool" } };
   conditionalPoolRepair.contextRelationCandidates[0].evidenceRefs = [{ eventId: "conditional-pool", messageRef: "", startOffset: 0, endOffset: 18, quote: "not using the pool" }];
-  conditionalPoolPrice.semanticCandidates.find((candidate) => candidate.candidateId === POOL_CANDIDATE_ID).evidenceRefs = conditionalPoolRepair.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
+  conditionalPoolPrice.semanticCandidates.find((candidate) => candidate.capability === "price" && candidate.canonicalIdentityCandidate === "price").evidenceRefs = conditionalPoolPrice.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
+  conditionalPoolPrice.semanticCandidates.find((candidate) => candidate.propertyCatalogIdentity === "pool" && candidate.capability === "amenity").evidenceRefs = conditionalPoolRepair.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
+  conditionalPoolRepair.semanticCandidates.find((candidate) => candidate.propertyCatalogIdentity === "pool" && candidate.capability === "amenity").evidenceRefs = conditionalPoolRepair.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
   let conditionalPoolCalls = 0;
   const conditionalPoolPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(++conditionalPoolCalls === 1 ? conditionalPoolPrice : conditionalPoolRepair) }) }) });
   const conditionalPoolResult = await conditionalPoolPlanner.classify({ currentMessage: conditionalPoolMessage, currentMessages: [conditionalPoolMessage], sourceEvents: [{ eventId: "conditional-pool", messageText: conditionalPoolMessage }], eventTimestamp: 1, catalog: wholeMessageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
@@ -238,7 +253,9 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   suffixPoolRepair.tasks[0] = { ...suffixPoolRepair.tasks[0], sourceText: "the pool will not be used" };
   suffixPoolRepair.contextRelationCandidates[0].evidenceRefs = [{ eventId: "suffix-pool", messageRef: "", startOffset: 0, endOffset: 25, quote: "the pool will not be used" }];
   let suffixPoolCalls = 0;
-  suffixPoolPrice.semanticCandidates.find((candidate) => candidate.candidateId === POOL_CANDIDATE_ID).evidenceRefs = suffixPoolRepair.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
+  suffixPoolPrice.semanticCandidates.find((candidate) => candidate.capability === "price" && candidate.canonicalIdentityCandidate === "price").evidenceRefs = suffixPoolPrice.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
+  suffixPoolPrice.semanticCandidates.find((candidate) => candidate.propertyCatalogIdentity === "pool" && candidate.capability === "amenity").evidenceRefs = suffixPoolRepair.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
+  suffixPoolRepair.semanticCandidates.find((candidate) => candidate.propertyCatalogIdentity === "pool" && candidate.capability === "amenity").evidenceRefs = suffixPoolRepair.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
   const suffixPoolPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(++suffixPoolCalls === 1 ? suffixPoolPrice : suffixPoolRepair) }) }) });
   const suffixPoolResult = await suffixPoolPlanner.classify({ currentMessage: suffixPoolMessage, currentMessages: [suffixPoolMessage], sourceEvents: [{ eventId: "suffix-pool", messageText: suffixPoolMessage }], eventTimestamp: 1, catalog: wholeMessageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(suffixPoolCalls, 2, "a postpositive facility usage condition must not be swallowed by lodging price");
@@ -306,11 +323,13 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
       propertyCatalogIdentity: null
     }
   ];
-  const lodgingCoverageBodies = [];
+  lodgingPriceOutput.semanticCandidates.unshift({ semanticKind: "capability", capability: "price", canonicalIdentityCandidate: "price", evidenceRefs: lodgingPriceOutput.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })), lodgingScopeCandidate: null, temporalSemanticCandidate: null, propertyCatalogIdentity: null });
+  lodgingPriceOutput.semanticCandidates = lodgingPriceOutput.semanticCandidates.map((candidate) => { const { candidateId, ...intent } = candidate; return intent; });
+  lodgingRepairOutput.semanticCandidates = lodgingPriceOutput.semanticCandidates.slice(1).map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));  const lodgingCoverageBodies = [];
   const lodgingCoveragePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async (_url, options) => { lodgingCoverageBodies.push(JSON.parse(options.body)); return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(++lodgingCoverageCalls === 1 ? lodgingPriceOutput : lodgingRepairOutput) }) }; } });
   const lodgingCoverageResult = await lodgingCoveragePlanner.classify({ currentMessage: lodgingMessage, currentMessages: [lodgingMessage], sourceEvents: [{ eventId: "lodging-coverage", messageText: lodgingMessage }], eventTimestamp: 1, catalog: lodgingCatalog, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(lodgingCoverageCalls, 2, "an omitted explicit lodging inventory set must enter the bounded coverage round");
-  assert.deepEqual(JSON.parse(lodgingCoverageBodies[1].input[1].content[0].text).coverageRepair.missingCandidateIds, [ROOM302_CANDIDATE_ID, ROOM402_CANDIDATE_ID, TEMPORAL_CANDIDATE_ID]);
+  assert.deepEqual(JSON.parse(lodgingCoverageBodies[1].input[1].content[0].text).coverageRepair.missingCandidateIds, lodgingCoverageResult.semanticCandidates.filter((candidate) => ["room302", "room402", "temporal_pattern"].includes(candidate.propertyCatalogIdentity || candidate.canonicalIdentityCandidate)).map((candidate) => candidate.candidateId));
   assert.equal(lodgingCoverageResult.tasks.some((task) => ["availability", "bundle_availability", "room_options"].includes(task.type)), true, "a broad date-dependent room price must retain a date-clarification capability");
   const resolvedLodgingPrice = JSON.parse(JSON.stringify(lodgingPriceOutput));
   resolvedLodgingPrice.tasks[0].sourceText = "7\u6708\u9031\u516d302\u50f9\u683c";
@@ -318,7 +337,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   resolvedLodgingPrice.contextRelationCandidates[0].evidenceRefs = [{ eventId: "resolved-lodging", messageRef: "", startOffset: 0, endOffset: resolvedLodgingPrice.tasks[0].sourceText.length, quote: resolvedLodgingPrice.tasks[0].sourceText }];
   resolvedLodgingPrice.tasks.push({ ...resolvedLodgingPrice.tasks[0], candidateIndex: 1, taskId: "resolved-date-availability", type: "availability", requestedOutputs: ["availability"] });
   resolvedLodgingPrice.contextRelationCandidates.push({ ...resolvedLodgingPrice.contextRelationCandidates[0], candidateIndex: 1, evidenceRefs: resolvedLodgingPrice.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })) });
-  resolvedLodgingPrice.semanticCandidates = [];
+  resolvedLodgingPrice.semanticCandidates = [{ semanticKind: "capability", capability: "price", canonicalIdentityCandidate: "price", evidenceRefs: resolvedLodgingPrice.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })), lodgingScopeCandidate: null, temporalSemanticCandidate: null, propertyCatalogIdentity: null }, { semanticKind: "catalog_subject", capability: "availability", canonicalIdentityCandidate: "room302", evidenceRefs: resolvedLodgingPrice.contextRelationCandidates[1].evidenceRefs.map((ref) => ({ ...ref })), lodgingScopeCandidate: null, temporalSemanticCandidate: null, propertyCatalogIdentity: "room302" }];
   let resolvedLodgingCalls = 0;
   const resolvedLodgingPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: encodeFakePlannerOutput((resolvedLodgingCalls += 1) && resolvedLodgingPrice) }) }) });
   const resolvedLodgingResult = await resolvedLodgingPlanner.classify({ currentMessage: resolvedLodgingPrice.tasks[0].sourceText, currentMessages: [resolvedLodgingPrice.tasks[0].sourceText], sourceEvents: [{ eventId: "resolved-lodging", messageText: resolvedLodgingPrice.tasks[0].sourceText }], eventTimestamp: 1, catalog: lodgingCatalog, contextSnapshot: { scope: {}, cycles: [] } });
@@ -426,34 +445,42 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const numberedFirst = JSON.parse(JSON.stringify(lodgingPriceOutput));
   numberedFirst.tasks[0] = { ...numberedFirst.tasks[0], taskId: "bundle", type: "availability", sourceText: numberedMessage, requestedOutputs: ["availability"], entity: { category: "bundle", rawText: "\u5305\u68df", canonicalCandidate: "whole-house", confidence: 1 }, stayCandidate: { dateExpression: { rawText: "7/16-7/17", kind: "range", anchor: "message_time" }, checkInCandidate: "2026-07-16", checkOutCandidate: "2026-07-17", nightsCandidate: 1, guestCountCandidate: 5 } };
   numberedFirst.contextRelationCandidates = [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "numbered-coverage", messageRef: "", startOffset: 0, endOffset: numberedMessage.length, quote: numberedMessage }] }];
-  const numberedCandidateIds = ["73000000-0000-4000-8000-000000000001", "73000000-0000-4000-8000-000000000002"];
-  numberedFirst.semanticCandidates = ["301", "302"].map((roomNumber, index) => {
+  const numberedLodgingScope = { bundleCanonicalCandidate: "whole-house", roomCanonicalCandidates: ["room301", "room302"], guestCountCandidate: 5 };
+  const bundleStartOffset = numberedMessage.indexOf("\u5305\u68df");
+  numberedFirst.semanticCandidates = [{
+    semanticKind: "lodging_scope",
+    capability: "bundle_availability",
+    canonicalIdentityCandidate: "whole-house",
+    evidenceRefs: [{ eventId: "numbered-coverage", messageRef: "", startOffset: bundleStartOffset, endOffset: bundleStartOffset + 2, quote: "\u5305\u68df" }],
+    lodgingScopeCandidate: numberedLodgingScope,
+    temporalSemanticCandidate: { ...numberedFirst.tasks[0].stayCandidate.dateExpression },
+    propertyCatalogIdentity: "whole-house"
+  }, ...["301", "302"].map((roomNumber) => {
     const startOffset = numberedMessage.indexOf(roomNumber);
     return {
-      candidateId: numberedCandidateIds[index],
-      semanticKind: "catalog_subject",
-      capability: "price",
+      semanticKind: "lodging_scope",
+      capability: "availability",
       canonicalIdentityCandidate: `room${roomNumber}`,
       evidenceRefs: [{ eventId: "numbered-coverage", messageRef: "", startOffset, endOffset: startOffset + roomNumber.length, quote: roomNumber }],
-      lodgingScopeCandidate: null,
-      temporalSemanticCandidate: null,
+      lodgingScopeCandidate: numberedLodgingScope,
+      temporalSemanticCandidate: { ...numberedFirst.tasks[0].stayCandidate.dateExpression },
       propertyCatalogIdentity: `room${roomNumber}`
     };
-  });
+  })];
   const numberedRepairOutput = () => {
     const repaired = JSON.parse(JSON.stringify(lodgingRepairOutput));
     repaired.tasks = ["301", "302"].map((roomNumber, index) => ({
       ...repaired.tasks[index],
       candidateIndex: index,
       taskId: ["74000000-0000-4000-8000-000000000001", "74000000-0000-4000-8000-000000000002"][index],
+      type: "availability",
       sourceText: roomNumber,
+      requestedOutputs: ["availability"],
       entity: { category: "room", rawText: roomNumber, canonicalCandidate: `room${roomNumber}`, confidence: 1 },
-      stayCandidate: numberedFirst.tasks[0].stayCandidate,
-      semanticCandidateIds: [numberedCandidateIds[index]],
-      lodgingScopeId: null
+      stayCandidate: numberedFirst.tasks[0].stayCandidate
     }));
     repaired.contextRelationCandidates = repaired.tasks.map((task) => { const startOffset = numberedMessage.indexOf(task.sourceText); return { candidateIndex: task.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "numbered-coverage", messageRef: "", startOffset, endOffset: startOffset + task.sourceText.length, quote: task.sourceText }] }; });
-    repaired.semanticCandidates = numberedFirst.semanticCandidates.filter((candidate) => numberedCandidateIds.includes(candidate.candidateId)).map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));
+    repaired.semanticCandidates = numberedFirst.semanticCandidates.filter((candidate) => candidate.propertyCatalogIdentity && candidate.propertyCatalogIdentity.startsWith("room")).map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })), lodgingScopeCandidate: { ...candidate.lodgingScopeCandidate, roomCanonicalCandidates: [...candidate.lodgingScopeCandidate.roomCanonicalCandidates] }, temporalSemanticCandidate: { ...candidate.temporalSemanticCandidate } }));
     return repaired;
   };
   let numberedCalls = 0;
@@ -480,23 +507,29 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   capacityRepair.tasks[0] = { ...capacityFirst.tasks[0], taskId: "whole-house", type: "bundle_availability", sourceText: "6-8\u4eba", requestedOutputs: ["availability"], entity: { category: "bundle", rawText: "\u5305\u68df", canonicalCandidate: "whole-house", confidence: 1 } };
   const capacityOffset = capacityMessage.indexOf("6-8\u4eba");
   capacityRepair.contextRelationCandidates[0].evidenceRefs = [{ eventId: "capacity-coverage", messageRef: "", startOffset: capacityOffset, endOffset: capacityOffset + 4, quote: "6-8\u4eba" }];
-  const capacityCandidateId = "75000000-0000-4000-8000-000000000001";
   const capacityEvidenceRefs = [{ eventId: "capacity-coverage", messageRef: "", startOffset: capacityOffset, endOffset: capacityOffset + 4, quote: "6-8\u4eba" }];
   capacityFirst.semanticCandidates = [{
-    candidateId: capacityCandidateId,
-    semanticKind: "catalog_subject",
+    semanticKind: "capability",
+    capability: "availability",
+    canonicalIdentityCandidate: "availability",
+    evidenceRefs: capacityFirst.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })),
+    lodgingScopeCandidate: null,
+    temporalSemanticCandidate: { ...capacityFirst.tasks[0].stayCandidate.dateExpression },
+    propertyCatalogIdentity: null
+  }, {
+    semanticKind: "lodging_scope",
     capability: "bundle_availability",
     canonicalIdentityCandidate: "whole-house",
     evidenceRefs: capacityEvidenceRefs.map((ref) => ({ ...ref })),
-    lodgingScopeCandidate: null,
+    lodgingScopeCandidate: { bundleCanonicalCandidate: "whole-house", roomCanonicalCandidates: [], guestCountCandidate: 8 },
     temporalSemanticCandidate: null,
     propertyCatalogIdentity: "whole-house"
   }];
   capacityRepair.tasks[0].taskId = "76000000-0000-4000-8000-000000000001";
-  capacityRepair.tasks[0].semanticCandidateIds = [capacityCandidateId];
-  capacityRepair.tasks[0].lodgingScopeId = null;
+  delete capacityRepair.tasks[0].semanticCandidateIds;
+  delete capacityRepair.tasks[0].lodgingScopeId;
   capacityRepair.tasks[0].stayCandidate = { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: 8 };
-  capacityRepair.semanticCandidates = capacityFirst.semanticCandidates.map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));
+  capacityRepair.semanticCandidates = capacityFirst.semanticCandidates.filter((candidate) => candidate.propertyCatalogIdentity === "whole-house").map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })), lodgingScopeCandidate: { ...candidate.lodgingScopeCandidate, roomCanonicalCandidates: [...candidate.lodgingScopeCandidate.roomCanonicalCandidates] } }));
   let capacityScopeCalls = 0;
   const capacityScopePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(++capacityScopeCalls === 1 ? capacityFirst : capacityRepair) }) }) });
   const capacityScopeResult = await capacityScopePlanner.classify({ currentMessage: capacityMessage, currentMessages: [capacityMessage], sourceEvents: [{ eventId: "capacity-coverage", messageText: capacityMessage }], eventTimestamp: 1, catalog: lodgingCatalog, contextSnapshot: { scope: {}, cycles: [] } });
@@ -541,10 +574,16 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const featureFirst = JSON.parse(JSON.stringify(lodgingPriceOutput));
   featureFirst.tasks[0] = { ...featureFirst.tasks[0], taskId: "feature-availability", type: "availability", sourceText: featureMessage, requestedOutputs: ["availability"], entity: { category: "room", rawText: "double room", canonicalCandidate: null, confidence: 1 } };
   featureFirst.contextRelationCandidates[0].evidenceRefs = [{ eventId: "feature-coverage", messageRef: "", startOffset: 0, endOffset: featureMessage.length, quote: featureMessage }];
-  const featureCandidateId = "77000000-0000-4000-8000-000000000001";
   const featureOffset = featureMessage.indexOf("bathtub");
   featureFirst.semanticCandidates = [{
-    candidateId: featureCandidateId,
+    semanticKind: "capability",
+    capability: "availability",
+    canonicalIdentityCandidate: "availability",
+    evidenceRefs: featureFirst.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })),
+    lodgingScopeCandidate: null,
+    temporalSemanticCandidate: null,
+    propertyCatalogIdentity: null
+  }, {
     semanticKind: "catalog_subject",
     capability: "property_fact",
     canonicalIdentityCandidate: "bathtub",
@@ -554,9 +593,11 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     propertyCatalogIdentity: null
   }];
   const featureRepair = JSON.parse(JSON.stringify(featureFirst));
-  featureRepair.tasks[0] = { ...featureRepair.tasks[0], candidateIndex: 0, taskId: "78000000-0000-4000-8000-000000000001", type: "property_fact", sourceText: "bathtub", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "room_feature", rawText: "bathtub", canonicalCandidate: null, confidence: 1 }, stayCandidate: null, semanticCandidateIds: [featureCandidateId], lodgingScopeId: null };
-  featureRepair.contextRelationCandidates = [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: featureFirst.semanticCandidates[0].evidenceRefs.map((ref) => ({ ...ref })) }];
-  featureRepair.semanticCandidates = featureFirst.semanticCandidates.map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));
+  featureRepair.tasks[0] = { ...featureRepair.tasks[0], candidateIndex: 0, taskId: "78000000-0000-4000-8000-000000000001", type: "property_fact", sourceText: "bathtub", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "room_feature", rawText: "bathtub", canonicalCandidate: null, confidence: 1 }, stayCandidate: null };
+  delete featureRepair.tasks[0].semanticCandidateIds;
+  delete featureRepair.tasks[0].lodgingScopeId;
+  featureRepair.semanticCandidates = featureFirst.semanticCandidates.filter((candidate) => candidate.capability === "property_fact").map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));
+  featureRepair.contextRelationCandidates = [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: featureRepair.semanticCandidates[0].evidenceRefs.map((ref) => ({ ...ref })) }];
 
 
   let featureCalls = 0;
@@ -597,10 +638,16 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const faqFeatureFirst = JSON.parse(JSON.stringify(featureFirst));
   faqFeatureFirst.tasks[0] = { ...faqFeatureFirst.tasks[0], taskId: "faq-feature-availability", sourceText: faqFeatureMessage, entity: { category: "room", rawText: "double room", canonicalCandidate: null, confidence: 1 } };
   faqFeatureFirst.contextRelationCandidates[0].evidenceRefs = [{ eventId: "faq-feature-coverage", messageRef: "", startOffset: 0, endOffset: faqFeatureMessage.length, quote: faqFeatureMessage }];
-  const faqFeatureCandidateId = "79000000-0000-4000-8000-000000000001";
   const faqFeatureOffset = faqFeatureMessage.indexOf("soaking tub");
   faqFeatureFirst.semanticCandidates = [{
-    candidateId: faqFeatureCandidateId,
+    semanticKind: "capability",
+    capability: "availability",
+    canonicalIdentityCandidate: "availability",
+    evidenceRefs: faqFeatureFirst.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })),
+    lodgingScopeCandidate: null,
+    temporalSemanticCandidate: null,
+    propertyCatalogIdentity: null
+  }, {
     semanticKind: "catalog_subject",
     capability: "property_fact",
     canonicalIdentityCandidate: "bathing_fixture_info",
@@ -610,9 +657,11 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     propertyCatalogIdentity: "bathing_fixture_info"
   }];
   const faqFeatureRepair = JSON.parse(JSON.stringify(faqFeatureFirst));
-  faqFeatureRepair.tasks[0] = { ...faqFeatureRepair.tasks[0], candidateIndex: 0, taskId: "7a000000-0000-4000-8000-000000000001", type: "property_fact", sourceText: "soaking tub", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "soaking tub", canonicalCandidate: "bathing_fixture_info", confidence: 1 }, stayCandidate: null, semanticCandidateIds: [faqFeatureCandidateId], lodgingScopeId: null };
-  faqFeatureRepair.contextRelationCandidates = [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: faqFeatureFirst.semanticCandidates[0].evidenceRefs.map((ref) => ({ ...ref })) }];
-  faqFeatureRepair.semanticCandidates = faqFeatureFirst.semanticCandidates.map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));
+  faqFeatureRepair.tasks[0] = { ...faqFeatureRepair.tasks[0], candidateIndex: 0, taskId: "7a000000-0000-4000-8000-000000000001", type: "property_fact", sourceText: "soaking tub", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "soaking tub", canonicalCandidate: "bathing_fixture_info", confidence: 1 }, stayCandidate: null };
+  delete faqFeatureRepair.tasks[0].semanticCandidateIds;
+  delete faqFeatureRepair.tasks[0].lodgingScopeId;
+  faqFeatureRepair.semanticCandidates = faqFeatureFirst.semanticCandidates.filter((candidate) => candidate.capability === "property_fact").map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));
+  faqFeatureRepair.contextRelationCandidates = [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: faqFeatureRepair.semanticCandidates[0].evidenceRefs.map((ref) => ({ ...ref })) }];
   let faqFeatureCalls = 0;
   const faqFeaturePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: encodeFakePlannerOutput((faqFeatureCalls += 1) === 1 ? faqFeatureFirst : faqFeatureRepair) }) }) });
   const faqFeatureResult = await faqFeaturePlanner.classify({ currentMessage: faqFeatureMessage, currentMessages: [faqFeatureMessage], sourceEvents: [{ eventId: "faq-feature-coverage", messageText: faqFeatureMessage }], eventTimestamp: 1, catalog: faqFeatureCatalog, contextSnapshot: { scope: {}, cycles: [] } });
@@ -640,11 +689,11 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     casePreservingFirst.tasks[0] = { ...casePreservingFirst.tasks[0], sourceText: casePreservingMessage };
     casePreservingFirst.contextRelationCandidates[0].evidenceRefs = [{ eventId: "faq-case-coverage", messageRef: "", startOffset: 0, endOffset: casePreservingMessage.length, quote: casePreservingMessage }];
     const casePreservingEvidence = [{ eventId: "faq-case-coverage", messageRef: "", startOffset: casePreservingHit.startOffset, endOffset: casePreservingHit.endOffset, quote: casePreservingHit.mention }];
-    casePreservingFirst.semanticCandidates = [{ ...faqFeatureFirst.semanticCandidates.find((candidate) => candidate.candidateId === faqFeatureCandidateId), evidenceRefs: casePreservingEvidence.map((ref) => ({ ...ref })) }];
+    casePreservingFirst.semanticCandidates = [{ ...faqFeatureFirst.semanticCandidates.find((candidate) => candidate.capability === "availability"), evidenceRefs: casePreservingFirst.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })) }, { ...faqFeatureFirst.semanticCandidates.find((candidate) => candidate.capability === "property_fact"), evidenceRefs: casePreservingEvidence.map((ref) => ({ ...ref })) }];
     const casePreservingRepair = JSON.parse(JSON.stringify(faqFeatureRepair));
     casePreservingRepair.tasks[0] = { ...casePreservingRepair.tasks[0], sourceText: casePreservingHit.mention, entity: { ...casePreservingRepair.tasks[0].entity, rawText: casePreservingHit.mention } };
     casePreservingRepair.contextRelationCandidates[0].evidenceRefs = casePreservingEvidence.map((ref) => ({ ...ref }));
-    casePreservingRepair.semanticCandidates = casePreservingFirst.semanticCandidates.map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));
+    casePreservingRepair.semanticCandidates = casePreservingFirst.semanticCandidates.filter((candidate) => candidate.capability === "property_fact").map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));
 
 
     let casePreservingCalls = 0;
@@ -670,10 +719,16 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const boundaryFaqFirst = JSON.parse(JSON.stringify(faqFeatureFirst));
   boundaryFaqFirst.tasks[0] = { ...boundaryFaqFirst.tasks[0], sourceText: boundaryFaqMessage };
   boundaryFaqFirst.contextRelationCandidates[0].evidenceRefs = [{ eventId: "faq-boundary-coverage", messageRef: "", startOffset: 0, endOffset: boundaryFaqMessage.length, quote: boundaryFaqMessage }];
-  const boundaryFaqCandidateId = "7b000000-0000-4000-8000-000000000001";
   const boundaryFaqEvidence = [{ eventId: "faq-boundary-coverage", messageRef: "", startOffset: boundaryFaqHit.startOffset, endOffset: boundaryFaqHit.endOffset, quote: boundaryFaqHit.mention }];
   boundaryFaqFirst.semanticCandidates = [{
-    candidateId: boundaryFaqCandidateId,
+    semanticKind: "capability",
+    capability: "availability",
+    canonicalIdentityCandidate: "availability",
+    evidenceRefs: boundaryFaqFirst.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })),
+    lodgingScopeCandidate: null,
+    temporalSemanticCandidate: null,
+    propertyCatalogIdentity: null
+  }, {
     semanticKind: "catalog_subject",
     capability: "property_fact",
     canonicalIdentityCandidate: "pool_open",
@@ -683,9 +738,11 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     propertyCatalogIdentity: "pool_open"
   }];
   const boundaryFaqRepair = JSON.parse(JSON.stringify(boundaryFaqFirst));
-  boundaryFaqRepair.tasks[0] = { ...boundaryFaqRepair.tasks[0], candidateIndex: 0, taskId: "7c000000-0000-4000-8000-000000000001", type: "property_fact", sourceText: boundaryFaqHit.mention, requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: boundaryFaqHit.mention, canonicalCandidate: "pool_open", confidence: 1 }, stayCandidate: null, semanticCandidateIds: [boundaryFaqCandidateId], lodgingScopeId: null };
+  boundaryFaqRepair.tasks[0] = { ...boundaryFaqRepair.tasks[0], candidateIndex: 0, taskId: "7c000000-0000-4000-8000-000000000001", type: "property_fact", sourceText: boundaryFaqHit.mention, requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: boundaryFaqHit.mention, canonicalCandidate: "pool_open", confidence: 1 }, stayCandidate: null };
+  delete boundaryFaqRepair.tasks[0].semanticCandidateIds;
+  delete boundaryFaqRepair.tasks[0].lodgingScopeId;
   boundaryFaqRepair.contextRelationCandidates = [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: boundaryFaqEvidence.map((ref) => ({ ...ref })) }];
-  boundaryFaqRepair.semanticCandidates = boundaryFaqFirst.semanticCandidates.map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));
+  boundaryFaqRepair.semanticCandidates = boundaryFaqFirst.semanticCandidates.filter((candidate) => candidate.capability === "property_fact").map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));
   let boundaryFaqCalls = 0;
   const boundaryFaqPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: encodeFakePlannerOutput((boundaryFaqCalls += 1) === 1 ? boundaryFaqFirst : boundaryFaqRepair) }) }) });
   const boundaryFaqResult = await boundaryFaqPlanner.classify({ currentMessage: boundaryFaqMessage, currentMessages: [boundaryFaqMessage], sourceEvents: [{ eventId: "faq-boundary-coverage", messageText: boundaryFaqMessage }], eventTimestamp: 1, catalog: boundaryFaqCatalog, contextSnapshot: { scope: {}, cycles: [] } });
@@ -766,7 +823,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   let duplicateFeatureCalls = 0;
   const duplicateFeatureFirst = JSON.parse(JSON.stringify(featureFirst));
   duplicateFeatureFirst.contextRelationCandidates[0].evidenceRefs = [{ eventId: "feature-current", messageRef: "", startOffset: 0, endOffset: featureMessage.length, quote: featureMessage }];
-  duplicateFeatureFirst.semanticCandidates = [{ ...featureFirst.semanticCandidates.find((candidate) => candidate.candidateId === featureCandidateId), evidenceRefs: [{ eventId: "feature-current", messageRef: "", startOffset: featureOffset, endOffset: featureOffset + "bathtub".length, quote: "bathtub" }] }];
+  duplicateFeatureFirst.semanticCandidates = [{ ...featureFirst.semanticCandidates.find((candidate) => candidate.capability === "property_fact"), evidenceRefs: [{ eventId: "feature-current", messageRef: "", startOffset: featureOffset, endOffset: featureOffset + "bathtub".length, quote: "bathtub" }] }];
 
   const duplicateFeaturePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: encodeFakePlannerOutput((duplicateFeatureCalls += 1) && duplicateFeatureFirst) }) }) });
   const duplicateFeatureResult = await duplicateFeaturePlanner.classify({ currentMessage: featureMessage, currentMessages: [featureMessage], sourceEvents: [{ eventId: "feature-old", messageText: featureMessage }, { eventId: "feature-current", messageText: featureMessage }], eventTimestamp: 1, catalog: featureCatalog, contextSnapshot: { scope: {}, cycles: [] } });
@@ -775,11 +832,16 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(duplicateFeatureResult.tasks.some((item) => item.entity && ["alpha-room", "beta-room"].includes(item.entity.canonicalCandidate)), false, "duplicate source events must not authorize inventory canonical evidence");
 
 
-  assert.deepEqual(incompleteResult.tasks[0], omittedPool.tasks[0], "an incomplete second attempt must not erase the first valid task");
+  const { semanticCandidateIds: incompletePriceCandidateIds, lodgingScopeId: incompletePriceScopeId, ...incompletePriceSemantics } = incompleteResult.tasks[0];
+  assert.deepEqual(incompletePriceSemantics, omittedPool.tasks[0], "an incomplete second attempt must not erase the first valid task semantics");
+  assert.equal(incompletePriceCandidateIds.length, 1);
+  assert.equal(incompletePriceScopeId, null);
   const incompletePoolTask = incompleteResult.tasks.find((task) => task.type === "amenity" && task.entity && task.entity.canonicalCandidate === repairedPoolCanonicalIdentity);
   assert.equal(Boolean(incompletePoolTask), true, "a directly repaired low-risk subject must remain canonically representable beside the preserved price task");
-  assert.deepEqual(incompletePoolTask.semanticCandidateIds, [POOL_CANDIDATE_ID], "the repaired task must directly own the missing semantic candidate ID");
-  assert.equal(incompleteResult.semanticCandidates.filter((candidate) => candidate.candidateId === POOL_CANDIDATE_ID).length, 1, "the repaired candidate ID must join uniquely to the ledger");
+  const incompletePoolCandidate = incompleteResult.semanticCandidates.find((candidate) => candidate.propertyCatalogIdentity === "pool" && candidate.capability === "amenity");
+  assert.ok(incompletePoolCandidate, "the compiled repair ledger must retain the pool candidate");
+  assert.deepEqual(incompletePoolTask.semanticCandidateIds, [incompletePoolCandidate.candidateId], "the repaired task must directly own the compiled missing semantic candidate ID");
+  assert.equal(incompleteResult.semanticCandidates.filter((candidate) => candidate.candidateId === incompletePoolCandidate.candidateId).length, 1, "the repaired candidate ID must join uniquely to the ledger");
   assert.deepEqual(validatePlannerOutput(incompleteResult).errors, [], "the repaired subject must remain structurally executable beside preserved tasks");
   const incompleteDiagnostic = incompleteResult[Symbol.for("junzan.plannerProviderDiagnostic")];
   assert.equal(incompleteDiagnostic.coverageRepairSucceeded, true);
@@ -789,7 +851,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const duplicateCoverageMessage = wholeMessageText;
   const duplicateCoverageOutput = JSON.parse(JSON.stringify(wholeMessagePrice));
   duplicateCoverageOutput.contextRelationCandidates[0].evidenceRefs = [{ eventId: "coverage-current", messageRef: "", startOffset: 0, endOffset: duplicateCoverageMessage.length, quote: duplicateCoverageMessage }];
-  duplicateCoverageOutput.semanticCandidates = [{ ...wholeMessagePrice.semanticCandidates.find((candidate) => candidate.candidateId === POOL_CANDIDATE_ID), evidenceRefs: [{ eventId: "coverage-current", messageRef: "", startOffset: 0, endOffset: duplicateCoverageMessage.length, quote: duplicateCoverageMessage }] }];
+  duplicateCoverageOutput.semanticCandidates = [{ ...wholeMessagePrice.semanticCandidates.find((candidate) => candidate.propertyCatalogIdentity === "pool" && candidate.capability === "amenity"), evidenceRefs: [{ eventId: "coverage-current", messageRef: "", startOffset: 0, endOffset: duplicateCoverageMessage.length, quote: duplicateCoverageMessage }] }];
 
   const duplicateCoveragePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: encodeFakePlannerOutput((duplicateCoverageCalls += 1) && duplicateCoverageOutput) }) }) });
   const duplicateCoverageResult = await duplicateCoveragePlanner.classify({ currentMessage: duplicateCoverageMessage, currentMessages: [duplicateCoverageMessage], sourceEvents: [{ eventId: "coverage-old", messageText: duplicateCoverageMessage }, { eventId: "coverage-current", messageText: duplicateCoverageMessage }], eventTimestamp: 1, catalog: wholeMessageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
@@ -816,6 +878,10 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     { candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "partial", messageRef: "", startOffset: 0, endOffset: 21, quote: "Ask the lodging price" }] },
     { candidateIndex: 1, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "partial", messageRef: "", startOffset: 23, endOffset: partialMessage.length, quote: "arrange an unsupported request" }] }
   ];
+  partialOutput.semanticCandidates = [
+    { semanticKind: "capability", capability: "price", canonicalIdentityCandidate: "price", evidenceRefs: partialOutput.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })), lodgingScopeCandidate: null, temporalSemanticCandidate: null, propertyCatalogIdentity: null },
+    { semanticKind: "capability", capability: "human_help", canonicalIdentityCandidate: "human_help", evidenceRefs: partialOutput.contextRelationCandidates[1].evidenceRefs.map((ref) => ({ ...ref })), lodgingScopeCandidate: null, temporalSemanticCandidate: null, propertyCatalogIdentity: null }
+  ];
   assert.equal(validatePlannerOutput(partialOutput).ok, false, "the provider fixture must begin with one structurally invalid sibling");
   let partialCalls = 0;
   const partialPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => {
@@ -825,7 +891,10 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const partialInput = { currentMessage: partialMessage, currentMessages: [partialMessage], sourceEvents: [{ eventId: "partial", messageText: partialMessage }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } };
   const partialResult = await partialPlanner.classify(partialInput);
   assert.equal(partialCalls, 1, "a local task-contract failure must not retry the provider");
-  assert.deepEqual(partialResult.tasks[0], partialOutput.tasks[0], "a structurally valid source-bound task must survive an invalid sibling byte-for-byte");
+  const { semanticCandidateIds: partialPriceCandidateIds, lodgingScopeId: partialPriceScopeId, ...partialPriceSemantics } = partialResult.tasks[0];
+  assert.deepEqual(partialPriceSemantics, partialOutput.tasks[0], "a structurally valid source-bound task must survive an invalid sibling semantically unchanged");
+  assert.equal(partialPriceCandidateIds.length, 1);
+  assert.equal(partialPriceScopeId, null);
   assert.equal(partialResult.tasks[1].type, "human_help", "only the invalid source-bound sibling must become a scoped handoff");
   assert.equal(partialResult.tasks[1].sourceText, "arrange an unsupported request");
   assert.deepEqual(validatePlannerOutput(partialResult).errors, [], "the task-level fallback collection must be structurally executable");
@@ -864,6 +933,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     { candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "duplicate-clause", messageRef: "", startOffset: 0, endOffset: 19, quote: "Repeat this request" }] },
     { candidateIndex: 1, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "duplicate-clause", messageRef: "", startOffset: 21, endOffset: 40, quote: "Repeat this request" }] }
   ];
+  duplicateClauseOutput.semanticCandidates = duplicateClauseOutput.semanticCandidates.map((candidate, index) => ({ ...candidate, evidenceRefs: duplicateClauseOutput.contextRelationCandidates[index].evidenceRefs.map((ref) => ({ ...ref })) }));
   const duplicateClauseInput = { currentMessage: duplicateClauseMessage, currentMessages: [duplicateClauseMessage], sourceEvents: [{ eventId: "duplicate-clause", messageText: duplicateClauseMessage }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } };
   const duplicateClausePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(duplicateClauseOutput) }) }) });
   const duplicateClauseResult = await duplicateClausePlanner.classify(duplicateClauseInput);
@@ -888,6 +958,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     { candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "partial-overlap", messageRef: "", startOffset: 0, endOffset: 17, quote: "Preserved overlap" }] },
     { candidateIndex: 1, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "partial-overlap", messageRef: "", startOffset: 10, endOffset: partialOverlapMessage.length, quote: "overlap tail request" }] }
   ];
+  partialOverlapOutput.semanticCandidates = partialOverlapOutput.semanticCandidates.map((candidate, index) => ({ ...candidate, evidenceRefs: partialOverlapOutput.contextRelationCandidates[index].evidenceRefs.map((ref) => ({ ...ref })) }));
   const partialOverlapInput = { currentMessage: partialOverlapMessage, currentMessages: [partialOverlapMessage], sourceEvents: [{ eventId: "partial-overlap", messageText: partialOverlapMessage }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } };
   const partialOverlapPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(partialOverlapOutput) }) }) });
   const partialOverlapResult = await partialOverlapPlanner.classify(partialOverlapInput);
@@ -898,6 +969,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const crossIdentityOutput = JSON.parse(JSON.stringify(partialOverlapOutput));
   crossIdentityOutput.contextRelationCandidates[0].evidenceRefs[0] = { ...crossIdentityOutput.contextRelationCandidates[0].evidenceRefs[0], messageRef: "", eventId: "cross-identity" };
   crossIdentityOutput.contextRelationCandidates[1].evidenceRefs[0] = { ...crossIdentityOutput.contextRelationCandidates[1].evidenceRefs[0], messageRef: "cross-identity-ref", eventId: "" };
+  crossIdentityOutput.semanticCandidates = crossIdentityOutput.semanticCandidates.map((candidate, index) => ({ ...candidate, evidenceRefs: crossIdentityOutput.contextRelationCandidates[index].evidenceRefs.map((ref) => ({ ...ref })) }));
   const crossIdentityInput = { ...partialOverlapInput, sourceEvents: [{ eventId: "cross-identity", messageRef: "cross-identity-ref", messageText: partialOverlapMessage }] };
   const crossIdentityPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(crossIdentityOutput) }) }) });
   const crossIdentityResult = await crossIdentityPlanner.classify(crossIdentityInput);
@@ -949,34 +1021,53 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     assert.equal(externalResult.tasks.some((task) => task.entity && task.entity.canonicalCandidate === "breakfast"), false);
   }
 
-  const mismatchedEvidencePool = JSON.parse(JSON.stringify(repairedPool));
-  mismatchedEvidencePool.contextRelationCandidates[0].evidenceRefs[0] = { eventId: "coverage", messageRef: "", startOffset: 0, endOffset: 4, quote: "想問價格" };
+  const adversarialCoverageMessage = "想問價格，也想確認有戲水池嗎";
+  const adversarialPriceEvidence = [{ eventId: "coverage", messageRef: "", startOffset: 0, endOffset: 4, quote: "想問價格" }];
+  const adversarialPoolOffset = adversarialCoverageMessage.indexOf("戲水池");
+  const adversarialPoolEvidence = [{ eventId: "coverage", messageRef: "", startOffset: adversarialPoolOffset, endOffset: adversarialPoolOffset + 3, quote: "戲水池" }];
+  const adversarialFirst = JSON.parse(JSON.stringify(omittedPool));
+  adversarialFirst.tasks[0] = { ...adversarialFirst.tasks[0], sourceText: "想問價格" };
+  adversarialFirst.contextRelationCandidates[0].evidenceRefs = adversarialPriceEvidence.map((ref) => ({ ...ref }));
+  adversarialFirst.semanticCandidates.find((candidate) => candidate.capability === "price").evidenceRefs = adversarialPriceEvidence.map((ref) => ({ ...ref }));
+  adversarialFirst.semanticCandidates.find((candidate) => candidate.propertyCatalogIdentity === "pool").evidenceRefs = adversarialPoolEvidence.map((ref) => ({ ...ref }));
+  const validAdversarialPoolRepair = JSON.parse(JSON.stringify(repairedPool));
+  validAdversarialPoolRepair.tasks[0] = { ...validAdversarialPoolRepair.tasks[0], sourceText: "戲水池", entity: { ...validAdversarialPoolRepair.tasks[0].entity, rawText: "戲水池" } };
+  validAdversarialPoolRepair.contextRelationCandidates[0].evidenceRefs = adversarialPoolEvidence.map((ref) => ({ ...ref }));
+  validAdversarialPoolRepair.semanticCandidates = [JSON.parse(JSON.stringify(adversarialFirst.semanticCandidates.find((candidate) => candidate.propertyCatalogIdentity === "pool")))];
+  const mismatchedEvidencePool = JSON.parse(JSON.stringify(validAdversarialPoolRepair));
+  mismatchedEvidencePool.contextRelationCandidates[0].evidenceRefs = adversarialPriceEvidence.map((ref) => ({ ...ref }));
   let mismatchedEvidenceCalls = 0;
   const mismatchedEvidencePlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => {
     mismatchedEvidenceCalls += 1;
-    return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(mismatchedEvidenceCalls === 1 ? omittedPool : mismatchedEvidencePool) }) };
+    return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(mismatchedEvidenceCalls === 1 ? adversarialFirst : mismatchedEvidencePool) }) };
   } });
-  const mismatchedEvidenceResult = await mismatchedEvidencePlanner.classify({ currentMessage: "想問價格，也想確認有戲水池嗎", currentMessages: ["想問價格，也想確認有戲水池嗎"], sourceEvents: [{ eventId: "coverage", messageText: "想問價格，也想確認有戲水池嗎" }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  const mismatchedEvidenceResult = await mismatchedEvidencePlanner.classify({ currentMessage: adversarialCoverageMessage, currentMessages: [adversarialCoverageMessage], sourceEvents: [{ eventId: "coverage", messageText: adversarialCoverageMessage }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(mismatchedEvidenceCalls, 2, "mismatched repair evidence must consume at most the one bounded repair call");
-  assert.deepEqual(mismatchedEvidenceResult.tasks[0], omittedPool.tasks[0]);
+  const { semanticCandidateIds: mismatchedPriceCandidateIds, lodgingScopeId: mismatchedPriceScopeId, ...mismatchedPriceSemantics } = mismatchedEvidenceResult.tasks[0];
+  assert.deepEqual(mismatchedPriceSemantics, adversarialFirst.tasks[0]);
+  assert.equal(mismatchedPriceCandidateIds.length, 1);
+  assert.equal(mismatchedPriceScopeId, null);
   assert.equal(mismatchedEvidenceResult.tasks.some((task) => task.entity && task.entity.canonicalCandidate === repairedPoolCanonicalIdentity), false, "evidence from another clause must fail closed instead of synthesizing a subject");
   const mismatchedEvidenceDiagnostic = mismatchedEvidenceResult[Symbol.for("junzan.plannerProviderDiagnostic")];
   assert.equal(mismatchedEvidenceDiagnostic.coverageRepairSucceeded, false);
   assert.equal(mismatchedEvidenceDiagnostic.coverageRepairFallback, true);
   assert.equal((mismatchedEvidenceDiagnostic.repairLinks || []).some((link) => link.kind === "coverage_repair"), false, "rejected repair evidence must not receive provenance");
 
-  const invalidRelationPool = JSON.parse(JSON.stringify(repairedPool));
+  const invalidRelationPool = JSON.parse(JSON.stringify(validAdversarialPoolRepair));
   invalidRelationPool.contextRelationCandidates[0].kind = "supplement_existing";
   invalidRelationPool.contextRelationCandidates[0].candidateRequestCycleRefs = ["invented-cycle"];
   let invalidRelationCalls = 0;
   const invalidRelationPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => {
     invalidRelationCalls += 1;
-    return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(invalidRelationCalls === 1 ? omittedPool : invalidRelationPool) }) };
+    return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(invalidRelationCalls === 1 ? adversarialFirst : invalidRelationPool) }) };
   } });
-  const invalidRelationInput = { currentMessage: "想問價格，也想確認有戲水池嗎", currentMessages: ["想問價格，也想確認有戲水池嗎"], sourceEvents: [{ eventId: "coverage", messageText: "想問價格，也想確認有戲水池嗎" }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } };
+  const invalidRelationInput = { currentMessage: adversarialCoverageMessage, currentMessages: [adversarialCoverageMessage], sourceEvents: [{ eventId: "coverage", messageText: adversarialCoverageMessage }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } };
   const invalidRelationResult = await invalidRelationPlanner.classify(invalidRelationInput);
   assert.equal(invalidRelationCalls, 2, "an invalid relation must consume at most the one bounded repair call");
-  assert.deepEqual(invalidRelationResult.tasks[0], omittedPool.tasks[0]);
+  const { semanticCandidateIds: invalidRelationPriceCandidateIds, lodgingScopeId: invalidRelationPriceScopeId, ...invalidRelationPriceSemantics } = invalidRelationResult.tasks[0];
+  assert.deepEqual(invalidRelationPriceSemantics, adversarialFirst.tasks[0]);
+  assert.equal(invalidRelationPriceCandidateIds.length, 1);
+  assert.equal(invalidRelationPriceScopeId, null);
   assert.equal(invalidRelationResult.tasks.some((task) => task.entity && task.entity.canonicalCandidate === repairedPoolCanonicalIdentity), false, "an invented cycle must fail closed instead of synthesizing canonical coverage");
   assert.equal(validateUnderstandingContext(invalidRelationResult, invalidRelationInput.contextSnapshot, { sourceEvents: invalidRelationInput.sourceEvents }).ok, true, "discarding invalid repair output must preserve the context contract");
   const invalidRelationDiagnostic = invalidRelationResult[Symbol.for("junzan.plannerProviderDiagnostic")];
@@ -984,20 +1075,20 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(invalidRelationDiagnostic.coverageRepairFallback, true);
   assert.equal((invalidRelationDiagnostic.repairLinks || []).some((link) => link.kind === "coverage_repair"), false, "an invalid relation must not receive repair provenance");
 
-  const wrongTaskCanonical = JSON.parse(JSON.stringify(omittedPool));
+  const wrongTaskCanonical = JSON.parse(JSON.stringify(adversarialFirst));
   wrongTaskCanonical.tasks[0].entity.canonicalCandidate = "pool";
   let wrongTaskCalls = 0;
   const wrongTaskPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => {
     wrongTaskCalls += 1;
-    return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(wrongTaskCalls === 1 ? wrongTaskCanonical : repairedPool) }) };
+    return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(wrongTaskCalls === 1 ? wrongTaskCanonical : validAdversarialPoolRepair) }) };
   } });
   const wrongTaskResult = await wrongTaskPlanner.classify(invalidRelationInput);
   assert.equal(wrongTaskCalls, 2, "a canonical candidate attached to another task source must not suppress formal-subject repair");
   assert.equal(wrongTaskResult.tasks[1].entity.canonicalCandidate, "pool");
 
-  const capacityOutput = JSON.parse(JSON.stringify(omittedPool));
-  capacityOutput.tasks = Array.from({ length: 12 }, (_, index) => ({ ...omittedPool.tasks[0], candidateIndex: index, taskId: `price-${index}` }));
-  capacityOutput.contextRelationCandidates = Array.from({ length: 12 }, (_, index) => ({ ...omittedPool.contextRelationCandidates[0], candidateIndex: index }));
+  const capacityOutput = JSON.parse(JSON.stringify(adversarialFirst));
+  capacityOutput.tasks = Array.from({ length: 12 }, (_, index) => ({ ...adversarialFirst.tasks[0], candidateIndex: index, taskId: `price-${index}` }));
+  capacityOutput.contextRelationCandidates = Array.from({ length: 12 }, (_, index) => ({ ...adversarialFirst.contextRelationCandidates[0], candidateIndex: index }));
   let capacityCalls = 0;
   const capacityPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => {
     capacityCalls += 1;
@@ -1039,12 +1130,10 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   elevenTaskOutput.contextRelationCandidates.forEach((relation) => {
     relation.evidenceRefs = [{ eventId: "two-subject", messageRef: "", startOffset: 0, endOffset: 4, quote: "想問價格" }];
   });
-  const twoSubjectCandidateIds = [POOL_CANDIDATE_ID, PARKING_CANDIDATE_ID];
   const twoSubjectIdentities = [{ id: "pool", mention: "\u6232\u6c34\u6c60" }, { id: "parking", mention: "\u505c\u8eca\u5834" }];
-  elevenTaskOutput.semanticCandidates = twoSubjectIdentities.map((identity, index) => {
+  elevenTaskOutput.semanticCandidates = [{ semanticKind: "capability", capability: "price", canonicalIdentityCandidate: "price", evidenceRefs: elevenTaskOutput.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref })), lodgingScopeCandidate: null, temporalSemanticCandidate: null, propertyCatalogIdentity: null }, ...twoSubjectIdentities.map((identity) => {
     const startOffset = twoSubjectMessage.indexOf(identity.mention);
     return {
-      candidateId: twoSubjectCandidateIds[index],
       semanticKind: "catalog_subject",
       capability: "amenity",
       canonicalIdentityCandidate: identity.id,
@@ -1053,11 +1142,12 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
       temporalSemanticCandidate: null,
       propertyCatalogIdentity: identity.id
     };
-  });
+  })];
   const twoSubjectRepair = JSON.parse(JSON.stringify(multiFormalRepair));
-  twoSubjectRepair.tasks = twoSubjectIdentities.map((identity, index) => ({ ...twoSubjectRepair.tasks[index], candidateIndex: index, taskId: ["7d000000-0000-4000-8000-000000000001", "7d000000-0000-4000-8000-000000000002"][index], type: "amenity", sourceText: identity.mention, requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: identity.mention, canonicalCandidate: identity.id, confidence: 1 }, stayCandidate: null, semanticCandidateIds: [twoSubjectCandidateIds[index]], lodgingScopeId: null }));
+  twoSubjectRepair.tasks = twoSubjectIdentities.map((identity, index) => ({ ...twoSubjectRepair.tasks[index], candidateIndex: index, taskId: ["7d000000-0000-4000-8000-000000000001", "7d000000-0000-4000-8000-000000000002"][index], type: "amenity", sourceText: identity.mention, requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: identity.mention, canonicalCandidate: identity.id, confidence: 1 }, stayCandidate: null }));
+  twoSubjectRepair.tasks.forEach((task) => { delete task.semanticCandidateIds; delete task.lodgingScopeId; });
   twoSubjectRepair.contextRelationCandidates = twoSubjectRepair.tasks.map((task) => { const startOffset = twoSubjectMessage.indexOf(task.sourceText); return { candidateIndex: task.candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ eventId: "two-subject", messageRef: "", startOffset, endOffset: startOffset + task.sourceText.length, quote: task.sourceText }] }; });
-  twoSubjectRepair.semanticCandidates = elevenTaskOutput.semanticCandidates.map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));
+  twoSubjectRepair.semanticCandidates = elevenTaskOutput.semanticCandidates.filter((candidate) => candidate.capability === "amenity").map((candidate) => ({ ...candidate, evidenceRefs: candidate.evidenceRefs.map((ref) => ({ ...ref })) }));
 
   let twoSubjectCalls = 0;
   const twoSubjectPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => {
@@ -1069,8 +1159,9 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.deepEqual(new Set(twoSubjectResult.tasks.slice(11).map((taskValue) => taskValue.entity.canonicalCandidate)), new Set(["pool", "parking"]));
   assert.deepEqual(validatePlannerOutput(twoSubjectResult).errors, []);
   assert.equal(twoSubjectCalls, 2, "two missing subjects must use exactly the one bounded repair call");
-  assert.deepEqual(new Set(twoSubjectResult.tasks.slice(11).flatMap((task) => task.semanticCandidateIds)), new Set(twoSubjectCandidateIds));
-  assert.equal(twoSubjectCandidateIds.every((candidateId) => twoSubjectResult.semanticCandidates.filter((candidate) => candidate.candidateId === candidateId).length === 1), true, "each repaired candidate must join uniquely to the ledger");
+  const twoSubjectCompiledCandidates = twoSubjectResult.semanticCandidates.filter((candidate) => ["pool", "parking"].includes(candidate.propertyCatalogIdentity));
+  assert.deepEqual(new Set(twoSubjectResult.tasks.slice(11).flatMap((task) => task.semanticCandidateIds)), new Set(twoSubjectCompiledCandidates.map((candidate) => candidate.candidateId)));
+  assert.equal(twoSubjectCompiledCandidates.every((candidate) => twoSubjectResult.semanticCandidates.filter((item) => item.candidateId === candidate.candidateId).length === 1), true, "each repaired candidate must join uniquely to the ledger");
   const twoSubjectDiagnostic = twoSubjectResult[Symbol.for("junzan.plannerProviderDiagnostic")];
   assert.equal(twoSubjectDiagnostic.coverageRepairSucceeded, true);
   assert.equal(twoSubjectDiagnostic.coverageRepairFallback, false);

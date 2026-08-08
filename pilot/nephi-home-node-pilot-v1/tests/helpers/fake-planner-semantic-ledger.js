@@ -59,7 +59,7 @@ function migrateFakePlannerOutput(output) {
 }
 
 function encodeFakePlannerOutput(output) {
-  return JSON.stringify(migrateFakePlannerOutput(output));
+  return JSON.stringify(output);
 }
 
 module.exports = { encodeFakePlannerOutput, migrateFakePlannerOutput, opaqueCandidateId };

@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const { evidenceMatchesSource, sourceEventMaps } = require("./understanding-validator");
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -10,7 +11,7 @@ const ANCHORS = new Set(["message_time", "previous_check_in", "previous_check_ou
 const MAX_CANDIDATES = 24;
 
 function catalogIdentities(catalog) {
-  return new Set(["rooms", "amenities", "policies", "faqs"]
+  return new Set(["rooms", "amenities", "policies", "faqs", "propertyFacts", "transportFacts"]
     .flatMap((key) => Array.isArray(catalog && catalog[key]) ? catalog[key] : [])
     .map((entity) => String(entity && entity.canonicalId || "").trim())
     .filter(Boolean));
@@ -40,6 +41,74 @@ function validLodgingScope(value, identities) {
     && (guests === null || Number.isInteger(guests) && guests >= 1 && guests <= 100);
 }
 
+function deterministicUuid(seed) {
+  const bytes = crypto.createHash("sha256").update(seed).digest().subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableValue(value[key])]));
+}
+
+function compilerCompatibleCapability(taskType, capability) {
+  return taskType === capability || new Set([taskType, capability]).size === 2
+    && [taskType, capability].every((value) => ["availability", "bundle_availability"].includes(value));
+}
+
+function compilerEvidenceOverlaps(left, right, sourceMaps) {
+  const byEvent = left && left.eventId ? sourceMaps.byEventId.get(String(left.eventId)) : null;
+  const byMessage = left && left.messageRef ? sourceMaps.byMessageRef.get(String(left.messageRef)) : null;
+  const source = byEvent || byMessage;
+  const rightEvent = right && right.eventId ? sourceMaps.byEventId.get(String(right.eventId)) : null;
+  const rightMessage = right && right.messageRef ? sourceMaps.byMessageRef.get(String(right.messageRef)) : null;
+  if (!source || source !== (rightEvent || rightMessage)) return false;
+  return Number.isInteger(left.startOffset) && Number.isInteger(left.endOffset)
+    && Number.isInteger(right.startOffset) && Number.isInteger(right.endOffset)
+    && left.startOffset < right.endOffset && right.startOffset < left.endOffset;
+}
+
+function compileSemanticCandidates(output, input) {
+  if (!output || !Array.isArray(output.semanticCandidates) || !Array.isArray(output.tasks)) return output;
+  const scopeIds = new Map();
+  const candidates = output.semanticCandidates.slice(0, MAX_CANDIDATES).map((rawCandidate, index) => {
+    const rawScope = rawCandidate && rawCandidate.lodgingScopeCandidate;
+    const scope = rawScope && typeof rawScope === "object" && !Array.isArray(rawScope)
+      ? { bundleCanonicalCandidate: rawScope.bundleCanonicalCandidate, roomCanonicalCandidates: rawScope.roomCanonicalCandidates, guestCountCandidate: rawScope.guestCountCandidate }
+      : null;
+    const scopeSignature = scope === null ? "" : JSON.stringify(stableValue(scope));
+    const scopeId = scope === null ? null : (scopeIds.get(scopeSignature) || deterministicUuid(`scope:${scopeSignature}`));
+    if (scope !== null) scopeIds.set(scopeSignature, scopeId);
+    const payload = {
+      semanticKind: rawCandidate && rawCandidate.semanticKind,
+      capability: rawCandidate && rawCandidate.capability,
+      canonicalIdentityCandidate: rawCandidate && rawCandidate.canonicalIdentityCandidate,
+      evidenceRefs: rawCandidate && rawCandidate.evidenceRefs,
+      lodgingScopeCandidate: scope,
+      temporalSemanticCandidate: rawCandidate && rawCandidate.temporalSemanticCandidate,
+      propertyCatalogIdentity: rawCandidate && rawCandidate.propertyCatalogIdentity
+    };
+    return { ...payload, candidateId: deterministicUuid(`candidate:${JSON.stringify(stableValue(payload))}`), lodgingScopeCandidate: scope === null ? null : { scopeId, ...scope } };
+  });
+  const validCandidates = validateSemanticCandidates({ semanticCandidates: candidates }, input).validCandidates;
+  const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
+  const tasks = output.tasks.map((task) => {
+    const relation = (output.contextRelationCandidates || []).find((item) => item && item.candidateIndex === task.candidateIndex);
+    const matching = validCandidates.filter((candidate) => compilerCompatibleCapability(task && task.type, candidate.capability)
+      && (!candidate.propertyCatalogIdentity || String(task && task.entity && task.entity.canonicalCandidate || "") === candidate.propertyCatalogIdentity)
+      && relation && validEvidenceRefs(relation.evidenceRefs, input)
+      && candidate.evidenceRefs.every((candidateRef) => relation.evidenceRefs.some((taskRef) => compilerEvidenceOverlaps(candidateRef, taskRef, sourceMaps))));
+    const scopes = [...new Set(matching.map((candidate) => String(candidate.lodgingScopeCandidate && candidate.lodgingScopeCandidate.scopeId || "")))];
+    const scopeId = scopes.length === 1 ? scopes[0] : "";
+    const owned = scopes.length === 1 ? matching : [];
+    return { ...task, semanticCandidateIds: owned.map((candidate) => candidate.candidateId), lodgingScopeId: scopeId || null };
+  });
+  return { ...output, tasks, semanticCandidates: candidates };
+}
 function validateSemanticCandidates(output, input) {
   if (!output || !Array.isArray(output.semanticCandidates)) return { present: false, validCandidates: [], invalidCandidateIds: [] };
   const identities = catalogIdentities(input && input.catalog);
@@ -134,6 +203,7 @@ function verifiedRepairTask(repairOutput, input, candidate) {
 module.exports = {
   MAX_CANDIDATES,
   SEMANTIC_KINDS,
+  compileSemanticCandidates,
   validateSemanticCandidates,
   missingSemanticCandidates,
   verifiedRepairTask
