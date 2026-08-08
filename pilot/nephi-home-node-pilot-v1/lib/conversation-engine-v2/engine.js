@@ -173,6 +173,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0
 const REPAIR_KINDS = new Set(["coverage_repair", "task_collection_repair", "semantic_repair"]);
 const SEMANTIC_LEDGER_BOUNDARY_STAGES = new Set(["raw_parsed_output", "compile_before", "compile_after", "validate"]);
 const SEMANTIC_LEDGER_FAILURE_CODES = new Set(["candidate_object", "candidate_id", "candidate_count_limit", "semantic_kind", "capability", "canonical_identity", "property_catalog_identity", "identity_alignment", "evidence_refs", "lodging_scope", "lodging_scope_conflict", "temporal_candidate"]);
+const EVIDENCE_FAILURE_CODES = new Set(["missing_refs", "too_many_refs", "invalid_evidence_ref", "missing_source_identity", "unknown_event_id", "unknown_message_ref", "identity_conflict", "invalid_offset", "invalid_quote", "out_of_bounds", "quote_slice_mismatch"]);
 
 function safePlannerProviderErrorField(value, maxLength) {
   const text = String(value || "");
@@ -253,7 +254,10 @@ function safeSemanticLedgerBoundaries(value) {
     const failureCodes = [...new Set((Array.isArray(entry && entry.failureCodes) ? entry.failureCodes : [])
       .map(String)
       .filter((code) => SEMANTIC_LEDGER_FAILURE_CODES.has(code)))].sort();
-    return [{ stage, candidateCount: count("candidateCount"), validCandidateCount: count("validCandidateCount"), invalidCandidateCount: count("invalidCandidateCount"), ownershipCount: count("ownershipCount"), failureCodes }];
+    const evidenceFailureCodes = [...new Set((Array.isArray(entry && entry.evidenceFailureCodes) ? entry.evidenceFailureCodes : [])
+      .map(String)
+      .filter((code) => EVIDENCE_FAILURE_CODES.has(code)))].sort();
+    return [{ stage, candidateCount: count("candidateCount"), validCandidateCount: count("validCandidateCount"), invalidCandidateCount: count("invalidCandidateCount"), ownershipCount: count("ownershipCount"), failureCodes, evidenceFailureCodes }];
   });
 }
 

@@ -46,6 +46,34 @@ function evidenceMatchesSource(evidenceRef, sourceMaps) {
     && source.messageText.slice(evidenceRef.startOffset, evidenceRef.endOffset) === evidenceRef.quote;
 }
 
+function evidenceRefFailureCodes(evidenceRef, sourceMaps) {
+  if (!evidenceRef || typeof evidenceRef !== "object" || Array.isArray(evidenceRef)) return ["invalid_evidence_ref"];
+  const eventId = String(evidenceRef.eventId || "").trim();
+  const messageRef = String(evidenceRef.messageRef || "").trim();
+  const codes = [];
+  if (!eventId && !messageRef) codes.push("missing_source_identity");
+  if (!Number.isInteger(evidenceRef.startOffset) || !Number.isInteger(evidenceRef.endOffset)
+    || evidenceRef.startOffset < 0 || evidenceRef.endOffset <= evidenceRef.startOffset) codes.push("invalid_offset");
+  if (typeof evidenceRef.quote !== "string" || evidenceRef.quote.length < 1) codes.push("invalid_quote");
+  if (codes.length) return codes;
+  const byEvent = eventId ? sourceMaps.byEventId.get(eventId) : undefined;
+  const byMessage = messageRef ? sourceMaps.byMessageRef.get(messageRef) : undefined;
+  if (eventId && !byEvent) codes.push("unknown_event_id");
+  if (messageRef && !byMessage) codes.push("unknown_message_ref");
+  if (eventId && messageRef && byEvent && byMessage && byEvent !== byMessage) codes.push("identity_conflict");
+  const source = byEvent || byMessage;
+  if (!codes.length && source && evidenceRef.endOffset > source.messageText.length) codes.push("out_of_bounds");
+  if (!codes.length && source && source.messageText.slice(evidenceRef.startOffset, evidenceRef.endOffset) !== evidenceRef.quote) codes.push("quote_slice_mismatch");
+  return codes;
+}
+
+function evidenceRefsFailureCodes(refs, sourceEvents) {
+  if (!Array.isArray(refs) || refs.length < 1) return ["missing_refs"];
+  if (refs.length > 12) return ["too_many_refs"];
+  const sourceMaps = sourceEventMaps(sourceEvents);
+  return [...new Set(refs.flatMap((ref) => evidenceRefFailureCodes(ref, sourceMaps)))].sort();
+}
+
 function requestCandidateIndexes(plannerOutput) {
   const indexes = new Set();
   const errors = [];
@@ -111,4 +139,4 @@ function validateUnderstandingContext(plannerOutput, snapshot, { sourceEvents = 
   return { ok: errors.length === 0, errors, relations };
 }
 
-module.exports = { validateUnderstandingContext, validEvidenceRef, sourceEventMaps, evidenceMatchesSource };
+module.exports = { validateUnderstandingContext, validEvidenceRef, sourceEventMaps, evidenceMatchesSource, evidenceRefFailureCodes, evidenceRefsFailureCodes };

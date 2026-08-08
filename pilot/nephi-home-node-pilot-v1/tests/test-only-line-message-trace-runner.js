@@ -104,8 +104,8 @@ function recordsOf(persistence) {
       sourceText: TARGET_MESSAGE
     }],
     semanticLedgerBoundaries: [
-      { stage: "raw_parsed_output", candidateCount: 1, validCandidateCount: 1, invalidCandidateCount: 0, ownershipCount: 0, failureCodes: [], sourceText: TARGET_MESSAGE },
-      { stage: "compile_after", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs", "unapproved_code"] }
+      { stage: "raw_parsed_output", candidateCount: 1, validCandidateCount: 1, invalidCandidateCount: 0, ownershipCount: 0, failureCodes: [], evidenceFailureCodes: ["quote_slice_mismatch", "unapproved_code"], sourceText: TARGET_MESSAGE },
+      { stage: "compile_after", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs", "unapproved_code"], evidenceFailureCodes: ["missing_refs", "unapproved_code"] }
     ],
     tasks: [{
       taskId: "availability-1",
@@ -205,8 +205,8 @@ function recordsOf(persistence) {
   assert.equal(record.stages.planner.parserSucceeded, true);
   assert.deepEqual(record.stages.planner.repairProvenance, [{ kind: "coverage_repair", correlationId: "12345678-1234-4123-8123-123456789abc" }]);
   assert.deepEqual(record.stages.planner.semanticLedgerBoundaries, [
-    { stage: "raw_parsed_output", candidateCount: 1, validCandidateCount: 1, invalidCandidateCount: 0, ownershipCount: 0, failureCodes: [] },
-    { stage: "compile_after", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs"] }
+    { stage: "raw_parsed_output", candidateCount: 1, validCandidateCount: 1, invalidCandidateCount: 0, ownershipCount: 0, failureCodes: [], evidenceFailureCodes: ["quote_slice_mismatch"] },
+    { stage: "compile_after", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs"], evidenceFailureCodes: ["missing_refs"] }
   ]);
   assert.equal(record.stages.canonical_request.items[0].repairCorrelationId, "12345678-1234-4123-8123-123456789abc", "persisted safe trace must retain the opaque direct join");
   assert.equal(JSON.stringify(record.stages.planner.repairProvenance).includes("availability-1"), false, "safe provenance must not project semantic Planner task IDs");

@@ -14,6 +14,7 @@ const ROOM302_CANDIDATE_ID = "71000000-0000-4000-8000-000000000003";
 const ROOM402_CANDIDATE_ID = "71000000-0000-4000-8000-000000000004";
 const TEMPORAL_CANDIDATE_ID = "71000000-0000-4000-8000-000000000005";
 const { canonicalizeExecutionItem } = require("../lib/conversation-engine-v2/canonicalizer");
+const { evidenceRefsFailureCodes } = require("../lib/conversation-engine-v2/understanding-validator");
 const OPAQUE_REPAIR_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const { mentionedFaqSubjects } = require("../lib/conversation-engine-v2/entity-resolver");
 
@@ -84,7 +85,8 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     validCandidateCount: 1,
     invalidCandidateCount: 0,
     ownershipCount: 0,
-    failureCodes: []
+    failureCodes: [],
+    evidenceFailureCodes: []
   }, "a raw semantic candidate with exact source coordinates must be accepted before compilation");
   assert.equal(validateSemanticCandidates(compileSemanticCandidates(validRawEvidenceOutput, rawEvidenceInput), rawEvidenceInput).validCandidates.length, 1, "the exact raw evidence contract must remain valid after deterministic compilation");
   const invalidRawEvidenceOutput = {
@@ -96,9 +98,25 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     validCandidateCount: 0,
     invalidCandidateCount: 1,
     ownershipCount: 0,
-    failureCodes: ["evidence_refs"]
+    failureCodes: ["evidence_refs"],
+    evidenceFailureCodes: ["quote_slice_mismatch"]
   }, "a raw semantic candidate with a non-slice quote must fail closed as evidence_refs");
   assert.deepEqual(validateSemanticCandidates(compileSemanticCandidates(invalidRawEvidenceOutput, rawEvidenceInput), rawEvidenceInput).invalidFailureCodes, ["evidence_refs"], "deterministic compilation must not repair or hide invalid raw evidence");
+  const alternateEvidenceSourceEvents = [...rawEvidenceInput.sourceEvents, { eventId: "alternate-event", messageRef: "alternate-message", messageText: "Alternate source." }];
+  const evidenceReasonCases = [
+    { refs: [], expected: ["missing_refs"] },
+    { refs: new Array(13).fill(validRawEvidenceCandidate.evidenceRefs[0]), expected: ["too_many_refs"] },
+    { refs: [null], expected: ["invalid_evidence_ref"] },
+    { refs: [{ eventId: "", messageRef: "", startOffset: 0, endOffset: 1, quote: "A" }], expected: ["missing_source_identity"] },
+    { refs: [{ eventId: "unknown", messageRef: "", startOffset: 0, endOffset: 1, quote: "A" }], expected: ["unknown_event_id"] },
+    { refs: [{ eventId: "raw-evidence-event", messageRef: "unknown", startOffset: 0, endOffset: 1, quote: "A" }], expected: ["unknown_message_ref"] },
+    { refs: [{ eventId: "raw-evidence-event", messageRef: "alternate-message", startOffset: 0, endOffset: 1, quote: "A" }], sourceEvents: alternateEvidenceSourceEvents, expected: ["identity_conflict"] },
+    { refs: [{ eventId: "raw-evidence-event", messageRef: "raw-evidence-message", startOffset: 1.5, endOffset: 2, quote: "s" }], expected: ["invalid_offset"] },
+    { refs: [{ eventId: "raw-evidence-event", messageRef: "raw-evidence-message", startOffset: 0, endOffset: 1, quote: "" }], expected: ["invalid_quote"] },
+    { refs: [{ eventId: "raw-evidence-event", messageRef: "raw-evidence-message", startOffset: 0, endOffset: rawEvidenceMessage.length + 1, quote: rawEvidenceMessage }], expected: ["out_of_bounds"] },
+    { refs: invalidRawEvidenceOutput.semanticCandidates[0].evidenceRefs, expected: ["quote_slice_mismatch"] }
+  ];
+  for (const item of evidenceReasonCases) assert.deepEqual(evidenceRefsFailureCodes(item.refs, item.sourceEvents || rawEvidenceInput.sourceEvents), item.expected, "diagnostic evidence reason must mirror the existing fail-closed predicate");
   const coverageCatalog = buildPropertyCatalog({
     propertyId: "coverage-property",
     displayName: "Coverage Property",

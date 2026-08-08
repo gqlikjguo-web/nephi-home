@@ -1,7 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
-const { evidenceMatchesSource, sourceEventMaps } = require("./understanding-validator");
+const { evidenceMatchesSource, sourceEventMaps, evidenceRefsFailureCodes } = require("./understanding-validator");
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SEMANTIC_KINDS = new Set(["capability", "catalog_subject", "temporal_pattern", "lodging_scope"]);
@@ -212,12 +212,15 @@ function semanticCandidateDiagnosticSummary(output, input, { raw = false } = {})
     semanticCandidateFailureCodes(candidate, identities, counts, new Set(), input, { requireCandidateId: false })))].sort() : [];
   const ownershipCount = (Array.isArray(output && output.tasks) ? output.tasks : [])
     .reduce((count, task) => count + (Array.isArray(task && task.semanticCandidateIds) ? task.semanticCandidateIds.length : 0), 0);
+  const evidenceFailureCodes = [...new Set(candidates.flatMap((candidate) =>
+    evidenceRefsFailureCodes(candidate && candidate.evidenceRefs, input && input.sourceEvents || [])))].sort();
   return Object.freeze({
     candidateCount: candidates.length,
     validCandidateCount: raw ? Math.max(0, candidates.length - (rawFailureCodes.length ? candidates.length : 0)) : ledger.validCandidates.length,
     invalidCandidateCount: raw ? (rawFailureCodes.length ? candidates.length : 0) : ledger.invalidCandidateIds.length,
     ownershipCount: Math.min(ownershipCount, MAX_CANDIDATES),
-    failureCodes: Object.freeze(raw ? rawFailureCodes : (ledger.invalidFailureCodes || []))
+    failureCodes: Object.freeze(raw ? rawFailureCodes : (ledger.invalidFailureCodes || [])),
+    evidenceFailureCodes: Object.freeze(evidenceFailureCodes)
   });
 }
 

@@ -171,10 +171,10 @@ async function request(url, method, body, cookie = `nephi_admin_session=${adminT
     assert.equal(semanticLedgerPlannerTrace.providerAttemptCount, 1);
     assert.equal(semanticLedgerPlannerTrace.retryPerformed, false);
     assert.deepEqual(semanticLedgerPlannerTrace.semanticLedgerBoundaries, [
-      { stage: "raw_parsed_output", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 1, failureCodes: ["evidence_refs"] },
-      { stage: "compile_before", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 1, failureCodes: ["evidence_refs"] },
-      { stage: "compile_after", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs"] },
-      { stage: "validate", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs"] }
+      { stage: "raw_parsed_output", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 1, failureCodes: ["evidence_refs"], evidenceFailureCodes: ["missing_refs"] },
+      { stage: "compile_before", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 1, failureCodes: ["evidence_refs"], evidenceFailureCodes: ["missing_refs"] },
+      { stage: "compile_after", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs"], evidenceFailureCodes: ["missing_refs"] },
+      { stage: "validate", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs"], evidenceFailureCodes: ["missing_refs"] }
     ], "provider diagnostic must survive Engine, safe formatting, captureSafeTrace, and acceptance trace projection");
     assert.equal(JSON.stringify(semanticLedgerPlannerTrace).includes(SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE), false, "acceptance planner trace must not retain fixture message text");
 
