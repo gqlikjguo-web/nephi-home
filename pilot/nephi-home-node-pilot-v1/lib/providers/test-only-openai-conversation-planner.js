@@ -1090,11 +1090,13 @@ function mergeCoverageRepair(firstOutput, repairOutput, input, missingCanonicalI
       taskIds: Object.freeze(addedTaskIds.filter(Boolean))
     })
   });
+  const semanticLedgerBoundary = Object.getOwnPropertyDescriptor(firstOutput, SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC);
+  if (semanticLedgerBoundary) Object.defineProperty(merged, SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC, semanticLedgerBoundary);
   return merged;
 }
 
 function copyPlannerDiagnostics(source, target) {
-  for (const symbol of [TASK_COLLECTION_DIAGNOSTIC, ADDITIVE_REPAIR_DIAGNOSTIC, COVERAGE_MERGE_DIAGNOSTIC]) {
+  for (const symbol of [TASK_COLLECTION_DIAGNOSTIC, ADDITIVE_REPAIR_DIAGNOSTIC, COVERAGE_MERGE_DIAGNOSTIC, SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC]) {
     const descriptor = Object.getOwnPropertyDescriptor(source, symbol);
     if (descriptor) Object.defineProperty(target, symbol, descriptor);
   }
@@ -1182,6 +1184,8 @@ function mergeSemanticCandidateRepair(firstOutput, repairOutput, input, missingC
       taskIds: Object.freeze(addedTaskIds)
     })
   });
+  const semanticLedgerBoundary = Object.getOwnPropertyDescriptor(firstOutput, SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC);
+  if (semanticLedgerBoundary) Object.defineProperty(merged, SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC, semanticLedgerBoundary);
   return merged;
 }
 function plannerFailure({ code, category, status = 0, timeout = false, model = "", name = "Error", providerErrorType = "", providerErrorCode = "", providerErrorParam = "", providerAttemptCount = 1, firstAttemptErrorCategory = category, finalErrorCategory = category, retryPerformed = false, retrySucceeded = false, retryable = false, responseBodyPresent = false, parsedOutputPresent = false }) {
@@ -1488,7 +1492,7 @@ class TestOnlyOpenAiConversationPlanner {
             const finalRepairOutput = copyPlannerDiagnostics(sanitizedRepairOutput, compileSemanticCandidates(sanitizedRepairOutput, repairInput));
             if (replaceInvalidSemanticLedger) {
               if (fullyValidatedSemanticRepair(finalRepairOutput, input)) {
-                return annotateProviderSuccess(finalRepairOutput, "", providerAttempts, { performed: true, succeeded: true, fallback: false });
+                return annotateProviderSuccess(copyPlannerDiagnostics(firstOutput, finalRepairOutput), "", providerAttempts, { performed: true, succeeded: true, fallback: false });
               }
               return annotateProviderSuccess(firstOutput, "", providerAttempts, { performed: true, succeeded: false, fallback: true });
             }

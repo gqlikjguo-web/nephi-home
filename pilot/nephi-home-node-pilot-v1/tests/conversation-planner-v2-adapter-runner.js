@@ -23,6 +23,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
 (async () => {
   const result = await planner.classify({ currentMessage: "你好", currentMessages: ["你好"], eventTimestamp: 1, catalog: { propertyId: "p1", rooms: [] }, conversationState: { schemaVersion: 2 } });
   assert.equal(result.schemaVersion, 2);
+  assert.equal(Array.isArray(result[Symbol.for("junzan.plannerProviderDiagnostic")].semanticLedgerBoundaries), true, "direct provider output must retain semantic-ledger boundary diagnostics");
   assert.equal(requestBody.text.format.name, "junzan_conversation_plan_v2");
   assert.equal(requestBody.text.format.strict, true);
   assert.equal(requestBody.text.format.schema.properties.tasks.minItems, 1);
@@ -107,6 +108,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(coverageDiagnostic.coverageRepairPerformed, true);
   assert.equal(coverageDiagnostic.coverageRepairSucceeded, true);
   assert.equal(coverageDiagnostic.coverageRepairFallback, false);
+  assert.equal(Array.isArray(coverageDiagnostic.semanticLedgerBoundaries), true, "coverage merge must retain first-round semantic-ledger boundaries");
   assert.equal(Array.isArray(coverageDiagnostic.repairLinks), true, "coverage repair must record private task-to-correlation provenance");
   assert.deepEqual(coverageDiagnostic.repairLinks.map((item) => item.kind), ["coverage_repair"]);
   assert.equal(coverageDiagnostic.repairLinks[0].taskId, coverageResult.tasks[1].taskId);
@@ -143,6 +145,18 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(invalidLedgerDiagnostic.coverageRepairPerformed, true);
   assert.equal(invalidLedgerDiagnostic.coverageRepairSucceeded, true);
   assert.equal(invalidLedgerDiagnostic.coverageRepairFallback, false);
+  assert.equal(Array.isArray(invalidLedgerDiagnostic.semanticLedgerBoundaries), true, "full repair success must retain first-round semantic-ledger boundaries");
+
+  let invalidLedgerFallbackCalls = 0;
+  const invalidLedgerFallbackPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async () => {
+    invalidLedgerFallbackCalls += 1;
+    return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(invalidLedgerFirst) }) };
+  } });
+  const invalidLedgerFallbackResult = await invalidLedgerFallbackPlanner.classify({ currentMessage: coverageMessage, currentMessages: [coverageMessage], sourceEvents: [{ eventId: "coverage", messageRef: "coverage-message", messageText: coverageMessage }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(invalidLedgerFallbackCalls, 2, "invalid full repair must use its one bounded repair call");
+  const invalidLedgerFallbackDiagnostic = invalidLedgerFallbackResult[Symbol.for("junzan.plannerProviderDiagnostic")];
+  assert.equal(invalidLedgerFallbackDiagnostic.coverageRepairFallback, true);
+  assert.equal(Array.isArray(invalidLedgerFallbackDiagnostic.semanticLedgerBoundaries), true, "full repair fallback must retain first-round semantic-ledger boundaries");
 
   const wholeMessageText = "Ask the lodging price and confirm the pool";
   const wholeMessageCatalog = buildPropertyCatalog({
