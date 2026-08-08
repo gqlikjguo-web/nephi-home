@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const { validateUnderstandingContext, evidenceMatchesSource, sourceEventMaps, evidenceRefsFailureCodes } = require("./understanding-validator");
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SEMANTIC_CANDIDATE_COMPILED = Symbol("junzan.semanticCandidateCompiled");
 const SEMANTIC_KINDS = new Set(["capability", "catalog_subject", "temporal_pattern", "lodging_scope"]);
 const CAPABILITIES = new Set(["availability", "available_dates", "room_options", "bundle_availability", "capacity", "price", "total_price", "amenity", "amenity_list", "policy", "property_fact", "booking_request", "human_help", "high_risk", "unknown"]);
 const DATE_KINDS = new Set(["absolute", "relative", "weekday", "weekend", "range", "contextual", "none"]);
@@ -74,6 +75,11 @@ function compilerEvidenceOverlaps(left, right, sourceMaps) {
 
 function compileSemanticCandidates(output, input, { synthesizeMissingCandidates = false } = {}) {
   if (!output || !Array.isArray(output.tasks)) return output;
+  // A first pass brands its final ledger. Sanitizers may call this function again;
+  // do not reinterpret branded final candidates as provider raw output, because
+  // provider-only provenance is intentionally gone.
+  if (Array.isArray(output.semanticCandidates) && output.semanticCandidates.length
+    && output.semanticCandidates.every((candidate) => candidate && candidate[SEMANTIC_CANDIDATE_COMPILED] === true)) return output;
   const rawCandidates = Array.isArray(output.semanticCandidates)
     ? output.semanticCandidates
     : synthesizeMissingCandidates
@@ -132,7 +138,9 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
     };
     const candidateId = deterministicUuid(`candidate:${JSON.stringify(stableValue(payload))}`);
     candidateProvenanceIndexes.set(candidateId, provenanceIndexes);
-    return { ...payload, candidateId, lodgingScopeCandidate: scope === null ? null : { scopeId, ...scope } };
+    const compiledCandidate = { ...payload, candidateId, lodgingScopeCandidate: scope === null ? null : { scopeId, ...scope } };
+    Object.defineProperty(compiledCandidate, SEMANTIC_CANDIDATE_COMPILED, { enumerable: false, value: true });
+    return compiledCandidate;
   });
   const validCandidates = validateSemanticCandidates({ semanticCandidates: candidates }, input).validCandidates;
   const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);

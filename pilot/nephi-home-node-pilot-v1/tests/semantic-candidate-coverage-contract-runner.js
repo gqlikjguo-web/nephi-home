@@ -36,6 +36,7 @@ function semanticCandidate({
   semanticKind,
   capability,
   canonicalIdentityCandidate = null,
+  provenanceRelationCandidateIndexes,
   evidenceRefs,
   lodgingScopeCandidate = null,
   temporalSemanticCandidate = null,
@@ -46,6 +47,7 @@ function semanticCandidate({
     semanticKind,
     capability,
     canonicalIdentityCandidate,
+    provenanceRelationCandidateIndexes,
     evidenceRefs,
     lodgingScopeCandidate,
     temporalSemanticCandidate,
@@ -167,6 +169,7 @@ async function classifySequence({ first, repair, plannerInput }) {
     semanticKind: "capability",
     capability: "price",
     canonicalIdentityCandidate: "price",
+    provenanceRelationCandidateIndexes: [0],
     evidenceRefs: priceEvidence
   });
   const facilityCandidate = semanticCandidate({
@@ -174,6 +177,7 @@ async function classifySequence({ first, repair, plannerInput }) {
     semanticKind: "catalog_subject",
     capability: "property_fact",
     canonicalIdentityCandidate: "water_feature",
+    provenanceRelationCandidateIndexes: [0],
     propertyCatalogIdentity: "water_feature",
     evidenceRefs: facilityEvidence
   });
@@ -186,7 +190,7 @@ async function classifySequence({ first, repair, plannerInput }) {
     category: "other",
     dependsOnStayContext: true
   });
-  const first = output({ message, eventId, tasks: [firstPriceTask], semanticCandidates: [priceCandidate, facilityCandidate] });
+  const first = output({ message, eventId, tasks: [firstPriceTask], semanticCandidates: [priceCandidate, facilityCandidate], relations: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: evidence(eventId, message) }] });
   const missingLedger = JSON.parse(JSON.stringify(first));
   delete missingLedger.semanticCandidates;
   delete missingLedger.tasks[0].semanticCandidateIds;
@@ -216,7 +220,7 @@ async function classifySequence({ first, repair, plannerInput }) {
     eventId,
     tasks: [repairedFacilityTask],
     semanticCandidates: [facilityCandidate],
-    relations: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: facilityEvidence }]
+    relations: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: evidence(eventId, message) }]
   });
   const repaired = await classifySequence({ first, repair, plannerInput: input(message, eventId, propertyCatalog) });
   assert.equal(repaired.calls, 2, "one missing structured candidate must trigger exactly one repair call");
@@ -228,8 +232,8 @@ async function classifySequence({ first, repair, plannerInput }) {
   assert.equal(repaired.result.tasks[1].semanticCandidateIds.length, 1);
   const repairPayload = JSON.parse(repaired.bodies[1].input[1].content[0].text).coverageRepair;
   assert.deepEqual(repairPayload.missingCandidateIds, repaired.result.semanticCandidates.filter((candidate) => candidate.propertyCatalogIdentity === "water_feature").map((candidate) => candidate.candidateId));
-  const { candidateId: _facilityCandidateId, ...facilitySemantics } = facilityCandidate;
-  assert.deepEqual(repairPayload.missingSemanticCandidates.map(({ candidateId, ...candidate }) => candidate), [facilitySemantics]);
+  const { candidateId: _facilityCandidateId, provenanceRelationCandidateIndexes: _facilityProvenance, ...facilitySemantics } = facilityCandidate;
+  assert.deepEqual(repairPayload.missingSemanticCandidates.map(({ candidateId, ...candidate }) => candidate), [{ ...facilitySemantics, evidenceRefs: evidence(eventId, message) }]);
   assert.equal(Object.hasOwn(repairPayload, "missingCanonicalIds"), false, "repair must not be driven by text-derived canonical IDs");
 
   const alternateMessage = "Please tell me whether the cooling area may be used.";
@@ -280,6 +284,7 @@ async function classifySequence({ first, repair, plannerInput }) {
     semanticKind: "temporal_pattern",
     capability: "availability",
     canonicalIdentityCandidate: "temporal_pattern",
+    provenanceRelationCandidateIndexes: [0],
     evidenceRefs: temporalEvidence,
     temporalSemanticCandidate: { rawText: "recurring weekend stays in a chosen month", kind: "weekday", anchor: "message_time" }
   });
@@ -300,7 +305,7 @@ async function classifySequence({ first, repair, plannerInput }) {
     eventId: temporalEvent,
     tasks: [temporalRepairTask],
     semanticCandidates: [temporalCandidate],
-    relations: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: temporalEvidence }]
+    relations: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: evidence(temporalEvent, temporalMessage) }]
   });
   const temporal = await classifySequence({ first: temporalFirst, repair: temporalRepair, plannerInput: input(temporalMessage, temporalEvent, propertyCatalog) });
   assert.equal(temporal.calls, 2, "structured temporal semantics must trigger repair independently of sourceText field arrangement");
@@ -310,8 +315,8 @@ async function classifySequence({ first, repair, plannerInput }) {
   const lodgingEvent = "lodging-scope";
   const lodgingEvidence = evidence(lodgingEvent, lodgingMessage);
   const lodgingScopeCandidate = { scopeId: IDS.scope, bundleCanonicalCandidate: "lodging_bundle", roomCanonicalCandidates: ["quiet_room"], guestCountCandidate: 6 };
-  const bundleCandidate = semanticCandidate({ candidateId: IDS.bundle, semanticKind: "lodging_scope", capability: "bundle_availability", canonicalIdentityCandidate: "lodging_bundle", propertyCatalogIdentity: "lodging_bundle", evidenceRefs: lodgingEvidence, lodgingScopeCandidate });
-  const roomCandidate = semanticCandidate({ candidateId: IDS.room, semanticKind: "lodging_scope", capability: "availability", canonicalIdentityCandidate: "quiet_room", propertyCatalogIdentity: "quiet_room", evidenceRefs: lodgingEvidence, lodgingScopeCandidate });
+  const bundleCandidate = semanticCandidate({ candidateId: IDS.bundle, semanticKind: "lodging_scope", capability: "bundle_availability", canonicalIdentityCandidate: "lodging_bundle", provenanceRelationCandidateIndexes: [0], propertyCatalogIdentity: "lodging_bundle", evidenceRefs: lodgingEvidence, lodgingScopeCandidate });
+  const roomCandidate = semanticCandidate({ candidateId: IDS.room, semanticKind: "lodging_scope", capability: "availability", canonicalIdentityCandidate: "quiet_room", provenanceRelationCandidateIndexes: [1], propertyCatalogIdentity: "quiet_room", evidenceRefs: lodgingEvidence, lodgingScopeCandidate });
   const bundleTask = task({ candidateIndex: 0, taskId: "bundle-sibling", type: "bundle_availability", sourceText: lodgingMessage, semanticCandidateIds: [IDS.bundle], category: "bundle", canonicalCandidate: "lodging_bundle", dependsOnStayContext: true, lodgingScopeId: IDS.scope });
   const roomTask = task({ candidateIndex: 1, taskId: "room-sibling", type: "availability", sourceText: lodgingMessage, semanticCandidateIds: [IDS.room], category: "room", canonicalCandidate: "quiet_room", dependsOnStayContext: true, lodgingScopeId: IDS.scope });
   const lodgingOutput = output({ message: lodgingMessage, eventId: lodgingEvent, tasks: [bundleTask, roomTask], semanticCandidates: [bundleCandidate, roomCandidate], relations: [
@@ -343,7 +348,7 @@ async function classifySequence({ first, repair, plannerInput }) {
   const snapshot = buildContextSnapshotV3(stateWithScope, { propertyId: "semantic-contract-property", channel: "test", userId: "user", now: "2026-01-01T01:00:00.000Z" });
   assert.deepEqual(snapshot.cycles.map((cycle) => cycle.requestCycleId), [IDS.scope], "later modify_existing must see exactly one lodging request cycle");
 
-  const invalidCandidate = semanticCandidate({ candidateId: IDS.unknown, semanticKind: "catalog_subject", capability: "property_fact", canonicalIdentityCandidate: "not_in_catalog", propertyCatalogIdentity: "not_in_catalog", evidenceRefs: facilityEvidence });
+  const invalidCandidate = semanticCandidate({ candidateId: IDS.unknown, semanticKind: "catalog_subject", capability: "property_fact", canonicalIdentityCandidate: "not_in_catalog", provenanceRelationCandidateIndexes: [0], propertyCatalogIdentity: "not_in_catalog", evidenceRefs: facilityEvidence });
   const invalidFirst = output({ message, eventId, tasks: [firstPriceTask], semanticCandidates: [priceCandidate, invalidCandidate] });
   const invalidRepairTask = task({ candidateIndex: 0, taskId: "invalid-repair", type: "property_fact", sourceText: "place where guests cool off", semanticCandidateIds: [IDS.unknown], category: "amenity", canonicalCandidate: "not_in_catalog" });
   const invalidRepair = output({ message, eventId, tasks: [invalidRepairTask], semanticCandidates: [invalidCandidate], relations: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: facilityEvidence }] });
@@ -354,7 +359,7 @@ async function classifySequence({ first, repair, plannerInput }) {
   const featureMessage = "Does the sleeping space offer a deep soaking option?";
   const featureEvent = "structured-room-feature";
   const featureEvidence = evidence(featureEvent, featureMessage, "deep soaking option");
-  const featureCandidate = semanticCandidate({ candidateId: IDS.feature, semanticKind: "capability", capability: "property_fact", canonicalIdentityCandidate: "room_feature", evidenceRefs: featureEvidence });
+  const featureCandidate = semanticCandidate({ candidateId: IDS.feature, semanticKind: "capability", capability: "property_fact", canonicalIdentityCandidate: "room_feature", provenanceRelationCandidateIndexes: [0], evidenceRefs: featureEvidence });
   const featureTask = {
     ...task({ candidateIndex: 0, taskId: "room-feature", type: "property_fact", sourceText: "deep soaking option", semanticCandidateIds: [IDS.feature], category: "room_feature" }),
     entity: { category: "room_feature", rawText: "deep soaking option", canonicalCandidate: null, confidence: 1 }
