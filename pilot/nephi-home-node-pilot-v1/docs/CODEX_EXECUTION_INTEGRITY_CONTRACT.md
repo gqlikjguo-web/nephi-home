@@ -56,6 +56,64 @@ Checkpoint B 的 provider fail-closed 必須保留合法、明確的 PostgreSQL�
 
 只有第 2 項明列的內容屬於本輪授權範圍。任何未明列的延伸工作，包括後續階段、優化、重構、文件、測試、CI、PR、部署、外部操作或「順便修正」，即使看似有幫助，也不得自行加入。發現額外問題只能回報，除非使用者另外明確批准。不得把建議、可能的後續方案、設計備選或未授權計畫解讀成本輪任務。
 
+## 已驗證正常區域保護規則
+
+任何已經由 regression、acceptance、runtime evidence 或正式 PASS 證據證明正常的 production behavior、function、module、contract 或 data path，預設視為「受保護正常區域」。
+
+Codex 不得因為：
+
+- 方便實作
+- 同屬一個模組
+- 同屬一條 lifecycle / contract / 主線
+- 想順便整理
+- 想重構
+- fixture 比較容易修改
+- 推測可能相關
+
+而修改受保護正常區域。
+
+只有新的真實 failing evidence 建立以下完整因果鏈時，才允許修改：
+
+`實際 FAIL`
+→ `earliest failure layer`
+→ `exact production function / transition`
+→ `該區域直接造成 failure 的證據`
+→ `證明不修改該處就無法安全修復`
+
+缺少任何一項，該正常區域禁止修改。
+
+若同一 function/module 同時包含正常與 failing 行為，只能修改造成 FAIL 的最小責任範圍，並保留其他已正常行為。
+
+任何修改後，原本證明正常的 regression / acceptance 必須重新 PASS。
+若原 PASS 變 FAIL，視為 regression：
+
+- 不得提交
+- 不得 push 修正版
+- 不得部署
+- 必須先恢復原正常能力
+
+禁止以「同一主線」、「同一 contract」、「同一 lifecycle」、「順便修」、「重構較乾淨」作為修改正常區域的理由。
+
+核心原則：
+
+> 沒有直接失敗證據指向的正常 production code，不准動。
+> 已經 PASS 的能力，修其他問題時必須保持 PASS。
+> 修 A 不得以破壞 B 為代價。
+
+## Production Modification Gate
+
+任何 production file 修改前，Codex 必須先自行確認並留下紀錄：
+
+1. 本次實際 FAIL
+2. earliest failure layer
+3. exact failing function / transition
+4. 為什麼必須修改該 function
+5. 哪些鄰近 behavior 已經 PASS，列為禁止修改區
+6. 修完後必須重跑哪些既有 PASS regression
+
+六項任何一項無法證明：
+→ 不得修改 production code，只能繼續定位或回報 `BLOCKED`。
+
 ## 11. 外部系統與部署授權
 
 沒有使用者對特定外部動作的明確授權，不得 push、建立 PR、merge、部署或操作 Render、LINE Console、正式 PostgreSQL、credentials 與 production environment。測試或本機完成不能解除：
