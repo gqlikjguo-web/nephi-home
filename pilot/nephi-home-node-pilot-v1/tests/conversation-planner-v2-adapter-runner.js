@@ -60,8 +60,10 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(plannerInstructions, /0-based UTF-16 JavaScript string index inclusive.*endOffset is exclusive/i, "planner must receive exact JavaScript offset semantics");
   assert.match(plannerInstructions, /messageText\.slice\(startOffset, endOffset\)/i, "planner must receive exact quote reconstruction semantics");
   assert.equal(Object.hasOwn(requestBody.text.format.schema.properties.semanticCandidates.items.properties, "evidenceRefs"), true, "pending coverage candidates retain raw source provenance");
-  assert.equal(semanticProvenanceSchema.minItems, 1, "the provider schema must require explicit relation provenance");
+  assert.equal(semanticProvenanceSchema.minItems, 0, "the required provenance field must represent pending_task with an empty array");
   assert.equal(semanticProvenanceSchema.items.type, "integer", "relation provenance must be candidate indexes");
+  assert.ok(requestBody.text.format.schema.properties.semanticCandidates.items.required.includes("evidenceRefs"), "OpenAI strict schema must require the lifecycle evidence field");
+  assert.ok(requestBody.text.format.schema.properties.semanticCandidates.items.required.includes("provenanceRelationCandidateIndexes"), "OpenAI strict schema must require the lifecycle provenance field");
   assert.deepEqual(semanticCoverageStatusSchema.enum, ["bound", "pending_task"], "the provider schema must distinguish bound and pending coverage candidates");
   assert.equal(JSON.stringify(requestBody).includes("test-key"), false);
   const rawEvidenceMessage = "Ask about the lodging policy.";

@@ -1084,10 +1084,10 @@ function plannerProviderJsonSchema() {
   schema.properties.semanticCandidates.description = "A lifecycle ledger. bound candidates cite verified context-relation indexes; pending_task coverage candidates retain strict raw source evidence until a repair creates the task and relation.";
   candidateSchema.required = candidateSchema.required.filter((field) => field !== "candidateId");
   delete candidateSchema.properties.candidateId;
-  candidateSchema.required = candidateSchema.required.filter((field) => field !== "evidenceRefs");
-  candidateSchema.required.push("coverageStatus");
+  candidateSchema.required.push("coverageStatus", "provenanceRelationCandidateIndexes");
   candidateSchema.properties.coverageStatus = { type: "string", enum: ["bound", "pending_task"] };
-  candidateSchema.properties.provenanceRelationCandidateIndexes = { type: "array", minItems: 1, maxItems: 12, description: "Explicit semantic provenance only. List each contextRelationCandidates candidateIndex whose already-verified evidence span represents this semantic candidate. Do not calculate source coordinates for semanticCandidates.", items: { type: "integer", minimum: 0 } };
+  candidateSchema.properties.evidenceRefs = { ...candidateSchema.properties.evidenceRefs, minItems: 0, description: "Required lifecycle field. Use [] for bound candidates; pending_task candidates must provide strict raw source evidence until repair creates the task and relation." };
+  candidateSchema.properties.provenanceRelationCandidateIndexes = { type: "array", minItems: 0, maxItems: 12, description: "Required lifecycle field. Bound candidates list each contextRelationCandidates candidateIndex whose verified evidence represents this candidate; pending_task candidates use [].", items: { type: "integer", minimum: 0 } };
   const scopeSchema = candidateSchema.properties.lodgingScopeCandidate;
   scopeSchema.required = scopeSchema.required.filter((field) => field !== "scopeId");
   delete scopeSchema.properties.scopeId;

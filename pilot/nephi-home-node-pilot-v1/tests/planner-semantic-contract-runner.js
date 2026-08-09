@@ -1,13 +1,30 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { applyPlannerSemanticContract, normalizeDuplicateTaskIds, plannerJsonSchema, validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
+const { applyPlannerSemanticContract, normalizeDuplicateTaskIds, plannerJsonSchema, plannerProviderJsonSchema, validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
 const { canonicalizeExecutionItem } = require("../lib/conversation-engine-v2/canonicalizer");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
 const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const eventTimestamp = Date.parse("2026-08-01T10:00:00+08:00");
+
+function assertOpenAiStructuredOutputObjectRequirements(node, path = "$") {
+  if (!node || typeof node !== "object" || Array.isArray(node)) return;
+  const types = Array.isArray(node.type) ? node.type : [node.type];
+  if (types.includes("object")) {
+    assert.equal(node.additionalProperties, false, `${path}: OpenAI strict object must forbid additional properties`);
+    assert.ok(node.properties && typeof node.properties === "object" && !Array.isArray(node.properties), `${path}: OpenAI strict object must declare properties`);
+    assert.deepEqual(
+      [...(node.required || [])].sort(),
+      Object.keys(node.properties).sort(),
+      `${path}: OpenAI strict object required must include every properties key`
+    );
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (value && typeof value === "object") assertOpenAiStructuredOutputObjectRequirements(value, `${path}.${key}`);
+  }
+}
 
 function task({ taskId, type = "property_fact", category = "other", rawText, sourceText = rawText, canonicalCandidate = null, detailIntent = "general", requestedOutputs = ["answer"], dependsOnStayContext = false, stayCandidate = null }) {
   return {
@@ -1065,7 +1082,14 @@ function main() {
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 42 + contradictoryFieldCaseCount, passCount: 42 + contradictoryFieldCaseCount, failCount: 0 }));
+  const providerSchema = plannerProviderJsonSchema();
+  assertOpenAiStructuredOutputObjectRequirements(providerSchema);
+  const providerCandidateSchema = providerSchema.properties.semanticCandidates.items;
+  assert.ok(providerCandidateSchema.required.includes("evidenceRefs"));
+  assert.ok(providerCandidateSchema.required.includes("provenanceRelationCandidateIndexes"));
+  assert.equal(providerCandidateSchema.properties.evidenceRefs.minItems, 0, "bound lifecycle can represent its required empty raw-evidence field");
+  assert.equal(providerCandidateSchema.properties.provenanceRelationCandidateIndexes.minItems, 0, "pending lifecycle can represent its required empty relation-provenance field");
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 43 + contradictoryFieldCaseCount, passCount: 43 + contradictoryFieldCaseCount, failCount: 0 }));
 }
 
 main();
