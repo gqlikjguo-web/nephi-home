@@ -248,13 +248,94 @@ function semanticCandidateFailureCodes(candidate, identities, counts, conflictin
   return codes;
 }
 
-function semanticCandidateDiagnosticSummary(output, input, { raw = false } = {}) {
+function diagnosticProvenance(candidate, originCandidate) {
+  const source = originCandidate && typeof originCandidate === "object" ? originCandidate : candidate;
+  const provenancePresent = Boolean(source && Object.hasOwn(source, "provenanceRelationCandidateIndexes"));
+  const rawProvenance = provenancePresent
+    ? source.provenanceRelationCandidateIndexes
+    : candidate && candidate[SEMANTIC_CANDIDATE_COMPILED] === true
+      ? candidate[SEMANTIC_CANDIDATE_PROVENANCE]
+      : undefined;
+  const provenanceCount = Array.isArray(rawProvenance) ? Math.min(rawProvenance.length, 12) : 0;
+  const provenanceRelationCandidateIndexes = Array.isArray(rawProvenance)
+    ? rawProvenance.slice(0, 12).filter((value) => Number.isInteger(value) && value >= 0)
+    : [];
+  return { provenancePresent, provenanceCount, provenanceRelationCandidateIndexes };
+}
+
+function diagnosticLifecycle(candidate, originCandidate) {
+  const compiledLifecycle = candidate && candidate[SEMANTIC_CANDIDATE_COMPILED] === true
+    ? candidate[SEMANTIC_CANDIDATE_LIFECYCLE]
+    : "";
+  const coverageStatus = originCandidate && ["bound", "pending_task"].includes(originCandidate.coverageStatus)
+    ? originCandidate.coverageStatus
+    : candidate && ["bound", "pending_task"].includes(candidate.coverageStatus)
+      ? candidate.coverageStatus
+      : ["bound", "pending_task"].includes(compiledLifecycle) ? compiledLifecycle : "unknown";
+  return {
+    coverageStatus,
+    lifecycle: ["bound", "pending_task"].includes(compiledLifecycle) ? compiledLifecycle : coverageStatus
+  };
+}
+
+function diagnosticRelationState(originOutput, input, provenanceIndexes) {
+  const relations = Array.isArray(originOutput && originOutput.contextRelationCandidates)
+    ? originOutput.contextRelationCandidates
+    : [];
+  const context = validateUnderstandingContext(originOutput, input && input.contextSnapshot || { scope: {}, cycles: [] }, { sourceEvents: input && input.sourceEvents || [] });
+  const verifiedIndexes = new Set(context.ok && Array.isArray(context.relations)
+    ? context.relations.map((relation) => relation.candidateIndex)
+    : []);
+  return provenanceIndexes.map((candidateIndex) => {
+    const matches = relations.filter((relation) => relation && relation.candidateIndex === candidateIndex);
+    const relation = matches.length === 1 ? matches[0] : null;
+    const evidenceFailureCodes = relation
+      ? evidenceRefsFailureCodes(relation.evidenceRefs, input && input.sourceEvents || [])
+      : [];
+    const relationExists = Boolean(relation);
+    const relationEvidenceValid = relationExists && evidenceFailureCodes.length === 0;
+    return Object.freeze({
+      candidateIndex,
+      relationExists,
+      relationContextValid: relationExists && verifiedIndexes.has(candidateIndex),
+      relationEvidenceValid,
+      evidenceFailureCodes: Object.freeze([...evidenceFailureCodes])
+    });
+  });
+}
+
+function missingRefsDiagnosticReason({ lifecycle, provenancePresent, provenanceCount, provenanceIndexes, provenanceRelations, originCandidate, candidate, input }) {
+  const currentEvidenceFailures = evidenceRefsFailureCodes(candidate && candidate.evidenceRefs, input && input.sourceEvents || []);
+  if (!currentEvidenceFailures.includes("missing_refs")) return "";
+  if (lifecycle === "pending_task") {
+    const rawEvidenceFailures = evidenceRefsFailureCodes(originCandidate && originCandidate.evidenceRefs, input && input.sourceEvents || []);
+    return rawEvidenceFailures.length ? "pending_invalid_raw_evidence" : "compiled_evidence_lost";
+  }
+  if (lifecycle !== "bound") return "other";
+  if (!provenancePresent || provenanceCount === 0) return "bound_missing_provenance";
+  if (provenanceIndexes.length !== provenanceCount) return "other";
+  if (provenanceRelations.some((relation) => !relation.relationExists)) return "bound_unknown_provenance_relation";
+  if (provenanceRelations.some((relation) => !relation.relationEvidenceValid)) return "bound_relation_evidence_invalid";
+  if (provenanceRelations.some((relation) => !relation.relationContextValid)) return "bound_relation_context_invalid";
+  return "compiled_evidence_lost";
+}
+
+function semanticCandidateDiagnosticSummary(output, input, { raw = false, includeCandidates = false, originOutput = null } = {}) {
   const candidates = Array.isArray(output && output.semanticCandidates) ? output.semanticCandidates.slice(0, MAX_CANDIDATES) : [];
   const identities = catalogIdentities(input && input.catalog);
   const counts = new Map();
   for (const candidate of candidates) {
     const candidateId = String(candidate && candidate.candidateId || "");
     counts.set(candidateId, (counts.get(candidateId) || 0) + 1);
+  }
+  const scopeSignatures = new Map();
+  const conflictingScopeIds = new Set();
+  for (const candidate of candidates) {
+    const scope = candidate && candidate.lodgingScopeCandidate;
+    if (!scope || !UUID_PATTERN.test(String(scope.scopeId || ""))) continue;
+    const signature = JSON.stringify(scope);
+    if (scopeSignatures.has(scope.scopeId) && scopeSignatures.get(scope.scopeId) !== signature) conflictingScopeIds.add(scope.scopeId);
+    else scopeSignatures.set(scope.scopeId, signature);
   }
   const ledger = raw ? null : validateSemanticCandidates(output, input);
   const rawFailureCodes = raw ? [...new Set(candidates.flatMap((candidate) =>
@@ -263,14 +344,50 @@ function semanticCandidateDiagnosticSummary(output, input, { raw = false } = {})
     .reduce((count, task) => count + (Array.isArray(task && task.semanticCandidateIds) ? task.semanticCandidateIds.length : 0), 0);
   const evidenceFailureCodes = [...new Set(candidates.flatMap((candidate) =>
     evidenceRefsFailureCodes(candidate && candidate.evidenceRefs, input && input.sourceEvents || [])))].sort();
-  return Object.freeze({
+  const summary = {
     candidateCount: candidates.length,
     validCandidateCount: raw ? Math.max(0, candidates.length - (rawFailureCodes.length ? candidates.length : 0)) : ledger.validCandidates.length,
     invalidCandidateCount: raw ? (rawFailureCodes.length ? candidates.length : 0) : ledger.invalidCandidateIds.length,
     ownershipCount: Math.min(ownershipCount, MAX_CANDIDATES),
     failureCodes: Object.freeze(raw ? rawFailureCodes : (ledger.invalidFailureCodes || [])),
     evidenceFailureCodes: Object.freeze(evidenceFailureCodes)
+  };
+  if (!includeCandidates) return Object.freeze(summary);
+  const diagnosticOrigin = originOutput && typeof originOutput === "object" ? originOutput : output;
+  const originCandidates = Array.isArray(diagnosticOrigin && diagnosticOrigin.semanticCandidates)
+    ? diagnosticOrigin.semanticCandidates.slice(0, MAX_CANDIDATES)
+    : [];
+  const candidateDiagnostics = candidates.map((candidate, candidateOrdinal) => {
+    const originCandidate = originCandidates[candidateOrdinal] || candidate;
+    const { coverageStatus, lifecycle } = diagnosticLifecycle(candidate, originCandidate);
+    const { provenancePresent, provenanceCount, provenanceRelationCandidateIndexes } = diagnosticProvenance(candidate, originCandidate);
+    const provenanceRelations = diagnosticRelationState(diagnosticOrigin, input, provenanceRelationCandidateIndexes);
+    const candidateFailureCodes = semanticCandidateFailureCodes(candidate, identities, counts, conflictingScopeIds, input, { requireCandidateId: !raw });
+    return Object.freeze({
+      candidateOrdinal,
+      coverageStatus,
+      lifecycle,
+      provenancePresent,
+      provenanceCount,
+      provenanceRelationCandidateIndexes: Object.freeze([...provenanceRelationCandidateIndexes]),
+      verifiedRelationCount: provenanceRelations.filter((relation) => relation.relationContextValid).length,
+      evidenceRefCount: Array.isArray(candidate && candidate.evidenceRefs) ? Math.min(candidate.evidenceRefs.length, 12) : 0,
+      valid: candidateFailureCodes.length === 0,
+      failureCodes: Object.freeze([...candidateFailureCodes]),
+      missingRefsReason: missingRefsDiagnosticReason({
+        lifecycle,
+        provenancePresent,
+        provenanceCount,
+        provenanceIndexes: provenanceRelationCandidateIndexes,
+        provenanceRelations,
+        originCandidate,
+        candidate,
+        input
+      }),
+      provenanceRelations: Object.freeze(provenanceRelations)
+    });
   });
+  return Object.freeze({ ...summary, candidates: Object.freeze(candidateDiagnostics) });
 }
 
 function evidenceSource(ref, sourceMaps) {

@@ -67,7 +67,16 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     taskResults: [{ taskId: "parking", capability: "parking", type: "parking", status: "answered", reason: "", dataSource: "property_catalog", facts: { subject: "停車", status: "confirmed_yes", answer: "民宿旁可停車。" } }],
     trace: [
       { stage: "property_catalog", providerType: "postgres" },
-      { stage: "planner", parserSucceeded: true }, { stage: "validation" }, { stage: "semantic_contract", validationPassed: true },
+      { stage: "planner", parserSucceeded: true, semanticLedgerBoundaries: [{
+        stage: "compile_after",
+        candidateCount: 1,
+        validCandidateCount: 0,
+        invalidCandidateCount: 1,
+        ownershipCount: 0,
+        failureCodes: ["evidence_refs"],
+        evidenceFailureCodes: ["missing_refs"],
+        candidates: [{ candidateOrdinal: 0, coverageStatus: "bound", lifecycle: "bound", provenancePresent: false, provenanceCount: 0, provenanceRelationCandidateIndexes: [], verifiedRelationCount: 0, evidenceRefCount: 0, valid: false, failureCodes: ["evidence_refs"], missingRefsReason: "bound_missing_provenance", provenanceRelations: [] }]
+      }] }, { stage: "validation" }, { stage: "semantic_contract", validationPassed: true },
       { stage: "canonical_request" }, { stage: "formal_request" }, { stage: "query_plan" },
       { stage: "executor" }, { stage: "claim_validator" }, { stage: "final_decision" }
     ]
@@ -275,6 +284,7 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.equal(continuedReport.cases[1].turns[0].guestQuestion, "middle");
   assert.equal(continuedReport.cases[1].turns[0].finalResponse.replyText, "PRIVATE_FINAL_RESPONSE");
   assert.equal(continuedReport.cases[1].turns[0].formalEvidence[0].facts.answer, "PRIVATE_FACT_ANSWER");
+  assert.equal(continuedReport.cases[0].turns[0].runtimeEvidence.planner[0].semanticLedgerBoundaries[0].candidates[0].missingRefsReason, "bound_missing_provenance", "safe candidate diagnostics must survive into the private acceptance artifact");
   assert.equal(continuedReport.cases[2].status, "PASS", "later cases must be preserved in the private report after an earlier failure");
   assert.equal(JSON.stringify(continuedReport).includes("PRIVATE_OIDC_TOKEN"), false, "the private report must not retain authentication material");
   assert.equal(continuedWrites[0].status, "PASS", "successful case output must remain unchanged");

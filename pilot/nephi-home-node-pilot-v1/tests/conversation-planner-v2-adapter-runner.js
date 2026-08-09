@@ -111,6 +111,59 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     evidenceFailureCodes: ["quote_slice_mismatch"]
   }, "a raw semantic candidate with a non-slice quote must fail closed as evidence_refs");
   assert.equal(validateSemanticCandidates(compileSemanticCandidates(invalidRawEvidenceOutput, rawEvidenceInput), rawEvidenceInput).validCandidates.length, 1, "deterministic compilation must replace raw model coordinates only with verified relation evidence");
+  const diagnosticCandidate = (outputValue, options = {}) => semanticCandidateDiagnosticSummary(outputValue, rawEvidenceInput, {
+    includeCandidates: true,
+    ...options
+  }).candidates[0];
+  const boundMissingProvenance = JSON.parse(JSON.stringify(validRawEvidenceOutput));
+  delete boundMissingProvenance.semanticCandidates[0].provenanceRelationCandidateIndexes;
+  const boundMissingCompiled = compileSemanticCandidates(boundMissingProvenance, rawEvidenceInput);
+  assert.equal(diagnosticCandidate(boundMissingCompiled, { originOutput: boundMissingProvenance }).missingRefsReason, "bound_missing_provenance", "diagnostics must distinguish missing bound provenance");
+  const boundUnknownProvenance = JSON.parse(JSON.stringify(validRawEvidenceOutput));
+  boundUnknownProvenance.semanticCandidates[0].provenanceRelationCandidateIndexes = [99];
+  assert.equal(diagnosticCandidate(compileSemanticCandidates(boundUnknownProvenance, rawEvidenceInput), { originOutput: boundUnknownProvenance }).missingRefsReason, "bound_unknown_provenance_relation", "diagnostics must distinguish unknown provenance relations");
+  const boundInvalidRelationEvidence = JSON.parse(JSON.stringify(validRawEvidenceOutput));
+  boundInvalidRelationEvidence.contextRelationCandidates[0].evidenceRefs[0].quote = "not the source slice";
+  const invalidRelationEvidenceDiagnostic = diagnosticCandidate(compileSemanticCandidates(boundInvalidRelationEvidence, rawEvidenceInput), { originOutput: boundInvalidRelationEvidence });
+  assert.equal(invalidRelationEvidenceDiagnostic.missingRefsReason, "bound_relation_evidence_invalid", "diagnostics must distinguish invalid relation evidence");
+  assert.deepEqual(invalidRelationEvidenceDiagnostic.provenanceRelations, [{ candidateIndex: 0, relationExists: true, relationContextValid: false, relationEvidenceValid: false, evidenceFailureCodes: ["quote_slice_mismatch"] }]);
+  const boundInvalidRelationContext = JSON.parse(JSON.stringify(validRawEvidenceOutput));
+  boundInvalidRelationContext.contextRelationCandidates[0].kind = "supplement_existing";
+  const invalidRelationContextDiagnostic = diagnosticCandidate(compileSemanticCandidates(boundInvalidRelationContext, rawEvidenceInput), { originOutput: boundInvalidRelationContext });
+  assert.equal(invalidRelationContextDiagnostic.missingRefsReason, "bound_relation_context_invalid", "diagnostics must distinguish a relation whose evidence is valid but understanding context is invalid");
+  assert.deepEqual(invalidRelationContextDiagnostic.provenanceRelations, [{ candidateIndex: 0, relationExists: true, relationContextValid: false, relationEvidenceValid: true, evidenceFailureCodes: [] }]);
+  const pendingInvalidRaw = JSON.parse(JSON.stringify(invalidRawEvidenceOutput));
+  pendingInvalidRaw.semanticCandidates[0].coverageStatus = "pending_task";
+  pendingInvalidRaw.semanticCandidates[0].provenanceRelationCandidateIndexes = [];
+  assert.equal(diagnosticCandidate(compileSemanticCandidates(pendingInvalidRaw, rawEvidenceInput), { originOutput: pendingInvalidRaw }).missingRefsReason, "pending_invalid_raw_evidence", "diagnostics must distinguish invalid pending raw evidence");
+  const compiledLoss = compileSemanticCandidates(validRawEvidenceOutput, rawEvidenceInput);
+  compiledLoss.semanticCandidates[0] = { ...compiledLoss.semanticCandidates[0], evidenceRefs: [] };
+  const compiledLossDiagnostic = diagnosticCandidate(compiledLoss, { originOutput: validRawEvidenceOutput });
+  assert.equal(compiledLossDiagnostic.missingRefsReason, "compiled_evidence_lost", "diagnostics must identify a raw-valid candidate whose verified compiled evidence disappears");
+  assert.deepEqual({
+    coverageStatus: compiledLossDiagnostic.coverageStatus,
+    lifecycle: compiledLossDiagnostic.lifecycle,
+    provenancePresent: compiledLossDiagnostic.provenancePresent,
+    provenanceCount: compiledLossDiagnostic.provenanceCount,
+    provenanceRelationCandidateIndexes: compiledLossDiagnostic.provenanceRelationCandidateIndexes,
+    verifiedRelationCount: compiledLossDiagnostic.verifiedRelationCount,
+    evidenceRefCount: compiledLossDiagnostic.evidenceRefCount,
+    valid: compiledLossDiagnostic.valid,
+    failureCodes: compiledLossDiagnostic.failureCodes
+  }, {
+    coverageStatus: "bound",
+    lifecycle: "bound",
+    provenancePresent: true,
+    provenanceCount: 1,
+    provenanceRelationCandidateIndexes: [0],
+    verifiedRelationCount: 1,
+    evidenceRefCount: 0,
+    valid: false,
+    failureCodes: ["evidence_refs"]
+  }, "candidate diagnostics must expose only bounded lifecycle/provenance/relation counts and codes");
+  const productionSnapshot = JSON.stringify(validRawEvidenceOutput);
+  semanticCandidateDiagnosticSummary(validRawEvidenceOutput, rawEvidenceInput, { raw: true, includeCandidates: true });
+  assert.equal(JSON.stringify(validRawEvidenceOutput), productionSnapshot, "diagnostic projection must not mutate production output");
   const providerOutput = (candidate, relationEvidence) => ({
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 1 },

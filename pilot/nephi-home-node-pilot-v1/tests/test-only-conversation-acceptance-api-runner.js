@@ -170,12 +170,27 @@ async function request(url, method, body, cookie = `nephi_admin_session=${adminT
     assert.equal(semanticLedgerPlannerTrace.parserSucceeded, true);
     assert.equal(semanticLedgerPlannerTrace.providerAttemptCount, 1);
     assert.equal(semanticLedgerPlannerTrace.retryPerformed, false);
-    assert.deepEqual(semanticLedgerPlannerTrace.semanticLedgerBoundaries, [
+    assert.deepEqual(semanticLedgerPlannerTrace.semanticLedgerBoundaries.map(({ candidates: _candidates, ...boundary }) => boundary), [
       { stage: "raw_parsed_output", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 1, failureCodes: ["evidence_refs"], evidenceFailureCodes: ["missing_refs"] },
       { stage: "compile_before", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 1, failureCodes: ["evidence_refs"], evidenceFailureCodes: ["missing_refs"] },
       { stage: "compile_after", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs"], evidenceFailureCodes: ["missing_refs"] },
       { stage: "validate", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs"], evidenceFailureCodes: ["missing_refs"] }
     ], "provider diagnostic must survive Engine, safe formatting, captureSafeTrace, and acceptance trace projection");
+    const compileAfterCandidateDiagnostic = semanticLedgerPlannerTrace.semanticLedgerBoundaries[2].candidates[0];
+    assert.deepEqual(compileAfterCandidateDiagnostic, {
+      candidateOrdinal: 0,
+      coverageStatus: "bound",
+      lifecycle: "bound",
+      provenancePresent: false,
+      provenanceCount: 0,
+      provenanceRelationCandidateIndexes: [],
+      verifiedRelationCount: 0,
+      evidenceRefCount: 0,
+      valid: false,
+      failureCodes: ["evidence_refs"],
+      missingRefsReason: "bound_missing_provenance",
+      provenanceRelations: []
+    }, "per-candidate lifecycle diagnostics must survive provider, Engine, safe formatter, captureSafeTrace, and acceptance projection");
     assert.equal(JSON.stringify(semanticLedgerPlannerTrace).includes(SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE), false, "acceptance planner trace must not retain fixture message text");
 
     await post("B", "need dates", "b-1");

@@ -11,6 +11,8 @@ const SAFE_REPAIR_KINDS = new Set(["coverage_repair", "task_collection_repair", 
 const SAFE_SEMANTIC_LEDGER_BOUNDARY_STAGES = new Set(["raw_parsed_output", "compile_before", "compile_after", "validate"]);
 const SAFE_SEMANTIC_LEDGER_FAILURE_CODES = new Set(["candidate_object", "candidate_id", "candidate_count_limit", "semantic_kind", "capability", "canonical_identity", "property_catalog_identity", "identity_alignment", "evidence_refs", "lodging_scope", "lodging_scope_conflict", "temporal_candidate"]);
 const SAFE_EVIDENCE_FAILURE_CODES = new Set(["missing_refs", "too_many_refs", "invalid_evidence_ref", "missing_source_identity", "unknown_event_id", "unknown_message_ref", "identity_conflict", "invalid_offset", "invalid_quote", "out_of_bounds", "quote_slice_mismatch"]);
+const SAFE_SEMANTIC_LIFECYCLES = new Set(["bound", "pending_task", "unknown"]);
+const SAFE_SEMANTIC_MISSING_REFS_REASONS = new Set(["", "pending_invalid_raw_evidence", "bound_missing_provenance", "bound_unknown_provenance_relation", "bound_relation_context_invalid", "bound_relation_evidence_invalid", "compiled_evidence_lost", "other"]);
 const TRACE_STAGES = new Set([
   "state_before",
   "planner",
@@ -109,7 +111,37 @@ function safeSemanticLedgerBoundaries(value) {
     const evidenceFailureCodes = [...new Set((Array.isArray(item && item.evidenceFailureCodes) ? item.evidenceFailureCodes : [])
       .map(String)
       .filter((code) => SAFE_EVIDENCE_FAILURE_CODES.has(code)))].sort();
-    return [{ stage, candidateCount: count("candidateCount"), validCandidateCount: count("validCandidateCount"), invalidCandidateCount: count("invalidCandidateCount"), ownershipCount: count("ownershipCount"), failureCodes, evidenceFailureCodes }];
+    const candidates = (Array.isArray(item && item.candidates) ? item.candidates : []).slice(0, 24).map((candidate, candidateOrdinal) => {
+      const provenanceRelationCandidateIndexes = (Array.isArray(candidate && candidate.provenanceRelationCandidateIndexes) ? candidate.provenanceRelationCandidateIndexes : [])
+        .slice(0, 12).filter((index) => Number.isInteger(index) && index >= 0 && index <= 1000000);
+      const candidateFailureCodes = [...new Set((Array.isArray(candidate && candidate.failureCodes) ? candidate.failureCodes : [])
+        .map(String).filter((code) => SAFE_SEMANTIC_LEDGER_FAILURE_CODES.has(code)))].sort();
+      const provenanceRelations = (Array.isArray(candidate && candidate.provenanceRelations) ? candidate.provenanceRelations : []).slice(0, 12).flatMap((relation) => {
+        const candidateIndex = Number(relation && relation.candidateIndex);
+        if (!Number.isInteger(candidateIndex) || candidateIndex < 0 || candidateIndex > 1000000) return [];
+        const relationEvidenceFailureCodes = [...new Set((Array.isArray(relation && relation.evidenceFailureCodes) ? relation.evidenceFailureCodes : [])
+          .map(String).filter((code) => SAFE_EVIDENCE_FAILURE_CODES.has(code)))].sort();
+        return [{ candidateIndex, relationExists: Boolean(relation.relationExists), relationContextValid: Boolean(relation.relationContextValid), relationEvidenceValid: Boolean(relation.relationEvidenceValid), evidenceFailureCodes: relationEvidenceFailureCodes }];
+      });
+      const coverageStatus = String(candidate && candidate.coverageStatus || "unknown");
+      const lifecycle = String(candidate && candidate.lifecycle || "unknown");
+      const missingRefsReason = String(candidate && candidate.missingRefsReason || "");
+      return {
+        candidateOrdinal: Number.isInteger(candidate && candidate.candidateOrdinal) ? Math.max(0, Math.min(candidate.candidateOrdinal, 23)) : candidateOrdinal,
+        coverageStatus: SAFE_SEMANTIC_LIFECYCLES.has(coverageStatus) ? coverageStatus : "unknown",
+        lifecycle: SAFE_SEMANTIC_LIFECYCLES.has(lifecycle) ? lifecycle : "unknown",
+        provenancePresent: Boolean(candidate && candidate.provenancePresent),
+        provenanceCount: Number.isInteger(candidate && candidate.provenanceCount) ? Math.max(0, Math.min(candidate.provenanceCount, 12)) : 0,
+        provenanceRelationCandidateIndexes,
+        verifiedRelationCount: Number.isInteger(candidate && candidate.verifiedRelationCount) ? Math.max(0, Math.min(candidate.verifiedRelationCount, 12)) : 0,
+        evidenceRefCount: Number.isInteger(candidate && candidate.evidenceRefCount) ? Math.max(0, Math.min(candidate.evidenceRefCount, 12)) : 0,
+        valid: Boolean(candidate && candidate.valid),
+        failureCodes: candidateFailureCodes,
+        missingRefsReason: SAFE_SEMANTIC_MISSING_REFS_REASONS.has(missingRefsReason) ? missingRefsReason : "other",
+        provenanceRelations
+      };
+    });
+    return [{ stage, candidateCount: count("candidateCount"), validCandidateCount: count("validCandidateCount"), invalidCandidateCount: count("invalidCandidateCount"), ownershipCount: count("ownershipCount"), failureCodes, evidenceFailureCodes, candidates }];
   });
 }
 

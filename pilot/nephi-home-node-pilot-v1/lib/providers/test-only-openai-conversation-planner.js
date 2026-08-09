@@ -1457,16 +1457,16 @@ class TestOnlyOpenAiConversationPlanner {
         const result = await this.requestOnce(input, attempt, Math.min(this.timeoutMs, remainingMs));
         providerAttempts.push(result.attemptDiagnostic);
         const semanticLedgerBoundaries = [
-          Object.freeze({ stage: "raw_parsed_output", ...semanticCandidateDiagnosticSummary(result.output, input, { raw: true }) }),
-          Object.freeze({ stage: "compile_before", ...semanticCandidateDiagnosticSummary(result.output, input, { raw: true }) })
+          Object.freeze({ stage: "raw_parsed_output", ...semanticCandidateDiagnosticSummary(result.output, input, { raw: true, includeCandidates: true }) }),
+          Object.freeze({ stage: "compile_before", ...semanticCandidateDiagnosticSummary(result.output, input, { raw: true, includeCandidates: true }) })
         ];
         const providerContractOutput = normalizePlannerEvidenceCoordinates(result.output, input.sourceEvents || []);
         const compiledOutput = compileSemanticCandidates(providerContractOutput, input);
-        semanticLedgerBoundaries.push(Object.freeze({ stage: "compile_after", ...semanticCandidateDiagnosticSummary(compiledOutput, input) }));
+        semanticLedgerBoundaries.push(Object.freeze({ stage: "compile_after", ...semanticCandidateDiagnosticSummary(compiledOutput, input, { includeCandidates: true, originOutput: providerContractOutput }) }));
         const sanitized = sanitizePlannerTaskCollection(compiledOutput, input);
         const sanitizedOutput = copyPlannerDiagnostics(sanitized, compileSemanticCandidates(sanitized, input));
         const ledger = validateSemanticCandidates(sanitizedOutput, input);
-        semanticLedgerBoundaries.push(Object.freeze({ stage: "validate", ...semanticCandidateDiagnosticSummary(sanitizedOutput, input) }));
+        semanticLedgerBoundaries.push(Object.freeze({ stage: "validate", ...semanticCandidateDiagnosticSummary(sanitizedOutput, input, { includeCandidates: true, originOutput: providerContractOutput }) }));
         const firstOutput = ledger.present
           ? failClosedSemanticCandidates(sanitizedOutput, ledger.validCandidates, ledger.invalidCandidateIds)
           : sanitizedOutput;
