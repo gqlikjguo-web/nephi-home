@@ -86,6 +86,20 @@ function uniqueIdentifiedSourceEvidence(evidenceRef, sourceEvents, identifierCou
   };
 }
 
+function normalizePendingEvidenceRefs(evidenceRefs, sourceEvents, identifierCounts, sourceMaps) {
+  if (!Array.isArray(evidenceRefs) || evidenceRefs.length === 0) return null;
+  if (evidenceRefs.every((evidenceRef) => evidenceMatchesSource(evidenceRef, sourceMaps))) return evidenceRefs;
+  const normalized = evidenceRefs.map((evidenceRef) => {
+    if (evidenceMatchesSource(evidenceRef, sourceMaps)) return evidenceRef;
+    const quote = evidenceRef && evidenceRef.quote;
+    return uniqueIdentifiedSourceMatch(quote, evidenceRef, sourceEvents, identifierCounts)
+      || uniqueExactSourceMatch(quote, sourceEvents, identifierCounts);
+  });
+  return normalized.every(Boolean) && normalized.every((evidenceRef) => evidenceMatchesSource(evidenceRef, sourceMaps))
+    ? normalized
+    : null;
+}
+
 function normalizePlannerEvidenceCoordinates(plannerOutput, sourceEvents) {
   if (!plannerOutput || typeof plannerOutput !== "object" || Array.isArray(plannerOutput)
     || !Array.isArray(plannerOutput.tasks) || !Array.isArray(plannerOutput.contextRelationCandidates)) return plannerOutput;
@@ -118,7 +132,26 @@ function normalizePlannerEvidenceCoordinates(plannerOutput, sourceEvents) {
     changed = true;
     return { ...candidate, evidenceRefs: canonicalEvidence };
   });
-  return changed ? { ...plannerOutput, contextRelationCandidates } : plannerOutput;
+  let semanticCandidatesChanged = false;
+  const semanticCandidates = Array.isArray(plannerOutput.semanticCandidates)
+    ? plannerOutput.semanticCandidates.map((candidate) => {
+      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)
+        || candidate.coverageStatus !== "pending_task"
+        || !Array.isArray(candidate.provenanceRelationCandidateIndexes)
+        || candidate.provenanceRelationCandidateIndexes.length !== 0) return candidate;
+      const normalizedEvidence = normalizePendingEvidenceRefs(candidate.evidenceRefs, sourceEvents, identifierCounts, sourceMaps);
+      if (!normalizedEvidence || normalizedEvidence === candidate.evidenceRefs) return candidate;
+      changed = true;
+      semanticCandidatesChanged = true;
+      return { ...candidate, evidenceRefs: normalizedEvidence };
+    })
+    : plannerOutput.semanticCandidates;
+  if (!changed) return plannerOutput;
+  return {
+    ...plannerOutput,
+    contextRelationCandidates,
+    ...(semanticCandidatesChanged ? { semanticCandidates } : {})
+  };
 }
 
 module.exports = { normalizePlannerEvidenceCoordinates };

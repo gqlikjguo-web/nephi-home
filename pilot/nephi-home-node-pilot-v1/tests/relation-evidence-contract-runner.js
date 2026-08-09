@@ -7,6 +7,7 @@ const { ConversationEngineV2Coordinator } = require("../lib/conversation-engine-
 const { emptyStateV2 } = require("../lib/conversation-engine-v2/state-reducer");
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
 const { normalizePlannerEvidenceCoordinates } = require("../lib/conversation-engine-v2/evidence-normalizer");
+const { compileSemanticCandidates, validateSemanticCandidates } = require("../lib/conversation-engine-v2/semantic-candidate-contract");
 const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const scope = {
@@ -195,6 +196,82 @@ async function main() {
     eventId: "", messageRef: "message-only", startOffset: 0, endOffset: 12, quote: "availability"
   });
   assert.equal(validateUnderstandingContext(messageRefOnly, snapshot(), { sourceEvents: messageRefOnlyEvents }).ok, true);
+
+  const pendingCandidatePlan = (evidenceRefs) => ({
+    ...plannerOutput({ tasks: [], contextRelationCandidates: [] }),
+    semanticCandidates: [{
+      semanticKind: "capability",
+      capability: "policy",
+      canonicalIdentityCandidate: "policy",
+      coverageStatus: "pending_task",
+      provenanceRelationCandidateIndexes: [],
+      evidenceRefs,
+      lodgingScopeCandidate: null,
+      temporalSemanticCandidate: null,
+      propertyCatalogIdentity: null
+    }]
+  });
+  const pendingInput = {
+    sourceEvents,
+    contextSnapshot: { scope: {}, cycles: [] },
+    catalog: { propertyId: scope.propertyId, rooms: [], amenities: [], policies: [], faqs: [], propertyFacts: [], transportFacts: [] }
+  };
+  const canonicalPendingEvidence = {
+    eventId: "event-a",
+    messageRef: "message-a",
+    startOffset: 5,
+    endOffset: 17,
+    quote: "availability"
+  };
+  for (const recoverablePending of [
+    {
+      name: "quote slice mismatch",
+      evidence: { ...canonicalPendingEvidence, startOffset: 0, endOffset: 12 }
+    },
+    {
+      name: "out of bounds",
+      evidence: { ...canonicalPendingEvidence, startOffset: 99, endOffset: 111 }
+    },
+    {
+      name: "unknown event with one exact source",
+      evidence: { ...canonicalPendingEvidence, eventId: "planner-invented-event", messageRef: "" }
+    }
+  ]) {
+    const pendingPlan = pendingCandidatePlan([recoverablePending.evidence]);
+    const normalizedPending = normalizePlannerEvidenceCoordinates(pendingPlan, sourceEvents);
+    assert.deepEqual(normalizedPending.semanticCandidates[0].evidenceRefs, [canonicalPendingEvidence], `${recoverablePending.name}: pending evidence must use the one exact source coordinate`);
+    assert.equal(validateSemanticCandidates(compileSemanticCandidates(normalizedPending, pendingInput), pendingInput).invalidCandidateIds.length, 0, `${recoverablePending.name}: normalized pending evidence must pass the unchanged semantic validator`);
+  }
+
+  const rawValidPending = pendingCandidatePlan([canonicalPendingEvidence]);
+  assert.strictEqual(normalizePlannerEvidenceCoordinates(rawValidPending, sourceEvents), rawValidPending, "strict-valid pending evidence must remain byte-stable and retain object identity");
+
+  for (const unsafePending of [
+    {
+      name: "ambiguous exact quote across source events",
+      output: pendingCandidatePlan([{ ...canonicalPendingEvidence, eventId: "planner-invented-event", messageRef: "" }]),
+      events: [
+        { eventId: "ambiguous-a", messageRef: "ambiguous-message-a", messageText: "availability" },
+        { eventId: "ambiguous-b", messageRef: "ambiguous-message-b", messageText: "availability" }
+      ]
+    },
+    {
+      name: "repeated exact quote in one source event",
+      output: pendingCandidatePlan([{ ...canonicalPendingEvidence, eventId: "planner-invented-event", messageRef: "" }]),
+      events: [{ eventId: "repeated", messageRef: "repeated-message", messageText: "availability availability" }]
+    },
+    {
+      name: "quote absent from source events",
+      output: pendingCandidatePlan([{ ...canonicalPendingEvidence, quote: "not present", startOffset: 0, endOffset: 11 }]),
+      events: sourceEvents
+    }
+  ]) {
+    const before = clone(unsafePending.output);
+    const normalizedPending = normalizePlannerEvidenceCoordinates(unsafePending.output, unsafePending.events);
+    assert.deepEqual(normalizedPending, before, `${unsafePending.name}: unsafe pending evidence must remain invalid and unchanged`);
+    const unsafeInput = { ...pendingInput, sourceEvents: unsafePending.events };
+    assert.equal(validateSemanticCandidates(compileSemanticCandidates(normalizedPending, unsafeInput), unsafeInput).validCandidates.length, 0, `${unsafePending.name}: unsafe pending evidence must remain fail-closed`);
+  }
 
   for (const unrepairable of [
     {
