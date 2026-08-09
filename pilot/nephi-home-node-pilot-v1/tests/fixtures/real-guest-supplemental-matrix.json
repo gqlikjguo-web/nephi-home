@@ -33,7 +33,7 @@
       "id": "rgs-019-modify-room-mix",
       "bucket": "controlled_operator_context",
       "turns": [
-        { "input": "3/6-3/7 人數大概6-8人", "expectedSemantic": ["date_range", "guests", "bundle"], "allowedActions": ["reply", "clarification", "handoff"], "establishOperatorContext": true },
+        { "input": "8/14-8/15 人數大概6-8人", "expectedSemantic": ["date_range", "guests", "bundle"], "allowedActions": ["reply", "clarification", "handoff"], "establishOperatorContext": true },
         { "input": "可以改成雙人房嗎？", "expectedSemantic": ["replace_room_mix", "room_type"], "allowedActions": ["reply", "clarification", "handoff"] },
         { "input": "能不能兩間雙人房跟一間4人房", "expectedSemantic": ["replace_room_mix", "two_double_rooms", "one_four_person_room"], "allowedActions": ["reply", "clarification", "handoff"] }
       ]
@@ -42,9 +42,9 @@
       "id": "rgs-020-modify-date",
       "bucket": "controlled_operator_context",
       "turns": [
-        { "input": "7/16-7/17\n五位大人\n包棟需求（301/302）", "expectedSemantic": ["date_range", "guests", "bundle", "room_301"], "allowedActions": ["reply", "clarification", "handoff"], "establishOperatorContext": true },
-        { "input": "您好 不好意思 想請問可以改成6/30-7/1嗎", "expectedSemantic": ["replace_date_range", "clarify_existing_booking"], "allowedActions": ["reply", "clarification", "handoff"], "pastDatePolicy": "reject_if_resolved_past" },
-        { "input": "沒錯！我改成6/30入住～", "expectedSemantic": ["confirm_replacement_date"], "allowedActions": ["reply", "clarification", "handoff"], "pastDatePolicy": "reject_if_resolved_past" }
+        { "input": "8/27-8/28\n五位大人\n包棟需求（301/302）", "expectedSemantic": ["date_range", "guests", "bundle", "room_301"], "allowedActions": ["reply", "clarification", "handoff"], "establishOperatorContext": true },
+        { "input": "您好 不好意思 想請問可以改成8/18-8/19嗎", "expectedSemantic": ["replace_date_range", "clarify_existing_booking"], "allowedActions": ["reply", "clarification", "handoff"], "pastDatePolicy": "reject_if_resolved_past" },
+        { "input": "沒錯！我改成8/18入住～", "expectedSemantic": ["confirm_replacement_date"], "allowedActions": ["reply", "clarification", "handoff"], "pastDatePolicy": "reject_if_resolved_past" }
       ]
     },
 
