@@ -47,12 +47,18 @@ function semanticCandidate({
     semanticKind,
     capability,
     canonicalIdentityCandidate,
+    coverageStatus: "bound",
     provenanceRelationCandidateIndexes,
     evidenceRefs,
     lodgingScopeCandidate,
     temporalSemanticCandidate,
     propertyCatalogIdentity
   };
+}
+
+function pendingCandidate(candidate) {
+  const { provenanceRelationCandidateIndexes: _provenance, ...pending } = candidate;
+  return { ...pending, coverageStatus: "pending_task" };
 }
 
 function task({
@@ -190,7 +196,7 @@ async function classifySequence({ first, repair, plannerInput }) {
     category: "other",
     dependsOnStayContext: true
   });
-  const first = output({ message, eventId, tasks: [firstPriceTask], semanticCandidates: [priceCandidate, facilityCandidate], relations: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: evidence(eventId, message) }] });
+  const first = output({ message, eventId, tasks: [firstPriceTask], semanticCandidates: [priceCandidate, pendingCandidate(facilityCandidate)], relations: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: evidence(eventId, message) }] });
   const missingLedger = JSON.parse(JSON.stringify(first));
   delete missingLedger.semanticCandidates;
   delete missingLedger.tasks[0].semanticCandidateIds;
@@ -232,9 +238,53 @@ async function classifySequence({ first, repair, plannerInput }) {
   assert.equal(repaired.result.tasks[1].semanticCandidateIds.length, 1);
   const repairPayload = JSON.parse(repaired.bodies[1].input[1].content[0].text).coverageRepair;
   assert.deepEqual(repairPayload.missingCandidateIds, repaired.result.semanticCandidates.filter((candidate) => candidate.propertyCatalogIdentity === "water_feature").map((candidate) => candidate.candidateId));
-  const { candidateId: _facilityCandidateId, provenanceRelationCandidateIndexes: _facilityProvenance, ...facilitySemantics } = facilityCandidate;
-  assert.deepEqual(repairPayload.missingSemanticCandidates.map(({ candidateId, ...candidate }) => candidate), [{ ...facilitySemantics, evidenceRefs: evidence(eventId, message) }]);
+  const { candidateId: _facilityCandidateId, provenanceRelationCandidateIndexes: _facilityProvenance, coverageStatus: _facilityCoverage, ...facilitySemantics } = facilityCandidate;
+  assert.deepEqual(repairPayload.missingSemanticCandidates.map(({ candidateId, ...candidate }) => candidate), [{ ...facilitySemantics, evidenceRefs: facilityEvidence }], "pending coverage must retain its strictly validated raw source evidence until repair binds it to a relation");
   assert.equal(Object.hasOwn(repairPayload, "missingCanonicalIds"), false, "repair must not be driven by text-derived canonical IDs");
+
+  const facilityCapabilityCandidate = semanticCandidate({
+    candidateId: IDS.feature,
+    semanticKind: "capability",
+    capability: "property_fact",
+    canonicalIdentityCandidate: "property_fact",
+    provenanceRelationCandidateIndexes: [0],
+    evidenceRefs: facilityEvidence
+  });
+  const groupedFirst = output({
+    message,
+    eventId,
+    tasks: [firstPriceTask],
+    semanticCandidates: [priceCandidate, pendingCandidate(facilityCandidate), pendingCandidate(facilityCapabilityCandidate)],
+    relations: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: evidence(eventId, message) }]
+  });
+  const groupedRepairTask = task({
+    candidateIndex: 0,
+    taskId: "repaired-facility-group",
+    type: "property_fact",
+    sourceText: "place where guests cool off",
+    semanticCandidateIds: [IDS.facility, IDS.feature],
+    category: "amenity",
+    canonicalCandidate: "water_feature"
+  });
+  const groupedRepair = output({
+    message,
+    eventId,
+    tasks: [groupedRepairTask],
+    semanticCandidates: [facilityCandidate, facilityCapabilityCandidate],
+    relations: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: facilityEvidence }]
+  });
+  const grouped = await classifySequence({ first: groupedFirst, repair: groupedRepair, plannerInput: input(message, eventId, propertyCatalog) });
+  assert.equal(grouped.calls, 2, "multiple compatible missing candidates must share one repair call");
+  assert.equal(grouped.result.tasks.length, 2, "one repair task that owns multiple candidates must merge only once");
+  const groupedPendingIds = grouped.result.semanticCandidates
+    .filter((candidate) => candidate.capability === "property_fact")
+    .map((candidate) => candidate.candidateId)
+    .sort();
+  assert.deepEqual(grouped.result.tasks[1].semanticCandidateIds.slice().sort(), groupedPendingIds, "group repair must preserve every pending candidate ID on the single bound task");
+  const groupedDiagnostic = grouped.result[Symbol.for("junzan.plannerProviderDiagnostic")];
+  assert.equal(groupedDiagnostic.coverageRepairSucceeded, true);
+  assert.equal(groupedDiagnostic.coverageRepairFallback, false);
+  assert.equal(groupedDiagnostic.repairLinks.length, 1, "one grouped repair task must produce one repair link");
 
   const alternateMessage = "Please tell me whether the cooling area may be used.";
   const alternateEvent = "semantic-ledger-alternate";
@@ -289,7 +339,7 @@ async function classifySequence({ first, repair, plannerInput }) {
     temporalSemanticCandidate: { rawText: "recurring weekend stays in a chosen month", kind: "weekday", anchor: "message_time" }
   });
   const temporalPrice = task({ candidateIndex: 0, taskId: "temporal-price", type: "price", sourceText: temporalMessage, semanticCandidateIds: [IDS.price], category: "room", dependsOnStayContext: true });
-  const temporalFirst = output({ message: temporalMessage, eventId: temporalEvent, tasks: [temporalPrice], semanticCandidates: [{ ...priceCandidate, evidenceRefs: evidence(temporalEvent, temporalMessage) }, temporalCandidate] });
+  const temporalFirst = output({ message: temporalMessage, eventId: temporalEvent, tasks: [temporalPrice], semanticCandidates: [{ ...priceCandidate, evidenceRefs: evidence(temporalEvent, temporalMessage) }, pendingCandidate(temporalCandidate)] });
   const temporalRepairTask = task({
     candidateIndex: 0,
     taskId: "temporal-availability",
@@ -349,7 +399,7 @@ async function classifySequence({ first, repair, plannerInput }) {
   assert.deepEqual(snapshot.cycles.map((cycle) => cycle.requestCycleId), [IDS.scope], "later modify_existing must see exactly one lodging request cycle");
 
   const invalidCandidate = semanticCandidate({ candidateId: IDS.unknown, semanticKind: "catalog_subject", capability: "property_fact", canonicalIdentityCandidate: "not_in_catalog", provenanceRelationCandidateIndexes: [0], propertyCatalogIdentity: "not_in_catalog", evidenceRefs: facilityEvidence });
-  const invalidFirst = output({ message, eventId, tasks: [firstPriceTask], semanticCandidates: [priceCandidate, invalidCandidate] });
+  const invalidFirst = output({ message, eventId, tasks: [firstPriceTask], semanticCandidates: [priceCandidate, pendingCandidate(invalidCandidate)] });
   const invalidRepairTask = task({ candidateIndex: 0, taskId: "invalid-repair", type: "property_fact", sourceText: "place where guests cool off", semanticCandidateIds: [IDS.unknown], category: "amenity", canonicalCandidate: "not_in_catalog" });
   const invalidRepair = output({ message, eventId, tasks: [invalidRepairTask], semanticCandidates: [invalidCandidate], relations: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: facilityEvidence }] });
   const invalid = await classifySequence({ first: invalidFirst, repair: invalidRepair, plannerInput: input(message, eventId, propertyCatalog) });
@@ -368,14 +418,14 @@ async function classifySequence({ first, repair, plannerInput }) {
   const feature = await classifySequence({ first: featureOutput, plannerInput: input(featureMessage, featureEvent, propertyCatalog) });
   assert.equal(feature.calls, 1, "a structured room feature must not depend on a complete catalog feature string matcher");
 
-  const duplicateFirst = output({ message, eventId, tasks: [firstPriceTask], semanticCandidates: [priceCandidate, facilityCandidate, facilityCandidate] });
+  const duplicateFirst = output({ message, eventId, tasks: [firstPriceTask], semanticCandidates: [priceCandidate, pendingCandidate(facilityCandidate), pendingCandidate(facilityCandidate)] });
   const duplicate = await classifySequence({ first: duplicateFirst, plannerInput: input(message, eventId, propertyCatalog) });
   assert.equal(duplicate.calls, 1, "duplicate candidate IDs must not be repaired or joined");
   assert.equal(duplicate.result.tasks.length, 1);
   assert.equal(duplicate.result.needsHuman, true, "duplicate candidate IDs must fail closed");
 
   const ambiguousCandidate = { ...facilityCandidate, candidateId: IDS.feature };
-  const ambiguousFirst = output({ message, eventId, tasks: [firstPriceTask], semanticCandidates: [priceCandidate, facilityCandidate, ambiguousCandidate] });
+  const ambiguousFirst = output({ message, eventId, tasks: [firstPriceTask], semanticCandidates: [priceCandidate, pendingCandidate(facilityCandidate), pendingCandidate(ambiguousCandidate)] });
   const ambiguousRepairTask = task({
     candidateIndex: 0,
     taskId: "ambiguous-repair",

@@ -23,10 +23,17 @@ assert.equal(validateSemanticCandidates(compiled, input).invalidCandidateIds.len
 assert.deepEqual(compiled.semanticCandidates.map((item) => item.evidenceRefs), refs);
 assert.deepEqual(compiled.tasks.map((item) => item.semanticCandidateIds.length), [1, 1]);
 assert.equal(compiled.semanticCandidates.every((item) => item.evidenceRefs.every((ref) => evidenceMatchesSource(ref, sourceEventMaps(sourceEvents)))), true);
+const sharedEvidence = output([[0], [1]]);
+sharedEvidence.tasks[1] = task(1, "price");
+sharedEvidence.contextRelationCandidates[1] = { ...relation(1), evidenceRefs: refs[0].map((ref) => ({ ...ref })) };
+sharedEvidence.semanticCandidates[1] = candidate("price", [1]);
+const sharedCompiled = compileSemanticCandidates(sharedEvidence, input);
+assert.notEqual(sharedCompiled.semanticCandidates[0].candidateId, sharedCompiled.semanticCandidates[1].candidateId, "same semantic payload and evidence must remain distinct when verified provenance differs");
+assert.deepEqual(sharedCompiled.tasks.map((item) => item.semanticCandidateIds.length), [1, 1]);
 const crossBound = compileSemanticCandidates(output([[0], [0]]), input);
 assert.deepEqual(crossBound.tasks.map((item) => item.semanticCandidateIds.length), [1, 0], "a verified source span for task 0 must not bind a policy candidate to task 1");
 for (const provenance of [[[0, 0], [1]], [undefined, [1]], [[], [1]], [[2], [1]]]) {
   const rejected = compileSemanticCandidates(output(provenance), input);
   assert.equal(validateSemanticCandidates(rejected, input).invalidCandidateIds.length > 0, true, "ambiguous, missing, or unknown provenance must fail closed");
 }
-console.log(JSON.stringify({ suite: "semantic-candidate-provenance", caseCount: 11, passCount: 11, failCount: 0 }));
+console.log(JSON.stringify({ suite: "semantic-candidate-provenance", caseCount: 13, passCount: 13, failCount: 0 }));

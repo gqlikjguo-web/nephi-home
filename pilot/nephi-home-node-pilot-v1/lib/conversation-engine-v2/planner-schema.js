@@ -1003,13 +1003,48 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     });
   }
   const { isolatedTaskIndexes: _isolatedTaskIndexes, ...contractValue } = value;
-  return {
+  const result = {
     ...contractValue,
     tasks,
     contextRelationCandidates,
     shouldIgnore: silentOnly ? true : value.shouldIgnore,
     semanticValidation: { acceptedTasks, repairedTasks, rejectedTasks, repairedRelations }
   };
+  const semanticCandidates = Array.isArray(value.semanticCandidates) ? value.semanticCandidates : [];
+  const candidatesById = new Map(semanticCandidates.map((candidate) => [String(candidate && candidate.candidateId || ""), candidate]));
+  const repairCanonicalizationResult = Object.freeze(tasks.flatMap((task) => {
+    const candidateIds = Array.isArray(task && task.semanticCandidateIds) ? task.semanticCandidateIds : [];
+    const resolved = task.entity && catalog ? resolveEntity(catalog, task.entity) : null;
+    return candidateIds.flatMap((rawCandidateId) => {
+      const candidateId = String(rawCandidateId || "");
+      const candidate = candidatesById.get(candidateId);
+      if (!candidate) return [];
+      const semanticIdentity = candidate.semanticKind === "capability"
+        ? String(candidate.capability || "")
+        : candidate.semanticKind === "temporal_pattern"
+          ? "temporal_pattern"
+          : "";
+      const resolvedIdentity = resolved && resolved.status === "resolved" && resolved.entity
+        ? String(resolved.entity.canonicalId || "")
+        : "";
+      const canonicalIdentity = semanticIdentity || resolvedIdentity;
+      const catalogIdentity = String(candidate.propertyCatalogIdentity || "");
+      const unique = Boolean(canonicalIdentity && (!catalogIdentity || catalogIdentity === canonicalIdentity));
+      return [Object.freeze({
+        taskId: String(task.taskId || ""),
+        candidateId,
+        unique,
+        canonicalIdentity: unique ? canonicalIdentity : null
+      })];
+    });
+  }));
+  Object.defineProperty(result, "repairCanonicalizationResult", {
+    enumerable: false,
+    configurable: false,
+    writable: false,
+    value: repairCanonicalizationResult
+  });
+  return result;
 }
 
 function plannerJsonSchema() {
@@ -1046,11 +1081,12 @@ function plannerProviderJsonSchema() {
   delete taskSchema.properties.semanticCandidateIds;
   delete taskSchema.properties.lodgingScopeId;
   const candidateSchema = schema.properties.semanticCandidates.items;
+  schema.properties.semanticCandidates.description = "A lifecycle ledger. bound candidates cite verified context-relation indexes; pending_task coverage candidates retain strict raw source evidence until a repair creates the task and relation.";
   candidateSchema.required = candidateSchema.required.filter((field) => field !== "candidateId");
   delete candidateSchema.properties.candidateId;
   candidateSchema.required = candidateSchema.required.filter((field) => field !== "evidenceRefs");
-  delete candidateSchema.properties.evidenceRefs;
-  candidateSchema.required.push("provenanceRelationCandidateIndexes");
+  candidateSchema.required.push("coverageStatus");
+  candidateSchema.properties.coverageStatus = { type: "string", enum: ["bound", "pending_task"] };
   candidateSchema.properties.provenanceRelationCandidateIndexes = { type: "array", minItems: 1, maxItems: 12, description: "Explicit semantic provenance only. List each contextRelationCandidates candidateIndex whose already-verified evidence span represents this semantic candidate. Do not calculate source coordinates for semanticCandidates.", items: { type: "integer", minimum: 0 } };
   const scopeSchema = candidateSchema.properties.lodgingScopeCandidate;
   scopeSchema.required = scopeSchema.required.filter((field) => field !== "scopeId");

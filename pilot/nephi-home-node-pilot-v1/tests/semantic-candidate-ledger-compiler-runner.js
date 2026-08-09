@@ -1,8 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { compileSemanticCandidates, validateSemanticCandidates, missingSemanticCandidates } = require("../lib/conversation-engine-v2/semantic-candidate-contract");
-const { validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
+const { compileSemanticCandidates, validateSemanticCandidates, missingSemanticCandidates, verifiedRepairTask } = require("../lib/conversation-engine-v2/semantic-candidate-contract");
+const { applyPlannerSemanticContract, validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
 
 const message = "Is Garden Suite A available on 2026-08-20 for two guests?";
 const input = {
@@ -65,7 +65,94 @@ function main() {
   assert.equal(multiCompiled.contextRelationCandidates[1].kind, "new_request", "compiler does not alter context relations");
   assert.equal(multiCompiled.tasks.every((task) => task.semanticCandidateIds.length === 1), true, "compiler establishes task ownership for every compatible task");
 
-  console.log(JSON.stringify({ suite: "semantic-candidate-ledger-compiler", caseCount: 11, passCount: 11, failCount: 0 }));
+  const pendingSource = baseOutput();
+  pendingSource.semanticCandidates[0].coverageStatus = "pending_task";
+  delete pendingSource.semanticCandidates[0].provenanceRelationCandidateIndexes;
+  const compiledPending = compileSemanticCandidates(pendingSource, input);
+  const repairWithoutCanonicalization = compileSemanticCandidates(baseOutput(), input);
+  assert.equal(verifiedRepairTask(repairWithoutCanonicalization, input, compiledPending.semanticCandidates[0]), null, "semantic repair must fail closed when canonicalization handoff is missing");
+  Object.defineProperty(repairWithoutCanonicalization, "repairCanonicalizationResult", { value: Object.freeze([Object.freeze({
+    taskId: repairWithoutCanonicalization.tasks[0].taskId,
+    candidateId: repairWithoutCanonicalization.semanticCandidates[0].candidateId,
+    unique: false,
+    canonicalIdentity: null
+  })]) });
+  assert.equal(verifiedRepairTask(repairWithoutCanonicalization, input, compiledPending.semanticCandidates[0]), null, "ambiguous canonicalization must not authorize pending-to-bound repair");
+  const uniquelyCanonicalized = compileSemanticCandidates(baseOutput(), input);
+  Object.defineProperty(uniquelyCanonicalized, "repairCanonicalizationResult", { value: Object.freeze([Object.freeze({
+    taskId: uniquelyCanonicalized.tasks[0].taskId,
+    candidateId: uniquelyCanonicalized.semanticCandidates[0].candidateId,
+    unique: true,
+    canonicalIdentity: "garden-suite-a"
+  })]) });
+  assert.equal(Boolean(verifiedRepairTask(uniquelyCanonicalized, input, compiledPending.semanticCandidates[0])), true, "one immutable unique task/candidate canonicalization may authorize repair");
+  assert.equal(Object.isFrozen(uniquelyCanonicalized.repairCanonicalizationResult) && Object.isFrozen(uniquelyCanonicalized.repairCanonicalizationResult[0]), true, "canonicalization handoff must be immutable");
+
+  const groupedPendingSource = baseOutput();
+  groupedPendingSource.semanticCandidates = [{
+    ...groupedPendingSource.semanticCandidates[0],
+    semanticKind: "catalog_subject",
+    coverageStatus: "pending_task",
+    lodgingScopeCandidate: null
+  }, {
+    semanticKind: "temporal_pattern",
+    capability: "availability",
+    canonicalIdentityCandidate: "temporal_pattern",
+    coverageStatus: "pending_task",
+    evidenceRefs: evidenceRefs.map((ref) => ({ ...ref })),
+    lodgingScopeCandidate: null,
+    temporalSemanticCandidate: { rawText: "2026-08-20", kind: "absolute", anchor: "message_time" },
+    propertyCatalogIdentity: null
+  }];
+  groupedPendingSource.semanticCandidates.forEach((candidate) => { delete candidate.provenanceRelationCandidateIndexes; });
+  const groupedPending = compileSemanticCandidates(groupedPendingSource, input);
+  const groupedRepairSource = baseOutput();
+  groupedRepairSource.semanticCandidates = groupedPendingSource.semanticCandidates.map((candidate) => ({
+    ...candidate,
+    coverageStatus: "bound",
+    provenanceRelationCandidateIndexes: [0]
+  }));
+  const groupedRepair = compileSemanticCandidates(groupedRepairSource, input);
+  assert.equal(groupedRepair.tasks[0].semanticCandidateIds.length, 2, "one verified repair task may own multiple compatible semantic candidates");
+  Object.defineProperty(groupedRepair, "repairCanonicalizationResult", { value: Object.freeze(groupedRepair.semanticCandidates.map((candidate) => Object.freeze({
+    taskId: groupedRepair.tasks[0].taskId,
+    candidateId: candidate.candidateId,
+    unique: true,
+    canonicalIdentity: candidate.semanticKind === "temporal_pattern" ? "temporal_pattern" : "garden-suite-a"
+  }))) });
+  assert.equal(groupedPending.semanticCandidates.every((candidate) => Boolean(verifiedRepairTask(groupedRepair, input, candidate))), true, "each uniquely canonicalized candidate in one repair task must retain lifecycle continuity");
+  const inconsistentTemporalRepair = compileSemanticCandidates(groupedRepairSource, input);
+  Object.defineProperty(inconsistentTemporalRepair, "repairCanonicalizationResult", { value: Object.freeze(inconsistentTemporalRepair.semanticCandidates.map((candidate) => Object.freeze({
+    taskId: inconsistentTemporalRepair.tasks[0].taskId,
+    candidateId: candidate.candidateId,
+    unique: true,
+    canonicalIdentity: "garden-suite-a"
+  }))) });
+  assert.equal(verifiedRepairTask(inconsistentTemporalRepair, input, groupedPending.semanticCandidates.find((candidate) => candidate.semanticKind === "temporal_pattern")), null, "a temporal candidate must reject a room identity even when the mapping is marked unique");
+
+  const inventedCapabilityPendingSource = baseOutput();
+  inventedCapabilityPendingSource.semanticCandidates = [{
+    semanticKind: "capability",
+    capability: "availability",
+    canonicalIdentityCandidate: "invented-capability-identity",
+    coverageStatus: "pending_task",
+    evidenceRefs: evidenceRefs.map((ref) => ({ ...ref })),
+    lodgingScopeCandidate: null,
+    temporalSemanticCandidate: null,
+    propertyCatalogIdentity: null
+  }];
+  const inventedCapabilityPending = compileSemanticCandidates(inventedCapabilityPendingSource, input);
+  const inventedCapabilityRepairSource = baseOutput();
+  inventedCapabilityRepairSource.semanticCandidates = [{
+    ...inventedCapabilityPendingSource.semanticCandidates[0],
+    coverageStatus: "bound",
+    provenanceRelationCandidateIndexes: [0]
+  }];
+  const inventedCapabilityRepair = compileSemanticCandidates(inventedCapabilityRepairSource, input);
+  const authoritativeCapabilityRepair = applyPlannerSemanticContract(inventedCapabilityRepair, { catalog: input.catalog, sourceEvents: input.sourceEvents });
+  assert.equal(verifiedRepairTask(authoritativeCapabilityRepair, input, inventedCapabilityPending.semanticCandidates[0]), null, "canonicalization authority must reject a Planner-invented capability identity");
+
+  console.log(JSON.stringify({ suite: "semantic-candidate-ledger-compiler", caseCount: 19, passCount: 19, failCount: 0 }));
 }
 
 main();

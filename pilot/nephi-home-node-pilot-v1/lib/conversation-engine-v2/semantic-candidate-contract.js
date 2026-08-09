@@ -5,6 +5,8 @@ const { validateUnderstandingContext, evidenceMatchesSource, sourceEventMaps, ev
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SEMANTIC_CANDIDATE_COMPILED = Symbol("junzan.semanticCandidateCompiled");
+const SEMANTIC_CANDIDATE_PROVENANCE = Symbol("junzan.semanticCandidateProvenance");
+const SEMANTIC_CANDIDATE_LIFECYCLE = Symbol("junzan.semanticCandidateLifecycle");
 const SEMANTIC_KINDS = new Set(["capability", "catalog_subject", "temporal_pattern", "lodging_scope"]);
 const CAPABILITIES = new Set(["availability", "available_dates", "room_options", "bundle_availability", "capacity", "price", "total_price", "amenity", "amenity_list", "policy", "property_fact", "booking_request", "human_help", "high_risk", "unknown"]);
 const DATE_KINDS = new Set(["absolute", "relative", "weekday", "weekend", "range", "contextual", "none"]);
@@ -75,11 +77,6 @@ function compilerEvidenceOverlaps(left, right, sourceMaps) {
 
 function compileSemanticCandidates(output, input, { synthesizeMissingCandidates = false } = {}) {
   if (!output || !Array.isArray(output.tasks)) return output;
-  // A first pass brands its final ledger. Sanitizers may call this function again;
-  // do not reinterpret branded final candidates as provider raw output, because
-  // provider-only provenance is intentionally gone.
-  if (Array.isArray(output.semanticCandidates) && output.semanticCandidates.length
-    && output.semanticCandidates.every((candidate) => candidate && candidate[SEMANTIC_CANDIDATE_COMPILED] === true)) return output;
   const rawCandidates = Array.isArray(output.semanticCandidates)
     ? output.semanticCandidates
     : synthesizeMissingCandidates
@@ -104,6 +101,9 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
       })
       : null;
   if (!rawCandidates) return output;
+  const recompiledCandidateIds = new Set(rawCandidates
+    .filter((candidate) => candidate && candidate[SEMANTIC_CANDIDATE_COMPILED] === true)
+    .map((candidate) => candidate.candidateId));
   const context = validateUnderstandingContext(output, input && input.contextSnapshot || { scope: {}, cycles: [] }, { sourceEvents: input && input.sourceEvents || [] });
   const verifiedRelations = context.ok
     ? new Map(context.relations.map((relation) => [relation.candidateIndex, relation.evidenceRefs.map((ref) => ({ ...ref }))]))
@@ -111,6 +111,11 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
   const scopeIds = new Map();
   const candidateProvenanceIndexes = new Map();
   const candidates = rawCandidates.slice(0, MAX_CANDIDATES).map((rawCandidate, index) => {
+    if (rawCandidate && rawCandidate[SEMANTIC_CANDIDATE_COMPILED] === true) {
+      candidateProvenanceIndexes.set(rawCandidate.candidateId,
+        Array.isArray(rawCandidate[SEMANTIC_CANDIDATE_PROVENANCE]) ? rawCandidate[SEMANTIC_CANDIDATE_PROVENANCE] : []);
+      return rawCandidate;
+    }
     const rawScope = rawCandidate && rawCandidate.lodgingScopeCandidate;
     const scope = rawScope && typeof rawScope === "object" && !Array.isArray(rawScope)
       ? { bundleCanonicalCandidate: rawScope.bundleCanonicalCandidate, roomCanonicalCandidates: rawScope.roomCanonicalCandidates, guestCountCandidate: rawScope.guestCountCandidate }
@@ -119,14 +124,19 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
     const scopeId = scope === null ? null : (scopeIds.get(scopeSignature) || deterministicUuid(`scope:${scopeSignature}`));
     if (scope !== null) scopeIds.set(scopeSignature, scopeId);
     const provenance = rawCandidate && rawCandidate.provenanceRelationCandidateIndexes;
+    const pendingCoverage = rawCandidate && rawCandidate.coverageStatus === "pending_task";
     const provenanceIndexes = Array.isArray(provenance) && provenance.length >= 1 && provenance.length <= 12
       && provenance.every((value) => Number.isInteger(value) && value >= 0)
       && new Set(provenance).size === provenance.length
       ? provenance
       : [];
-    const evidenceRefs = provenanceIndexes.length && provenanceIndexes.every((candidateIndex) => verifiedRelations.has(candidateIndex))
-      ? provenanceIndexes.flatMap((candidateIndex) => verifiedRelations.get(candidateIndex).map((ref) => ({ ...ref })))
-      : [];
+    const evidenceRefs = pendingCoverage
+      ? (!provenanceIndexes.length && validEvidenceRefs(rawCandidate && rawCandidate.evidenceRefs, input)
+        ? rawCandidate.evidenceRefs.map((ref) => ({ ...ref }))
+        : [])
+      : provenanceIndexes.length && provenanceIndexes.every((candidateIndex) => verifiedRelations.has(candidateIndex))
+        ? provenanceIndexes.flatMap((candidateIndex) => verifiedRelations.get(candidateIndex).map((ref) => ({ ...ref })))
+        : [];
     const payload = {
       semanticKind: rawCandidate && rawCandidate.semanticKind,
       capability: rawCandidate && rawCandidate.capability,
@@ -136,19 +146,33 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
       temporalSemanticCandidate: rawCandidate && rawCandidate.temporalSemanticCandidate,
       propertyCatalogIdentity: rawCandidate && rawCandidate.propertyCatalogIdentity
     };
-    const candidateId = deterministicUuid(`candidate:${JSON.stringify(stableValue(payload))}`);
+    const candidateId = deterministicUuid(`candidate:${JSON.stringify(stableValue(payload))}:provenance:${JSON.stringify(provenanceIndexes)}`);
     candidateProvenanceIndexes.set(candidateId, provenanceIndexes);
     const compiledCandidate = { ...payload, candidateId, lodgingScopeCandidate: scope === null ? null : { scopeId, ...scope } };
     Object.defineProperty(compiledCandidate, SEMANTIC_CANDIDATE_COMPILED, { enumerable: false, value: true });
+    Object.defineProperty(compiledCandidate, SEMANTIC_CANDIDATE_PROVENANCE, { enumerable: false, value: Object.freeze([...provenanceIndexes]) });
+    Object.defineProperty(compiledCandidate, SEMANTIC_CANDIDATE_LIFECYCLE, { enumerable: false, value: pendingCoverage ? "pending_task" : "bound" });
     return compiledCandidate;
   });
   const validCandidates = validateSemanticCandidates({ semanticCandidates: candidates }, input).validCandidates;
   const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
+  const relations = Array.isArray(output.contextRelationCandidates) ? output.contextRelationCandidates : [];
+  const pendingTaskMatches = new Map(validCandidates.map((candidate) => [candidate.candidateId,
+    candidate[SEMANTIC_CANDIDATE_LIFECYCLE] === "pending_task" && recompiledCandidateIds.has(candidate.candidateId)
+      ? output.tasks.filter((task) => {
+        const relation = relations.find((item) => item && item.candidateIndex === task.candidateIndex);
+        return compilerCompatibleCapability(task && task.type, candidate.capability)
+          && (!candidate.propertyCatalogIdentity || String(task && task.entity && task.entity.canonicalCandidate || "") === candidate.propertyCatalogIdentity)
+          && relation && validEvidenceRefs(relation.evidenceRefs, input)
+          && candidate.evidenceRefs.every((candidateRef) => relation.evidenceRefs.some((taskRef) => compilerEvidenceOverlaps(candidateRef, taskRef, sourceMaps)));
+      })
+      : []]));
   const tasks = output.tasks.map((task) => {
-    const relation = (output.contextRelationCandidates || []).find((item) => item && item.candidateIndex === task.candidateIndex);
+    const relation = relations.find((item) => item && item.candidateIndex === task.candidateIndex);
     const matching = validCandidates.filter((candidate) => compilerCompatibleCapability(task && task.type, candidate.capability)
       && (!candidate.propertyCatalogIdentity || String(task && task.entity && task.entity.canonicalCandidate || "") === candidate.propertyCatalogIdentity)
-      && candidateProvenanceIndexes.get(candidate.candidateId).includes(task && task.candidateIndex)
+      && (candidateProvenanceIndexes.get(candidate.candidateId).includes(task && task.candidateIndex)
+        || pendingTaskMatches.get(candidate.candidateId).length === 1 && pendingTaskMatches.get(candidate.candidateId)[0] === task)
       && relation && validEvidenceRefs(relation.evidenceRefs, input)
       && candidate.evidenceRefs.every((candidateRef) => relation.evidenceRefs.some((taskRef) => compilerEvidenceOverlaps(candidateRef, taskRef, sourceMaps))));
     const scopes = [...new Set(matching.map((candidate) => String(candidate.lodgingScopeCandidate && candidate.lodgingScopeCandidate.scopeId || "")))];
@@ -288,14 +312,45 @@ function missingSemanticCandidates(output, input, candidates) {
   return candidates.filter((candidate) => !(output.tasks || []).some((task) => taskOwnsCandidate(output, input, task, candidate)));
 }
 
+function lifecycleCandidateSignature(candidate) {
+  if (!candidate || typeof candidate !== "object") return "";
+  const { candidateId, evidenceRefs, ...semantic } = candidate;
+  return JSON.stringify(stableValue(semantic));
+}
+
 function verifiedRepairTask(repairOutput, input, candidate) {
-  if (!repairOutput || !Array.isArray(repairOutput.tasks)) return null;
-  const matches = repairOutput.tasks.filter((task) => Array.isArray(task && task.semanticCandidateIds)
-    && task.semanticCandidateIds.length === 1 && task.semanticCandidateIds[0] === candidate.candidateId
+  if (!repairOutput || !Array.isArray(repairOutput.tasks)
+    || candidate && candidate[SEMANTIC_CANDIDATE_COMPILED] === true
+      && candidate[SEMANTIC_CANDIDATE_LIFECYCLE] !== "pending_task") return null;
+  const directMatches = repairOutput.tasks.filter((task) => Array.isArray(task && task.semanticCandidateIds)
+    && task.semanticCandidateIds.includes(candidate.candidateId)
     && taskOwnsCandidate(repairOutput, input, task, candidate));
+  const repairCandidates = Array.isArray(repairOutput.semanticCandidates) ? repairOutput.semanticCandidates : [];
+  const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
+  const continuityCandidates = directMatches.length ? [] : repairCandidates.filter((repairCandidate) =>
+    lifecycleCandidateSignature(repairCandidate) === lifecycleCandidateSignature(candidate)
+    && candidate.evidenceRefs.every((pendingRef) => repairCandidate.evidenceRefs.some((repairRef) => evidenceOverlaps(pendingRef, repairRef, sourceMaps))));
+  const matches = directMatches.length ? directMatches : continuityCandidates.length === 1
+    ? repairOutput.tasks.filter((task) => Array.isArray(task && task.semanticCandidateIds)
+      && task.semanticCandidateIds.includes(continuityCandidates[0].candidateId)
+      && taskOwnsCandidate(repairOutput, input, task, continuityCandidates[0]))
+    : [];
   if (matches.length !== 1) return null;
+  const matchedCandidateId = directMatches.length ? candidate.candidateId : continuityCandidates[0].candidateId;
+  const canonicalizationResults = repairOutput.repairCanonicalizationResult;
+  if (!Array.isArray(canonicalizationResults) || !Object.isFrozen(canonicalizationResults)) return null;
+  const canonicalizationMatches = canonicalizationResults.filter((result) => result
+    && Object.isFrozen(result)
+    && result.taskId === matches[0].taskId
+    && result.candidateId === matchedCandidateId);
+  if (canonicalizationMatches.length !== 1 || canonicalizationMatches[0].unique !== true
+    || typeof canonicalizationMatches[0].canonicalIdentity !== "string" || !canonicalizationMatches[0].canonicalIdentity
+    || candidate.propertyCatalogIdentity && canonicalizationMatches[0].canonicalIdentity !== candidate.propertyCatalogIdentity
+    || ["capability", "temporal_pattern"].includes(candidate.semanticKind)
+      && canonicalizationMatches[0].canonicalIdentity !== candidate.canonicalIdentityCandidate) return null;
   const relations = (repairOutput.contextRelationCandidates || []).filter((relation) => relation && relation.candidateIndex === matches[0].candidateIndex);
-  return relations.length === 1 ? { task: matches[0], relation: relations[0] } : null;
+  const task = directMatches.length ? matches[0] : { ...matches[0], semanticCandidateIds: [candidate.candidateId] };
+  return relations.length === 1 ? { task, relation: relations[0] } : null;
 }
 
 module.exports = {
