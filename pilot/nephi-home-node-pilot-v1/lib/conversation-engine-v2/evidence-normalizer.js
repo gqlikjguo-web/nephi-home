@@ -1,5 +1,7 @@
 "use strict";
 
+const { evidenceMatchesSource, sourceEventMaps } = require("./understanding-validator");
+
 function sourceIdentifierCounts(sourceEvents) {
   const eventIds = new Map();
   const messageRefs = new Map();
@@ -93,12 +95,14 @@ function normalizePlannerEvidenceCoordinates(plannerOutput, sourceEvents) {
     tasksByCandidateIndex.set(task.candidateIndex, tasksByCandidateIndex.has(task.candidateIndex) ? null : task);
   }
   const identifierCounts = sourceIdentifierCounts(sourceEvents);
+  const sourceMaps = sourceEventMaps(sourceEvents);
   let changed = false;
   const contextRelationCandidates = plannerOutput.contextRelationCandidates.map((candidate) => {
     if (!candidate || typeof candidate !== "object" || !Number.isInteger(candidate.candidateIndex)) return candidate;
     const task = tasksByCandidateIndex.get(candidate.candidateIndex);
     if (!task) return candidate;
     const plannerEvidence = Array.isArray(candidate.evidenceRefs) ? candidate.evidenceRefs : [];
+    if (plannerEvidence.length > 0 && plannerEvidence.every((evidenceRef) => evidenceMatchesSource(evidenceRef, sourceMaps))) return candidate;
     const canonicalQuotedEvidence = candidate.kind === "new_request"
       ? plannerEvidence.map((evidenceRef) => uniqueIdentifiedSourceMatch(
           evidenceRef && evidenceRef.quote,

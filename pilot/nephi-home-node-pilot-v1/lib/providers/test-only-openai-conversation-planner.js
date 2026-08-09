@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 const { plannerProviderJsonSchema, validatePlannerOutput, applyPlannerSemanticContract } = require("../conversation-engine-v2/planner-schema");
 const { compileSemanticCandidates, validateSemanticCandidates, semanticCandidateDiagnosticSummary, missingSemanticCandidates, verifiedRepairTask } = require("../conversation-engine-v2/semantic-candidate-contract");
+const { normalizePlannerEvidenceCoordinates } = require("../conversation-engine-v2/evidence-normalizer");
 const { mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures, mentionedFaqSubjects, resolveEntity } = require("../conversation-engine-v2/entity-resolver");
 const { getCapabilityDefinition } = require("../conversation-engine-v2/capability-registry");
 const { validateUnderstandingContext, sourceEventMaps, evidenceMatchesSource } = require("../conversation-engine-v2/understanding-validator");
@@ -1459,7 +1460,8 @@ class TestOnlyOpenAiConversationPlanner {
           Object.freeze({ stage: "raw_parsed_output", ...semanticCandidateDiagnosticSummary(result.output, input, { raw: true }) }),
           Object.freeze({ stage: "compile_before", ...semanticCandidateDiagnosticSummary(result.output, input, { raw: true }) })
         ];
-        const compiledOutput = compileSemanticCandidates(result.output, input);
+        const providerContractOutput = normalizePlannerEvidenceCoordinates(result.output, input.sourceEvents || []);
+        const compiledOutput = compileSemanticCandidates(providerContractOutput, input);
         semanticLedgerBoundaries.push(Object.freeze({ stage: "compile_after", ...semanticCandidateDiagnosticSummary(compiledOutput, input) }));
         const sanitized = sanitizePlannerTaskCollection(compiledOutput, input);
         const sanitizedOutput = copyPlannerDiagnostics(sanitized, compileSemanticCandidates(sanitized, input));
@@ -1503,7 +1505,8 @@ class TestOnlyOpenAiConversationPlanner {
           try {
             const repairResult = await this.requestOnce(repairInput, 2, Math.min(this.timeoutMs, Math.max(1, Math.floor(deadlineMs - Date.now()))));
             providerAttempts.push(repairResult.attemptDiagnostic);
-            const compiledRepairOutput = compileSemanticCandidates(repairResult.output, repairInput);
+            const repairContractOutput = normalizePlannerEvidenceCoordinates(repairResult.output, repairInput.sourceEvents || []);
+            const compiledRepairOutput = compileSemanticCandidates(repairContractOutput, repairInput);
             const sanitizedRepairOutput = sanitizePlannerTaskCollection(compiledRepairOutput, repairInput);
             const finalRepairOutput = copyPlannerDiagnostics(sanitizedRepairOutput, compileSemanticCandidates(sanitizedRepairOutput, repairInput));
             const canonicalizedRepairOutput = applyPlannerSemanticContract(finalRepairOutput, { catalog: input.catalog, sourceEvents: input.sourceEvents });

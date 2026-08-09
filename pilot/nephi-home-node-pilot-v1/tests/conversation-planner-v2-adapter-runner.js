@@ -111,6 +111,59 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     evidenceFailureCodes: ["quote_slice_mismatch"]
   }, "a raw semantic candidate with a non-slice quote must fail closed as evidence_refs");
   assert.equal(validateSemanticCandidates(compileSemanticCandidates(invalidRawEvidenceOutput, rawEvidenceInput), rawEvidenceInput).validCandidates.length, 1, "deterministic compilation must replace raw model coordinates only with verified relation evidence");
+  const providerOutput = (candidate, relationEvidence) => ({
+    schemaVersion: 2,
+    discourse: { relation: "new_request", confidence: 1 },
+    stateOperations: [],
+    stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
+    tasks: validRawEvidenceOutput.tasks.map((task) => ({ ...task })),
+    contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [{ ...relationEvidence }] }],
+    semanticCandidates: [{ ...candidate }],
+    ambiguities: [],
+    missingInformation: [],
+    needsHuman: false,
+    shouldIgnore: false,
+    reason: "provider coordinate drift regression"
+  });
+  const classifyProviderOutput = async (providerValue) => new TestOnlyOpenAiConversationPlanner({
+    apiKey: "test-key",
+    model: "test-model",
+    fetchImpl: async () => ({ ok: true, json: async () => ({ output_text: JSON.stringify(providerValue) }) })
+  }).classify(rawEvidenceInput);
+  const exactProviderResult = await classifyProviderOutput(providerOutput(validRawEvidenceCandidate, validRawEvidenceCandidate.evidenceRefs[0]));
+  for (const { driftedEvidence, expectedRawFailure } of [
+    { driftedEvidence: { ...validRawEvidenceCandidate.evidenceRefs[0], quote: "paraphrased policy request" }, expectedRawFailure: "quote_slice_mismatch" },
+    { driftedEvidence: { ...validRawEvidenceCandidate.evidenceRefs[0], endOffset: rawEvidenceMessage.length + 7 }, expectedRawFailure: "out_of_bounds" },
+    { driftedEvidence: { ...validRawEvidenceCandidate.evidenceRefs[0], eventId: "model-invented-event", messageRef: "" }, expectedRawFailure: "unknown_event_id" }
+  ]) {
+    const driftResult = await classifyProviderOutput(providerOutput(
+      { ...validRawEvidenceCandidate, evidenceRefs: [{ ...driftedEvidence }] },
+      driftedEvidence
+    ));
+    const driftLedger = validateSemanticCandidates(driftResult, rawEvidenceInput);
+    assert.equal(driftLedger.validCandidates.length, 1, "bound provider coordinate drift must compile from the uniquely identified verified relation");
+    assert.deepEqual(driftResult.semanticCandidates[0].evidenceRefs, validRawEvidenceCandidate.evidenceRefs, "bound final evidence must be the canonical verified relation evidence, never the model coordinates");
+    assert.deepEqual(driftResult.tasks[0].semanticCandidateIds, [driftResult.semanticCandidates[0].candidateId], "canonical relation evidence must retain deterministic task ownership");
+    assert.deepEqual(driftResult.semanticCandidates, exactProviderResult.semanticCandidates, "equivalent bound semantics must compile identically across raw coordinate quality");
+    assert.deepEqual(driftResult.tasks, exactProviderResult.tasks, "equivalent bound semantics must retain identical ownership across raw coordinate quality");
+    const driftBoundaries = driftResult[Symbol.for("junzan.plannerProviderDiagnostic")].semanticLedgerBoundaries;
+    assert.deepEqual(driftBoundaries[0].evidenceFailureCodes, [expectedRawFailure], "the recorded raw boundary must retain the provider coordinate failure reason");
+    assert.equal(driftBoundaries[2].validCandidateCount, 1, "provider contract normalization must supply verified relation evidence before the first compile");
+    assert.deepEqual(driftBoundaries[2].evidenceFailureCodes, [], "compile_after must not convert recoverable provider drift into missing_refs");
+    assert.equal(driftBoundaries[3].ownershipCount, 1, "final validation must retain bound task ownership");
+  }
+  const invalidPendingCandidate = {
+    ...validRawEvidenceCandidate,
+    coverageStatus: "pending_task",
+    provenanceRelationCandidateIndexes: [],
+    evidenceRefs: [{ ...validRawEvidenceCandidate.evidenceRefs[0], quote: "paraphrased policy request" }]
+  };
+  const invalidPendingResult = await classifyProviderOutput(providerOutput(invalidPendingCandidate, invalidPendingCandidate.evidenceRefs[0]));
+  assert.equal(invalidPendingResult.semanticCandidates.length, 0, "invalid pending raw evidence must never be promoted into formal provenance by relation normalization");
+  assert.deepEqual(invalidPendingResult.tasks[0].semanticCandidateIds, [], "an invalid pending candidate must remain unowned and fail closed");
+  const secondCompiledExact = compileSemanticCandidates(exactProviderResult, rawEvidenceInput);
+  assert.deepEqual(secondCompiledExact.semanticCandidates, exactProviderResult.semanticCandidates, "second compile must preserve verified evidence and candidate identity");
+  assert.deepEqual(secondCompiledExact.tasks, exactProviderResult.tasks, "second compile must preserve verified ownership");
   const alternateEvidenceSourceEvents = [...rawEvidenceInput.sourceEvents, { eventId: "alternate-event", messageRef: "alternate-message", messageText: "Alternate source." }];
   const evidenceReasonCases = [
     { refs: [], expected: ["missing_refs"] },
