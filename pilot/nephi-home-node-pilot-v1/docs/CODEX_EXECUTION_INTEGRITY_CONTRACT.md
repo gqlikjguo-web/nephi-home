@@ -34,9 +34,13 @@ Checkpoint B 的 provider fail-closed 必須保留合法、明確的 PostgreSQL�
 
 每項完成聲明必須能獨立核對：原始要求 → 修改檔案與函式 → production 呼叫鏈 → assertion → 測試分類 → stdout/stderr 與 exit code → commit/CI → 對應 runtime 證據。任何一段缺失都標示 `UNPROVEN`，不得推論為成功。每個命令同時記錄工作目錄、branch、HEAD 與是否使用外部資源。
 
+每輪完成報告固定逐項列出：A. exact root cause；B. `MUTATION_ALLOWLIST`；C. actual modified production paths；D. allowlist 外 mutation；E. unauthorized DB/state mutation；F. previously PASS regression；G. frontend regression；H. admin regression；I. LINE regression；J. property isolation regression；K. tests/evidence；L. commit SHA。D 至 J 必須以可核對證據證明為 `0`；任何一項無法證明時不得宣稱 COMPLETE，只能使用 `BLOCKED`、`NOT_VERIFIED` 或 `IMPLEMENTED_LOCAL_VERIFIED`。
+
 ## 8. 誠實 BLOCKED 與未完成
 
 允許誠實回報 `BLOCKED`、`PARTIALLY_IMPLEMENTED` 或 `UNPROVEN`。`BLOCKED` 必須列出失敗前置條件、實際證據、最後安全動作、需要的權限或外部變更，以及為何無安全本機進展。禁止隱藏失敗、跳過失敗測試、偽造結果或把 queued／timeout／skip／neutral 當成成功。
+
+Production bug 只使用「未定位」、「已定位未驗證」、「已修復」三種狀態。「已修復」必須具有 exact deployed SHA、real environment、相關 real provider、root-cause boundary evidence 與 Protected Baseline no-regression evidence；local test 或 CI PASS 只能支持本機狀態，不得升級成「已修復」。
 
 ## 9. 核心封口的獨立審查
 
@@ -56,69 +60,65 @@ Checkpoint B 的 provider fail-closed 必須保留合法、明確的 PostgreSQL�
 
 只有第 2 項明列的內容屬於本輪授權範圍。任何未明列的延伸工作，包括後續階段、優化、重構、文件、測試、CI、PR、部署、外部操作或「順便修正」，即使看似有幫助，也不得自行加入。發現額外問題只能回報，除非使用者另外明確批准。不得把建議、可能的後續方案、設計備選或未授權計畫解讀成本輪任務。
 
-## 已驗證正常區域保護規則
+### 全系統 Protected Baseline（DEFAULT DENY）
 
-任何已經由 regression、acceptance、runtime evidence 或正式 PASS 證據證明正常的 production behavior、function、module、contract 或 data path，預設視為「受保護正常區域」。
+JunZan AI 所有已正常、已修好、已 PASS、已驗證或已供客人／業者使用的 code、behavior、data、settings、UI、API、LINE、database 與 infrastructure，全部預設為 `PROTECTED_BASELINE`。本規則涵蓋所有 property 與整個 JunZan AI，不只單一測試 property；沒有明確授權就不能改，而不是「沒說不能改就能改」。
 
-Codex 不得因為：
+受保護範圍至少包括：
 
-- 方便實作
-- 同屬一個模組
-- 同屬一條 lifecycle / contract / 主線
-- 想順便整理
-- 想重構
-- fixture 比較容易修改
-- 推測可能相關
+- Runtime／AI：Planner／OpenAI provider、schema、semantic compiler、evidence、context、conversation state、entity resolver、capability executor、Canonicalizer、Resolver／PostgreSQL provider、FinalDecision、Claim Validator、FinalResponse、property isolation、Unknown ≠ No 及所有已 PASS 自動回覆能力。
+- 前台／後台：guest／admin／availability frontend、public／admin API、route／slug、房型顯示、房價、房況、bundle、LINE 按鈕／連結與目前正常 UI 行為。
+- PostgreSQL：properties、property_settings、room_types、room enabled／presentation、prices、room_price_overrides、availability、bundles／members、knowledge_items、LINE bindings、admin／operator identity、onboarding、custom replies、notes、conversations／messages／state。
+- LINE：credentials、bindings、webhook、gateway、routing、LINE URL 與 property identity。
+- Infrastructure：Render、PostgreSQL connection、environment variables、GitHub Actions、OIDC、migrations、seed、reset、sync、initialization 與 deployment configuration。
 
-而修改受保護正常區域。
+### MUTATION_ALLOWLIST 與 Production Modification Gate
 
-只有新的真實 failing evidence 建立以下完整因果鏈時，才允許修改：
+每輪開始先記錄 task baseline，並列出 exact repository-relative `MUTATION_ALLOWLIST`。只有本輪唯一結果直接需要、且由使用者當次授權的最小責任範圍可列入；實作途中發現需要 allowlist 外檔案、function、table、field 或外部動作時立即停止，不得自行擴張。
+
+任何 production mutation 在取得授權資格前，必須先建立完整直接因果鏈：
 
 `實際 FAIL`
 → `earliest failure layer`
 → `exact production function / transition`
-→ `該區域直接造成 failure 的證據`
+→ `direct causation`
 → `證明不修改該處就無法安全修復`
 
-缺少任何一項，該正常區域禁止修改。
+同時列出鄰近已 PASS behavior、no-regression 測試與 rollback。缺少任何一項時不得修改 production；「同一主線／contract／lifecycle」、「方便」、「重構」、「fixture 較容易」或推測相關都不是授權。
 
-若同一 function/module 同時包含正常與 failing 行為，只能修改造成 FAIL 的最小責任範圍，並保留其他已正常行為。
+即使證據證明某個 `PROTECTED_BASELINE` surface 必須改，也只取得向使用者請求修改的資格。Codex 必須先停止並回報：真實 FAIL、earliest layer、exact surface、不可避免原因、exact files／functions／tables／fields、預計行為差異、可能影響的正常能力、no-regression 驗證與 rollback；只有使用者對該次 exact mutation 明確同意後才能執行。過去授權、一般「繼續」或 test-only 身分不構成本次批准。
 
-任何修改後，原本證明正常的 regression / acceptance 必須重新 PASS。
-若原 PASS 變 FAIL，視為 regression：
+Machine Code Gate 必須比較 task-start baseline 與完成狀態，包含 tracked 與 untracked path，並證明 `actual modified paths ⊆ MUTATION_ALLOWLIST`。任何額外 path 以 `PROTECTED_BASELINE_MUTATION` exit 1；Gate 輸入缺失、baseline 無法證明或以 broad／模糊 path 代替 exact allowlist 時均為 `INTEGRITY_FAILURE`。
 
-- 不得提交
-- 不得 push 修正版
-- 不得部署
-- 必須先恢復原正常能力
+### Protected PASS 與 acceptance 不可退化
 
-禁止以「同一主線」、「同一 contract」、「同一 lifecycle」、「順便修」、「重構較乾淨」作為修改正常區域的理由。
+Protected PASS set 只能增加，不能縮小。修 B 造成 A 從 PASS 變 FAIL 仍是 `REGRESSION`，不得提交、push 或部署；必須 rollback，或修到 A、B 同時 PASS。Acceptance 題目、assertion、預期、safety、property isolation、Unknown ≠ No、NOT_EXECUTABLE 與 substantive coverage 同屬 `PROTECTED_BASELINE`；若 acceptance 本身確有錯誤，只能在獨立任務以獨立證據先取得批准，不得與 production fix 同輪修改。
 
-核心原則：
-
-> 沒有直接失敗證據指向的正常 production code，不准動。
-> 已經 PASS 的能力，修其他問題時必須保持 PASS。
-> 修 A 不得以破壞 B 為代價。
-
-## Production Modification Gate
-
-任何 production file 修改前，Codex 必須先自行確認並留下紀錄：
-
-1. 本次實際 FAIL
-2. earliest failure layer
-3. exact failing function / transition
-4. 為什麼必須修改該 function
-5. 哪些鄰近 behavior 已經 PASS，列為禁止修改區
-6. 修完後必須重跑哪些既有 PASS regression
-
-六項任何一項無法證明：
-→ 不得修改 production code，只能繼續定位或回報 `BLOCKED`。
+Section 3 的禁止旁路永久適用，並明確包括 case／question hardcode、keyword、regex、alias、fuzzy patch、fallback masking、broad validator relaxation、unrelated refactor、順便修改 frontend／backend／DB，以及為製造 GREEN 改產品行為。
 
 ## 11. 外部系統與部署授權
 
-沒有使用者對特定外部動作的明確授權，不得 push、建立 PR、merge、部署或操作 Render、LINE Console、正式 PostgreSQL、credentials 與 production environment。測試或本機完成不能解除：
+沒有使用者對特定外部動作的當次明確授權，不得 push、建立 PR、merge、部署或操作 Render、LINE Console、PostgreSQL、credentials 與 production environment。測試或本機完成不能解除：
 
 `DEPLOYMENT_BLOCKED_TEST_ONLY_LINE_BINDING_MIGRATION`
+
+### Runtime 正常寫入與 Agent 主動寫入的邊界
+
+本限制只約束 Codex／Agent／測試／驗收／維護流程主動造成的 operational state mutation。已核准且正常運作的 JunZan AI runtime 必要寫入，例如正常處理客人訊息時保存 message、conversation state、reply log 或同類正式業務狀態，不得被 Gate 禁止、不得被修改破壞，也不需要逐次取得使用者批准；這些正常 runtime 必要寫入本身屬於 `PROTECTED_BASELINE`。
+
+Codex／Agent／workflow 主動執行或觸發 seed、reset、sync、initialization、migration、backfill、restore、batch UPDATE、DELETE、property settings overwrite、availability reset、price overwrite 或 LINE binding change，全部是 `WRITE OPERATION`。名稱即使是 preflight、integrity、test-only 或 verification，只要會寫資料就仍是 mutation；必須先停止並取得使用者針對該次 exact operation 的明確批准。
+
+### Acceptance 隔離 Gate
+
+Acceptance 不得 reset／sync public、operator-managed、customer-facing、LINE-bound property 或正常 JunZan operational data。優先使用獨立 acceptance PostgreSQL database 與獨立 write credential，且該 credential 不得有正常 operational DB write permission。若只能使用獨立 acceptance property，第一個 DB write 前必須自動證明：無 public slug、無 LINE binding、無正常 admin／operator ownership、有 acceptance-only marker，且不與正常 property 共用 mutable rows；任一條件缺失即 `INTEGRITY_FAILURE`。
+
+### Operational State Gate
+
+任何 Codex／Agent task 可能接觸 deployed environment 時，必須在動作前後讀取同一 scope 的 operational snapshot。至少完整包含 settings、rooms（含 enabled／presentation）、prices、overrides、availability、bundles、knowledge、LINE、admin／operator bindings 與 public identity。正常業者資料可能自然變化時只能比較本次 before／after snapshot，不得使用永久固定 hash。任何未列入本次 operational mutation allowlist 的差異以 `PROTECTED_OPERATIONAL_STATE_MUTATION` exit 1；scope 不一致、必要 domain 缺失或 snapshot 不可驗證均為 `INTEGRITY_FAILURE`。
+
+### Operational-data 事故與 restore
+
+發現 Codex／acceptance 誤寫正常 operational data 時，立即停止後續 AI 修正、acceptance 與外部寫入，先唯讀查找 PostgreSQL／Render backup、historical state、audit／history、pre-sync artifact 或其他可證明的 last-known-good state，並分類為 `RECOVERABLE_EXACT`、`RECOVERABLE_PARTIAL` 或 `NOT_RECOVERABLE`。不得以 fixture、對話記憶或猜測恢復。找到 exact recovery source 後，只能先回報 source、exact tables／fields、expected before／after 與 rollback，再停止等待使用者對 restore 的當次明確批准。
 
 ## 12. 權威衝突與停止條件
 

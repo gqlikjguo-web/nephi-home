@@ -26,6 +26,18 @@ const requiredScripts = Object.freeze({
   "test:runtime-uniqueness": "node tests/v2-runtime-uniqueness-runner.js",
   "test:provider-fail-closed": "node tests/provider-authority-fail-closed-runner.js"
 });
+const requiredOperationalDomains = Object.freeze([
+  "settings",
+  "rooms",
+  "prices",
+  "overrides",
+  "availability",
+  "bundles",
+  "knowledge",
+  "line",
+  "adminOperatorBindings",
+  "publicIdentity"
+]);
 const protectedPaths = Object.freeze([
   "pilot/nephi-home-node-pilot-v1/docs/CONTROLLED_ARCHITECTURE_TEST_ACCEPTANCE.md",
   "pilot/nephi-home-node-pilot-v1/tests/fixtures/v1-golden-acceptance-matrix.json",
@@ -132,7 +144,12 @@ const validContract = [
   "Isolated unit tests cannot be expanded into full runtime evidence.",
   "Without databaseUrl or valid postgresConnection, createProviders throws DATABASE_URL_REQUIRED.",
   "createJsonProviders is isolated-test injection only.",
-  "DEPLOYMENT_BLOCKED_TEST_ONLY_LINE_BINDING_MIGRATION"
+  "DEPLOYMENT_BLOCKED_TEST_ONLY_LINE_BINDING_MIGRATION",
+  "PROTECTED_BASELINE",
+  "MUTATION_ALLOWLIST",
+  "PROTECTED_BASELINE_MUTATION",
+  "PROTECTED_OPERATIONAL_STATE_MUTATION",
+  "正常 runtime 必要寫入"
 ].join("\n");
 
 function writeFile(root, relativePath, content) {
@@ -177,20 +194,52 @@ function createFixture(options = {}) {
   return root;
 }
 
-function runGate(root) {
-  return spawnSync(process.execPath, [gatePath, "--root", root], { encoding: "utf8" });
+function runGate(root, args = []) {
+  return spawnSync(process.execPath, [gatePath, "--root", root, ...args], { encoding: "utf8" });
 }
 
-function expectsPass(root, label) {
-  const result = runGate(root);
+function expectsPass(root, label, args = []) {
+  const result = runGate(root, args);
   assert.equal(result.status, 0, `${label} should pass: ${result.stderr || result.stdout}`);
   assert.match(result.stdout, /PASS codex-integrity/, `${label} should print PASS`);
 }
 
-function expectsFailure(root, label) {
-  const result = runGate(root);
+function expectsFailure(root, label, args = [], expectedCode = /INTEGRITY_FAILURE/) {
+  const result = runGate(root, args);
   assert.equal(result.status, 1, `${label} should fail with exit code 1`);
-  assert.match(result.stderr, /INTEGRITY_FAILURE/, `${label} should report INTEGRITY_FAILURE`);
+  assert.match(result.stderr, expectedCode, `${label} should report ${expectedCode}`);
+}
+
+function commitFixture(root) {
+  const commands = [
+    ["init"],
+    ["add", "."],
+    ["-c", "user.name=Codex Integrity Test", "-c", "user.email=codex-integrity@example.invalid", "commit", "-m", "baseline"]
+  ];
+  for (const args of commands) {
+    const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+    assert.equal(result.status, 0, `git ${args.join(" ")} failed: ${result.stderr || result.stdout}`);
+  }
+  const result = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+
+function operationalSnapshot(overrides = {}) {
+  const state = Object.fromEntries(requiredOperationalDomains.map((domain) => [domain, { value: `${domain}-baseline` }]));
+  return {
+    schemaVersion: 1,
+    scope: { environment: "test-only", propertyId: "acceptance_isolated" },
+    state,
+    ...overrides
+  };
+}
+
+function writeSnapshot(value) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "protected-operational-state-"));
+  const target = path.join(root, "snapshot.json");
+  fs.writeFileSync(target, JSON.stringify(value), "utf8");
+  return target;
 }
 
 expectsPass(createFixture(), "valid fixture");
@@ -241,8 +290,74 @@ expectsFailure(createFixture({
   additionalAuthority: "docs/SECOND_AUTHORITY.md"
 }), "duplicate active authority scope");
 
+const allowlistedMutationRoot = createFixture();
+const allowlistedMutationBaseline = commitFixture(allowlistedMutationRoot);
+writeFile(allowlistedMutationRoot, projectPath("lib/safe.js"), "\"use strict\";\nmodule.exports = false;\n");
+expectsPass(allowlistedMutationRoot, "allowlisted path mutation", [
+  "--baseline", allowlistedMutationBaseline,
+  "--allow-path", projectPath("lib/safe.js"),
+  "--no-deployed-touch"
+]);
+
+const protectedMutationRoot = createFixture();
+const protectedMutationBaseline = commitFixture(protectedMutationRoot);
+writeFile(protectedMutationRoot, projectPath("lib/safe.js"), "\"use strict\";\nmodule.exports = false;\n");
+expectsFailure(protectedMutationRoot, "mutation outside allowlist", [
+  "--baseline", protectedMutationBaseline,
+  "--allow-path", projectPath("docs/CODEX_EXECUTION_INTEGRITY_CONTRACT.md"),
+  "--no-deployed-touch"
+], /PROTECTED_BASELINE_MUTATION/);
+
+const untrackedMutationRoot = createFixture();
+const untrackedMutationBaseline = commitFixture(untrackedMutationRoot);
+writeFile(untrackedMutationRoot, projectPath("lib/untracked-protected.js"), "\"use strict\";\n");
+expectsFailure(untrackedMutationRoot, "untracked mutation outside allowlist", [
+  "--baseline", untrackedMutationBaseline,
+  "--no-deployed-touch"
+], /PROTECTED_BASELINE_MUTATION/);
+
+const unchangedOperationalRoot = createFixture();
+const unchangedOperationalBaseline = commitFixture(unchangedOperationalRoot);
+const unchangedBefore = writeSnapshot(operationalSnapshot());
+const unchangedAfter = writeSnapshot(operationalSnapshot());
+expectsPass(unchangedOperationalRoot, "unchanged operational snapshot", [
+  "--baseline", unchangedOperationalBaseline,
+  "--before-state", unchangedBefore,
+  "--after-state", unchangedAfter
+]);
+
+const changedOperationalRoot = createFixture();
+const changedOperationalBaseline = commitFixture(changedOperationalRoot);
+const changedBefore = operationalSnapshot();
+const changedAfter = operationalSnapshot();
+changedAfter.state.rooms = { value: "rooms-mutated" };
+expectsFailure(changedOperationalRoot, "unauthorized operational mutation", [
+  "--baseline", changedOperationalBaseline,
+  "--before-state", writeSnapshot(changedBefore),
+  "--after-state", writeSnapshot(changedAfter)
+], /PROTECTED_OPERATIONAL_STATE_MUTATION/);
+
+expectsPass(changedOperationalRoot, "explicit operational domain allowlist", [
+  "--baseline", changedOperationalBaseline,
+  "--before-state", writeSnapshot(changedBefore),
+  "--after-state", writeSnapshot(changedAfter),
+  "--allow-state", "rooms"
+]);
+
+const incompleteOperationalRoot = createFixture();
+const incompleteOperationalBaseline = commitFixture(incompleteOperationalRoot);
+const incompleteState = operationalSnapshot();
+delete incompleteState.state.line;
+expectsFailure(incompleteOperationalRoot, "incomplete operational snapshot", [
+  "--baseline", incompleteOperationalBaseline,
+  "--before-state", writeSnapshot(incompleteState),
+  "--after-state", writeSnapshot(operationalSnapshot())
+], /INTEGRITY_FAILURE/);
+
+expectsFailure(createFixture(), "mutation gate requires complete task inputs", ["--no-deployed-touch"], /INTEGRITY_FAILURE/);
+
 const missingContractRoot = createFixture();
 fs.rmSync(path.join(missingContractRoot, projectPath(`tests/${requiredContractRunners[0]}`)));
 expectsFailure(missingContractRoot, "missing required contract runner");
 
-console.log(JSON.stringify({ suite: "verify-codex-integrity", caseCount: 36, passCount: 36, failCount: 0 }));
+console.log(JSON.stringify({ suite: "verify-codex-integrity", caseCount: 44, passCount: 44, failCount: 0 }));

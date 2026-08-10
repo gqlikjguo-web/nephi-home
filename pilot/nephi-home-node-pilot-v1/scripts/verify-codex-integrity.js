@@ -2,6 +2,20 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { spawnSync } = require("node:child_process");
+
+const REQUIRED_OPERATIONAL_DOMAINS = Object.freeze([
+  "settings",
+  "rooms",
+  "prices",
+  "overrides",
+  "availability",
+  "bundles",
+  "knowledge",
+  "line",
+  "adminOperatorBindings",
+  "publicIdentity"
+]);
 
 function readText(filePath) {
   return fs.readFileSync(filePath, "utf8");
@@ -28,6 +42,132 @@ function parseAuthorityRows(source) {
     rows.push({ authority: cells[0], scope: cells[1], status: cells[2], conflictAction: cells[3] });
   }
   return rows;
+}
+
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableValue(value[key])]));
+  }
+  return value;
+}
+
+function stableJson(value) {
+  return JSON.stringify(stableValue(value));
+}
+
+function optionValues(argv, name) {
+  const values = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] !== name) continue;
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) return null;
+    values.push(value);
+    index += 1;
+  }
+  return values;
+}
+
+function exactRepositoryPath(value) {
+  const normalized = String(value || "").trim().replace(/\\/g, "/");
+  if (!normalized || path.posix.isAbsolute(normalized)) return null;
+  const clean = path.posix.normalize(normalized);
+  if (clean === "." || clean === ".." || clean.startsWith("../")) return null;
+  return clean;
+}
+
+function gitOutput(root, args) {
+  const result = spawnSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${String(result.stderr || result.stdout || "").trim()}`);
+  return result.stdout;
+}
+
+function parseSnapshot(filePath, label, failures) {
+  let snapshot;
+  try {
+    snapshot = JSON.parse(readText(path.resolve(filePath)));
+  } catch (error) {
+    failures.push(`${label} operational snapshot is unreadable: ${error.message}`);
+    return null;
+  }
+  if (!snapshot || snapshot.schemaVersion !== 1 || !snapshot.scope || !snapshot.state) {
+    failures.push(`${label} operational snapshot must contain schemaVersion 1, scope, and state`);
+    return null;
+  }
+  for (const field of ["environment", "propertyId"]) {
+    if (!String(snapshot.scope[field] || "").trim()) failures.push(`${label} operational snapshot scope.${field} is required`);
+  }
+  for (const domain of REQUIRED_OPERATIONAL_DOMAINS) {
+    if (!Object.hasOwn(snapshot.state, domain)) failures.push(`${label} operational snapshot is missing state.${domain}`);
+  }
+  return snapshot;
+}
+
+function verifyProtectedBaseline(root, argv) {
+  const failures = [];
+  const taskFlags = new Set(["--baseline", "--allow-path", "--before-state", "--after-state", "--allow-state", "--no-deployed-touch"]);
+  if (!argv.some((argument) => taskFlags.has(argument))) return failures;
+
+  const baselineValues = optionValues(argv, "--baseline");
+  const allowPathValues = optionValues(argv, "--allow-path");
+  const beforeValues = optionValues(argv, "--before-state");
+  const afterValues = optionValues(argv, "--after-state");
+  const allowStateValues = optionValues(argv, "--allow-state");
+  if ([baselineValues, allowPathValues, beforeValues, afterValues, allowStateValues].some((values) => values === null)) {
+    return ["protected-baseline task options contain a missing value"];
+  }
+  if (baselineValues.length !== 1) return ["protected-baseline task mode requires exactly one --baseline commit"];
+
+  const allowedPaths = new Set();
+  for (const value of allowPathValues) {
+    const normalized = exactRepositoryPath(value);
+    if (!normalized) failures.push(`mutation allowlist path is not an exact repository-relative path: ${value}`);
+    else allowedPaths.add(normalized);
+  }
+
+  try {
+    const baseline = gitOutput(root, ["rev-parse", "--verify", `${baselineValues[0]}^{commit}`]).trim();
+    gitOutput(root, ["merge-base", "--is-ancestor", baseline, "HEAD"]);
+    const modified = gitOutput(root, ["diff", "--name-only", "-z", baseline, "--"])
+      .split("\0").filter(Boolean).map(exactRepositoryPath);
+    const untracked = gitOutput(root, ["ls-files", "--others", "--exclude-standard", "-z"])
+      .split("\0").filter(Boolean).map(exactRepositoryPath);
+    const actual = [...new Set([...modified, ...untracked].filter(Boolean))].sort();
+    const outsideAllowlist = actual.filter((relativePath) => !allowedPaths.has(relativePath));
+    if (outsideAllowlist.length) failures.push(`PROTECTED_BASELINE_MUTATION: ${outsideAllowlist.join(", ")}`);
+  } catch (error) {
+    failures.push(`protected-baseline git evidence is invalid: ${error.message}`);
+  }
+
+  const noDeployedTouch = argv.includes("--no-deployed-touch");
+  const hasSnapshotArguments = beforeValues.length || afterValues.length || allowStateValues.length;
+  if (noDeployedTouch && hasSnapshotArguments) {
+    failures.push("--no-deployed-touch cannot be combined with operational snapshot options");
+    return failures;
+  }
+  if (noDeployedTouch) return failures;
+  if (beforeValues.length !== 1 || afterValues.length !== 1) {
+    failures.push("deployed-environment task mode requires exactly one --before-state and --after-state snapshot");
+    return failures;
+  }
+
+  const allowedState = new Set();
+  for (const domain of allowStateValues) {
+    if (!REQUIRED_OPERATIONAL_DOMAINS.includes(domain)) failures.push(`operational mutation allowlist domain is invalid: ${domain}`);
+    else allowedState.add(domain);
+  }
+  const before = parseSnapshot(beforeValues[0], "before", failures);
+  const after = parseSnapshot(afterValues[0], "after", failures);
+  if (!before || !after) return failures;
+  if (stableJson(before.scope) !== stableJson(after.scope)) {
+    failures.push("operational snapshot scope changed between before and after");
+    return failures;
+  }
+  const changedDomains = [...new Set([...Object.keys(before.state), ...Object.keys(after.state)])]
+    .filter((domain) => stableJson(before.state[domain]) !== stableJson(after.state[domain]));
+  const unauthorized = changedDomains.filter((domain) => !allowedState.has(domain));
+  if (unauthorized.length) failures.push(`PROTECTED_OPERATIONAL_STATE_MUTATION: ${unauthorized.sort().join(", ")}`);
+  return failures;
 }
 
 function verify(root) {
@@ -155,7 +295,12 @@ function verify(root) {
       "DATABASE_URL_REQUIRED",
       "postgresConnection",
       "createJsonProviders",
-      "DEPLOYMENT_BLOCKED_TEST_ONLY_LINE_BINDING_MIGRATION"
+      "DEPLOYMENT_BLOCKED_TEST_ONLY_LINE_BINDING_MIGRATION",
+      "PROTECTED_BASELINE",
+      "MUTATION_ALLOWLIST",
+      "PROTECTED_BASELINE_MUTATION",
+      "PROTECTED_OPERATIONAL_STATE_MUTATION",
+      "正常 runtime 必要寫入"
     ];
     for (const requiredText of requiredContractText) {
       if (!contract.includes(requiredText)) failures.push(`integrity contract is missing required invariant text: ${requiredText}`);
@@ -289,7 +434,7 @@ const rootFlag = process.argv.indexOf("--root");
 const root = rootFlag === -1
   ? path.resolve(__dirname, "..", "..", "..")
   : path.resolve(process.argv[rootFlag + 1] || "");
-const failures = verify(root);
+const failures = [...verify(root), ...verifyProtectedBaseline(root, process.argv.slice(2))];
 if (failures.length) {
   for (const failure of failures) console.error(`INTEGRITY_FAILURE: ${failure}`);
   process.exitCode = 1;
