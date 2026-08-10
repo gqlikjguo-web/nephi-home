@@ -30,6 +30,8 @@ services:
         value: "true"
       - key: TEST_ONLY_ACCEPTANCE_ENABLED
         value: "true"
+      - key: TEST_ONLY_ACCEPTANCE_PROPERTY_ID
+        value: nephi_home
       - key: NEPHI_PILOT_CLASSIFIER_TIMEOUT_MS
         value: "15000"
       - key: PUBLIC_BASE_URL

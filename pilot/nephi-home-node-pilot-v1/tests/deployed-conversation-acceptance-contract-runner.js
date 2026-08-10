@@ -9,6 +9,10 @@ const {
   DEPLOYED_ACCEPTANCE_MATRIX,
   pollForDeployment,
   requestGithubOidcToken,
+  initializeDeployedAcceptanceData,
+  createAcceptanceRunScope,
+  acceptanceConversationId,
+  acceptanceEventId,
   validateAcceptanceResult,
   assessFinalResponseEvidence,
   writeAcceptanceReport,
@@ -57,6 +61,45 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.equal(oidcToken, "short-lived-oidc-secret");
   assert.equal(new URL(oidcRequest.url).searchParams.get("audience"), TEST_ONLY_ACCEPTANCE_AUDIENCE);
   assert.equal(oidcRequest.options.headers.authorization, "Bearer actions-request-secret");
+
+  const runScopeOne = createAcceptanceRunScope(expectedCommit, "00000000-0000-4000-8000-000000000001");
+  const runScopeTwo = createAcceptanceRunScope(expectedCommit, "00000000-0000-4000-8000-000000000002");
+  assert.notEqual(runScopeOne, runScopeTwo, "two acceptance executions at the same commit must never reuse a run scope");
+  assert.notEqual(acceptanceConversationId(runScopeOne, "rg-001"), acceptanceConversationId(runScopeTwo, "rg-001"), "old Conversation State must be unreachable from a new run");
+  assert.notEqual(
+    acceptanceEventId(runScopeOne, "rg-001", 1, "00000000-0000-4000-8000-000000000003"),
+    acceptanceEventId(runScopeTwo, "rg-001", 1, "00000000-0000-4000-8000-000000000003"),
+    "old message claims must be unreachable from a new run"
+  );
+
+  const initializationRequests = [];
+  const initialized = await initializeDeployedAcceptanceData({
+    baseUrl: "https://test-only.example",
+    propertyId: "nephi_home",
+    oidcToken: "short-lived-oidc-secret",
+    expectedSnapshotHash: "b".repeat(64),
+    fetchImpl: async (url, options) => {
+      initializationRequests.push({ url: String(url), options, body: JSON.parse(options.body) });
+      return { ok: true, status: 200, json: async () => ({ ok: true, data: { status: "verified", propertyId: "nephi_home", snapshotHash: "b".repeat(64), roomCount: 4, bundleCount: 1, knowledgeItemCount: 18, availabilityDayCount: 49 } }) };
+    }
+  });
+  assert.equal(initialized.snapshotHash, "b".repeat(64));
+  assert.equal(initializationRequests.length, 1);
+  assert.equal(initializationRequests[0].url, "https://test-only.example/api/admin/test-only/acceptance-data-integrity");
+  assert.equal(initializationRequests[0].options.headers.authorization, "Bearer short-lived-oidc-secret");
+  assert.deepEqual(initializationRequests[0].body, { propertyId: "nephi_home", expectedSnapshotHash: "b".repeat(64) });
+
+  await assert.rejects(
+    initializeDeployedAcceptanceData({
+      baseUrl: "https://test-only.example",
+      propertyId: "nephi_home",
+      oidcToken: "short-lived-oidc-secret",
+      expectedSnapshotHash: "b".repeat(64),
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, data: { status: "verified", propertyId: "nephi_home", snapshotHash: "c".repeat(64) } }) })
+    }),
+    (error) => error && error.code === "INTEGRITY_FAILURE_ACCEPTANCE_DATA_MISMATCH",
+    "a deployed snapshot hash mismatch must block before any OpenAI case"
+  );
 
   const safeResult = {
     traceId: "trace-1",

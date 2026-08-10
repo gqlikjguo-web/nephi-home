@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { TEST_ONLY_ACCEPTANCE_AUDIENCE, EXPECTED_REPOSITORY, EXPECTED_REF, EXPECTED_WORKFLOW_REF } = require("../lib/test-only-acceptance-oidc");
 const { getCapabilityDefinition } = require("../lib/conversation-engine-v2/capability-registry");
+const { loadAcceptanceDataSnapshot } = require("../lib/providers/test-only-acceptance-data");
 
 const DEFAULT_BASE_URL = "https://nephi-home-node-pilot-test-only-btye.onrender.com";
 const SAFE_FACT_KEYS = new Set(["subject", "status", "answer", "locationMapUrl", "detailIntent", "availability", "checkIn", "checkOut", "detailProvided", "detailNeedsConfirmation", "amenities", "availableDates", "range", "availableInventory", "applicableBundles", "prices"]);
@@ -15,6 +16,7 @@ const FORBIDDEN_FINAL_TEXT = ["一定有房", "已完成訂房"];
 
 const MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-fixed-matrix.json");
 const SUPPLEMENTAL_MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-supplemental-matrix.json");
+const ACCEPTANCE_DATA_MANIFEST_PATH = path.resolve(__dirname, "../fixtures/postgres-seed.json");
 const NOT_EXECUTABLE_STATUS = "NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API";
 const OPERATOR_CONTEXT_CASES = new Map([
   ["rg-040-modify-guests-bed", "operator_prior_context_cannot_be_established"],
@@ -217,6 +219,68 @@ async function requestGithubOidcToken({ requestUrl, requestToken, fetchImpl = gl
   return payload.value;
 }
 
+async function initializeDeployedAcceptanceData({ baseUrl, propertyId, oidcToken, expectedSnapshotHash, fetchImpl = globalThis.fetch }) {
+  if (!propertyId || !oidcToken || !/^[0-9a-f]{64}$/.test(String(expectedSnapshotHash || ""))) {
+    const error = new Error("acceptance data initialization input is incomplete");
+    error.code = "INTEGRITY_FAILURE_ACCEPTANCE_DATA_INPUT";
+    throw error;
+  }
+  let response;
+  let payload = null;
+  try {
+    response = await fetchImpl(`${String(baseUrl).replace(/\/$/, "")}/api/admin/test-only/acceptance-data-integrity`, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${oidcToken}` },
+      body: JSON.stringify({ propertyId, expectedSnapshotHash })
+    });
+    payload = await response.json().catch(() => null);
+  } catch (cause) {
+    const error = new Error("acceptance data initialization request failed");
+    error.code = "INTEGRITY_FAILURE_ACCEPTANCE_DATA_INITIALIZATION";
+    error.cause = cause;
+    throw error;
+  }
+  const result = responseData(payload);
+  if (!response || !response.ok || !result || result.status !== "verified" || result.propertyId !== propertyId) {
+    const error = new Error("acceptance data initialization failed");
+    error.code = "INTEGRITY_FAILURE_ACCEPTANCE_DATA_INITIALIZATION";
+    error.httpStatus = Number(response && response.status) || 0;
+    error.httpErrorCode = String(payload && payload.error && payload.error.code || "UNKNOWN");
+    throw error;
+  }
+  if (result.snapshotHash !== expectedSnapshotHash) {
+    const error = new Error("acceptance data snapshot mismatch");
+    error.code = "INTEGRITY_FAILURE_ACCEPTANCE_DATA_MISMATCH";
+    throw error;
+  }
+  return result;
+}
+
+function createAcceptanceRunScope(commit, uuid = crypto.randomUUID()) {
+  const normalizedCommit = String(commit || "").trim().toLowerCase();
+  const normalizedUuid = String(uuid || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(normalizedCommit) || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalizedUuid)) {
+    throw new Error("acceptance_run_scope_invalid");
+  }
+  return `gha-${normalizedCommit.slice(0, 12)}-${normalizedUuid}`;
+}
+
+function acceptanceConversationId(runScope, caseId) {
+  const scope = String(runScope || "").trim();
+  const id = String(caseId || "").trim();
+  if (!scope || !id) throw new Error("acceptance_conversation_scope_invalid");
+  return `${scope}-${id}`;
+}
+
+function acceptanceEventId(runScope, caseId, turnNumber, uuid = crypto.randomUUID()) {
+  const turn = Number(turnNumber);
+  const normalizedUuid = String(uuid || "").trim().toLowerCase();
+  if (!Number.isInteger(turn) || turn < 1 || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalizedUuid)) {
+    throw new Error("acceptance_event_scope_invalid");
+  }
+  return `${acceptanceConversationId(runScope, caseId)}-turn-${turn}-${normalizedUuid}`;
+}
+
 function validateAcceptanceResult(result, expectation = {}) {
   if (!result || typeof result !== "object") throw new Error("acceptance_result_required");
   if (!result.traceId || !result.eventId) throw new Error("acceptance_evidence_ids_required");
@@ -375,6 +439,7 @@ function safeNotExecutableEvidence(caseId, turnNumber, reasonCode) {
 function safeErrorCode(error) {
   const raw = String(error && (error.code || error.message) || "unknown");
   const code = raw.split(":", 1)[0];
+  if (/^INTEGRITY_FAILURE_[A-Z0-9_]+$/.test(code)) return code;
   return /^[a-z][a-z0-9_]*$/.test(code) ? code : "acceptance_case_failed";
 }
 
@@ -561,7 +626,7 @@ function isRefreshableOidcRejection(error) {
     && error.httpErrorCode === "ACCEPTANCE_OIDC_REJECTED");
 }
 
-async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidcToken, commit, matrix = ACCEPTANCE_MATRIX, fetchImpl = globalThis.fetch, now = () => new Date(), write = (value) => console.log(JSON.stringify(value)), reportWriter = null, reportFinalizer = null }) {
+async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidcToken, commit, matrix = ACCEPTANCE_MATRIX, fetchImpl = globalThis.fetch, now = () => new Date(), write = (value) => console.log(JSON.stringify(value)), reportWriter = null, reportFinalizer = null, randomUuid = crypto.randomUUID }) {
   const failures = [];
   const reportCases = [];
   let currentOidcToken = oidcToken;
@@ -571,6 +636,7 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
   let executableTurnCount = 0;
   let notExecutableCaseCount = 0;
   let notExecutableTurnCount = 0;
+  const runScope = createAcceptanceRunScope(commit, randomUuid());
   const turnCount = matrix.reduce((sum, item) => sum + item.turns.length, 0);
   async function requestForCase(caseId, turnNumber, options) {
     try {
@@ -590,7 +656,7 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
   }
   for (const item of matrix) {
     const caseReport = { caseId: item.id, bucket: item.bucket || "", status: "", turns: [] };
-    const conversationId = `gha-${commit.slice(0, 12)}-${item.id}-${crypto.randomUUID()}`;
+    const conversationId = acceptanceConversationId(runScope, item.id);
     let firstRequest = null;
     let lastResult = null;
     let caseFailed = false;
@@ -620,7 +686,7 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
       }
       caseExecuted = true;
       executableTurnCount += 1;
-      const eventId = `gha-${item.id}-${index + 1}-${crypto.randomUUID()}`;
+      const eventId = acceptanceEventId(runScope, item.id, index + 1, randomUuid());
       const request = {
         customerId: propertyId,
         conversationId,
@@ -936,6 +1002,14 @@ async function main(env = process.env) {
   console.log(JSON.stringify({ stage: "deployment-ready", status: health.status, testOnly: health.testOnly, commit: health.commit }));
   const oidcRequest = { requestUrl: env.ACTIONS_ID_TOKEN_REQUEST_URL, requestToken: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN };
   const oidcToken = await requestGithubOidcToken(oidcRequest);
+  const repositorySnapshot = loadAcceptanceDataSnapshot(ACCEPTANCE_DATA_MANIFEST_PATH);
+  const dataIntegrity = await initializeDeployedAcceptanceData({
+    baseUrl,
+    propertyId,
+    oidcToken,
+    expectedSnapshotHash: repositorySnapshot.snapshotHash
+  });
+  console.log(JSON.stringify({ stage: "acceptance-data-integrity", status: dataIntegrity.status, propertyId: dataIntegrity.propertyId, snapshotHash: dataIntegrity.snapshotHash }));
   const summary = await runAcceptanceMatrix({
     baseUrl,
     propertyId,
@@ -977,6 +1051,10 @@ module.exports = {
   NOT_EXECUTABLE_STATUS,
   pollForDeployment,
   requestGithubOidcToken,
+  initializeDeployedAcceptanceData,
+  createAcceptanceRunScope,
+  acceptanceConversationId,
+  acceptanceEventId,
   validateAcceptanceResult,
   validateNativeAcceptanceResult,
   assessFinalResponseEvidence,

@@ -22,6 +22,7 @@ const { createLineSetupService } = require("./lib/line-setup-service");
 const { CustomReplyError, createCustomReplyService } = require("./lib/custom-reply-rules");
 const { createTestOnlyLineMessageTrace } = require("./lib/test-only-line-message-trace");
 const { createGithubActionsOidcVerifier } = require("./lib/test-only-acceptance-oidc");
+const { syncTestOnlyAcceptanceData } = require("./lib/providers/test-only-acceptance-data");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -619,6 +620,7 @@ function createRequestHandler(service, options = {}) {
   const customReplyService = options.customReplyService;
   const customReplyTestHandler = options.customReplyTestHandler;
   const testOnlyAcceptanceHandler = options.testOnlyAcceptanceHandler;
+  const testOnlyAcceptanceDataInitializer = options.testOnlyAcceptanceDataInitializer;
   const testOnlyAcceptanceOidcVerifier = options.testOnlyAcceptanceOidcVerifier;
   const testOnlyLineMessageTrace = options.testOnlyLineMessageTrace;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
@@ -649,6 +651,11 @@ function createRequestHandler(service, options = {}) {
         if (typeof testOnlyAcceptanceHandler !== "function") return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
         const identity = await authorizeTestOnlyAcceptance(request);
         return sendData(response, await testOnlyAcceptanceHandler(await readJsonBody(request), identity));
+      }
+      if (request.method === "POST" && pathname === "/api/admin/test-only/acceptance-data-integrity") {
+        if (typeof testOnlyAcceptanceDataInitializer !== "function") return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
+        const identity = await authorizeTestOnlyAcceptance(request);
+        return sendData(response, await testOnlyAcceptanceDataInitializer(await readJsonBody(request), identity));
       }
       if (request.method === "DELETE" && pathname === "/api/admin/test-only/conversation-acceptance") {
         if (typeof testOnlyAcceptanceHandler !== "function") return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
@@ -1063,12 +1070,47 @@ function createApp(options = {}) {
   });
   const testOnlyEnvironment = Object.hasOwn(options, "testOnlyEnvironment") ? options.testOnlyEnvironment === true : config.testOnlyEnvironment === true;
   const testOnlyAcceptanceEnabled = Object.hasOwn(options, "testOnlyAcceptanceEnabled") ? options.testOnlyAcceptanceEnabled === true : config.testOnlyAcceptanceEnabled === true;
+  const testOnlyAcceptancePropertyId = String(options.testOnlyAcceptancePropertyId || config.testOnlyAcceptancePropertyId || "").trim();
   const deploymentCommit = String(options.deploymentCommit || process.env.RENDER_GIT_COMMIT || "").trim().toLowerCase();
   const testOnlyAcceptanceOidcVerifier = typeof options.testOnlyAcceptanceOidcVerifier === "function"
     ? options.testOnlyAcceptanceOidcVerifier
     : testOnlyEnvironment && testOnlyAcceptanceEnabled && deploymentCommit
       ? createGithubActionsOidcVerifier({ deploymentCommit, fetchImpl: options.testOnlyAcceptanceOidcFetch || globalThis.fetch, now })
       : null;
+  const acceptanceDataConnection = options.testOnlyAcceptanceDataConnection
+    || (config.databaseUrl ? { kind: "pg", databaseUrl: config.databaseUrl } : null);
+  const acceptanceDataManifestPath = String(options.testOnlyAcceptanceManifestPath || path.join(APP_ROOT, "fixtures", "postgres-seed.json"));
+  const injectedAcceptanceDataInitializer = typeof options.testOnlyAcceptanceDataInitializer === "function"
+    ? options.testOnlyAcceptanceDataInitializer
+    : null;
+  const testOnlyAcceptanceDataInitializer = testOnlyEnvironment && testOnlyAcceptanceEnabled && testOnlyAcceptancePropertyId && providers.kind === "postgres"
+    ? async (body = {}, identity = null) => {
+      const propertyId = String(body.propertyId || body.customerId || "").trim();
+      const expectedSnapshotHash = String(body.expectedSnapshotHash || "").trim().toLowerCase();
+      if (propertyId !== testOnlyAcceptancePropertyId) throw new AppError(403, "TEST_ONLY_ACCEPTANCE_PROPERTY_MISMATCH", "Acceptance property scope was rejected");
+      if (!/^[0-9a-f]{64}$/.test(expectedSnapshotHash)) throw new AppError(400, "ACCEPTANCE_DATA_SNAPSHOT_HASH_REQUIRED", "Expected repository snapshot hash is required");
+      if (!injectedAcceptanceDataInitializer && !acceptanceDataConnection) throw new AppError(503, "ACCEPTANCE_DATA_POSTGRES_REQUIRED", "Test-only PostgreSQL acceptance data is unavailable");
+      let result;
+      try {
+        result = injectedAcceptanceDataInitializer
+          ? await injectedAcceptanceDataInitializer({ propertyId, expectedSnapshotHash, identity })
+          : await syncTestOnlyAcceptanceData({
+            connection: acceptanceDataConnection,
+            manifestPath: acceptanceDataManifestPath,
+            acceptancePropertyId: propertyId,
+            expectedSnapshotHash,
+            testOnly: true
+          });
+      } catch (error) {
+        const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(String(error && error.code || "")) ? error.code : "ACCEPTANCE_DATA_INTEGRITY_FAILURE";
+        throw new AppError(409, code, "Test-only acceptance data initialization failed");
+      }
+      if (!result || result.status !== "verified" || result.propertyId !== propertyId || result.snapshotHash !== expectedSnapshotHash) {
+        throw new AppError(409, "ACCEPTANCE_DATA_INTEGRITY_FAILURE", "Test-only PostgreSQL snapshot verification failed");
+      }
+      return result;
+    }
+    : null;
   const testOnlyLineMessageTrace = createTestOnlyLineMessageTrace({
     enabled: adminAuthRequired && (Object.hasOwn(options, "testOnlyLineMessageTraceEnabled") ? options.testOnlyLineMessageTraceEnabled === true : config.testOnlyLineMessageTraceEnabled === true),
     testOnly: testOnlyEnvironment,
@@ -1238,7 +1280,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, deploymentCommit }));
+  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, deploymentCommit }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
 }
 

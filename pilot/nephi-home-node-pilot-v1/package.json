@@ -13,6 +13,7 @@
     "test:line-message-trace": "node tests/test-only-line-message-trace-runner.js && node tests/test-only-line-message-trace-postgres-runner.js && node tests/test-only-line-message-trace-http-runner.js",
     "verify:protected-acceptance": "node scripts/verify-protected-acceptance.js",
     "verify:codex-integrity": "node scripts/verify-codex-integrity.js",
+    "verify:test-only-acceptance-data": "node tests/test-only-acceptance-data-integrity-runner.js",
     "test:canonical-golden": "node tests/canonical-request-golden-gate-runner.js",
     "test:runtime-uniqueness": "node tests/v2-runtime-uniqueness-runner.js",
     "test:provider-fail-closed": "node tests/provider-authority-fail-closed-runner.js",

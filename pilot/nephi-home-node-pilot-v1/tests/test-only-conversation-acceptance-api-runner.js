@@ -117,6 +117,16 @@ async function request(url, method, body, cookie = `nephi_admin_session=${adminT
   return { response, body: payload.data || payload };
 }
 
+async function integrityRequest(url, body, authorization = "") {
+  const response = await fetch(`${url}/api/admin/test-only/acceptance-data-integrity`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(authorization ? { authorization } : {}) },
+    body: JSON.stringify(body)
+  });
+  const payload = await response.json();
+  return { response, body: payload.data || payload };
+}
+
 (async () => {
   assert.equal(runtimeConfig({ TEST_ONLY_ACCEPTANCE_ENABLED: "true" }).testOnlyAcceptanceEnabled, true, "runtime config must parse the deployed acceptance flag");
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-acceptance-api-"));
@@ -258,13 +268,28 @@ async function request(url, method, body, cookie = `nephi_admin_session=${adminT
 
     const disabled = createApp({ providers: createJsonProviders({ dataFile: path.join(temp, "disabled.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json"), now }), adminAuthRequired: false, testOnlyEnvironment: true, testOnlyAcceptanceEnabled: false, now });
     const disabledRunning = await disabled.start(0, "127.0.0.1");
-    try { assert.equal((await request(disabledRunning.url, "POST", { customerId: propertyId, conversationId: "x", messageText: "parking" }).then((x) => x.response.status)), 404); assert.equal((await request(disabledRunning.url, "DELETE", { customerId: propertyId, conversationId: "x" }).then((x) => x.response.status)), 404); } finally { await disabled.stop(); }
+    try { assert.equal((await request(disabledRunning.url, "POST", { customerId: propertyId, conversationId: "x", messageText: "parking" }).then((x) => x.response.status)), 404); assert.equal((await request(disabledRunning.url, "DELETE", { customerId: propertyId, conversationId: "x" }).then((x) => x.response.status)), 404); assert.equal((await integrityRequest(disabledRunning.url, { propertyId }).then((x) => x.response.status)), 404); } finally { await disabled.stop(); }
     const nonTest = createApp({ providers: createJsonProviders({ dataFile: path.join(temp, "non-test.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json"), now }), adminAuthRequired: false, testOnlyEnvironment: false, testOnlyAcceptanceEnabled: true, now });
     const nonTestRunning = await nonTest.start(0, "127.0.0.1");
-    try { assert.equal((await request(nonTestRunning.url, "POST", { customerId: propertyId, conversationId: "x", messageText: "parking" }).then((x) => x.response.status)), 404); assert.equal((await request(nonTestRunning.url, "DELETE", { customerId: propertyId, conversationId: "x" }).then((x) => x.response.status)), 404); } finally { await nonTest.stop(); }
+    try { assert.equal((await request(nonTestRunning.url, "POST", { customerId: propertyId, conversationId: "x", messageText: "parking" }).then((x) => x.response.status)), 404); assert.equal((await request(nonTestRunning.url, "DELETE", { customerId: propertyId, conversationId: "x" }).then((x) => x.response.status)), 404); assert.equal((await integrityRequest(nonTestRunning.url, { propertyId }).then((x) => x.response.status)), 404); } finally { await nonTest.stop(); }
 
     const oidcProviders = createJsonProviders({ dataFile: path.join(temp, "oidc.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json"), now });
-    const oidcApp = createApp({ providers: oidcProviders, adminAuthRequired: false, testOnlyEnvironment: true, testOnlyAcceptanceEnabled: true, testOnlyAcceptanceOidcVerifier: async (token) => token === "valid-oidc-token", now, testOnlyOverrides: { planner: { classify: plannerOutput } } });
+    oidcProviders.kind = "postgres";
+    const dataInitializationCalls = [];
+    const oidcApp = createApp({
+      providers: oidcProviders,
+      adminAuthRequired: false,
+      testOnlyEnvironment: true,
+      testOnlyAcceptanceEnabled: true,
+      testOnlyAcceptancePropertyId: propertyId,
+      testOnlyAcceptanceDataInitializer: async (input) => {
+        dataInitializationCalls.push(input);
+        return { status: "verified", propertyId, snapshotHash: "a".repeat(64), roomCount: 4, bundleCount: 1, knowledgeItemCount: 18, availabilityDayCount: 49 };
+      },
+      testOnlyAcceptanceOidcVerifier: async (token) => token === "valid-oidc-token",
+      now,
+      testOnlyOverrides: { planner: { classify: plannerOutput } }
+    });
     const oidcRunning = await oidcApp.start(0, "127.0.0.1");
     const oidcLogs = [];
     const originalConsoleLog = console.log;
@@ -275,6 +300,17 @@ async function request(url, method, body, cookie = `nephi_admin_session=${adminT
       const rejected = await request(oidcRunning.url, "POST", { customerId: propertyId, conversationId: "oidc-rejected", messageText: "parking", eventId: "oidc-2" }, "", "Bearer invalid-oidc-token");
       assert.equal(rejected.response.status, 403, "an invalid OIDC identity must fail closed");
       assert.equal(JSON.stringify(rejected.body).includes("invalid-oidc-token"), false, "OIDC tokens must never be reflected in responses");
+      const initialized = await integrityRequest(oidcRunning.url, { propertyId, expectedSnapshotHash: "a".repeat(64) }, "Bearer valid-oidc-token");
+      assert.equal(initialized.response.status, 200, "the verified OIDC identity must initialize exact test-only acceptance data");
+      assert.deepEqual(initialized.body, { status: "verified", propertyId, snapshotHash: "a".repeat(64), roomCount: 4, bundleCount: 1, knowledgeItemCount: 18, availabilityDayCount: 49 });
+      assert.equal(dataInitializationCalls.length, 1);
+      assert.equal(dataInitializationCalls[0].propertyId, propertyId);
+      const wrongProperty = await integrityRequest(oidcRunning.url, { propertyId: "demo_homestay_b", expectedSnapshotHash: "a".repeat(64) }, "Bearer valid-oidc-token");
+      assert.equal(wrongProperty.response.status, 403, "the initializer must reject a property outside the configured acceptance scope");
+      assert.equal(dataInitializationCalls.length, 1, "wrong-property input must not reach the synchronizer");
+      const rejectedInitialization = await integrityRequest(oidcRunning.url, { propertyId, expectedSnapshotHash: "a".repeat(64) }, "Bearer invalid-oidc-token");
+      assert.equal(rejectedInitialization.response.status, 403, "invalid OIDC must not initialize data");
+      assert.equal(dataInitializationCalls.length, 1);
     } finally { console.log = originalConsoleLog; await oidcApp.stop(); }
     assert.equal(oidcLogs.some((entry) => entry.includes("valid-oidc-token") || entry.includes("invalid-oidc-token")), false, "OIDC tokens must never be written to logs");
 
@@ -292,6 +328,6 @@ async function request(url, method, body, cookie = `nephi_admin_session=${adminT
       const oidcRejected = await request(envRunning.url, "POST", { customerId: propertyId, conversationId: "env-oidc", messageText: "parking" }, "", "Bearer malformed-token");
       assert.equal(oidcRejected.response.status, 403, "the enabled runtime must wire the production OIDC verifier and fail closed");
     } finally { await envApp.stop(); }
-    console.log(JSON.stringify({ suite: "test-only-conversation-acceptance-api", caseCount: 31, passCount: 31, failCount: 0 }));
+    console.log(JSON.stringify({ suite: "test-only-conversation-acceptance-api", caseCount: 37, passCount: 37, failCount: 0 }));
   } finally { await app.stop(); fs.rmSync(temp, { recursive: true, force: true }); }
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
