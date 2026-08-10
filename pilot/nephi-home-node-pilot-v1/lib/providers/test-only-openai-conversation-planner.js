@@ -7,6 +7,7 @@ const { normalizePlannerEvidenceCoordinates } = require("../conversation-engine-
 const { mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures, mentionedFaqSubjects, resolveEntity } = require("../conversation-engine-v2/entity-resolver");
 const { getCapabilityDefinition } = require("../conversation-engine-v2/capability-registry");
 const { validateUnderstandingContext, sourceEventMaps, evidenceMatchesSource } = require("../conversation-engine-v2/understanding-validator");
+const { captureTestOnlyAcceptanceRawUnderstanding } = require("../test-only-raw-understanding-diagnostic");
 const RESPONSES_URL = "https://api.openai.com/v1/responses";
 const PLANNER_PROVIDER = "openai";
 const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic");
@@ -1600,6 +1601,10 @@ class TestOnlyOpenAiConversationPlanner {
       try {
         const result = await this.requestOnce(input, attempt, Math.min(this.timeoutMs, remainingMs));
         providerAttempts.push(result.attemptDiagnostic);
+        captureTestOnlyAcceptanceRawUnderstanding(result.output, input, {
+          responseRole: "primary",
+          providerAttemptNumber: attempt
+        });
         const semanticLedgerBoundaries = [
           Object.freeze({ stage: "raw_parsed_output", ...semanticCandidateDiagnosticSummary(result.output, input, { raw: true, includeCandidates: true }) }),
           Object.freeze({ stage: "compile_before", ...semanticCandidateDiagnosticSummary(result.output, input, { raw: true, includeCandidates: true }) })
@@ -1670,6 +1675,10 @@ class TestOnlyOpenAiConversationPlanner {
           try {
             const repairResult = await this.requestOnce(repairInput, 2, Math.min(this.timeoutMs, Math.max(1, Math.floor(deadlineMs - Date.now()))));
             providerAttempts.push(repairResult.attemptDiagnostic);
+            captureTestOnlyAcceptanceRawUnderstanding(repairResult.output, repairInput, {
+              responseRole: "coverage_repair",
+              providerAttemptNumber: 2
+            });
             const repairContractOutput = normalizePlannerEvidenceCoordinates(repairResult.output, repairInput.sourceEvents || []);
             const compiledRepairOutput = compileSemanticCandidates(repairContractOutput, repairInput);
             const sanitizedRepairOutput = sanitizePlannerTaskCollection(compiledRepairOutput, repairInput);

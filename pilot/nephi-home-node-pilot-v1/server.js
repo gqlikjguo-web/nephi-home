@@ -23,6 +23,7 @@ const { CustomReplyError, createCustomReplyService } = require("./lib/custom-rep
 const { createTestOnlyLineMessageTrace } = require("./lib/test-only-line-message-trace");
 const { createGithubActionsOidcVerifier } = require("./lib/test-only-acceptance-oidc");
 const { syncTestOnlyAcceptanceData } = require("./lib/providers/test-only-acceptance-data");
+const { runWithTestOnlyAcceptanceRawUnderstanding } = require("./lib/test-only-raw-understanding-diagnostic");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -1205,9 +1206,17 @@ function createApp(options = {}) {
       }
       const claimed = await providers.persistence.claimMessageEvent(customerId, channelId, eventId, { lineUserId, eventTimestamp: now().toISOString(), guestMessage: messageText, replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
       if (!claimed.claimed) return { duplicate: true, eventId };
-      const result = await root.engine.process({ customerId, channelId, lineUserId, eventId, eventTimestamp: now().toISOString(), messageText });
+      const processAcceptanceMessage = () => root.engine.process({ customerId, channelId, lineUserId, eventId, eventTimestamp: now().toISOString(), messageText });
+      const execution = customerId === testOnlyAcceptancePropertyId
+        ? await runWithTestOnlyAcceptanceRawUnderstanding({ propertyId: customerId }, processAcceptanceMessage)
+        : { value: await processAcceptanceMessage(), rawUnderstandingSnapshots: [] };
+      const result = execution.value;
       const trace = acceptanceTraces.get(result.traceId) || [];
       acceptanceTraces.delete(result.traceId);
+      if (execution.rawUnderstandingSnapshots.length) {
+        const plannerBoundary = trace.find((entry) => entry && entry.stage === "planner");
+        if (plannerBoundary) plannerBoundary.rawUnderstandingSnapshots = execution.rawUnderstandingSnapshots;
+      }
       const response = {
         traceId: result.traceId,
         eventId,

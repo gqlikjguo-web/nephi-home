@@ -54,6 +54,18 @@ function plannerOutputUnchecked({ sourceEvents, currentMessage }) {
 
 const SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE = "semantic diagnostic";
 const SEMANTIC_LEDGER_DIAGNOSTIC_CANDIDATE_ID = "70000000-0000-4000-8000-000000000001";
+const RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE = "raw understanding diagnostic";
+const RAW_UNDERSTANDING_SECRETS = {
+  apiKey: "sk-private-provider-key",
+  authorization: "Bearer private-authorization",
+  oidcToken: "private-oidc-token",
+  providerHttpBody: "private-provider-http-body",
+  systemPrompt: "private-system-prompt",
+  hiddenReasoning: "private-hidden-reasoning",
+  credential: "private-credential",
+  doorCode: "private-door-code",
+  paymentAccount: "private-payment-account"
+};
 const semanticLedgerDiagnosticProvider = new TestOnlyOpenAiConversationPlanner({
   apiKey: "test-only-local-key",
   model: "test-only-local-model",
@@ -103,11 +115,69 @@ const semanticLedgerDiagnosticProvider = new TestOnlyOpenAiConversationPlanner({
   })
 });
 
+const rawUnderstandingDiagnosticProvider = new TestOnlyOpenAiConversationPlanner({
+  apiKey: "test-only-local-key",
+  model: "test-only-local-model",
+  retryDelayMs: 0,
+  fetchImpl: async () => ({
+    ok: true,
+    json: async () => ({ output_text: encodeFakePlannerOutput({
+      schemaVersion: 2,
+      discourse: { relation: "new_request", confidence: 1 },
+      stateOperations: [],
+      stay: stay(),
+      tasks: [{
+        candidateIndex: 0,
+        taskId: "raw-room-availability",
+        type: "availability",
+        sourceText: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE,
+        detailIntent: "general",
+        requestedOutputs: ["availability"],
+        eligibilityEvidence: { kind: "none", sourceText: "" },
+        dependsOnStayContext: true,
+        entity: { category: "room", rawText: "301", canonicalCandidate: "room301", confidence: 1 },
+        stayCandidate: stay(),
+        confidence: 1,
+        ...RAW_UNDERSTANDING_SECRETS
+      }],
+      contextRelationCandidates: [{
+        candidateIndex: 0,
+        kind: "new_request",
+        candidateRequestCycleRefs: [],
+        evidenceRefs: [{ eventId: "raw-understanding-event", messageRef: "raw-understanding-message", startOffset: 0, endOffset: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE.length, quote: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE }],
+        ...RAW_UNDERSTANDING_SECRETS
+      }],
+      semanticCandidates: [{
+        semanticKind: "catalog_subject",
+        capability: "availability",
+        canonicalIdentityCandidate: "room301",
+        coverageStatus: "bound",
+        provenanceRelationCandidateIndexes: [0],
+        evidenceRefs: [],
+        lodgingScopeCandidate: { bundleCanonicalCandidate: null, roomCanonicalCandidates: ["room301"], guestCountCandidate: 2 },
+        temporalSemanticCandidate: null,
+        propertyCatalogIdentity: "room301",
+        ...RAW_UNDERSTANDING_SECRETS
+      }],
+      ambiguities: [],
+      missingInformation: ["stay.checkIn"],
+      needsHuman: false,
+      shouldIgnore: false,
+      reason: "raw_understanding_diagnostic_fixture",
+      ...RAW_UNDERSTANDING_SECRETS
+    }) })
+  })
+});
+
+let lastRawUnderstandingPlannerResult = null;
 const plannerWithSemanticLedgerDiagnostic = {
-  classify(input) {
-    return input.currentMessage === SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE
-      ? semanticLedgerDiagnosticProvider.classify(input)
-      : plannerOutput(input);
+  async classify(input) {
+    if (input.currentMessage === SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE) return semanticLedgerDiagnosticProvider.classify(input);
+    if (input.currentMessage === RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE) {
+      lastRawUnderstandingPlannerResult = await rawUnderstandingDiagnosticProvider.classify(input);
+      return lastRawUnderstandingPlannerResult;
+    }
+    return plannerOutput(input);
   }
 };
 
@@ -134,7 +204,7 @@ async function integrityRequest(url, body, authorization = "") {
   const sessions = new Map([[sessionTokenHash(adminToken), { propertyId, username: "platform", userId: "platform-user" }]]);
   providers.persistence.getAdminSession = (tokenHash) => sessions.get(tokenHash) || null;
   providers.onboarding = { isPlatformAdmin: (_propertyId, username, userId) => username === "platform" && userId === "platform-user" };
-  const app = createApp({ providers, adminAuthRequired: true, testOnlyEnvironment: true, testOnlyAcceptanceEnabled: true, now, testOnlyOverrides: { planner: plannerWithSemanticLedgerDiagnostic } });
+  const app = createApp({ providers, adminAuthRequired: true, testOnlyEnvironment: true, testOnlyAcceptanceEnabled: true, testOnlyAcceptancePropertyId: propertyId, now, testOnlyOverrides: { planner: plannerWithSemanticLedgerDiagnostic } });
   const engineFinalResponses = new Map();
   const originalEngineProcess = app.conversationEngineV2.process.bind(app.conversationEngineV2);
   app.conversationEngineV2.process = async (input) => {
@@ -201,7 +271,70 @@ async function integrityRequest(url, body, authorization = "") {
       missingRefsReason: "bound_missing_provenance",
       provenanceRelations: []
     }, "per-candidate lifecycle diagnostics must survive provider, Engine, safe formatter, captureSafeTrace, and acceptance projection");
-    assert.equal(JSON.stringify(semanticLedgerPlannerTrace).includes(SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE), false, "acceptance planner trace must not retain fixture message text");
+    const semanticRawSnapshot = semanticLedgerPlannerTrace.rawUnderstandingSnapshots[0];
+    assert.equal(semanticRawSnapshot.tasks[0].taskId, "policy", "raw-present tasks must remain visible even when downstream structural validation rejects them");
+    const semanticValidationTrace = semanticLedgerDiagnostic.body.trace.find((entry) => entry.stage === "validation");
+    assert.deepEqual(semanticValidationTrace.finalTasks, [], "the paired downstream boundary must make raw-present-but-rejected distinguishable from raw-missing");
+    const { rawUnderstandingSnapshots: _privateSemanticRaw, ...semanticPlannerWithoutPrivateRaw } = semanticLedgerPlannerTrace;
+    assert.equal(JSON.stringify(semanticPlannerWithoutPrivateRaw).includes(SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE), false, "ordinary Planner trace fields must not retain fixture message text outside the private raw snapshot");
+
+    const rawDiagnosticCapturedLogs = [];
+    const originalRawDiagnosticConsoleLog = console.log;
+    console.log = (...args) => rawDiagnosticCapturedLogs.push(args.map(String).join(" "));
+    let rawUnderstandingDiagnostic;
+    try {
+      rawUnderstandingDiagnostic = await post("raw-understanding", RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE, "raw-understanding-event");
+    } finally {
+      console.log = originalRawDiagnosticConsoleLog;
+    }
+    const rawUnderstandingPlannerTrace = rawUnderstandingDiagnostic.body.trace.find((entry) => entry.stage === "planner");
+    assert.equal(rawUnderstandingDiagnostic.response.status, 200);
+    assert.equal(Array.isArray(rawUnderstandingPlannerTrace.rawUnderstandingSnapshots), true, "OIDC/admin-protected acceptance traces must expose the pre-transformation raw understanding snapshot for the exact acceptance property");
+    assert.equal(rawUnderstandingPlannerTrace.rawUnderstandingSnapshots.length, 1);
+    const rawSnapshot = rawUnderstandingPlannerTrace.rawUnderstandingSnapshots[0];
+    assert.equal(rawSnapshot.stage, "raw_parsed_output");
+    assert.equal(rawSnapshot.responseRole, "primary");
+    assert.equal(rawSnapshot.providerAttemptNumber, 1);
+    assert.deepEqual(rawSnapshot.tasks.map((task) => ({ taskOrdinal: task.taskOrdinal, candidateIndex: task.candidateIndex, taskId: task.taskId, type: task.type, sourceText: task.sourceText, requestedOutputs: task.requestedOutputs, entity: task.entity })), [{
+      taskOrdinal: 0,
+      candidateIndex: 0,
+      taskId: "raw-room-availability",
+      type: "availability",
+      sourceText: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE,
+      requestedOutputs: ["availability"],
+      entity: { category: "room", rawText: "301", canonicalCandidate: "room301", confidence: 1 }
+    }], "snapshot must retain the model's actual raw task subject, capability, source binding, and entity identity before downstream transformation");
+    assert.deepEqual(rawSnapshot.semanticCandidates.map((candidate) => ({ candidateOrdinal: candidate.candidateOrdinal, semanticKind: candidate.semanticKind, capability: candidate.capability, canonicalIdentityCandidate: candidate.canonicalIdentityCandidate, propertyCatalogIdentity: candidate.propertyCatalogIdentity, coverageStatus: candidate.coverageStatus, provenanceRelationCandidateIndexes: candidate.provenanceRelationCandidateIndexes, lodgingScopeCandidate: candidate.lodgingScopeCandidate })), [{
+      candidateOrdinal: 0,
+      semanticKind: "catalog_subject",
+      capability: "availability",
+      canonicalIdentityCandidate: "room301",
+      propertyCatalogIdentity: "room301",
+      coverageStatus: "bound",
+      provenanceRelationCandidateIndexes: [0],
+      lodgingScopeCandidate: { bundleCanonicalCandidate: null, roomCanonicalCandidates: ["room301"], guestCountCandidate: 2 }
+    }], "snapshot must retain raw canonical identity, lodging scope, lifecycle, and relation ownership without inventing another semantic model");
+    assert.deepEqual(rawSnapshot.semanticCandidates[0].evidenceRefs, [], "the raw snapshot must be captured before evidence normalization fills bound evidence from the verified relation");
+    const rawCompileAfterCandidate = rawUnderstandingPlannerTrace.semanticLedgerBoundaries.find((boundary) => boundary.stage === "compile_after").candidates[0];
+    assert.equal(rawCompileAfterCandidate.evidenceRefCount, 1, "the paired compile_after boundary must prove the raw snapshot predates downstream evidence normalization and compilation");
+    assert.deepEqual(rawSnapshot.contextRelationCandidates[0].evidenceRefs, [{ eventId: "raw-understanding-event", messageRef: "raw-understanding-message", startOffset: 0, endOffset: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE.length, quote: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE }], "snapshot must retain allowlisted evidence binding metadata at the raw boundary");
+    assert.equal(rawSnapshot.tasks.some((task) => task.type === "policy"), false, "an absent raw task must remain distinguishable from a task lost downstream");
+    assert.equal(rawUnderstandingPlannerTrace.tasks.some((task) => task.taskId === "raw-room-availability"), true, "the same trace must expose the downstream Planner task boundary for raw-vs-downstream comparison");
+    const rawSerialized = JSON.stringify(rawSnapshot);
+    for (const secret of Object.values(RAW_UNDERSTANDING_SECRETS)) assert.equal(rawSerialized.includes(secret), false, `private raw snapshot leaked ${secret}`);
+    assert.equal(rawDiagnosticCapturedLogs.some((line) => line.includes(RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE)), false, "private raw understanding content must never enter ordinary application logs");
+    const providerResultBeforeSnapshotMutation = JSON.stringify(lastRawUnderstandingPlannerResult);
+    rawSnapshot.tasks[0].type = "unknown";
+    assert.equal(JSON.stringify(lastRawUnderstandingPlannerResult), providerResultBeforeSnapshotMutation, "mutating a snapshot must not change the Planner result byte-for-byte");
+    const unscopedProviderResult = await rawUnderstandingDiagnosticProvider.classify({
+      currentMessage: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE,
+      currentMessages: [RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE],
+      sourceEvents: [{ eventId: "raw-understanding-event", messageRef: "raw-understanding-message", messageText: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE }],
+      eventTimestamp: now().toISOString(),
+      catalog: { propertyId, rooms: [] },
+      contextSnapshot: { scope: {}, cycles: [] }
+    });
+    assert.equal(Object.hasOwn(unscopedProviderResult[Symbol.for("junzan.plannerProviderDiagnostic")], "rawUnderstandingSnapshots"), false, "the raw snapshot must not exist outside an explicitly protected test-only acceptance request");
 
     await post("B", "need dates", "b-1");
     assert.notDeepEqual(stateFor("A"), stateFor("B"), "conversation IDs must be isolated");
@@ -209,6 +342,9 @@ async function integrityRequest(url, body, authorization = "") {
     assert.equal(beta.response.status, 200);
     const otherProperty = await request(running.url, "POST", { customerId: "demo_homestay_b", conversationId: "A", messageText: "parking", eventId: "property-b-1" });
     assert.equal(otherProperty.response.status, 200); assert.notDeepEqual(stateFor("A"), stateFor("A", "demo_homestay_b"), "properties must be isolated");
+    const otherPropertyRawDiagnostic = await request(running.url, "POST", { customerId: "demo_homestay_b", conversationId: "raw-understanding", messageText: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE, eventId: "raw-understanding-other-property" });
+    assert.equal(otherPropertyRawDiagnostic.response.status, 200);
+    assert.equal(otherPropertyRawDiagnostic.body.trace.some((entry) => Object.hasOwn(entry, "rawUnderstandingSnapshots")), false, "a non-acceptance property must never obtain the private raw understanding snapshot");
 
     const duplicateBefore = clone(stateFor("B")); const duplicate = await post("B", "parking", "b-1");
     assert.equal(duplicate.body.duplicate, true); assert.deepEqual(stateFor("B"), duplicateBefore, "a redelivered event must not execute or write state");
