@@ -105,7 +105,7 @@ function parseSnapshot(filePath, label, failures) {
 
 function verifyProtectedBaseline(root, argv) {
   const failures = [];
-  const taskFlags = new Set(["--baseline", "--allow-path", "--before-state", "--after-state", "--allow-state", "--no-deployed-touch"]);
+  const taskFlags = new Set(["--baseline", "--allow-path", "--before-state", "--after-state", "--allow-state", "--no-deployed-write"]);
   if (!argv.some((argument) => taskFlags.has(argument))) return failures;
 
   const baselineValues = optionValues(argv, "--baseline");
@@ -139,13 +139,13 @@ function verifyProtectedBaseline(root, argv) {
     failures.push(`protected-baseline git evidence is invalid: ${error.message}`);
   }
 
-  const noDeployedTouch = argv.includes("--no-deployed-touch");
+  const noDeployedWrite = argv.includes("--no-deployed-write");
   const hasSnapshotArguments = beforeValues.length || afterValues.length || allowStateValues.length;
-  if (noDeployedTouch && hasSnapshotArguments) {
-    failures.push("--no-deployed-touch cannot be combined with operational snapshot options");
+  if (noDeployedWrite && hasSnapshotArguments) {
+    failures.push("--no-deployed-write cannot be combined with operational snapshot options");
     return failures;
   }
-  if (noDeployedTouch) return failures;
+  if (noDeployedWrite) return failures;
   if (beforeValues.length !== 1 || afterValues.length !== 1) {
     failures.push("deployed-environment task mode requires exactly one --before-state and --after-state snapshot");
     return failures;

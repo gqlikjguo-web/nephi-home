@@ -114,7 +114,7 @@ Acceptance 不得 reset／sync public、operator-managed、customer-facing、LIN
 
 ### Operational State Gate
 
-任何 Codex／Agent task 可能接觸 deployed environment 時，必須在動作前後讀取同一 scope 的 operational snapshot。至少完整包含 settings、rooms（含 enabled／presentation）、prices、overrides、availability、bundles、knowledge、LINE、admin／operator bindings 與 public identity。正常業者資料可能自然變化時只能比較本次 before／after snapshot，不得使用永久固定 hash。任何未列入本次 operational mutation allowlist 的差異以 `PROTECTED_OPERATIONAL_STATE_MUTATION` exit 1；scope 不一致、必要 domain 缺失或 snapshot 不可驗證均為 `INTEGRITY_FAILURE`。
+任何 Codex／Agent task 可能主動造成 deployed operational state mutation 時，必須在寫入前後讀取同一 scope 的 operational snapshot。至少完整包含 settings、rooms（含 enabled／presentation）、prices、overrides、availability、bundles、knowledge、LINE、admin／operator bindings 與 public identity。純唯讀調查可明確宣告 `--no-deployed-write`，不等同於未接觸外部唯讀資料，也不得掩護任何寫入。正常業者資料可能自然變化時只能比較本次 before／after snapshot，不得使用永久固定 hash。任何未列入本次 operational mutation allowlist 的差異以 `PROTECTED_OPERATIONAL_STATE_MUTATION` exit 1；scope 不一致、必要 domain 缺失或 snapshot 不可驗證均為 `INTEGRITY_FAILURE`。
 
 ### Operational-data 事故與 restore
 

@@ -296,7 +296,7 @@ writeFile(allowlistedMutationRoot, projectPath("lib/safe.js"), "\"use strict\";\
 expectsPass(allowlistedMutationRoot, "allowlisted path mutation", [
   "--baseline", allowlistedMutationBaseline,
   "--allow-path", projectPath("lib/safe.js"),
-  "--no-deployed-touch"
+  "--no-deployed-write"
 ]);
 
 const protectedMutationRoot = createFixture();
@@ -305,7 +305,7 @@ writeFile(protectedMutationRoot, projectPath("lib/safe.js"), "\"use strict\";\nm
 expectsFailure(protectedMutationRoot, "mutation outside allowlist", [
   "--baseline", protectedMutationBaseline,
   "--allow-path", projectPath("docs/CODEX_EXECUTION_INTEGRITY_CONTRACT.md"),
-  "--no-deployed-touch"
+  "--no-deployed-write"
 ], /PROTECTED_BASELINE_MUTATION/);
 
 const untrackedMutationRoot = createFixture();
@@ -313,7 +313,7 @@ const untrackedMutationBaseline = commitFixture(untrackedMutationRoot);
 writeFile(untrackedMutationRoot, projectPath("lib/untracked-protected.js"), "\"use strict\";\n");
 expectsFailure(untrackedMutationRoot, "untracked mutation outside allowlist", [
   "--baseline", untrackedMutationBaseline,
-  "--no-deployed-touch"
+  "--no-deployed-write"
 ], /PROTECTED_BASELINE_MUTATION/);
 
 const unchangedOperationalRoot = createFixture();
@@ -354,7 +354,7 @@ expectsFailure(incompleteOperationalRoot, "incomplete operational snapshot", [
   "--after-state", writeSnapshot(operationalSnapshot())
 ], /INTEGRITY_FAILURE/);
 
-expectsFailure(createFixture(), "mutation gate requires complete task inputs", ["--no-deployed-touch"], /INTEGRITY_FAILURE/);
+expectsFailure(createFixture(), "mutation gate requires complete task inputs", ["--no-deployed-write"], /INTEGRITY_FAILURE/);
 
 const missingContractRoot = createFixture();
 fs.rmSync(path.join(missingContractRoot, projectPath(`tests/${requiredContractRunners[0]}`)));
