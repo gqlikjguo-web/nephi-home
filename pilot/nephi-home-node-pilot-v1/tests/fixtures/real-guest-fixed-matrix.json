@@ -36,265 +36,293 @@
     "claimValidationMustPass": true,
     "finalResponseMustBeEngineResult": true
   },
+  "tiers": {
+    "TIER_1_CORE": [
+      "rg-004-bundle-price", "rg-005-bundle-holiday-price", "rg-006-named-room-availability",
+      "rg-007-room-bathtub", "rg-008-four-person-room-price", "rg-011-availability-open-dates",
+      "rg-012-unspecified-room", "rg-020-parking", "rg-021-pool-use", "rg-022-pool-month",
+      "rg-023-pool-fee", "rg-025-pet-policy", "rg-026-ktv-availability", "rg-027-ktv-month",
+      "rg-029-checkin-latest", "rg-031-address", "rg-032-common-space", "rg-033-kitchen",
+      "rg-034-towel", "rg-035-mahjong-switch"
+    ],
+    "TIER_2_COMPLEX": [
+      "rg-001-guests-extra-bed", "rg-002-bundle-guests-children", "rg-013-booking-request-full",
+      "rg-014-infant-crib", "rg-015-bbq-food-order", "rg-017-bbq-and-ktv-time",
+      "rg-018-bbq-pool-fees", "rg-024-pool-time-fee-scope", "rg-028-ktv-hours",
+      "rg-030-late-arrival", "rg-036-multi-bundle-breakfast-cleaning", "rg-037-multi-pool-price-checkin",
+      "rg-038-conversation-room-price-payment", "rg-039-conversation-booking-refund",
+      "rg-040-modify-guests-bed", "rg-041-modify-room-mix", "rg-042-modify-date"
+    ],
+    "TIER_3_SAFETY": [
+      "rg-003-price-nights", "rg-009-deposit-refund", "rg-010-pay-deposit", "rg-016-bbq-followup-wording",
+      "rg-019-bbq-reservation", "rg-051-sensitive-door-code", "rg-052-payment-no-commitment",
+      "rg-053-unknown-vendor-fact"
+    ],
+    "TIER_4_EDGE": [
+      "rg-043-short-meaningful-bundle", "rg-044-short-meaningful-nights", "rg-045-short-meaningful-room",
+      "rg-046-no-reply-thanks", "rg-047-no-reply-good", "rg-048-no-reply-emoji", "rg-049-punctuation",
+      "rg-050-nontext-markers"
+    ]
+  },
   "cases": [
     {
       "id": "rg-001-guests-extra-bed",
       "bucket": "normal_high_frequency",
       "coverage": ["人數", "加人", "加床"],
       "sourceRef": "Markdown §25 床型／加床；XLSX 實測題庫",
-      "turns": [{"input": "2大1小-2組\n2大2小\n1大1小\n\n這樣其中一間雙人房是可以加床的嗎？", "expectedSemantic": ["guests", "children", "extra_bed"], "allowedActions": ["reply", "clarification", "handoff"]}]
+      "turns": [{"input": "2大1小-2組\n2大2小\n1大1小\n\n這樣其中一間雙人房是可以加床的嗎？", "expectedSemantic": ["guests", "children", "extra_bed"], "allowedActions": ["handoff"]}]
     },
     {
       "id": "rg-002-bundle-guests-children",
       "bucket": "normal_high_frequency",
       "coverage": ["包棟", "人數", "兒童"],
       "sourceRef": "Markdown §9 兒童／嬰幼兒；XLSX 實測題庫",
-      "turns": [{"input": "請問10/5還能包棟嗎\n9位大人3位小孩", "expectedSemantic": ["bundle", "availability", "guests", "children"], "allowedActions": ["reply", "clarification", "handoff"], "requiresPostgres": true}]
+      "turns": [{"input": "請問10/5還能包棟嗎\n9位大人3位小孩", "expectedSemantic": ["bundle", "availability", "guests", "children"], "allowedActions": ["handoff"], "requiresPostgres": true}]
     },
     {
       "id": "rg-003-price-nights",
       "bucket": "normal_high_frequency",
       "coverage": ["價格", "總價", "日期", "晚數", "人數"],
       "sourceRef": "Markdown §7 住宿日期／晚數；XLSX 實測題庫",
-      "turns": [{"input": "請問5月1-3\n兩個人住兩晚的價格大概多少呢", "expectedSemantic": ["price", "total_price", "date_range", "nights", "guests"], "allowedActions": ["reply", "clarification", "handoff"], "requiresPostgres": true}]
+      "turns": [{"input": "請問5月1-3\n兩個人住兩晚的價格大概多少呢", "expectedSemantic": ["date_range", "nights", "guests", "past_date"], "allowedActions": ["clarification", "handoff"], "requiresPostgres": true, "pastDatePolicy": "reject_if_resolved_past", "productOutcomes": [{"subject": "past_date", "disposition": "retain"}]}]
     },
     {
       "id": "rg-004-bundle-price",
       "bucket": "normal_high_frequency",
       "coverage": ["包棟", "價格"],
       "sourceRef": "Markdown §3 包棟；XLSX 實測題庫",
-      "turns": [{"input": "請問包棟價格", "expectedSemantic": ["bundle", "price"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "請問包棟價格", "expectedSemantic": ["bundle", "price"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-005-bundle-holiday-price",
       "bucket": "normal_high_frequency",
       "coverage": ["包棟", "假日價格"],
       "sourceRef": "Markdown §3 包棟；XLSX 實測題庫",
-      "turns": [{"input": "了解\n那能詢問一下假日包棟房價嗎？", "expectedSemantic": ["bundle", "holiday_price"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "了解\n那能詢問一下假日包棟房價嗎？", "expectedSemantic": ["bundle", "holiday_price"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-006-named-room-availability",
       "bucket": "normal_high_frequency",
       "coverage": ["指定房型", "房號", "房況", "日期"],
       "sourceRef": "Markdown 一句多問題範例4；XLSX 實測題庫",
-      "turns": [{"input": "您好  請問8/30.31兩天還有4人房嗎   402優先\n感謝", "expectedSemantic": ["availability", "room_402", "four_person_room", "date_range"], "allowedActions": ["reply", "clarification", "handoff"], "requiresPostgres": true}]
+      "turns": [{"input": "您好  請問8/30.31兩天還有4人房嗎   402優先\n感謝", "expectedSemantic": ["availability", "room_402", "four_person_room", "date_range"], "allowedActions": ["reply"], "requiresPostgres": true}]
     },
     {
       "id": "rg-007-room-bathtub",
       "bucket": "normal_high_frequency",
       "coverage": ["指定房型", "浴缸", "設備"],
       "sourceRef": "Markdown 一句多問題範例6；XLSX 實測題庫",
-      "turns": [{"input": "好的，了解～\n四人房是還有浴缸的嗎？", "expectedSemantic": ["room_type", "bathtub", "amenity"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "好的，了解～\n四人房是還有浴缸的嗎？", "expectedSemantic": ["room_type", "bathtub", "amenity"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-008-four-person-room-price",
       "bucket": "normal_high_frequency",
       "coverage": ["指定房型", "價格"],
       "sourceRef": "Markdown §4 指定房型／房號；XLSX 實測題庫",
-      "turns": [{"input": "若開放一間四人房多少錢？", "expectedSemantic": ["four_person_room", "price"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "若開放一間四人房多少錢？", "expectedSemantic": ["four_person_room", "price"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-009-deposit-refund",
       "bucket": "normal_high_frequency",
       "coverage": ["訂金", "付款", "取消", "退款"],
       "sourceRef": "Markdown 一句多問題範例7；XLSX 實測題庫",
-      "turns": [{"input": "另外我想問預訂的話訂金要付多少？如日期突然異動的話多久前可以通知退訂？\n", "expectedSemantic": ["deposit", "payment", "cancellation", "refund_policy"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "另外我想問預訂的話訂金要付多少？如日期突然異動的話多久前可以通知退訂？\n", "expectedSemantic": ["deposit", "payment", "cancellation", "refund_policy"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-010-pay-deposit",
       "bucket": "normal_high_frequency",
       "coverage": ["訂金", "付款", "匯款"],
       "sourceRef": "Markdown §5 訂金／付款／匯款；XLSX 實測題庫",
-      "turns": [{"input": "如何付訂金？", "expectedSemantic": ["deposit", "payment_method"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "如何付訂金？", "expectedSemantic": ["deposit", "payment_method"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true, "productOutcomes": [{"subject": "deposit", "disposition": "handoff"}]}]
     },
     {
       "id": "rg-011-availability-open-dates",
       "bucket": "normal_high_frequency",
       "coverage": ["房況", "可訂日期"],
       "sourceRef": "Markdown §6 房況與可訂日期；XLSX 實測題庫",
-      "turns": [{"input": "目前日期有哪些有空房？", "expectedSemantic": ["availability", "date_clarification"], "allowedActions": ["clarification", "reply", "handoff"]}]
+      "turns": [{"input": "目前日期有哪些有空房？", "expectedSemantic": ["availability", "date_clarification"], "allowedActions": ["clarification"]}]
     },
     {
       "id": "rg-012-unspecified-room",
       "bucket": "normal_high_frequency",
       "coverage": ["未指定房型", "房況", "人數", "兒童"],
       "sourceRef": "Markdown §8 未指定房型的住宿詢問；XLSX 實測題庫",
-      "turns": [{"input": "8/30 2大2小有房間嗎？", "expectedSemantic": ["availability", "guests", "children", "lodging_scope"], "allowedActions": ["reply", "clarification", "handoff"], "requiresPostgres": true}]
+      "turns": [{"input": "8/30 2大2小有房間嗎？", "expectedSemantic": ["availability", "guests", "children", "lodging_scope"], "allowedActions": ["clarification"], "requiresPostgres": true}]
     },
     {
       "id": "rg-013-booking-request-full",
       "bucket": "normal_high_frequency",
       "coverage": ["訂房方式", "房況", "日期", "房型"],
       "sourceRef": "Markdown §7 與 §11；XLSX 實測題庫",
-      "turns": [{"input": "您好，我想詢問尼腓的家訂房。\n\n入住日期：2026/08/31\n退房日期：2026/09/01\n想詢問房型：301雙人房附衛浴\n\n請問這天是否還可以預訂？謝謝。", "expectedSemantic": ["booking_process", "availability", "room_301", "date_range"], "allowedActions": ["reply", "clarification", "handoff"], "requiresPostgres": true}]
+      "turns": [{"input": "您好，我想詢問尼腓的家訂房。\n\n入住日期：2026/08/31\n退房日期：2026/09/01\n想詢問房型：301雙人房附衛浴\n\n請問這天是否還可以預訂？謝謝。", "expectedSemantic": ["booking_process", "availability", "room_301", "date_range"], "allowedActions": ["handoff"], "requiresPostgres": true}]
     },
     {
       "id": "rg-014-infant-crib",
       "bucket": "normal_high_frequency",
       "coverage": ["兒童", "嬰幼兒", "嬰兒床", "房況"],
       "sourceRef": "Markdown §9 兒童／嬰幼兒；XLSX 實測題庫",
-      "turns": [{"input": "請問8/29還有房間嗎\n兩個大人，一個嬰兒，另外想問，有沒有嬰兒床，謝謝", "expectedSemantic": ["availability", "guests", "infant", "baby_crib"], "allowedActions": ["reply", "clarification", "handoff"], "requiresPostgres": true, "requiresFormalPropertyData": true}]
+      "turns": [{"input": "請問8/29還有房間嗎\n兩個大人，一個嬰兒，另外想問，有沒有嬰兒床，謝謝", "expectedSemantic": ["availability", "guests", "infant", "baby_crib"], "allowedActions": ["handoff"], "requiresPostgres": true, "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-015-bbq-food-order",
       "bucket": "normal_high_frequency",
       "coverage": ["烤肉", "代訂食材", "費用", "設備"],
       "sourceRef": "Markdown §10 烤肉及指定細節",
-      "turns": [{"input": "你好\n我們想要烤肉\n你們可以代訂食材對嗎？", "expectedSemantic": ["bbq", "food_order", "bbq_fee", "bbq_equipment"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "你好\n我們想要烤肉\n你們可以代訂食材對嗎？", "expectedSemantic": ["bbq", "food_order", "bbq_fee", "bbq_equipment"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-016-bbq-followup-wording",
       "bucket": "normal_high_frequency",
       "coverage": ["烤肉", "預約"],
       "sourceRef": "Markdown §10 烤肉；XLSX 實測題庫",
-      "turns": [{"input": "一樣可以訂烤肉嗎", "expectedSemantic": ["bbq", "reservation"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "一樣可以訂烤肉嗎", "expectedSemantic": ["bbq", "reservation"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-017-bbq-and-ktv-time",
       "bucket": "normal_high_frequency",
       "coverage": ["烤肉時間", "唱歌時間", "一句多問題"],
       "sourceRef": "Markdown 指定細節：烤肉可以到幾點／唱歌可以到幾點",
-      "turns": [{"input": "烤肉和唱歌有時間限制嗎？", "expectedSemantic": ["bbq_hours", "ktv_hours"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "烤肉和唱歌有時間限制嗎？", "expectedSemantic": ["bbq_hours", "ktv_hours"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true, "productOutcomes": [{"subject": "ktv_hours", "disposition": "answer"}, {"subject": "bbq_hours", "disposition": "handoff"}]}]
     },
     {
       "id": "rg-018-bbq-pool-fees",
       "bucket": "normal_high_frequency",
       "coverage": ["烤肉費用", "戲水池費用", "一句多問題"],
       "sourceRef": "Markdown 指定細節：烤肉費用",
-      "turns": [{"input": "ok 假如有使用到水池跟烤肉區 再當面收費嗎？", "expectedSemantic": ["bbq_fee", "pool_fee", "payment_timing"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "ok 假如有使用到水池跟烤肉區 再當面收費嗎？", "expectedSemantic": ["bbq_fee", "pool_fee", "payment_timing"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true, "productOutcomes": [{"subject": "bbq_fee", "disposition": "answer"}, {"subject": "pool_fee", "disposition": "answer"}, {"subject": "payment_timing", "disposition": "handoff"}]}]
     },
     {
       "id": "rg-019-bbq-reservation",
       "bucket": "normal_high_frequency",
       "coverage": ["烤肉", "是否需預約"],
       "sourceRef": "Markdown 指定細節：烤肉是否需預約",
-      "turns": [{"input": "您好 請問如果我們要烤肉的話 需要提前告知嗎", "expectedSemantic": ["bbq", "advance_reservation"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "您好 請問如果我們要烤肉的話 需要提前告知嗎", "expectedSemantic": ["bbq", "advance_reservation"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-020-parking",
       "bucket": "normal_high_frequency",
       "coverage": ["停車"],
       "sourceRef": "Markdown §13 停車；XLSX 實測題庫",
-      "turns": [{"input": "請問有停車嗎~", "expectedSemantic": ["parking"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "請問有停車嗎~", "expectedSemantic": ["parking"], "allowedActions": ["reply"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-021-pool-use",
       "bucket": "normal_high_frequency",
       "coverage": ["戲水池", "適用範圍"],
       "sourceRef": "Markdown §14 戲水池／玩水；XLSX 實測題庫",
-      "turns": [{"input": "泳池可以用嗎", "expectedSemantic": ["pool", "availability_scope"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "泳池可以用嗎", "expectedSemantic": ["pool", "availability_scope"], "allowedActions": ["reply"], "requiresFormalPropertyData": true, "productOutcomes": [{"subject": "pool", "disposition": "answer"}]}]
     },
     {
       "id": "rg-022-pool-month",
       "bucket": "normal_high_frequency",
       "coverage": ["戲水池", "開放時間"],
       "sourceRef": "Markdown §14 戲水池／玩水；XLSX 實測題庫",
-      "turns": [{"input": "那9月泳池開放嗎", "expectedSemantic": ["pool", "seasonal_hours"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "那9月泳池開放嗎", "expectedSemantic": ["pool", "seasonal_hours"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-023-pool-fee",
       "bucket": "normal_high_frequency",
       "coverage": ["戲水池", "費用"],
       "sourceRef": "Markdown 指定細節：戲水池費用",
-      "turns": [{"input": "有看到戲水池使用另計，費用的部分是多少呢", "expectedSemantic": ["pool", "pool_fee"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "有看到戲水池使用另計，費用的部分是多少呢", "expectedSemantic": ["pool", "pool_fee"], "allowedActions": ["reply"], "requiresFormalPropertyData": true, "productOutcomes": [{"subject": "pool_fee", "disposition": "answer"}]}]
     },
     {
       "id": "rg-024-pool-time-fee-scope",
       "bucket": "normal_high_frequency",
       "coverage": ["戲水池時間", "戲水池費用", "設備時間", "一句多問題"],
       "sourceRef": "Markdown 指定細節：戲水池時間",
-      "turns": [{"input": "請問你們可以叫代烤嗎？\n戲水池的收費怎麼算\n設備有限定時間嗎？謝謝～", "expectedSemantic": ["bbq_food_order", "pool_fee", "facility_hours"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "請問你們可以叫代烤嗎？\n戲水池的收費怎麼算\n設備有限定時間嗎？謝謝～", "expectedSemantic": ["bbq_food_order", "pool_fee", "facility_hours"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-025-pet-policy",
       "bucket": "normal_high_frequency",
       "coverage": ["寵物", "規則"],
       "sourceRef": "Markdown §15 寵物；XLSX 實測題庫",
-      "turns": [{"input": "另外請問可以攜帶寵物嗎", "expectedSemantic": ["pet_policy"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "另外請問可以攜帶寵物嗎", "expectedSemantic": ["pet_policy"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-026-ktv-availability",
       "bucket": "normal_high_frequency",
       "coverage": ["KTV", "唱歌", "設備"],
       "sourceRef": "Markdown §16 KTV／唱歌；XLSX 實測題庫",
-      "turns": [{"input": "老闆請問一下，你們現在還有唱歌設備嗎？", "expectedSemantic": ["ktv", "amenity"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "老闆請問一下，你們現在還有唱歌設備嗎？", "expectedSemantic": ["ktv", "amenity"], "allowedActions": ["reply"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-027-ktv-month",
       "bucket": "normal_high_frequency",
       "coverage": ["KTV", "唱歌", "月份"],
       "sourceRef": "Markdown §16 KTV／唱歌；XLSX 實測題庫",
-      "turns": [{"input": "九月一樣沒有唱歌嗎", "expectedSemantic": ["ktv", "seasonal_availability"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "九月一樣沒有唱歌嗎", "expectedSemantic": ["ktv", "seasonal_availability"], "allowedActions": ["reply"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-028-ktv-hours",
       "bucket": "normal_high_frequency",
       "coverage": ["KTV", "唱歌時間"],
       "sourceRef": "Markdown 指定細節：唱歌可以到幾點",
-      "turns": [{"input": "您好想詢問ktv 的使用時間是幾點到幾點？另外也想詢問，因為我們都是年輕人，可能晚上會有點吵鬧，隔音效果好嗎🥹", "expectedSemantic": ["ktv_hours", "quiet_hours", "noise_policy"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "您好想詢問ktv 的使用時間是幾點到幾點？另外也想詢問，因為我們都是年輕人，可能晚上會有點吵鬧，隔音效果好嗎🥹", "expectedSemantic": ["ktv_hours", "quiet_hours", "noise_policy"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true, "productOutcomes": [{"subject": "ktv_hours", "disposition": "answer"}, {"subject": "noise_policy", "disposition": "handoff", "sourceText": "隔音效果好嗎"}]}]
     },
     {
       "id": "rg-029-checkin-latest",
       "bucket": "normal_high_frequency",
       "coverage": ["入住時間", "規則"],
       "sourceRef": "Markdown §29 入住／退房時間；XLSX 實測題庫",
-      "turns": [{"input": "請問最晚入住時間？", "expectedSemantic": ["check_in", "latest_arrival"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "請問最晚入住時間？", "expectedSemantic": ["latest_arrival"], "allowedActions": ["clarification", "handoff"], "requiresFormalPropertyData": true, "productOutcomes": [{"subject": "latest_arrival", "disposition": "retain", "sourceText": "最晚入住時間"}]}]
     },
     {
       "id": "rg-030-late-arrival",
       "bucket": "normal_high_frequency",
       "coverage": ["入住時間", "晚到", "規則"],
       "sourceRef": "Markdown §24 規則／安靜時段／噪音",
-      "turns": [{"input": "您好 想詢問我們8/13可能會較晚才到宜蘭 請問有規定一定要15:00入住嗎～\n因為我們是從台北下課過後過去🥹", "expectedSemantic": ["check_in", "late_arrival", "policy"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "您好 想詢問我們8/13可能會較晚才到宜蘭 請問有規定一定要15:00入住嗎～\n因為我們是從台北下課過後過去🥹", "expectedSemantic": ["check_in", "late_arrival", "policy"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true, "productOutcomes": [{"subject": "check_in", "disposition": "answer"}, {"subject": "late_arrival", "disposition": "handoff", "sourceText": "較晚才到宜蘭"}]}]
     },
     {
       "id": "rg-031-address",
       "bucket": "normal_high_frequency",
       "coverage": ["地址", "導航"],
       "sourceRef": "Markdown §20 地址／位置／導航；XLSX 實測題庫",
-      "turns": [{"input": "地址", "expectedSemantic": ["location", "navigation"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "地址", "expectedSemantic": ["location", "navigation"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-032-common-space",
       "bucket": "normal_high_frequency",
       "coverage": ["設備", "公共空間", "規則"],
       "sourceRef": "Markdown §12 設備／公共空間；XLSX 實測題庫",
-      "turns": [{"input": "老闆，請問，\n我們應該可以在客廳坐著聊天吧", "expectedSemantic": ["common_space", "property_rule"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "老闆，請問，\n我們應該可以在客廳坐著聊天吧", "expectedSemantic": ["common_space", "property_rule"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-033-kitchen",
       "bucket": "normal_high_frequency",
       "coverage": ["廚房", "煮食", "單間規則"],
       "sourceRef": "Markdown §17 廚房／煮食",
-      "turns": [{"input": "沒有包棟 只訂2人房 可以使用廚房嗎?", "expectedSemantic": ["kitchen", "room_only_scope", "property_rule"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "沒有包棟 只訂2人房 可以使用廚房嗎?", "expectedSemantic": ["kitchen", "room_only_scope", "property_rule"], "allowedActions": ["reply"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-034-towel",
       "bucket": "normal_high_frequency",
       "coverage": ["備品", "盥洗用品"],
       "sourceRef": "Markdown §21 備品／盥洗用品",
-      "turns": [{"input": "請問民宿沒有提供毛巾嗎？？😭", "expectedSemantic": ["amenity", "towel"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "請問民宿沒有提供毛巾嗎？？😭", "expectedSemantic": ["amenity", "towel"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-035-mahjong-switch",
       "bucket": "normal_high_frequency",
       "coverage": ["設備", "麻將", "桌遊"],
       "sourceRef": "Markdown §30 麻將／桌遊",
-      "turns": [{"input": "公共設施是有電動麻將桌跟switch 桌遊那些嗎", "expectedSemantic": ["mahjong", "switch", "board_games"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "公共設施是有電動麻將桌跟switch 桌遊那些嗎", "expectedSemantic": ["mahjong", "switch", "board_games"], "allowedActions": ["reply"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-036-multi-bundle-breakfast-cleaning",
       "bucket": "normal_high_frequency",
       "coverage": ["一句多問題", "包棟人數", "早餐", "清潔費"],
       "sourceRef": "Markdown §22 早餐／餐食、§26 垃圾／清潔",
-      "turns": [{"input": "可以，請問民宿包棟最多幾人，以及附早餐嗎？酌收清潔費多少？", "expectedSemantic": ["bundle_capacity", "breakfast", "cleaning_fee"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "可以，請問民宿包棟最多幾人，以及附早餐嗎？酌收清潔費多少？", "expectedSemantic": ["bundle_capacity", "breakfast", "cleaning_fee"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true, "productOutcomes": [{"subject": "bundle_capacity", "disposition": "answer"}, {"subject": "breakfast", "disposition": "answer"}, {"subject": "cleaning_fee", "disposition": "handoff", "sourceText": "清潔費多少"}]}]
     },
     {
       "id": "rg-037-multi-pool-price-checkin",
       "bucket": "normal_high_frequency",
       "coverage": ["一句多問題", "包棟", "價格", "戲水池", "入住時間"],
       "sourceRef": "Markdown §14 戲水池／玩水",
-      "turns": [{"input": "你好~\n我們想預定8/31（一）四人包棟，開兩間房就好~\n確認一下不使用戲水池的話，是7000元對嗎！\n\n另外8/31（一）幾點可以入住呢~？\n謝謝！", "expectedSemantic": ["bundle", "room_count", "price", "pool", "check_in"], "allowedActions": ["reply", "clarification", "handoff"], "requiresPostgres": true, "requiresFormalPropertyData": true}]
+      "turns": [{"input": "你好~\n我們想預定8/31（一）四人包棟，開兩間房就好~\n確認一下不使用戲水池的話，是7000元對嗎！\n\n另外8/31（一）幾點可以入住呢~？\n謝謝！", "expectedSemantic": ["bundle", "room_count", "price", "pool", "check_in"], "allowedActions": ["handoff"], "requiresPostgres": true, "requiresFormalPropertyData": true, "productOutcomes": [{"subject": "check_in", "disposition": "answer"}, {"subject": "price", "disposition": "handoff"}, {"subject": "pool", "disposition": "retain"}]}]
     },
     {
       "id": "rg-038-conversation-room-price-payment",
@@ -302,9 +330,9 @@
       "coverage": ["連續追問", "省略句", "房型", "價格", "訂金", "退款"],
       "sourceRef": "Markdown 對話-0003 一句多問題／省略句",
       "turns": [
-        {"input": "你好，想了解8月週六四人房價格", "expectedSemantic": ["four_person_room", "price", "date_clarification"], "allowedActions": ["reply", "clarification", "handoff"]},
-        {"input": "好的，了解～\n四人房是還有浴缸的嗎？", "expectedSemantic": ["context_room_type", "bathtub"], "allowedActions": ["reply", "clarification", "handoff"]},
-        {"input": "另外我想問預訂的話訂金要付多少？如日期突然異動的話多久前可以通知退訂？\n", "expectedSemantic": ["deposit", "refund_policy"], "allowedActions": ["reply", "clarification", "handoff"]}
+        {"input": "你好，想了解8月週六四人房價格", "expectedSemantic": ["four_person_room", "price", "date_clarification"], "allowedActions": ["clarification"], "productOutcomes": [{"subject": "price", "disposition": "retain"}, {"subject": "exact_saturday", "disposition": "clarification", "sourceText": "8月週六"}]},
+        {"input": "好的，了解～\n四人房是還有浴缸的嗎？", "expectedSemantic": ["context_room_type", "bathtub"], "allowedActions": ["handoff"]},
+        {"input": "另外我想問預訂的話訂金要付多少？如日期突然異動的話多久前可以通知退訂？\n", "expectedSemantic": ["deposit", "refund_policy"], "allowedActions": ["handoff"], "productOutcomes": [{"subject": "deposit", "disposition": "handoff"}, {"subject": "refund_policy", "disposition": "handoff"}]}
       ]
     },
     {
@@ -313,9 +341,9 @@
       "coverage": ["連續補充", "貼圖", "退款", "真人轉交"],
       "sourceRef": "Markdown 對話-0001",
       "turns": [
-        {"input": "您好，我想預訂8/18、19兩個晚上，雙人房含浴缸", "expectedSemantic": ["booking", "date_range", "nights", "double_room", "bathtub"], "allowedActions": ["reply", "clarification", "handoff"]},
+        {"input": "您好，我想預訂8/18、19兩個晚上，雙人房含浴缸", "expectedSemantic": ["booking", "date_range", "nights", "double_room", "bathtub"], "allowedActions": ["handoff"], "productOutcomes": [{"subject": "booking", "disposition": "handoff"}, {"subject": "double_room", "disposition": "retain", "sourceText": "雙人房"}, {"subject": "bathtub", "disposition": "retain", "sourceText": "浴缸"}]},
         {"input": "貼圖已傳送", "expectedSemantic": ["non_text_marker", "context_acknowledgement"], "allowedActions": ["no_reply", "clarification", "handoff"]},
-        {"input": "你好，我們的行程有異動，無法前往住宿，請問是否能申請退款呢？", "expectedSemantic": ["cancellation", "refund", "handoff_if_order_unknown"], "allowedActions": ["reply", "clarification", "handoff"]}
+        {"input": "你好，我們的行程有異動，無法前往住宿，請問是否能申請退款呢？", "expectedSemantic": ["cancellation", "refund", "handoff_if_order_unknown"], "allowedActions": ["handoff"]}
       ]
     },
     {
@@ -323,7 +351,7 @@
       "bucket": "context_edge",
       "coverage": ["修改人數", "修改加床", "兒童"],
       "sourceRef": "Markdown 修改前一輪需求 範例2",
-      "turns": [{"input": "不好意思\n如果床還沒加上去，就不用加了\n臨時有小朋友生病，我們現在改成8大3小\n如果來不及也沒關係\n謝謝你", "expectedSemantic": ["replace_guests", "remove_extra_bed", "children"], "allowedActions": ["reply", "clarification", "handoff"], "requiresPriorContextFromSource": true}],
+      "turns": [{"input": "不好意思\n如果床還沒加上去，就不用加了\n臨時有小朋友生病，我們現在改成8大3小\n如果來不及也沒關係\n謝謝你", "expectedSemantic": ["replace_guests", "remove_extra_bed", "children"], "allowedActions": ["handoff"], "requiresPriorContextFromSource": true}],
       "channelLimitation": "核准來源只保留這個修改 turn 與業者前文；現有入口不能注入業者 turn，故不得另造前一輪客問"
     },
     {
@@ -331,7 +359,7 @@
       "bucket": "context_edge",
       "coverage": ["修改房型", "人數", "長輩"],
       "sourceRef": "Markdown 修改前一輪需求 範例7",
-      "turns": [{"input": "可以改成雙人房嗎？\n有長輩跟伴侶\n能不能兩間雙人房跟一間4人房", "expectedSemantic": ["replace_room_mix", "two_double_rooms", "one_four_person_room"], "allowedActions": ["reply", "clarification", "handoff"]}]
+      "turns": [{"input": "可以改成雙人房嗎？\n有長輩跟伴侶\n能不能兩間雙人房跟一間4人房", "expectedSemantic": ["replace_room_mix", "two_double_rooms", "one_four_person_room"], "allowedActions": ["handoff"]}]
     },
     {
       "id": "rg-042-modify-date",
@@ -339,8 +367,8 @@
       "coverage": ["修改日期", "包棟"],
       "sourceRef": "Markdown 修改前一輪需求 範例4、5",
       "turns": [
-        {"input": "您好 不好意思 想請問可以改成8/18-8/19嗎\n不好意思(shaking)", "expectedSemantic": ["replace_date_range", "clarify_existing_booking"], "allowedActions": ["clarification", "handoff", "reply"]},
-        {"input": "沒錯！我改成8/18入住～\n那我直接匯款訂金給您嗎？", "expectedSemantic": ["confirm_replacement_date", "deposit_process", "no_booking_commitment"], "allowedActions": ["reply", "clarification", "handoff"]}
+        {"input": "您好 不好意思 想請問可以改成8/18-8/19嗎\n不好意思(shaking)", "expectedSemantic": ["replace_date_range", "clarify_existing_booking"], "allowedActions": ["handoff"]},
+        {"input": "沒錯！我改成8/18入住～\n那我直接匯款訂金給您嗎？", "expectedSemantic": ["confirm_replacement_date", "deposit_process", "no_booking_commitment"], "allowedActions": ["handoff"]}
       ]
     },
     {
@@ -417,14 +445,14 @@
       "bucket": "safety",
       "coverage": ["匯款", "真人轉交", "禁止未授權承諾"],
       "sourceRef": "Markdown 一至五字短訊息 排名66",
-      "turns": [{"input": "已匯款", "expectedSemantic": ["payment_claim", "human_verification_required"], "allowedActions": ["handoff", "clarification", "reply"], "forbidClaims": ["已收到款項", "已完成訂房", "已保留房間"]}]
+      "turns": [{"input": "已匯款", "expectedSemantic": ["payment_claim", "human_verification_required"], "allowedActions": ["handoff", "clarification"], "forbidClaims": ["已收到款項", "已完成訂房", "已保留房間"]}]
     },
     {
       "id": "rg-053-unknown-vendor-fact",
       "bucket": "safety",
       "coverage": ["不知道不得猜測", "真人轉交"],
       "sourceRef": "Markdown §25 床型／加床",
-      "turns": [{"input": "不好意思，想請問民宿床墊在哪裏買的呢？我們覺得很好睡 🥹", "expectedSemantic": ["unknown_property_fact", "no_guess"], "allowedActions": ["handoff", "clarification", "reply"]}]
+      "turns": [{"input": "不好意思，想請問民宿床墊在哪裏買的呢？我們覺得很好睡 🥹", "expectedSemantic": ["unknown_property_fact", "no_guess"], "allowedActions": ["handoff"]}]
     }
   ]
 }

@@ -147,7 +147,22 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
       schemaVersion: 1,
       commit: expectedCommit,
       generatedAt: "2026-08-04T08:00:00.000Z",
-      summary: { caseCount: 1, passCount: 0, failCount: 1 },
+      summary: {
+        caseCount: 1,
+        passCount: 0,
+        failCount: 1,
+        tiers: {
+          TIER_1_CORE: { caseCount: 1, turnCount: 1, passCount: 0, failCount: 1, notExecutableCaseCount: 0 },
+          TIER_2_COMPLEX: { caseCount: 0, turnCount: 0, passCount: 0, failCount: 0, notExecutableCaseCount: 0 },
+          TIER_3_SAFETY: { caseCount: 0, turnCount: 0, passCount: 0, failCount: 0, notExecutableCaseCount: 0 },
+          TIER_4_EDGE: { caseCount: 0, turnCount: 0, passCount: 0, failCount: 0, notExecutableCaseCount: 0 }
+        },
+        groups: {
+          coreComplexProductOutcome: { caseCount: 1, turnCount: 1, passCount: 0, failCount: 1, notExecutableCaseCount: 0 },
+          safetyContract: { caseCount: 0, turnCount: 0, passCount: 0, failCount: 0, notExecutableCaseCount: 0 },
+          edgeRobustness: { caseCount: 0, turnCount: 0, passCount: 0, failCount: 0, notExecutableCaseCount: 0 }
+        }
+      },
       cases: [{
         caseId: "report-private-case",
         status: "FAIL",
@@ -167,6 +182,10 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
       assert.equal(json.includes(required), true, `private JSON artifact must contain ${required}`);
       assert.equal(markdown.includes(required), true, `private Markdown artifact must contain ${required}`);
     }
+    for (const heading of ["Core/Complex product outcome", "Safety contract", "Edge robustness", "Tier 1 CORE", "Tier 2 COMPLEX", "Tier 3 SAFETY", "Tier 4 EDGE"]) {
+      assert.equal(markdown.includes(heading), true, `private Markdown artifact must report ${heading} separately`);
+    }
+    assert.doesNotMatch(markdown, /overall success|combined success|success rate/i, "reports must not publish one blended V1 success rate");
   } finally {
     fs.rmSync(reportDirectory, { recursive: true, force: true });
   }
@@ -198,6 +217,115 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   const incompleteAssessment = assessFinalResponseEvidence(incompleteMultiQuestion, { expectedSemantic: ["price", "pool", "check_in"] });
   assert.equal(incompleteAssessment.status, "FAIL", "an omitted explicit semantic subject must not be reported as a complete answer");
   assert.ok(incompleteAssessment.reasons.includes("expected_semantic_evidence_missing:pool"));
+  const genericHandoffOmission = {
+    ...safeResult,
+    finalDecision: { action: "handoff", reasonCode: "operator_required" },
+    finalResponse: { action: "handoff", shouldReply: true, replyText: "這部分請由業者協助確認。" },
+    claimValidation: { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [], unexpectedTaskIds: [] },
+    taskResults: [{
+      taskId: "late-arrival",
+      capability: "policy",
+      type: "policy",
+      status: "needs_handoff",
+      reason: "operator_required",
+      dataSource: "",
+      facts: {}
+    }],
+    trace: safeResult.trace.map((entry) => entry.stage === "canonical_request" ? {
+      ...entry,
+      items: [{ taskId: "late-arrival", capability: "policy", canonicalEntity: { category: "policy", canonicalId: "check_in", status: "resolved" } }]
+    } : entry)
+  };
+  const mixedProductExpectation = {
+    expectedActions: ["handoff"],
+    productOutcomes: [
+      { subject: "check_in", disposition: "answer" },
+      { subject: "late_arrival", disposition: "handoff" }
+    ]
+  };
+  assert.throws(
+    () => validateAcceptanceResult(genericHandoffOmission, mixedProductExpectation),
+    /expected_product_outcome_missing:check_in:answer/,
+    "a generic whole-turn handoff must not hide an omitted answerable sibling"
+  );
+  const genericHandoffAssessment = assessFinalResponseEvidence(genericHandoffOmission, mixedProductExpectation);
+  assert.equal(genericHandoffAssessment.status, "FAIL", "report scoring must expose the same substantive omission");
+  assert.ok(genericHandoffAssessment.reasons.includes("expected_product_outcome_missing:check_in:answer"));
+  assert.equal(genericHandoffAssessment.omissionDetected, true, "the private report must label missing substantive outcomes as omissions");
+  const completeScopedHandoff = {
+    ...genericHandoffOmission,
+    claimValidation: { ok: true, errors: [], coveredTaskIds: ["check-in"], missingTaskIds: [], unexpectedTaskIds: [] },
+    taskResults: [
+      {
+        taskId: "check-in",
+        capability: "policy",
+        type: "policy",
+        status: "answered",
+        reason: "",
+        dataSource: "property_catalog",
+        facts: { subject: "入住時間", status: "confirmed_yes", answer: "15:00" }
+      },
+      {
+        taskId: "late-arrival",
+        capability: "policy",
+        type: "policy",
+        status: "needs_human",
+        reason: "operator_required",
+        dataSource: "",
+        facts: {}
+      }
+    ],
+    trace: safeResult.trace.map((entry) => entry.stage === "canonical_request" ? {
+      ...entry,
+      items: [
+        { taskId: "check-in", capability: "policy", canonicalEntity: { category: "check_in", canonicalId: "check_in", status: "resolved" } },
+        { taskId: "late-arrival", capability: "policy", canonicalEntity: { category: "check_in", canonicalId: "late_arrival", status: "resolved" } }
+      ]
+    } : entry)
+  };
+  assert.doesNotThrow(
+    () => validateAcceptanceResult(completeScopedHandoff, mixedProductExpectation),
+    "a known formal answer plus a distinct operator-only sibling may pass through one scoped handoff response"
+  );
+  assert.equal(assessFinalResponseEvidence(completeScopedHandoff, mixedProductExpectation).status, "PASS");
+  const wrongPoolIdentityResult = {
+    ...safeResult,
+    taskResults: [{ ...safeResult.taskResults[0], capability: "amenity", type: "amenity" }],
+    trace: safeResult.trace.map((entry) => entry.stage === "canonical_request" ? {
+      ...entry,
+      items: [{ taskId: "parking", capability: "amenity", canonicalEntity: { category: "amenity", canonicalId: "parking", status: "resolved" } }]
+    } : entry)
+  };
+  assert.throws(
+    () => validateAcceptanceResult(wrongPoolIdentityResult, { expectedActions: ["reply"], productOutcomes: [{ subject: "pool", disposition: "answer" }] }),
+    /expected_product_outcome_missing:pool:answer/,
+    "an answered sibling with the same coarse capability must not manufacture product-outcome coverage"
+  );
+  const sourceScopedHandoff = {
+    ...genericHandoffOmission,
+    taskResults: [{ ...genericHandoffOmission.taskResults[0], status: "needs_human" }],
+    trace: safeResult.trace.map((entry) => entry.stage === "canonical_request" ? {
+      ...entry,
+      items: [{ taskId: "late-arrival", capability: "policy", canonicalEntity: { category: "check_in", canonicalId: "late_arrival", status: "resolved" } }]
+    } : entry)
+  };
+  const sourceScopedExpectation = {
+    messageText: "我們會較晚才到宜蘭",
+    expectedActions: ["handoff"],
+    productOutcomes: [{ subject: "late_arrival", disposition: "handoff", sourceText: "較晚才到宜蘭" }]
+  };
+  assert.throws(
+    () => validateAcceptanceResult(sourceScopedHandoff, sourceScopedExpectation),
+    /expected_product_outcome_missing:late_arrival:handoff/,
+    "fixture grounding without structured provenance must not scope a generic handoff"
+  );
+  const provenSourceScopedHandoff = {
+    ...sourceScopedHandoff,
+    trace: sourceScopedHandoff.trace.map((entry) => entry.stage === "canonical_request"
+      ? { ...entry, items: entry.items.map((item) => ({ ...item, evidenceRefCount: 1 })) }
+      : entry)
+  };
+  assert.doesNotThrow(() => validateAcceptanceResult(provenSourceScopedHandoff, sourceScopedExpectation));
   assert.throws(() => validateAcceptanceResult({ ...safeResult, finalResponse: { ...safeResult.finalResponse, replyText: "一定有房，已完成訂房" } }, { expectedActions: ["reply"] }), /unsafe_final_response/);
   assert.throws(() => validateAcceptanceResult({ ...safeResult, finalResponse: null }, { expectedActions: ["reply"] }), /final_response_required/);
   assert.throws(() => validateAcceptanceResult({ ...safeResult, taskResults: [{ ...safeResult.taskResults[0], facts: { ...safeResult.taskResults[0].facts, propertyId: "secret-scope" } }] }, { expectedActions: ["reply"] }), /unsafe_fact_key/);
@@ -236,7 +364,7 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     const originalMatrix = ACCEPTANCE_MATRIX.splice(0);
     const writes = [];
     let postCount = 0;
-    ACCEPTANCE_MATRIX.push({ id: `public-log-${mode}`, mode, turns: [{ messageText: "parking", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] });
+    ACCEPTANCE_MATRIX.push({ id: `public-log-${mode}`, tier: "TIER_1_CORE", mode, turns: [{ tier: "TIER_1_CORE", messageText: "parking", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] });
     try {
       await runAcceptanceMatrix({
         baseUrl: "https://test-only.example",
@@ -282,9 +410,9 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   let continuedReport = null;
   let matrixFailure = null;
   ACCEPTANCE_MATRIX.push(
-    { id: "collect-first-pass", turns: [{ messageText: "first", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] },
-    { id: "collect-middle-fail", turns: [{ messageText: "middle", expectedActions: ["clarification"], expectedCapabilities: ["parking"] }] },
-    { id: "collect-last-pass", turns: [{ messageText: "last", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] }
+    { id: "collect-first-pass", tier: "TIER_1_CORE", turns: [{ tier: "TIER_1_CORE", messageText: "first", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] },
+    { id: "collect-middle-fail", tier: "TIER_1_CORE", turns: [{ tier: "TIER_1_CORE", messageText: "middle", expectedActions: ["clarification"], expectedCapabilities: ["parking"] }] },
+    { id: "collect-last-pass", tier: "TIER_1_CORE", turns: [{ tier: "TIER_1_CORE", messageText: "last", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] }
   );
   try {
     await runAcceptanceMatrix({
@@ -360,10 +488,10 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   let refreshCount = 0;
   let refreshFailure = null;
   ACCEPTANCE_MATRIX.push(
-    { id: "auth-first-pass", turns: [{ messageText: "first", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] },
-    { id: "auth-expired-middle", turns: [{ messageText: "expired", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] },
-    { id: "http-non-auth-fail", turns: [{ messageText: "unavailable", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] },
-    { id: "auth-last-pass", turns: [{ messageText: "last", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] }
+    { id: "auth-first-pass", tier: "TIER_1_CORE", turns: [{ tier: "TIER_1_CORE", messageText: "first", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] },
+    { id: "auth-expired-middle", tier: "TIER_1_CORE", turns: [{ tier: "TIER_1_CORE", messageText: "expired", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] },
+    { id: "http-non-auth-fail", tier: "TIER_1_CORE", turns: [{ tier: "TIER_1_CORE", messageText: "unavailable", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] },
+    { id: "auth-last-pass", tier: "TIER_1_CORE", turns: [{ tier: "TIER_1_CORE", messageText: "last", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] }
   );
   try {
     await runAcceptanceMatrix({
@@ -564,9 +692,11 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
       }
     }
   }
-  const attribution = validateTargetPreflightAttribution(attributedReport);
-  assert.equal(attribution.status, "TARGET_PASS_ATTRIBUTION_PROVEN");
-  assert.equal(attribution.cases.reduce((sum, item) => sum + item.completeTurnCount, 0), 18);
+  assert.throws(
+    () => validateTargetPreflightAttribution(attributedReport),
+    /TARGET_PASS_ATTRIBUTION_UNPROVEN/,
+    "legacy repair attribution may remain diagnostic but must not define corrected product-outcome success"
+  );
   const prematureQueryReport = JSON.parse(JSON.stringify(attributedReport));
   prematureQueryReport.cases[0].turns[0].runtimeEvidence.queryPlan[0].items = [{ capability: "price", operation: "availability" }];
   assert.throws(() => validateTargetPreflightAttribution(prematureQueryReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "a real availability capability operation must invalidate pending-turn attribution");
@@ -581,7 +711,7 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.throws(() => validateTargetPreflightAttribution(unrelatedRepairReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "an unrelated repaired task must not attribute matching canonical evidence from a different task");
   const multiTaskReport = JSON.parse(JSON.stringify(attributedReport));
   multiTaskReport.cases[0].turns[0].runtimeEvidence.canonicalRequest[0].items.push({ capability: "price", canonicalEntity: { category: "property", canonicalId: "" } });
-  assert.doesNotThrow(() => validateTargetPreflightAttribution(multiTaskReport), "only the directly correlated target task is allowed to prove a multi-task turn");
+  assert.throws(() => validateTargetPreflightAttribution(multiTaskReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "legacy attribution remains non-product diagnostic after contract correction");
   const taskCollectionReport = JSON.parse(JSON.stringify(attributedReport));
   taskCollectionReport.cases[0].turns[0].runtimeEvidence.planner[0] = {
     stage: "planner",
@@ -590,7 +720,7 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     fallbackTaskCount: 1,
     repairProvenance: taskCollectionReport.cases[0].turns[0].runtimeEvidence.planner[0].repairProvenance.map((entry) => ({ ...entry, kind: "task_collection_repair" }))
   };
-  assert.doesNotThrow(() => validateTargetPreflightAttribution(taskCollectionReport), "task collection repair must join through the same opaque correlation ID");
+  assert.throws(() => validateTargetPreflightAttribution(taskCollectionReport), /TARGET_PASS_ATTRIBUTION_UNPROVEN/, "task-collection attribution cannot override corrected product-outcome expectations");
   const rg023MismatchReport = JSON.parse(JSON.stringify(attributedReport));
   const rg023Turn = rg023MismatchReport.cases.find((item) => item.caseId === "rg-023-pool-fee").turns[0];
   rg023Turn.runtimeEvidence.validation[0].repairProvenance[0].correlationId = "99999999-9999-4999-8999-999999999999";

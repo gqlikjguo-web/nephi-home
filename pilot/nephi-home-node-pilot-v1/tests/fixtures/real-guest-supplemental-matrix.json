@@ -2,49 +2,63 @@
   "matrixId": "junzan-real-guest-supplemental-acceptance-20260804-v1",
   "propertyId": "nephi_home",
   "source": "REAL_GUEST_CONVERSATION_STATISTICS.md and the deidentified real-guest corpus analysis",
+  "tiers": {
+    "TIER_1_CORE": [
+      "rgs-002-double-room", "rgs-003-bbq", "rgs-004-breakfast", "rgs-005-parking",
+      "rgs-006-today-availability", "rgs-007-fee", "rgs-008-price-polite", "rgs-009-price-how-much",
+      "rgs-010-pets", "rgs-011-water-dispenser", "rgs-012-price-punctuation", "rgs-013-open-room",
+      "rgs-014-bundle-price", "rgs-015-pet-friendly"
+    ],
+    "TIER_2_COMPLEX": [
+      "rgs-017-two-days-arrangement", "rgs-018-modify-guests-extra-bed",
+      "rgs-019-modify-room-mix", "rgs-020-modify-date"
+    ],
+    "TIER_3_SAFETY": ["rgs-001-freeway-distance", "rgs-016-past-or-future-date"],
+    "TIER_4_EDGE": ["rgs-021-native-sticker", "rgs-022-native-image", "rgs-023-native-video", "rgs-024-native-file"]
+  },
   "cases": [
-    { "id": "rgs-001-freeway-distance", "bucket": "high_frequency_text_variant", "turns": [{ "input": "離交流道近嗎", "expectedSemantic": ["location", "navigation"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true }] },
-    { "id": "rgs-002-double-room", "bucket": "high_frequency_text_variant", "turns": [{ "input": "雙人房", "expectedSemantic": ["room_type"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true }] },
-    { "id": "rgs-003-bbq", "bucket": "high_frequency_text_variant", "turns": [{ "input": "可以烤肉嗎", "expectedSemantic": ["bbq"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true }] },
-    { "id": "rgs-004-breakfast", "bucket": "high_frequency_text_variant", "turns": [{ "input": "請問有早餐嗎", "expectedSemantic": ["breakfast", "amenity"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true }] },
-    { "id": "rgs-005-parking", "bucket": "high_frequency_text_variant", "turns": [{ "input": "有停車位嗎", "expectedSemantic": ["parking"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true }] },
-    { "id": "rgs-006-today-availability", "bucket": "high_frequency_text_variant", "turns": [{ "input": "請問今天還有空房嗎", "expectedSemantic": ["availability", "lodging_scope"], "allowedActions": ["reply", "clarification", "handoff"], "requiresPostgres": true }] },
-    { "id": "rgs-007-fee", "bucket": "high_frequency_text_variant", "turns": [{ "input": "請問費用", "expectedSemantic": ["price"], "allowedActions": ["reply", "clarification", "handoff"] }] },
-    { "id": "rgs-008-price-polite", "bucket": "high_frequency_text_variant", "turns": [{ "input": "請問價錢", "expectedSemantic": ["price"], "allowedActions": ["reply", "clarification", "handoff"] }] },
-    { "id": "rgs-009-price-how-much", "bucket": "high_frequency_text_variant", "turns": [{ "input": "價格多少", "expectedSemantic": ["price"], "allowedActions": ["reply", "clarification", "handoff"] }] },
-    { "id": "rgs-010-pets", "bucket": "high_frequency_text_variant", "turns": [{ "input": "可以帶寵物嗎", "expectedSemantic": ["pet_policy"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true }] },
-    { "id": "rgs-011-water-dispenser", "bucket": "high_frequency_text_variant", "turns": [{ "input": "請問有飲水機嗎", "expectedSemantic": ["amenity"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true }] },
-    { "id": "rgs-012-price-punctuation", "bucket": "high_frequency_text_variant", "turns": [{ "input": "價格？", "expectedSemantic": ["price"], "allowedActions": ["reply", "clarification", "handoff"] }] },
-    { "id": "rgs-013-open-room", "bucket": "high_frequency_text_variant", "turns": [{ "input": "還有空房嗎", "expectedSemantic": ["availability", "date_clarification"], "allowedActions": ["clarification", "reply", "handoff"] }] },
-    { "id": "rgs-014-bundle-price", "bucket": "high_frequency_text_variant", "turns": [{ "input": "想詢問包棟價格", "expectedSemantic": ["bundle", "price"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true }] },
-    { "id": "rgs-015-pet-friendly", "bucket": "high_frequency_text_variant", "turns": [{ "input": "請問有寵物友善嗎", "expectedSemantic": ["pet_policy"], "allowedActions": ["reply", "clarification", "handoff"], "requiresFormalPropertyData": true }] },
-    { "id": "rgs-016-past-or-future-date", "bucket": "high_frequency_text_variant", "turns": [{ "input": "7/15可以訂房嗎", "expectedSemantic": ["booking", "availability"], "allowedActions": ["reply", "clarification", "handoff"], "requiresPostgres": true, "pastDatePolicy": "reject_if_resolved_past" }] },
-    { "id": "rgs-017-two-days-arrangement", "bucket": "high_frequency_text_variant", "turns": [{ "input": "我們想住兩天怎麼安排", "expectedSemantic": ["nights", "booking_process"], "allowedActions": ["reply", "clarification", "handoff"] }] },
+    { "id": "rgs-001-freeway-distance", "bucket": "high_frequency_text_variant", "turns": [{ "input": "離交流道近嗎", "expectedSemantic": ["location", "navigation"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true, "productOutcomes": [{"subject": "location", "disposition": "handoff"}] }] },
+    { "id": "rgs-002-double-room", "bucket": "high_frequency_text_variant", "turns": [{ "input": "雙人房", "expectedSemantic": ["room_type"], "allowedActions": ["clarification"], "requiresFormalPropertyData": true }] },
+    { "id": "rgs-003-bbq", "bucket": "high_frequency_text_variant", "turns": [{ "input": "可以烤肉嗎", "expectedSemantic": ["bbq"], "allowedActions": ["reply"], "requiresFormalPropertyData": true }] },
+    { "id": "rgs-004-breakfast", "bucket": "high_frequency_text_variant", "turns": [{ "input": "請問有早餐嗎", "expectedSemantic": ["breakfast", "amenity"], "allowedActions": ["reply"], "requiresFormalPropertyData": true }] },
+    { "id": "rgs-005-parking", "bucket": "high_frequency_text_variant", "turns": [{ "input": "有停車位嗎", "expectedSemantic": ["parking"], "allowedActions": ["reply"], "requiresFormalPropertyData": true }] },
+    { "id": "rgs-006-today-availability", "bucket": "high_frequency_text_variant", "turns": [{ "input": "請問今天還有空房嗎", "expectedSemantic": ["availability", "lodging_scope"], "allowedActions": ["reply"], "requiresPostgres": true }] },
+    { "id": "rgs-007-fee", "bucket": "high_frequency_text_variant", "turns": [{ "input": "請問費用", "expectedSemantic": ["price"], "allowedActions": ["clarification"] }] },
+    { "id": "rgs-008-price-polite", "bucket": "high_frequency_text_variant", "turns": [{ "input": "請問價錢", "expectedSemantic": ["price"], "allowedActions": ["clarification"] }] },
+    { "id": "rgs-009-price-how-much", "bucket": "high_frequency_text_variant", "turns": [{ "input": "價格多少", "expectedSemantic": ["price"], "allowedActions": ["clarification"] }] },
+    { "id": "rgs-010-pets", "bucket": "high_frequency_text_variant", "turns": [{ "input": "可以帶寵物嗎", "expectedSemantic": ["pet_policy"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true, "productOutcomes": [{"subject": "pet_policy", "disposition": "handoff"}] }] },
+    { "id": "rgs-011-water-dispenser", "bucket": "high_frequency_text_variant", "turns": [{ "input": "請問有飲水機嗎", "expectedSemantic": ["amenity"], "allowedActions": ["reply"], "requiresFormalPropertyData": true }] },
+    { "id": "rgs-012-price-punctuation", "bucket": "high_frequency_text_variant", "turns": [{ "input": "價格？", "expectedSemantic": ["price"], "allowedActions": ["clarification"] }] },
+    { "id": "rgs-013-open-room", "bucket": "high_frequency_text_variant", "turns": [{ "input": "還有空房嗎", "expectedSemantic": ["availability", "date_clarification"], "allowedActions": ["clarification"] }] },
+    { "id": "rgs-014-bundle-price", "bucket": "high_frequency_text_variant", "turns": [{ "input": "想詢問包棟價格", "expectedSemantic": ["bundle", "price"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true }] },
+    { "id": "rgs-015-pet-friendly", "bucket": "high_frequency_text_variant", "turns": [{ "input": "請問有寵物友善嗎", "expectedSemantic": ["pet_policy"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true }] },
+    { "id": "rgs-016-past-or-future-date", "bucket": "high_frequency_text_variant", "turns": [{ "input": "7/15可以訂房嗎", "expectedSemantic": ["past_date"], "allowedActions": ["clarification", "handoff"], "requiresPostgres": true, "pastDatePolicy": "reject_if_resolved_past", "productOutcomes": [{"subject": "past_date", "disposition": "retain"}] }] },
+    { "id": "rgs-017-two-days-arrangement", "bucket": "high_frequency_text_variant", "turns": [{ "input": "我們想住兩天怎麼安排", "expectedSemantic": ["nights", "booking_process"], "allowedActions": ["clarification"] }] },
 
     {
       "id": "rgs-018-modify-guests-extra-bed",
       "bucket": "controlled_operator_context",
       "turns": [
-        { "input": "不好意思\n剛剛確認\n我們會有四個小孩\n11歲 7歲 4歲 跟1歲\n\n請問有一間四人房可以加一張床嗎？ 然後請問要加多少錢？", "expectedSemantic": ["guests", "children", "extra_bed"], "allowedActions": ["reply", "clarification", "handoff"], "establishOperatorContext": true },
-        { "input": "不好意思\n如果床還沒加上去，就不用加了\n臨時有小朋友生病，我們現在改成8大3小", "expectedSemantic": ["replace_guests", "remove_extra_bed", "children"], "allowedActions": ["reply", "clarification", "handoff"] }
+        { "input": "不好意思\n剛剛確認\n我們會有四個小孩\n11歲 7歲 4歲 跟1歲\n\n請問有一間四人房可以加一張床嗎？ 然後請問要加多少錢？", "expectedSemantic": ["guests", "children", "extra_bed"], "allowedActions": ["handoff"], "establishOperatorContext": true },
+        { "input": "不好意思\n如果床還沒加上去，就不用加了\n臨時有小朋友生病，我們現在改成8大3小", "expectedSemantic": ["replace_guests", "remove_extra_bed", "children"], "allowedActions": ["handoff"], "productOutcomes": [{"subject": "remove_extra_bed", "disposition": "handoff", "sourceText": "不用加了"}, {"subject": "replace_guests", "disposition": "handoff", "sourceText": "改成8大3小"}] }
       ]
     },
     {
       "id": "rgs-019-modify-room-mix",
       "bucket": "controlled_operator_context",
       "turns": [
-        { "input": "8/14-8/15 人數大概6-8人", "expectedSemantic": ["date_range", "guests", "bundle"], "allowedActions": ["reply", "clarification", "handoff"], "establishOperatorContext": true },
-        { "input": "可以改成雙人房嗎？", "expectedSemantic": ["replace_room_mix", "room_type"], "allowedActions": ["reply", "clarification", "handoff"] },
-        { "input": "能不能兩間雙人房跟一間4人房", "expectedSemantic": ["replace_room_mix", "two_double_rooms", "one_four_person_room"], "allowedActions": ["reply", "clarification", "handoff"] }
+        { "input": "8/14-8/15 人數大概6-8人", "expectedSemantic": ["date_range", "guests"], "allowedActions": ["clarification"], "establishOperatorContext": true },
+        { "input": "可以改成雙人房嗎？", "expectedSemantic": ["replace_room_mix", "room_type"], "allowedActions": ["handoff"] },
+        { "input": "能不能兩間雙人房跟一間4人房", "expectedSemantic": ["replace_room_mix", "two_double_rooms", "one_four_person_room"], "allowedActions": ["handoff"], "productOutcomes": [{"subject": "two_double_rooms", "disposition": "handoff", "sourceText": "兩間雙人房"}, {"subject": "one_four_person_room", "disposition": "handoff", "sourceText": "一間4人房"}] }
       ]
     },
     {
       "id": "rgs-020-modify-date",
       "bucket": "controlled_operator_context",
       "turns": [
-        { "input": "8/27-8/28\n五位大人\n包棟需求（301/302）", "expectedSemantic": ["date_range", "guests", "bundle", "room_301"], "allowedActions": ["reply", "clarification", "handoff"], "establishOperatorContext": true },
-        { "input": "您好 不好意思 想請問可以改成8/18-8/19嗎", "expectedSemantic": ["replace_date_range", "clarify_existing_booking"], "allowedActions": ["reply", "clarification", "handoff"], "pastDatePolicy": "reject_if_resolved_past" },
-        { "input": "沒錯！我改成8/18入住～", "expectedSemantic": ["confirm_replacement_date"], "allowedActions": ["reply", "clarification", "handoff"], "pastDatePolicy": "reject_if_resolved_past" }
+        { "input": "8/27-8/28\n五位大人\n包棟需求（301/302）", "expectedSemantic": ["date_range", "guests", "bundle", "room_301"], "allowedActions": ["clarification"], "establishOperatorContext": true },
+        { "input": "您好 不好意思 想請問可以改成8/18-8/19嗎", "expectedSemantic": ["replace_date_range", "clarify_existing_booking"], "allowedActions": ["handoff"], "pastDatePolicy": "reject_if_resolved_past" },
+        { "input": "沒錯！我改成8/18入住～", "expectedSemantic": ["confirm_replacement_date"], "allowedActions": ["handoff"], "pastDatePolicy": "reject_if_resolved_past", "productOutcomes": [{"subject": "confirm_replacement_date", "disposition": "retain", "sourceText": "8/18入住"}] }
       ]
     },
 

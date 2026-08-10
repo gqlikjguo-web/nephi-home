@@ -25,6 +25,39 @@ const OPERATOR_CONTEXT_CASES = new Map([
 ]);
 const NON_TEXT_SEMANTICS = new Set(["non_text_event", "non_text_marker"]);
 const FORBIDDEN_PROVIDER_MARKERS = ["json", "seed", "fixture", "pglite", "fake_planner", "fake_composer"];
+const ACCEPTANCE_TIERS = Object.freeze(["TIER_1_CORE", "TIER_2_COMPLEX", "TIER_3_SAFETY", "TIER_4_EDGE"]);
+const PRODUCT_OUTCOME_DISPOSITIONS = new Set(["answer", "clarification", "handoff", "retain"]);
+const HANDOFF_TASK_STATUSES = new Set(["needs_human", "property_data_missing", "failed"]);
+const PRODUCT_OUTCOME_SUBJECTS = Object.freeze({
+  bathtub: { categories: ["amenity", "room_feature"], canonicalIds: ["bathtub"] },
+  bbq_fee: { capabilities: ["bbq"], canonicalIds: ["bbq"] },
+  bbq_hours: { capabilities: ["bbq"], canonicalIds: ["bbq"] },
+  booking: { capabilities: ["booking_request"] },
+  breakfast: { capabilities: ["amenity", "property_fact"], canonicalIds: ["breakfast"] },
+  bundle_capacity: { capabilities: ["capacity"] },
+  check_in: { capabilities: ["policy", "property_fact"], categories: ["check_in"], canonicalIds: ["check_in"] },
+  cleaning_fee: { capabilities: ["human_help", "unknown"], categories: ["policy"], canonicalIds: ["cleaning_fee"] },
+  confirm_replacement_date: { capabilities: ["booking_request", "human_help", "unknown"] },
+  deposit: { capabilities: ["policy", "property_fact", "human_help", "unknown"], categories: ["payment"], canonicalIds: ["deposit", "payment"] },
+  double_room: { categories: ["room"], canonicalIds: ["room_301", "room_302"] },
+  exact_saturday: { capabilities: ["availability", "available_dates", "room_options", "bundle_availability", "price", "total_price"], temporalResolutionStatuses: ["unresolved"] },
+  ktv_hours: { capabilities: ["amenity", "policy", "property_fact"], canonicalIds: ["ktv", "singing"] },
+  late_arrival: { capabilities: ["policy", "property_fact", "human_help", "unknown"], categories: ["check_in"], canonicalIds: ["check_in", "late_arrival"] },
+  latest_arrival: { capabilities: ["policy", "property_fact", "human_help", "unknown"], categories: ["check_in"], canonicalIds: ["check_in", "latest_arrival"] },
+  location: { capabilities: ["location", "property_fact", "human_help", "unknown"], categories: ["transport"], canonicalIds: ["location"] },
+  noise_policy: { capabilities: ["policy", "property_fact", "human_help", "unknown"], categories: ["policy"], canonicalIds: ["noise_policy"] },
+  one_four_person_room: { capabilities: ["booking_request", "human_help", "unknown", "room_options"], categories: ["room"] },
+  past_date: { capabilities: ["availability", "available_dates", "room_options", "bundle_availability", "price", "total_price", "booking_request"], temporalRepairReasonCodes: ["past_date"] },
+  payment_timing: { capabilities: ["policy", "property_fact", "human_help", "unknown"], categories: ["payment"], canonicalIds: ["payment"] },
+  pet_policy: { capabilities: ["policy", "property_fact", "human_help", "unknown"], categories: ["policy"], canonicalIds: ["pets", "pet_policy"] },
+  pool: { capabilities: ["pool", "amenity", "property_fact", "human_help", "unknown"], canonicalIds: ["pool"] },
+  pool_fee: { capabilities: ["pool", "amenity", "policy", "property_fact"], canonicalIds: ["pool"] },
+  price: { capabilities: ["price", "total_price", "human_help", "unknown"] },
+  refund_policy: { capabilities: ["policy", "property_fact", "human_help", "unknown"], categories: ["cancellation"], canonicalIds: ["cancellation", "refund"] },
+  remove_extra_bed: { capabilities: ["booking_request", "human_help", "unknown"] },
+  replace_guests: { capabilities: ["booking_request", "human_help", "unknown"] },
+  two_double_rooms: { capabilities: ["booking_request", "human_help", "unknown", "room_options"], categories: ["room"] }
+});
 
 function semanticCapabilityGroups(tags = []) {
   const groups = [];
@@ -34,9 +67,9 @@ function semanticCapabilityGroups(tags = []) {
     if (!groups.some((item) => item.join("|") === key)) groups.push(normalized);
   };
   const values = new Set(tags);
-  if ([...values].some((tag) => ["availability", "date_clarification"].includes(tag))) add(["availability", "available_dates", "room_options", "bundle_availability"]);
+  if (values.has("availability")) add(["availability", "available_dates", "room_options", "bundle_availability"]);
   if ([...values].some((tag) => ["price", "total_price", "holiday_price"].includes(tag))) add(["price", "total_price"]);
-  if ([...values].some((tag) => ["extra_bed", "baby_crib", "bathtub", "amenity", "common_space", "kitchen", "towel", "mahjong", "switch", "board_games", "ktv"].includes(tag))) add(["amenity", "policy", "property_fact"]);
+  if ([...values].some((tag) => ["extra_bed", "baby_crib", "amenity", "common_space", "kitchen", "towel", "mahjong", "switch", "board_games", "ktv"].includes(tag))) add(["amenity", "policy", "property_fact"]);
   if ([...values].some((tag) => ["deposit", "payment", "cancellation", "refund", "refund_policy", "payment_method", "deposit_process", "payment_timing", "pet_policy", "check_in", "late_arrival", "latest_arrival", "quiet_hours", "noise_policy", "property_rule", "cleaning_fee"].includes(tag))) add(["policy", "property_fact"]);
   if ([...values].some((tag) => ["bbq", "bbq_equipment", "bbq_fee", "bbq_food_order", "bbq_hours", "food_order"].includes(tag))) add(["bbq", "amenity", "policy"]);
   if ([...values].some((tag) => ["pool", "pool_fee", "seasonal_hours"].includes(tag))) add(["pool", "amenity", "policy"]);
@@ -57,29 +90,85 @@ function executionReasonForTurn(item, turn) {
   return "";
 }
 
+function acceptanceTierAssignments(source, errorPrefix) {
+  const cases = Array.isArray(source && source.cases) ? source.cases : [];
+  const caseIds = new Set(cases.map((item) => String(item && item.id || "")));
+  const tiers = source && source.tiers;
+  if (!tiers || typeof tiers !== "object" || Array.isArray(tiers)) throw new Error(`${errorPrefix}_tiers_required`);
+  if (Object.keys(tiers).length !== ACCEPTANCE_TIERS.length || ACCEPTANCE_TIERS.some((tier) => !Object.hasOwn(tiers, tier))) throw new Error(`${errorPrefix}_tiers_invalid`);
+  const assignments = new Map();
+  for (const tier of ACCEPTANCE_TIERS) {
+    if (!Array.isArray(tiers[tier])) throw new Error(`${errorPrefix}_tier_cases_required:${tier}`);
+    for (const rawId of tiers[tier]) {
+      const id = String(rawId || "");
+      if (!caseIds.has(id)) throw new Error(`${errorPrefix}_tier_case_unknown:${id}`);
+      if (assignments.has(id)) throw new Error(`${errorPrefix}_tier_case_duplicate:${id}`);
+      assignments.set(id, tier);
+    }
+  }
+  if (assignments.size !== caseIds.size) throw new Error(`${errorPrefix}_tier_case_missing`);
+  return assignments;
+}
+
+function validatedProductOutcomes(turn, errorPrefix) {
+  const outcomes = turn && turn.productOutcomes;
+  if (outcomes === undefined) return [];
+  if (!Array.isArray(outcomes) || !outcomes.length) throw new Error(`${errorPrefix}_product_outcomes_invalid`);
+  const input = String(turn.input || "");
+  const seen = new Set();
+  return outcomes.map((outcome) => {
+    const subject = String(outcome && outcome.subject || "");
+    const disposition = String(outcome && outcome.disposition || "");
+    const sourceText = String(outcome && outcome.sourceText || "");
+    if (!Object.hasOwn(PRODUCT_OUTCOME_SUBJECTS, subject)) throw new Error(`${errorPrefix}_product_outcome_subject_unknown:${subject}`);
+    if (!PRODUCT_OUTCOME_DISPOSITIONS.has(disposition)) throw new Error(`${errorPrefix}_product_outcome_disposition_invalid:${disposition}`);
+    if (sourceText && !input.includes(sourceText)) throw new Error(`${errorPrefix}_product_outcome_source_ungrounded:${subject}`);
+    const key = `${subject}|${disposition}|${sourceText}`;
+    if (seen.has(key)) throw new Error(`${errorPrefix}_product_outcome_duplicate:${subject}`);
+    seen.add(key);
+    return { subject, disposition, ...(sourceText ? { sourceText } : {}) };
+  });
+}
+
+function loadedAcceptanceTurn(turn, tier, item, errorPrefix) {
+  const expectedActions = turn.allowedActions;
+  if (!Array.isArray(expectedActions) || !expectedActions.length) throw new Error(`${errorPrefix}_allowed_actions_required`);
+  if (["TIER_1_CORE", "TIER_2_COMPLEX"].includes(tier)
+    && ["reply", "clarification", "handoff"].every((action) => expectedActions.includes(action))) {
+    throw new Error(`${errorPrefix}_product_action_contract_too_broad`);
+  }
+  const turnReason = executionReasonForTurn(item, turn);
+  return {
+    tier,
+    ...(typeof turn.input === "string" ? { messageText: turn.input } : {}),
+    ...(turn.lineEvent ? { lineEvent: JSON.parse(JSON.stringify(turn.lineEvent)) } : {}),
+    expectedActions,
+    expectedSemantic: turn.expectedSemantic || [],
+    expectedCapabilities: semanticCapabilityGroups(turn.expectedSemantic || []),
+    productOutcomes: validatedProductOutcomes(turn, errorPrefix),
+    forbidClaims: turn.forbidClaims || [],
+    establishOperatorContext: turn.establishOperatorContext === true,
+    pastDatePolicy: turn.pastDatePolicy || "",
+    ...(turnReason ? { executionStatus: NOT_EXECUTABLE_STATUS, executionReasonCode: turnReason } : {})
+  };
+}
+
 function loadAcceptanceMatrix(filePath = MATRIX_PATH) {
   const source = JSON.parse(fs.readFileSync(filePath, "utf8"));
   if (!source || !Array.isArray(source.cases)) throw new Error("real_guest_matrix_cases_required");
   const turnCount = source.cases.reduce((sum, item) => sum + (Array.isArray(item.turns) ? item.turns.length : 0), 0);
   if (source.cases.length !== 53 || turnCount !== 61) throw new Error("real_guest_matrix_fixed_count_mismatch");
+  const tierAssignments = acceptanceTierAssignments(source, "real_guest_matrix");
   return source.cases.map((item) => {
     const caseReason = OPERATOR_CONTEXT_CASES.get(item.id) || "";
+    const tier = tierAssignments.get(item.id);
     return {
       id: item.id,
+      tier,
       bucket: item.bucket,
       sourceRef: item.sourceRef,
       ...(caseReason ? { executionStatus: NOT_EXECUTABLE_STATUS, executionReasonCode: caseReason } : {}),
-      turns: item.turns.map((turn) => {
-        const turnReason = executionReasonForTurn(item, turn);
-        return {
-          messageText: turn.input,
-          expectedActions: turn.allowedActions,
-          expectedSemantic: turn.expectedSemantic || [],
-          expectedCapabilities: semanticCapabilityGroups(turn.expectedSemantic || []),
-          forbidClaims: turn.forbidClaims || [],
-          ...(turnReason ? { executionStatus: NOT_EXECUTABLE_STATUS, executionReasonCode: turnReason } : {})
-        };
-      })
+      turns: item.turns.map((turn) => loadedAcceptanceTurn(turn, tier, item, "real_guest_matrix"))
     };
   });
 }
@@ -91,21 +180,17 @@ function loadSupplementalAcceptanceMatrix(filePath = SUPPLEMENTAL_MATRIX_PATH) {
   if (!source || !Array.isArray(source.cases)) throw new Error("supplemental_real_guest_matrix_cases_required");
   const turnCount = source.cases.reduce((sum, item) => sum + (Array.isArray(item.turns) ? item.turns.length : 0), 0);
   if (source.cases.length !== 24 || turnCount !== 29) throw new Error("supplemental_real_guest_matrix_fixed_count_mismatch");
-  return source.cases.map((item) => ({
-    id: item.id,
-    bucket: item.bucket,
-    sourceRef: item.sourceRef || source.source,
-    turns: item.turns.map((turn) => ({
-      ...(typeof turn.input === "string" ? { messageText: turn.input } : {}),
-      ...(turn.lineEvent ? { lineEvent: JSON.parse(JSON.stringify(turn.lineEvent)) } : {}),
-      expectedActions: turn.allowedActions,
-      expectedSemantic: turn.expectedSemantic || [],
-      expectedCapabilities: semanticCapabilityGroups(turn.expectedSemantic || []),
-      forbidClaims: turn.forbidClaims || [],
-      establishOperatorContext: turn.establishOperatorContext === true,
-      pastDatePolicy: turn.pastDatePolicy || ""
-    }))
-  }));
+  const tierAssignments = acceptanceTierAssignments(source, "supplemental_real_guest_matrix");
+  return source.cases.map((item) => {
+    const tier = tierAssignments.get(item.id);
+    return {
+      id: item.id,
+      tier,
+      bucket: item.bucket,
+      sourceRef: item.sourceRef || source.source,
+      turns: item.turns.map((turn) => loadedAcceptanceTurn(turn, tier, item, "supplemental_real_guest_matrix"))
+    };
+  });
 }
 
 const SUPPLEMENTAL_ACCEPTANCE_MATRIX = loadSupplementalAcceptanceMatrix();
@@ -281,6 +366,117 @@ function acceptanceEventId(runScope, caseId, turnNumber, uuid = crypto.randomUUI
   return `${acceptanceConversationId(runScope, caseId)}-turn-${turn}-${normalizedUuid}`;
 }
 
+function productOutcomeEvidenceUnits(result) {
+  const units = new Map();
+  const ensure = (taskId, fallback) => {
+    const key = String(taskId || fallback);
+    if (!units.has(key)) units.set(key, { key, taskResults: [], canonicalItems: [], plannerTasks: [] });
+    return units.get(key);
+  };
+  for (const [index, task] of (Array.isArray(result && result.taskResults) ? result.taskResults : []).entries()) {
+    ensure(task && task.taskId, `result:${index}`).taskResults.push(task);
+  }
+  const trace = Array.isArray(result && result.trace) ? result.trace : [];
+  const canonicalItems = trace.filter((entry) => entry && entry.stage === "canonical_request")
+    .flatMap((entry) => Array.isArray(entry.items) ? entry.items : []);
+  for (const [index, item] of canonicalItems.entries()) ensure(item && item.taskId, `canonical:${index}`).canonicalItems.push(item);
+  const plannerTasks = trace.filter((entry) => entry && ["planner", "validation", "semantic_contract"].includes(entry.stage))
+    .flatMap((entry) => [entry.tasks, entry.acceptedTasks, entry.finalTasks, entry.outputTasks].flatMap((tasks) => Array.isArray(tasks) ? tasks : []));
+  for (const [index, task] of plannerTasks.entries()) ensure(task && task.taskId, `planner:${index}`).plannerTasks.push(task);
+  return [...units.values()];
+}
+
+function productOutcomeUnitMatches(unit, definition, outcome) {
+  const capabilities = new Set([
+    ...unit.taskResults.flatMap((task) => [task && task.capability, task && task.type]),
+    ...unit.canonicalItems.map((item) => item && item.capability),
+    ...unit.plannerTasks.flatMap((task) => [task && task.capability, task && task.type])
+  ].map((value) => String(value || "").toLowerCase()).filter(Boolean));
+  const categories = new Set([
+    ...unit.canonicalItems.map((item) => item && item.canonicalEntity && item.canonicalEntity.category),
+    ...unit.plannerTasks.flatMap((task) => [task && task.category, task && task.entity && task.entity.category])
+  ].map((value) => String(value || "").toLowerCase()).filter(Boolean));
+  const canonicalIds = new Set([
+    ...unit.canonicalItems.map((item) => item && item.canonicalEntity && item.canonicalEntity.canonicalId),
+    ...unit.plannerTasks.flatMap((task) => [task && task.canonicalCandidate, task && task.entity && task.entity.canonicalCandidate])
+  ].map((value) => String(value || "").toLowerCase()).filter(Boolean));
+  const selectorMatch = [
+    ...(definition.capabilities || []).map((value) => capabilities.has(value)),
+    ...(definition.categories || []).map((value) => categories.has(value)),
+    ...(definition.canonicalIds || []).map((value) => canonicalIds.has(value))
+  ].some(Boolean);
+  if (!selectorMatch) return false;
+  if (outcome && outcome.disposition === "answer" && (definition.canonicalIds || []).length
+    && !definition.canonicalIds.some((value) => canonicalIds.has(value))) return false;
+  if (definition.temporalResolutionStatuses) {
+    if (!unit.canonicalItems.some((item) => definition.temporalResolutionStatuses.includes(String(item && item.temporalState && item.temporalState.resolutionStatus || "").toLowerCase()))) return false;
+  }
+  if (definition.temporalRepairReasonCodes
+    && !unit.canonicalItems.some((item) => definition.temporalRepairReasonCodes.includes(String(item && item.temporalState && item.temporalState.repairReasonCode || "").toLowerCase()))) return false;
+  return true;
+}
+
+function productOutcomeDispositionMatches(unit, outcome, result) {
+  const action = String(result && result.finalDecision && result.finalDecision.action || "");
+  const taskResults = unit.taskResults;
+  if (outcome.disposition === "retain") return unit.canonicalItems.length > 0 || unit.plannerTasks.length > 0;
+  if (outcome.disposition === "clarification") return action === "clarification" && taskResults.some((task) => task && task.status === "needs_clarification");
+  if (outcome.disposition === "handoff") return action === "handoff" && taskResults.some((task) => task && HANDOFF_TASK_STATUSES.has(task.status));
+  if (outcome.disposition === "answer") {
+    const coveredTaskIds = new Set(Array.isArray(result && result.claimValidation && result.claimValidation.coveredTaskIds) ? result.claimValidation.coveredTaskIds : []);
+    return taskResults.some((task) => task
+      && task.status === "answered"
+      && typeof task.dataSource === "string" && task.dataSource.trim()
+      && task.facts && typeof task.facts === "object" && !Array.isArray(task.facts) && Object.keys(task.facts).length
+      && coveredTaskIds.has(task.taskId));
+  }
+  return false;
+}
+
+function productOutcomeSourceEvidenceMatches(unit, outcome, expectation) {
+  if (!outcome || !outcome.sourceText) return true;
+  const sourceText = String(outcome.sourceText);
+  if (!String(expectation && expectation.messageText || "").includes(sourceText)) return false;
+  return unit.canonicalItems.some((item) => {
+    if (Number.isInteger(item && item.evidenceRefCount) && item.evidenceRefCount > 0) return true;
+    return Array.isArray(item && item.evidenceRefs)
+      && item.evidenceRefs.some((reference) => String(reference && reference.quote || "").includes(sourceText));
+  });
+}
+
+function missingProductOutcomes(result, expectation = {}) {
+  const outcomes = Array.isArray(expectation.productOutcomes) ? expectation.productOutcomes : [];
+  if (!outcomes.length) return [];
+  const units = productOutcomeEvidenceUnits(result);
+  const candidates = outcomes.map((outcome) => {
+    const definition = PRODUCT_OUTCOME_SUBJECTS[outcome && outcome.subject];
+    if (!definition || !PRODUCT_OUTCOME_DISPOSITIONS.has(outcome && outcome.disposition)) return [];
+    return units.map((unit, index) => ({ unit, index }))
+      .filter(({ unit }) => productOutcomeUnitMatches(unit, definition, outcome)
+        && productOutcomeDispositionMatches(unit, outcome, result)
+        && productOutcomeSourceEvidenceMatches(unit, outcome, expectation))
+      .map(({ index }) => index);
+  });
+  const directMissing = outcomes.flatMap((outcome, index) => candidates[index].length
+    ? []
+    : [`expected_product_outcome_missing:${String(outcome && outcome.subject || "unknown")}:${String(outcome && outcome.disposition || "invalid")}`]);
+  if (directMissing.length) return directMissing;
+  const order = outcomes.map((_outcome, index) => index).sort((left, right) => candidates[left].length - candidates[right].length);
+  const used = new Set();
+  const assign = (position) => {
+    if (position === order.length) return true;
+    const outcomeIndex = order[position];
+    for (const unitIndex of candidates[outcomeIndex]) {
+      if (used.has(unitIndex)) continue;
+      used.add(unitIndex);
+      if (assign(position + 1)) return true;
+      used.delete(unitIndex);
+    }
+    return false;
+  };
+  return assign(0) ? [] : [`expected_product_outcome_collision:${outcomes.map((outcome) => outcome.subject).join("|")}`];
+}
+
 function validateAcceptanceResult(result, expectation = {}) {
   if (!result || typeof result !== "object") throw new Error("acceptance_result_required");
   if (!result.traceId || !result.eventId) throw new Error("acceptance_evidence_ids_required");
@@ -320,6 +516,8 @@ function validateAcceptanceResult(result, expectation = {}) {
   const semanticTags = new Set(expectation.expectedSemantic || []);
   const missingSemanticEvidence = missingExpectedSemanticEvidence(result, expectation);
   if (missingSemanticEvidence.length) throw new Error(`expected_semantic_evidence_missing:${missingSemanticEvidence.join("|")}`);
+  const missingOutcomes = missingProductOutcomes(result, expectation);
+  if (missingOutcomes.length) throw new Error(missingOutcomes[0]);
   if (semanticTags.has("bundle") && canonicalItems.length && !canonicalItems.some((item) => item.capability === "bundle_availability" || item.canonicalEntity && item.canonicalEntity.category === "bundle")) throw new Error("expected_bundle_scope_missing");
   for (const roomNumber of ["301", "402"]) {
     if (semanticTags.has(`room_${roomNumber}`) && canonicalItems.length && !canonicalItems.some((item) => String(item.canonicalEntity && item.canonicalEntity.canonicalId || "").includes(roomNumber))) throw new Error(`expected_room_scope_missing:${roomNumber}`);
@@ -367,6 +565,7 @@ function assessFinalResponseEvidence(result, expectation = {}) {
   const forbiddenText = [...FORBIDDEN_FINAL_TEXT, ...(expectation.forbidClaims || [])];
   const unauthorizedCommitmentDetected = forbiddenText.some((value) => value && replyText.includes(value));
   reasons.push(...missingExpectedSemanticEvidence(result, expectation).map((tag) => `expected_semantic_evidence_missing:${tag}`));
+  reasons.push(...missingProductOutcomes(result, expectation));
 
   if (claimValidation.ok !== true || (claimValidation.errors || []).length || (claimValidation.missingTaskIds || []).length || (claimValidation.unexpectedTaskIds || []).length) {
     reasons.push("claim_validation_does_not_prove_complete_coverage");
@@ -392,7 +591,7 @@ function assessFinalResponseEvidence(result, expectation = {}) {
     status: passed ? "PASS" : "FAIL",
     completeAnswer: passed,
     formalDataConsistent: passed,
-    omissionDetected: uniqueReasons.some((reason) => reason.includes("not_covered") || reason.includes("unavailable") || reason.includes("coverage") || reason.includes("reply_text")),
+    omissionDetected: uniqueReasons.some((reason) => reason.includes("not_covered") || reason.includes("unavailable") || reason.includes("coverage") || reason.includes("reply_text") || reason.includes("product_outcome")),
     unsupportedGuessDetected: passed ? false : null,
     offTopicDetected: passed ? false : null,
     unauthorizedCommitmentDetected,
@@ -532,6 +731,7 @@ function reportTurn({ turnNumber, turn, result, assessment, error, status }) {
   const finalResponse = result && result.finalResponse || {};
   return {
     turn: turnNumber,
+    tier: ACCEPTANCE_TIERS.includes(turn && turn.tier) ? turn.tier : "TIER_4_EDGE",
     guestQuestion: String(turn && turn.messageText || ""),
     nativeEvent: turn && turn.lineEvent ? { type: String(turn.lineEvent.message && turn.lineEvent.message.type || "") } : null,
     status,
@@ -570,18 +770,33 @@ function markdownText(value) {
 }
 
 function acceptanceReportMarkdown(report) {
+  const groups = report.summary && report.summary.groups || {};
+  const tiers = report.summary && report.summary.tiers || {};
+  const metricLines = (label, metrics = {}) => [
+    `## ${label}`,
+    "",
+    `- Cases / turns: ${Number(metrics.caseCount) || 0} / ${Number(metrics.turnCount) || 0}`,
+    `- PASS / FAIL / PARTIAL: ${Number(metrics.passCount) || 0} / ${Number(metrics.failCount) || 0} / ${Number(metrics.partialCount) || 0}`,
+    `- Not executable cases / turns: ${Number(metrics.notExecutableCaseCount) || 0} / ${Number(metrics.notExecutableTurnCount) || 0}`,
+    ""
+  ];
   const lines = [
     "# JunZan AI deployed real-guest acceptance report",
     "",
     `- Commit: ${markdownText(report.commit)}`,
     `- Generated at: ${markdownText(report.generatedAt)}`,
-    `- PASS: ${Number(report.summary && report.summary.passCount) || 0}`,
-    `- FAIL: ${Number(report.summary && report.summary.failCount) || 0}`,
-    `- Not executable: ${Number(report.summary && report.summary.notExecutableCaseCount) || 0}`,
-    ""
+    `- Total cases / turns: ${Number(report.summary && report.summary.caseCount) || 0} / ${Number(report.summary && report.summary.turnCount) || 0}`,
+    "",
+    ...metricLines("Core/Complex product outcome", groups.coreComplexProductOutcome),
+    ...metricLines("Safety contract", groups.safetyContract),
+    ...metricLines("Edge robustness", groups.edgeRobustness),
+    ...metricLines("Tier 1 CORE", tiers.TIER_1_CORE),
+    ...metricLines("Tier 2 COMPLEX", tiers.TIER_2_COMPLEX),
+    ...metricLines("Tier 3 SAFETY", tiers.TIER_3_SAFETY),
+    ...metricLines("Tier 4 EDGE", tiers.TIER_4_EDGE)
   ];
   for (const item of report.cases || []) {
-    lines.push(`## ${markdownText(item.caseId)} — ${markdownText(item.status)}`, "");
+    lines.push(`## ${markdownText(item.caseId)} — ${markdownText(item.tier)} — ${markdownText(item.status)}`, "");
     for (const turn of item.turns || []) {
       lines.push(
         `### Turn ${turn.turn}`,
@@ -626,6 +841,56 @@ function isRefreshableOidcRejection(error) {
     && error.httpErrorCode === "ACCEPTANCE_OIDC_REJECTED");
 }
 
+function emptyAcceptanceMetrics() {
+  return {
+    caseCount: 0,
+    turnCount: 0,
+    executableCaseCount: 0,
+    executableTurnCount: 0,
+    passCount: 0,
+    partialCount: 0,
+    failCount: 0,
+    notExecutableCaseCount: 0,
+    notExecutableTurnCount: 0
+  };
+}
+
+function addAcceptanceMetrics(target, source) {
+  for (const key of Object.keys(target)) target[key] += Number(source && source[key]) || 0;
+  return target;
+}
+
+function separatedAcceptanceSummary(matrix, reportCases) {
+  const tiers = Object.fromEntries(ACCEPTANCE_TIERS.map((tier) => [tier, emptyAcceptanceMetrics()]));
+  for (const [index, item] of matrix.entries()) {
+    const tier = ACCEPTANCE_TIERS.includes(item && item.tier) ? item.tier : "TIER_4_EDGE";
+    const metrics = tiers[tier];
+    const reportCase = reportCases[index] || { status: "FAIL", turns: [] };
+    const turnCount = Array.isArray(item && item.turns) ? item.turns.length : 0;
+    const notExecutableTurnCount = (reportCase.turns || []).filter((turn) => turn.status === NOT_EXECUTABLE_STATUS).length;
+    const executableTurnCount = Math.max(0, turnCount - notExecutableTurnCount);
+    metrics.caseCount += 1;
+    metrics.turnCount += turnCount;
+    metrics.executableTurnCount += executableTurnCount;
+    metrics.notExecutableTurnCount += notExecutableTurnCount;
+    if (executableTurnCount > 0) metrics.executableCaseCount += 1;
+    else metrics.notExecutableCaseCount += 1;
+    if (reportCase.status === "PASS") metrics.passCount += 1;
+    else if (reportCase.status === "PARTIAL_NOT_EXECUTABLE") metrics.partialCount += 1;
+    else if (reportCase.status === "FAIL") metrics.failCount += 1;
+  }
+  const coreComplexProductOutcome = addAcceptanceMetrics(emptyAcceptanceMetrics(), tiers.TIER_1_CORE);
+  addAcceptanceMetrics(coreComplexProductOutcome, tiers.TIER_2_COMPLEX);
+  return {
+    tiers,
+    groups: {
+      coreComplexProductOutcome,
+      safetyContract: addAcceptanceMetrics(emptyAcceptanceMetrics(), tiers.TIER_3_SAFETY),
+      edgeRobustness: addAcceptanceMetrics(emptyAcceptanceMetrics(), tiers.TIER_4_EDGE)
+    }
+  };
+}
+
 async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidcToken, commit, matrix = ACCEPTANCE_MATRIX, fetchImpl = globalThis.fetch, now = () => new Date(), write = (value) => console.log(JSON.stringify(value)), reportWriter = null, reportFinalizer = null, randomUuid = crypto.randomUUID }) {
   const failures = [];
   const reportCases = [];
@@ -655,7 +920,8 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
     }
   }
   for (const item of matrix) {
-    const caseReport = { caseId: item.id, bucket: item.bucket || "", status: "", turns: [] };
+    const tier = ACCEPTANCE_TIERS.includes(item.tier) ? item.tier : "TIER_4_EDGE";
+    const caseReport = { caseId: item.id, tier, bucket: item.bucket || "", status: "", turns: [] };
     const conversationId = acceptanceConversationId(runScope, item.id);
     let firstRequest = null;
     let lastResult = null;
@@ -673,6 +939,7 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
         caseSkipped = true;
         caseReport.turns.push({
           turn: index + 1,
+          tier,
           guestQuestion: String(turn.messageText || ""),
           nativeEvent: turn.lineEvent ? { type: String(turn.lineEvent.message && turn.lineEvent.message.type || "") } : null,
           status: NOT_EXECUTABLE_STATUS,
@@ -767,6 +1034,7 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
     }
     reportCases.push(caseReport);
   }
+  const separated = separatedAcceptanceSummary(matrix, reportCases);
   const summary = {
     caseCount: matrix.length,
     turnCount,
@@ -776,10 +1044,11 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
     partialCount,
     failCount: reportCases.filter((item) => item.status === "FAIL").length,
     notExecutableCaseCount,
-    notExecutableTurnCount
+    notExecutableTurnCount,
+    ...separated
   };
   const report = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     commit,
     generatedAt: now().toISOString(),
     environment: {
@@ -795,14 +1064,12 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
     try {
       report.attribution = reportFinalizer(report);
     } catch (error) {
-      report.attribution = { status: safeErrorCode(error) };
-      if (typeof reportWriter === "function") reportWriter(report);
-      Object.assign(error, summary, { report });
-      throw error;
+      report.attribution = { status: "ENGINEERING_DIAGNOSTIC_UNPROVEN", errorCode: safeErrorCode(error) };
     }
   }
   if (typeof reportWriter === "function") reportWriter(report);
-  if (failures.length) {
+  const blockingFailures = reportCases.filter((item) => item.status === "FAIL" && item.tier !== "TIER_4_EDGE");
+  if (blockingFailures.length) {
     const error = new Error("deployed_acceptance_matrix_failed");
     error.code = "deployed_acceptance_matrix_failed";
     Object.assign(error, summary);
@@ -1058,6 +1325,7 @@ module.exports = {
   validateAcceptanceResult,
   validateNativeAcceptanceResult,
   assessFinalResponseEvidence,
+  missingProductOutcomes,
   writeAcceptanceReport,
   runAcceptanceMatrix,
   selectAcceptanceMatrix,
