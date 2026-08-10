@@ -1125,6 +1125,7 @@ function compatibleSemanticCapability(taskType, capability) {
 function invalidIdentitySemanticOwnership(output, input, diagnosticSummary) {
   const invalidCandidateIds = new Set();
   const taskKeys = new Set();
+  let identityFailurePresent = false;
   const identityFailureCodes = new Set(["property_catalog_identity", "identity_alignment"]);
   const tasks = Array.isArray(output && output.tasks) ? output.tasks : [];
   const candidates = Array.isArray(output && output.semanticCandidates) ? output.semanticCandidates : [];
@@ -1133,20 +1134,29 @@ function invalidIdentitySemanticOwnership(output, input, diagnosticSummary) {
   for (const diagnostic of diagnosticSummary && Array.isArray(diagnosticSummary.candidates) ? diagnosticSummary.candidates : []) {
     const failureCodes = Array.isArray(diagnostic && diagnostic.failureCodes) ? diagnostic.failureCodes : [];
     if (!failureCodes.length || failureCodes.some((code) => !identityFailureCodes.has(code))) continue;
+    identityFailurePresent = true;
     const candidate = candidates[diagnostic.candidateOrdinal];
-    if (!candidate || diagnostic.coverageStatus !== "bound") continue;
+    if (!candidate || !["bound", "pending_task"].includes(diagnostic.coverageStatus)) continue;
     const provenanceIndexes = Array.isArray(diagnostic.provenanceRelationCandidateIndexes)
       ? diagnostic.provenanceRelationCandidateIndexes
       : [];
-    const ownedTasks = tasks.filter((task) => provenanceIndexes.includes(task && task.candidateIndex)
-      && compatibleSemanticCapability(task && task.type, candidate.capability)
-      && relations.filter((relation) => relation && relation.candidateIndex === task.candidateIndex).length === 1
-      && relations.find((relation) => relation && relation.candidateIndex === task.candidateIndex).evidenceRefs.every((ref) => evidenceMatchesSource(ref, sourceMaps)));
-    if (!ownedTasks.length) continue;
+    const candidateEvidenceRefs = Array.isArray(candidate && candidate.evidenceRefs) ? candidate.evidenceRefs : [];
+    const ownedTasks = tasks.filter((task) => {
+      if (!compatibleSemanticCapability(task && task.type, candidate.capability)) return false;
+      const taskRelations = relations.filter((relation) => relation && relation.candidateIndex === task.candidateIndex);
+      if (taskRelations.length !== 1) return false;
+      const relationEvidenceRefs = Array.isArray(taskRelations[0].evidenceRefs) ? taskRelations[0].evidenceRefs : [];
+      if (!relationEvidenceRefs.length || !relationEvidenceRefs.every((ref) => evidenceMatchesSource(ref, sourceMaps))) return false;
+      if (diagnostic.coverageStatus === "bound") return provenanceIndexes.includes(task && task.candidateIndex);
+      return candidateEvidenceRefs.length > 0
+        && candidateEvidenceRefs.every((ref) => evidenceMatchesSource(ref, sourceMaps)
+          && relationEvidenceRefs.some((relationRef) => evidenceRefsOverlap(ref, relationRef, sourceMaps)));
+    });
+    if (diagnostic.coverageStatus === "pending_task" ? ownedTasks.length !== 1 : ownedTasks.length === 0) continue;
     invalidCandidateIds.add(String(candidate.candidateId || ""));
     for (const task of ownedTasks) taskKeys.add(semanticTaskKey(task));
   }
-  return { invalidCandidateIds, taskKeys };
+  return { invalidCandidateIds, taskKeys, identityFailurePresent };
 }
 
 function stableSemanticValue(value) {
@@ -1604,6 +1614,7 @@ class TestOnlyOpenAiConversationPlanner {
         semanticLedgerBoundaries.push(Object.freeze({ stage: "validate", ...validateSummary }));
         const invalidIdentityOwnership = invalidIdentitySemanticOwnership(sanitizedOutput, input, validateSummary);
         const identityOwnershipPresent = invalidIdentityOwnership.taskKeys.size > 0;
+        const identityFailurePresent = invalidIdentityOwnership.identityFailurePresent === true;
         const identityInvalidLedger = ledger.present
           && ledger.invalidCandidateIds.length > 0
           && identityOwnershipPresent
@@ -1611,7 +1622,7 @@ class TestOnlyOpenAiConversationPlanner {
         const firstOutput = ledger.present
           ? failClosedSemanticCandidates(sanitizedOutput, ledger.validCandidates, ledger.invalidCandidateIds, input, invalidIdentityOwnership.taskKeys)
           : sanitizedOutput;
-        const validIdentityResult = (candidateOutput) => !identityOwnershipPresent
+        const validIdentityResult = (candidateOutput) => !identityFailurePresent
           || firstOutput[IDENTITY_FAIL_CLOSED_COMPLETE] !== false && validMergedOutput(candidateOutput, input);
         const identityFailClosedValid = validIdentityResult(firstOutput);
         Object.defineProperty(firstOutput, SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC, {

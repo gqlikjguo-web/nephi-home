@@ -604,6 +604,78 @@ async function classifySequence({ first, repair, plannerInput }) {
     { scenarioName: "property_catalog_identity-mixed-invalid-shared", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: true, providerCalls: 2 }
   ], "provider-lifecycle identity failures must be repaired or become structurally valid scoped handoffs without contaminating valid siblings");
 
+  const pendingIdentityScenario = identityScenario({
+    failureClass: "identity_alignment",
+    validSibling: true,
+    repairMode: "success",
+    sharedEvidence: true
+  });
+  const pendingIdentityFirst = {
+    ...pendingIdentityScenario.firstOutput,
+    semanticCandidates: pendingIdentityScenario.firstOutput.semanticCandidates.map((candidate, candidateOrdinal) =>
+      candidateOrdinal === 1
+        ? {
+            ...candidate,
+            coverageStatus: "pending_task",
+            provenanceRelationCandidateIndexes: [],
+            evidenceRefs: identityWholeMessageEvidence.map((ref) => ({ ...ref }))
+          }
+        : candidate)
+  };
+  assertProviderLedgerShape(pendingIdentityFirst, "verified pending identity ownership");
+  const pendingIdentityClassified = await classifySequence({
+    first: pendingIdentityFirst,
+    repair: pendingIdentityScenario.repairOutput,
+    plannerInput: input(identityMessage, identityEvent, propertyCatalog)
+  });
+  const pendingIdentityDiagnostic = pendingIdentityClassified.result[Symbol.for("junzan.plannerProviderDiagnostic")];
+  const pendingIdentityValidateBoundary = pendingIdentityDiagnostic.semanticLedgerBoundaries.find((boundary) => boundary.stage === "validate");
+  const pendingIdentityStructural = validatePlannerOutput(pendingIdentityClassified.result);
+  const pendingIdentityCandidateIds = new Set(pendingIdentityClassified.result.semanticCandidates.map((candidate) => candidate.candidateId));
+  const pendingIdentitySibling = pendingIdentityClassified.result.tasks.find((item) => item.taskId === "identity-price-sibling");
+  assert.deepEqual(pendingIdentityValidateBoundary.failureCodes, ["identity_alignment"], "pending identity RED must isolate the real failure class after evidence normalization");
+  assert.equal(pendingIdentityStructural.ok, true, `verified pending identity ownership must not escape as structural provider success: ${pendingIdentityStructural.errors.join(",")}`);
+  assert.equal(pendingIdentityClassified.result.tasks.some((item) =>
+    !Array.isArray(item.semanticCandidateIds)
+      || !item.semanticCandidateIds.length
+      || item.semanticCandidateIds.some((candidateId) => !pendingIdentityCandidateIds.has(candidateId))), false, "verified pending identity repair must not leave dangling or empty ownership");
+  assert.ok(pendingIdentitySibling && pendingIdentitySibling.type === "price", "verified pending identity repair must preserve the valid sibling task");
+  assert.ok(pendingIdentitySibling.semanticCandidateIds.some((candidateId) =>
+    pendingIdentityClassified.result.semanticCandidates.some((candidate) => candidate.candidateId === candidateId && candidate.capability === "price")), "verified pending identity repair must preserve the valid sibling semantic candidate");
+  assert.equal(pendingIdentityClassified.calls, 2, "verified pending identity ownership must use exactly one bounded repair");
+
+  const ambiguousPendingTask = providerTask(task({
+    candidateIndex: 2,
+    taskId: "identity-alignment-ambiguous-owner",
+    type: "property_fact",
+    sourceText: identityMessage,
+    semanticCandidateIds: [IDS.unknown],
+    category: "amenity",
+    canonicalCandidate: "quiet_room"
+  }));
+  const ambiguousPendingIdentity = {
+    ...pendingIdentityFirst,
+    tasks: [...pendingIdentityFirst.tasks, ambiguousPendingTask],
+    contextRelationCandidates: [
+      ...pendingIdentityFirst.contextRelationCandidates,
+      { candidateIndex: 2, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: identityWholeMessageEvidence }
+    ]
+  };
+  assertProviderLedgerShape(ambiguousPendingIdentity, "ambiguous pending identity ownership");
+  await assert.rejects(
+    () => classifySequence({
+      first: ambiguousPendingIdentity,
+      repair: pendingIdentityScenario.repairOutput,
+      plannerInput: input(identityMessage, identityEvent, propertyCatalog)
+    }),
+    (error) => {
+      assert.equal(error && error.code, "planner_local_contract_failure");
+      assert.equal(error && error.errorCategory, "local_contract_failure");
+      return true;
+    },
+    "pending identity with multiple compatible verified relations must fail locally instead of guessing an owner"
+  );
+
   const sameTask = providerTask(task({
     candidateIndex: 0,
     taskId: "identity-shared-owner",
