@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const { TestOnlyOpenAiConversationPlanner } = require("../lib/providers/test-only-openai-conversation-planner");
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
-const { plannerJsonSchema, validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
+const { plannerJsonSchema, plannerProviderJsonSchema, validatePlannerOutput } = require("../lib/conversation-engine-v2/planner-schema");
 const { buildContextSnapshotV3, decideContextExecutionV3 } = require("../lib/conversation-engine-v2/conversation-state-v3-reducer");
 
 const IDS = Object.freeze({
@@ -397,6 +397,334 @@ async function classifySequence({ first, repair, plannerInput }) {
   };
   const snapshot = buildContextSnapshotV3(stateWithScope, { propertyId: "semantic-contract-property", channel: "test", userId: "user", now: "2026-01-01T01:00:00.000Z" });
   assert.deepEqual(snapshot.cycles.map((cycle) => cycle.requestCycleId), [IDS.scope], "later modify_existing must see exactly one lodging request cycle");
+
+  const identityMessage = "Could you quote the stay and verify the catalog-backed feature?";
+  const identityEvent = "semantic-identity-fail-closed";
+  const identityPriceEvidence = evidence(identityEvent, identityMessage, "quote the stay");
+  const identitySubjectEvidence = evidence(identityEvent, identityMessage, "catalog-backed feature");
+  const identityWholeMessageEvidence = evidence(identityEvent, identityMessage);
+  const providerSchema = plannerProviderJsonSchema().properties;
+
+  function providerTask(value) {
+    const { semanticCandidateIds: _semanticCandidateIds, lodgingScopeId: _lodgingScopeId, ...providerValue } = value;
+    return providerValue;
+  }
+
+  function providerCandidate(value) {
+    const { candidateId: _candidateId, ...providerValue } = value;
+    return { ...providerValue, evidenceRefs: [] };
+  }
+
+  function assertProviderLedgerShape(value, scenarioName) {
+    for (const item of value.tasks) {
+      assert.deepEqual(
+        Object.keys(item).filter((key) => !Object.hasOwn(providerSchema.tasks.items.properties, key)),
+        [],
+        `${scenarioName} raw task must contain only provider-schema properties`
+      );
+      assert.ok(providerSchema.tasks.items.required.every((key) => Object.hasOwn(item, key)), `${scenarioName} raw task must contain all provider-schema required properties`);
+    }
+    for (const item of value.semanticCandidates) {
+      assert.deepEqual(
+        Object.keys(item).filter((key) => !Object.hasOwn(providerSchema.semanticCandidates.items.properties, key)),
+        [],
+        `${scenarioName} raw candidate must contain only provider-schema properties`
+      );
+      assert.ok(providerSchema.semanticCandidates.items.required.every((key) => Object.hasOwn(item, key)), `${scenarioName} raw candidate must contain all provider-schema required properties`);
+    }
+  }
+
+  function identityScenario({ failureClass, validSibling, repairMode, sharedEvidence = false }) {
+    const invalidCatalogIdentity = failureClass === "property_catalog_identity" ? "not_in_catalog" : "water_feature";
+    const invalidCanonicalIdentity = failureClass === "property_catalog_identity" ? "not_in_catalog" : "quiet_room";
+    const invalidCandidateIndex = validSibling ? 1 : 0;
+    const scenarioName = `${failureClass}-${validSibling ? "mixed" : "single"}-${repairMode}${sharedEvidence ? "-shared" : ""}`;
+    const invalidTaskId = `${failureClass}-${validSibling ? "mixed" : "single"}`;
+    const priceSourceText = sharedEvidence ? identityMessage : "quote the stay";
+    const invalidSourceText = sharedEvidence ? identityMessage : "catalog-backed feature";
+    const priceEvidenceRefs = sharedEvidence ? identityWholeMessageEvidence : identityPriceEvidence;
+    const invalidEvidenceRefs = sharedEvidence ? identityWholeMessageEvidence : identitySubjectEvidence;
+    const identityPriceTask = providerTask(task({
+      candidateIndex: 0,
+      taskId: "identity-price-sibling",
+      type: "price",
+      sourceText: priceSourceText,
+      semanticCandidateIds: [IDS.price],
+      dependsOnStayContext: true
+    }));
+    const identityPriceCandidate = providerCandidate(semanticCandidate({
+      candidateId: IDS.price,
+      semanticKind: "capability",
+      capability: "price",
+      provenanceRelationCandidateIndexes: [0],
+      evidenceRefs: priceEvidenceRefs
+    }));
+    const invalidTask = providerTask(task({
+      candidateIndex: invalidCandidateIndex,
+      taskId: invalidTaskId,
+      type: "property_fact",
+      sourceText: invalidSourceText,
+      semanticCandidateIds: [IDS.unknown],
+      category: "amenity",
+      canonicalCandidate: invalidCanonicalIdentity
+    }));
+    const invalidCandidate = providerCandidate(semanticCandidate({
+      candidateId: IDS.unknown,
+      semanticKind: "catalog_subject",
+      capability: "property_fact",
+      canonicalIdentityCandidate: invalidCanonicalIdentity,
+      provenanceRelationCandidateIndexes: [invalidCandidateIndex],
+      propertyCatalogIdentity: invalidCatalogIdentity,
+      evidenceRefs: invalidEvidenceRefs
+    }));
+    const firstTasks = validSibling ? [identityPriceTask, invalidTask] : [invalidTask];
+    const firstCandidates = validSibling ? [identityPriceCandidate, invalidCandidate] : [invalidCandidate];
+    const relationFor = (item) => ({
+      candidateIndex: item.candidateIndex,
+      kind: "new_request",
+      candidateRequestCycleRefs: [],
+      evidenceRefs: item.taskId === "identity-price-sibling" ? priceEvidenceRefs : invalidEvidenceRefs
+    });
+    const firstOutput = output({
+      message: identityMessage,
+      eventId: identityEvent,
+      tasks: firstTasks,
+      semanticCandidates: firstCandidates,
+      relations: firstTasks.map(relationFor)
+    });
+    const repairedTask = providerTask(task({
+      candidateIndex: invalidCandidateIndex,
+      taskId: invalidTaskId,
+      type: "property_fact",
+      sourceText: invalidSourceText,
+      semanticCandidateIds: [IDS.facility],
+      category: "amenity",
+      canonicalCandidate: "water_feature"
+    }));
+    const repairedCandidate = providerCandidate(semanticCandidate({
+      candidateId: IDS.facility,
+      semanticKind: "catalog_subject",
+      capability: "property_fact",
+      canonicalIdentityCandidate: "water_feature",
+      provenanceRelationCandidateIndexes: [invalidCandidateIndex],
+      propertyCatalogIdentity: "water_feature",
+      evidenceRefs: invalidEvidenceRefs
+    }));
+    const fullRepairedTasks = validSibling ? [identityPriceTask, repairedTask] : [repairedTask];
+    const fullRepairedCandidates = validSibling ? [identityPriceCandidate, repairedCandidate] : [repairedCandidate];
+    const repairedTasks = repairMode === "omit_sibling" ? [repairedTask] : fullRepairedTasks;
+    const repairedCandidates = repairMode === "omit_sibling" ? [repairedCandidate] : fullRepairedCandidates;
+    const repairedOutput = output({
+      message: identityMessage,
+      eventId: identityEvent,
+      tasks: repairedTasks,
+      semanticCandidates: repairedCandidates,
+      relations: repairedTasks.map((item) => ({
+        ...relationFor(item),
+        kind: repairMode === "mutate_relation" && item.taskId === "identity-price-sibling" ? "relation_uncertain" : "new_request"
+      }))
+    });
+    return {
+      failureClass,
+      validSibling,
+      repairMode,
+      scenarioName,
+      invalidTaskId,
+      invalidCatalogIdentity,
+      invalidCanonicalIdentity,
+      firstOutput,
+      repairOutput: repairMode === "invalid" ? firstOutput : repairedOutput
+    };
+  }
+
+  const identityScenarios = [
+    identityScenario({ failureClass: "property_catalog_identity", validSibling: true, repairMode: "success" }),
+    identityScenario({ failureClass: "identity_alignment", validSibling: true, repairMode: "success" }),
+    identityScenario({ failureClass: "property_catalog_identity", validSibling: true, repairMode: "invalid" }),
+    identityScenario({ failureClass: "identity_alignment", validSibling: true, repairMode: "invalid" }),
+    identityScenario({ failureClass: "property_catalog_identity", validSibling: false, repairMode: "success" }),
+    identityScenario({ failureClass: "identity_alignment", validSibling: false, repairMode: "success" }),
+    identityScenario({ failureClass: "property_catalog_identity", validSibling: true, repairMode: "omit_sibling" }),
+    identityScenario({ failureClass: "property_catalog_identity", validSibling: true, repairMode: "mutate_relation" }),
+    identityScenario({ failureClass: "property_catalog_identity", validSibling: true, repairMode: "invalid", sharedEvidence: true })
+  ];
+  const identityResults = [];
+  for (const scenario of identityScenarios) {
+    assertProviderLedgerShape(scenario.firstOutput, `${scenario.scenarioName} first output`);
+    assertProviderLedgerShape(scenario.repairOutput, `${scenario.scenarioName} repair output`);
+    const rawInvalidTask = scenario.firstOutput.tasks.find((item) => item.taskId === scenario.invalidTaskId);
+    const rawInvalidCandidate = scenario.firstOutput.semanticCandidates.find((candidate) =>
+      candidate.provenanceRelationCandidateIndexes.includes(rawInvalidTask.candidateIndex));
+    assert.equal(Object.hasOwn(rawInvalidTask, "semanticCandidateIds"), false, `${scenario.scenarioName} ownership must not use a strict-output-only task field`);
+    assert.equal(Object.hasOwn(rawInvalidCandidate, "candidateId"), false, `${scenario.scenarioName} ownership must not use a strict-output-only candidate field`);
+    assert.equal(rawInvalidCandidate.coverageStatus, "bound", `${scenario.scenarioName} ownership must use the provider lifecycle`);
+    const classified = await classifySequence({
+      first: scenario.firstOutput,
+      repair: scenario.repairOutput,
+      plannerInput: input(identityMessage, identityEvent, propertyCatalog)
+    });
+    const candidateIds = new Set(classified.result.semanticCandidates.map((candidate) => candidate.candidateId));
+    const structural = validatePlannerOutput(classified.result);
+    const providerDiagnostic = classified.result[Symbol.for("junzan.plannerProviderDiagnostic")];
+    const validateBoundary = providerDiagnostic.semanticLedgerBoundaries.find((boundary) => boundary.stage === "validate");
+    const siblingTask = classified.result.tasks.find((item) => item.taskId === "identity-price-sibling");
+    const siblingCandidate = siblingTask && classified.result.semanticCandidates.find((candidate) =>
+      siblingTask.semanticCandidateIds.includes(candidate.candidateId));
+    const siblingRelation = siblingTask && classified.result.contextRelationCandidates.find((relation) =>
+      relation.candidateIndex === siblingTask.candidateIndex);
+    identityResults.push({
+      scenarioName: scenario.scenarioName,
+      failureClassObserved: validateBoundary.failureCodes.includes(scenario.failureClass),
+      invalidIdentityRemoved: !classified.result.semanticCandidates.some((candidate) =>
+        scenario.failureClass === "property_catalog_identity"
+          ? candidate.propertyCatalogIdentity === scenario.invalidCatalogIdentity
+          : candidate.propertyCatalogIdentity === scenario.invalidCatalogIdentity
+            && candidate.canonicalIdentityCandidate === scenario.invalidCanonicalIdentity),
+      danglingOwnership: classified.result.tasks.some((item) => !Array.isArray(item.semanticCandidateIds)
+        || !item.semanticCandidateIds.length
+        || item.semanticCandidateIds.some((candidateId) => !candidateIds.has(candidateId))),
+      structuralOk: structural.ok,
+      structuralErrors: structural.errors,
+      validSiblingPreserved: !scenario.validSibling || Boolean(siblingTask && siblingTask.type === "price"
+        && siblingCandidate && siblingCandidate.capability === "price"
+        && siblingRelation && siblingRelation.kind === "new_request"),
+      scopedHandoffPresent: classified.result.tasks.some((item) => item.type === "human_help" && item.sourceText === scenario.firstOutput.tasks.find((taskItem) => taskItem.taskId === scenario.invalidTaskId).sourceText),
+      providerCalls: classified.calls
+    });
+  }
+  assert.deepEqual(identityResults, [
+    { scenarioName: "property_catalog_identity-mixed-success", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: false, providerCalls: 2 },
+    { scenarioName: "identity_alignment-mixed-success", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: false, providerCalls: 2 },
+    { scenarioName: "property_catalog_identity-mixed-invalid", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: true, providerCalls: 2 },
+    { scenarioName: "identity_alignment-mixed-invalid", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: true, providerCalls: 2 },
+    { scenarioName: "property_catalog_identity-single-success", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: false, providerCalls: 2 },
+    { scenarioName: "identity_alignment-single-success", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: false, providerCalls: 2 },
+    { scenarioName: "property_catalog_identity-mixed-omit_sibling", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: true, providerCalls: 2 },
+    { scenarioName: "property_catalog_identity-mixed-mutate_relation", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: true, providerCalls: 2 },
+    { scenarioName: "property_catalog_identity-mixed-invalid-shared", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: true, providerCalls: 2 }
+  ], "provider-lifecycle identity failures must be repaired or become structurally valid scoped handoffs without contaminating valid siblings");
+
+  const sameTask = providerTask(task({
+    candidateIndex: 0,
+    taskId: "identity-shared-owner",
+    type: "property_fact",
+    sourceText: "catalog-backed feature",
+    semanticCandidateIds: [IDS.facility, IDS.unknown],
+    category: "amenity",
+    canonicalCandidate: "water_feature"
+  }));
+  const sameTaskValidCandidate = providerCandidate(semanticCandidate({
+    candidateId: IDS.facility,
+    semanticKind: "catalog_subject",
+    capability: "property_fact",
+    canonicalIdentityCandidate: "water_feature",
+    provenanceRelationCandidateIndexes: [0],
+    propertyCatalogIdentity: "water_feature",
+    evidenceRefs: identitySubjectEvidence
+  }));
+  const sameTaskInvalidCandidate = providerCandidate(semanticCandidate({
+    candidateId: IDS.unknown,
+    semanticKind: "catalog_subject",
+    capability: "property_fact",
+    canonicalIdentityCandidate: "not_in_catalog",
+    provenanceRelationCandidateIndexes: [0],
+    propertyCatalogIdentity: "not_in_catalog",
+    evidenceRefs: identitySubjectEvidence
+  }));
+  const sameTaskOutput = output({
+    message: identityMessage,
+    eventId: identityEvent,
+    tasks: [sameTask],
+    semanticCandidates: [sameTaskValidCandidate, sameTaskInvalidCandidate],
+    relations: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: identitySubjectEvidence }]
+  });
+  assertProviderLedgerShape(sameTaskOutput, "same-task mixed ownership");
+  const sameTaskClassified = await classifySequence({
+    first: sameTaskOutput,
+    repair: sameTaskOutput,
+    plannerInput: input(identityMessage, identityEvent, propertyCatalog)
+  });
+  const sameTaskStructural = validatePlannerOutput(sameTaskClassified.result);
+  const preservedSameTask = sameTaskClassified.result.tasks.find((item) => item.taskId === "identity-shared-owner");
+  assert.equal(sameTaskStructural.ok, true, `same-task fallback must remain structural: ${sameTaskStructural.errors.join(",")}`);
+  assert.ok(preservedSameTask && preservedSameTask.semanticCandidateIds.some((candidateId) =>
+    sameTaskClassified.result.semanticCandidates.some((candidate) => candidate.candidateId === candidateId && candidate.propertyCatalogIdentity === "water_feature")), "same-task fallback must preserve the valid semantic ownership");
+  assert.ok(sameTaskClassified.result.tasks.some((item) => item.type === "human_help" && item.sourceText === "catalog-backed feature"), "same-task fallback must hand off the invalid owned semantic instead of silently dropping it");
+  assert.equal(sameTaskClassified.calls, 2, "same-task identity failure must use one bounded repair");
+
+  const unrelatedInvalidTask = providerTask(task({
+    candidateIndex: 2,
+    taskId: "non-identity-invalid-sibling",
+    type: "property_fact",
+    sourceText: "catalog-backed feature",
+    semanticCandidateIds: [IDS.scope]
+  }));
+  const unrelatedInvalidCandidate = providerCandidate(semanticCandidate({
+    candidateId: IDS.scope,
+    semanticKind: "lodging_scope",
+    capability: "property_fact",
+    provenanceRelationCandidateIndexes: [2],
+    evidenceRefs: identitySubjectEvidence,
+    lodgingScopeCandidate: { bundleCanonicalCandidate: "not_in_catalog", roomCanonicalCandidates: [], guestCountCandidate: null }
+  }));
+  const mixedFailureBase = identityScenario({ failureClass: "property_catalog_identity", validSibling: true, repairMode: "invalid" }).firstOutput;
+  const mixedFailureOutput = output({
+    message: identityMessage,
+    eventId: identityEvent,
+    tasks: [...mixedFailureBase.tasks, unrelatedInvalidTask],
+    semanticCandidates: [...mixedFailureBase.semanticCandidates, unrelatedInvalidCandidate],
+    relations: [
+      ...mixedFailureBase.contextRelationCandidates,
+      { candidateIndex: 2, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: identitySubjectEvidence }
+    ]
+  });
+  assertProviderLedgerShape(mixedFailureOutput, "identity plus unrelated invalid sibling");
+  await assert.rejects(
+    () => classifySequence({
+      first: mixedFailureOutput,
+      repair: mixedFailureOutput,
+      plannerInput: input(identityMessage, identityEvent, propertyCatalog)
+    }),
+    (error) => {
+      assert.equal(error && error.code, "planner_local_contract_failure");
+      assert.equal(error && error.errorCategory, "local_contract_failure");
+      return true;
+    },
+    "identity ownership plus an unrelated invalid candidate must fail locally instead of returning a structurally invalid provider success"
+  );
+
+  const pendingProviderCandidate = {
+    ...providerCandidate(semanticCandidate({
+      candidateId: IDS.feature,
+      semanticKind: "catalog_subject",
+      capability: "amenity",
+      canonicalIdentityCandidate: "water_feature",
+      provenanceRelationCandidateIndexes: [],
+      propertyCatalogIdentity: "water_feature",
+      evidenceRefs: identitySubjectEvidence
+    })),
+    coverageStatus: "pending_task",
+    provenanceRelationCandidateIndexes: [],
+    evidenceRefs: identitySubjectEvidence
+  };
+  const mixedPendingFailureOutput = {
+    ...mixedFailureOutput,
+    semanticCandidates: [...mixedFailureOutput.semanticCandidates, pendingProviderCandidate]
+  };
+  assertProviderLedgerShape(mixedPendingFailureOutput, "identity plus unrelated invalid and pending siblings");
+  await assert.rejects(
+    () => classifySequence({
+      first: mixedPendingFailureOutput,
+      repair: mixedPendingFailureOutput,
+      plannerInput: input(identityMessage, identityEvent, propertyCatalog)
+    }),
+    (error) => {
+      assert.equal(error && error.code, "planner_local_contract_failure");
+      assert.equal(error && error.errorCategory, "local_contract_failure");
+      return true;
+    },
+    "additive coverage repair must not bypass the G2a structural fail-closed gate"
+  );
 
   const invalidCandidate = semanticCandidate({ candidateId: IDS.unknown, semanticKind: "catalog_subject", capability: "property_fact", canonicalIdentityCandidate: "not_in_catalog", provenanceRelationCandidateIndexes: [0], propertyCatalogIdentity: "not_in_catalog", evidenceRefs: facilityEvidence });
   const invalidFirst = output({ message, eventId, tasks: [firstPriceTask], semanticCandidates: [priceCandidate, pendingCandidate(invalidCandidate)] });

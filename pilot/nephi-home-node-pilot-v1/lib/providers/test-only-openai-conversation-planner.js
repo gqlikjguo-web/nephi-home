@@ -14,6 +14,7 @@ const COVERAGE_MERGE_DIAGNOSTIC = Symbol("coverageMergeDiagnostic");
 const TASK_COLLECTION_DIAGNOSTIC = Symbol("taskCollectionDiagnostic");
 const ADDITIVE_REPAIR_DIAGNOSTIC = Symbol("additiveRepairDiagnostic");
 const SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC = Symbol("semanticLedgerBoundaryDiagnostic");
+const IDENTITY_FAIL_CLOSED_COMPLETE = Symbol("identityFailClosedComplete");
 const RETRYABLE_ERROR_CATEGORIES = new Set(["timeout", "network", "rate_limit", "provider_5xx"]);
 const ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const MAX_PROVIDER_ATTEMPTS = 2;
@@ -1112,15 +1113,148 @@ function copyPlannerDiagnostics(source, target) {
   return target;
 }
 
-function failClosedSemanticCandidates(output, validCandidates, invalidCandidateIds) {
+function semanticTaskKey(task) {
+  return `${Number.isInteger(task && task.candidateIndex) ? task.candidateIndex : ""}\u0000${String(task && task.taskId || "")}`;
+}
+
+function compatibleSemanticCapability(taskType, capability) {
+  return taskType === capability || new Set([taskType, capability]).size === 2
+    && [taskType, capability].every((value) => ["availability", "bundle_availability"].includes(value));
+}
+
+function invalidIdentitySemanticOwnership(output, input, diagnosticSummary) {
+  const invalidCandidateIds = new Set();
+  const taskKeys = new Set();
+  const identityFailureCodes = new Set(["property_catalog_identity", "identity_alignment"]);
+  const tasks = Array.isArray(output && output.tasks) ? output.tasks : [];
+  const candidates = Array.isArray(output && output.semanticCandidates) ? output.semanticCandidates : [];
+  const relations = Array.isArray(output && output.contextRelationCandidates) ? output.contextRelationCandidates : [];
+  const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
+  for (const diagnostic of diagnosticSummary && Array.isArray(diagnosticSummary.candidates) ? diagnosticSummary.candidates : []) {
+    const failureCodes = Array.isArray(diagnostic && diagnostic.failureCodes) ? diagnostic.failureCodes : [];
+    if (!failureCodes.length || failureCodes.some((code) => !identityFailureCodes.has(code))) continue;
+    const candidate = candidates[diagnostic.candidateOrdinal];
+    if (!candidate || diagnostic.coverageStatus !== "bound") continue;
+    const provenanceIndexes = Array.isArray(diagnostic.provenanceRelationCandidateIndexes)
+      ? diagnostic.provenanceRelationCandidateIndexes
+      : [];
+    const ownedTasks = tasks.filter((task) => provenanceIndexes.includes(task && task.candidateIndex)
+      && compatibleSemanticCapability(task && task.type, candidate.capability)
+      && relations.filter((relation) => relation && relation.candidateIndex === task.candidateIndex).length === 1
+      && relations.find((relation) => relation && relation.candidateIndex === task.candidateIndex).evidenceRefs.every((ref) => evidenceMatchesSource(ref, sourceMaps)));
+    if (!ownedTasks.length) continue;
+    invalidCandidateIds.add(String(candidate.candidateId || ""));
+    for (const task of ownedTasks) taskKeys.add(semanticTaskKey(task));
+  }
+  return { invalidCandidateIds, taskKeys };
+}
+
+function stableSemanticValue(value) {
+  if (Array.isArray(value)) return value.map(stableSemanticValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableSemanticValue(value[key])]));
+}
+
+function preservesValidSemanticSiblings(originalOutput, repairedOutput, validCandidates) {
+  const validCandidateIds = new Set(validCandidates.map((candidate) => String(candidate && candidate.candidateId || "")));
+  const protectedTasks = (originalOutput.tasks || []).filter((task) => Array.isArray(task && task.semanticCandidateIds)
+    && task.semanticCandidateIds.some((candidateId) => validCandidateIds.has(String(candidateId || ""))));
+  const tasksPreserved = protectedTasks.every((task) => {
+    const repairedTask = (repairedOutput.tasks || []).find((candidateTask) => candidateTask
+      && candidateTask.candidateIndex === task.candidateIndex
+      && String(candidateTask.taskId || "") === String(task.taskId || ""));
+    const originalRelation = (originalOutput.contextRelationCandidates || []).find((relation) => relation
+      && relation.candidateIndex === task.candidateIndex);
+    const repairedRelation = (repairedOutput.contextRelationCandidates || []).find((relation) => relation
+      && relation.candidateIndex === task.candidateIndex);
+    return Boolean(repairedTask
+      && repairedRelation
+      && JSON.stringify(stableSemanticValue(repairedTask)) === JSON.stringify(stableSemanticValue(task))
+      && JSON.stringify(stableSemanticValue(repairedRelation)) === JSON.stringify(stableSemanticValue(originalRelation)));
+  });
+  if (!tasksPreserved) return false;
+  return validCandidates.every((candidate) => {
+    const repairedCandidate = (repairedOutput.semanticCandidates || []).find((item) => item
+      && String(item.candidateId || "") === String(candidate && candidate.candidateId || ""));
+    return Boolean(repairedCandidate
+      && JSON.stringify(stableSemanticValue(repairedCandidate)) === JSON.stringify(stableSemanticValue(candidate)));
+  });
+}
+
+function failClosedSemanticCandidates(output, validCandidates, invalidCandidateIds, input, invalidTaskKeys = new Set()) {
   if (!invalidCandidateIds.length) return copyPlannerDiagnostics(output, { ...output, semanticCandidates: validCandidates });
-  return copyPlannerDiagnostics(output, {
+  const validCandidateIds = new Set(validCandidates.map((candidate) => candidate.candidateId));
+  const relationsByIndex = new Map((output.contextRelationCandidates || [])
+    .map((relation) => [relation && relation.candidateIndex, relation]));
+  const preservedTasks = (output.tasks || []).filter((task) =>
+    !invalidTaskKeys.has(semanticTaskKey(task))
+    || Array.isArray(task && task.semanticCandidateIds)
+      && task.semanticCandidateIds.some((candidateId) => validCandidateIds.has(candidateId)));
+  const usedTaskIds = new Set(preservedTasks.map((task) => String(task && task.taskId || "")).filter(Boolean));
+  const tasks = [];
+  const contextRelationCandidates = [];
+  const fallbackCandidates = [];
+  let nextCandidateIndex = (output.tasks || []).reduce((maximum, task) =>
+    Math.max(maximum, Number.isInteger(task && task.candidateIndex) ? task.candidateIndex : -1), -1) + 1;
+  let failClosedComplete = true;
+  for (const task of output.tasks || []) {
+    const relation = relationsByIndex.get(task && task.candidateIndex);
+    const ownsValidCandidate = Array.isArray(task && task.semanticCandidateIds)
+      && task.semanticCandidateIds.some((candidateId) => validCandidateIds.has(candidateId));
+    if (!invalidTaskKeys.has(semanticTaskKey(task))) {
+      tasks.push(task);
+      if (relation) contextRelationCandidates.push(relation);
+      continue;
+    }
+    const fallbackCandidateIndex = ownsValidCandidate ? nextCandidateIndex : task.candidateIndex;
+    if (ownsValidCandidate) {
+      tasks.push(task);
+      if (relation) contextRelationCandidates.push(relation);
+      nextCandidateIndex += 1;
+    }
+    const fallback = safeTaskHandoff(
+      input,
+      task,
+      relation,
+      [],
+      fallbackCandidateIndex,
+      uniqueTaskId(`task-handoff-${String(task && task.taskId || "invalid-semantic")}`, usedTaskIds)
+    );
+    if (!fallback) {
+      failClosedComplete = false;
+      continue;
+    }
+    const candidateId = crypto.randomUUID();
+    tasks.push({ ...fallback.task, semanticCandidateIds: [candidateId], lodgingScopeId: null });
+    contextRelationCandidates.push(fallback.relation);
+    fallbackCandidates.push({
+      candidateId,
+      semanticKind: "capability",
+      capability: "human_help",
+      canonicalIdentityCandidate: "human_help",
+      coverageStatus: "bound",
+      evidenceRefs: fallback.relation.evidenceRefs.map((ref) => ({ ...ref })),
+      lodgingScopeCandidate: null,
+      temporalSemanticCandidate: null,
+      propertyCatalogIdentity: null
+    });
+  }
+  const failClosedOutput = copyPlannerDiagnostics(output, {
     ...output,
-    semanticCandidates: validCandidates,
+    tasks,
+    semanticCandidates: [...validCandidates, ...fallbackCandidates],
+    contextRelationCandidates,
     missingInformation: [...new Set([...(output.missingInformation || []), "semantic_candidate_invalid"])],
     needsHuman: true,
     shouldIgnore: false
   });
+  Object.defineProperty(failClosedOutput, IDENTITY_FAIL_CLOSED_COMPLETE, {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: failClosedComplete
+  });
+  return failClosedOutput;
 }
 
 function fullyValidatedSemanticRepair(output, input) {
@@ -1466,22 +1600,42 @@ class TestOnlyOpenAiConversationPlanner {
         const sanitized = sanitizePlannerTaskCollection(compiledOutput, input);
         const sanitizedOutput = copyPlannerDiagnostics(sanitized, compileSemanticCandidates(sanitized, input));
         const ledger = validateSemanticCandidates(sanitizedOutput, input);
-        semanticLedgerBoundaries.push(Object.freeze({ stage: "validate", ...semanticCandidateDiagnosticSummary(sanitizedOutput, input, { includeCandidates: true, originOutput: providerContractOutput }) }));
+        const validateSummary = semanticCandidateDiagnosticSummary(sanitizedOutput, input, { includeCandidates: true, originOutput: providerContractOutput });
+        semanticLedgerBoundaries.push(Object.freeze({ stage: "validate", ...validateSummary }));
+        const invalidIdentityOwnership = invalidIdentitySemanticOwnership(sanitizedOutput, input, validateSummary);
+        const identityOwnershipPresent = invalidIdentityOwnership.taskKeys.size > 0;
+        const identityInvalidLedger = ledger.present
+          && ledger.invalidCandidateIds.length > 0
+          && identityOwnershipPresent
+          && ledger.invalidCandidateIds.every((candidateId) => invalidIdentityOwnership.invalidCandidateIds.has(String(candidateId || "")));
         const firstOutput = ledger.present
-          ? failClosedSemanticCandidates(sanitizedOutput, ledger.validCandidates, ledger.invalidCandidateIds)
+          ? failClosedSemanticCandidates(sanitizedOutput, ledger.validCandidates, ledger.invalidCandidateIds, input, invalidIdentityOwnership.taskKeys)
           : sanitizedOutput;
+        const validIdentityResult = (candidateOutput) => !identityOwnershipPresent
+          || firstOutput[IDENTITY_FAIL_CLOSED_COMPLETE] !== false && validMergedOutput(candidateOutput, input);
+        const identityFailClosedValid = validIdentityResult(firstOutput);
         Object.defineProperty(firstOutput, SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC, {
           configurable: false,
           enumerable: false,
           writable: false,
           value: Object.freeze(semanticLedgerBoundaries)
         });
-        const replaceInvalidSemanticLedger = ledger.present
+        const replaceIdentityInvalidSemanticLedger = identityInvalidLedger
+          && !hasExplicitInventoryRemoval(input)
+          && validNonSemanticPlannerContract(sanitizedOutput, input);
+        const replaceLegacyInvalidSemanticLedger = ledger.present
           && ledger.invalidCandidateIds.length > 0
           && ledger.validCandidates.length === 0
           && !hasExplicitInventoryRemoval(input)
           && !hasDeterministicSemanticTaskNormalization(sanitizedOutput, input)
           && validNonSemanticPlannerContract(sanitizedOutput, input);
+        const replaceInvalidSemanticLedger = replaceIdentityInvalidSemanticLedger || replaceLegacyInvalidSemanticLedger;
+        const validCandidateIds = new Set(ledger.validCandidates.map((candidate) => String(candidate && candidate.candidateId || "")));
+        const preservedValidTaskIds = (sanitizedOutput.tasks || [])
+          .filter((task) => Array.isArray(task && task.semanticCandidateIds)
+            && task.semanticCandidateIds.some((candidateId) => validCandidateIds.has(String(candidateId || ""))))
+          .map((task) => String(task && task.taskId || ""))
+          .filter(Boolean);
         const missingCandidates = ledger.present
           ? missingSemanticCandidates(firstOutput, input, ledger.validCandidates)
           : [];
@@ -1494,7 +1648,7 @@ class TestOnlyOpenAiConversationPlanner {
                 invalidCandidateIds: ledger.invalidCandidateIds,
                 missingCandidateIds: [],
                 missingSemanticCandidates: [],
-                preservedTaskIds: []
+                preservedTaskIds: preservedValidTaskIds
               } : {
                 missingCandidateIds: missingCandidates.map((candidate) => candidate.candidateId),
                 missingSemanticCandidates: missingCandidates,
@@ -1513,22 +1667,38 @@ class TestOnlyOpenAiConversationPlanner {
             const canonicalizationDescriptor = Object.getOwnPropertyDescriptor(canonicalizedRepairOutput, "repairCanonicalizationResult");
             if (canonicalizationDescriptor) Object.defineProperty(finalRepairOutput, "repairCanonicalizationResult", canonicalizationDescriptor);
             if (replaceInvalidSemanticLedger) {
-              if (fullyValidatedSemanticRepair(finalRepairOutput, input)) {
+              if (fullyValidatedSemanticRepair(finalRepairOutput, input)
+                && preservesValidSemanticSiblings(sanitizedOutput, finalRepairOutput, ledger.validCandidates)) {
                 return annotateProviderSuccess(copyPlannerDiagnostics(firstOutput, finalRepairOutput), "", providerAttempts, { performed: true, succeeded: true, fallback: false });
+              }
+              if (!identityFailClosedValid) {
+                throw plannerFailure({ code: "planner_local_contract_failure", category: "local_contract_failure", model: this.model });
               }
               return annotateProviderSuccess(firstOutput, "", providerAttempts, { performed: true, succeeded: false, fallback: true });
             }
             const merged = mergeSemanticCandidateRepair(firstOutput, finalRepairOutput, input, missingCandidates);
             const coverage = merged[COVERAGE_MERGE_DIAGNOSTIC];
+            if (!validIdentityResult(merged)) {
+              throw plannerFailure({ code: "planner_local_contract_failure", category: "local_contract_failure", model: this.model });
+            }
             return annotateProviderSuccess(merged, "", providerAttempts, { performed: true, succeeded: coverage.succeeded, fallback: coverage.fallback });
           } catch (repairError) {
             providerAttempts.push(...(Array.isArray(repairError && repairError.providerAttempts) ? repairError.providerAttempts : []));
             if (replaceInvalidSemanticLedger) {
+              if (!identityFailClosedValid) {
+                throw plannerFailure({ code: "planner_local_contract_failure", category: "local_contract_failure", model: this.model });
+              }
               return annotateProviderSuccess(firstOutput, "", providerAttempts, { performed: true, succeeded: false, fallback: true });
             }
             const merged = mergeSemanticCandidateRepair(firstOutput, null, input, missingCandidates);
+            if (!validIdentityResult(merged)) {
+              throw plannerFailure({ code: "planner_local_contract_failure", category: "local_contract_failure", model: this.model });
+            }
             return annotateProviderSuccess(merged, "", providerAttempts, { performed: true, succeeded: false, fallback: true });
           }
+        }
+        if (!identityFailClosedValid) {
+          throw plannerFailure({ code: "planner_local_contract_failure", category: "local_contract_failure", model: this.model });
         }
         return annotateProviderSuccess(firstOutput, firstAttemptErrorCategory, providerAttempts);
       } catch (error) {
