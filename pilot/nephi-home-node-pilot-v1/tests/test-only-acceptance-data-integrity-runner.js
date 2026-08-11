@@ -21,18 +21,26 @@ function assertPermanentAcceptanceIntegrityGate() {
   );
   const deployedRunner = fs.readFileSync(path.join(ROOT, "scripts", "run-deployed-conversation-acceptance.js"), "utf8");
   const mainStart = deployedRunner.indexOf("async function main(env = process.env)");
-  const snapshotLoad = deployedRunner.indexOf("loadAcceptanceDataSnapshot(ACCEPTANCE_DATA_MANIFEST_PATH)", mainStart);
-  const initialization = deployedRunner.indexOf("await initializeDeployedAcceptanceData({", snapshotLoad);
-  const firstMatrixRequest = deployedRunner.indexOf("await runAcceptanceMatrix({", mainStart);
+  const initialization = deployedRunner.indexOf("await runOperationalReadOnlyAcceptance({", mainStart);
   assert.ok(
-    mainStart >= 0 && snapshotLoad > mainStart && initialization > snapshotLoad && firstMatrixRequest > initialization,
-    "repository snapshot sync/hash verification must precede the first acceptance matrix request"
+    mainStart >= 0 && initialization > mainStart,
+    "operational business integrity must wrap the acceptance matrix"
   );
+  assert.match(deployedRunner, /const before = await readIntegrity\(integrityInput\);[\s\S]*summary = await runMatrix\(matrixInput\);[\s\S]*const after = await readIntegrity\(integrityInput\);/, "the matrix must be enclosed by two operational integrity reads");
+  assert.equal(deployedRunner.slice(mainStart).includes("loadAcceptanceDataSnapshot(ACCEPTANCE_DATA_MANIFEST_PATH)"), false, "operational deployed acceptance must not load or initialize repository fixture facts");
   assert.match(
     deployedRunner,
     /const runScope = createAcceptanceRunScope\(commit, randomUuid\(\)\);/,
     "each acceptance execution must use a fresh run scope"
   );
+  const providerSource = fs.readFileSync(path.join(ROOT, "lib", "providers", "test-only-acceptance-data.js"), "utf8");
+  const operationalStart = providerSource.indexOf("async function readOperationalBusinessSnapshot(");
+  const operationalEnd = providerSource.indexOf("function unique(", operationalStart);
+  const operationalSource = providerSource.slice(operationalStart, operationalEnd);
+  assert.ok(operationalStart >= 0 && operationalEnd > operationalStart, "the operational snapshot reader must be present");
+  const operationalQueries = [...operationalSource.matchAll(/client\.query\("([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(operationalQueries.length >= 10 && operationalQueries.every((query) => query.startsWith("SELECT ")), "the operational reader must contain SELECT-only business access");
+  assert.doesNotMatch(operationalSource, /\b(?:syncTestOnlyAcceptanceData|writeSnapshot)\b/, "the operational reader must not reach fixture mutation functions");
 }
 
 async function withClient(connection, work) {
@@ -181,11 +189,44 @@ async function run() {
 
     const {
       loadAcceptanceDataSnapshot,
+      readOperationalAcceptanceDataIntegrity,
       syncTestOnlyAcceptanceData,
       verifyTestOnlyAcceptanceData
     } = require("../lib/providers/test-only-acceptance-data");
 
     const snapshot = loadAcceptanceDataSnapshot(MANIFEST_PATH);
+    const operationalBefore = await readOperationalAcceptanceDataIntegrity({ connection, acceptancePropertyId: PROPERTY_ID, testOnly: true });
+    assert.equal(operationalBefore.mode, "operational_read_only");
+    assert.match(operationalBefore.businessHash, /^[0-9a-f]{64}$/);
+    assert.equal(
+      (await withClient(connection, (client) => client.query("SELECT name FROM room_types WHERE property_id=$1 AND room_id='room301'", [PROPERTY_ID]))).rows[0].name,
+      "Stale 301",
+      "operational read-only integrity must never repair or replace operational facts"
+    );
+    await withClient(connection, async (client) => {
+      await client.query("INSERT INTO conversation_states(property_id,channel_id,line_user_id,state) VALUES($1,'runtime-only','runtime-only','{}'::jsonb)", [PROPERTY_ID]);
+      await client.query("INSERT INTO message_logs(property_id,channel_id,event_id,review_id,line_user_id,processing_status,status,needs_review,payload) VALUES($1,'runtime-only','runtime-only','runtime-only','runtime-only','complete','complete',false,'{}'::jsonb)", [PROPERTY_ID]);
+    });
+    const operationalAfterRuntime = await readOperationalAcceptanceDataIntegrity({ connection, acceptancePropertyId: PROPERTY_ID, testOnly: true });
+    assert.equal(operationalAfterRuntime.businessHash, operationalBefore.businessHash, "runtime logs and conversation state must be excluded from the business hash");
+    await withClient(connection, (client) => client.query("UPDATE properties SET display_name='Business mutation sentinel' WHERE property_id=$1", [PROPERTY_ID]));
+    const operationalAfterBusiness = await readOperationalAcceptanceDataIntegrity({ connection, acceptancePropertyId: PROPERTY_ID, testOnly: true });
+    assert.notEqual(operationalAfterBusiness.businessHash, operationalBefore.businessHash, "a business authority mutation must change the business hash");
+    await withClient(connection, (client) => client.query("UPDATE properties SET display_name='Stale property' WHERE property_id=$1", [PROPERTY_ID]));
+    await withClient(connection, (client) => client.query(
+      "INSERT INTO property_line_bindings(property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled) VALUES($1,$2,$3::jsonb,$4::jsonb,true)",
+      [PROPERTY_ID, "private-webhook-key", JSON.stringify({ ciphertext: "private-secret-ciphertext" }), JSON.stringify({ ciphertext: "private-token-ciphertext" })]
+    ));
+    const operationalWithLine = await readOperationalAcceptanceDataIntegrity({ connection, acceptancePropertyId: PROPERTY_ID, testOnly: true });
+    assert.deepEqual(
+      { ...operationalWithLine.lineBinding, webhookKeyHash: "hash" },
+      { exists: true, enabled: true, hasChannelSecret: true, hasChannelAccessToken: true, webhookKeyHash: "hash" },
+      "LINE integrity state must expose only configured booleans and stable hashed identity"
+    );
+    assert.match(operationalWithLine.lineBinding.webhookKeyHash, /^[0-9a-f]{64}$/);
+    for (const secret of ["private-webhook-key", "private-secret-ciphertext", "private-token-ciphertext"]) {
+      assert.equal(JSON.stringify(operationalWithLine).includes(secret), false, "operational integrity results must not expose LINE credential material");
+    }
     await assert.rejects(
       syncTestOnlyAcceptanceData({
         connection,
@@ -241,7 +282,7 @@ async function run() {
       (error) => error && error.code === "ACCEPTANCE_DATA_CANONICAL_CONFLICT"
     );
 
-    console.log(JSON.stringify({ suite: "test-only-acceptance-data-integrity", caseCount: 13, passCount: 13, failCount: 0 }));
+    console.log(JSON.stringify({ suite: "test-only-acceptance-data-integrity", caseCount: 20, passCount: 20, failCount: 0 }));
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

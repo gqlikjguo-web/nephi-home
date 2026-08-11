@@ -420,7 +420,9 @@ async function integrityRequest(url, body, authorization = "") {
       testOnlyAcceptancePropertyId: propertyId,
       testOnlyAcceptanceDataInitializer: async (input) => {
         dataInitializationCalls.push(input);
-        return { status: "verified", propertyId, snapshotHash: "a".repeat(64), roomCount: 4, bundleCount: 1, knowledgeItemCount: 18, availabilityDayCount: 49 };
+        return input.mode === "operational_read_only"
+          ? { status: "verified", mode: "operational_read_only", propertyId, businessHash: "b".repeat(64) }
+          : { status: "verified", mode: "fixture_snapshot", propertyId, snapshotHash: "a".repeat(64), roomCount: 4, bundleCount: 1, knowledgeItemCount: 18, availabilityDayCount: 49 };
       },
       testOnlyAcceptanceOidcVerifier: async (token) => token === "valid-oidc-token",
       now,
@@ -436,17 +438,28 @@ async function integrityRequest(url, body, authorization = "") {
       const rejected = await request(oidcRunning.url, "POST", { customerId: propertyId, conversationId: "oidc-rejected", messageText: "parking", eventId: "oidc-2" }, "", "Bearer invalid-oidc-token");
       assert.equal(rejected.response.status, 403, "an invalid OIDC identity must fail closed");
       assert.equal(JSON.stringify(rejected.body).includes("invalid-oidc-token"), false, "OIDC tokens must never be reflected in responses");
-      const initialized = await integrityRequest(oidcRunning.url, { propertyId, expectedSnapshotHash: "a".repeat(64) }, "Bearer valid-oidc-token");
-      assert.equal(initialized.response.status, 200, "the verified OIDC identity must initialize exact test-only acceptance data");
-      assert.deepEqual(initialized.body, { status: "verified", propertyId, snapshotHash: "a".repeat(64), roomCount: 4, bundleCount: 1, knowledgeItemCount: 18, availabilityDayCount: 49 });
+      const initialized = await integrityRequest(oidcRunning.url, { mode: "operational_read_only", propertyId }, "Bearer valid-oidc-token");
+      assert.equal(initialized.response.status, 200, "the verified OIDC identity must read operational business integrity");
+      assert.deepEqual(initialized.body, { status: "verified", mode: "operational_read_only", propertyId, businessHash: "b".repeat(64) });
       assert.equal(dataInitializationCalls.length, 1);
       assert.equal(dataInitializationCalls[0].propertyId, propertyId);
-      const wrongProperty = await integrityRequest(oidcRunning.url, { propertyId: "demo_homestay_b", expectedSnapshotHash: "a".repeat(64) }, "Bearer valid-oidc-token");
+      assert.equal(dataInitializationCalls[0].mode, "operational_read_only");
+      assert.equal(Object.hasOwn(dataInitializationCalls[0], "expectedSnapshotHash"), false, "operational mode must not receive fixture authority");
+      const fixtureInitialized = await integrityRequest(oidcRunning.url, { mode: "fixture_snapshot", propertyId, expectedSnapshotHash: "a".repeat(64) }, "Bearer valid-oidc-token");
+      assert.equal(fixtureInitialized.response.status, 200, "explicit isolated fixture mode must remain available");
+      assert.equal(fixtureInitialized.body.mode, "fixture_snapshot");
+      assert.equal(dataInitializationCalls.length, 2);
+      const missingMode = await integrityRequest(oidcRunning.url, { propertyId }, "Bearer valid-oidc-token");
+      assert.equal(missingMode.response.status, 400, "missing mode must fail closed");
+      const unknownMode = await integrityRequest(oidcRunning.url, { mode: "unknown_mode", propertyId }, "Bearer valid-oidc-token");
+      assert.equal(unknownMode.response.status, 400, "unknown mode must fail closed");
+      assert.equal(dataInitializationCalls.length, 2, "invalid modes must not reach either data path");
+      const wrongProperty = await integrityRequest(oidcRunning.url, { mode: "operational_read_only", propertyId: "demo_homestay_b" }, "Bearer valid-oidc-token");
       assert.equal(wrongProperty.response.status, 403, "the initializer must reject a property outside the configured acceptance scope");
-      assert.equal(dataInitializationCalls.length, 1, "wrong-property input must not reach the synchronizer");
-      const rejectedInitialization = await integrityRequest(oidcRunning.url, { propertyId, expectedSnapshotHash: "a".repeat(64) }, "Bearer invalid-oidc-token");
+      assert.equal(dataInitializationCalls.length, 2, "wrong-property input must not reach either data path");
+      const rejectedInitialization = await integrityRequest(oidcRunning.url, { mode: "operational_read_only", propertyId }, "Bearer invalid-oidc-token");
       assert.equal(rejectedInitialization.response.status, 403, "invalid OIDC must not initialize data");
-      assert.equal(dataInitializationCalls.length, 1);
+      assert.equal(dataInitializationCalls.length, 2);
     } finally { console.log = originalConsoleLog; await oidcApp.stop(); }
     assert.equal(oidcLogs.some((entry) => entry.includes("valid-oidc-token") || entry.includes("invalid-oidc-token")), false, "OIDC tokens must never be written to logs");
 

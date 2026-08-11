@@ -22,7 +22,7 @@ const { createLineSetupService } = require("./lib/line-setup-service");
 const { CustomReplyError, createCustomReplyService } = require("./lib/custom-reply-rules");
 const { createTestOnlyLineMessageTrace } = require("./lib/test-only-line-message-trace");
 const { createGithubActionsOidcVerifier } = require("./lib/test-only-acceptance-oidc");
-const { syncTestOnlyAcceptanceData } = require("./lib/providers/test-only-acceptance-data");
+const { readOperationalAcceptanceDataIntegrity, syncTestOnlyAcceptanceData } = require("./lib/providers/test-only-acceptance-data");
 const { runWithTestOnlyAcceptanceRawUnderstanding } = require("./lib/test-only-raw-understanding-diagnostic");
 
 const APP_ROOT = __dirname;
@@ -1087,26 +1087,32 @@ function createApp(options = {}) {
   const testOnlyAcceptanceDataInitializer = testOnlyEnvironment && testOnlyAcceptanceEnabled && testOnlyAcceptancePropertyId && providers.kind === "postgres"
     ? async (body = {}, identity = null) => {
       const propertyId = String(body.propertyId || body.customerId || "").trim();
+      const mode = String(body.mode || "").trim();
       const expectedSnapshotHash = String(body.expectedSnapshotHash || "").trim().toLowerCase();
       if (propertyId !== testOnlyAcceptancePropertyId) throw new AppError(403, "TEST_ONLY_ACCEPTANCE_PROPERTY_MISMATCH", "Acceptance property scope was rejected");
-      if (!/^[0-9a-f]{64}$/.test(expectedSnapshotHash)) throw new AppError(400, "ACCEPTANCE_DATA_SNAPSHOT_HASH_REQUIRED", "Expected repository snapshot hash is required");
+      if (mode !== "operational_read_only" && mode !== "fixture_snapshot") throw new AppError(400, "ACCEPTANCE_DATA_MODE_REQUIRED", "Explicit acceptance data mode is required");
+      if (mode === "fixture_snapshot" && !/^[0-9a-f]{64}$/.test(expectedSnapshotHash)) throw new AppError(400, "ACCEPTANCE_DATA_SNAPSHOT_HASH_REQUIRED", "Expected repository snapshot hash is required");
       if (!injectedAcceptanceDataInitializer && !acceptanceDataConnection) throw new AppError(503, "ACCEPTANCE_DATA_POSTGRES_REQUIRED", "Test-only PostgreSQL acceptance data is unavailable");
       let result;
       try {
         result = injectedAcceptanceDataInitializer
-          ? await injectedAcceptanceDataInitializer({ propertyId, expectedSnapshotHash, identity })
-          : await syncTestOnlyAcceptanceData({
+          ? await injectedAcceptanceDataInitializer({ mode, propertyId, ...(mode === "fixture_snapshot" ? { expectedSnapshotHash } : {}), identity })
+          : mode === "operational_read_only"
+            ? await readOperationalAcceptanceDataIntegrity({ connection: acceptanceDataConnection, acceptancePropertyId: propertyId, testOnly: true })
+            : { ...(await syncTestOnlyAcceptanceData({
             connection: acceptanceDataConnection,
             manifestPath: acceptanceDataManifestPath,
             acceptancePropertyId: propertyId,
             expectedSnapshotHash,
             testOnly: true
-          });
+          })), mode: "fixture_snapshot" };
       } catch (error) {
         const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(String(error && error.code || "")) ? error.code : "ACCEPTANCE_DATA_INTEGRITY_FAILURE";
         throw new AppError(409, code, "Test-only acceptance data initialization failed");
       }
-      if (!result || result.status !== "verified" || result.propertyId !== propertyId || result.snapshotHash !== expectedSnapshotHash) {
+      const validResult = result && result.status === "verified" && result.mode === mode && result.propertyId === propertyId
+        && (mode === "operational_read_only" ? /^[0-9a-f]{64}$/.test(String(result.businessHash || "")) : result.snapshotHash === expectedSnapshotHash);
+      if (!validResult) {
         throw new AppError(409, "ACCEPTANCE_DATA_INTEGRITY_FAILURE", "Test-only PostgreSQL snapshot verification failed");
       }
       return result;

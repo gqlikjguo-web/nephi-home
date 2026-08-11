@@ -5,7 +5,6 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { TEST_ONLY_ACCEPTANCE_AUDIENCE, EXPECTED_REPOSITORY, EXPECTED_REF, EXPECTED_WORKFLOW_REF } = require("../lib/test-only-acceptance-oidc");
 const { getCapabilityDefinition } = require("../lib/conversation-engine-v2/capability-registry");
-const { loadAcceptanceDataSnapshot } = require("../lib/providers/test-only-acceptance-data");
 
 const DEFAULT_BASE_URL = "https://nephi-home-node-pilot-test-only-btye.onrender.com";
 const SAFE_FACT_KEYS = new Set(["subject", "status", "answer", "locationMapUrl", "detailIntent", "availability", "checkIn", "checkOut", "detailProvided", "detailNeedsConfirmation", "amenities", "availableDates", "range", "availableInventory", "applicableBundles", "prices"]);
@@ -16,7 +15,6 @@ const FORBIDDEN_FINAL_TEXT = ["一定有房", "已完成訂房"];
 
 const MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-fixed-matrix.json");
 const SUPPLEMENTAL_MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-supplemental-matrix.json");
-const ACCEPTANCE_DATA_MANIFEST_PATH = path.resolve(__dirname, "../fixtures/postgres-seed.json");
 const NOT_EXECUTABLE_STATUS = "NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API";
 const OPERATOR_CONTEXT_CASES = new Map([
   ["rg-040-modify-guests-bed", "operator_prior_context_cannot_be_established"],
@@ -304,8 +302,13 @@ async function requestGithubOidcToken({ requestUrl, requestToken, fetchImpl = gl
   return payload.value;
 }
 
-async function initializeDeployedAcceptanceData({ baseUrl, propertyId, oidcToken, expectedSnapshotHash, fetchImpl = globalThis.fetch }) {
-  if (!propertyId || !oidcToken || !/^[0-9a-f]{64}$/.test(String(expectedSnapshotHash || ""))) {
+async function initializeDeployedAcceptanceData({ baseUrl, propertyId, oidcToken, mode, expectedSnapshotHash, fetchImpl = globalThis.fetch }) {
+  if (mode !== "operational_read_only" && mode !== "fixture_snapshot") {
+    const error = new Error("explicit acceptance data mode is required");
+    error.code = "INTEGRITY_FAILURE_ACCEPTANCE_DATA_MODE";
+    throw error;
+  }
+  if (!propertyId || !oidcToken || (mode === "fixture_snapshot" && !/^[0-9a-f]{64}$/.test(String(expectedSnapshotHash || "")))) {
     const error = new Error("acceptance data initialization input is incomplete");
     error.code = "INTEGRITY_FAILURE_ACCEPTANCE_DATA_INPUT";
     throw error;
@@ -316,7 +319,7 @@ async function initializeDeployedAcceptanceData({ baseUrl, propertyId, oidcToken
     response = await fetchImpl(`${String(baseUrl).replace(/\/$/, "")}/api/admin/test-only/acceptance-data-integrity`, {
       method: "POST",
       headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${oidcToken}` },
-      body: JSON.stringify({ propertyId, expectedSnapshotHash })
+      body: JSON.stringify({ mode, propertyId, ...(mode === "fixture_snapshot" ? { expectedSnapshotHash } : {}) })
     });
     payload = await response.json().catch(() => null);
   } catch (cause) {
@@ -326,19 +329,46 @@ async function initializeDeployedAcceptanceData({ baseUrl, propertyId, oidcToken
     throw error;
   }
   const result = responseData(payload);
-  if (!response || !response.ok || !result || result.status !== "verified" || result.propertyId !== propertyId) {
+  if (!response || !response.ok || !result || result.status !== "verified" || result.mode !== mode || result.propertyId !== propertyId) {
     const error = new Error("acceptance data initialization failed");
     error.code = "INTEGRITY_FAILURE_ACCEPTANCE_DATA_INITIALIZATION";
     error.httpStatus = Number(response && response.status) || 0;
     error.httpErrorCode = String(payload && payload.error && payload.error.code || "UNKNOWN");
     throw error;
   }
-  if (result.snapshotHash !== expectedSnapshotHash) {
+  if (mode === "fixture_snapshot" && result.snapshotHash !== expectedSnapshotHash) {
     const error = new Error("acceptance data snapshot mismatch");
     error.code = "INTEGRITY_FAILURE_ACCEPTANCE_DATA_MISMATCH";
     throw error;
   }
+  if (mode === "operational_read_only" && !/^[0-9a-f]{64}$/.test(String(result.businessHash || ""))) {
+    const error = new Error("operational business hash is invalid");
+    error.code = "INTEGRITY_FAILURE_ACCEPTANCE_DATA_MISMATCH";
+    throw error;
+  }
   return result;
+}
+
+async function runOperationalReadOnlyAcceptance({ readIntegrity, runMatrix, integrityInput, matrixInput }) {
+  const before = await readIntegrity(integrityInput);
+  let summary;
+  let matrixError = null;
+  try { summary = await runMatrix(matrixInput); } catch (error) { matrixError = error; }
+  const after = await readIntegrity(integrityInput);
+  if (before.businessHash !== after.businessHash) {
+    const error = new Error("operational business integrity changed during acceptance");
+    error.code = "OPERATIONAL_INTEGRITY_FAILURE";
+    error.businessHashBefore = before.businessHash;
+    error.businessHashAfter = after.businessHash;
+    if (matrixError) error.cause = matrixError;
+    throw error;
+  }
+  if (matrixError) {
+    matrixError.businessHashBefore = before.businessHash;
+    matrixError.businessHashAfter = after.businessHash;
+    throw matrixError;
+  }
+  return { ...summary, businessHashBefore: before.businessHash, businessHashAfter: after.businessHash };
 }
 
 function createAcceptanceRunScope(commit, uuid = crypto.randomUUID()) {
@@ -1263,29 +1293,28 @@ async function main(env = process.env) {
   const acceptance = acceptanceMatrixForMode(env);
   const baseUrl = String(env.TEST_ONLY_ACCEPTANCE_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, "");
   const propertyId = String(env.TEST_ONLY_ACCEPTANCE_PROPERTY_ID || "nephi_home").trim();
+  const acceptanceDataMode = String(env.TEST_ONLY_ACCEPTANCE_DATA_MODE || "").trim();
+  if (acceptanceDataMode !== "operational_read_only") throw Object.assign(new Error("deployed acceptance requires operational_read_only"), { code: "INTEGRITY_FAILURE_ACCEPTANCE_DATA_MODE" });
   const reportDirectory = String(env.TEST_ONLY_ACCEPTANCE_REPORT_DIR || "").trim();
   if (!reportDirectory) throw new Error("acceptance_report_directory_required");
   const health = await pollForDeployment({ baseUrl, expectedCommit: commit });
   console.log(JSON.stringify({ stage: "deployment-ready", status: health.status, testOnly: health.testOnly, commit: health.commit }));
   const oidcRequest = { requestUrl: env.ACTIONS_ID_TOKEN_REQUEST_URL, requestToken: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN };
   const oidcToken = await requestGithubOidcToken(oidcRequest);
-  const repositorySnapshot = loadAcceptanceDataSnapshot(ACCEPTANCE_DATA_MANIFEST_PATH);
-  const dataIntegrity = await initializeDeployedAcceptanceData({
-    baseUrl,
-    propertyId,
-    oidcToken,
-    expectedSnapshotHash: repositorySnapshot.snapshotHash
-  });
-  console.log(JSON.stringify({ stage: "acceptance-data-integrity", status: dataIntegrity.status, propertyId: dataIntegrity.propertyId, snapshotHash: dataIntegrity.snapshotHash }));
-  const summary = await runAcceptanceMatrix({
-    baseUrl,
-    propertyId,
-    oidcToken,
-    refreshOidcToken: () => requestGithubOidcToken(oidcRequest),
-    commit,
-    matrix: acceptance.matrix,
-    reportFinalizer: acceptance.mode === "target_preflight" ? validateTargetPreflightAttribution : null,
-    reportWriter: (report) => writeAcceptanceReport(report, reportDirectory)
+  const summary = await runOperationalReadOnlyAcceptance({
+    readIntegrity: async (input) => initializeDeployedAcceptanceData({ ...input, oidcToken: await requestGithubOidcToken(oidcRequest) }),
+    runMatrix: runAcceptanceMatrix,
+    integrityInput: { baseUrl, propertyId, mode: acceptanceDataMode },
+    matrixInput: {
+      baseUrl,
+      propertyId,
+      oidcToken,
+      refreshOidcToken: () => requestGithubOidcToken(oidcRequest),
+      commit,
+      matrix: acceptance.matrix,
+      reportFinalizer: acceptance.mode === "target_preflight" ? validateTargetPreflightAttribution : null,
+      reportWriter: (report) => writeAcceptanceReport(report, reportDirectory)
+    }
   });
   console.log(JSON.stringify({ suite: "deployed-conversation-acceptance", mode: acceptance.mode, ...summary, commit }));
 }
@@ -1319,6 +1348,7 @@ module.exports = {
   pollForDeployment,
   requestGithubOidcToken,
   initializeDeployedAcceptanceData,
+  runOperationalReadOnlyAcceptance,
   createAcceptanceRunScope,
   acceptanceConversationId,
   acceptanceEventId,

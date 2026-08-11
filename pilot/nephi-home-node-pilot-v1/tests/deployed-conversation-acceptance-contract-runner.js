@@ -10,6 +10,7 @@ const {
   pollForDeployment,
   requestGithubOidcToken,
   initializeDeployedAcceptanceData,
+  runOperationalReadOnlyAcceptance,
   createAcceptanceRunScope,
   acceptanceConversationId,
   acceptanceEventId,
@@ -77,28 +78,75 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     baseUrl: "https://test-only.example",
     propertyId: "nephi_home",
     oidcToken: "short-lived-oidc-secret",
-    expectedSnapshotHash: "b".repeat(64),
+    mode: "operational_read_only",
     fetchImpl: async (url, options) => {
       initializationRequests.push({ url: String(url), options, body: JSON.parse(options.body) });
-      return { ok: true, status: 200, json: async () => ({ ok: true, data: { status: "verified", propertyId: "nephi_home", snapshotHash: "b".repeat(64), roomCount: 4, bundleCount: 1, knowledgeItemCount: 18, availabilityDayCount: 49 } }) };
+      return { ok: true, status: 200, json: async () => ({ ok: true, data: { status: "verified", mode: "operational_read_only", propertyId: "nephi_home", businessHash: "b".repeat(64) } }) };
     }
   });
-  assert.equal(initialized.snapshotHash, "b".repeat(64));
+  assert.equal(initialized.businessHash, "b".repeat(64));
   assert.equal(initializationRequests.length, 1);
   assert.equal(initializationRequests[0].url, "https://test-only.example/api/admin/test-only/acceptance-data-integrity");
   assert.equal(initializationRequests[0].options.headers.authorization, "Bearer short-lived-oidc-secret");
-  assert.deepEqual(initializationRequests[0].body, { propertyId: "nephi_home", expectedSnapshotHash: "b".repeat(64) });
+  assert.deepEqual(initializationRequests[0].body, { mode: "operational_read_only", propertyId: "nephi_home" });
+
+  const fixtureInitialized = await initializeDeployedAcceptanceData({
+    baseUrl: "https://test-only.example",
+    propertyId: "nephi_home",
+    oidcToken: "short-lived-oidc-secret",
+    mode: "fixture_snapshot",
+    expectedSnapshotHash: "b".repeat(64),
+    fetchImpl: async (_url, options) => {
+      assert.deepEqual(JSON.parse(options.body), { mode: "fixture_snapshot", propertyId: "nephi_home", expectedSnapshotHash: "b".repeat(64) });
+      return { ok: true, status: 200, json: async () => ({ ok: true, data: { status: "verified", mode: "fixture_snapshot", propertyId: "nephi_home", snapshotHash: "b".repeat(64) } }) };
+    }
+  });
+  assert.equal(fixtureInitialized.snapshotHash, "b".repeat(64), "the explicit isolated fixture mode must remain available");
+
+  for (const mode of [undefined, "unknown_mode"]) {
+    await assert.rejects(
+      initializeDeployedAcceptanceData({ baseUrl: "https://test-only.example", propertyId: "nephi_home", oidcToken: "short-lived-oidc-secret", mode }),
+      (error) => error && error.code === "INTEGRITY_FAILURE_ACCEPTANCE_DATA_MODE",
+      "missing and unknown acceptance data modes must fail closed before a request"
+    );
+  }
 
   await assert.rejects(
     initializeDeployedAcceptanceData({
       baseUrl: "https://test-only.example",
       propertyId: "nephi_home",
       oidcToken: "short-lived-oidc-secret",
+      mode: "fixture_snapshot",
       expectedSnapshotHash: "b".repeat(64),
-      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, data: { status: "verified", propertyId: "nephi_home", snapshotHash: "c".repeat(64) } }) })
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, data: { status: "verified", mode: "fixture_snapshot", propertyId: "nephi_home", snapshotHash: "c".repeat(64) } }) })
     }),
     (error) => error && error.code === "INTEGRITY_FAILURE_ACCEPTANCE_DATA_MISMATCH",
     "a deployed snapshot hash mismatch must block before any OpenAI case"
+  );
+
+  const stableIntegrityReads = [];
+  const stableSummary = await runOperationalReadOnlyAcceptance({
+    readIntegrity: async () => {
+      stableIntegrityReads.push(true);
+      return { status: "verified", mode: "operational_read_only", propertyId: "nephi_home", businessHash: "d".repeat(64) };
+    },
+    runMatrix: async () => ({ status: "PASS", passCount: 1 }),
+    integrityInput: {},
+    matrixInput: {}
+  });
+  assert.equal(stableIntegrityReads.length, 2, "operational acceptance must read business integrity before and after the matrix");
+  assert.equal(stableSummary.businessHashBefore, "d".repeat(64));
+  assert.equal(stableSummary.businessHashAfter, "d".repeat(64));
+  const changingHashes = ["e".repeat(64), "f".repeat(64)];
+  await assert.rejects(
+    runOperationalReadOnlyAcceptance({
+      readIntegrity: async () => ({ status: "verified", mode: "operational_read_only", propertyId: "nephi_home", businessHash: changingHashes.shift() }),
+      runMatrix: async () => ({ status: "PASS", passCount: 1 }),
+      integrityInput: {},
+      matrixInput: {}
+    }),
+    (error) => error && error.code === "OPERATIONAL_INTEGRITY_FAILURE",
+    "a business mutation during the matrix must fail the deployed run"
   );
 
   const safeResult = {

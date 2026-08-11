@@ -33,6 +33,103 @@ function hashAcceptanceDataSnapshot(snapshot) {
   return crypto.createHash("sha256").update(stableJson(data)).digest("hex");
 }
 
+function normalizedDate(value) {
+  return String(value || "").slice(0, 10);
+}
+
+async function readOperationalBusinessSnapshot(client, propertyId) {
+  const propertyResult = await client.query("SELECT display_name FROM properties WHERE property_id=$1", [propertyId]);
+  if (propertyResult.rows.length !== 1) throw integrityError("TEST_ONLY_ACCEPTANCE_PROPERTY_MISMATCH", "operational acceptance property was not found");
+  const settingsResult = await client.query("SELECT settings FROM property_settings WHERE property_id=$1", [propertyId]);
+  const roomResult = await client.query(
+    "SELECT room_id,name,display_name,room_code,capacity,highlights,type,description,position,enabled,base_price,weekday_price,friday_price,saturday_price,monday_thursday_price,saturday_holiday_price,sunday_price FROM room_types WHERE property_id=$1 ORDER BY position,room_id",
+    [propertyId]
+  );
+  const overrideResult = await client.query("SELECT room_id,stay_date::text date,price,currency FROM room_price_overrides WHERE property_id=$1 ORDER BY stay_date,room_id", [propertyId]);
+  const legacyAvailabilityResult = await client.query("SELECT stay_date::text date,room301,room302,room401,room402,whole_house FROM availability_days WHERE property_id=$1 ORDER BY stay_date", [propertyId]);
+  const inventoryAvailabilityResult = await client.query("SELECT stay_date::text date,inventory_id,status,remaining FROM inventory_availability_days WHERE property_id=$1 ORDER BY stay_date,inventory_id", [propertyId]);
+  const bundleResult = await client.query("SELECT bundle_id,name,capacity,base_price,monday_thursday_price,friday_price,saturday_holiday_price,sunday_price,enabled,entertainment_amenities FROM bundle_offers WHERE property_id=$1 ORDER BY bundle_id", [propertyId]);
+  const bundleMemberResult = await client.query("SELECT bundle_id,room_id,position FROM bundle_offer_members WHERE property_id=$1 ORDER BY bundle_id,position,room_id", [propertyId]);
+  const bundleAvailabilityResult = await client.query("SELECT stay_date::text date,bundle_id,status FROM bundle_availability_days WHERE property_id=$1 ORDER BY stay_date,bundle_id", [propertyId]);
+  const knowledgeResult = await client.query("SELECT knowledge_id,question,answer,knowledge_key,position FROM knowledge_items WHERE property_id=$1 ORDER BY position,knowledge_id", [propertyId]);
+  const lineBindingResult = await client.query("SELECT webhook_key,channel_secret_encrypted IS NOT NULL has_channel_secret,channel_access_token_encrypted IS NOT NULL has_channel_access_token,enabled FROM property_line_bindings WHERE property_id=$1", [propertyId]);
+  const lineBinding = lineBindingResult.rows[0] || null;
+  return {
+    schemaVersion: 1,
+    property: {
+      propertyId,
+      displayName: propertyResult.rows[0].display_name,
+      settings: settingsResult.rows[0] && settingsResult.rows[0].settings || null
+    },
+    rooms: roomResult.rows.map((row) => ({
+      id: row.room_id,
+      name: row.name,
+      displayName: row.display_name,
+      roomCode: row.room_code,
+      capacity: Number(row.capacity),
+      highlights: Array.isArray(row.highlights) ? row.highlights : [],
+      type: row.type,
+      description: row.description,
+      position: Number(row.position),
+      enabled: Boolean(row.enabled),
+      prices: {
+        base: Number(row.base_price),
+        weekday: Number(row.weekday_price),
+        friday: Number(row.friday_price),
+        saturday: Number(row.saturday_price),
+        mondayThursday: Number(row.monday_thursday_price),
+        saturdayHoliday: Number(row.saturday_holiday_price),
+        sunday: Number(row.sunday_price)
+      }
+    })),
+    priceOverrides: overrideResult.rows.map((row) => ({ roomId: row.room_id, date: normalizedDate(row.date), price: Number(row.price), currency: row.currency })),
+    legacyAvailability: legacyAvailabilityResult.rows.map((row) => ({ date: normalizedDate(row.date), room301: row.room301, room302: row.room302, room401: row.room401, room402: row.room402, wholeHouse: row.whole_house })),
+    inventoryAvailability: inventoryAvailabilityResult.rows.map((row) => ({ date: normalizedDate(row.date), inventoryId: row.inventory_id, status: row.status, remaining: Number(row.remaining) })),
+    bundles: bundleResult.rows.map((row) => ({
+      id: row.bundle_id,
+      name: row.name,
+      capacity: Number(row.capacity),
+      enabled: Boolean(row.enabled),
+      entertainmentAmenities: Array.isArray(row.entertainment_amenities) ? row.entertainment_amenities : [],
+      prices: { base: Number(row.base_price), mondayThursday: Number(row.monday_thursday_price), friday: Number(row.friday_price), saturdayHoliday: Number(row.saturday_holiday_price), sunday: Number(row.sunday_price) }
+    })),
+    bundleMembers: bundleMemberResult.rows.map((row) => ({ bundleId: row.bundle_id, roomId: row.room_id, position: Number(row.position) })),
+    bundleAvailability: bundleAvailabilityResult.rows.map((row) => ({ date: normalizedDate(row.date), bundleId: row.bundle_id, status: row.status })),
+    knowledgeItems: knowledgeResult.rows.map((row) => ({ knowledgeId: row.knowledge_id, question: row.question, answer: row.answer, knowledgeKey: row.knowledge_key || null, position: Number(row.position) })),
+    lineBinding: lineBinding ? {
+      exists: true,
+      enabled: Boolean(lineBinding.enabled),
+      hasChannelSecret: Boolean(lineBinding.has_channel_secret),
+      hasChannelAccessToken: Boolean(lineBinding.has_channel_access_token),
+      webhookKeyHash: crypto.createHash("sha256").update(String(lineBinding.webhook_key || "")).digest("hex")
+    } : { exists: false, enabled: false, hasChannelSecret: false, hasChannelAccessToken: false, webhookKeyHash: null }
+  };
+}
+
+async function readOperationalAcceptanceDataIntegrity(options = {}) {
+  if (options.testOnly !== true) throw integrityError("TEST_ONLY_ACCEPTANCE_DATA_SCOPE_REQUIRED", "test-only acceptance data scope is required");
+  const propertyId = String(options.acceptancePropertyId || "").trim();
+  if (!propertyId) throw integrityError("TEST_ONLY_ACCEPTANCE_PROPERTY_MISMATCH", "operational acceptance property scope is required");
+  const client = await openPostgres(options.connection);
+  try {
+    const snapshot = await client.transaction((transaction) => readOperationalBusinessSnapshot(transaction, propertyId));
+    return {
+      status: "verified",
+      mode: "operational_read_only",
+      propertyId,
+      businessHash: hashAcceptanceDataSnapshot(snapshot),
+      roomCount: snapshot.rooms.length,
+      bundleCount: snapshot.bundles.length,
+      knowledgeItemCount: snapshot.knowledgeItems.length,
+      legacyAvailabilityDayCount: snapshot.legacyAvailability.length,
+      inventoryAvailabilityRowCount: snapshot.inventoryAvailability.length,
+      lineBinding: snapshot.lineBinding
+    };
+  } finally {
+    await client.close();
+  }
+}
+
 function unique(values, field) {
   if (new Set(values).size !== values.length) canonicalConflict(`${field} contains duplicates`, { field });
 }
@@ -436,6 +533,7 @@ async function syncTestOnlyAcceptanceData(options = {}) {
 module.exports = {
   hashAcceptanceDataSnapshot,
   loadAcceptanceDataSnapshot,
+  readOperationalAcceptanceDataIntegrity,
   syncTestOnlyAcceptanceData,
   verifyTestOnlyAcceptanceData
 };
