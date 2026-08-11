@@ -143,7 +143,7 @@ function catalog() {
   };
 }
 
-async function classifySequence({ first, repair, plannerInput }) {
+async function classifySequence({ first, repair, plannerInput, repairPatchTargets }) {
   let calls = 0;
   const bodies = [];
   const planner = new TestOnlyOpenAiConversationPlanner({
@@ -152,8 +152,20 @@ async function classifySequence({ first, repair, plannerInput }) {
     retryDelayMs: 0,
     fetchImpl: async (_url, options) => {
       calls += 1;
-      bodies.push(JSON.parse(options.body));
-      return response(calls === 1 ? first : repair || first);
+      const body = JSON.parse(options.body);
+      bodies.push(body);
+      const repairInput = calls > 1 ? JSON.parse(body.input[1].content[0].text).coverageRepair : null;
+      const repairValue = repair || first;
+      const value = repairInput && repairInput.patchInvalidSemanticUnits
+        ? {
+            ...repairValue,
+            repairPatchTargets: repairPatchTargets || repairInput.invalidSemanticUnits.map((unit) => ({
+              targetCandidateId: unit.candidateId,
+              patchTaskId: unit.taskId
+            }))
+          }
+        : repairValue;
+      return response(calls === 1 ? first : value);
     }
   });
   const result = await planner.classify(plannerInput);
@@ -599,10 +611,62 @@ async function classifySequence({ first, repair, plannerInput }) {
     { scenarioName: "identity_alignment-mixed-invalid", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: true, providerCalls: 2 },
     { scenarioName: "property_catalog_identity-single-success", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: false, providerCalls: 2 },
     { scenarioName: "identity_alignment-single-success", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: false, providerCalls: 2 },
-    { scenarioName: "property_catalog_identity-mixed-omit_sibling", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: true, providerCalls: 2 },
-    { scenarioName: "property_catalog_identity-mixed-mutate_relation", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: true, providerCalls: 2 },
+    { scenarioName: "property_catalog_identity-mixed-omit_sibling", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: false, providerCalls: 2 },
+    { scenarioName: "property_catalog_identity-mixed-mutate_relation", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: false, providerCalls: 2 },
     { scenarioName: "property_catalog_identity-mixed-invalid-shared", failureClassObserved: true, invalidIdentityRemoved: true, danglingOwnership: false, structuralOk: true, structuralErrors: [], validSiblingPreserved: true, scopedHandoffPresent: true, providerCalls: 2 }
   ], "provider-lifecycle identity failures must be repaired or become structurally valid scoped handoffs without contaminating valid siblings");
+
+  const boundedPatchScenario = identityScenario({ failureClass: "identity_alignment", validSibling: true, repairMode: "success" });
+  const successfulPatch = await classifySequence({
+    first: boundedPatchScenario.firstOutput,
+    repair: boundedPatchScenario.repairOutput,
+    plannerInput: input(identityMessage, identityEvent, propertyCatalog)
+  });
+  const successfulPatchInput = JSON.parse(successfulPatch.bodies[1].input[1].content[0].text).coverageRepair;
+  assert.equal(successfulPatch.calls, 2, "invalid semantic units may use exactly one bounded repair call");
+  assert.equal(successfulPatchInput.patchInvalidSemanticUnits, true);
+  assert.equal(successfulPatchInput.invalidSemanticUnits.length, 1, "repair input must expose only the invalid semantic unit");
+  assert.deepEqual(successfulPatchInput.preservedTaskIds, ["identity-price-sibling"], "the runtime must retain ownership of valid siblings");
+  const successfulPatchSchema = successfulPatch.bodies[1].text.format.schema;
+  assert.ok(successfulPatchSchema.required.includes("repairPatchTargets"));
+  assert.deepEqual(
+    successfulPatchSchema.properties.repairPatchTargets.items.properties.targetCandidateId.enum,
+    successfulPatchInput.invalidSemanticUnits.map((unit) => unit.candidateId),
+    "the provider schema must reject patch target IDs outside the exact invalid-unit set"
+  );
+  const preservedSibling = successfulPatch.result.tasks.find((item) => item.taskId === "identity-price-sibling");
+  const originalSibling = boundedPatchScenario.firstOutput.tasks.find((item) => item.taskId === "identity-price-sibling");
+  const { semanticCandidateIds: _preservedIds, lodgingScopeId: _preservedScope, ...preservedProviderTask } = preservedSibling;
+  assert.deepEqual(preservedProviderTask, originalSibling, "a successful patch must not remove or change the valid sibling task");
+
+  const unknownTargetPatch = await classifySequence({
+    first: boundedPatchScenario.firstOutput,
+    repair: boundedPatchScenario.repairOutput,
+    plannerInput: input(identityMessage, identityEvent, propertyCatalog),
+    repairPatchTargets: [{ targetCandidateId: "ffffffff-ffff-4fff-8fff-ffffffffffff", patchTaskId: boundedPatchScenario.invalidTaskId }]
+  });
+  assert.equal(unknownTargetPatch.calls, 2);
+  assert.ok(unknownTargetPatch.result.tasks.some((item) => item.type === "human_help" && item.taskId.includes(boundedPatchScenario.invalidTaskId)), "an unknown patch candidate ID must fail closed");
+
+  const wrongEvidenceRepair = JSON.parse(JSON.stringify(boundedPatchScenario.repairOutput));
+  wrongEvidenceRepair.contextRelationCandidates = wrongEvidenceRepair.contextRelationCandidates.map((relation) =>
+    relation.candidateIndex === 1 ? { ...relation, evidenceRefs: identityPriceEvidence } : relation);
+  const wrongEvidencePatch = await classifySequence({
+    first: boundedPatchScenario.firstOutput,
+    repair: wrongEvidenceRepair,
+    plannerInput: input(identityMessage, identityEvent, propertyCatalog)
+  });
+  assert.ok(wrongEvidencePatch.result.tasks.some((item) => item.type === "human_help" && item.taskId.includes(boundedPatchScenario.invalidTaskId)), "a patch with evidence from the wrong request must fail closed");
+
+  const wrongRelationRepair = JSON.parse(JSON.stringify(boundedPatchScenario.repairOutput));
+  wrongRelationRepair.contextRelationCandidates = wrongRelationRepair.contextRelationCandidates.map((relation) =>
+    relation.candidateIndex === 1 ? { ...relation, candidateIndex: 9 } : relation);
+  const wrongRelationPatch = await classifySequence({
+    first: boundedPatchScenario.firstOutput,
+    repair: wrongRelationRepair,
+    plannerInput: input(identityMessage, identityEvent, propertyCatalog)
+  });
+  assert.ok(wrongRelationPatch.result.tasks.some((item) => item.type === "human_help" && item.taskId.includes(boundedPatchScenario.invalidTaskId)), "a patch with the wrong relation ownership must fail closed");
 
   const pendingIdentityScenario = identityScenario({
     failureClass: "identity_alignment",
@@ -722,7 +786,7 @@ async function classifySequence({ first, repair, plannerInput }) {
   assert.equal(allInvalidPendingClassified.result.tasks.length, 2, "all affected verified owners must remain represented in the safe handoff");
   assert.equal(allInvalidPendingClassified.result.tasks.every((item) => item.type === "human_help"), true, "all affected verified owners must fail closed without choosing an owner");
   assert.equal(allInvalidPendingClassified.result.semanticCandidates.every((candidate) => candidate.capability === "human_help"), true, "the all-invalid ledger must not preserve an invalid identity candidate");
-  assert.equal(allInvalidPendingClassified.calls, 2, "all-invalid ambiguous pending identity ownership must use at most one bounded repair");
+  assert.equal(allInvalidPendingClassified.calls, 1, "ambiguous pending identity ownership must fail closed without asking the provider to guess a patch target");
 
   const sameTask = providerTask(task({
     candidateIndex: 0,
@@ -770,7 +834,7 @@ async function classifySequence({ first, repair, plannerInput }) {
   assert.ok(preservedSameTask && preservedSameTask.semanticCandidateIds.some((candidateId) =>
     sameTaskClassified.result.semanticCandidates.some((candidate) => candidate.candidateId === candidateId && candidate.propertyCatalogIdentity === "water_feature")), "same-task fallback must preserve the valid semantic ownership");
   assert.ok(sameTaskClassified.result.tasks.some((item) => item.type === "human_help" && item.sourceText === "catalog-backed feature"), "same-task fallback must hand off the invalid owned semantic instead of silently dropping it");
-  assert.equal(sameTaskClassified.calls, 2, "same-task identity failure must use one bounded repair");
+  assert.equal(sameTaskClassified.calls, 1, "same-task mixed ownership must fail closed without asking the provider to overwrite a valid sibling");
 
   const unrelatedInvalidTask = providerTask(task({
     candidateIndex: 2,

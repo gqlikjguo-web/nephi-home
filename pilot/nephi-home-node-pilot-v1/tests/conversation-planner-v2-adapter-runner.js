@@ -51,7 +51,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(plannerInstructions, /proximity, near, far, distance, duration, directions, navigation, or nearby existence/i, "planner must cover proximity semantics rather than a fixed list of place names");
   assert.match(plannerInstructions, /never search for, recommend, invent, or identify a nearby place/i, "planner must not create unapproved nearby-place facts");
   assert.match(plannerInstructions, /every coordinated subject or requested fact/i, "planner must retain each subject in a multi-question message");
-  assert.match(plannerInstructions, /coverageRepair.*only.*missing.*preserv/i, "a bounded repair round must supplement missing tasks without reinterpreting preserved tasks");
+  assert.match(plannerInstructions, /patchInvalidSemanticUnits.*only replacement.*runtime owns.*validated siblings/i, "a bounded invalid-unit repair must leave validated siblings under runtime ownership");
   assert.match(plannerInstructions, /pure social acknowledgement/i, "planner must classify non-actionable acknowledgements without inventing a task");
   assert.match(requestBody.input[0].content[0].text, /punctuation or emoji/i, "planner must classify non-semantic punctuation and emoji by dialogue act");
   assert.match(requestBody.input[0].content[0].text, /price or total price/i, "planner must distinguish pricing from availability and policy");
@@ -313,16 +313,25 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const invalidLedgerBodies = [];
   const invalidLedgerPlanner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", retryDelayMs: 0, fetchImpl: async (_url, options) => {
     invalidLedgerCalls += 1;
-    invalidLedgerBodies.push(JSON.parse(options.body));
-    return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(invalidLedgerCalls === 1 ? invalidLedgerFirst : invalidLedgerRepair) }) };
+    const body = JSON.parse(options.body);
+    invalidLedgerBodies.push(body);
+    const repairInput = invalidLedgerCalls > 1 ? JSON.parse(body.input[1].content[0].text).coverageRepair : null;
+    const repairOutput = repairInput && repairInput.patchInvalidSemanticUnits
+      ? {
+          ...invalidLedgerRepair,
+          repairPatchTargets: repairInput.invalidSemanticUnits.map((unit) => ({ targetCandidateId: unit.candidateId, patchTaskId: unit.taskId }))
+        }
+      : invalidLedgerRepair;
+    return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(invalidLedgerCalls === 1 ? invalidLedgerFirst : repairOutput) }) };
   } });
   const invalidLedgerResult = await invalidLedgerPlanner.classify({ currentMessage: coverageMessage, currentMessages: [coverageMessage], sourceEvents: [{ eventId: "coverage", messageRef: "coverage-message", messageText: coverageMessage }], eventTimestamp: 1, catalog: coverageCatalog, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(invalidLedgerCalls, 2, "an invalid first-round semantic ledger must receive one bounded full repair");
   assert.deepEqual(validatePlannerOutput(invalidLedgerResult).errors, [], "only a fully validated repaired ledger may replace the invalid first result");
   assert.equal(invalidLedgerResult.tasks[0].type, "price");
   const invalidLedgerRepairInput = JSON.parse(invalidLedgerBodies[1].input[1].content[0].text);
-  assert.equal(invalidLedgerRepairInput.coverageRepair.replaceInvalidSemanticLedger, true);
+  assert.equal(invalidLedgerRepairInput.coverageRepair.patchInvalidSemanticUnits, true);
   assert.equal(invalidLedgerRepairInput.coverageRepair.invalidCandidateIds.length, 1);
+  assert.equal(invalidLedgerRepairInput.coverageRepair.invalidSemanticUnits.length, 1);
   const invalidLedgerDiagnostic = invalidLedgerResult[Symbol.for("junzan.plannerProviderDiagnostic")];
   assert.equal(invalidLedgerDiagnostic.coverageRepairPerformed, true);
   assert.equal(invalidLedgerDiagnostic.coverageRepairSucceeded, true);
