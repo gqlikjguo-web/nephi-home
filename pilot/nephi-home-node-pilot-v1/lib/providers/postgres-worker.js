@@ -156,7 +156,7 @@ async function operation(name, args) {
     const by={};
     for(const item of normalized.rows){const date=item.date.slice(0,10);by[date]=by[date]||{date};by[date][item.inventory_id]=item.status;}
     const bundles=await operation("listBundles",[propertyId]);
-    for(const row of Object.values(by))for(const bundle of bundles){const own=row[bundle.id]||"closed";row[bundle.id]=bundle.enabled&&bundle.memberRoomIds.length>0&&own==="available"&&bundle.memberRoomIds.every(id=>row[id]==="available")?"available":"closed";}
+    for(const row of Object.values(by))for(const bundle of bundles){const own=row[bundle.id]||"closed";row[bundle.id]=bundle.enabled&&bundle.memberRoomIds.length>0&&own==="available"?"available":"closed";}
     return Object.values(by).sort((left,right)=>left.date.localeCompare(right.date));
   }
   if (name === "getDayNotes") {
@@ -188,10 +188,19 @@ async function operation(name, args) {
   }
   if (name === "setDay") {
     const [propertyId,date,roomId,status] = args;
-    const room=await client.query("SELECT 1 FROM room_types WHERE property_id=$1 AND room_id=$2",[propertyId,roomId]),bundle=(await operation("listBundles",[propertyId])).find(item=>item.id===roomId);
+    const room=await client.query("SELECT 1 FROM room_types WHERE property_id=$1 AND room_id=$2",[propertyId,roomId]),bundles=await operation("listBundles",[propertyId]),bundle=bundles.find(item=>item.id===roomId);
     if(!room.rows.length&&!bundle)throw new Error("invalid inventory");
-    const inventoryIds=bundle?[bundle.id,...bundle.memberRoomIds]:[roomId];
-    for(const inventoryId of inventoryIds)await client.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES($1,$2,$3,$4,$5) ON CONFLICT(property_id,inventory_id,stay_date) DO UPDATE SET status=excluded.status,remaining=excluded.remaining,updated_at=now()",[propertyId,inventoryId,date,status,status==="available"?1:0]);
+    await client.query("BEGIN");
+    try {
+      const current=await client.query("SELECT status FROM inventory_availability_days WHERE property_id=$1 AND inventory_id=$2 AND stay_date=$3 FOR UPDATE",[propertyId,roomId,date]);
+      const previousStatus=current.rows[0]?.status||"";
+      await client.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES($1,$2,$3,$4,$5) ON CONFLICT(property_id,inventory_id,stay_date) DO UPDATE SET status=excluded.status,remaining=excluded.remaining,updated_at=now()",[propertyId,roomId,date,status,status==="available"?1:0]);
+      if(!bundle&&previousStatus==="available"&&status==="closed")for(const containingBundle of bundles.filter(item=>item.memberRoomIds.includes(roomId)))await client.query("UPDATE inventory_availability_days SET status='closed',remaining=0,updated_at=now() WHERE property_id=$1 AND inventory_id=$2 AND stay_date=$3 AND status='available'",[propertyId,containingBundle.id,date]);
+      await client.query("COMMIT");
+    } catch(error) {
+      await client.query("ROLLBACK");
+      throw error;
+    }
     return (await operation("getRows", [propertyId,date,new Date(Date.parse(date)+86400000).toISOString().slice(0,10)]))[0];
   }
   if (name === "updatePropertyProfile") {

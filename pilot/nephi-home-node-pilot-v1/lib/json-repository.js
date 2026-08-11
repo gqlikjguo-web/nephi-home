@@ -70,6 +70,12 @@ function recomputeBundleAvailability(property, row) {
   }
 }
 
+function closeOpenBundlesForRoom(property, row, roomId) {
+  for (const bundle of bundleInventory(property)) {
+    if (bundle.memberRoomIds.includes(roomId) && row[bundle.id] === "available") row[bundle.id] = "closed";
+  }
+}
+
 function migrateDailyRoomNotes(state) {
   state.dailyRoomNotes = state.dailyRoomNotes || {};
   for (const dates of Object.values(state.dailyRoomNotes)) {
@@ -293,13 +299,10 @@ class JsonFileRepository {
       const inventory = propertyInventory(property).find((item) => item.id === roomId);
       if (!inventory) throw new Error("invalid inventory");
       const row = rows[date] || availabilityRow(property, date, "available");
-      if (Array.isArray(inventory.memberRoomIds) && inventory.memberRoomIds.length) {
-        row[roomId] = status;
-        for (const memberRoomId of inventory.memberRoomIds) row[memberRoomId] = status;
-      } else {
-        row[roomId] = status;
-        recomputeBundleAvailability(property, row);
-      }
+      const previousStatus = row[roomId];
+      row[roomId] = status;
+      const isBundle = Array.isArray(inventory.memberRoomIds) && inventory.memberRoomIds.length;
+      if (!isBundle && previousStatus === "available" && status === "closed") closeOpenBundlesForRoom(property, row, roomId);
       rows[date] = row;
       return { ...row };
     });

@@ -16,6 +16,7 @@
     "verify:test-only-acceptance-data": "node tests/test-only-acceptance-data-integrity-runner.js",
     "test:canonical-golden": "node tests/canonical-request-golden-gate-runner.js",
     "test:runtime-uniqueness": "node tests/v2-runtime-uniqueness-runner.js",
+    "test:inventory-toggle-linkage": "node tests/inventory-toggle-linkage-runner.js",
     "test:provider-fail-closed": "node tests/provider-authority-fail-closed-runner.js",
     "test:custom-replies": "node tests/admin-availability-window-runner.js && node tests/custom-reply-rules-runner.js && node tests/custom-reply-rules-postgres-runner.js && node tests/admin-custom-replies-runner.js && node tests/controlled-custom-reply-runtime-runner.js",
     "test:deployed-acceptance-contract": "node tests/test-only-acceptance-oidc-runner.js && node tests/deployed-conversation-acceptance-contract-runner.js && node tests/real-guest-deployed-acceptance-matrix-runner.js && node tests/test-only-conversation-acceptance-api-runner.js",
