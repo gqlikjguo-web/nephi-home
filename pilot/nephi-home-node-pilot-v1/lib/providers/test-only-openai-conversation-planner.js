@@ -25,6 +25,36 @@ const DEFAULT_RETRY_DELAY_MS = 750;
 const MAX_RETRY_DELAY_MS = 1000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function propertyCatalogIdentityValues(catalog) {
+  return [...new Set(Object.values(catalog && typeof catalog === "object" ? catalog : {})
+    .filter(Array.isArray)
+    .flat()
+    .map((entity) => String(entity && entity.canonicalId || "").trim())
+    .filter(Boolean))];
+}
+
+function nullableIdentityEnum(values) {
+  return { type: ["string", "null"], enum: [...new Set([...values, null])], maxLength: 120 };
+}
+
+function plannerProviderSchemaForCatalog(catalog) {
+  const schema = JSON.parse(JSON.stringify(plannerProviderJsonSchema()));
+  const catalogIdentities = propertyCatalogIdentityValues(catalog);
+  const taskIdentity = schema.properties.tasks.items.properties.entity.properties.canonicalCandidate;
+  const candidateProperties = schema.properties.semanticCandidates.items.properties;
+  const genericSemanticIdentities = [
+    ...(candidateProperties.capability.enum || []),
+    ...(candidateProperties.semanticKind.enum || [])
+  ];
+  Object.assign(taskIdentity, nullableIdentityEnum(catalogIdentities));
+  Object.assign(candidateProperties.propertyCatalogIdentity, nullableIdentityEnum(catalogIdentities));
+  Object.assign(candidateProperties.canonicalIdentityCandidate, nullableIdentityEnum([
+    ...catalogIdentities,
+    ...genericSemanticIdentities
+  ]));
+  return schema;
+}
+
 function safeProviderErrorField(value, maxLength) {
   const text = String(value || "");
   return /^[A-Za-z0-9._:-]+$/.test(text) ? text.slice(0, maxLength) : "";
@@ -1538,7 +1568,7 @@ class TestOnlyOpenAiConversationPlanner {
     let output;
     let failure;
     try {
-      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] }, ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {}) }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerProviderJsonSchema() } } }) });
+      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] }, ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {}) }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerProviderSchemaForCatalog(input.catalog) } } }) });
       const status = Number(response.status || response.statusCode || 0);
       httpStatus = Number.isInteger(status) ? status : 0;
       providerRequestId = safeResponseRequestId(response);

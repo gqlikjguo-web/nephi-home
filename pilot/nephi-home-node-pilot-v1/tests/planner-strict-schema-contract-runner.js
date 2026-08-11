@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 
 const { plannerJsonSchema } = require("../lib/conversation-engine-v2/planner-schema");
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
+const { TestOnlyOpenAiConversationPlanner } = require("../lib/providers/test-only-openai-conversation-planner");
 
 function auditStrictObjects(node, path = "$") {
   if (!node || typeof node !== "object" || Array.isArray(node)) return;
@@ -43,7 +44,33 @@ function snapshot() {
   };
 }
 
-function main() {
+async function providerSchemaForCatalog(catalog) {
+  let capturedSchema = null;
+  const planner = new TestOnlyOpenAiConversationPlanner({
+    apiKey: "test-only-key",
+    model: "test-only-model",
+    fetchImpl: async (_url, options) => {
+      capturedSchema = JSON.parse(options.body).text.format.schema;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        text: async () => JSON.stringify({ output_text: "{}" })
+      };
+    }
+  });
+  await planner.requestOnce({
+    currentMessage: "想詢問房型",
+    currentMessages: ["想詢問房型"],
+    sourceEvents: [],
+    eventTimestamp: "2026-08-11T00:00:00.000Z",
+    catalog,
+    contextSnapshot: { scope: {}, cycles: [] }
+  }, 1);
+  return capturedSchema;
+}
+
+async function main() {
   const schema = plannerJsonSchema();
   auditStrictObjects(schema);
 
@@ -81,7 +108,47 @@ function main() {
   assert.equal(validateUnderstandingContext(minimalPlannerOutput(eventOnlyEvidence), snapshot(), { sourceEvents }).ok, true);
   assert.equal(validateUnderstandingContext(minimalPlannerOutput(messageOnlyEvidence), snapshot(), { sourceEvents }).ok, true);
 
+  const catalogA = {
+    rooms: [{ canonicalId: "room_catalog_a" }],
+    amenities: [{ canonicalId: "amenity_catalog_a" }],
+    policies: [],
+    faqs: [],
+    propertyFacts: [],
+    transportFacts: []
+  };
+  const catalogB = {
+    rooms: [{ canonicalId: "room_catalog_b" }],
+    amenities: [],
+    policies: [],
+    faqs: [],
+    propertyFacts: [],
+    transportFacts: []
+  };
+  const schemaA = await providerSchemaForCatalog(catalogA);
+  const schemaB = await providerSchemaForCatalog(catalogB);
+  const identitySchemas = (schema) => ({
+    task: schema.properties.tasks.items.properties.entity.properties.canonicalCandidate,
+    semantic: schema.properties.semanticCandidates.items.properties.canonicalIdentityCandidate,
+    property: schema.properties.semanticCandidates.items.properties.propertyCatalogIdentity
+  });
+  const identitiesA = identitySchemas(schemaA);
+  const identitiesB = identitySchemas(schemaB);
+  for (const [name, identitySchema] of Object.entries(identitiesA)) {
+    assert.ok(Array.isArray(identitySchema.enum), `${name} identity must be provider-schema bounded`);
+    assert.ok(identitySchema.enum.includes(null), `${name} identity must preserve legitimate null`);
+    assert.ok(identitySchema.enum.includes("room_catalog_a"), `${name} identity must accept the supplied catalog identity`);
+    assert.equal(identitySchema.enum.includes("fabricated_property_identity"), false, `${name} identity must reject fabricated identities`);
+    assert.equal(identitySchema.enum.includes("room_catalog_b"), false, `${name} identity must not leak another property's catalog`);
+  }
+  for (const identitySchema of Object.values(identitiesB)) {
+    assert.ok(identitySchema.enum.includes("room_catalog_b"));
+    assert.equal(identitySchema.enum.includes("room_catalog_a"), false);
+  }
+
   console.log("planner strict schema contract: PASS");
 }
 
-main();
+main().catch((error) => {
+  console.error(error.stack || error);
+  process.exit(1);
+});
