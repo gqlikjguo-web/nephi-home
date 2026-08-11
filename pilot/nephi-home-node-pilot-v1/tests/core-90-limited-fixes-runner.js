@@ -224,7 +224,7 @@ async function deterministicFallbackClearsRejectedComposerState() {
   assert.equal(trace.result.finalDecision.reviewRequired, false);
 }
 
-async function poolRoutingUsesGroundedPropertyCatalog() {
+async function poolIdentityConflictFailsClosed() {
   for (const [propertyId, label, rawText] of [
     ["property_pool_alpha", "Pool Alpha", "戲水池"],
     ["property_pool_beta", "Pool Beta", "游泳池"]
@@ -252,12 +252,17 @@ async function poolRoutingUsesGroundedPropertyCatalog() {
         canonicalCandidate: "bbq"
       })
     });
+    const conflictSemantic = wrongCandidate.stage("semantic_contract");
+    assert.equal(conflictSemantic.outputTasks[0].type, "unknown");
+    assert.equal(
+      conflictSemantic.semanticValidation.rejectedTasks[0].reason,
+      "property_catalog_entity_conflict"
+    );
     const wrongCanonical = wrongCandidate.stage("canonical_request").items[0];
-    assert.equal(wrongCanonical.capability, "pool");
-    assert.equal(wrongCanonical.canonicalEntity.canonicalId, "pool");
-    assert.equal(wrongCanonical.canonicalEntity.category, "policy");
-    assert.equal(wrongCanonical.resolverId, "property_catalog");
-    assert.equal(wrongCandidate.result.replyText, `${label} pool fact.`);
+    assert.equal(wrongCanonical.capability, "unknown");
+    assert.equal(wrongCanonical.resolverId, "human_handoff");
+    assert.equal(wrongCandidate.result.finalDecision.action, "handoff");
+    assert.equal(wrongCandidate.result.replyText.includes(`${label} pool fact.`), false);
     assert.equal(wrongCandidate.result.replyText.includes("barbecue"), false);
 
     const missingCandidate = await execute({
@@ -338,18 +343,18 @@ async function poolRoutingUsesGroundedPropertyCatalog() {
         eligibilityEvidence
       })
     });
-    const semanticTask = detailed.stage("semantic_contract").outputTasks[0];
+    const semanticStage = detailed.stage("semantic_contract");
+    const semanticTask = semanticStage.outputTasks[0];
+    assert.equal(semanticTask.type, "unknown");
+    assert.equal(semanticTask.detailIntent, "general");
     assert.equal(
-      semanticTask.detailIntent,
-      detailIntent,
-      "catalog grounding must not erase a valid detail-specific request"
+      semanticStage.semanticValidation.rejectedTasks[0].reason,
+      "property_catalog_entity_conflict"
     );
     const detailedCanonical = detailed.stage("canonical_request").items[0];
-    assert.equal(detailedCanonical.capability, "pool");
-    assert.equal(detailedCanonical.canonicalEntity.canonicalId, "pool");
-    assert.equal(detailedCanonical.canonicalEntity.category, "policy");
-    assert.equal(detailedCanonical.resolverId, "property_catalog");
-    assert.equal(detailedCanonical.detailIntent, detailIntent);
+    assert.equal(detailedCanonical.capability, "unknown");
+    assert.equal(detailedCanonical.resolverId, "human_handoff");
+    assert.equal(detailed.result.finalDecision.action, "handoff");
   }
 
   const ambiguousProperty = property("property_pool_ambiguous", "Pool Ambiguous");
@@ -721,7 +726,7 @@ async function locationFailureStageIsComposerFallbackState() {
 
 const cases = [
   ["deterministic fallback clears rejected Composer state", deterministicFallbackClearsRejectedComposerState],
-  ["pool routing uses grounded property catalog", poolRoutingUsesGroundedPropertyCatalog],
+  ["pool identity conflict fails closed", poolIdentityConflictFailsClosed],
   ["parking unresolvable Planner entity uses unique source alias", parkingUnresolvablePlannerEntityUsesUniqueSourceAlias],
   ["contradictory Planner fields preserve controlled capabilities", contradictoryPlannerFieldsPreserveControlledCapabilities],
   ["location failure stage is Composer fallback state", locationFailureStageIsComposerFallbackState]

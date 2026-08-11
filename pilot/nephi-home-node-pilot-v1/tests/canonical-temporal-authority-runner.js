@@ -230,6 +230,50 @@ assert.equal(ambiguousRecoveredSpan.resolutionStatus, "unresolved");
 assert.equal(ambiguousRecoveredSpan.checkIn, null);
 assert.equal(ambiguousRecoveredSpan.checkOut, null);
 
+const dateBesideGuestRange = resolveCanonicalTemporal({
+  guestMessage: "8/14-8/15，預計6-8人入住",
+  candidateSourceText: "8/14-8/15，預計6-8人入住",
+  plannerCandidate: candidate("8/14-8/15", "range", "2026-08-14", "2026-08-15", 1),
+  eventTimestamp: EVENT_TIMESTAMP,
+  timezone: TIMEZONE,
+  applicableTaskIds: ["availability"]
+});
+assert.equal(dateBesideGuestRange.resolutionStatus, "resolved", "a disjoint guest-count range must not compete with a source-bound temporal span");
+assert.deepEqual(
+  { checkIn: dateBesideGuestRange.checkIn, checkOut: dateBesideGuestRange.checkOut, nights: dateBesideGuestRange.nights },
+  { checkIn: "2026-08-14", checkOut: "2026-08-15", nights: 1 },
+  "canonical grammar for the exact Planner span must remain authoritative"
+);
+
+const secondDisjointNumericRange = resolveCanonicalTemporal({
+  guestMessage: "日期8/14到8/15；房客數量約6-8",
+  candidateSourceText: "日期8/14到8/15；房客數量約6-8",
+  plannerCandidate: candidate("8/14到8/15", "range", "2026-08-14", "2026-08-15", 1),
+  eventTimestamp: EVENT_TIMESTAMP,
+  timezone: TIMEZONE,
+  applicableTaskIds: ["availability"]
+});
+assert.equal(secondDisjointNumericRange.resolutionStatus, "resolved", "message-level substring inference must not override a successfully parsed owned span");
+assert.equal(secondDisjointNumericRange.checkIn, "2026-08-14");
+assert.equal(secondDisjointNumericRange.checkOut, "2026-08-15");
+
+for (const sourceOwnedConflict of [
+  "8/14-8/15或8/21-8/22",
+  "8/14-8/15或8/14-8/16"
+]) {
+  const conflicted = resolveCanonicalTemporal({
+    guestMessage: sourceOwnedConflict,
+    candidateSourceText: sourceOwnedConflict,
+    plannerCandidate: candidate(sourceOwnedConflict, "range"),
+    eventTimestamp: EVENT_TIMESTAMP,
+    timezone: TIMEZONE,
+    applicableTaskIds: ["availability"]
+  });
+  assert.equal(conflicted.resolutionStatus, "unresolved", `${sourceOwnedConflict}: conflicting temporal evidence must remain fail closed`);
+  assert.equal(conflicted.checkIn, null, `${sourceOwnedConflict}: no conflicting date may be selected`);
+  assert.equal(conflicted.checkOut, null, `${sourceOwnedConflict}: no conflicting range may be selected`);
+}
+
 const staleConfirmedInputs = {
   stay: {
     checkIn: "2026-08-06",

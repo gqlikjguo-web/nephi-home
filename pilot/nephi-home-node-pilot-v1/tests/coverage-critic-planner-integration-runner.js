@@ -292,7 +292,17 @@ function coverageRepairInput(body) {
     });
     await assert.rejects(
       () => flow.planner.classify(input([sourceEvent, secondEvent])),
-      (error) => error && error.code === "planner_local_contract_failure",
+      (error) => {
+        assert.equal(error && error.code, "planner_local_contract_failure");
+        assert.equal(error.errorCategory, "local_contract_failure");
+        assert.equal(error.coverageCriticResultStatus, "invalid_output");
+        assert.equal(error.coverageCriticErrorCategory, "local_contract_failure");
+        assert.equal(error.repairRequired, false);
+        assert.equal(error.repairAllowed, false);
+        assert.equal(error.understandingCallLimit, 3);
+        assert.equal(error.understandingCallsUsed, 2);
+        return true;
+      },
       scenario.name
     );
     assert.equal(flow.totalCalls(), 2, `${scenario.name} must fail closed without repair`);
@@ -306,7 +316,19 @@ function coverageRepairInput(body) {
   });
   await assert.rejects(
     () => criticFailureFlow.planner.classify(input([sourceEvent])),
-    (error) => error && error.code === "planner_local_contract_failure"
+    (error) => {
+      assert.equal(error && error.code, "planner_local_contract_failure");
+      assert.equal(error.errorCategory, "local_contract_failure");
+      assert.equal(error.coverageCriticResultStatus, "provider_failure");
+      assert.equal(error.coverageCriticErrorCategory, "timeout");
+      assert.equal(error.repairRequired, false);
+      assert.equal(error.repairAllowed, false);
+      assert.equal(error.understandingCallLimit, 3);
+      assert.equal(error.understandingCallsUsed, 2);
+      assert.equal(Object.hasOwn(error, "sourceEvents"), false);
+      assert.equal(Object.hasOwn(error, "criticOutput"), false);
+      return true;
+    }
   );
   assert.equal(criticFailureFlow.totalCalls(), 2, "Critic failure must not retry");
 
@@ -317,7 +339,16 @@ function coverageRepairInput(body) {
   });
   await assert.rejects(
     () => falsePositiveFlow.planner.classify(input([sourceEvent])),
-    (error) => error && error.code === "planner_local_contract_failure"
+    (error) => {
+      assert.equal(error && error.code, "planner_local_contract_failure");
+      assert.equal(error.coverageCriticResultStatus, "missing_detected");
+      assert.equal(error.coverageCriticErrorCategory, "local_contract_failure");
+      assert.equal(error.repairRequired, true);
+      assert.equal(error.repairAllowed, true);
+      assert.equal(error.understandingCallLimit, 3);
+      assert.equal(error.understandingCallsUsed, 3);
+      return true;
+    }
   );
   assert.equal(falsePositiveFlow.totalCalls(), 3, "Invalid false-positive repair must fail closed after the third call");
 
@@ -328,7 +359,16 @@ function coverageRepairInput(body) {
   });
   await assert.rejects(
     () => retryFlow.planner.classify(input([sourceEvent])),
-    (error) => error && error.code === "planner_local_contract_failure"
+    (error) => {
+      assert.equal(error && error.code, "planner_local_contract_failure");
+      assert.equal(error.coverageCriticResultStatus, "missing_detected");
+      assert.equal(error.coverageCriticErrorCategory, "local_contract_failure");
+      assert.equal(error.repairRequired, true);
+      assert.equal(error.repairAllowed, false);
+      assert.equal(error.understandingCallLimit, 3);
+      assert.equal(error.understandingCallsUsed, 3);
+      return true;
+    }
   );
   assert.equal(retryFlow.totalCalls(), 3, "Primary retry + Critic must consume the full budget without a fourth call");
   assert.equal(retryFlow.plannerCalls(), 2);

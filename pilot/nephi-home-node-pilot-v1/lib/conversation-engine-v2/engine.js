@@ -165,8 +165,9 @@ function legacyTaskResult(execution) {
 }
 
 const SAFE_FALLBACK = SAFE_HANDOFF_TEXT;
-const PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "unknown"]);
+const PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "local_contract_failure", "unknown"]);
 const PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
+const COVERAGE_CRITIC_RESULT_STATUSES = new Set(["budget_exhausted", "provider_failure", "invalid_output", "missing_detected", "complete"]);
 const PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
 const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic");
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -392,11 +393,16 @@ function safePlannerErrorDiagnostic(error, planner) {
     errorCode = "planner_empty_response";
   } else if (errorCategory === "network") {
     errorCode = "planner_network_error";
+  } else if (errorCategory === "local_contract_failure") {
+    errorCode = "planner_local_contract_failure";
   }
   const attemptCount = Number(error && error.providerAttemptCount);
   const providerAttempts = (Array.isArray(error && error.providerAttempts) ? error.providerAttempts : [])
     .slice(0, 2)
     .map(safePlannerAttemptDiagnostic);
+  const coverageCriticResultStatus = String(error && error.coverageCriticResultStatus || "");
+  const understandingCallLimit = Number(error && error.understandingCallLimit);
+  const understandingCallsUsed = Number(error && error.understandingCallsUsed);
   return {
     errorName: PLANNER_ERROR_NAMES.has(error && error.name) ? error.name : "Error",
     errorCode,
@@ -416,7 +422,15 @@ function safePlannerErrorDiagnostic(error, planner) {
     retryable: Boolean(error && error.retryable),
     responseBodyPresent: Boolean(error && error.responseBodyPresent),
     parsedOutputPresent: Boolean(error && error.parsedOutputPresent),
-    providerAttempts
+    providerAttempts,
+    ...(COVERAGE_CRITIC_RESULT_STATUSES.has(coverageCriticResultStatus) ? {
+      coverageCriticResultStatus,
+      coverageCriticErrorCategory: safePlannerErrorCategory(error && error.coverageCriticErrorCategory),
+      repairRequired: Boolean(error && error.repairRequired),
+      repairAllowed: Boolean(error && error.repairAllowed),
+      understandingCallLimit: Number.isInteger(understandingCallLimit) && understandingCallLimit >= 1 ? Math.min(understandingCallLimit, 3) : 0,
+      understandingCallsUsed: Number.isInteger(understandingCallsUsed) && understandingCallsUsed >= 0 ? Math.min(understandingCallsUsed, 3) : 0
+    } : {})
   };
 }
 

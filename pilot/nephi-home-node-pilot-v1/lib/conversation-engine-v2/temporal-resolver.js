@@ -139,14 +139,16 @@ function monthWeekdayConstraint(raw) {
 }
 
 function explicitNights(raw) {
-  const match = raw.match(/(?:(?:入住|住)([一二兩三四五六七八九十\d]+)[晚天]|([一二兩三四五六七八九十\d]+)晚)/u);
+  const match = raw.match(/(?:(?:入住|住)((?<!\d)\d+|(?<![一二兩三四五六七八九十])[一二兩三四五六七八九十]+)(?:個)?(?:晚上|晚|天)|((?<!\d)\d+|(?<![一二兩三四五六七八九十])[一二兩三四五六七八九十]+)(?:個)?(?:晚上|晚))/u);
   if (!match) return null;
   const nights = chineseInteger(match[1] || match[2]);
   return Number.isInteger(nights) && nights >= 1 && nights <= 60 ? nights : null;
 }
 
 function expressionBeforeNights(raw) {
-  return raw.replace(/(?:(?:入住|住)[一二兩三四五六七八九十\d]+[晚天]|[一二兩三四五六七八九十\d]+晚).*$/u, "");
+  return raw
+    .replace(/(?:(?:入住|住)(?:(?<!\d)\d+|(?<![一二兩三四五六七八九十])[一二兩三四五六七八九十]+)(?:個)?(?:晚上|晚|天)|(?:(?<!\d)\d+|(?<![一二兩三四五六七八九十])[一二兩三四五六七八九十]+)(?:個)?(?:晚上|晚)).*$/u, "")
+    .replace(/[、,，;；]+$/u, "");
 }
 
 function parseSingleExpression(raw, base, baseWeekday) {
@@ -219,32 +221,75 @@ function compactDateRange(raw, base) {
   return { checkIn, checkOut, nights, expressionType: "date_range" };
 }
 
+function occupiedNightDateList(raw, base, duration) {
+  if (!Number.isInteger(duration) || !raw.includes("、")) return null;
+  const tokens = raw.split("、");
+  const bareDateToken = (token, index) => /^(?:(?:\d{4})[/-])?\d{1,2}[/-]\d{1,2}(?:日|號)?$/u.test(token)
+    || /^(?:(?:\d{4})年)?\d{1,2}月\d{1,2}(?:日|號)?$/u.test(token)
+    || index > 0 && /^\d{1,2}(?:日|號)?$/u.test(token);
+  if (tokens.some((token, index) => !bareDateToken(token, index))) return null;
+  if (tokens.length < 2 || tokens.length !== duration || tokens.some((token) => !token)) {
+    return { unresolvedReason: "temporal_range_invalid" };
+  }
+  const dates = [];
+  for (const [index, token] of tokens.entries()) {
+    let date = absoluteDateFromRaw(token, index === 0 ? base : dates[index - 1]);
+    if (!date && index > 0 && /^\d{1,2}(?:日|號)?$/u.test(token)) {
+      const day = Number(token.replace(/(?:日|號)$/u, ""));
+      const previous = dates[index - 1];
+      const previousYear = Number(previous.slice(0, 4));
+      const previousMonth = Number(previous.slice(5, 7));
+      date = `${previousYear}-${String(previousMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      if (!valid(date) || date <= previous) {
+        const nextMonthBase = addDays(`${previousYear}-${String(previousMonth).padStart(2, "0")}-28`, 7);
+        date = `${nextMonthBase.slice(0, 7)}-${String(day).padStart(2, "0")}`;
+      }
+    }
+    if (!valid(date) || index > 0 && date !== addDays(dates[index - 1], 1)) {
+      return { unresolvedReason: "temporal_range_invalid" };
+    }
+    dates.push(date);
+  }
+  return {
+    checkIn: dates[0],
+    checkOut: addDays(dates[dates.length - 1], 1),
+    nights: duration,
+    expressionType: "date_range"
+  };
+}
+
+function durationValidatedRange(result, duration) {
+  return duration && result.nights !== duration
+    ? { unresolvedReason: "temporal_range_invalid" }
+    : result;
+}
+
 function parseRange(raw, base, baseWeekday) {
   const duration = explicitNights(raw);
   const inclusiveDayRange = duration ? null : raw.match(/^((?:(?:\d{4})[/-])?\d{1,2}[/-]\d{1,2}(?:日|號)?(?:-|\.|、|~|～|到|至)(?:(?:\d{1,2})[/-])?\d{1,2}(?:日|號)?)[一二兩三四五六七八九十\d]+天$/u);
   const temporalExpression = duration
     ? expressionBeforeNights(raw)
     : inclusiveDayRange ? inclusiveDayRange[1] : raw;
+  const occupiedNights = occupiedNightDateList(temporalExpression, base, duration);
+  if (occupiedNights) return occupiedNights;
   const compact = compactDateRange(temporalExpression, base);
-  if (compact) return duration && compact.nights !== duration
-    ? { unresolvedReason: "temporal_range_invalid" }
-    : compact;
+  if (compact) return durationValidatedRange(compact, duration);
   const labeled = temporalExpression.match(/^入住日期[:：]?(.+?)[,，]?退房日期[:：]?(.+)$/u);
   if (labeled) {
     const left = parseSingleExpression(normalizeText(labeled[1]), base, baseWeekday);
     const right = parseSingleExpression(normalizeText(labeled[2]), base, baseWeekday);
     if (!left || !right || !left.checkIn || !right.checkIn || right.checkIn <= left.checkIn) return { unresolvedReason: "temporal_range_invalid" };
     const nights = daysBetween(left.checkIn, right.checkIn);
-    return { checkIn: left.checkIn, checkOut: right.checkIn, nights, expressionType: "date_range" };
+    return durationValidatedRange({ checkIn: left.checkIn, checkOut: right.checkIn, nights, expressionType: "date_range" }, duration);
   }
-  const between = raw.match(/^(.+?)(?:到|至)(.+)$/u);
+  const between = temporalExpression.match(/^(.+?)(?:到|至)(.+)$/u);
   if (between) {
     const left = parseSingleExpression(normalizeText(between[1]), base, baseWeekday);
     const right = parseSingleExpression(normalizeText(between[2]), base, baseWeekday);
     if (!left || !right || !left.checkIn || !right.checkIn || right.checkIn <= left.checkIn) return { unresolvedReason: "temporal_range_invalid" };
-    return { checkIn: left.checkIn, checkOut: right.checkIn, nights: daysBetween(left.checkIn, right.checkIn), expressionType: "date_range" };
+    return durationValidatedRange({ checkIn: left.checkIn, checkOut: right.checkIn, nights: daysBetween(left.checkIn, right.checkIn), expressionType: "date_range" }, duration);
   }
-  const stayRange = raw.match(/^(.+?)入住[、,，]?(.+?)退房$/u);
+  const stayRange = temporalExpression.match(/^(.+?)入住[、,，]?(.+?)退房$/u);
   if (stayRange) {
     const leftRaw = normalizeText(stayRange[1]);
     const rightRaw = normalizeText(stayRange[2]);
@@ -253,7 +298,7 @@ function parseRange(raw, base, baseWeekday) {
     if (!left || !left.checkIn || !right || !right.checkIn) return { unresolvedReason: "temporal_range_invalid" };
     if (right.checkIn <= left.checkIn && weekdayParts(rightRaw)) right = { ...right, checkIn: addDays(right.checkIn, 7) };
     if (right.checkIn <= left.checkIn) return { unresolvedReason: "temporal_range_invalid" };
-    return { checkIn: left.checkIn, checkOut: right.checkIn, nights: daysBetween(left.checkIn, right.checkIn), expressionType: "date_range" };
+    return durationValidatedRange({ checkIn: left.checkIn, checkOut: right.checkIn, nights: daysBetween(left.checkIn, right.checkIn), expressionType: "date_range" }, duration);
   }
   const nights = duration;
   if (nights) {
@@ -281,13 +326,18 @@ function parseTemporalGrammar(raw, eventTimestamp, timezone) {
   return parseTemporalGrammarAtBase(raw, partsAt(timestamp, timezone));
 }
 
-function inferTemporalSpanFromMessage(text, eventTimestamp, timezone) {
+function inferTemporalSpanFromMessage(text, eventTimestamp, timezone, ownedRawText = "") {
   const message = normalizeText(text);
   const timestamp = Number(eventTimestamp) || Date.parse(eventTimestamp || "");
   if (!message || !Number.isFinite(timestamp)) return null;
   const baseParts = partsAt(timestamp, timezone);
+  const normalizedOwnedRaw = normalizeText(ownedRawText);
+  const ownedStart = normalizedOwnedRaw ? message.indexOf(normalizedOwnedRaw) : -1;
+  const ownedSpan = ownedStart >= 0 && message.indexOf(normalizedOwnedRaw, ownedStart + 1) === -1
+    ? { start: ownedStart, end: ownedStart + normalizedOwnedRaw.length }
+    : null;
   const wholeMessage = parseTemporalGrammarAtBase(message, baseParts);
-  if (wholeMessage.unresolvedReason === "temporal_expression_ambiguous") {
+  if (wholeMessage.unresolvedReason === "temporal_expression_ambiguous" && !ownedSpan) {
     return { ambiguity: wholeMessage.unresolvedReason };
   }
   const candidates = [];
@@ -307,7 +357,11 @@ function inferTemporalSpanFromMessage(text, eventTimestamp, timezone) {
     }
   }
   if (!candidates.length) return null;
-  const maximal = candidates.filter((candidate) => !candidates.some((other) => (
+  const eligibleCandidates = ownedSpan
+    ? candidates.filter((candidate) => candidate.start < ownedSpan.end && candidate.end > ownedSpan.start)
+    : candidates;
+  if (!eligibleCandidates.length) return null;
+  const maximal = eligibleCandidates.filter((candidate) => !eligibleCandidates.some((other) => (
     other !== candidate
     && other.start <= candidate.start
     && other.end >= candidate.end
@@ -355,7 +409,7 @@ function inferDurationSpanFromMessage(text) {
   return shortest[0];
 }
 
-function inferGroundedTemporalSpan({ candidateSourceText, guestMessage, eventTimestamp, timezone }) {
+function inferGroundedTemporalSpan({ candidateSourceText, guestMessage, eventTimestamp, timezone, ownedRawText = "" }) {
   const normalizedMessage = normalizeText(guestMessage);
   const normalizedCandidateSource = normalizeText(candidateSourceText);
   const sources = [];
@@ -367,7 +421,7 @@ function inferGroundedTemporalSpan({ candidateSourceText, guestMessage, eventTim
   }
   let ambiguity = null;
   for (const source of sources) {
-    const temporal = inferTemporalSpanFromMessage(source, eventTimestamp, timezone);
+    const temporal = inferTemporalSpanFromMessage(source, eventTimestamp, timezone, ownedRawText);
     if (temporal && temporal.rawText) return temporal;
     if (temporal && temporal.ambiguity) ambiguity = temporal;
     const duration = inferDurationSpanFromMessage(source);
@@ -521,11 +575,12 @@ function resolveCanonicalTemporal({
   let rawText = normalizeText(expression.rawText);
   let recoveredPlannerSpan = false;
   const taskIds = [...new Set((Array.isArray(applicableTaskIds) ? applicableTaskIds : []).map(String).filter(Boolean))];
-  const inferGroundedSpan = (allowGuestMessage = allowSharedMessageInference) => inferGroundedTemporalSpan({
+  const inferGroundedSpan = (allowGuestMessage = allowSharedMessageInference, ownedRawText = "") => inferGroundedTemporalSpan({
     candidateSourceText,
     guestMessage: allowGuestMessage ? guestMessage : "",
     eventTimestamp,
-    timezone
+    timezone,
+    ownedRawText
   });
 
   if (!rawText) {
@@ -646,7 +701,7 @@ function resolveCanonicalTemporal({
 
   if (!recoveredPlannerSpan) {
     const initialParsed = parseTemporalGrammar(rawText, eventTimestamp, timezone);
-    const inferred = inferGroundedSpan(false);
+    const inferred = inferGroundedSpan(false, initialParsed.checkIn ? rawText : "");
     if (inferred && inferred.ambiguity) {
       return withFieldMetadata({
         rawText: "",

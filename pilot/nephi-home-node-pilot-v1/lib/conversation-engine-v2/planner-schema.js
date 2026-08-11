@@ -268,18 +268,67 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
         canonicalCandidate: null
       })
     : null;
-  const candidateGrounded = entity.canonicalCandidate
-    && (!rawGrounded || rawGrounded.status === "not_found")
-    && (!scopedRawGrounded || scopedRawGrounded.status === "not_found")
+  const canonicalGrounded = entity.canonicalCandidate
     ? resolveEntity(catalog, {
         category: "other",
         rawText: "",
         canonicalCandidate: entity.canonicalCandidate
       })
     : null;
+  const candidateGrounded = canonicalGrounded
+    && (!rawGrounded || rawGrounded.status === "not_found")
+    && (!scopedRawGrounded || scopedRawGrounded.status === "not_found")
+    ? canonicalGrounded
+    : null;
   const sourceBoundRaw = normalizedText(entity.rawText);
   const sourceBoundTask = normalizedText(task.sourceText);
   const verifiedSource = normalizedText(verifiedSourceText);
+  const canonicalIdentityTokens = normalizedText(entity.canonicalCandidate).match(/[\p{L}\p{N}]+/gu) || [];
+  const sourceIdentityTokens = sourceBoundRaw.match(/[\p{L}\p{N}]+/gu) || [];
+  const sourceNamesCanonicalIdentity = canonicalIdentityTokens.length > 0
+    && canonicalIdentityTokens.every((token) => sourceIdentityTokens.includes(token));
+  const formalTextIdentityMatches = Object.values(catalog)
+    .filter(Array.isArray)
+    .flat()
+    .filter((fact) => fact && (fact.answer || ["confirmed_yes", "confirmed_no"].includes(fact.status)))
+    .flatMap((fact) => fact && fact.canonicalId
+      ? [fact.publicName, ...(fact.aliases || []), fact.answer]
+        .map((value) => ({ canonicalId: fact.canonicalId, text: normalizedText(value) }))
+      : [])
+    .filter((match) => match.text && sourceBoundRaw.includes(match.text));
+  const longestFormalTextLength = formalTextIdentityMatches.reduce(
+    (longest, match) => Math.max(longest, match.text.length),
+    0
+  );
+  const formalTextIdentityIds = new Set(formalTextIdentityMatches
+    .filter((match) => match.text.length === longestFormalTextLength)
+    .map((match) => match.canonicalId));
+  const sourceIdentityIds = new Set([
+    rawGrounded && rawGrounded.status === "resolved" && rawGrounded.entity && rawGrounded.entity.canonicalId,
+    scopedRawGrounded && scopedRawGrounded.status === "resolved" && scopedRawGrounded.entity && scopedRawGrounded.entity.canonicalId,
+    ...mentionedPropertyFacts(catalog, entity.rawText).map(({ entity: fact }) => fact && fact.canonicalId),
+    ...mentionedInventoryEntities(catalog, entity.rawText).map(({ entity: inventory }) => inventory && inventory.canonicalId),
+    ...formalTextIdentityIds,
+    sourceNamesCanonicalIdentity && canonicalGrounded && canonicalGrounded.status === "resolved"
+      ? canonicalGrounded.entity.canonicalId
+      : null
+  ].filter(Boolean));
+  const sourceBoundCanonicalConflict = sourceBoundRaw
+    && verifiedSource.includes(sourceBoundRaw)
+    && entity.canonicalCandidate
+    && canonicalGrounded && canonicalGrounded.status === "resolved"
+    && (sourceIdentityIds.size > 0
+      ? sourceIdentityIds.size !== 1 || !sourceIdentityIds.has(canonicalGrounded.entity.canonicalId)
+      : entity.category !== canonicalGrounded.entity.category);
+  if (sourceBoundCanonicalConflict) return {
+    ...task,
+    type: "unknown",
+    detailIntent: "general",
+    requestedOutputs: ["answer"],
+    dependsOnStayContext: false,
+    stayCandidate: null,
+    entity: { ...entity, category: "other", canonicalCandidate: null }
+  };
   const mentionedFacts = ["availability", "amenity"].includes(task.type)
     && ["time", "start_time", "end_time"].includes(task.detailIntent)
     && sourceBoundRaw

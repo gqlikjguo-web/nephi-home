@@ -28,14 +28,15 @@ const { runWithTestOnlyAcceptanceRawUnderstanding } = require("./lib/test-only-r
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const SAFE_PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
-const SAFE_PLANNER_ERROR_CODES = new Set(["planner_authentication_error", "planner_model_not_found", "planner_rate_limit", "planner_provider_error", "planner_http_error", "planner_timeout", "planner_parse_error", "planner_empty_response", "planner_structured_output_error", "planner_network_error", "planner_configuration_error", "planner_unknown_error"]);
+const SAFE_PLANNER_ERROR_CODES = new Set(["planner_authentication_error", "planner_model_not_found", "planner_rate_limit", "planner_provider_error", "planner_http_error", "planner_timeout", "planner_parse_error", "planner_empty_response", "planner_structured_output_error", "planner_network_error", "planner_configuration_error", "planner_local_contract_failure", "planner_unknown_error"]);
 const SAFE_SEMANTIC_LEDGER_BOUNDARY_STAGES = new Set(["raw_parsed_output", "compile_before", "compile_after", "validate"]);
 const SAFE_SEMANTIC_LEDGER_FAILURE_CODES = new Set(["candidate_object", "candidate_id", "candidate_count_limit", "semantic_kind", "capability", "canonical_identity", "property_catalog_identity", "identity_alignment", "evidence_refs", "lodging_scope", "lodging_scope_conflict", "temporal_candidate"]);
 const SAFE_EVIDENCE_FAILURE_CODES = new Set(["missing_refs", "too_many_refs", "invalid_evidence_ref", "missing_source_identity", "unknown_event_id", "unknown_message_ref", "identity_conflict", "invalid_offset", "invalid_quote", "out_of_bounds", "quote_slice_mismatch"]);
 const SAFE_SEMANTIC_LIFECYCLES = new Set(["bound", "pending_task", "unknown"]);
 const SAFE_SEMANTIC_MISSING_REFS_REASONS = new Set(["", "pending_invalid_raw_evidence", "bound_missing_provenance", "bound_unknown_provenance_relation", "bound_relation_context_invalid", "bound_relation_evidence_invalid", "compiled_evidence_lost", "other"]);
-const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "unknown"]);
+const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "local_contract_failure", "unknown"]);
 const SAFE_PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
+const SAFE_COVERAGE_CRITIC_RESULT_STATUSES = new Set(["budget_exhausted", "provider_failure", "invalid_output", "missing_detected", "complete"]);
 const SAFE_CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
 const SAFE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_REPAIR_KINDS = new Set(["coverage_repair", "task_collection_repair", "semantic_repair"]);
@@ -315,6 +316,7 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
   }
   if (details.stage === "planner_error") {
     const status = Number(details.httpStatus);
+    const coverageCriticResultStatus = String(details.coverageCriticResultStatus || "");
     return {
       ...base,
       errorName: SAFE_PLANNER_ERROR_NAMES.has(details.errorName) ? details.errorName : "Error",
@@ -335,7 +337,15 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       retryable: Boolean(details.retryable),
       responseBodyPresent: Boolean(details.responseBodyPresent),
       parsedOutputPresent: Boolean(details.parsedOutputPresent),
-      providerAttempts: safePlannerAttempts(details.providerAttempts)
+      providerAttempts: safePlannerAttempts(details.providerAttempts),
+      ...(SAFE_COVERAGE_CRITIC_RESULT_STATUSES.has(coverageCriticResultStatus) ? {
+        coverageCriticResultStatus,
+        coverageCriticErrorCategory: safePlannerErrorCategory(details.coverageCriticErrorCategory),
+        repairRequired: Boolean(details.repairRequired),
+        repairAllowed: Boolean(details.repairAllowed),
+        understandingCallLimit: Math.min(safeDiagnosticCount(details.understandingCallLimit), 3),
+        understandingCallsUsed: Math.min(safeDiagnosticCount(details.understandingCallsUsed), 3)
+      } : {})
     };
   }
   if (details.stage === "validation") return {

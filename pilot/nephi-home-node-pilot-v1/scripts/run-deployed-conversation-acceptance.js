@@ -38,14 +38,14 @@ const PRODUCT_OUTCOME_SUBJECTS = Object.freeze({
   confirm_replacement_date: { capabilities: ["booking_request", "human_help", "unknown"] },
   deposit: { capabilities: ["policy", "property_fact", "human_help", "unknown"], categories: ["payment"], canonicalIds: ["deposit", "payment"] },
   double_room: { categories: ["room"], canonicalIds: ["room_301", "room_302"] },
-  exact_saturday: { capabilities: ["availability", "available_dates", "room_options", "bundle_availability", "price", "total_price"], temporalResolutionStatuses: ["unresolved"] },
+  exact_saturday: { dimension: "temporal", capabilities: ["availability", "available_dates", "room_options", "bundle_availability", "price", "total_price"], temporalResolutionStatuses: ["unresolved"] },
   ktv_hours: { capabilities: ["amenity", "policy", "property_fact"], canonicalIds: ["ktv", "singing"] },
   late_arrival: { capabilities: ["policy", "property_fact", "human_help", "unknown"], categories: ["check_in"], canonicalIds: ["check_in", "late_arrival"] },
   latest_arrival: { capabilities: ["policy", "property_fact", "human_help", "unknown"], categories: ["check_in"], canonicalIds: ["check_in", "latest_arrival"] },
   location: { capabilities: ["location", "property_fact", "human_help", "unknown"], categories: ["transport"], canonicalIds: ["location"] },
   noise_policy: { capabilities: ["policy", "property_fact", "human_help", "unknown"], categories: ["policy"], canonicalIds: ["noise_policy"] },
   one_four_person_room: { capabilities: ["booking_request", "human_help", "unknown", "room_options"], categories: ["room"] },
-  past_date: { capabilities: ["availability", "available_dates", "room_options", "bundle_availability", "price", "total_price", "booking_request"], temporalRepairReasonCodes: ["past_date"] },
+  past_date: { dimension: "temporal", capabilities: ["availability", "available_dates", "room_options", "bundle_availability", "price", "total_price", "booking_request"], temporalRepairReasonCodes: ["past_date"] },
   payment_timing: { capabilities: ["policy", "property_fact", "human_help", "unknown"], categories: ["payment"], canonicalIds: ["payment"] },
   pet_policy: { capabilities: ["policy", "property_fact", "human_help", "unknown"], categories: ["policy"], canonicalIds: ["pets", "pet_policy"] },
   pool: { capabilities: ["pool", "amenity", "property_fact", "human_help", "unknown"], canonicalIds: ["pool"] },
@@ -503,11 +503,14 @@ function missingProductOutcomes(result, expectation = {}) {
   const assign = (position) => {
     if (position === order.length) return true;
     const outcomeIndex = order[position];
+    const definition = PRODUCT_OUTCOME_SUBJECTS[outcomes[outcomeIndex] && outcomes[outcomeIndex].subject];
+    const dimension = String(definition && definition.dimension || "business");
     for (const unitIndex of candidates[outcomeIndex]) {
-      if (used.has(unitIndex)) continue;
-      used.add(unitIndex);
+      const assignmentKey = `${unitIndex}:${dimension}`;
+      if (used.has(assignmentKey)) continue;
+      used.add(assignmentKey);
       if (assign(position + 1)) return true;
-      used.delete(unitIndex);
+      used.delete(assignmentKey);
     }
     return false;
   };

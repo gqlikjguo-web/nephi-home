@@ -115,10 +115,42 @@ for (const testCase of CASES) {
   );
 }
 
+const EXPLICIT_NIGHT_CASES = Object.freeze([
+  { rawText: "8/18、19兩個晚上", checkIn: "2026-08-18", checkOut: "2026-08-20", nights: 2 },
+  { rawText: "8/31、9/1兩晚", checkIn: "2026-08-31", checkOut: "2026-09-02", nights: 2 },
+  { rawText: "8/18-8/20兩晚", checkIn: "2026-08-18", checkOut: "2026-08-20", nights: 2 },
+  { rawText: "8/18入住、8/20退房兩晚", checkIn: "2026-08-18", checkOut: "2026-08-20", nights: 2 },
+  { rawText: "8/18住兩晚", checkIn: "2026-08-18", checkOut: "2026-08-20", nights: 2 }
+]);
+
+for (const testCase of EXPLICIT_NIGHT_CASES) {
+  const actual = resolveCanonicalTemporal({
+    guestMessage: testCase.rawText,
+    candidateSourceText: testCase.rawText,
+    plannerCandidate: {
+      dateExpression: { rawText: testCase.rawText, kind: "range", anchor: "message_time" },
+      checkInCandidate: testCase.checkIn,
+      checkOutCandidate: testCase.checkOut,
+      nightsCandidate: testCase.nights,
+      guestCountCandidate: null
+    },
+    eventTimestamp: EVENT_TIMESTAMP,
+    timezone: TIMEZONE,
+    applicableTaskIds: ["availability"]
+  });
+  assert.deepEqual(
+    { resolutionStatus: actual.resolutionStatus, checkIn: actual.checkIn, checkOut: actual.checkOut, nights: actual.nights },
+    { resolutionStatus: "resolved", checkIn: testCase.checkIn, checkOut: testCase.checkOut, nights: testCase.nights },
+    `${testCase.rawText} must distinguish occupied-night lists from check-in/check-out boundaries`
+  );
+}
+
 const UNRESOLVED_CASES = Object.freeze([
   { rawText: "7/30-7/28", reasonCode: "temporal_range_invalid" },
   { rawText: "7/28-29和8/1-2", reasonCode: "temporal_expression_unrecognized" },
-  { rawText: "7/28到哪天", reasonCode: "temporal_range_invalid" }
+  { rawText: "7/28到哪天", reasonCode: "temporal_range_invalid" },
+  { rawText: "8/18-8/20三晚", reasonCode: "temporal_range_invalid" },
+  { rawText: "8/18入住、8/20退房三晚", reasonCode: "temporal_range_invalid" }
 ]);
 
 for (const testCase of UNRESOLVED_CASES) {
@@ -143,7 +175,7 @@ for (const testCase of UNRESOLVED_CASES) {
   assert.equal(actual.resolutionStatus, "unresolved", testCase.rawText);
   assert.equal(actual.checkIn, null, testCase.rawText);
   assert.equal(actual.checkOut, null, testCase.rawText);
-  assert.equal(actual.repairReasonCode, testCase.reasonCode, testCase.rawText);
+  if (testCase.reasonCode) assert.equal(actual.repairReasonCode, testCase.reasonCode, testCase.rawText);
 }
 
 console.log("canonical temporal range grammar: PASS");

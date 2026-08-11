@@ -147,7 +147,7 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
   const rawDiagnostic = diagnostics.find((entry) => entry.stage === "planner_error");
   assert.ok(rawDiagnostic, `${name} must emit planner_error`);
   const diagnostic = formatSafeTestOnlyConversationTrace(rawDiagnostic);
-  assert.deepEqual(Object.keys(diagnostic).sort(), [
+  const expectedDiagnosticKeys = [
     "errorCategory",
     "errorCode",
     "errorName",
@@ -171,7 +171,16 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
     "stage",
     "timeout",
     "traceId"
-  ].sort(), `${name} diagnostic must contain only the safe schema`);
+  ];
+  if (expected.coverageCriticResultStatus) expectedDiagnosticKeys.push(
+    "coverageCriticResultStatus",
+    "coverageCriticErrorCategory",
+    "repairRequired",
+    "repairAllowed",
+    "understandingCallLimit",
+    "understandingCallsUsed"
+  );
+  assert.deepEqual(Object.keys(diagnostic).sort(), expectedDiagnosticKeys.sort(), `${name} diagnostic must contain only the safe schema`);
   assert.equal(diagnostic.errorName, expected.errorName, `${name} errorName`);
   assert.equal(diagnostic.errorCode, expected.errorCode, `${name} errorCode`);
   assert.equal(diagnostic.httpStatus, expected.httpStatus, `${name} httpStatus`);
@@ -190,6 +199,14 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
   assert.equal(diagnostic.retryable, Boolean(expected.retryable));
   assert.equal(diagnostic.responseBodyPresent, Boolean(expected.responseBodyPresent));
   assert.equal(diagnostic.parsedOutputPresent, Boolean(expected.parsedOutputPresent));
+  if (expected.coverageCriticResultStatus) {
+    assert.equal(diagnostic.coverageCriticResultStatus, expected.coverageCriticResultStatus);
+    assert.equal(diagnostic.coverageCriticErrorCategory, expected.coverageCriticErrorCategory);
+    assert.equal(diagnostic.repairRequired, expected.repairRequired);
+    assert.equal(diagnostic.repairAllowed, expected.repairAllowed);
+    assert.equal(diagnostic.understandingCallLimit, expected.understandingCallLimit);
+    assert.equal(diagnostic.understandingCallsUsed, expected.understandingCallsUsed);
+  }
   assert.equal(diagnostic.providerAttempts.length, diagnostic.providerAttemptCount);
   diagnostic.providerAttempts.forEach((attempt, index) => {
     assert.equal(attempt.attemptNumber, index + 1);
@@ -236,9 +253,16 @@ function successfulProviderResponse(providerRequestId = "") {
   }));
   output.tasks[0] = {
     ...output.tasks[0],
-    sourceText: "test",
-    entity: { ...output.tasks[0].entity, rawText: "test" }
+    sourceText: "入住",
+    entity: { ...output.tasks[0].entity, rawText: "入住" }
   };
+  output.contextRelationCandidates[0].evidenceRefs = [{
+    eventId: "test-event",
+    messageRef: "",
+    startOffset: 0,
+    endOffset: 2,
+    quote: "入住"
+  }];
   return providerResponse(200, JSON.stringify({
     output_text: JSON.stringify(output)
   }), providerRequestId);
@@ -266,8 +290,8 @@ async function plannerRetrySuccess({ name, firstFailure, expectedCategory }) {
     lineUserId: "guest",
     eventId: `planner-retry-${name}`,
     eventTimestamp: 1,
-    messageText: "test",
-    sourceEvents: [{ eventId: "test-event", messageText: "test" }]
+    messageText: "入住",
+    sourceEvents: [{ eventId: "test-event", messageText: "入住" }]
   });
   assert.equal(fetchCount, 2, `${name} must make exactly one retry`);
   assert.equal(result.finalDecision.action, "reply", `${name} retry success must continue to a reply`);
@@ -471,7 +495,7 @@ async function main() {
   const firstSuccessOutput = await openAiPlanner(async () => {
     firstSuccessAttemptCount += 1;
     return successfulProviderResponse();
-  }).classify({ currentMessage: "test", sourceEvents: [], catalog: {}, contextSnapshot: { scope: {}, cycles: [] } });
+  }).classify({ currentMessage: "入住", sourceEvents: [{ eventId: "test-event", messageRef: "", messageText: "入住" }], catalog: {}, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(firstSuccessAttemptCount, 1, "a successful first attempt must not issue a second request");
   assert.equal(firstSuccessOutput.schemaVersion, 2);
   assert.equal(openAiPlanner(async () => successfulProviderResponse(), { retryDelayMs: 999999 }).retryDelayMs, 1000, "retry delay must be bounded");
@@ -625,6 +649,60 @@ async function main() {
     expected: { errorName: "Error", errorCode: "planner_network_error", httpStatus: 0, timeout: false, errorCategory: "network", model, provider: "openai", providerAttemptCount: 2, retryPerformed: true, retryable: true }
   });
   assert.equal(networkAttemptCount, 2, "a persistent network failure must stop after attempt 2");
+  const criticBoundaryError = new Error(`${sensitive.guestMessage} ${sensitive.responseBody}`);
+  Object.assign(criticBoundaryError, {
+    code: "planner_local_contract_failure",
+    errorCategory: "local_contract_failure",
+    plannerModel: model,
+    plannerProvider: "openai",
+    providerAttemptCount: 1,
+    firstAttemptErrorCategory: "local_contract_failure",
+    finalErrorCategory: "local_contract_failure",
+    coverageCriticResultStatus: "provider_failure",
+    coverageCriticErrorCategory: "timeout",
+    repairRequired: false,
+    repairAllowed: false,
+    understandingCallLimit: 3,
+    understandingCallsUsed: 2,
+    responseBodyPresent: true,
+    parsedOutputPresent: true,
+    providerAttempts: [{
+      attemptNumber: 1,
+      startedAt: "2026-08-01T00:00:00.000Z",
+      completedAt: "2026-08-01T00:00:00.010Z",
+      durationMs: 10,
+      timeoutMs: 10,
+      clientRequestId: "12345678-1234-4123-8123-123456789012",
+      providerRequestId: "safe_request_id",
+      errorCategory: "local_contract_failure",
+      httpStatus: 0,
+      responseBodyPresent: true,
+      parsedOutputPresent: true
+    }],
+    criticOutput: { raw: sensitive.responseBody },
+    sourceEvents: [{ messageText: sensitive.guestMessage }]
+  });
+  await plannerFailureDiagnostic({
+    name: "coverage-critic-local-contract",
+    planner: { model, provider: "openai", classify: async () => { throw criticBoundaryError; } },
+    expected: {
+      errorName: "Error",
+      errorCode: "planner_local_contract_failure",
+      httpStatus: 0,
+      timeout: false,
+      errorCategory: "local_contract_failure",
+      model,
+      provider: "openai",
+      responseBodyPresent: true,
+      parsedOutputPresent: true,
+      coverageCriticResultStatus: "provider_failure",
+      coverageCriticErrorCategory: "timeout",
+      repairRequired: false,
+      repairAllowed: false,
+      understandingCallLimit: 3,
+      understandingCallsUsed: 2
+    }
+  });
   await plannerFailureDiagnostic({
     name: "configuration",
     planner: null,

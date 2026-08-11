@@ -254,6 +254,54 @@ function assertContradictoryPlannerFieldsPreserveControlledCapability() {
 
 function main() {
   const contradictoryFieldCaseCount = assertContradictoryPlannerFieldsPreserveControlledCapability();
+  const incoherentSourceIdentity = sourceBoundSemantic(task({
+    taskId: "source-identity-conflict",
+    type: "amenity",
+    category: "room_feature",
+    rawText: "private in-room leisure fixture",
+    canonicalCandidate: "bbq"
+  }));
+  assert.equal(incoherentSourceIdentity.tasks[0].type, "unknown", "a substantive source-bound raw entity must fail closed when it cannot uniquely ground to the supplied catalog identity");
+  assert.equal(incoherentSourceIdentity.tasks[0].entity.canonicalCandidate, null, "an unrelated but valid catalog identity must not replace ungrounded source identity");
+  assert.ok(
+    incoherentSourceIdentity.semanticValidation.rejectedTasks.some((item) => item.taskId === "source-identity-conflict" && item.reason === "property_catalog_entity_conflict"),
+    "the source/raw/canonical coherence rejection must remain visible"
+  );
+  const incoherentCanonical = canonicalizeExecutionItem({
+    item: {
+      candidateIndex: 0,
+      requestCycleId: "source-identity-conflict",
+      task: incoherentSourceIdentity.tasks[0],
+      transition: { approvedProduct: { productType: "any", productId: null, roomTypeId: null, bundleId: null } }
+    },
+    relation: null,
+    contextSnapshot: { cycles: [] },
+    catalog,
+    guestMessage: "private in-room leisure fixture",
+    eventTimestamp
+  });
+  assert.notEqual(incoherentCanonical.canonicalRequest.resolverId, "property_catalog", "an incoherent formal identity must not reach the property executor path");
+
+  const conflictingResolvedIdentity = sourceBoundSemantic(task({
+    taskId: "resolved-source-identity-conflict",
+    type: "policy",
+    category: "policy",
+    rawText: "cancel",
+    canonicalCandidate: "bbq"
+  }));
+  assert.equal(conflictingResolvedIdentity.tasks[0].type, "unknown", "a uniquely resolved source identity must fail closed when a same-category canonical candidate names a different fact");
+  assert.equal(conflictingResolvedIdentity.tasks[0].entity.canonicalCandidate, null);
+
+  const coherentSourceIdentity = sourceBoundSemantic(task({
+    taskId: "source-identity-coherent",
+    type: "property_fact",
+    category: "policy",
+    rawText: "barbecue",
+    canonicalCandidate: "bbq"
+  }));
+  assert.equal(coherentSourceIdentity.tasks[0].entity.canonicalCandidate, "bbq", "a source alias and matching canonical identity must remain valid");
+  assert.notEqual(coherentSourceIdentity.tasks[0].type, "unknown");
+
   const resolvedLocation = canonical(task({ taskId: "map", category: "transport", rawText: "directions" }));
   assert.equal(resolvedLocation.semantic.tasks[0].entity.canonicalCandidate, "location", "a uniquely property-catalog grounded transport entity must become location");
   assert.equal(resolvedLocation.item.canonicalRequest.capability, "location");
@@ -1136,7 +1184,7 @@ function main() {
   assert.ok(providerCandidateSchema.required.includes("provenanceRelationCandidateIndexes"));
   assert.equal(providerCandidateSchema.properties.evidenceRefs.minItems, 0, "bound lifecycle can represent its required empty raw-evidence field");
   assert.equal(providerCandidateSchema.properties.provenanceRelationCandidateIndexes.minItems, 0, "pending lifecycle can represent its required empty relation-provenance field");
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 43 + contradictoryFieldCaseCount, passCount: 43 + contradictoryFieldCaseCount, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 46 + contradictoryFieldCaseCount, passCount: 46 + contradictoryFieldCaseCount, failCount: 0 }));
 }
 
 main();

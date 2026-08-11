@@ -25,6 +25,8 @@ const SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC = Symbol("semanticLedgerBoundaryDiagno
 const IDENTITY_FAIL_CLOSED_COMPLETE = Symbol("identityFailClosedComplete");
 const RETRYABLE_ERROR_CATEGORIES = new Set(["timeout", "network", "rate_limit", "provider_5xx"]);
 const ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
+const COVERAGE_CRITIC_RESULT_STATUSES = new Set(["budget_exhausted", "provider_failure", "invalid_output", "missing_detected", "complete"]);
+const COVERAGE_CRITIC_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "local_contract_failure", "unknown"]);
 const MAX_PRIMARY_ATTEMPTS = 2;
 const MAX_UNDERSTANDING_CALLS = 3;
 const MAX_MERGED_TASKS = 24;
@@ -1777,7 +1779,7 @@ function mergeSemanticCandidateRepair(firstOutput, repairOutput, input, missingC
   if (semanticLedgerBoundary) Object.defineProperty(merged, SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC, semanticLedgerBoundary);
   return merged;
 }
-function plannerFailure({ code, category, status = 0, timeout = false, model = "", name = "Error", providerErrorType = "", providerErrorCode = "", providerErrorParam = "", providerAttemptCount = 1, firstAttemptErrorCategory = category, finalErrorCategory = category, retryPerformed = false, retrySucceeded = false, retryable = false, responseBodyPresent = false, parsedOutputPresent = false }) {
+function plannerFailure({ code, category, status = 0, timeout = false, model = "", name = "Error", providerErrorType = "", providerErrorCode = "", providerErrorParam = "", providerAttemptCount = 1, firstAttemptErrorCategory = category, finalErrorCategory = category, retryPerformed = false, retrySucceeded = false, retryable = false, responseBodyPresent = false, parsedOutputPresent = false, coverageCriticResultStatus = "", coverageCriticErrorCategory = "unknown", repairRequired = false, repairAllowed = false, understandingCallsUsed = 0 }) {
   const error = new Error(code);
   error.name = name;
   error.code = code;
@@ -1797,6 +1799,18 @@ function plannerFailure({ code, category, status = 0, timeout = false, model = "
   error.retryable = Boolean(retryable);
   error.responseBodyPresent = Boolean(responseBodyPresent);
   error.parsedOutputPresent = Boolean(parsedOutputPresent);
+  if (COVERAGE_CRITIC_RESULT_STATUSES.has(coverageCriticResultStatus)) {
+    error.coverageCriticResultStatus = coverageCriticResultStatus;
+    error.coverageCriticErrorCategory = COVERAGE_CRITIC_ERROR_CATEGORIES.has(coverageCriticErrorCategory)
+      ? coverageCriticErrorCategory
+      : "unknown";
+    error.repairRequired = Boolean(repairRequired);
+    error.repairAllowed = Boolean(repairAllowed);
+    error.understandingCallLimit = MAX_UNDERSTANDING_CALLS;
+    error.understandingCallsUsed = Number.isInteger(understandingCallsUsed) && understandingCallsUsed >= 0
+      ? Math.min(understandingCallsUsed, MAX_UNDERSTANDING_CALLS)
+      : 0;
+  }
   error.safePlannerFailure = true;
   return error;
 }
@@ -2110,6 +2124,23 @@ class TestOnlyOpenAiConversationPlanner {
           ? missingSemanticCandidates(firstOutput, input, ledger.validCandidates)
           : [];
         let understandingCallCount = providerAttempts.length;
+        const semanticRepairRequired = patchInvalidSemanticUnits || missingCandidates.length > 0;
+        const coverageContractFailure = ({
+          resultStatus,
+          errorCategory = "local_contract_failure",
+          repairRequired = semanticRepairRequired,
+          repairAllowed = false,
+          callsUsed = understandingCallCount
+        }) => plannerFailure({
+          code: "planner_local_contract_failure",
+          category: "local_contract_failure",
+          model: this.model,
+          coverageCriticResultStatus: resultStatus,
+          coverageCriticErrorCategory: COVERAGE_CRITIC_ERROR_CATEGORIES.has(errorCategory) ? errorCategory : "unknown",
+          repairRequired,
+          repairAllowed,
+          understandingCallsUsed: callsUsed
+        });
         let coverageCriticDiagnostic = null;
         let missingRequestTargets = [];
         if (this.coverageCritic) {
@@ -2120,7 +2151,7 @@ class TestOnlyOpenAiConversationPlanner {
               validatedMissingSpanCount: 0,
               repairTriggeredReason: "fail_closed"
             });
-            throw plannerFailure({ code: "planner_local_contract_failure", category: "local_contract_failure", model: this.model });
+            throw coverageContractFailure({ resultStatus: "budget_exhausted" });
           }
           const criticCallNumber = understandingCallCount + 1;
           const coveredRequests = coveredRequestRepresentations(firstOutput, input, ledger.validCandidates);
@@ -2136,14 +2167,19 @@ class TestOnlyOpenAiConversationPlanner {
               timeoutMs: Math.min(this.timeoutMs, criticRemainingMs)
             });
             understandingCallCount += 1;
-          } catch {
+          } catch (criticError) {
             captureTestOnlyAcceptanceCoverageCritic(input, {
               callNumber: criticCallNumber,
               resultStatus: "provider_failure",
               validatedMissingSpanCount: 0,
               repairTriggeredReason: "fail_closed"
             });
-            throw plannerFailure({ code: "planner_local_contract_failure", category: "local_contract_failure", model: this.model });
+            throw coverageContractFailure({
+              resultStatus: "provider_failure",
+              errorCategory: String(criticError && criticError.errorCategory || "unknown"),
+              repairAllowed: false,
+              callsUsed: criticCallNumber
+            });
           }
           missingRequestTargets = validatedCriticMissingRequests(criticOutput, input, coveredRequests);
           if (!missingRequestTargets) {
@@ -2153,10 +2189,13 @@ class TestOnlyOpenAiConversationPlanner {
               validatedMissingSpanCount: 0,
               repairTriggeredReason: "fail_closed"
             });
-            throw plannerFailure({ code: "planner_local_contract_failure", category: "local_contract_failure", model: this.model });
+            throw coverageContractFailure({
+              resultStatus: "invalid_output",
+              errorCategory: "local_contract_failure",
+              repairAllowed: false
+            });
           }
           const providerCriticDiagnostic = criticOutput && criticOutput[COVERAGE_CRITIC_DIAGNOSTIC];
-          const semanticRepairRequired = patchInvalidSemanticUnits || missingCandidates.length;
           const repairTriggeredReason = missingRequestTargets.length && semanticRepairRequired
             ? "combined_semantic_and_critic"
             : missingRequestTargets.length
@@ -2181,7 +2220,12 @@ class TestOnlyOpenAiConversationPlanner {
           && understandingCallCount < MAX_UNDERSTANDING_CALLS
           && (!this.coverageCritic ? attempt === 1 : true);
         if (repairRequired && !repairAllowed && this.coverageCritic) {
-          throw plannerFailure({ code: "planner_local_contract_failure", category: "local_contract_failure", model: this.model });
+          throw coverageContractFailure({
+            resultStatus: coverageCriticDiagnostic && coverageCriticDiagnostic.resultStatus || "complete",
+            errorCategory: "local_contract_failure",
+            repairRequired: true,
+            repairAllowed: false
+          });
         }
         if (repairAllowed) {
           const preservedTaskIds = patchInvalidSemanticUnits
@@ -2277,7 +2321,13 @@ class TestOnlyOpenAiConversationPlanner {
           } catch (repairError) {
             providerAttempts.push(...(Array.isArray(repairError && repairError.providerAttempts) ? repairError.providerAttempts : []));
             if (this.coverageCritic) {
-              throw plannerFailure({ code: "planner_local_contract_failure", category: "local_contract_failure", model: this.model });
+              throw coverageContractFailure({
+                resultStatus: coverageCriticDiagnostic && coverageCriticDiagnostic.resultStatus || "complete",
+                errorCategory: String(repairError && repairError.errorCategory || "local_contract_failure"),
+                repairRequired: true,
+                repairAllowed: true,
+                callsUsed: Math.min(understandingCallCount + 1, MAX_UNDERSTANDING_CALLS)
+              });
             }
             if (patchInvalidSemanticUnits) {
               if (!identityFailClosedValid) {
@@ -2293,6 +2343,14 @@ class TestOnlyOpenAiConversationPlanner {
           }
         }
         if (!identityFailClosedValid) {
+          if (this.coverageCritic) {
+            throw coverageContractFailure({
+              resultStatus: coverageCriticDiagnostic && coverageCriticDiagnostic.resultStatus || "complete",
+              errorCategory: "local_contract_failure",
+              repairRequired,
+              repairAllowed
+            });
+          }
           throw plannerFailure({ code: "planner_local_contract_failure", category: "local_contract_failure", model: this.model });
         }
         return annotateProviderSuccess(firstOutput, firstAttemptErrorCategory, providerAttempts, null, coverageCriticDiagnostic, understandingCallCount);

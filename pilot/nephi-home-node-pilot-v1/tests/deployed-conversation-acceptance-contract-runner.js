@@ -16,6 +16,7 @@ const {
   acceptanceEventId,
   validateAcceptanceResult,
   assessFinalResponseEvidence,
+  missingProductOutcomes,
   writeAcceptanceReport,
   runAcceptanceMatrix,
   selectAcceptanceMatrix,
@@ -414,6 +415,81 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     "a known formal answer plus a distinct operator-only sibling may pass through one scoped handoff response"
   );
   assert.equal(assessFinalResponseEvidence(completeScopedHandoff, mixedProductExpectation).status, "PASS");
+  const priceWithTemporalClarification = {
+    finalDecision: { action: "clarification" },
+    claimValidation: { coveredTaskIds: [] },
+    taskResults: [{ taskId: "price", capability: "price", type: "price", status: "needs_clarification", facts: {} }],
+    trace: [{
+      stage: "canonical_request",
+      items: [{
+        taskId: "price",
+        capability: "price",
+        canonicalEntity: { category: "bundle", canonicalId: "bundle-a", status: "resolved" },
+        temporalState: { resolutionStatus: "unresolved", repairReasonCode: "temporal_expression_ambiguous" },
+        evidenceRefCount: 1
+      }]
+    }]
+  };
+  const crossDimensionOutcomes = {
+    messageText: "8月週六四人房價格",
+    productOutcomes: [
+      { subject: "price", disposition: "retain" },
+      { subject: "exact_saturday", disposition: "clarification", sourceText: "8月週六" }
+    ]
+  };
+  assert.deepEqual(
+    missingProductOutcomes(priceWithTemporalClarification, crossDimensionOutcomes),
+    [],
+    "one semantic unit may satisfy compatible business and temporal dimensions"
+  );
+  const sameBusinessUnit = {
+    ...priceWithTemporalClarification,
+    taskResults: [{ taskId: "pool", capability: "pool", type: "amenity", status: "needs_clarification", facts: {} }],
+    trace: [{
+      stage: "canonical_request",
+      items: [{
+        taskId: "pool",
+        capability: "pool",
+        canonicalEntity: { category: "amenity", canonicalId: "pool", status: "resolved" },
+        evidenceRefCount: 1
+      }]
+    }]
+  };
+  assert.match(
+    missingProductOutcomes(sameBusinessUnit, { productOutcomes: [{ subject: "pool", disposition: "retain" }, { subject: "pool_fee", disposition: "retain" }] })[0],
+    /^expected_product_outcome_collision:/,
+    "two business subjects must not consume the same business evidence unit"
+  );
+  const sameTemporalUnit = JSON.parse(JSON.stringify(priceWithTemporalClarification));
+  sameTemporalUnit.trace[0].items[0].temporalState.repairReasonCode = "past_date";
+  assert.match(
+    missingProductOutcomes(
+      sameTemporalUnit,
+      { productOutcomes: [{ subject: "exact_saturday", disposition: "clarification" }, { subject: "past_date", disposition: "retain" }] }
+    )[0],
+    /^expected_product_outcome_collision:/,
+    "the same temporal unit must remain injective within the temporal dimension"
+  );
+  const resolvedTemporalUnit = JSON.parse(JSON.stringify(priceWithTemporalClarification));
+  resolvedTemporalUnit.trace[0].items[0].temporalState.resolutionStatus = "resolved";
+  assert.deepEqual(
+    missingProductOutcomes(resolvedTemporalUnit, { productOutcomes: [{ subject: "exact_saturday", disposition: "clarification" }] }),
+    ["expected_product_outcome_missing:exact_saturday:clarification"],
+    "a resolved date must not satisfy an exact-date clarification"
+  );
+  const wrongFinalAction = { ...priceWithTemporalClarification, finalDecision: { action: "handoff" } };
+  assert.deepEqual(
+    missingProductOutcomes(wrongFinalAction, { productOutcomes: [{ subject: "exact_saturday", disposition: "clarification" }] }),
+    ["expected_product_outcome_missing:exact_saturday:clarification"],
+    "a wrong final action must not satisfy a clarification outcome"
+  );
+  const missingSourceEvidence = JSON.parse(JSON.stringify(priceWithTemporalClarification));
+  delete missingSourceEvidence.trace[0].items[0].evidenceRefCount;
+  assert.deepEqual(
+    missingProductOutcomes(missingSourceEvidence, crossDimensionOutcomes),
+    ["expected_product_outcome_missing:exact_saturday:clarification"],
+    "fixture source text without structured evidence must not pass"
+  );
   const wrongPoolIdentityResult = {
     ...safeResult,
     taskResults: [{ ...safeResult.taskResults[0], capability: "amenity", type: "amenity" }],
@@ -883,5 +959,5 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.equal(packageJson.scripts["test:deployed-acceptance-contract"], "node tests/test-only-acceptance-oidc-runner.js && node tests/deployed-conversation-acceptance-contract-runner.js && node tests/real-guest-deployed-acceptance-matrix-runner.js && node tests/test-only-conversation-acceptance-api-runner.js");
   assert.equal(packageJson.scripts.posttest, "node tests/test-only-acceptance-oidc-runner.js && node tests/deployed-conversation-acceptance-contract-runner.js && node tests/real-guest-deployed-acceptance-matrix-runner.js");
 
-  console.log(JSON.stringify({ suite: "deployed-conversation-acceptance-contract", caseCount: 18, passCount: 18, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "deployed-conversation-acceptance-contract", caseCount: 24, passCount: 24, failCount: 0 }));
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
