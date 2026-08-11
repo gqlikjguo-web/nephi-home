@@ -115,7 +115,8 @@ function safeResult(eventId, traceId) {
     );
 
     const rg029 = ACCEPTANCE_MATRIX.find((item) => item.id === "rg-029-checkin-latest").turns[0];
-    assert.deepEqual(rg029.expectedActions, ["clarification", "handoff"], "unknown latest-arrival policy must not be forced into an automatic reply");
+    assert.deepEqual(rg029.expectedActions, ["reply", "handoff"], "requested-detail handling must accept the protected reply path or a safe handoff");
+    assert.equal(rg029.strictDetailReview, true, "rg-029 must opt in to the reusable strict requested-detail contract");
     assert.equal(rg029.expectedSemantic.includes("check_in"), false, "latest arrival must not fail solely on canonicalId=check_in");
     assert.deepEqual(rg029.productOutcomes, [{ subject: "latest_arrival", disposition: "retain", sourceText: "最晚入住時間" }]);
 

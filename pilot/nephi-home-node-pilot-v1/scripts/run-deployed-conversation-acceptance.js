@@ -145,6 +145,7 @@ function loadedAcceptanceTurn(turn, tier, item, errorPrefix) {
     expectedCapabilities: semanticCapabilityGroups(turn.expectedSemantic || []),
     productOutcomes: validatedProductOutcomes(turn, errorPrefix),
     forbidClaims: turn.forbidClaims || [],
+    strictDetailReview: turn.strictDetailReview === true,
     establishOperatorContext: turn.establishOperatorContext === true,
     pastDatePolicy: turn.pastDatePolicy || "",
     ...(turnReason ? { executionStatus: NOT_EXECUTABLE_STATUS, executionReasonCode: turnReason } : {})
@@ -513,6 +514,45 @@ function missingProductOutcomes(result, expectation = {}) {
   return assign(0) ? [] : [`expected_product_outcome_collision:${outcomes.map((outcome) => outcome.subject).join("|")}`];
 }
 
+function strictDetailEvidence(result) {
+  const tasks = (Array.isArray(result && result.taskResults) ? result.taskResults : []).filter((task) => (
+    task
+    && task.status === "answered"
+    && task.dataSource === "property_catalog"
+    && task.facts
+    && typeof task.facts.detailProvided === "boolean"
+    && typeof task.facts.detailNeedsConfirmation === "boolean"
+  ));
+  if (tasks.length !== 1) throw new Error(tasks.length ? "strict_detail_task_ambiguous" : "strict_detail_task_required");
+  return tasks[0];
+}
+
+function validateStrictDetailReview(result) {
+  if (result.finalDecision.action === "handoff") return;
+  if (result.finalDecision.action !== "reply") throw new Error("strict_detail_reply_or_handoff_required");
+  const task = strictDetailEvidence(result);
+  const facts = task.facts;
+  const coveredTaskIds = new Set(Array.isArray(result.claimValidation.coveredTaskIds) ? result.claimValidation.coveredTaskIds : []);
+  if (!coveredTaskIds.has(task.taskId)) throw new Error("strict_detail_claim_coverage_required");
+  const formalDetail = facts.detailProvided === true && facts.detailNeedsConfirmation === false;
+  const missingDetail = facts.detailProvided === false && facts.detailNeedsConfirmation === true;
+  if (!formalDetail && !missingDetail) throw new Error("strict_detail_facts_invalid");
+  const review = result.reviewPersistence && typeof result.reviewPersistence === "object" ? result.reviewPersistence : {};
+  if (formalDetail) {
+    if (result.finalDecision.reviewRequired === true || review.required === true || review.persisted === true || review.pending === true) throw new Error("formal_detail_review_forbidden");
+    const answer = String(facts.answer || "").trim();
+    if (!answer) throw new Error("formal_detail_answer_required");
+    if (!result.finalResponse.replyText.includes(answer)) throw new Error("formal_detail_answer_missing");
+    return;
+  }
+  if (result.finalDecision.reviewRequired !== true || review.required !== true || review.persisted !== true || review.pending !== true) throw new Error("detail_review_persistence_required");
+  const replyText = String(result.finalResponse.replyText || "");
+  const formalText = JSON.stringify(result.taskResults.map((item) => item && item.facts || {}));
+  const exactTimes = replyText.match(/(?:[01]?\d|2[0-3]):[0-5]\d/g) || [];
+  if (exactTimes.some((value) => !formalText.includes(value))) throw new Error("detail_review_unauthorized_exact_value");
+  if (!replyText.includes("業者") || !replyText.includes("確認")) throw new Error("detail_review_confirmation_required");
+}
+
 function validateAcceptanceResult(result, expectation = {}) {
   if (!result || typeof result !== "object") throw new Error("acceptance_result_required");
   if (!result.traceId || !result.eventId) throw new Error("acceptance_evidence_ids_required");
@@ -554,6 +594,7 @@ function validateAcceptanceResult(result, expectation = {}) {
   if (missingSemanticEvidence.length) throw new Error(`expected_semantic_evidence_missing:${missingSemanticEvidence.join("|")}`);
   const missingOutcomes = missingProductOutcomes(result, expectation);
   if (missingOutcomes.length) throw new Error(missingOutcomes[0]);
+  if (expectation.strictDetailReview === true) validateStrictDetailReview(result);
   if (semanticTags.has("bundle") && canonicalItems.length && !canonicalItems.some((item) => item.capability === "bundle_availability" || item.canonicalEntity && item.canonicalEntity.category === "bundle")) throw new Error("expected_bundle_scope_missing");
   for (const roomNumber of ["301", "402"]) {
     if (semanticTags.has(`room_${roomNumber}`) && canonicalItems.length && !canonicalItems.some((item) => String(item.canonicalEntity && item.canonicalEntity.canonicalId || "").includes(roomNumber))) throw new Error(`expected_room_scope_missing:${roomNumber}`);
@@ -765,6 +806,8 @@ function reportTurn({ turnNumber, turn, result, assessment, error, status }) {
   const finalDecision = result && result.finalDecision || {};
   const claimValidation = result && result.claimValidation || {};
   const finalResponse = result && result.finalResponse || {};
+  const review = result && result.reviewPersistence || {};
+  const detailTask = result && Array.isArray(result.taskResults) ? result.taskResults.find((task) => task && task.facts && typeof task.facts.detailProvided === "boolean") : null;
   return {
     turn: turnNumber,
     tier: ACCEPTANCE_TIERS.includes(turn && turn.tier) ? turn.tier : "TIER_4_EDGE",
@@ -778,8 +821,14 @@ function reportTurn({ turnNumber, turn, result, assessment, error, status }) {
     formalEvidence: formalEvidenceForReport(result),
     finalDecision: {
       action: String(finalDecision.action || "").slice(0, 40),
-      reasonCode: String(finalDecision.reasonCode || "").slice(0, 160)
+      reasonCode: String(finalDecision.reasonCode || "").slice(0, 160),
+      reviewRequired: finalDecision.reviewRequired === true
     },
+    reviewRequired: finalDecision.reviewRequired === true,
+    reviewPersisted: review.persisted === true,
+    reviewPending: review.pending === true,
+    detailProvided: detailTask ? detailTask.facts.detailProvided : null,
+    detailNeedsConfirmation: detailTask ? detailTask.facts.detailNeedsConfirmation : null,
     claimValidation: {
       ok: typeof claimValidation.ok === "boolean" ? claimValidation.ok : null,
       errors: Array.isArray(claimValidation.errors) ? claimValidation.errors.map((value) => String(value).slice(0, 120)) : [],

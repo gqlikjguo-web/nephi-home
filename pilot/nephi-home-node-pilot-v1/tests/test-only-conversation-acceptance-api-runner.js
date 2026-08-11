@@ -43,6 +43,11 @@ function plannerOutputUnchecked({ sourceEvents, currentMessage }) {
     const task = planTask({ taskId: "parking-followup", type: "amenity", sourceText: currentMessage, dependsOnStayContext: false, canonicalCandidate: "parking", category: "amenity" });
     return { ...base, discourse: { relation: "continue", confidence: 0.99 }, tasks: [task], contextRelationCandidates: [relation(source, "supplement_existing", ["parking"])] };
   }
+  if (currentMessage === "latest detail review") {
+    const task = planTask({ taskId: "latest-arrival", type: "policy", sourceText: currentMessage, dependsOnStayContext: false, canonicalCandidate: "check_in", category: "policy" });
+    task.detailIntent = "latest_arrival_policy";
+    return { ...base, tasks: [task], contextRelationCandidates: [relation(source)] };
+  }
   if (currentMessage === "mixed") {
     const parking = planTask({ taskId: "mixed-parking", type: "amenity", sourceText: currentMessage, dependsOnStayContext: false, canonicalCandidate: "parking", category: "amenity" });
     const human = planTask({ taskId: "mixed-human", type: "high_risk", sourceText: currentMessage, dependsOnStayContext: false }); human.candidateIndex = 1; human.requestedOutputs = ["handoff"]; human.entity.rawText = "human help";
@@ -238,6 +243,22 @@ async function integrityRequest(url, body, authorization = "") {
     assert.equal(continued.body.taskResults[0].dataSource, "property_catalog");
     assert.equal(continued.body.taskResults[0].facts.subject, "停車");
     assert.equal(Object.hasOwn(continued.body.taskResults[0].facts, "propertyId"), false, "safe facts must omit provider scope internals");
+    const detailReview = await post("detail-review", "latest detail review", "detail-review-1");
+    assert.equal(detailReview.body.finalDecision.action, "reply");
+    assert.equal(detailReview.body.finalDecision.reviewRequired, true);
+    assert.equal(detailReview.body.taskResults[0].facts.detailProvided, false);
+    assert.equal(detailReview.body.taskResults[0].facts.detailNeedsConfirmation, true);
+    assert.deepEqual(detailReview.body.reviewPersistence, {
+      required: true,
+      persisted: true,
+      pending: true
+    }, "acceptance evidence must bind pending review persistence to this exact event");
+    const noReviewAfterPending = await post("no-review-after-pending", "parking", "no-review-after-pending-1");
+    assert.deepEqual(noReviewAfterPending.body.reviewPersistence, {
+      required: false,
+      persisted: false,
+      pending: false
+    }, "an unrelated pending review must never be attributed to the current event");
     const mixed = await post("mixed", "mixed", "mixed-1");
     assert.deepEqual(mixed.body.taskResults.map((item) => item.status), ["answered", "needs_human"], "mixed tasks must retain independent results through the Engine");
     assert.equal(mixed.body.finalDecision.action, "handoff");

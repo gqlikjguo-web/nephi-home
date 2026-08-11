@@ -99,6 +99,21 @@ function safeAcceptanceTaskResult(item = {}) {
   };
 }
 
+function acceptanceReviewPersistence(persistence, customerId, channelId, eventId, reviewRequired) {
+  const required = reviewRequired === true;
+  const message = persistence.findMessageByEventId(customerId, eventId, channelId);
+  const exactEvent = Boolean(message
+    && message.eventId === eventId
+    && message.channelId === channelId
+    && String(message.customerId || message.propertyId || customerId) === customerId);
+  const persisted = required && exactEvent && message.needsReview === true;
+  return {
+    required,
+    persisted,
+    pending: persisted && message.status === "pending"
+  };
+}
+
 function safeAcceptanceList(values, maxLength = 80) {
   return Array.isArray(values) ? values.slice(0, 200).map((value) => safeAcceptanceText(value, maxLength)) : [];
 }
@@ -1227,6 +1242,7 @@ function createApp(options = {}) {
         traceId: result.traceId,
         eventId,
         finalDecision: safeAcceptanceFinalDecision(result.finalDecision),
+        reviewPersistence: acceptanceReviewPersistence(providers.persistence, customerId, channelId, eventId, result.finalDecision.reviewRequired),
         claimValidation: safeAcceptanceClaimValidation(result.claimValidation),
         finalResponse: {
           action: result.finalResponse.action,

@@ -184,6 +184,73 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     ]
   };
   assert.equal(validateAcceptanceResult(safeResult, { expectedActions: ["reply"], expectedCapabilities: ["parking"] }).action, "reply");
+  const missingDetailResult = {
+    ...safeResult,
+    finalDecision: { action: "reply", reasonCode: "execution_answered", reviewRequired: true },
+    claimValidation: { ok: true, errors: [], coveredTaskIds: ["latest-arrival"], missingTaskIds: [], unexpectedTaskIds: [] },
+    finalResponse: { action: "reply", shouldReply: true, replyText: "最晚抵達安排目前沒有正式資料，需要請業者確認。" },
+    taskResults: [{
+      taskId: "latest-arrival",
+      capability: "policy",
+      type: "policy",
+      status: "answered",
+      reason: "",
+      dataSource: "property_catalog",
+      facts: { subject: "入住", status: "confirmed_yes", answer: "", detailIntent: "latest_arrival_policy", detailProvided: false, detailNeedsConfirmation: true }
+    }],
+    reviewPersistence: { required: true, persisted: false, pending: false }
+  };
+  assert.throws(
+    () => validateAcceptanceResult(missingDetailResult, { expectedActions: ["reply", "handoff"], strictDetailReview: true }),
+    /detail_review_persistence_required/,
+    "detailNeedsConfirmation must not pass without exact-event pending review persistence"
+  );
+  assert.throws(
+    () => validateAcceptanceResult({
+      ...missingDetailResult,
+      reviewPersistence: { required: true, persisted: true, pending: true },
+      finalResponse: { action: "reply", shouldReply: true, replyText: "最晚入住時間是 23:00。" }
+    }, { expectedActions: ["reply", "handoff"], strictDetailReview: true }),
+    /detail_review_unauthorized_exact_value/,
+    "a missing formal detail must reject an exact value absent from formal evidence"
+  );
+  const formalDetailResult = {
+    ...missingDetailResult,
+    finalDecision: { action: "reply", reasonCode: "execution_answered", reviewRequired: false },
+    finalResponse: { action: "reply", shouldReply: true, replyText: "最晚入住時間為 22:00。" },
+    taskResults: [{
+      ...missingDetailResult.taskResults[0],
+      facts: { subject: "最晚入住時間", status: "confirmed_yes", answer: "22:00", detailIntent: "latest_arrival_policy", detailProvided: true, detailNeedsConfirmation: false }
+    }],
+    reviewPersistence: { required: false, persisted: false, pending: false }
+  };
+  assert.equal(
+    validateAcceptanceResult(formalDetailResult, { expectedActions: ["reply", "handoff"], strictDetailReview: true }).action,
+    "reply",
+    "formal requested detail must pass without review persistence"
+  );
+  assert.throws(
+    () => validateAcceptanceResult({ ...formalDetailResult, finalDecision: { ...formalDetailResult.finalDecision, reviewRequired: true } }, { expectedActions: ["reply", "handoff"], strictDetailReview: true }),
+    /formal_detail_review_forbidden/,
+    "the strict contract must distinguish a present formal detail from the missing-detail review branch"
+  );
+  let strictDetailReport = null;
+  const strictDetailSummary = await runAcceptanceMatrix({
+    baseUrl: "https://test-only.example",
+    propertyId: "nephi_home",
+    oidcToken: "PRIVATE_OIDC_TOKEN",
+    commit: expectedCommit,
+    matrix: [{ id: "strict-detail-report", tier: "TIER_1_CORE", turns: [{ messageText: "requested detail", expectedActions: ["reply", "handoff"], strictDetailReview: true }] }],
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, data: { ...missingDetailResult, reviewPersistence: { required: true, persisted: true, pending: true } } }) }),
+    write: () => {},
+    reportWriter: (report) => { strictDetailReport = report; }
+  });
+  assert.equal(strictDetailSummary.passCount, 1);
+  assert.deepEqual(
+    (({ reviewRequired, reviewPersisted, reviewPending, detailProvided, detailNeedsConfirmation }) => ({ reviewRequired, reviewPersisted, reviewPending, detailProvided, detailNeedsConfirmation }))(strictDetailReport.cases[0].turns[0]),
+    { reviewRequired: true, reviewPersisted: true, reviewPending: true, detailProvided: false, detailNeedsConfirmation: true },
+    "the private artifact must retain strict detail and review evidence without exposing review identity"
+  );
   const supportedAssessment = assessFinalResponseEvidence(safeResult, { expectedActions: ["reply"], expectedCapabilities: ["parking"] });
   assert.equal(supportedAssessment.status, "PASS", "an exact Engine FinalResponse grounded in allowlisted formal facts may pass");
   assert.deepEqual(supportedAssessment.reasons, []);

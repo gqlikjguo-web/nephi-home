@@ -266,7 +266,7 @@
       "bucket": "normal_high_frequency",
       "coverage": ["入住時間", "規則"],
       "sourceRef": "Markdown §29 入住／退房時間；XLSX 實測題庫",
-      "turns": [{"input": "請問最晚入住時間？", "expectedSemantic": ["latest_arrival"], "allowedActions": ["clarification", "handoff"], "requiresFormalPropertyData": true, "productOutcomes": [{"subject": "latest_arrival", "disposition": "retain", "sourceText": "最晚入住時間"}]}]
+      "turns": [{"input": "請問最晚入住時間？", "expectedSemantic": ["latest_arrival"], "allowedActions": ["reply", "handoff"], "requiresFormalPropertyData": true, "strictDetailReview": true, "productOutcomes": [{"subject": "latest_arrival", "disposition": "retain", "sourceText": "最晚入住時間"}]}]
     },
     {
       "id": "rg-030-late-arrival",
