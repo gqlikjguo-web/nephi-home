@@ -83,7 +83,7 @@ const REGISTRY_BLUEPRINT = {
   },
   parking: {
     capability: "parking",
-    acceptedCandidateTypes: ["amenity", "property_fact", "availability"],
+    acceptedCandidateTypes: ["amenity", "property_fact"],
     acceptedEntityCategories: ["amenity", "transport"],
     stayDependency: false,
     requiredFields: [],

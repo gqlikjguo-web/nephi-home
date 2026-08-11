@@ -112,7 +112,8 @@ async function main() {
     rooms: [{ canonicalId: "room_catalog_a", category: "room" }],
     amenities: [
       { canonicalId: "amenity_catalog_a", category: "amenity" },
-      { canonicalId: "parking", category: "amenity" }
+      { canonicalId: "parking", category: "amenity" },
+      { canonicalId: "bbq", category: "activity" }
     ],
     policies: [],
     faqs: [],
@@ -160,14 +161,18 @@ async function main() {
   const roomBranch = branchForIdentity("room_catalog_a");
   const amenityBranch = branchForIdentity("amenity_catalog_a");
   const parkingBranch = branchForIdentity("parking");
-  assert.ok(roomBranch && amenityBranch && parkingBranch, "every catalog identity must have an authoritative compatibility branch");
+  const bbqBranch = branchForIdentity("bbq");
+  assert.ok(roomBranch && amenityBranch && parkingBranch && bbqBranch, "every catalog identity must have an authoritative compatibility branch");
   assert.ok(roomBranch.properties.capability.enum.includes("availability"));
   assert.ok(roomBranch.properties.capability.enum.includes("price"));
   assert.equal(roomBranch.properties.capability.enum.includes("amenity"), false, "room identity must reject an incompatible amenity capability");
   assert.ok(amenityBranch.properties.capability.enum.includes("amenity"));
   assert.equal(amenityBranch.properties.capability.enum.includes("price"), false, "amenity identity must reject an incompatible price capability");
-  assert.ok(parkingBranch.properties.capability.enum.includes("availability"), "entity-specific registry authority must preserve parking availability");
+  assert.equal(parkingBranch.properties.capability.enum.includes("availability"), false, "parking identity must reject the room-inventory availability capability");
+  assert.ok(parkingBranch.properties.capability.enum.includes("amenity"), "parking identity must preserve the amenity candidate type");
+  assert.ok(parkingBranch.properties.capability.enum.includes("property_fact"), "parking identity must preserve the property-fact candidate type");
   assert.equal(parkingBranch.properties.capability.enum.includes("price"), false);
+  assert.ok(bbqBranch.properties.capability.enum.includes("policy"), "an unrelated registry entry must remain authoritative");
 
   console.log("planner strict schema contract: PASS");
 }
