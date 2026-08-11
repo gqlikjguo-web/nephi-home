@@ -676,6 +676,54 @@ async function classifySequence({ first, repair, plannerInput }) {
     "pending identity with multiple compatible verified relations must fail locally instead of guessing an owner"
   );
 
+  const allInvalidPendingScenario = identityScenario({
+    failureClass: "identity_alignment",
+    validSibling: false,
+    repairMode: "invalid",
+    sharedEvidence: true
+  });
+  const secondAllInvalidOwner = providerTask(task({
+    candidateIndex: 1,
+    taskId: "identity-alignment-all-invalid-second-owner",
+    type: "property_fact",
+    sourceText: identityMessage,
+    semanticCandidateIds: [IDS.unknown],
+    category: "amenity",
+    canonicalCandidate: "quiet_room"
+  }));
+  const allInvalidPendingIdentity = {
+    ...allInvalidPendingScenario.firstOutput,
+    tasks: [...allInvalidPendingScenario.firstOutput.tasks, secondAllInvalidOwner],
+    semanticCandidates: allInvalidPendingScenario.firstOutput.semanticCandidates.map((candidate) => ({
+      ...candidate,
+      coverageStatus: "pending_task",
+      provenanceRelationCandidateIndexes: [],
+      evidenceRefs: identityWholeMessageEvidence.map((ref) => ({ ...ref }))
+    })),
+    contextRelationCandidates: [
+      ...allInvalidPendingScenario.firstOutput.contextRelationCandidates,
+      { candidateIndex: 1, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: identityWholeMessageEvidence }
+    ]
+  };
+  assertProviderLedgerShape(allInvalidPendingIdentity, "all-invalid ambiguous pending identity ownership");
+  const allInvalidPendingClassified = await classifySequence({
+    first: allInvalidPendingIdentity,
+    repair: allInvalidPendingIdentity,
+    plannerInput: input(identityMessage, identityEvent, propertyCatalog)
+  });
+  const allInvalidPendingStructural = validatePlannerOutput(allInvalidPendingClassified.result);
+  const allInvalidPendingUnderstanding = validateUnderstandingContext(
+    allInvalidPendingClassified.result,
+    { scope: {}, cycles: [] },
+    { sourceEvents: input(identityMessage, identityEvent, propertyCatalog).sourceEvents }
+  );
+  assert.equal(allInvalidPendingStructural.ok, true, `all-invalid ambiguous pending identity ownership must fail closed structurally: ${allInvalidPendingStructural.errors.join(",")}`);
+  assert.equal(allInvalidPendingUnderstanding.ok, true, "all-invalid ambiguous pending identity ownership must preserve verified relation evidence");
+  assert.equal(allInvalidPendingClassified.result.tasks.length, 2, "all affected verified owners must remain represented in the safe handoff");
+  assert.equal(allInvalidPendingClassified.result.tasks.every((item) => item.type === "human_help"), true, "all affected verified owners must fail closed without choosing an owner");
+  assert.equal(allInvalidPendingClassified.result.semanticCandidates.every((candidate) => candidate.capability === "human_help"), true, "the all-invalid ledger must not preserve an invalid identity candidate");
+  assert.equal(allInvalidPendingClassified.calls, 2, "all-invalid ambiguous pending identity ownership must use at most one bounded repair");
+
   const sameTask = providerTask(task({
     candidateIndex: 0,
     taskId: "identity-shared-owner",

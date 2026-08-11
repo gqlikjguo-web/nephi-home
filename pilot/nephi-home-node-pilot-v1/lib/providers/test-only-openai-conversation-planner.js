@@ -1127,6 +1127,7 @@ function invalidIdentitySemanticOwnership(output, input, diagnosticSummary) {
   const invalidCandidateIds = new Set();
   const taskKeys = new Set();
   let identityFailurePresent = false;
+  const validSemanticSiblingPresent = Number(diagnosticSummary && diagnosticSummary.validCandidateCount || 0) > 0;
   const identityFailureCodes = new Set(["property_catalog_identity", "identity_alignment"]);
   const tasks = Array.isArray(output && output.tasks) ? output.tasks : [];
   const candidates = Array.isArray(output && output.semanticCandidates) ? output.semanticCandidates : [];
@@ -1153,7 +1154,9 @@ function invalidIdentitySemanticOwnership(output, input, diagnosticSummary) {
         && candidateEvidenceRefs.every((ref) => evidenceMatchesSource(ref, sourceMaps)
           && relationEvidenceRefs.some((relationRef) => evidenceRefsOverlap(ref, relationRef, sourceMaps)));
     });
-    if (diagnostic.coverageStatus === "pending_task" ? ownedTasks.length !== 1 : ownedTasks.length === 0) continue;
+    if (diagnostic.coverageStatus === "pending_task") {
+      if (ownedTasks.length === 0 || ownedTasks.length > 1 && validSemanticSiblingPresent) continue;
+    } else if (ownedTasks.length === 0) continue;
     invalidCandidateIds.add(String(candidate.candidateId || ""));
     for (const task of ownedTasks) taskKeys.add(semanticTaskKey(task));
   }
