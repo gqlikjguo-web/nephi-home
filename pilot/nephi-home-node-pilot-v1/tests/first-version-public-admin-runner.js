@@ -202,14 +202,15 @@ function seedDate(offsetDays) {
     },
     persistence: {}
   });
-  const search = () => service.searchAvailability({ customerId: "alpha_home", checkIn: checkInDate, checkOut: checkOutDate, queryMode: "bundle_only" });
+  const search = (queryMode = "bundle_only") => service.searchAvailability({ customerId: "alpha_home", checkIn: checkInDate, checkOut: checkOutDate, queryMode });
   assert.deepEqual(search().rooms.map((room) => room.id), ["bundle"], "manual bundle availability plus all member rooms must make the bundle available");
   service.setDay({ customerId: "alpha_home", date: checkInDate, roomId: "bundle", status: "closed" });
   assert.equal(rows.get("alpha_home").double, "available", "closing a bundle must not close member rooms");
   assert.deepEqual(search().rooms.map((room) => room.id), [], "manual bundle close must hide only that bundle");
   service.setDay({ customerId: "alpha_home", date: checkInDate, roomId: "bundle", status: "available" });
   service.setDay({ customerId: "alpha_home", date: checkInDate, roomId: "double", status: "closed" });
-  assert.deepEqual(search().rooms.map((room) => room.id), [], "a closed member room must make the bundle unavailable");
+  assert.deepEqual(search().rooms.map((room) => room.id), ["bundle"], "an explicitly available bundle must remain sellable when a member room is closed");
+  assert.deepEqual(search("room_only").rooms.map((room) => room.id), ["family"], "a closed member room must not be offered as an individual room");
   service.setDay({ customerId: "alpha_home", date: checkInDate, roomId: "double", status: "available" });
   assert.deepEqual(search().rooms.map((room) => room.id), ["bundle"], "a manually-open bundle must recover once every member is available");
   assert.equal(service.searchAvailability({ customerId: "beta_home", checkIn: checkInDate, checkOut: checkOutDate, queryMode: "bundle_only" }).rooms.length, 0, "bundle availability must remain property-scoped");

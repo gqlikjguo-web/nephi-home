@@ -89,6 +89,42 @@ function runRangeContract(providers, label) {
   assert.equal(row[ROOM_IDS[2]], "available", `${label}: batch room close must preserve sibling rooms`);
 }
 
+function runSearchContract(providers, label) {
+  const service = createMvpService(providers, { now: () => NOW });
+  const search = (date, queryMode) => service.searchAvailability({
+    customerId: PROPERTY_ID,
+    checkIn: date,
+    checkOut: new Date(Date.parse(`${date}T00:00:00.000Z`) + 86400000).toISOString().slice(0, 10),
+    queryMode,
+    roomType: "all"
+  }).rooms.map((room) => room.id);
+  const setRooms = (date, status) => {
+    for (const roomId of ROOM_IDS) providers.availability.setDay(PROPERTY_ID, date, roomId, status);
+  };
+
+  setRooms("2026-08-20", "closed");
+  let row = providers.availability.setDay(PROPERTY_ID, "2026-08-20", BUNDLE_ID, "available");
+  assert.equal(row[BUNDLE_ID], "available", `${label}: explicit bundle open must be canonical`);
+  for (const roomId of ROOM_IDS) assert.equal(row[roomId], "closed", `${label}: explicit bundle open must preserve closed ${roomId}`);
+  assert.deepEqual(search("2026-08-20", "bundle_only"), [BUNDLE_ID], `${label}: available bundle must remain sellable while all member rooms are closed`);
+  assert.deepEqual(search("2026-08-20", "room_only"), [], `${label}: closed member rooms must not be offered as rooms`);
+  assert.deepEqual(search("2026-08-20", "any"), [BUNDLE_ID], `${label}: any mode must offer only the available bundle when its members are closed`);
+
+  setRooms("2026-08-21", "available");
+  providers.availability.setDay(PROPERTY_ID, "2026-08-21", BUNDLE_ID, "closed");
+  assert.deepEqual(search("2026-08-21", "bundle_only"), [], `${label}: a closed bundle must remain unavailable while all members are available`);
+
+  setRooms("2026-08-22", "available");
+  providers.availability.setDay(PROPERTY_ID, "2026-08-22", BUNDLE_ID, "available");
+  assert.deepEqual(search("2026-08-22", "bundle_only"), [BUNDLE_ID], `${label}: an available bundle with available members must be offered`);
+
+  setRooms("2026-08-23", "available");
+  providers.availability.setDay(PROPERTY_ID, "2026-08-23", BUNDLE_ID, "available");
+  row = providers.availability.setDay(PROPERTY_ID, "2026-08-23", ROOM_IDS[0], "closed");
+  assert.equal(row[BUNDLE_ID], "closed", `${label}: room available-to-closed transition must close the open bundle`);
+  assert.deepEqual(search("2026-08-23", "bundle_only"), [], `${label}: search must respect the final closed bundle state after a room transition`);
+}
+
 function createJsonFixture(temp) {
   const seedFile = path.join(temp, "seed.json");
   fs.writeFileSync(seedFile, JSON.stringify(propertySeed()), "utf8");
@@ -133,6 +169,7 @@ async function run() {
     const providers = createJsonFixture(jsonTemp);
     runToggleContract(providers.availability, "JSON provider");
     runRangeContract(providers, "JSON service range path");
+    runSearchContract(providers, "JSON service search path");
   } finally {
     fs.rmSync(jsonTemp, { recursive: true, force: true });
   }
@@ -146,6 +183,7 @@ async function run() {
     providers = createPostgresProviders(connection);
     runToggleContract(providers.availability, "PostgreSQL provider");
     runRangeContract(providers, "PostgreSQL service range path");
+    runSearchContract(providers, "PostgreSQL service search path");
   } finally {
     if (providers) await providers.close();
     fs.rmSync(postgresTemp, { recursive: true, force: true });

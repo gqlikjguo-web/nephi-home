@@ -348,7 +348,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       const row = byDate[date];
       if (!row) return false;
       if (room.inventoryType === "bundle") {
-        return row[room.id] === "available" && (room.memberRoomIds || []).every((id) => row[id] === "available");
+        return row[room.id] === "available";
       }
       return row[room.id] === "available";
     })) : [];
