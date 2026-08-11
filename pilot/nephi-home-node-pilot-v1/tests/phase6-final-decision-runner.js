@@ -11,6 +11,7 @@ function check(decision, expected) {
 const answered = { taskId: "answered", outcome: "answered" };
 check(decide([]), { action: "no_reply", reasonCode: "no_actionable_requests", summary: { answeredTaskIds: [] } });
 check(decide([answered]), { action: "reply", reasonCode: "execution_answered", taskIds: ["answered"], summary: { answeredTaskIds: ["answered"] } });
+check(decide([{ taskId: "detail-review", outcome: "answered", facts: { detailNeedsConfirmation: true } }]), { action: "reply", reasonCode: "execution_answered", taskIds: ["detail-review"], reviewRequired: true, summary: { answeredTaskIds: ["detail-review"] } });
 check(decide([{ taskId: "missing", outcome: "not_ready", readinessStatus: "missing", missingFields: ["stay.checkIn"] }]), { action: "clarification", reasonCode: "missing", taskIds: ["missing"], missingFields: ["stay.checkIn"], summary: { notReadyTaskIds: ["missing"] } });
 check(decide([{ taskId: "invalid", outcome: "not_ready", readinessStatus: "invalid", missingFields: ["stay.checkIn"] }]), { action: "clarification", reasonCode: "invalid", taskIds: ["invalid"], missingFields: ["stay.checkIn"], summary: { notReadyTaskIds: ["invalid"] } });
 check(decide([{ taskId: "conflict", outcome: "not_ready", readinessStatus: "conflicting", missingFields: ["stay.checkOut"] }]), { action: "clarification", reasonCode: "conflicting", taskIds: ["conflict"], missingFields: ["stay.checkOut"], summary: { notReadyTaskIds: ["conflict"] } });
@@ -29,4 +30,4 @@ check(decide([], { plannerFailure: "planner_parse_failed" }), { action: "handoff
 check(decide([answered], { claimValidation: { ok: false } }), { action: "handoff", reasonCode: "claim_validation_failed", taskIds: ["answered"], reviewRequired: true, summary: { answeredTaskIds: ["answered"] } });
 const fixed = decide([answered, { taskId: "review", outcome: "unknown", reason: "property_fact_unknown" }]);
 for (const delivery of [true, false]) assert.deepEqual(decide([answered, { taskId: "review", outcome: "unknown", reason: "property_fact_unknown" }]), fixed, `delivery ${delivery} must not alter FinalDecision`);
-console.log("phase6 final decision: PASS (24 acceptance cases)");
+console.log("phase6 final decision: PASS (25 acceptance cases)");

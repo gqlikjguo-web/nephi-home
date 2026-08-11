@@ -14,7 +14,7 @@ const secret = "phase6-channel-secret";
 const propertyId = "demo_homestay_a";
 const channelId = "line";
 const lineUserId = "u";
-const property = { propertyId, displayName: "Test", timezone: "Asia/Taipei", currency: "TWD", rooms: [], commonAnswers: { parkingRule: "Parking is available." }, semanticCatalog: { aliases: { parking: ["parking"] }, amenities: [] } };
+const property = { propertyId, displayName: "Test", timezone: "Asia/Taipei", currency: "TWD", rooms: [], commonAnswers: { parkingRule: "Parking is available." }, propertyFacts: [{ canonicalId: "bbq", category: "policy", status: "provided", publicText: "A separate fee may apply.", aliases: ["barbecue"] }], semanticCatalog: { aliases: { parking: ["parking"], bbq: ["barbecue"] }, amenities: [] } };
 
 function plannerFor(kind) {
   return { classify: async ({ sourceEvents }) => {
@@ -29,6 +29,10 @@ function plannerFor(kind) {
     }
     if (kind === "clarification") {
       const task = { taskId: "availability", candidateIndex: 0, type: "availability", sourceText: "availability", requestedOutputs: ["availability"], dependsOnStayContext: true, stayCandidate: base.stay, entity: { category: "room", rawText: "", canonicalCandidate: null, confidence: 0.99 }, confidence: 0.99 };
+      return finalize({ ...base, tasks: [task], contextRelationCandidates: [relation(0)] });
+    }
+    if (kind === "detail_review") {
+      const task = { taskId: "barbecue-fee", candidateIndex: 0, type: "policy", sourceText: "barbecue fee", detailIntent: "fee", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: false, stayCandidate: null, entity: { category: "policy", rawText: "barbecue", canonicalCandidate: "bbq", confidence: 0.99 }, confidence: 0.99 };
       return finalize({ ...base, tasks: [task], contextRelationCandidates: [relation(0)] });
     }
     const task = { taskId: "parking", candidateIndex: 0, type: "amenity", sourceText: "parking", requestedOutputs: ["answer"], dependsOnStayContext: false, stayCandidate: null, entity: { category: "amenity", rawText: "parking", canonicalCandidate: "parking", confidence: 0.99 }, confidence: 0.99 };
@@ -68,8 +72,9 @@ async function run(kind, mode, { callbackThrows = false, finalResponseOverride =
     assert.equal(response.status, 200);
     await new Promise((resolve) => setTimeout(resolve, 80));
     const records = app.providers.persistence.listMessageLogs(propertyId).map((entry) => ({ ...entry, propertyId }));
+    const pendingReviews = app.service.listReviews(propertyId, "pending");
     const boundChannelId = `line-binding:${crypto.createHash("sha256").update(binding.binding.webhookKey).digest("hex").slice(0, 24)}`;
-    return { propertyId, channelId: boundChannelId, lineUserId, eventId, finalDecision: finalDecisions.get(eventId), finalResponse: finalResponses.get(eventId), engineDiagnostics, transportDiagnostics, calls, records };
+    return { propertyId, channelId: boundChannelId, lineUserId, eventId, finalDecision: finalDecisions.get(eventId), finalResponse: finalResponses.get(eventId), engineDiagnostics, transportDiagnostics, calls, records, pendingReviews };
   } finally {
     await app.stop();
     fs.rmSync(temp, { recursive: true, force: true });
@@ -129,6 +134,13 @@ function assertRecordAlignment(result) {
     processingStatus: "no_reply", shouldReply: false, noReply: true
   });
   assertRecordAlignment(silent);
+  const detailReview = await run("detail_review", "success");
+  assert.equal(detailReview.finalDecision.action, "reply");
+  assert.equal(detailReview.finalDecision.reviewRequired, true);
+  assertRecordAlignment(detailReview);
+  const detailReviewRecord = findExactRecord(detailReview, (eventId) => eventId === detailReview.eventId);
+  assert.ok(detailReviewRecord.reviewId, "detail confirmation must persist a formal review id");
+  assert.ok(detailReview.pendingReviews.some((item) => item.reviewId === detailReviewRecord.reviewId), "detail confirmation must appear in the production pending review queue");
   const delivered = await run("reply", "success");
   assert.equal(delivered.finalResponse.shouldReply, true);
   assert.notEqual(delivered.finalResponse.replyText.trim(), "");

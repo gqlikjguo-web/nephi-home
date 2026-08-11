@@ -300,6 +300,8 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   });
   assert.equal(unstructuredFee.result.taskResults[0].facts.detailNeedsConfirmation, true, "a free-text rule without a controlled currency amount must not be promoted to a fee answer");
   assert.equal(unstructuredFee.result.taskResults[0].facts.detailProvided, false);
+  assert.equal(unstructuredFee.result.finalDecision.action, "reply", "rgs-003 must keep the controlled reply");
+  assert.equal(unstructuredFee.result.finalDecision.reviewRequired, true, "rgs-003 must create formal review when the requested controlled detail needs confirmation");
   const unstructuredTime = await execute({
     currentProperty: noDetailProperty,
     message: "singing hours",

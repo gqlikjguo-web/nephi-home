@@ -36,6 +36,8 @@ function buildFinalDecision({ executionOutcomes = [], plannerFailure = "", claim
   if (claimValidation && claimValidation.ok === false) return { action: "handoff", reasonCode: "claim_validation_failed", taskIds, missingFields, reviewRequired: true, executionSummary: summary };
   if (!outcomes.length) return { action: "no_reply", reasonCode: noReplyReason || "no_actionable_requests", taskIds, missingFields, reviewRequired: false, executionSummary: summary };
   const answered = outcomes.some((item) => item && REPLY_OUTCOMES.has(item.outcome));
+  const detailNeedsConfirmation = outcomes.some((item) => item && item.outcome === "answered"
+    && item.facts && item.facts.detailNeedsConfirmation === true);
   const mandatoryHandoff = outcomes.find((item) => item && HANDOFF_OUTCOMES.has(item.outcome)
     && (MANDATORY_HANDOFF_TYPES.has(item.type) || MANDATORY_HANDOFF_TYPES.has(item.reason)));
   if (mandatoryHandoff) return { action: "handoff", reasonCode: mandatoryHandoff.reason || mandatoryHandoff.outcome, taskIds, missingFields, reviewRequired: true, executionSummary: summary };
@@ -45,7 +47,7 @@ function buildFinalDecision({ executionOutcomes = [], plannerFailure = "", claim
   if (handoff) return { action: "handoff", reasonCode: handoff.reason || handoff.outcome, taskIds, missingFields, reviewRequired: true, executionSummary: summary };
   const clarification = outcomes.find((item) => item && item.outcome === "not_ready");
   if (clarification) return { action: "clarification", reasonCode: clarification.readinessStatus || "not_ready", taskIds, missingFields, clarificationCandidates, reviewRequired: false, executionSummary: summary };
-  if (answered) return { action: "reply", reasonCode: "execution_answered", taskIds, missingFields, reviewRequired: false, executionSummary: summary };
+  if (answered) return { action: "reply", reasonCode: "execution_answered", taskIds, missingFields, reviewRequired: detailNeedsConfirmation, executionSummary: summary };
   return { action: "handoff", reasonCode: "unsupported_execution_outcome", taskIds, missingFields, reviewRequired: true, executionSummary: summary };
 }
 
