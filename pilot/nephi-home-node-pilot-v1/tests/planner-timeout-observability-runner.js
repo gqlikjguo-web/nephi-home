@@ -57,6 +57,12 @@ function successResponse(requestId = "") {
   }), requestId);
 }
 
+function coverageCriticSuccessResponse(requestId = "") {
+  return response(200, JSON.stringify({
+    output_text: JSON.stringify({ missingRequests: [] })
+  }), requestId);
+}
+
 function planner(fetchImpl, overrides = {}) {
   return new TestOnlyOpenAiConversationPlanner({
     apiKey: sensitive.apiKey,
@@ -124,15 +130,25 @@ async function main() {
   assert.equal(defaultTimeoutSuccess[PROVIDER_DIAGNOSTIC].providerAttempts[0].timeoutMs, 30000,
     "the live Planner default must allow a bounded 30-second provider attempt");
 
+  const envDefaultTimeoutBodies = [];
   const envDefaultTimeoutSuccess = await createTestOnlyOpenAiConversationPlannerFromEnv({
     env: {
       OPENAI_TEST_API_KEY: sensitive.apiKey,
       OPENAI_TEST_MODEL: "gpt-4.1-mini"
     },
-    fetchImpl: async () => successResponse("req_provider_env_default_timeout")
+    fetchImpl: async (_url, options) => {
+      const body = JSON.parse(options.body);
+      envDefaultTimeoutBodies.push(body);
+      return body.text.format.name === "junzan_coverage_critic_v1"
+        ? coverageCriticSuccessResponse("req_provider_env_default_timeout_critic")
+        : successResponse("req_provider_env_default_timeout");
+    }
   }).classify(classifyInput());
   assert.equal(envDefaultTimeoutSuccess[PROVIDER_DIAGNOSTIC].providerAttempts[0].timeoutMs, 30000,
     "the live Planner environment factory must retain the bounded 30-second default");
+  assert.deepEqual(envDefaultTimeoutBodies.map((body) => body.text.format.name),
+    ["junzan_conversation_plan_v2", "junzan_coverage_critic_v1"],
+    "the environment factory must use one bounded Planner call and one bounded Critic call");
 
   const sentHeaders = [];
   const sentBodies = [];

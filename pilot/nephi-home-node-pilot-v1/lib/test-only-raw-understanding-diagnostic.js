@@ -8,6 +8,8 @@ const MAX_RELATIONS = 24;
 const MAX_EVIDENCE_REFS = 12;
 const MAX_LIST_ITEMS = 24;
 const RESPONSE_ROLES = new Set(["primary", "coverage_repair"]);
+const CRITIC_RESULT_STATUSES = new Set(["complete", "missing_detected", "invalid_output", "provider_failure", "budget_exhausted"]);
+const CRITIC_REPAIR_REASONS = new Set(["", "critic_missing_request", "combined_semantic_and_critic", "existing_semantic_repair", "fail_closed"]);
 const storage = new AsyncLocalStorage();
 
 function boundedString(value, maxLength) {
@@ -152,7 +154,7 @@ function rawUnderstandingSnapshot(output, metadata = {}) {
   return deepFreeze({
     stage: "raw_parsed_output",
     responseRole: RESPONSE_ROLES.has(metadata.responseRole) ? metadata.responseRole : "primary",
-    providerAttemptNumber: boundedInteger(metadata.providerAttemptNumber, 1, 2) || 1,
+    providerAttemptNumber: boundedInteger(metadata.providerAttemptNumber, 1, 3) || 1,
     schemaVersion: Number.isInteger(output && output.schemaVersion) ? output.schemaVersion : null,
     discourse: {
       relation: boundedString(discourse.relation, 80),
@@ -179,17 +181,36 @@ function captureTestOnlyAcceptanceRawUnderstanding(output, input, metadata = {})
   return snapshot;
 }
 
+function captureTestOnlyAcceptanceCoverageCritic(input, metadata = {}) {
+  const context = storage.getStore();
+  const propertyId = boundedString(input && input.catalog && input.catalog.propertyId, 160).trim();
+  if (!context || !propertyId || propertyId !== context.propertyId || context.coverageCriticDiagnostics.length >= 3) return null;
+  const resultStatus = boundedString(metadata.resultStatus, 40);
+  const repairTriggeredReason = boundedString(metadata.repairTriggeredReason, 80);
+  const diagnostic = deepFreeze({
+    callRole: "coverage_critic",
+    callNumber: boundedInteger(metadata.callNumber, 1, 3) || 1,
+    resultStatus: CRITIC_RESULT_STATUSES.has(resultStatus) ? resultStatus : "invalid_output",
+    validatedMissingSpanCount: boundedInteger(metadata.validatedMissingSpanCount, 0, MAX_CANDIDATES) || 0,
+    repairTriggeredReason: CRITIC_REPAIR_REASONS.has(repairTriggeredReason) ? repairTriggeredReason : "fail_closed"
+  });
+  context.coverageCriticDiagnostics.push(diagnostic);
+  return diagnostic;
+}
+
 async function runWithTestOnlyAcceptanceRawUnderstanding({ propertyId } = {}, callback) {
   const exactPropertyId = boundedString(propertyId, 160).trim();
   if (!exactPropertyId || typeof callback !== "function") throw new TypeError("test-only acceptance raw understanding scope is required");
-  return storage.run({ propertyId: exactPropertyId, snapshots: [] }, async () => {
+  return storage.run({ propertyId: exactPropertyId, snapshots: [], coverageCriticDiagnostics: [] }, async () => {
     const value = await callback();
     const snapshots = Object.freeze(storage.getStore().snapshots.slice());
-    return { value, rawUnderstandingSnapshots: snapshots };
+    const coverageCriticDiagnostics = Object.freeze(storage.getStore().coverageCriticDiagnostics.slice());
+    return { value, rawUnderstandingSnapshots: snapshots, coverageCriticDiagnostics };
   });
 }
 
 module.exports = {
+  captureTestOnlyAcceptanceCoverageCritic,
   captureTestOnlyAcceptanceRawUnderstanding,
   runWithTestOnlyAcceptanceRawUnderstanding
 };
