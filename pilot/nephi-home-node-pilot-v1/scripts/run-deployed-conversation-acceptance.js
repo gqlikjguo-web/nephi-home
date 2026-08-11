@@ -393,7 +393,13 @@ function acceptanceEventId(runScope, caseId, turnNumber, uuid = crypto.randomUUI
   if (!Number.isInteger(turn) || turn < 1 || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalizedUuid)) {
     throw new Error("acceptance_event_scope_invalid");
   }
-  return `${acceptanceConversationId(runScope, caseId)}-turn-${turn}-${normalizedUuid}`;
+  const eventId = `${acceptanceConversationId(runScope, caseId)}-turn-${turn}-${normalizedUuid}`;
+  if (eventId.length <= 120) return eventId;
+  const caseIdentity = crypto.createHash("sha256")
+    .update(`${String(caseId || "").trim()}\u0000${normalizedUuid}`, "utf8")
+    .digest("hex")
+    .slice(0, 24);
+  return `${String(runScope || "").trim()}-case-${caseIdentity}-turn-${turn}`;
 }
 
 function productOutcomeEvidenceUnits(result) {

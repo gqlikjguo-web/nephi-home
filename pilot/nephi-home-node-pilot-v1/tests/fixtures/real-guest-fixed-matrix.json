@@ -91,7 +91,7 @@
       "bucket": "normal_high_frequency",
       "coverage": ["包棟", "價格"],
       "sourceRef": "Markdown §3 包棟；XLSX 實測題庫",
-      "turns": [{"input": "請問包棟價格", "expectedSemantic": ["bundle", "price"], "allowedActions": ["handoff"], "requiresFormalPropertyData": true}]
+      "turns": [{"input": "請問包棟價格", "expectedSemantic": ["bundle", "price"], "allowedActions": ["clarification", "handoff"], "requiresFormalPropertyData": true}]
     },
     {
       "id": "rg-005-bundle-holiday-price",

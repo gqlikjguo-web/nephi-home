@@ -72,6 +72,17 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     acceptanceEventId(runScopeTwo, "rg-001", 1, "00000000-0000-4000-8000-000000000003"),
     "old message claims must be unreachable from a new run"
   );
+  const shortEventId = acceptanceEventId(runScopeOne, "rg-001", 1, "00000000-0000-4000-8000-000000000003");
+  assert.equal(shortEventId, `${runScopeOne}-rg-001-turn-1-00000000-0000-4000-8000-000000000003`, "short acceptance event IDs must remain byte-for-byte compatible");
+  const longCaseId = "rg-038-conversation-room-price-payment-with-additional-debug-scope";
+  const boundedEventId = acceptanceEventId(runScopeOne, longCaseId, 1, "00000000-0000-4000-8000-000000000003");
+  assert.ok(boundedEventId.length <= 120, "long acceptance case IDs must never create an invalid Planner evidence identity");
+  assert.ok(boundedEventId.startsWith(`${runScopeOne}-case-`), "bounded IDs must preserve the acceptance run scope");
+  assert.ok(boundedEventId.endsWith("-turn-1"), "bounded IDs must preserve the turn number");
+  assert.equal(boundedEventId, acceptanceEventId(runScopeOne, longCaseId, 1, "00000000-0000-4000-8000-000000000003"), "bounded identity generation must be deterministic");
+  assert.notEqual(boundedEventId, acceptanceEventId(runScopeOne, `${longCaseId}-other`, 1, "00000000-0000-4000-8000-000000000003"), "different long case IDs must remain distinct");
+  assert.notEqual(boundedEventId, acceptanceEventId(runScopeOne, longCaseId, 2, "00000000-0000-4000-8000-000000000003"), "different turns must remain distinct");
+  assert.notEqual(boundedEventId, acceptanceEventId(runScopeOne, longCaseId, 1, "00000000-0000-4000-8000-000000000004"), "different event nonces must remain distinct");
 
   const initializationRequests = [];
   const initialized = await initializeDeployedAcceptanceData({
