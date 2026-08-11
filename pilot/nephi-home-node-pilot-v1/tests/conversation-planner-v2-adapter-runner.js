@@ -31,8 +31,10 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(requestBody.text.format.schema.properties.tasks.minItems, 1);
   const plannerInstructions = requestBody.input[0].content[0].text;
   const taskSchema = requestBody.text.format.schema.properties.tasks.items;
-  const semanticProvenanceSchema = requestBody.text.format.schema.properties.semanticCandidates.items.properties.provenanceRelationCandidateIndexes;
-  const semanticCoverageStatusSchema = requestBody.text.format.schema.properties.semanticCandidates.items.properties.coverageStatus;
+  const semanticCandidateItems = requestBody.text.format.schema.properties.semanticCandidates.items;
+  const semanticCandidateSchema = semanticCandidateItems.anyOf ? semanticCandidateItems.anyOf[0] : semanticCandidateItems;
+  const semanticProvenanceSchema = semanticCandidateSchema.properties.provenanceRelationCandidateIndexes;
+  const semanticCoverageStatusSchema = semanticCandidateSchema.properties.coverageStatus;
   assert.match(plannerInstructions, /monetary lodging (?:amount|charge|rate)/i, "planner grammar must define price semantically instead of relying on question wording");
   assert.match(plannerInstructions, /type price.*requestedOutputs price.*dependsOnStayContext true/i, "generic and scoped monetary lodging requests must retain the inventory price contract");
   assert.match(plannerInstructions, /policy.*rules or conditions.*not.*monetary/i, "planner grammar must keep property rules separate from price requests");
@@ -59,11 +61,11 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(plannerInstructions, /at least one non-empty eventId or messageRef/i, "planner must receive the source identity requirement");
   assert.match(plannerInstructions, /0-based UTF-16 JavaScript string index inclusive.*endOffset is exclusive/i, "planner must receive exact JavaScript offset semantics");
   assert.match(plannerInstructions, /messageText\.slice\(startOffset, endOffset\)/i, "planner must receive exact quote reconstruction semantics");
-  assert.equal(Object.hasOwn(requestBody.text.format.schema.properties.semanticCandidates.items.properties, "evidenceRefs"), true, "pending coverage candidates retain raw source provenance");
+  assert.equal(Object.hasOwn(semanticCandidateSchema.properties, "evidenceRefs"), true, "pending coverage candidates retain raw source provenance");
   assert.equal(semanticProvenanceSchema.minItems, 0, "the required provenance field must represent pending_task with an empty array");
   assert.equal(semanticProvenanceSchema.items.type, "integer", "relation provenance must be candidate indexes");
-  assert.ok(requestBody.text.format.schema.properties.semanticCandidates.items.required.includes("evidenceRefs"), "OpenAI strict schema must require the lifecycle evidence field");
-  assert.ok(requestBody.text.format.schema.properties.semanticCandidates.items.required.includes("provenanceRelationCandidateIndexes"), "OpenAI strict schema must require the lifecycle provenance field");
+  assert.ok(semanticCandidateSchema.required.includes("evidenceRefs"), "OpenAI strict schema must require the lifecycle evidence field");
+  assert.ok(semanticCandidateSchema.required.includes("provenanceRelationCandidateIndexes"), "OpenAI strict schema must require the lifecycle provenance field");
   assert.deepEqual(semanticCoverageStatusSchema.enum, ["bound", "pending_task"], "the provider schema must distinguish bound and pending coverage candidates");
   assert.equal(JSON.stringify(requestBody).includes("test-key"), false);
   const rawEvidenceMessage = "Ask about the lodging policy.";

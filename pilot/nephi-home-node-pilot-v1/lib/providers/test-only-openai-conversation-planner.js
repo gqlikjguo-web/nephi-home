@@ -37,21 +37,58 @@ function nullableIdentityEnum(values) {
   return { type: ["string", "null"], enum: [...new Set([...values, null])], maxLength: 120 };
 }
 
-function plannerProviderSchemaForCatalog(catalog) {
+function compatibleCatalogCapabilities(entity, capabilityValues) {
+  const category = String(entity && entity.category || "").trim();
+  const entityDefinition = getCapabilityDefinition(entity && entity.canonicalId);
+  if (entityDefinition && entityDefinition.acceptedEntityCategories.includes(category)) {
+    return entityDefinition.acceptedCandidateTypes.filter((capability) => capabilityValues.includes(capability));
+  }
+  return capabilityValues.filter((capability) => {
+    const definition = getCapabilityDefinition(capability);
+    return definition
+      && definition.acceptedCandidateTypes.includes(capability)
+      && definition.acceptedEntityCategories.includes(category);
+  });
+}
+
+function plannerProviderSchemaForCatalog(catalog, model = "") {
   const schema = JSON.parse(JSON.stringify(plannerProviderJsonSchema()));
   const catalogIdentities = propertyCatalogIdentityValues(catalog);
   const taskIdentity = schema.properties.tasks.items.properties.entity.properties.canonicalCandidate;
-  const candidateProperties = schema.properties.semanticCandidates.items.properties;
+  const candidateSchema = schema.properties.semanticCandidates.items;
+  const candidateProperties = candidateSchema.properties;
+  const capabilityValues = candidateProperties.capability.enum || [];
   const genericSemanticIdentities = [
-    ...(candidateProperties.capability.enum || []),
+    ...capabilityValues,
     ...(candidateProperties.semanticKind.enum || [])
   ];
   Object.assign(taskIdentity, nullableIdentityEnum(catalogIdentities));
-  Object.assign(candidateProperties.propertyCatalogIdentity, nullableIdentityEnum(catalogIdentities));
-  Object.assign(candidateProperties.canonicalIdentityCandidate, nullableIdentityEnum([
-    ...catalogIdentities,
-    ...genericSemanticIdentities
-  ]));
+  const catalogEntities = Object.values(catalog && typeof catalog === "object" ? catalog : {})
+    .filter(Array.isArray)
+    .flat()
+    .filter((entity) => entity && catalogIdentities.includes(String(entity.canonicalId || "").trim()));
+  const compatibilityGroups = new Map();
+  for (const entity of catalogEntities) {
+    const canonicalId = String(entity.canonicalId || "").trim();
+    const compatibleCapabilities = compatibleCatalogCapabilities(entity, capabilityValues);
+    if (!compatibleCapabilities.length) {
+      throw plannerFailure({ code: "R3_AUTHORITY_NOT_DERIVABLE", category: "local_contract_failure", model });
+    }
+    const signature = JSON.stringify([...compatibleCapabilities].sort());
+    if (!compatibilityGroups.has(signature)) compatibilityGroups.set(signature, { capabilities: compatibleCapabilities, identities: [] });
+    compatibilityGroups.get(signature).identities.push(canonicalId);
+  }
+  const genericBranch = JSON.parse(JSON.stringify(candidateSchema));
+  Object.assign(genericBranch.properties.propertyCatalogIdentity, nullableIdentityEnum([]));
+  Object.assign(genericBranch.properties.canonicalIdentityCandidate, nullableIdentityEnum(genericSemanticIdentities));
+  const catalogBranches = [...compatibilityGroups.values()].map(({ capabilities, identities }) => {
+    const branch = JSON.parse(JSON.stringify(candidateSchema));
+    Object.assign(branch.properties.capability, { enum: capabilities });
+    Object.assign(branch.properties.propertyCatalogIdentity, { type: "string", enum: identities, maxLength: 120 });
+    Object.assign(branch.properties.canonicalIdentityCandidate, { type: "string", enum: identities, maxLength: 120 });
+    return branch;
+  });
+  schema.properties.semanticCandidates.items = { anyOf: [genericBranch, ...catalogBranches] };
   return schema;
 }
 
@@ -1568,7 +1605,7 @@ class TestOnlyOpenAiConversationPlanner {
     let output;
     let failure;
     try {
-      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] }, ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {}) }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerProviderSchemaForCatalog(input.catalog) } } }) });
+      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] }, ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {}) }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerProviderSchemaForCatalog(input.catalog, this.model) } } }) });
       const status = Number(response.status || response.statusCode || 0);
       httpStatus = Number.isInteger(status) ? status : 0;
       providerRequestId = safeResponseRequestId(response);
