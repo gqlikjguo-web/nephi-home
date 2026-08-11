@@ -24,6 +24,7 @@ const PROPERTY_SETTING_CATALOG = Object.freeze([
   ["parkingRule", "parking", "停車", "amenity"],
   ["bbqRule", "bbq", "烤肉", "policy"],
   ["checkInTime", "check_in", "入住", "policy"],
+  ["latestArrivalTime", "check_in__latest_arrival_policy", "最晚入住時間", "policy"],
   ["checkOutTime", "check_out", "退房", "policy"],
   ["selfCheckInRule", "self_checkin", "自助入住", "policy"],
   ["breakfastRule", "breakfast", "早餐", "policy"],

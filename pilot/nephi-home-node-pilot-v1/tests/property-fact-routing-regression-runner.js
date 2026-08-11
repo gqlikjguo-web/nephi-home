@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
+const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const EVENT_TIME = Date.parse("2026-07-27T10:00:00+08:00");
@@ -207,6 +208,65 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
 (async () => {
   const alpha = property("property_alpha", "Alpha");
   const beta = property("property_beta", "Beta");
+  alpha.commonAnswers = { ...alpha.commonAnswers, checkInTime: "15:00", latestArrivalTime: "22:00", checkOutTime: "11:00" };
+  beta.commonAnswers = { ...beta.commonAnswers, checkInTime: "14:00", latestArrivalTime: "20:00", checkOutTime: "10:00" };
+
+  const alphaCatalog = buildPropertyCatalog(alpha);
+  const alphaGeneralCheckIn = alphaCatalog.policies.find((item) => item.canonicalId === "check_in");
+  const alphaLatestArrival = alphaCatalog.policies.find((item) => item.canonicalId === "check_in__latest_arrival_policy");
+  const betaLatestArrival = buildPropertyCatalog(beta).policies.find((item) => item.canonicalId === "check_in__latest_arrival_policy");
+  assert.equal(alphaGeneralCheckIn.answer, "15:00", "general check-in must remain backed only by checkInTime");
+  assert.ok(alphaLatestArrival, "latestArrivalTime must create check_in__latest_arrival_policy");
+  assert.ok(betaLatestArrival, "each property must create its own latest-arrival detail identity");
+  assert.deepEqual(
+    { category: alphaLatestArrival.category, status: alphaLatestArrival.status, answer: alphaLatestArrival.answer },
+    { category: "policy", status: "confirmed_yes", answer: "22:00" },
+    "latestArrivalTime must create the exact formal detail identity"
+  );
+  assert.equal(betaLatestArrival.answer, "20:00", "each property must retain its own latest-arrival detail");
+
+  const latestArrival = await execute({
+    currentProperty: alpha,
+    message: "最晚幾點可以入住？",
+    tasks: [task({
+      taskId: "latest-arrival",
+      type: "policy",
+      sourceText: "最晚幾點可以入住？",
+      category: "policy",
+      canonicalCandidate: "check_in",
+      detailIntent: "latest_arrival_policy"
+    })]
+  });
+  assert.deepEqual(canonicalCapabilities(latestArrival.diagnostics), ["policy"]);
+  assert.equal(latestArrival.result.taskResults[0].status, "answered");
+  assert.equal(latestArrival.result.taskResults[0].facts.source, "property_catalog");
+  assert.equal(latestArrival.result.taskResults[0].facts.answer, "22:00");
+  assert.equal(latestArrival.result.taskResults[0].facts.detailProvided, true);
+  assert.equal(latestArrival.result.taskResults[0].facts.detailNeedsConfirmation, false);
+  assert.equal(latestArrival.result.finalDecision.action, "reply");
+  assert.equal(latestArrival.result.finalDecision.reviewRequired, false);
+  assert.match(latestArrival.result.replyText, /22:00/);
+
+  const missingLatestProperty = property("property_missing_latest", "MissingLatest");
+  missingLatestProperty.commonAnswers = { ...missingLatestProperty.commonAnswers, checkInTime: "15:00", checkOutTime: "11:00" };
+  const missingLatestArrival = await execute({
+    currentProperty: missingLatestProperty,
+    message: "最晚幾點可以入住？",
+    tasks: [task({
+      taskId: "missing-latest-arrival",
+      type: "policy",
+      sourceText: "最晚幾點可以入住？",
+      category: "policy",
+      canonicalCandidate: "check_in",
+      detailIntent: "latest_arrival_policy"
+    })]
+  });
+  assert.equal(missingLatestArrival.result.taskResults[0].status, "answered");
+  assert.equal(missingLatestArrival.result.taskResults[0].facts.answer, "", "general checkInTime must not substitute for the requested latest-arrival detail");
+  assert.equal(missingLatestArrival.result.taskResults[0].facts.detailProvided, false);
+  assert.equal(missingLatestArrival.result.taskResults[0].facts.detailNeedsConfirmation, true);
+  assert.equal(missingLatestArrival.result.finalDecision.action, "reply");
+  assert.equal(missingLatestArrival.result.finalDecision.reviewRequired, true);
 
   const parking = await execute({
     currentProperty: alpha,

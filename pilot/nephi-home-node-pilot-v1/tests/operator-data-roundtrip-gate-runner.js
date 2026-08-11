@@ -293,7 +293,7 @@ async function api(url, route, options = {}) {
     );
     await client.query(
       "INSERT INTO property_settings(property_id,settings) VALUES($1,$2::jsonb),($3,$4::jsonb)",
-      [PROPERTY_ALPHA, JSON.stringify({ commonAnswers: {} }), PROPERTY_BETA, JSON.stringify({ commonAnswers: {} })]
+      [PROPERTY_ALPHA, JSON.stringify({ commonAnswers: { checkInTime: "15:00", checkOutTime: "11:00" } }), PROPERTY_BETA, JSON.stringify({ commonAnswers: { checkInTime: "14:00", latestArrivalTime: "20:00", checkOutTime: "10:00" } })]
     );
     await client.query(
       "INSERT INTO room_types(property_id,room_id,name,capacity,type,description,position) VALUES($1,'alpha-room','Alpha Room',2,'double','',0),($2,'beta-room','Beta Room',2,'double','',0)",
@@ -313,6 +313,26 @@ async function api(url, route, options = {}) {
     });
     const running = await app.start(0, "127.0.0.1");
 
+    const initialProfile = await api(running.url, `/api/property-profile?propertyId=${PROPERTY_ALPHA}`);
+    assert.equal(initialProfile.response.status, 200);
+    assert.equal(initialProfile.body.data.latestArrivalTime, "", "an absent operator value must load as blank");
+    const saveLatestArrival = await api(running.url, "/api/property-profile", {
+      method: "PUT",
+      body: JSON.stringify({ propertyId: PROPERTY_ALPHA, propertyName: "Property Alpha", googleMapsUrl: "", lineUrl: "", contactInfo: "", checkInTime: "15:00", latestArrivalTime: "22:00", checkOutTime: "11:00" })
+    });
+    assert.equal(saveLatestArrival.response.status, 200);
+    assert.equal(saveLatestArrival.body.data.latestArrivalTime, "22:00");
+    const forgedProfileScope = await api(running.url, "/api/property-profile", {
+      method: "PUT",
+      body: JSON.stringify({ propertyId: PROPERTY_BETA, propertyName: "Property Beta", googleMapsUrl: "", lineUrl: "", contactInfo: "", checkInTime: "14:00", latestArrivalTime: "23:00", checkOutTime: "10:00" })
+    });
+    assert.equal(forgedProfileScope.response.status, 403, "a property admin cannot forge another property's profile scope");
+    const invalidLatestArrival = await api(running.url, "/api/property-profile", {
+      method: "PUT",
+      body: JSON.stringify({ propertyId: PROPERTY_ALPHA, propertyName: "Property Alpha", googleMapsUrl: "", lineUrl: "", contactInfo: "", checkInTime: "15:00", latestArrivalTime: "25:30", checkOutTime: "11:00" })
+    });
+    assert.equal(invalidLatestArrival.response.status, 400, "the profile API must reject an invalid optional latest-arrival time");
+    assert.equal(providers.customerSettings.getProperty(PROPERTY_ALPHA).commonAnswers.latestArrivalTime, "22:00");
     const saveAlpha = await api(running.url, "/api/property-facts", {
       method: "PUT",
       body: JSON.stringify({ propertyId: PROPERTY_ALPHA, facts: alphaFacts })
@@ -328,11 +348,23 @@ async function api(url, route, options = {}) {
 
     const inspection = await openPostgres(connection);
     const alphaStored = await inspection.query(
-      "SELECT settings->'propertyFacts' AS facts FROM property_settings WHERE property_id=$1",
+      "SELECT settings->'propertyFacts' AS facts, settings->'commonAnswers' AS answers FROM property_settings WHERE property_id=$1",
       [PROPERTY_ALPHA]
     );
     assert.deepEqual(alphaStored.rows[0].facts, alphaFacts, "the normalized payload must be stored in PostgreSQL JSONB");
+    assert.equal(alphaStored.rows[0].answers.latestArrivalTime, "22:00", "PostgreSQL JSONB must store the operator value under the current property");
+    assert.equal(alphaStored.rows[0].answers.checkInTime, "15:00");
+    assert.equal(alphaStored.rows[0].answers.checkOutTime, "11:00");
     await inspection.close();
+    assert.equal(providers.customerSettings.getProperty(PROPERTY_BETA).commonAnswers.latestArrivalTime, "20:00", "the other property's operator value must remain isolated");
+    const clearLatestArrival = await api(running.url, "/api/property-profile", {
+      method: "PUT",
+      body: JSON.stringify({ propertyId: PROPERTY_ALPHA, propertyName: "Property Alpha", googleMapsUrl: "", lineUrl: "", contactInfo: "", checkInTime: "15:00", latestArrivalTime: "", checkOutTime: "11:00" })
+    });
+    assert.equal(clearLatestArrival.response.status, 200);
+    assert.equal(clearLatestArrival.body.data.latestArrivalTime, "");
+    assert.equal(Object.hasOwn(providers.customerSettings.getProperty(PROPERTY_ALPHA).commonAnswers, "latestArrivalTime"), false, "clearing must delete the JSONB key rather than store an empty string");
+    assert.equal(providers.customerSettings.getProperty(PROPERTY_BETA).commonAnswers.latestArrivalTime, "20:00", "clearing Alpha must not change Beta");
     providers.customerSettings.updatePropertyFacts(PROPERTY_BETA, betaFacts);
 
     const readBack = await api(running.url, `/api/property-facts?propertyId=${PROPERTY_ALPHA}`);

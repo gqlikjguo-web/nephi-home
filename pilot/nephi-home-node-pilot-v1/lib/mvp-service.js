@@ -402,6 +402,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       lineUrl: property.lineUrl || "",
       contactInfo: String(property.businessProfile && property.businessProfile.contactInfo || ""),
       checkInTime: String(property.safeFacts && property.safeFacts.checkInTime || ""),
+      latestArrivalTime: String(property.safeFacts && property.safeFacts.latestArrivalTime || ""),
       checkOutTime: String(property.safeFacts && property.safeFacts.checkOutTime || "")
     };
   }
@@ -412,20 +413,25 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     const googleMapsUrl = normalizeGoogleMapsUrl(input.googleMapsUrl);
     const contactInfo = cleanText(input.contactInfo, 300);
     const checkInTime = cleanText(input.checkInTime, 5);
+    const latestArrivalTime = cleanText(input.latestArrivalTime, 5);
     const checkOutTime = cleanText(input.checkOutTime, 5);
     const lineUrl = cleanText(input.lineUrl, 500);
     if (!propertyName || !TIME_PATTERN.test(checkInTime) || !TIME_PATTERN.test(checkOutTime)) throw new AppError(400, "INVALID_PROFILE", "請填寫民宿名稱與有效的入住、退房時間");
+    if (latestArrivalTime && !TIME_PATTERN.test(latestArrivalTime)) throw new AppError(400, "INVALID_PROFILE", "最晚入住時間必須使用 HH:MM");
     if (input.googleMapsUrl && !googleMapsUrl) throw new AppError(400, "INVALID_GOOGLE_MAPS_URL", "Google Maps 網址格式不正確");
     if (lineUrl) {
       let parsed;
       try { parsed = new URL(lineUrl); } catch { throw new AppError(400, "INVALID_LINE_URL", "LINE 官方帳號網址格式不正確"); }
       if (parsed.protocol !== "https:" || !LINE_URL_HOSTS.has(parsed.hostname.toLowerCase())) throw new AppError(400, "INVALID_LINE_URL", "LINE 官方帳號網址格式不正確");
     }
+    const commonAnswers = { ...(property.safeFacts || {}), checkInTime, checkOutTime };
+    if (latestArrivalTime) commonAnswers.latestArrivalTime = latestArrivalTime;
+    else delete commonAnswers.latestArrivalTime;
     const updated = repository.updatePropertyProfile(property.customerId, {
       displayName: propertyName,
       businessProfile: { ...(property.businessProfile || {}), googleMapsUrl, contactInfo },
       contactLink: lineUrl,
-      commonAnswers: { ...(property.safeFacts || {}), checkInTime, checkOutTime }
+      commonAnswers
     });
     return {
       propertyName: updated.displayName,
@@ -433,6 +439,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
       lineUrl: updated.contactLink || "",
       contactInfo: String(updated.businessProfile && updated.businessProfile.contactInfo || ""),
       checkInTime: String(updated.commonAnswers && updated.commonAnswers.checkInTime || ""),
+      latestArrivalTime: String(updated.commonAnswers && updated.commonAnswers.latestArrivalTime || ""),
       checkOutTime: String(updated.commonAnswers && updated.commonAnswers.checkOutTime || "")
     };
   }
