@@ -1074,10 +1074,57 @@ function main() {
   const duplicateTaskIdSemantic = applyPlannerSemanticContract(normalizedDuplicateTaskIds, { catalog });
   assert.equal(duplicateTaskIdSemantic.semanticValidation.repairedTasks.filter((item) => item.reason === "duplicate_task_id_normalization").length, 1, "the controlled repair must remain visible in semantic validation evidence");
   const statefulDuplicateTaskIds = plan([
-    { ...task({ taskId: "availability", type: "availability", category: "room", rawText: "room a" }), candidateIndex: 0 },
-    { ...task({ taskId: "availability", type: "availability", category: "room", rawText: "room b" }), candidateIndex: 1 }
+    { ...task({ taskId: "availability", type: "availability", category: "room", rawText: "four guests" }), candidateIndex: 0 },
+    { ...task({ taskId: "availability", type: "availability", category: "room", rawText: "room 402" }), candidateIndex: 1 }
   ]);
-  assert.equal(validatePlannerOutput(normalizeDuplicateTaskIds(statefulDuplicateTaskIds)).ok, false, "stateful duplicate task IDs must remain fail-closed because they become request-cycle identities");
+  const statefulScopeIds = ["80000000-0000-4000-8000-000000000001", "80000000-0000-4000-8000-000000000002"];
+  statefulDuplicateTaskIds.tasks.forEach((item, index) => { item.lodgingScopeId = statefulScopeIds[index]; });
+  statefulDuplicateTaskIds.semanticCandidates.forEach((candidate, index) => {
+    candidate.lodgingScopeCandidate = {
+      scopeId: statefulScopeIds[index],
+      bundleCanonicalCandidate: null,
+      roomCanonicalCandidates: index === 0 ? [] : ["room-402"],
+      guestCountCandidate: index === 0 ? 4 : null
+    };
+    candidate.evidenceRefs = [{
+      eventId: "duplicate-availability-event",
+      messageRef: "",
+      startOffset: index === 0 ? 0 : 16,
+      endOffset: index === 0 ? 11 : 24,
+      quote: index === 0 ? "four guests" : "room 402"
+    }];
+  });
+  statefulDuplicateTaskIds.contextRelationCandidates.forEach((relation, index) => {
+    relation.evidenceRefs = statefulDuplicateTaskIds.semanticCandidates[index].evidenceRefs.map((ref) => ({ ...ref }));
+  });
+  assert.deepEqual(validatePlannerOutput(statefulDuplicateTaskIds).errors, ["tasks.taskId.duplicate"], "the ownership-isolated availability fixture must begin invalid only because of its duplicate technical task ID");
+  const normalizedStatefulDuplicateTaskIds = normalizeDuplicateTaskIds(statefulDuplicateTaskIds);
+  assert.equal(validatePlannerOutput(normalizedStatefulDuplicateTaskIds).ok, true, "ownership-isolated availability technical IDs must be normalized");
+  assert.equal(new Set(normalizedStatefulDuplicateTaskIds.tasks.map((item) => item.taskId)).size, 2);
+  assert.deepEqual(
+    normalizedStatefulDuplicateTaskIds.tasks.map(({ taskId: _taskId, ...item }) => item),
+    statefulDuplicateTaskIds.tasks.map(({ taskId: _taskId, ...item }) => item),
+    "stateful normalization must change only the technical taskId"
+  );
+
+  function assertStatefulDuplicateRemainsFailClosed(mutator, message) {
+    const unsafe = JSON.parse(JSON.stringify(statefulDuplicateTaskIds));
+    mutator(unsafe);
+    const normalizedUnsafe = normalizeDuplicateTaskIds(unsafe);
+    assert.equal(new Set(normalizedUnsafe.tasks.map((item) => item.taskId)).size, 1, message);
+    assert.equal(validatePlannerOutput(normalizedUnsafe).ok, false, message);
+  }
+  assertStatefulDuplicateRemainsFailClosed((value) => { value.tasks[1].candidateIndex = value.tasks[0].candidateIndex; }, "duplicate candidate ownership must not be normalized");
+  assertStatefulDuplicateRemainsFailClosed((value) => { value.tasks[1].semanticCandidateIds = []; }, "empty semantic ownership must not be normalized");
+  assertStatefulDuplicateRemainsFailClosed((value) => { value.tasks[1].semanticCandidateIds = [...value.tasks[0].semanticCandidateIds]; }, "overlapping semantic ownership must not be normalized");
+  assertStatefulDuplicateRemainsFailClosed((value) => { value.tasks[1].lodgingScopeId = value.tasks[0].lodgingScopeId; }, "conflicting lodging scope ownership must not be normalized");
+  assertStatefulDuplicateRemainsFailClosed((value) => { value.contextRelationCandidates.pop(); }, "unverifiable relation ownership must not be normalized");
+  assertStatefulDuplicateRemainsFailClosed((value) => {
+    value.semanticCandidates[1].lodgingScopeCandidate = {
+      ...value.semanticCandidates[0].lodgingScopeCandidate,
+      scopeId: value.tasks[1].lodgingScopeId
+    };
+  }, "tasks representing the same semantic lodging unit must not be normalized");
 
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));

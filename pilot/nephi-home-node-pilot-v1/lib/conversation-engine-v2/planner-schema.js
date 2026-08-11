@@ -562,6 +562,76 @@ function sourceEventsAreUnicodeNonSubstantive(sourceEvents) {
 }
 
 function normalizeDuplicateTaskIds(value) {
+function evidenceOwnershipSignature(evidenceRefs) {
+  return JSON.stringify((evidenceRefs || []).map((ref) => ({
+    eventId: ref.eventId || "",
+    messageRef: ref.messageRef || "",
+    startOffset: ref.startOffset,
+    endOffset: ref.endOffset,
+    quote: ref.quote
+  })));
+}
+
+function hasIsolatedAvailabilityOwnership(value, tasks) {
+  if (!tasks.every((task) => task && task.type === "availability")) return false;
+  const candidateIndexes = tasks.map((task) => task.candidateIndex);
+  if (candidateIndexes.some((index) => !Number.isInteger(index) || index < 0)
+    || new Set(candidateIndexes).size !== tasks.length) return false;
+
+  const allCandidateOwners = new Map();
+  for (const task of value.tasks) {
+    for (const candidateId of Array.isArray(task && task.semanticCandidateIds) ? task.semanticCandidateIds : []) {
+      allCandidateOwners.set(candidateId, (allCandidateOwners.get(candidateId) || 0) + 1);
+    }
+  }
+  const semanticCandidates = Array.isArray(value.semanticCandidates) ? value.semanticCandidates : [];
+  const candidatesById = new Map();
+  for (const candidate of semanticCandidates) {
+    const candidateId = String(candidate && candidate.candidateId || "");
+    if (!UUID_PATTERN.test(candidateId) || candidatesById.has(candidateId)) return false;
+    candidatesById.set(candidateId, candidate);
+  }
+
+  const relations = Array.isArray(value.contextRelationCandidates) ? value.contextRelationCandidates : [];
+  const ownedIds = new Set();
+  const scopeIds = new Set();
+  const relationSignatures = new Set();
+  const lodgingUnitSignatures = new Set();
+  for (const task of tasks) {
+    const candidateIds = Array.isArray(task.semanticCandidateIds) ? task.semanticCandidateIds : [];
+    if (!candidateIds.length || new Set(candidateIds).size !== candidateIds.length
+      || candidateIds.some((candidateId) => !UUID_PATTERN.test(String(candidateId || ""))
+        || ownedIds.has(candidateId) || allCandidateOwners.get(candidateId) !== 1 || !candidatesById.has(candidateId))) return false;
+    candidateIds.forEach((candidateId) => ownedIds.add(candidateId));
+
+    const taskRelations = relations.filter((relation) => relation && relation.candidateIndex === task.candidateIndex);
+    if (taskRelations.length !== 1 || !Array.isArray(taskRelations[0].evidenceRefs)
+      || !taskRelations[0].evidenceRefs.length || !taskRelations[0].evidenceRefs.every(validEvidenceRefShape)) return false;
+    const relationSignature = evidenceOwnershipSignature(taskRelations[0].evidenceRefs);
+    if (relationSignatures.has(relationSignature)) return false;
+    relationSignatures.add(relationSignature);
+
+    const scopeId = String(task.lodgingScopeId || "");
+    if (!UUID_PATTERN.test(scopeId) || scopeIds.has(scopeId)) return false;
+    scopeIds.add(scopeId);
+    const ownedCandidates = candidateIds.map((candidateId) => candidatesById.get(candidateId));
+    if (ownedCandidates.some((candidate) => !Array.isArray(candidate.evidenceRefs)
+      || !candidate.evidenceRefs.length || !candidate.evidenceRefs.every(validEvidenceRefShape)
+      || evidenceOwnershipSignature(candidate.evidenceRefs) !== relationSignature)) return false;
+    if (!ownedCandidates.some((candidate) => candidate.semanticKind === "capability" && candidate.capability === "availability")) return false;
+    const ownedScopes = ownedCandidates.map((candidate) => candidate.lodgingScopeCandidate).filter(Boolean);
+    if (!ownedScopes.length || ownedScopes.some((scope) => scope.scopeId !== scopeId)) return false;
+    const lodgingUnitSignature = JSON.stringify(ownedScopes.map((scope) => ({
+      bundleCanonicalCandidate: scope.bundleCanonicalCandidate,
+      roomCanonicalCandidates: [...scope.roomCanonicalCandidates].sort(),
+      guestCountCandidate: scope.guestCountCandidate
+    })));
+    if (lodgingUnitSignatures.has(lodgingUnitSignature)) return false;
+    lodgingUnitSignatures.add(lodgingUnitSignature);
+  }
+  return true;
+}
+
   if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.tasks)) return value;
   const taskGroups = new Map();
   for (const task of value.tasks) {
@@ -571,7 +641,10 @@ function normalizeDuplicateTaskIds(value) {
     taskGroups.get(taskId).push(task);
   }
   const safelyRepairableTaskIds = new Set([...taskGroups]
-    .filter(([, tasks]) => tasks.length > 1 && tasks.every((task) => STATELESS_DUPLICATE_TASK_ID_TYPES.has(task.type)))
+    .filter(([, tasks]) => tasks.length > 1 && (
+      tasks.every((task) => STATELESS_DUPLICATE_TASK_ID_TYPES.has(task.type))
+      || hasIsolatedAvailabilityOwnership(value, tasks)
+    ))
     .map(([taskId]) => taskId));
   const reservedTaskIds = new Set(value.tasks
     .map((task) => task && typeof task.taskId === "string" ? task.taskId.trim() : "")
