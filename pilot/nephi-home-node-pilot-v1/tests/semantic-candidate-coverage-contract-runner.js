@@ -668,6 +668,18 @@ async function classifySequence({ first, repair, plannerInput, repairPatchTarget
   });
   assert.ok(wrongRelationPatch.result.tasks.some((item) => item.type === "human_help" && item.taskId.includes(boundedPatchScenario.invalidTaskId)), "a patch with the wrong relation ownership must fail closed");
 
+  const unboundIdentityRepair = JSON.parse(JSON.stringify(boundedPatchScenario.repairOutput));
+  unboundIdentityRepair.semanticCandidates = unboundIdentityRepair.semanticCandidates.map((candidate) =>
+    candidate.propertyCatalogIdentity === "water_feature"
+      ? { ...candidate, canonicalIdentityCandidate: null, propertyCatalogIdentity: null }
+      : candidate);
+  const unboundIdentityPatch = await classifySequence({
+    first: boundedPatchScenario.firstOutput,
+    repair: unboundIdentityRepair,
+    plannerInput: input(identityMessage, identityEvent, propertyCatalog)
+  });
+  assert.ok(unboundIdentityPatch.result.tasks.some((item) => item.type === "human_help" && item.taskId.includes(boundedPatchScenario.invalidTaskId)), "a catalog-grounded patch task must not merge with an unbound semantic candidate identity");
+
   const pendingIdentityScenario = identityScenario({
     failureClass: "identity_alignment",
     validSibling: true,

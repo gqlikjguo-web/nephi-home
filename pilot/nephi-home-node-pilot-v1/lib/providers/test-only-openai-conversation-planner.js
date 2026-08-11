@@ -1406,6 +1406,10 @@ function mergeInvalidSemanticPatches(originalOutput, repairOutput, input, units,
       || typeof canonicalizationMatches[0].canonicalIdentity !== "string"
       || !canonicalizationMatches[0].canonicalIdentity
       || candidate.propertyCatalogIdentity && canonicalizationMatches[0].canonicalIdentity !== candidate.propertyCatalogIdentity) return null;
+    const resolvedTaskEntity = task && task.entity ? resolveEntity(input.catalog, task.entity) : null;
+    if (resolvedTaskEntity && resolvedTaskEntity.status === "resolved" && resolvedTaskEntity.entity
+      && (candidate.propertyCatalogIdentity !== resolvedTaskEntity.entity.canonicalId
+        || candidate.canonicalIdentityCandidate !== resolvedTaskEntity.entity.canonicalId)) return null;
     patches.push({ unit, task, relation, candidate });
   }
   const patchedTaskKeys = new Set(units.map((unit) => unit.taskKey));
