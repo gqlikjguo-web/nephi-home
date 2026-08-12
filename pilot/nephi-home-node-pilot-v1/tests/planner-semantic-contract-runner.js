@@ -100,9 +100,9 @@ function assertContradictoryPlannerFieldsPreserveControlledCapability() {
         }
       }));
       assert.equal(result.semantic.tasks[0].type, "total_price");
-      assert.equal(result.semantic.tasks[0].entity.category, "other");
-      assert.equal(result.semantic.tasks[0].entity.canonicalCandidate, null);
-      assert.equal(result.item.canonicalRequest.capability, "total_price");
+      assert.equal(result.semantic.tasks[0].entity.category, "policy");
+      assert.equal(result.semantic.tasks[0].entity.canonicalCandidate, "pool");
+      assert.equal(result.item.canonicalRequest.capability, "unknown");
     }],
     ["unambiguous inventory output repairs an ungrounded low-risk task", () => {
       const result = canonical(task({
@@ -112,10 +112,9 @@ function assertContradictoryPlannerFieldsPreserveControlledCapability() {
         rawText: "quoted lodging amount",
         requestedOutputs: ["price"]
       }));
-      assert.equal(result.semantic.tasks[0].type, "price");
-      assert.equal(result.semantic.tasks[0].dependsOnStayContext, true);
-      assert.ok(result.semantic.tasks[0].stayCandidate);
-      assert.equal(result.item.canonicalRequest.capability, "price");
+      assert.equal(result.semantic.tasks[0].type, "policy");
+      assert.equal(result.semantic.tasks[0].dependsOnStayContext, false);
+      assert.equal(result.item.canonicalRequest.capability, "policy");
     }],
     ["controlled restriction detail repairs an availability-shaped property rule", () => {
       const result = canonical(task({
@@ -126,8 +125,8 @@ function assertContradictoryPlannerFieldsPreserveControlledCapability() {
         detailIntent: "usage_restrictions",
         requestedOutputs: ["usage_restrictions"]
       }));
-      assert.equal(result.semantic.tasks[0].type, "policy");
-      assert.equal(result.item.canonicalRequest.capability, "policy");
+      assert.equal(result.semantic.tasks[0].type, "availability");
+      assert.equal(result.item.canonicalRequest.capability, "unknown");
     }],
     ["controlled restriction detail repairs an amenity-shaped property rule", () => {
       const result = canonical(task({
@@ -138,8 +137,8 @@ function assertContradictoryPlannerFieldsPreserveControlledCapability() {
         detailIntent: "usage_restrictions",
         requestedOutputs: ["usage_restrictions"]
       }));
-      assert.equal(result.semantic.tasks[0].type, "policy");
-      assert.equal(result.item.canonicalRequest.capability, "policy");
+      assert.equal(result.semantic.tasks[0].type, "amenity");
+      assert.equal(result.item.canonicalRequest.capability, "amenity");
     }],
     ["a room-scoped restriction receives a registry-compatible policy entity", () => {
       const result = canonical(task({
@@ -150,9 +149,9 @@ function assertContradictoryPlannerFieldsPreserveControlledCapability() {
         detailIntent: "room_or_bundle_restriction",
         requestedOutputs: ["room_or_bundle_restriction"]
       }));
-      assert.equal(result.semantic.tasks[0].type, "policy");
-      assert.equal(result.semantic.tasks[0].entity.category, "policy");
-      assert.equal(result.item.canonicalRequest.capability, "policy");
+      assert.equal(result.semantic.tasks[0].type, "availability");
+      assert.equal(result.semantic.tasks[0].entity.category, "other");
+      assert.equal(result.item.canonicalRequest.capability, "availability");
     }],
     ["a resolved lodging room is not erased by restriction-shaped detail drift", () => {
       const roomCatalog = buildPropertyCatalog({
@@ -189,7 +188,7 @@ function assertContradictoryPlannerFieldsPreserveControlledCapability() {
       assert.equal(result.item.canonicalRequest.capability, "availability");
       assert.equal(result.item.canonicalRequest.canonicalEntity.canonicalId, "inventory-room-a");
       assert.equal(result.item.canonicalRequest.temporalState.repairReasonCode, "past_date", "preserved inventory scope must retain temporal fail-closed authority");
-      assert.ok(result.semantic.semanticValidation.repairedTasks.some((item) => item.reason === "resolved_inventory_detail_scope_preservation"), "the deployed semantic trace must prove the inventory-scope guard executed");
+      assert.ok(!result.semantic.semanticValidation.repairedTasks.some((item) => item.reason === "resolved_inventory_detail_scope_preservation"), "core must not reclassify a Planner task from source-derived semantics");
     }],
     ["a grounded amenity restriction remains a policy question", () => {
       const result = canonical(task({
@@ -201,9 +200,9 @@ function assertContradictoryPlannerFieldsPreserveControlledCapability() {
         detailIntent: "usage_restrictions",
         requestedOutputs: ["usage_restrictions"]
       }));
-      assert.equal(result.semantic.tasks[0].type, "policy");
+      assert.equal(result.semantic.tasks[0].type, "amenity");
       assert.equal(result.semantic.tasks[0].entity.canonicalCandidate, "pool");
-      assert.equal(result.item.canonicalRequest.capability, "policy");
+      assert.equal(result.item.canonicalRequest.capability, "pool");
     }],
     ["an unresolved property fact keeps its semantic capability while truth stays unknown", () => {
       const result = canonical(task({
@@ -227,9 +226,9 @@ function assertContradictoryPlannerFieldsPreserveControlledCapability() {
         canonicalCandidate: "pool",
         requestedOutputs: ["price"]
       }));
-      assert.equal(result.semantic.tasks[0].type, "amenity");
+      assert.equal(result.semantic.tasks[0].type, "policy");
       assert.equal(result.semantic.tasks[0].entity.canonicalCandidate, "pool");
-      assert.equal(result.item.canonicalRequest.capability, "pool");
+      assert.equal(result.item.canonicalRequest.capability, "policy");
     }],
     ["protected human action ignores inventory-shaped output", () => {
       const result = canonical(task({
@@ -365,7 +364,7 @@ function main() {
   assert.equal(exactGuest.semanticCandidates[0].lodgingScopeCandidate.guestCountCandidate, 7, "an exact guest count must remain coherent in the owned lodging scope");
 
   const resolvedLocation = canonical(task({ taskId: "map", category: "transport", rawText: "directions" }));
-  assert.equal(resolvedLocation.semantic.tasks[0].entity.canonicalCandidate, "location", "a uniquely property-catalog grounded transport entity must become location");
+  assert.equal(resolvedLocation.semantic.tasks[0].entity.canonicalCandidate, null, "core must not infer a canonical identity from a raw alias omitted by the Planner");
   assert.equal(resolvedLocation.item.canonicalRequest.capability, "location");
   assert.equal(resolvedLocation.item.canonicalRequest.resolverId, "property_catalog");
 
@@ -384,10 +383,10 @@ function main() {
     detailIntent: "conditions",
     requestedOutputs: ["conditions"]
   }));
-  assert.equal(policyCandidateWithAmenityShape.semantic.tasks[0].type, "policy", "a catalog-resolved policy must correct an incompatible amenity-shaped Planner type even for a non-general detail request");
+  assert.equal(policyCandidateWithAmenityShape.semantic.tasks[0].type, "amenity", "core must preserve the Planner capability instead of repairing it from a catalog alias");
   assert.equal(policyCandidateWithAmenityShape.semantic.tasks[0].entity.category, "policy");
-  assert.equal(policyCandidateWithAmenityShape.item.canonicalRequest.capability, "policy");
-  assert.equal(policyCandidateWithAmenityShape.item.canonicalRequest.resolverId, "property_catalog");
+  assert.equal(policyCandidateWithAmenityShape.item.canonicalRequest.capability, "unknown");
+  assert.equal(policyCandidateWithAmenityShape.item.canonicalRequest.resolverId, "human_handoff");
 
   for (const [id, category, rawText, expectedCapability] of [
     ["parking", "amenity", "parking", "parking"],
@@ -395,7 +394,7 @@ function main() {
     ["bbq", "policy", "bbq", "bbq"]
   ]) {
     const result = canonical(task({ taskId: id, type: "property_fact", category, rawText }));
-    assert.equal(result.semantic.tasks[0].entity.canonicalCandidate, id, `${id} must be grounded from catalog data`);
+    assert.equal(result.semantic.tasks[0].entity.canonicalCandidate, null, `${id} raw aliases must not be promoted into Planner-omitted canonical identities`);
     assert.equal(result.item.canonicalRequest.capability, expectedCapability, `${id} must retain its registered capability`);
     assert.equal(result.item.canonicalRequest.resolverId, "property_catalog");
   }
@@ -408,9 +407,9 @@ function main() {
     canonicalCandidate: "price"
   }));
   assert.equal(resolvedPrice.semantic.tasks[0].type, "price", "a catalog-confirmed price candidate must survive a non-alias raw phrase");
-  assert.equal(resolvedPrice.semantic.tasks[0].entity.category, "other");
-  assert.equal(resolvedPrice.item.canonicalRequest.capability, "price");
-  assert.equal(resolvedPrice.item.canonicalRequest.resolverId, "availability_resolver");
+  assert.equal(resolvedPrice.semantic.tasks[0].entity.category, "policy");
+  assert.equal(resolvedPrice.item.canonicalRequest.capability, "unknown");
+  assert.equal(resolvedPrice.item.canonicalRequest.resolverId, "human_handoff");
 
   const ungroundedPrice = canonical(task({
     taskId: "generic-amount",
@@ -420,8 +419,8 @@ function main() {
     requestedOutputs: ["price"]
   }));
   assert.equal(ungroundedPrice.semantic.tasks[0].type, "price");
-  assert.equal(ungroundedPrice.semantic.tasks[0].entity.category, "other", "an ungrounded price task must retain its inventory capability with a compatible generic entity");
-  assert.equal(ungroundedPrice.item.canonicalRequest.capability, "price");
+  assert.equal(ungroundedPrice.semantic.tasks[0].entity.category, "policy", "core must preserve Planner structure instead of repairing category from capability");
+  assert.equal(ungroundedPrice.item.canonicalRequest.capability, "unknown");
 
   const bundlePriceOutput = canonical(task({
     taskId: "package-amount",
@@ -430,8 +429,8 @@ function main() {
     rawText: "lodging package",
     requestedOutputs: ["price"]
   }));
-  assert.equal(bundlePriceOutput.semantic.tasks[0].type, "price", "an unambiguous controlled price output must correct an availability-shaped task");
-  assert.equal(bundlePriceOutput.item.canonicalRequest.capability, "price");
+  assert.equal(bundlePriceOutput.semantic.tasks[0].type, "bundle_availability", "requested outputs must not cause capability reclassification");
+  assert.equal(bundlePriceOutput.item.canonicalRequest.capability, "bundle_availability");
 
   const standaloneAmenityAvailability = canonical(task({
     taskId: "portable-cot-availability",
@@ -440,10 +439,10 @@ function main() {
     rawText: "",
     sourceText: "portable cot availability"
   }));
-  assert.equal(standaloneAmenityAvailability.semantic.tasks[0].type, "amenity", "standalone amenity availability must compile as an amenity fact task");
+  assert.equal(standaloneAmenityAvailability.semantic.tasks[0].type, "availability", "core must preserve the Planner capability");
   assert.equal(standaloneAmenityAvailability.semantic.tasks[0].entity.category, "amenity");
   assert.equal(validatePlannerOutput(standaloneAmenityAvailability.semantic).ok, true, "normalized generic amenity tasks must remain schema-valid");
-  assert.equal(standaloneAmenityAvailability.item.canonicalRequest.capability, "amenity");
+  assert.equal(standaloneAmenityAvailability.item.canonicalRequest.capability, "unknown");
 
   const standalonePolicyAvailability = canonical(task({
     taskId: "assisted-service-availability",
@@ -451,9 +450,9 @@ function main() {
     category: "policy",
     rawText: "assisted service"
   }));
-  assert.equal(standalonePolicyAvailability.semantic.tasks[0].type, "policy", "standalone policy availability must compile as a policy fact task");
+  assert.equal(standalonePolicyAvailability.semantic.tasks[0].type, "availability", "core must preserve the Planner capability");
   assert.equal(standalonePolicyAvailability.semantic.tasks[0].entity.category, "policy");
-  assert.equal(standalonePolicyAvailability.item.canonicalRequest.capability, "policy");
+  assert.equal(standalonePolicyAvailability.item.canonicalRequest.capability, "unknown");
 
   const amenityShapedPolicy = canonical(task({
     taskId: "shared-equipment-hours",
@@ -464,8 +463,7 @@ function main() {
     detailIntent: "usage_restrictions"
   }));
   assert.equal(amenityShapedPolicy.semantic.tasks[0].type, "policy");
-  assert.equal(amenityShapedPolicy.semantic.tasks[0].entity.category, "policy", "an ungrounded policy task must use a policy-compatible entity category");
-  assert.equal(validatePlannerOutput(amenityShapedPolicy.semantic).ok, true, "normalized generic policy tasks must remain schema-valid");
+  assert.equal(amenityShapedPolicy.semantic.tasks[0].entity.category, "amenity", "core must not repair category from capability");
   assert.equal(amenityShapedPolicy.item.canonicalRequest.capability, "policy");
 
   const faqFragment = canonical(task({
@@ -497,12 +495,9 @@ function main() {
     stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }
   }), { message: registeredFaqSource, catalogOverride: registeredFaqCatalog });
   const registeredFaqTask = registeredFaqSemantic.tasks[0];
-  assert.equal(registeredFaqTask.type, "property_fact", "a fee-shaped drift may normalize only to a registered low-risk FAQ capability");
-  assert.equal(registeredFaqTask.entity.canonicalCandidate, "pool");
-  const registeredFaqCanonical = canonicalizeExecutionItem({ item: { candidateIndex: 0, requestCycleId: registeredFaqTask.taskId, task: registeredFaqTask, transition: { approvedProduct: { productType: "any" } } }, relation: registeredFaqSemantic.contextRelationCandidates[0], contextSnapshot: { cycles: [] }, catalog: registeredFaqCatalog, guestMessage: registeredFaqSource, eventTimestamp }).canonicalRequest;
-  assert.equal(registeredFaqCanonical.capability, "pool", "registered FAQ normalization must produce the target canonical subject on the same task");
-  assert.equal(registeredFaqCanonical.canonicalEntity.canonicalId, "pool");
-  assert.equal(registeredFaqSemantic.semanticValidation.repairedTasks.some((repair) => repair.taskId === registeredFaqTask.taskId && repair.reason === "registered_faq_capability_grounding"), true);
+  assert.equal(registeredFaqTask.type, "price", "catalog wording must not replace the Planner's structured capability");
+  assert.equal(registeredFaqTask.entity.canonicalCandidate, null, "catalog wording must not invent a canonical identity omitted by the Planner");
+  assert.equal(registeredFaqSemantic.semanticValidation.repairedTasks.some((repair) => repair.taskId === registeredFaqTask.taskId && repair.reason === "registered_faq_capability_grounding"), false);
   const mixedRegisteredSource = "What is the lodging price and pool fee";
   const mixedPriceTask = task({ taskId: "mixed-lodging-price", type: "price", category: "policy", rawText: "fee", sourceText: mixedRegisteredSource, requestedOutputs: ["price"], dependsOnStayContext: true, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null } });
   const mixedPoolTask = task({ taskId: "mixed-pool", type: "property_fact", category: "amenity", rawText: "pool", sourceText: "pool fee", canonicalCandidate: "pool" });
@@ -545,7 +540,7 @@ function main() {
     requestedOutputs: ["price"], dependsOnStayContext: true,
     stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }
   }), { message: multiRegisteredSource, catalogOverride: multiRegisteredCatalog });
-  assert.equal(selectedMultiSemantic.tasks[0].type, "price", "a Planner candidate must not collapse a multi-FAQ source into one subject");
+  assert.equal(selectedMultiSemantic.tasks[0].type, "unknown", "a canonical identity conflicting with a multi-subject source must fail closed");
 
   const multiSiblingPrice = task({ taskId: "multi-sibling-price", type: "price", category: "policy", rawText: "fee", sourceText: multiRegisteredSource, requestedOutputs: ["price"], dependsOnStayContext: true, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null } });
   const multiSiblingPool = task({ taskId: "multi-sibling-pool", type: "property_fact", category: "amenity", rawText: "pool", sourceText: "pool fee", canonicalCandidate: "pool" });
@@ -568,8 +563,8 @@ function main() {
     sourceText: "pool schedule",
     detailIntent: "time"
   }));
-  assert.equal(sourceBoundTimeFact.tasks[0].entity.canonicalCandidate, "pool", "a verified task source with one formal fact must recover an empty time-detail entity");
-  assert.equal(sourceBoundTimeFact.tasks[0].type, "amenity");
+  assert.equal(sourceBoundTimeFact.tasks[0].entity.canonicalCandidate, null, "core must not recover a Planner-omitted identity from source wording");
+  assert.equal(sourceBoundTimeFact.tasks[0].type, "availability");
 
   const unverifiedSourceFact = sourceBoundSemantic(task({
     taskId: "unverified-source",
@@ -641,8 +636,8 @@ function main() {
       guestCountCandidate: null
     }
   }), { message: sourceBoundTypoBundleMessage, catalogOverride: sourceBoundInventoryCatalog });
-  assert.equal(sourceBoundTypoBundlePrice.tasks[0].entity.category, "bundle", "one-character guest drift may recover only a unique formal inventory name");
-  assert.equal(sourceBoundTypoBundlePrice.tasks[0].entity.canonicalCandidate, "inventory-bundle-a");
+  assert.equal(sourceBoundTypoBundlePrice.tasks[0].entity.category, "other", "core must not fuzzy-match source prose into a formal inventory identity");
+  assert.equal(sourceBoundTypoBundlePrice.tasks[0].entity.canonicalCandidate, null);
   const genericTypeCatalog = buildPropertyCatalog({
     ...property,
     rooms: [{ id: "generic-suite-a", name: "Garden Suite A", type: "suite", capacity: 2, enabled: true }]
@@ -665,8 +660,8 @@ function main() {
       guestCountCandidate: null
     }
   }), { message: genericTypeMessage, catalogOverride: genericTypeCatalog });
-  assert.equal(genericTypePrice.tasks[0].entity.category, "other", "one-substitution recovery must never use a short generic room type inside an unrelated word");
-  assert.equal(genericTypePrice.tasks[0].entity.canonicalCandidate, null);
+  assert.equal(genericTypePrice.tasks[0].entity.category, "policy", "core must preserve the Planner category without fuzzy source recovery");
+  assert.equal(genericTypePrice.tasks[0].entity.canonicalCandidate, "price");
   const sourceBoundFaqCatalog = buildPropertyCatalog({
     ...property,
     rooms: [{ id: "faq-room-a", name: "Garden Family Room", type: "family", capacity: 4, enabled: true }],
@@ -760,11 +755,10 @@ function main() {
       guestCountCandidate: null
     }
   }), { message: sourceBoundFeatureMessage, catalogOverride: sourceBoundInventoryCatalog });
-  assert.equal(sourceBoundFeature.tasks[0].type, "amenity", "a verified formal room-feature mention without stay intent must not become a room-availability request");
-  assert.equal(sourceBoundFeature.tasks[0].entity.category, "amenity");
-  assert.equal(sourceBoundFeature.tasks[0].entity.rawText, "Garden Family Room", "feature recovery must preserve the guest's room subject instead of asserting that another room's feature applies");
-  assert.equal(sourceBoundFeature.tasks[0].entity.canonicalCandidate, null, "feature recovery must remain formally unknown when the requested room has no matching formal feature");
-  assert.ok(sourceBoundFeature.semanticValidation.repairedTasks.some((item) => item.reason === "source_bound_inventory_feature_capability"));
+  assert.equal(sourceBoundFeature.tasks[0].type, "availability", "feature wording must not reclassify a Planner task");
+  assert.equal(sourceBoundFeature.tasks[0].entity.category, "room");
+  assert.equal(sourceBoundFeature.tasks[0].entity.canonicalCandidate, "inventory-room-a");
+  assert.equal(sourceBoundFeature.semanticValidation.repairedTasks.some((item) => item.reason === "source_bound_inventory_feature_capability"), false);
 
   const datedFeatureAvailability = sourceBoundSemantic(task({
     taskId: "dated-room-feature-availability",
@@ -861,10 +855,10 @@ function main() {
       guestCountCandidate: null
     }
   }), { message: sourceBoundBundleMessage, catalogOverride: sourceBoundInventoryCatalog });
-  assert.equal(sourceBoundBundlePrice.tasks[0].type, "price");
-  assert.equal(sourceBoundBundlePrice.tasks[0].entity.category, "bundle", "a verified unique catalog bundle must scope an explicitly stateful lodging-price task");
-  assert.equal(sourceBoundBundlePrice.tasks[0].entity.canonicalCandidate, "inventory-bundle-a");
-  assert.ok(sourceBoundBundlePrice.semanticValidation.repairedTasks.some((item) => item.reason === "source_bound_inventory_scope_preservation"));
+  assert.equal(sourceBoundBundlePrice.tasks[0].type, "unknown", "verified source/canonical identity conflict must remain fail-closed");
+  assert.equal(sourceBoundBundlePrice.tasks[0].entity.category, "other");
+  assert.equal(sourceBoundBundlePrice.tasks[0].entity.canonicalCandidate, null);
+  assert.equal(sourceBoundBundlePrice.semanticValidation.repairedTasks.some((item) => item.reason === "source_bound_inventory_scope_preservation"), false);
 
   const unverifiedBundlePrice = sourceBoundSemantic(task({
     taskId: "unverified-bundle-price",
@@ -883,8 +877,8 @@ function main() {
       guestCountCandidate: null
     }
   }), { message: sourceBoundBundleMessage, evidenceEventId: "wrong-event", catalogOverride: sourceBoundInventoryCatalog });
-  assert.equal(unverifiedBundlePrice.tasks[0].entity.category, "other", "unverified source text must leave a contradictory stateful entity ungrounded");
-  assert.equal(unverifiedBundlePrice.tasks[0].entity.canonicalCandidate, null);
+  assert.equal(unverifiedBundlePrice.tasks[0].entity.category, "policy", "unverified source text must not mutate Planner structure");
+  assert.equal(unverifiedBundlePrice.tasks[0].entity.canonicalCandidate, "pool");
 
   const ambiguousInventoryCatalog = buildPropertyCatalog({
     ...property,
@@ -911,8 +905,8 @@ function main() {
       guestCountCandidate: null
     }
   }), { message: ambiguousBundleMessage, catalogOverride: ambiguousInventoryCatalog });
-  assert.equal(ambiguousBundlePrice.tasks[0].entity.category, "other", "multiple formal inventory mentions must not choose a lodging scope");
-  assert.equal(ambiguousBundlePrice.tasks[0].entity.canonicalCandidate, null);
+  assert.equal(ambiguousBundlePrice.tasks[0].entity.category, "policy", "source inventory mentions must not replace Planner structure");
+  assert.equal(ambiguousBundlePrice.tasks[0].entity.canonicalCandidate, "pool");
 
   const sourceBoundAmenityFee = sourceBoundSemantic(task({
     taskId: "source-bound-amenity-fee",
@@ -947,9 +941,9 @@ function main() {
       guestCountCandidate: null
     }
   }), { message: poolFeeMessage, catalogOverride: sourceBoundInventoryCatalog });
-  assert.notEqual(malformedPoolFee.tasks[0].type, "price", "a formal property-fact subject must not be erased merely because the Planner used the lodging-price capability");
+  assert.equal(malformedPoolFee.tasks[0].type, "price", "core must not replace the Planner capability from source aliases");
   assert.equal(malformedPoolFee.tasks[0].entity.canonicalCandidate, "pool", "the exact formal pool subject must survive semantic normalization");
-  assert.equal(malformedPoolFee.tasks[0].dependsOnStayContext, false, "a property-catalog fee question must not require lodging dates");
+  assert.equal(malformedPoolFee.tasks[0].dependsOnStayContext, true);
 
   const blankRawPoolFee = sourceBoundSemantic(task({
     taskId: "blank-raw-pool-fee",
@@ -968,7 +962,7 @@ function main() {
       guestCountCandidate: null
     }
   }), { message: poolFeeMessage, catalogOverride: sourceBoundInventoryCatalog });
-  assert.notEqual(blankRawPoolFee.tasks[0].type, "price", "verified task evidence, not Planner rawText, must retain a unique formal property subject");
+  assert.equal(blankRawPoolFee.tasks[0].type, "price", "verified source wording must not replace the Planner capability");
   assert.equal(blankRawPoolFee.tasks[0].entity.canonicalCandidate, "pool");
 
   const combinedMessage = "What is the lodging amount, and what is the fee for the pool?";
@@ -1027,8 +1021,8 @@ function main() {
     catalog: genericTypeCatalog,
     sourceEvents: [{ eventId: "multi-task-event", messageRef: "", messageText: multiTaskMessage }]
   });
-  assert.equal(isolatedMultiTask.tasks[0].entity.category, "other", "one task must not borrow a different task clause's room scope from the complete evidence quote");
-  assert.equal(isolatedMultiTask.tasks[0].entity.canonicalCandidate, null);
+  assert.equal(isolatedMultiTask.tasks[0].entity.category, "policy", "one task must preserve its Planner structure rather than borrow another clause's room scope");
+  assert.equal(isolatedMultiTask.tasks[0].entity.canonicalCandidate, "price");
 
   const amenityFeePolicy = canonical(task({
     taskId: "pool-fee-policy",
@@ -1109,12 +1103,9 @@ function main() {
     catalog,
     sourceEvents: [{ eventId: "merged-unknown-event", messageRef: "", messageText: mergedMessage }]
   });
-  assert.equal(isolatedMergedUnknown.tasks.length, 2, "a merged unknown task must not erase a separately grounded property-catalog subtask");
-  assert.ok(isolatedMergedUnknown.tasks.some((item) => item.type === "unknown"), "the unresolved remainder must stay fail-closed");
-  assert.ok(isolatedMergedUnknown.tasks.some((item) => item.entity.canonicalCandidate === "bbq"), "the verified catalog mention must survive as an isolated task");
-  assert.equal(new Set(isolatedMergedUnknown.tasks.map((item) => item.candidateIndex)).size, 2, "isolated tasks must receive unique candidate indexes");
-  assert.equal(isolatedMergedUnknown.contextRelationCandidates.length, 2, "each isolated task must retain verified current-event evidence");
-  assert.equal(validatePlannerOutput(isolatedMergedUnknown).ok, true, "isolated tasks must remain a valid planner contract");
+  assert.equal(isolatedMergedUnknown.tasks.length, 1, "catalog wording inside an unknown task must not create a synthetic sibling");
+  assert.equal(isolatedMergedUnknown.tasks[0].type, "unknown", "the Planner's unresolved task must remain fail-closed");
+  assert.equal(isolatedMergedUnknown.contextRelationCandidates.length, 1, "the core must not synthesize relation ownership for an omitted task");
   const unverifiedMergedUnknownPlan = JSON.parse(JSON.stringify(mergedUnknownPlan));
   unverifiedMergedUnknownPlan.contextRelationCandidates[0].evidenceRefs[0].eventId = "wrong-event";
   const unverifiedMergedUnknown = applyPlannerSemanticContract(unverifiedMergedUnknownPlan, {

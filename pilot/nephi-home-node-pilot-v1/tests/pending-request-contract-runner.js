@@ -115,7 +115,7 @@ async function main() {
       }
     })], { relation: "acknowledgement", shouldIgnore: true }),
     plan([availabilityTask({ taskId: "mistaken-search", type: "available_dates" })], {
-      relation: "new_request",
+      relation: "answer_clarification",
       dateText: "今天",
       dateKind: "relative",
       stateOperations: [

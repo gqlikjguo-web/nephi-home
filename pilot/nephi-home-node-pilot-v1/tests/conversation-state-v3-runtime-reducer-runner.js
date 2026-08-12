@@ -95,9 +95,10 @@ const decision = decideContextExecutionV3({
   state: previous,
   relations: [{
     candidateIndex: 0,
-    relationKind: "new_request",
-    stateAction: "start",
-    requestCycleId: null,
+    relationKind: "state_slot_supplement",
+    stateAction: "continue",
+    requestCycleId: "pricing-task",
+    reasonCode: "planner_structured_context_continue",
     evidenceRefs: [{
       eventId: "event-date",
       messageRef: "",
@@ -119,7 +120,7 @@ assert.equal(
 );
 assert.equal(decision.relations[0].stateAction, "continue");
 assert.equal(decision.relations[0].requestCycleId, "pricing-task");
-assert.equal(decision.contextDecision.reasonCode, "unique_pending_slot_update");
+assert.equal(decision.contextDecision.reasonCode, "planner_structured_context_continue");
 
 const mixedPrevious = createConversationStateV3({
   ...scope,
@@ -156,8 +157,8 @@ const mixedDecision = decideContextExecutionV3({
   plannerTasks: [dateOnlyPlannerTask],
   now: NOW
 });
-assert.equal(mixedDecision.resumedPending, true);
-assert.equal(mixedDecision.executionItems[0].requestCycleId, "pricing-task");
+assert.equal(mixedDecision.resumedPending, false);
+assert.notEqual(mixedDecision.executionItems[0].requestCycleId, "pricing-task");
 
 const repeatedNewRequest = decideContextExecutionV3({
   state: previous,
@@ -345,7 +346,13 @@ assert.equal(decideContextExecutionV3({
   relations: [],
   plannerTasks: [guestOnlyPlannerTask],
   now: NOW
-}).resumedPending, true, "an exact guest-count expression may resume the unique pending task");
+}).resumedPending, false, "raw guest-count wording must not create context continuation authority");
+assert.equal(decideContextExecutionV3({
+  state: pendingCapacity,
+  relations: [{ candidateIndex: guestOnlyPlannerTask.candidateIndex, stateAction: "continue", requestCycleId: "capacity-task", relationKind: "supplement_existing", evidenceRefs: [] }],
+  plannerTasks: [guestOnlyPlannerTask],
+  now: NOW
+}).resumedPending, true, "an explicit structured continuation must remain the context authority");
 assert.equal(decideContextExecutionV3({
   state: pendingCapacity,
   relations: [],

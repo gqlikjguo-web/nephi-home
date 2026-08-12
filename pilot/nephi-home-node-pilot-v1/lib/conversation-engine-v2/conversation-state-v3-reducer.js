@@ -335,21 +335,7 @@ function decideContextExecutionV3({
   catalog,
   now
 }) {
-  const autoRelation = automaticPendingRelation(
-    state,
-    plannerTasks,
-    relations,
-    now
-  );
-  const effectiveRelations = (relations || []).map((relation) => (
-    autoRelation
-    && relation.candidateIndex === autoRelation.candidateIndex
-      ? autoRelation
-      : relation
-  ));
-  if (autoRelation && !effectiveRelations.some(
-    (relation) => relation.candidateIndex === autoRelation.candidateIndex
-  )) effectiveRelations.push(autoRelation);
+  const effectiveRelations = [...(relations || [])];
   const relationByCandidate = new Map(effectiveRelations.map(
     (relation) => [relation.candidateIndex, relation]
   ));
@@ -419,7 +405,7 @@ function decideContextExecutionV3({
       transition: { reasonCode: "new_task", contextTask: null, approvedProduct: approvedProductForTask(task, catalog), slotSources: { checkIn: task.stayCandidate && task.stayCandidate.checkInCandidate ? "current_turn" : "absent", checkOut: task.stayCandidate && (task.stayCandidate.checkOutCandidate || Number.isInteger(task.stayCandidate.nightsCandidate)) ? "current_turn" : "absent", product: task.entity && task.entity.canonicalCandidate ? "current_turn" : "absent" } }
     }];
   });
-  const primary = autoRelation || effectiveRelations.find(
+  const primary = effectiveRelations.find(
     (relation) => relation.stateAction && relation.stateAction !== "none"
   ) || {
     candidateIndex: null,

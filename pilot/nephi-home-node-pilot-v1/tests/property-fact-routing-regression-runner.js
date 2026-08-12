@@ -271,7 +271,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   const parking = await execute({
     currentProperty: alpha,
     message: "有車位嗎？",
-    tasks: [propertyFactTask("parking", "availability", "有車位嗎？", "amenity", "parking")]
+    tasks: [propertyFactTask("parking", "property_fact", "有車位嗎？", "amenity", "parking")]
   });
   assert.deepEqual(canonicalCapabilities(parking.diagnostics), ["parking"]);
   assert.equal(parking.result.taskResults[0].facts.source, "property_catalog");
@@ -280,12 +280,12 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   const bbq = await execute({
     currentProperty: alpha,
     message: "可以烤肉嗎？",
-    tasks: [propertyFactTask("bbq", "availability", "可以烤肉嗎？", "policy", "bbq")]
+    tasks: [propertyFactTask("bbq", "property_fact", "可以烤肉嗎？", "policy", "bbq")]
   });
   assert.deepEqual(
     canonicalCapabilities(bbq.diagnostics),
     ["bbq"],
-    "a resolved property-scoped BBQ entity must not become unknown solely because the Planner used availability"
+    "a resolved property-scoped BBQ entity must use the Planner-provided property-fact capability"
   );
   assert.equal(bbq.result.taskResults[0].facts.source, "property_catalog");
   assert.equal(bbq.result.finalDecision.action, "reply");
@@ -293,7 +293,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   const pool = await execute({
     currentProperty: alpha,
     message: "有戲水池嗎？",
-    tasks: [propertyFactTask("pool", "availability", "有戲水池嗎？", "amenity", "pool")]
+    tasks: [propertyFactTask("pool", "property_fact", "有戲水池嗎？", "amenity", "pool")]
   });
   assert.deepEqual(
     canonicalCapabilities(pool.diagnostics),
@@ -308,7 +308,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
     message: "singing hours",
     tasks: [task({
       taskId: "singing-hours",
-      type: "availability",
+      type: "property_fact",
       sourceText: "singing hours",
       category: "amenity",
       canonicalCandidate: "singing",
@@ -331,9 +331,9 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
       detailIntent: "time"
     })]
   });
-  assert.deepEqual(canonicalCapabilities(sourceBoundSingingHours.diagnostics), ["property_fact"]);
-  assert.equal(sourceBoundSingingHours.result.taskResults[0].facts.source, "property_catalog");
-  assert.match(sourceBoundSingingHours.result.replyText, /08:00-22:00/);
+  assert.deepEqual(canonicalCapabilities(sourceBoundSingingHours.diagnostics), ["availability"]);
+  assert.notEqual(sourceBoundSingingHours.result.taskResults[0].status, "answered");
+  assert.equal(sourceBoundSingingHours.result.finalDecision.action, "clarification");
 
   const bbqFee = await execute({
     currentProperty: alpha,
@@ -365,7 +365,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   const unstructuredTime = await execute({
     currentProperty: noDetailProperty,
     message: "singing hours",
-    tasks: [task({ taskId: "unstructured-time", type: "availability", sourceText: "singing hours", category: "amenity", canonicalCandidate: "singing", detailIntent: "time" })]
+    tasks: [task({ taskId: "unstructured-time", type: "property_fact", sourceText: "singing hours", category: "amenity", canonicalCandidate: "singing", detailIntent: "time" })]
   });
   assert.equal(unstructuredTime.result.taskResults[0].facts.detailNeedsConfirmation, true, "a FAQ answer without a controlled clock time must not be promoted to an hours answer");
   assert.equal(unstructuredTime.result.taskResults[0].facts.detailProvided, false);
@@ -382,10 +382,10 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
       canonicalCandidate: null
     })]
   });
-  assert.deepEqual(canonicalCapabilities(mergedUnknown.diagnostics), ["unknown", "bbq"]);
-  assert.deepEqual(mergedUnknown.result.taskResults.map((item) => item.status), ["needs_human", "answered"]);
-  assert.match(mergedUnknown.result.replyText, /barbecue fee is 1,000 TWD/, "the formal catalog subtask must survive a merged unknown Planner task");
-  assert.equal(mergedUnknown.result.finalDecision.action, "reply");
+  assert.deepEqual(canonicalCapabilities(mergedUnknown.diagnostics), ["unknown"]);
+  assert.deepEqual(mergedUnknown.result.taskResults.map((item) => item.status), ["needs_human"]);
+  assert.doesNotMatch(mergedUnknown.result.replyText, /barbecue fee is 1,000 TWD/, "core must not synthesize a catalog subtask omitted by the Planner");
+  assert.equal(mergedUnknown.result.finalDecision.action, "handoff");
   assert.equal(mergedUnknown.result.claimValidation.ok, true);
   assert.deepEqual(mergedUnknown.result.claimValidation.missingTaskIds, []);
 
@@ -418,10 +418,10 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
       requestedOutputs: ["conditions"]
     })]
   });
-  assert.deepEqual(canonicalCapabilities(policyCandidateWithAmenityShape.diagnostics), ["policy"]);
-  assert.equal(policyCandidateWithAmenityShape.result.finalDecision.action, "reply", "a catalog-resolved policy must remain answerable when Planner supplies an incompatible amenity-shaped type");
+  assert.deepEqual(canonicalCapabilities(policyCandidateWithAmenityShape.diagnostics), ["unknown"]);
+  assert.equal(policyCandidateWithAmenityShape.result.finalDecision.action, "handoff", "an incompatible Planner capability must fail closed instead of being repaired from catalog aliases");
   assert.equal(policyCandidateWithAmenityShape.result.claimValidation.ok, true);
-  assert.notEqual(policyCandidateWithAmenityShape.result.finalDecision.reasonCode, "unknown");
+  assert.equal(policyCandidateWithAmenityShape.result.finalDecision.reasonCode, "unknown");
 
   const location = await execute({
     currentProperty: alpha,
@@ -477,7 +477,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
     const scoped = await execute({
       currentProperty,
       message: "有車位嗎？",
-      tasks: [propertyFactTask("scoped-parking", "availability", "有車位嗎？", "amenity", "parking")]
+      tasks: [propertyFactTask("scoped-parking", "property_fact", "有車位嗎？", "amenity", "parking")]
     });
     assert.equal(scoped.result.replyText.includes(`${ownLabel} parking fact.`), true);
     assert.equal(scoped.result.replyText.includes(`${foreignLabel} parking fact.`), false);

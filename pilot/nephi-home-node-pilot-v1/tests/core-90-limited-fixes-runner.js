@@ -455,12 +455,12 @@ async function parkingUnresolvablePlannerEntityUsesUniqueSourceAlias() {
     })
   });
   const conflictingSemantic = conflictingEntity.stage("semantic_contract").outputTasks[0];
-  assert.equal(conflictingSemantic.type, "amenity");
-  assert.equal(conflictingSemantic.canonicalCandidate, "bbq");
-  assert.equal(conflictingEntity.stage("semantic_contract").semanticValidation.repairedTasks[0].reason, "property_catalog_entity_grounding");
-  assert.equal(conflictingEntity.result.finalDecision.action, "reply");
+  assert.equal(conflictingSemantic.type, "availability");
+  assert.equal(conflictingSemantic.canonicalCandidate, null);
+  assert.equal(conflictingEntity.stage("semantic_contract").semanticValidation.repairedTasks.length, 0);
+  assert.equal(conflictingEntity.result.finalDecision.action, "handoff");
   assert.equal(conflictingEntity.result.replyText.includes("parking fact."), false);
-  assert.equal(conflictingEntity.result.replyText.includes("barbecue fact."), true, "a uniquely grounded entity must use its registered capability even when the Planner type is inaccurate");
+  assert.equal(conflictingEntity.result.replyText.includes("barbecue fact."), false, "core must not repair an inaccurate Planner capability from source aliases");
 
   const ambiguousProperty = property("property_parking_ambiguous_source", "Parking Ambiguous Source");
   ambiguousProperty.semanticCatalog.aliases.parking = ["共用設施"];
@@ -551,9 +551,9 @@ async function contradictoryPlannerFieldsPreserveControlledCapabilities() {
     })
   });
   assert.equal(statefulPrice.stage("semantic_contract").outputTasks[0].type, "total_price");
-  assert.equal(statefulPrice.stage("canonical_request").items[0].capability, "total_price");
-  assert.equal(statefulPrice.stage("query_plan").count, 0, "a date-less total must clarify without querying availability");
-  assert.equal(statefulPrice.result.finalDecision.action, "clarification");
+  assert.equal(statefulPrice.stage("canonical_request").items[0].capability, "unknown");
+  assert.equal(statefulPrice.stage("query_plan").items[0].operation, "human_handoff", "contradictory Planner structure must not query availability");
+  assert.equal(statefulPrice.result.finalDecision.action, "handoff");
 
   const outputGroundedPrice = await execute({
     currentProperty,
@@ -568,10 +568,10 @@ async function contradictoryPlannerFieldsPreserveControlledCapabilities() {
       requestedOutputs: ["price"]
     })
   });
-  assert.equal(outputGroundedPrice.stage("semantic_contract").outputTasks[0].type, "price");
-  assert.equal(outputGroundedPrice.stage("canonical_request").items[0].capability, "price");
-  assert.equal(outputGroundedPrice.stage("query_plan").count, 0, "an unresolved lodging price must clarify before querying availability");
-  assert.equal(outputGroundedPrice.result.finalDecision.action, "clarification");
+  assert.equal(outputGroundedPrice.stage("semantic_contract").outputTasks[0].type, "policy");
+  assert.equal(outputGroundedPrice.stage("canonical_request").items[0].capability, "policy");
+  assert.equal(outputGroundedPrice.stage("query_plan").items[0].operation, "property_catalog", "Planner policy capability must not be replaced by an availability query");
+  assert.equal(outputGroundedPrice.result.finalDecision.action, "handoff");
 
   const propertyRule = await execute({
     currentProperty,
@@ -587,8 +587,8 @@ async function contradictoryPlannerFieldsPreserveControlledCapabilities() {
       requestedOutputs: ["usage_restrictions"]
     })
   });
-  assert.equal(propertyRule.stage("semantic_contract").outputTasks[0].type, "policy");
-  assert.equal(propertyRule.stage("canonical_request").items[0].capability, "policy");
+  assert.equal(propertyRule.stage("semantic_contract").outputTasks[0].type, "availability");
+  assert.equal(propertyRule.stage("canonical_request").items[0].capability, "unknown");
   assert.equal(propertyRule.stage("executor").results[0].status, "needs_human", "missing formal policy data must remain Unknown");
   assert.equal(propertyRule.result.finalDecision.action, "handoff");
 
@@ -624,10 +624,10 @@ async function contradictoryPlannerFieldsPreserveControlledCapabilities() {
       requestedOutputs: ["time"]
     })
   });
-  assert.equal(sourceGroundedDetail.stage("semantic_contract").outputTasks[0].type, "property_fact");
-  assert.equal(sourceGroundedDetail.stage("canonical_request").items[0].canonicalEntity.canonicalId, "singing");
-  assert.equal(sourceGroundedDetail.stage("executor").results[0].status, "answered");
-  assert.match(sourceGroundedDetail.result.finalResponse.replyText, /08:00.+22:00/);
+  assert.equal(sourceGroundedDetail.stage("semantic_contract").outputTasks[0].type, "availability");
+  assert.equal(sourceGroundedDetail.stage("canonical_request").items[0].canonicalEntity.canonicalId, null);
+  assert.notEqual(sourceGroundedDetail.stage("executor").results[0].status, "answered");
+  assert.equal(sourceGroundedDetail.result.finalDecision.action, "handoff");
 
   const ambiguousProperty = property("property_ambiguous_detail", "Ambiguous Detail");
   ambiguousProperty.propertyFacts.push(

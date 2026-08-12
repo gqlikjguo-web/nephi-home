@@ -310,7 +310,6 @@ function parseRange(raw, base, baseWeekday) {
 }
 
 function parseTemporalGrammarAtBase(raw, baseParts) {
-  if (/下次.*有空.*週末/u.test(raw)) return { unresolvedReason: "temporal_expression_ambiguous" };
   const constrainedWeekday = monthWeekdayConstraint(raw);
   if (constrainedWeekday) return constrainedWeekday;
   const range = parseRange(raw, baseParts.key, baseParts.weekday);

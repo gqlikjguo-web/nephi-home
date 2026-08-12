@@ -95,16 +95,6 @@ function definitionMatches(definition, task, entity) {
     && definition.acceptedEntityCategories.includes(entity.category);
 }
 
-function resolvedStandalonePropertyFactMatches(definition, task, entity) {
-  return task.type === "availability"
-    && task.dependsOnStayContext === false
-    && definition.resolverId === "property_catalog"
-    && definition.stayDependency === false
-    && definition.riskLevel === "low"
-    && definition.responseMode === "answer"
-    && definition.acceptedEntityCategories.includes(entity.category);
-}
-
 function selectCapabilityDefinition(task, entity) {
   const semanticDetailDefinition = task.detailIntent !== "general"
     && ["policy", "property_fact"].includes(task.type)
@@ -113,10 +103,9 @@ function selectCapabilityDefinition(task, entity) {
     return semanticDetailDefinition;
   }
   const entitySpecific = entity.canonicalId && getCapabilityDefinition(entity.canonicalId);
-  if (entitySpecific && (
-    definitionMatches(entitySpecific, task, entity)
-    || resolvedStandalonePropertyFactMatches(entitySpecific, task, entity)
-  )) return entitySpecific;
+  if (entitySpecific && definitionMatches(entitySpecific, task, entity)) {
+    return entitySpecific;
+  }
   const matches = Object.values(CAPABILITY_REGISTRY)
     .filter((definition) => definition.acceptedCandidateTypes.includes(definition.capability))
     .filter((definition) => definitionMatches(definition, task, entity));

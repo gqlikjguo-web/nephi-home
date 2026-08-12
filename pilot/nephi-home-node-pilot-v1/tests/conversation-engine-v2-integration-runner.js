@@ -390,7 +390,7 @@ function latestConditions(result) {
   const groundedPlanner = { classify: async () => ({
     schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-    tasks: [{ taskId: "parking", type: "policy", sourceText: "有車位嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "policy", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, confidence: 0.99 }],
+    tasks: [{ taskId: "parking", type: "property_fact", sourceText: "有車位嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, confidence: 0.99 }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "known_fact"
   }) };
   const groundedDiagnostics = [];
@@ -398,18 +398,13 @@ function latestConditions(result) {
   const groundedReply = await groundedEngine.process({ customerId: "p1", channelId: "c1", lineUserId: "grounded", eventId: "grounded", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "有車位嗎？" });
   assert.equal(groundedReply.replyText, "有一個停車位");
   const groundedSemanticTrace = groundedDiagnostics.find((item) => item.stage === "semantic_contract");
-  const groundedCanonicalTrace = groundedDiagnostics.find((item) => item.stage === "canonical_request");
-  assert.equal(Array.isArray(groundedSemanticTrace.repairProvenance), true, "semantic compiler repair must emit opaque provenance");
-  assert.equal(groundedSemanticTrace.repairProvenance.length, 1);
-  assert.equal(groundedSemanticTrace.repairProvenance[0].kind, "semantic_repair");
-  assert.match(groundedSemanticTrace.repairProvenance[0].correlationId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
-  assert.equal(groundedCanonicalTrace.items[0].repairCorrelationId, groundedSemanticTrace.repairProvenance[0].correlationId, "semantic repair and canonical evidence must share one opaque ID");
+  assert.equal(Object.hasOwn(groundedSemanticTrace, "repairProvenance"), false, "a structurally valid Planner task must not need source-derived semantic repair");
   const groundedSafeDiagnostics = groundedDiagnostics.map(formatSafeTestOnlyConversationTrace).filter(Boolean);
   const groundedSafeValidation = groundedSafeDiagnostics.find((item) => item.stage === "validation");
   const groundedSafeSemantic = groundedSafeDiagnostics.find((item) => item.stage === "semantic_contract");
   assert.deepEqual(groundedSafeValidation.repairProvenance, groundedSemanticTrace.repairProvenance, "validation must retain the semantic repair join in the safe trace");
   assert.equal(Object.hasOwn(groundedSafeSemantic, "repairProvenance"), false, "semantic repair provenance must have exactly one authoritative safe stage");
-  assert.equal(groundedSafeDiagnostics.filter((item) => Array.isArray(item.repairProvenance)).length, 1, "engine-to-server projection must not duplicate semantic repair correlation IDs");
+  assert.equal(groundedSafeDiagnostics.filter((item) => Array.isArray(item.repairProvenance)).length, 0, "no semantic repair ledger is projected when no repair occurred");
   assert.equal(Object.hasOwn(groundedReply.taskResults[0], "repairCorrelationId"), false, "diagnostic provenance must not enter product task results");
   assert.equal(groundedDiagnostics.find((item) => item.stage === "composer").composerSource, "openai");
   assert.equal(groundedDiagnostics.find((item) => item.stage === "composer").fallbackOccurred, false);
@@ -418,7 +413,7 @@ function latestConditions(result) {
     const parkingPlanner = { classify: async () => ({
       schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
       stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-      tasks: [{ taskId: "parking", type: "availability", sourceText: question, requestedOutputs: ["availability", "policy"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "停車", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }],
+      tasks: [{ taskId: "parking", type: "amenity", sourceText: question, requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "停車", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }],
       ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "parking_question"
     }) };
     const parkingEngine = new ConversationEngineV2({
@@ -438,7 +433,7 @@ function latestConditions(result) {
   const parkingUnknownPlanner = { classify: async () => ({
     schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
     stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-    tasks: [{ taskId: "parking", type: "availability", sourceText: "有車位嗎？", requestedOutputs: ["availability"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }],
+    tasks: [{ taskId: "parking", type: "amenity", sourceText: "有車位嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "parking_unknown"
   }) };
   const propertyWithoutParkingFact = { ...property, commonAnswers: {}, semanticCatalog: { aliases: { parking: ["車位"] }, amenities: [] } };
@@ -474,7 +469,7 @@ function latestConditions(result) {
     return { result, diagnostics, composerCalls };
   }
 
-  const parkingTask = { taskId: "parking", type: "availability", sourceText: "有車位嗎？", requestedOutputs: ["availability"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 };
+  const parkingTask = { taskId: "parking", type: "amenity", sourceText: "有車位嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 };
   const mixedUnknown = await runMixedResult({
     id: "mixed-unknown", messageText: "有車位嗎？未知問題",
     tasks: [parkingTask, { taskId: "unknown", type: "unknown", sourceText: "未知問題", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "other", rawText: "未知問題", canonicalCandidate: null, confidence: 0.9 }, stayCandidate: null, confidence: 0.9 }]
@@ -523,7 +518,7 @@ function latestConditions(result) {
     stay: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: 1, guestCountCandidate: null },
     tasks: [
       { taskId: "availability", type: "availability", sourceText: "8/6 有雙人房嗎？", requestedOutputs: ["room_options", "availability"], dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: null, confidence: 0.95 }, stayCandidate: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: 1, guestCountCandidate: null }, confidence: 0.95 },
-      { taskId: "parking", type: "availability", sourceText: "有車位嗎？", requestedOutputs: ["availability", "policy"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 },
+      { taskId: "parking", type: "amenity", sourceText: "有車位嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 },
       { taskId: "bbq", type: "policy", sourceText: "可以烤肉嗎？", requestedOutputs: ["policy"], dependsOnStayContext: false, entity: { category: "policy", rawText: "烤肉", canonicalCandidate: "bbq", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }
     ], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "multi_task"
   }) };

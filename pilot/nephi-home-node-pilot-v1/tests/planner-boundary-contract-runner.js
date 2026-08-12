@@ -25,10 +25,15 @@ const planner = (overrides = {}) => ({
 });
 
 const pendingBundle = state([task()]);
-const slotOnly = decideContextExecutionV3({ state: pendingBundle, plannerTasks: [planner()], now: NOW });
-assert.equal(slotOnly.executionItems[0].task.type, "price", "slot-only availability candidate must resume pending pricing");
-assert.equal(slotOnly.executionItems[0].task.entity.canonicalCandidate, "whole", "slot-only candidate must preserve pending bundle product");
-assert.equal(slotOnly.contextDecision.reasonCode, "unique_pending_slot_update");
+const slotOnly = decideContextExecutionV3({
+  state: pendingBundle,
+  relations: [{ candidateIndex: 0, stateAction: "continue", requestCycleId: "pricing", reasonCode: "planner_structured_context_continue" }],
+  plannerTasks: [planner()],
+  now: NOW
+});
+assert.equal(slotOnly.executionItems[0].task.type, "price", "a structured continue relation must resume pending pricing");
+assert.equal(slotOnly.executionItems[0].task.entity.canonicalCandidate, "whole", "a structured continue relation must preserve pending bundle product");
+assert.equal(slotOnly.contextDecision.reasonCode, "planner_structured_context_continue");
 
 const explicitNew = decideContextExecutionV3({ state: pendingBundle, catalog, plannerTasks: [planner({ sourceText: "new availability", entity: { category: "room", rawText: "new room", canonicalCandidate: "room", confidence: 0.9 } })], now: NOW });
 assert.equal(explicitNew.executionItems[0].task.type, "availability", "explicit new task must not be locked to pending pricing");

@@ -76,6 +76,8 @@ function plan({
   taskValue,
   stayValue = stay(),
   relation = "new_request",
+  relationKind = relation,
+  requestCycleRefs = [],
   missingInformation = []
 }) {
   return {
@@ -89,8 +91,8 @@ function plan({
     tasks: [taskValue],
     contextRelationCandidates: [{
       candidateIndex: 0,
-      kind: relation,
-      candidateRequestCycleRefs: [],
+      kind: relationKind,
+      candidateRequestCycleRefs: requestCycleRefs,
       evidenceRefs: [{
         eventId: "",
         messageRef: "",
@@ -305,6 +307,9 @@ async function pricingFollowupGap() {
     }),
     plan({
       message: secondMessage,
+      relation: "continue",
+      relationKind: "supplement_existing",
+      requestCycleRefs: ["pricing"],
       taskValue: task({
         taskId: "date-only",
         type: "available_dates",
@@ -503,6 +508,9 @@ async function availabilityThenDate() {
     }),
     plan({
       message: secondMessage,
+      relation: "continue",
+      relationKind: "supplement_existing",
+      requestCycleRefs: ["availability"],
       taskValue: task({
         taskId: "date-slot",
         type: "available_dates",
@@ -531,6 +539,7 @@ async function availabilityThenDate() {
     secondMessage
   ));
   const providerRequest = runtime.resolverCalls[0] || {};
+  if (!second.taskResults[0]) throw new Error(JSON.stringify({ second, diagnostics: runtime.diagnostics }));
   return {
     caseId: "availability_then_date",
     actual: {
@@ -567,6 +576,9 @@ async function bundleThenDate() {
     }),
     plan({
       message: secondMessage,
+      relation: "continue",
+      relationKind: "supplement_existing",
+      requestCycleRefs: ["bundle-availability"],
       taskValue: task({
         taskId: "date-slot",
         type: "available_dates",
@@ -645,6 +657,9 @@ async function capacityThenGuestCount() {
     }),
     plan({
       message: secondMessage,
+      relation: "continue",
+      relationKind: "supplement_existing",
+      requestCycleRefs: ["capacity"],
       taskValue: task({
         taskId: "guest-slot",
         type: "capacity",

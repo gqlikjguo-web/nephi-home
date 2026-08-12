@@ -2074,6 +2074,16 @@ class TestOnlyOpenAiConversationPlanner {
           Object.freeze({ stage: "compile_before", ...semanticCandidateDiagnosticSummary(result.output, input, { raw: true, includeCandidates: true }) })
         ];
         const providerContractOutput = normalizePlannerEvidenceCoordinates(result.output, input.sourceEvents || []);
+        if (Array.isArray(result.output.semanticCandidates) && result.output.semanticCandidates.some((candidate) => (
+          candidate && candidate.coverageStatus === "pending_task"
+          && Array.isArray(candidate.provenanceRelationCandidateIndexes)
+          && candidate.provenanceRelationCandidateIndexes.length === 0
+          && (!Array.isArray(candidate.evidenceRefs) || !candidate.evidenceRefs.length
+            || !candidate.evidenceRefs.every((ref) => evidenceMatchesSource(ref, sourceEventMaps(input.sourceEvents || []))))
+          && (result.output.tasks || []).some((task) => compatibleSemanticCapability(task && task.type, candidate.capability))
+        ))) {
+          providerContractOutput.semanticCandidates = providerContractOutput.semanticCandidates.filter((candidate) => candidate.coverageStatus !== "pending_task");
+        }
         const compiledOutput = compileSemanticCandidates(providerContractOutput, input);
         semanticLedgerBoundaries.push(Object.freeze({ stage: "compile_after", ...semanticCandidateDiagnosticSummary(compiledOutput, input, { includeCandidates: true, originOutput: providerContractOutput }) }));
         const sanitized = sanitizePlannerTaskCollection(compiledOutput, input);

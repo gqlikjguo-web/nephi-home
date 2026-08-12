@@ -134,9 +134,9 @@ const CASES = Object.freeze([
       },
       {
         taskId: "parking",
-        type: "availability",
+        type: "amenity",
         sourceText: "有車位嗎？",
-        requestedOutputs: ["availability", "policy"],
+        requestedOutputs: ["answer"],
         dependsOnStayContext: false,
         entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 },
         stayCandidate: null

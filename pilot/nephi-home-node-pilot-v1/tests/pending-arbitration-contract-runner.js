@@ -78,6 +78,7 @@ function plan(tasks, options = {}) {
     );
   }
   return {
+    _contextRequestCycleRefs: options.contextRequestCycleRefs || [],
     schemaVersion: 2,
     discourse: { relation: options.relation || "new_request", confidence: 0.99 },
     stateOperations,
@@ -99,11 +100,13 @@ function plan(tasks, options = {}) {
 
 function bindPlanToSource(output, sourceEvents) {
   const source = sourceEvents[0];
+  const contextRequestCycleRefs = output._contextRequestCycleRefs || [];
+  delete output._contextRequestCycleRefs;
   output.tasks = output.tasks.map((item, index) => ({ ...item, candidateIndex: index, stayCandidate: item.dependsOnStayContext ? { ...output.stay } : null }));
   output.contextRelationCandidates = output.tasks.map((item) => ({
     candidateIndex: item.candidateIndex,
     kind: item.type === "unknown" ? "relation_uncertain" : output.discourse.relation === "modify" ? "modify_existing" : ["continue", "answer_clarification"].includes(output.discourse.relation) ? "supplement_existing" : output.discourse.relation === "acknowledgement" ? "relation_uncertain" : "new_request",
-    candidateRequestCycleRefs: [],
+    candidateRequestCycleRefs: contextRequestCycleRefs,
     evidenceRefs: [{ eventId: source.eventId, messageRef: source.messageRef || "", startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
   }));
   return migrateFakePlannerOutput(output);
@@ -226,12 +229,14 @@ async function testRemainingFieldsAndCompletion() {
   persistence.setConversationState(property.propertyId, "line-binding:test", "same-user", pendingState(pending, conditions));
   const runtime = engineFor([
     plan([task("available_dates", "nights-candidate", { sourceText: "two nights" })], {
-      relation: "new_request",
+      relation: "continue",
+      contextRequestCycleRefs: ["original-availability"],
       nights: 2
     })
   ], { persistence });
 
   const complete = await runtime.engine.process(input("remaining-nights", "two nights"));
+  assert.ok(complete.taskResults[0], JSON.stringify({ complete, diagnostics: runtime.diagnostics }));
   assert.equal(complete.taskResults[0].type, "availability");
   assert.equal(complete.taskResults[0].status, "answered", JSON.stringify(complete));
   assert.equal(runtime.calls.availability[0].checkIn, "2026-07-24");
@@ -249,7 +254,7 @@ async function testSharedSlotContract() {
       capability: "availability",
       conditions: { stay: { checkIn: "2026-07-24" } },
       message: "two nights",
-      plan: plan([task("available_dates", "nights-candidate", { sourceText: "two nights" })], { relation: "new_request", nights: 2 }),
+      plan: plan([task("available_dates", "nights-candidate", { sourceText: "two nights" })], { relation: "continue", contextRequestCycleRefs: ["original-availability"], nights: 2 }),
       assertState: (state) => assert.equal(state.tasks.some((entry) => entry.checkOut === "2026-07-26"), true)
     },
     {
@@ -257,7 +262,7 @@ async function testSharedSlotContract() {
       capability: "capacity",
       conditions: { stay: { checkIn: "2026-07-24", checkOut: "2026-07-25", nights: 1 } },
       message: "2 guests",
-      plan: plan([task("capacity", "guests-candidate", { sourceText: "2 guests" })], { relation: "new_request", guests: 2 }),
+      plan: plan([task("capacity", "guests-candidate", { sourceText: "2 guests" })], { relation: "continue", contextRequestCycleRefs: ["original-availability"], guests: 2 }),
       expectedType: "capacity",
       expectedAvailabilityCalls: 1,
       assertState: (state) => assert.equal(state.tasks.some((entry) => entry.guestCount === 2), true)
@@ -267,7 +272,7 @@ async function testSharedSlotContract() {
       capability: "availability",
       conditions: {},
       message: "the double room",
-      plan: plan([task("available_dates", "room-candidate", { sourceText: "the double room", entity: { category: "room", rawText: "double room", canonicalCandidate: "room_double", confidence: 0.99 } })], { relation: "new_request", roomId: "room_double" }),
+      plan: plan([task("available_dates", "room-candidate", { sourceText: "the double room", entity: { category: "room", rawText: "double room", canonicalCandidate: "room_double", confidence: 0.99 } })], { relation: "continue", contextRequestCycleRefs: ["original-availability"], roomId: "room_double" }),
       expectedType: "availability",
       expectedAvailabilityCalls: 0,
       assertState: (state) => assert.equal(state.tasks.some((entry) => entry.productId === "room_double"), true)
@@ -339,8 +344,8 @@ async function testAcknowledgementAndIndependentTasks() {
       shouldIgnore: true
     }),
     plan([task("amenity", "parking", { rawText: "parking", canonicalCandidate: "parking" })], {
-      relation: "acknowledgement",
-      shouldIgnore: true
+      relation: "new_request",
+      shouldIgnore: false
     })
   ], { persistence: acknowledgementPersistence });
   const ignored = await acknowledgementRuntime.engine.process(input("ack-only", "thanks"));
@@ -475,7 +480,8 @@ async function testProductionRoute() {
   const plannerOutputs = [
     plan([task("availability", "route-availability")], { missingInformation: ["stay.checkIn"] }),
     plan([task("available_dates", "route-date-candidate", { sourceText: "7/24" })], {
-      relation: "new_request",
+      relation: "continue",
+      contextRequestCycleRefs: ["route-availability"],
       dateText: "7/24",
       dateKind: "absolute",
       checkInCandidate: "2026-07-24",

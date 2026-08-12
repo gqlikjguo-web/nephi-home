@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const {
   resolveCanonicalTemporal
@@ -176,7 +178,10 @@ assert.equal(ambiguous.expressionType, "ambiguous");
 assert.equal(ambiguous.checkIn, null);
 assert.equal(ambiguous.checkOut, null);
 assert.equal(ambiguous.resolutionSource, "canonical_temporal_grammar");
-assert.equal(ambiguous.repairReasonCode, "temporal_expression_ambiguous");
+assert.equal(ambiguous.repairReasonCode, "temporal_expression_unrecognized");
+
+const temporalSource = fs.readFileSync(path.join(__dirname, "../lib/conversation-engine-v2/temporal-resolver.js"), "utf8");
+assert.doesNotMatch(temporalSource, /下次\.\*有空\.\*週末/u, "controlled temporal grammar must not contain a full-phrase semantic patch");
 
 const past = resolveCanonicalTemporal({
   guestMessage: "7/26 有房嗎？",

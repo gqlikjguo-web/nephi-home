@@ -33,7 +33,7 @@ function plannerOutputUnchecked({ sourceEvents, currentMessage }) {
   }
   if (currentMessage === "2026-08-06") {
     const task = planTask({ taskId: "date-slot", type: "availability", sourceText: currentMessage, dependsOnStayContext: true, stayCandidate: stay("2026-08-06") });
-    return { ...base, tasks: [task], stay: stay("2026-08-06"), contextRelationCandidates: [relation(source)] };
+    return { ...base, discourse: { relation: "continue", confidence: 0.99 }, tasks: [task], stay: stay("2026-08-06"), contextRelationCandidates: [relation(source, "supplement_existing", ["availability"])] };
   }
   if (currentMessage === "parking") {
     const task = planTask({ taskId: "parking", type: "amenity", sourceText: currentMessage, dependsOnStayContext: false, canonicalCandidate: "parking", category: "amenity" });

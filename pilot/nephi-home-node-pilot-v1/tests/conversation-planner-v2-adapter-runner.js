@@ -1440,7 +1440,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const blankRawResult = await blankRawPlanner.classify(blankRawInput);
   assert.equal(blankRawCalls, 1, "a verified formal subject that Semantic Contract can normalize must not trigger a duplicate repair sibling");
   const blankRawSemantic = applyPlannerSemanticContract(blankRawResult, { catalog: coverageCatalog, sourceEvents: blankRawInput.sourceEvents });
-  assert.notEqual(blankRawSemantic.tasks[0].type, "price", "the malformed stateful shape must normalize to the formal property subject without inventing lodging price");
+  assert.equal(blankRawSemantic.tasks[0].type, "price", "semantic core must preserve the Planner capability rather than reinterpret source wording");
   assert.equal(blankRawSemantic.tasks[0].entity.canonicalCandidate, "pool");
   const missingTaskDate = JSON.parse(JSON.stringify(omittedPool));
   missingTaskDate.tasks[0] = { ...missingTaskDate.tasks[0], sourceText: "7/20想問價格" };
