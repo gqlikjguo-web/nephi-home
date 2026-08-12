@@ -598,7 +598,7 @@ function latestConditions(result) {
   assert.equal(multiTask.claimValidation.ok, true);
   assert.deepEqual(multiTask.claimValidation.missingTaskIds, []);
 
-  function temporalPlanner({ message, operations = [], tasks, nightsCandidate = null, guestCountCandidate = null, missingInformation = [] }) {
+  function temporalPlanner({ message, operations = [], tasks, semanticCandidates, nightsCandidate = null, guestCountCandidate = null, missingInformation = [] }) {
     const operationValues = new Map(operations.filter((item) => item && item.operation !== "clear").map((item) => [item.field, item.value]));
     const dateExpression = {
       rawText: operationValues.get("stay.dateExpression.rawText") || "",
@@ -632,6 +632,7 @@ function latestConditions(result) {
       stateOperations: [],
       stay,
       tasks: scopedTasks,
+      ...(Array.isArray(semanticCandidates) ? { semanticCandidates } : {}),
       ambiguities: [], missingInformation, needsHuman: false, shouldIgnore: false, reason: "temporal_flow"
     }) };
   }
@@ -658,11 +659,17 @@ function latestConditions(result) {
 
   let uncertainGuestAvailabilityCalls = 0;
   const uncertainGuestMessage = "8/14-8/15 人數大概6-8人";
+  const uncertainGuestScopeId = "80000000-0000-4000-8000-000000000019";
+  const uncertainAvailabilityCandidateId = "81000000-0000-4000-8000-000000000019";
+  const uncertainCapacityCandidateId = "82000000-0000-4000-8000-000000000019";
+  const uncertainGuestScope = { scopeId: uncertainGuestScopeId, bundleCanonicalCandidate: null, roomCanonicalCandidates: [], guestCountCandidate: 7 };
   const uncertainGuest = await runTemporal(uncertainGuestMessage, temporalPlanner({
     message: uncertainGuestMessage,
     operations: dateOperations("8/14-8/15", "range", { checkInCandidate: "2026-08-14" }),
     tasks: [{
       taskId: "uncertain-guest-availability",
+      semanticCandidateIds: [uncertainAvailabilityCandidateId],
+      lodgingScopeId: uncertainGuestScopeId,
       type: "availability",
       sourceText: uncertainGuestMessage,
       requestedOutputs: ["availability"],
@@ -676,15 +683,38 @@ function latestConditions(result) {
         guestCountCandidate: 7
       },
       confidence: 0.98
+    }, {
+      taskId: "uncertain-guest-capacity",
+      semanticCandidateIds: [uncertainCapacityCandidateId],
+      lodgingScopeId: uncertainGuestScopeId,
+      type: "capacity",
+      sourceText: uncertainGuestMessage,
+      detailIntent: "quantity",
+      requestedOutputs: ["answer"],
+      dependsOnStayContext: true,
+      entity: { category: "room", rawText: "房型", canonicalCandidate: null, confidence: 0.98 },
+      stayCandidate: {
+        dateExpression: { rawText: "8/14-8/15", kind: "range", anchor: "message_time" },
+        checkInCandidate: "2026-08-14",
+        checkOutCandidate: "2026-08-15",
+        nightsCandidate: 1,
+        guestCountCandidate: 7
+      },
+      confidence: 0.98
     }],
+    semanticCandidates: [
+      { candidateId: uncertainAvailabilityCandidateId, semanticKind: "capability", capability: "availability", canonicalIdentityCandidate: null, evidenceRefs: [], lodgingScopeCandidate: uncertainGuestScope, temporalSemanticCandidate: null, propertyCatalogIdentity: null },
+      { candidateId: uncertainCapacityCandidateId, semanticKind: "capability", capability: "capacity", canonicalIdentityCandidate: null, evidenceRefs: [], lodgingScopeCandidate: uncertainGuestScope, temporalSemanticCandidate: null, propertyCatalogIdentity: null }
+    ],
     missingInformation: ["exact guest count"]
   }), "uncertain-guest-count", Date.parse("2026-07-17T10:00:00+08:00"), (query) => {
     uncertainGuestAvailabilityCalls += 1;
     return temporalAvailabilityResolver(query);
   });
   assert.equal(uncertainGuest.finalDecision.action, "clarification", "an explicitly uncertain guest count must clarify");
-  assert.equal(uncertainGuest.taskResults[0].status, "needs_clarification");
-  assert.deepEqual(uncertainGuest.taskResults[0].missingInputs, ["guestCount"]);
+  const uncertainAvailability = uncertainGuest.taskResults.find((item) => item.taskId === "uncertain-guest-availability");
+  assert.equal(uncertainAvailability.status, "needs_clarification");
+  assert.deepEqual(uncertainAvailability.missingInputs, ["guestCount"]);
   assert.equal(uncertainGuestAvailabilityCalls, 0, "an explicitly uncertain guest count must not execute availability");
 
   const multiDateTasks = [

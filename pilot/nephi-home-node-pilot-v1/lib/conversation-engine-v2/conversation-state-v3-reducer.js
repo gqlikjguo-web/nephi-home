@@ -366,7 +366,7 @@ function decideContextExecutionV3({
   const executionItems = plannerTasks.flatMap((task) => {
     const relation = relationByCandidate.get(task.candidateIndex);
     if (relation && relation.stateAction === "end") return [];
-    if (relation && relation.stateAction === "continue") {
+    if (relation && ["continue", "replace"].includes(relation.stateAction)) {
       const target = state.tasks.find(
         (candidate) => candidate.taskId === relation.requestCycleId
           && currentTask(candidate, now)
@@ -380,12 +380,19 @@ function decideContextExecutionV3({
             ? { productType: "room_type", productId: target.productId, roomTypeId: target.roomTypeId, bundleId: null }
             : { productType: "any", productId: null, roomTypeId: null, bundleId: null };
         resumedPending = resumedPending || PENDING_STATUSES.has(target.status);
+        const contextTask = plannerTaskFromState(target, task);
         return [{
           candidateIndex: task.candidateIndex,
           requestCycleId: target.taskId,
-          task: plannerTaskFromState(target, task),
+          task: relation.stateAction === "replace"
+            ? { ...contextTask, type: "booking_request", dependsOnStayContext: false }
+            : contextTask,
           transition: {
-            reasonCode: relation.reasonCode || "continue_existing_task",
+            reasonCode: relation.reasonCode || (
+              relation.stateAction === "replace"
+                ? "replace_existing_task"
+                : "continue_existing_task"
+            ),
             contextTask: target,
             approvedProduct: currentProduct.productType === "any" ? contextProduct : currentProduct,
             slotSources: {

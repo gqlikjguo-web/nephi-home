@@ -1080,17 +1080,31 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     return task;
   });
   let guestCountCertaintyAligned = false;
-  if (tasks.length === 1
-    && value.stay && value.stay.guestCountCandidate === null
-    && Array.isArray(value.missingInformation) && value.missingInformation.length > 0
-    && tasks[0] && tasks[0].dependsOnStayContext === true
-    && tasks[0].stayCandidate && Number.isInteger(tasks[0].stayCandidate.guestCountCandidate)) {
-    tasks[0] = {
-      ...tasks[0],
-      stayCandidate: { ...tasks[0].stayCandidate, guestCountCandidate: null }
-    };
-    guestCountCertaintyAligned = true;
-    repairedTasks.push({ taskId: tasks[0].taskId, index: 0, reason: "guest_count_certainty_alignment" });
+  const guestCountCertaintyAlignedTaskIndexes = new Set();
+  if (value.stay && value.stay.guestCountCandidate === null
+    && Array.isArray(value.missingInformation) && value.missingInformation.length > 0) {
+    const stayTaskGroups = new Map();
+    tasks.forEach((task, index) => {
+      if (!task || task.dependsOnStayContext !== true || !task.stayCandidate) return;
+      const scopeId = String(task.lodgingScopeId || "");
+      const groupId = scopeId || (tasks.length === 1 ? "single_stay_task" : "");
+      if (!groupId) return;
+      const group = stayTaskGroups.get(groupId) || [];
+      group.push({ task, index });
+      stayTaskGroups.set(groupId, group);
+    });
+    for (const group of stayTaskGroups.values()) {
+      if (!group.some(({ task }) => Number.isInteger(task.stayCandidate.guestCountCandidate))) continue;
+      for (const { task, index } of group) {
+        tasks[index] = {
+          ...task,
+          stayCandidate: { ...task.stayCandidate, guestCountCandidate: null }
+        };
+        repairedTasks.push({ taskId: task.taskId, index, reason: "guest_count_certainty_alignment" });
+        guestCountCertaintyAlignedTaskIndexes.add(index);
+      }
+      guestCountCertaintyAligned = true;
+    }
   }
   const acknowledgementWithActionableTask = value.discourse
     && value.discourse.relation === "acknowledgement"
@@ -1146,7 +1160,11 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
   }
   const { isolatedTaskIndexes: _isolatedTaskIndexes, ...contractValue } = value;
   const ownedGuestCandidateIds = guestCountCertaintyAligned
-    ? new Set(Array.isArray(tasks[0].semanticCandidateIds) ? tasks[0].semanticCandidateIds.map(String) : [])
+    ? new Set([...guestCountCertaintyAlignedTaskIndexes].flatMap((index) => (
+      Array.isArray(tasks[index] && tasks[index].semanticCandidateIds)
+        ? tasks[index].semanticCandidateIds.map(String)
+        : []
+    )))
     : new Set();
   const semanticCandidates = (Array.isArray(value.semanticCandidates) ? value.semanticCandidates : []).map((candidate) => {
     if (!guestCountCertaintyAligned || !ownedGuestCandidateIds.has(String(candidate && candidate.candidateId || ""))

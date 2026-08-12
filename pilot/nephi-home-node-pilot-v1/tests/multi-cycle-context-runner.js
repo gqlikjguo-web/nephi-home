@@ -12,6 +12,7 @@ const {
   createConversationTaskV3,
   readConversationStateV3
 } = require("../lib/conversation-contracts/conversation-state-v3");
+const { decideContextExecutionV3 } = require("../lib/conversation-engine-v2/conversation-state-v3-reducer");
 const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const scope = { propertyId: "multi-property", channelId: "multi-channel", lineUserId: "multi-user", now: "2026-07-24T00:00:00.000Z", eventId: "multi-event" };
@@ -29,6 +30,75 @@ function legacyState() {
 }
 
 function clone(value) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
+
+function replaceExecutionAuthorityCoverage() {
+  const now = "2026-08-12T00:00:00.000Z";
+  const requestCycleId = "existing-availability-cycle";
+  const state = {
+    schemaVersion: 3,
+    scope: { propertyId: "multi-property", channel: "multi-channel", userId: "multi-user" },
+    revision: 1,
+    tasks: [{
+      taskId: requestCycleId,
+      taskType: "availability",
+      status: "answered",
+      productType: "bundle",
+      productId: "bundle-all",
+      bundleId: "bundle-all",
+      checkIn: "2026-08-27",
+      checkOut: "2026-08-28",
+      guestCount: 5,
+      entityId: "bundle-all",
+      entityCategory: "bundle",
+      detailIntent: "general",
+      knownFields: ["checkIn", "checkOut", "guestCount", "productId"],
+      missingFields: [],
+      createdAt: "2026-08-11T00:00:00.000Z",
+      updatedAt: "2026-08-11T00:00:00.000Z",
+      expiresAt: "2026-08-13T00:00:00.000Z"
+    }],
+    createdAt: "2026-08-11T00:00:00.000Z",
+    updatedAt: now,
+    expiresAt: "2026-08-13T00:00:00.000Z"
+  };
+  const catalog = { timezone: "Asia/Taipei", rooms: [], bundles: [{ canonicalId: "bundle-all", memberRoomIds: [] }] };
+  const replacements = [
+    { taskId: "modify-stay-dates", sourceText: "可以改成8/18-8/19嗎", rawText: "8/18-8/19", kind: "range", checkInCandidate: "2026-08-18", checkOutCandidate: "2026-08-19", nightsCandidate: 1 },
+    { taskId: "modify-check-in-date", sourceText: "我改成8/18入住", rawText: "8/18", kind: "absolute", checkInCandidate: "2026-08-18", checkOutCandidate: null, nightsCandidate: null }
+  ];
+  for (const replacement of replacements) {
+    const plannerTask = {
+      candidateIndex: 0,
+      taskId: replacement.taskId,
+      type: "availability",
+      sourceText: replacement.sourceText,
+      detailIntent: "time",
+      requestedOutputs: ["answer"],
+      dependsOnStayContext: true,
+      entity: { category: "other", rawText: "修改日期", canonicalCandidate: null, confidence: 1 },
+      stayCandidate: {
+        dateExpression: { rawText: replacement.rawText, kind: replacement.kind, anchor: "message_time" },
+        checkInCandidate: replacement.checkInCandidate,
+        checkOutCandidate: replacement.checkOutCandidate,
+        nightsCandidate: replacement.nightsCandidate,
+        guestCountCandidate: null
+      },
+      confidence: 1
+    };
+    const execution = decideContextExecutionV3({
+      state,
+      relations: [{ candidateIndex: 0, relationKind: "modify_existing", stateAction: "replace", requestCycleId, reasonCode: "replace", evidenceRefs: [] }],
+      plannerTasks: [plannerTask],
+      catalog,
+      now
+    });
+    const item = execution.executionItems[0];
+    assert.notEqual(item.transition.reasonCode, "new_task", "verified replace must not degrade to a new task");
+    assert.equal(item.transition.contextTask.taskId, requestCycleId, "verified replace must preserve existing-request context authority");
+    assert.equal(item.requestCycleId, requestCycleId, "verified replace must retain the referenced request cycle identity");
+    assert.equal(item.task.type, "booking_request", "verified replacement of an existing request must retain handoff authority");
+  }
+}
 function projectStateForLegacyAssertions(state) {
   const projected = clone(state);
   if (!projected || projected.schemaVersion !== 3) return projected;
@@ -620,6 +690,7 @@ async function main() {
   await explicitStayCandidateContractCoverage();
   await perCandidateConditionsCoverage();
   await engineEndToEndCoverage();
+  replaceExecutionAuthorityCoverage();
 
   console.log("multi-cycle context: PASS");
 }
