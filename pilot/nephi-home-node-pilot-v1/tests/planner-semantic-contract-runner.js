@@ -1236,20 +1236,13 @@ function main() {
     };
   }, "tasks representing the same semantic lodging unit must not be normalized");
 
-  const bundleCatalog = buildPropertyCatalog({
-    propertyId: "bundle-contract", displayName: "Bundle Contract", timezone: "Asia/Taipei",
-    rooms: [{ id: "whole-house", inventoryType: "bundle", publicDisplayName: "12人包棟", capacity: 12, memberRoomIds: [], enabled: true }]
-  });
-  const customBundle = task({ taskId: "custom-bundle", type: "bundle_availability", category: "bundle", rawText: "四人包棟", sourceText: "四人包棟，開兩間房", canonicalCandidate: "whole-house", requestedOutputs: ["bundle_availability"], dependsOnStayContext: true, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: 4 } });
-  const customBundleResult = applyPlannerSemanticContract(plan([customBundle]), { catalog: bundleCatalog });
-  assert.equal(customBundleResult.tasks[0].type, "unknown", "an explicitly custom lodging composition must not be coerced to a differently named formal bundle");
-  const exactBundle = { ...customBundle, taskId: "exact-bundle", sourceText: "12人包棟", entity: { ...customBundle.entity, rawText: "12人包棟" }, stayCandidate: { ...customBundle.stayCandidate, guestCountCandidate: 8 } };
-  assert.equal(applyPlannerSemanticContract(plan([exactBundle]), { catalog: bundleCatalog }).tasks[0].type, "bundle_availability", "a catalog-exact formal bundle request remains executable even below maximum capacity");
-
-  const bookingAction = task({ taskId: "booking-action", type: "availability", category: "room", rawText: "雙人房", sourceText: "我想預訂雙人房", canonicalCandidate: null, dependsOnStayContext: true, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: 2 } });
-  assert.equal(applyPlannerSemanticContract(plan([bookingAction])).tasks[0].type, "booking_request", "an explicit booking action must retain mandatory handoff authority");
-  const availabilityQuestion = { ...bookingAction, taskId: "availability-question", sourceText: "雙人房可以預訂嗎", entity: { ...bookingAction.entity, rawText: "雙人房" } };
-  assert.equal(applyPlannerSemanticContract(plan([availabilityQuestion])).tasks[0].type, "availability", "an availability question must not be promoted to a booking action");
+  const mixedAvailability = task({ taskId: "mixed-availability", type: "availability", category: "room", rawText: "雙人房", sourceText: "我想預訂雙人房，也請先確認房況", canonicalCandidate: null, requestedOutputs: ["availability"], dependsOnStayContext: true, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: 2 } });
+  const mixedBooking = { ...task({ taskId: "mixed-booking", type: "booking_request", category: "other", rawText: "", sourceText: "我想預訂雙人房，也請先確認房況", requestedOutputs: ["handoff"] }), candidateIndex: 1 };
+  const mixedBookingResult = applyPlannerSemanticContract(plan([mixedAvailability, mixedBooking]));
+  assert.deepEqual(mixedBookingResult.tasks.map((item) => item.type), ["availability", "booking_request"], "a booking action must not replace an independently verifiable availability task");
+  assert.deepEqual(mixedBookingResult.tasks.map((item) => item.requestedOutputs), [["availability"], ["handoff"]], "mixed booking must retain both the formal-data answer and mandatory handoff authority");
+  const availabilityOnly = { ...mixedAvailability, taskId: "availability-only", sourceText: "請確認雙人房房況" };
+  assert.equal(applyPlannerSemanticContract(plan([availabilityOnly])).tasks[0].type, "availability", "ordinary availability remains executable without a booking task");
 
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));

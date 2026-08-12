@@ -47,36 +47,6 @@ const PLANNER_OPERATION_PATHS = new Set([
 function confidence(value) { return typeof value === "number" && value >= 0 && value <= 1; }
 function text(value, limit = 500) { return typeof value === "string" && value.length <= limit; }
 function normalizedText(value) { return String(value || "").normalize("NFKC").trim().toLocaleLowerCase("zh-TW"); }
-function chineseCardinal(value) {
-  if (/^\d{1,3}$/u.test(value)) return Number(value);
-  const digits = { "一": 1, "二": 2, "兩": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9 };
-  if (value === "十") return 10;
-  if (value.includes("十")) {
-    const [tens, ones] = value.split("十");
-    return (tens ? digits[tens] : 1) * 10 + (ones ? digits[ones] : 0);
-  }
-  return digits[value] || null;
-}
-function explicitBundleLabelCount(value) {
-  const match = String(value || "").match(/([0-9]{1,3}|[一二兩三四五六七八九十]{1,3})\s*人\s*包棟/u);
-  return match ? chineseCardinal(match[1]) : null;
-}
-function conflictsWithFormalBundleLabel(task, catalog) {
-  const entity = task && task.entity;
-  if (!catalog || !entity || entity.category !== "bundle" || !entity.canonicalCandidate) return false;
-  const requestedCount = explicitBundleLabelCount(entity.rawText);
-  if (!requestedCount) return false;
-  const bundle = (catalog.rooms || []).find((item) => item && item.category === "bundle" && item.canonicalId === entity.canonicalCandidate);
-  if (!bundle) return true;
-  const formalCounts = [bundle.publicName, ...(bundle.aliases || [])].map(explicitBundleLabelCount).filter(Number.isInteger);
-  return formalCounts.length === 0 || !formalCounts.includes(requestedCount);
-}
-function isExplicitBookingAction(task) {
-  if (!task || !["availability", "bundle_availability", "room_options"].includes(task.type)) return false;
-  const source = String(task.sourceText || "").normalize("NFC");
-  return /(?:我|我們)?(?:想|要|希望|請|麻煩)(?:直接|現在|幫我|替我)?(?:預訂|訂房|下訂)/u.test(source)
-    && !/(?:可以|能否|可否|是否|還能|還可以)(?:預訂|訂房|下訂)/u.test(source);
-}
 function normalizeEligibilityEvidence(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { kind: "none", sourceText: "" };
   const kind = ELIGIBILITY_EVIDENCE_KINDS.has(value.kind) ? value.kind : "none";
@@ -1004,8 +974,6 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     ...taskIdRepairs,
     ...value.isolatedTaskIndexes.map((index) => ({ taskId: value.tasks[index].taskId, index, reason: "merged_unknown_catalog_task_isolation" }))
   ], rejectedTasks = [], repairedRelations = [...relationNormalization.repairs];
-  const mandatoryHandoffTaskIndexes = new Set();
-  const conflictingBundleTaskIndexes = new Set();
   let contextRelationCandidates = value.contextRelationCandidates;
   const formalPropertyIdsByCandidate = new Map(value.tasks.map((task) => [
     task && task.candidateIndex,
@@ -1018,17 +986,6 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     if (!entity) return task;
 
     const verifiedSourceText = verifiedNewRequestEvidence(task, value.contextRelationCandidates, sourceEvents);
-    if (isExplicitBookingAction(task)) {
-      task = { ...task, type: "booking_request", requestedOutputs: ["handoff"], dependsOnStayContext: false, stayCandidate: null, entity: { ...task.entity, category: "other", rawText: "", canonicalCandidate: null } };
-      entity = task.entity;
-      mandatoryHandoffTaskIndexes.add(index);
-      repairedTasks.push({ taskId: task.taskId, index, reason: "explicit_booking_action_handoff_preservation" });
-    } else if (conflictsWithFormalBundleLabel(task, catalog)) {
-      task = { ...task, type: "unknown", detailIntent: "general", requestedOutputs: ["answer"], dependsOnStayContext: false, stayCandidate: null, entity: { ...task.entity, category: "other", rawText: "", canonicalCandidate: null } };
-      entity = task.entity;
-      conflictingBundleTaskIndexes.add(index);
-      rejectedTasks.push({ taskId: task.taskId, index, reason: "formal_bundle_label_conflict" });
-    }
     const sourceBoundFeatureTask = normalizedSourceBoundInventoryFeatureTaskShape(task, value.stay, catalog, verifiedSourceText);
     if (sourceBoundFeatureTask) {
       const sourceBoundFeatureReason = sourceBoundFeatureTask[INVENTORY_SCOPE_REPAIR_REASON];
@@ -1122,18 +1079,6 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     if (!repairedTasks.some((item) => item.index === index) && !rejectedTasks.some((item) => item.index === index)) acceptedTasks.push({ taskId: task.taskId, index });
     return task;
   });
-  const semanticCandidateRepairs = new Map();
-  tasks.forEach((task, index) => {
-    if (!mandatoryHandoffTaskIndexes.has(index) && !conflictingBundleTaskIndexes.has(index)) return;
-    for (const candidateId of task.semanticCandidateIds || []) semanticCandidateRepairs.set(String(candidateId), mandatoryHandoffTaskIndexes.has(index) ? "booking_request" : "unknown");
-  });
-  if (Array.isArray(value.semanticCandidates)) value = {
-    ...value,
-    semanticCandidates: value.semanticCandidates.map((candidate) => {
-      const capability = semanticCandidateRepairs.get(String(candidate && candidate.candidateId || ""));
-      return capability ? { ...candidate, capability, canonicalIdentityCandidate: null, lodgingScopeCandidate: null, temporalSemanticCandidate: null, propertyCatalogIdentity: null } : candidate;
-    })
-  };
   let guestCountCertaintyAligned = false;
   const guestCountCertaintyAlignedTaskIndexes = new Set();
   if (value.stay && value.stay.guestCountCandidate === null

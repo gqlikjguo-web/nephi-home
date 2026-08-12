@@ -135,11 +135,11 @@ function main() {
     catalog: {
       propertyId: "bundle-property",
       rooms: [
-        { canonicalId: "whole-house", inventoryType: "bundle", memberRoomIds: ["room-a", "room-b", "room-c"] },
-        { canonicalId: "room-a", inventoryType: "room" },
-        { canonicalId: "room-b", inventoryType: "room" },
-        { canonicalId: "room-c", inventoryType: "room" },
-        { canonicalId: "unrelated-room", inventoryType: "room" }
+        { canonicalId: "whole-house", inventoryType: "bundle", capacity: 8, memberRoomIds: ["room-a", "room-b", "room-c"] },
+        { canonicalId: "room-a", inventoryType: "room", capacity: 2 },
+        { canonicalId: "room-b", inventoryType: "room", capacity: 2 },
+        { canonicalId: "room-c", inventoryType: "room", capacity: 2 },
+        { canonicalId: "unrelated-room", inventoryType: "room", capacity: 2 }
       ], amenities: [], policies: [], faqs: []
     },
     sourceEvents: [{ eventId: "bundle-event", messageRef: "bundle-message", messageText: bundleMessage }]
@@ -164,6 +164,17 @@ function main() {
   const unifiedBundleScope = compileSemanticCandidates(bundleScopeOutput, bundleInput);
   assert.equal(new Set(unifiedBundleScope.tasks.map((item) => item.lodgingScopeId)).size, 1, "one source-bound bundle request and its catalog-proven member rooms must compile to one logical lodging scope");
   assert.deepEqual(unifiedBundleScope.semanticCandidates[0].lodgingScopeCandidate.roomCanonicalCandidates, ["room-a", "room-b"], "the unified scope must retain explicitly requested member-room constraints");
+  assert.equal(validateSemanticCandidates(unifiedBundleScope, bundleInput).invalidCandidateIds.length, 0, "a bundle scope fully proven by one catalog product remains executable");
+
+  const conflictingBundleScope = structuredClone(unifiedBundleScope);
+  conflictingBundleScope.semanticCandidates[0].lodgingScopeCandidate.roomCanonicalCandidates = ["room-a", "unrelated-room"];
+  const conflictingBundleValidation = validateSemanticCandidates(conflictingBundleScope, bundleInput);
+  assert.equal(conflictingBundleValidation.invalidCandidateIds.includes(conflictingBundleScope.semanticCandidates[0].candidateId), true, "a bundle scope containing a non-member room must fail closed");
+  assert.ok(conflictingBundleValidation.invalidFailureCodes.includes("lodging_scope_catalog_conflict"), "catalog-incompatible lodging constraints must expose the structural failure code");
+
+  const overCapacityBundleScope = structuredClone(unifiedBundleScope);
+  overCapacityBundleScope.semanticCandidates[0].lodgingScopeCandidate.guestCountCandidate = 9;
+  assert.equal(validateSemanticCandidates(overCapacityBundleScope, bundleInput).invalidCandidateIds.includes(overCapacityBundleScope.semanticCandidates[0].candidateId), true, "a guest constraint beyond the formal bundle capacity must fail closed");
 
   const unrelatedScopeOutput = structuredClone(bundleScopeOutput);
   unrelatedScopeOutput.tasks[2].entity = { category: "room", rawText: "Unrelated Room", canonicalCandidate: "unrelated-room", confidence: 1 };

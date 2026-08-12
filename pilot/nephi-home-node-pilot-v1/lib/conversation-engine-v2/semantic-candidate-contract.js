@@ -75,6 +75,18 @@ function compilerEvidenceOverlaps(left, right, sourceMaps) {
     && left.startOffset < right.endOffset && right.startOffset < left.endOffset;
 }
 
+function lodgingScopeMatchesCatalog(value, catalog) {
+  if (value === null || !value || value.bundleCanonicalCandidate === null) return true;
+  const rooms = Array.isArray(catalog && catalog.rooms) ? catalog.rooms : [];
+  const bundle = rooms.find((room) => room && room.canonicalId === value.bundleCanonicalCandidate
+    && (room.inventoryType === "bundle" || room.category === "bundle"));
+  if (!bundle) return false;
+  const memberRoomIds = new Set((Array.isArray(bundle.memberRoomIds) ? bundle.memberRoomIds : []).map(String));
+  if (!value.roomCanonicalCandidates.every((roomId) => memberRoomIds.has(String(roomId)))) return false;
+  return value.guestCountCandidate === null || !Number.isInteger(bundle.capacity)
+    || value.guestCountCandidate <= bundle.capacity;
+}
+
 function normalizedRelatedLodgingScopes(rawCandidates, catalog, verifiedRelations, sourceMaps) {
   const normalized = rawCandidates.map((candidate) => candidate && candidate.lodgingScopeCandidate);
   const rooms = Array.isArray(catalog && catalog.rooms) ? catalog.rooms : [];
@@ -257,6 +269,7 @@ function validateSemanticCandidates(output, input) {
       && (!catalogIdentity || canonicalIdentity === catalogIdentity)
       && validEvidenceRefs(candidate.evidenceRefs, input)
       && validLodgingScope(candidate.lodgingScopeCandidate, identities)
+      && lodgingScopeMatchesCatalog(candidate.lodgingScopeCandidate, input && input.catalog)
       && !(candidate.lodgingScopeCandidate && conflictingScopeIds.has(candidate.lodgingScopeCandidate.scopeId))
       && validTemporalCandidate(candidate.temporalSemanticCandidate));
     if (valid) validCandidates.push(candidate);
@@ -286,6 +299,7 @@ function semanticCandidateFailureCodes(candidate, identities, counts, conflictin
   if (catalogIdentity && canonicalIdentity !== catalogIdentity) codes.push("identity_alignment");
   if (!validEvidenceRefs(candidate.evidenceRefs, input)) codes.push("evidence_refs");
   if (!validLodgingScope(candidate.lodgingScopeCandidate, identities)) codes.push("lodging_scope");
+  else if (!lodgingScopeMatchesCatalog(candidate.lodgingScopeCandidate, input && input.catalog)) codes.push("lodging_scope_catalog_conflict");
   if (candidate.lodgingScopeCandidate && conflictingScopeIds.has(candidate.lodgingScopeCandidate.scopeId)) codes.push("lodging_scope_conflict");
   if (!validTemporalCandidate(candidate.temporalSemanticCandidate)) codes.push("temporal_candidate");
   return codes;
