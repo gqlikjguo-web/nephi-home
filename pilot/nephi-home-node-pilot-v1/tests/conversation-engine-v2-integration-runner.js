@@ -598,7 +598,7 @@ function latestConditions(result) {
   assert.equal(multiTask.claimValidation.ok, true);
   assert.deepEqual(multiTask.claimValidation.missingTaskIds, []);
 
-  function temporalPlanner({ message, operations = [], tasks, nightsCandidate = null, guestCountCandidate = null }) {
+  function temporalPlanner({ message, operations = [], tasks, nightsCandidate = null, guestCountCandidate = null, missingInformation = [] }) {
     const operationValues = new Map(operations.filter((item) => item && item.operation !== "clear").map((item) => [item.field, item.value]));
     const dateExpression = {
       rawText: operationValues.get("stay.dateExpression.rawText") || "",
@@ -632,7 +632,7 @@ function latestConditions(result) {
       stateOperations: [],
       stay,
       tasks: scopedTasks,
-      ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "temporal_flow"
+      ambiguities: [], missingInformation, needsHuman: false, shouldIgnore: false, reason: "temporal_flow"
     }) };
   }
   const dateOperations = (rawText, kind = "absolute", { checkInCandidate = null, nightsCandidate = null, guestCountCandidate = null } = {}) => [
@@ -645,8 +645,8 @@ function latestConditions(result) {
   ];
   const temporalProperty = { ...property, commonAnswers: { parkingRule: "有停車位。", bbqRule: "可依規則烤肉。" }, semanticCatalog: { aliases: { r1: ["雙人房"], parking: ["車位"], bbq: ["烤肉"] }, amenities: [] } };
   const temporalAvailabilityResolver = (query) => ({ ...query, availabilityReliable: true, rooms: temporalProperty.rooms.filter((room) => query.roomType === "all" || room.id === query.roomType), lineUrl: "" });
-  async function runTemporal(message, plannerOutput, userId, eventTimestamp = Date.parse("2026-07-17T10:00:00+08:00")) {
-    const temporalEngine = new ConversationEngineV2({ planner: explicitPlanner(plannerOutput), persistence, getProperty: () => temporalProperty, availabilityResolver: temporalAvailabilityResolver, listPriceOverrides: () => [], now: () => new Date(eventTimestamp) });
+  async function runTemporal(message, plannerOutput, userId, eventTimestamp = Date.parse("2026-07-17T10:00:00+08:00"), resolver = temporalAvailabilityResolver) {
+    const temporalEngine = new ConversationEngineV2({ planner: explicitPlanner(plannerOutput), persistence, getProperty: () => temporalProperty, availabilityResolver: resolver, listPriceOverrides: () => [], now: () => new Date(eventTimestamp) });
     return temporalEngine.process({ customerId: "p1", channelId: "c1", lineUserId: userId, eventId: `event-${userId}`, eventTimestamp, messageText: message });
   }
 
@@ -655,6 +655,37 @@ function latestConditions(result) {
   assert.equal(latestConditions(singleDate).stay.checkOut, "2026-08-07");
   assert.equal(latestConditions(singleDate).stay.nights, 1);
   assert.equal(singleDate.taskResults[0].status, "answered");
+
+  let uncertainGuestAvailabilityCalls = 0;
+  const uncertainGuestMessage = "8/14-8/15 人數大概6-8人";
+  const uncertainGuest = await runTemporal(uncertainGuestMessage, temporalPlanner({
+    message: uncertainGuestMessage,
+    operations: dateOperations("8/14-8/15", "range", { checkInCandidate: "2026-08-14" }),
+    tasks: [{
+      taskId: "uncertain-guest-availability",
+      type: "availability",
+      sourceText: uncertainGuestMessage,
+      requestedOutputs: ["availability"],
+      dependsOnStayContext: true,
+      entity: { category: "room", rawText: "雙人房", canonicalCandidate: "r1", confidence: 0.98 },
+      stayCandidate: {
+        dateExpression: { rawText: "8/14-8/15", kind: "range", anchor: "message_time" },
+        checkInCandidate: "2026-08-14",
+        checkOutCandidate: "2026-08-15",
+        nightsCandidate: 1,
+        guestCountCandidate: 7
+      },
+      confidence: 0.98
+    }],
+    missingInformation: ["exact guest count"]
+  }), "uncertain-guest-count", Date.parse("2026-07-17T10:00:00+08:00"), (query) => {
+    uncertainGuestAvailabilityCalls += 1;
+    return temporalAvailabilityResolver(query);
+  });
+  assert.equal(uncertainGuest.finalDecision.action, "clarification", "an explicitly uncertain guest count must clarify");
+  assert.equal(uncertainGuest.taskResults[0].status, "needs_clarification");
+  assert.deepEqual(uncertainGuest.taskResults[0].missingInputs, ["guestCount"]);
+  assert.equal(uncertainGuestAvailabilityCalls, 0, "an explicitly uncertain guest count must not execute availability");
 
   const multiDateTasks = [
     { taskId: "availability", type: "availability", sourceText: "8/6 有雙人房嗎？", requestedOutputs: ["availability"], dependsOnStayContext: true, entity: { category: "room", rawText: "雙人房", canonicalCandidate: "r1", confidence: 0.98 }, confidence: 0.98 },

@@ -143,14 +143,27 @@ function mentionedInventoryFeatures(catalog, sourceText) {
   return [...features.values()]
     .filter(({ feature }) => mentionedAlias(sourceText, feature));
 }
+function exactCanonicalCategoryCompatible(expected, entity) {
+  if (!entity) return false;
+  if (expected === "room") return ["room", "bundle"].includes(entity.category);
+  if (expected === "amenity") return ["amenity", "policy"].includes(entity.category);
+  if (expected === "room_feature") return entity.category === "room"
+    || entity.category === "amenity" && entity.sourceKind === "faq";
+  if (expected === "activity") return entity.category === "amenity";
+  if (expected === "other") return true;
+  return entity.category === expected;
+}
 function resolveEntity(catalog, candidate = {}) {
   const expected = candidate.category;
+  const canonical = key(candidate.canonicalCandidate);
   const entities = allEntities(catalog).filter((item) => expected === "room" ? ["room", "bundle"].includes(item.category) : expected === "amenity" ? ["amenity", "policy"].includes(item.category) : expected === "room_feature" ? item.category === "room" : expected === "activity" ? item.category === "amenity" : expected === "other" ? true : item.category === expected);
   const raw = key(candidate.rawText);
   const matches = raw ? entities.filter((item) => [item.publicName, item.type, ...(item.aliases || []), ...(item.features || [])].map(key).some((alias) => alias && alias === raw)) : [];
   if (matches.length > 1 && ["room", "room_feature"].includes(expected)) return { status: "matched_set", entities: matches };
-  const canonical = key(candidate.canonicalCandidate);
-  if (canonical) { const exact = entities.find((item) => key(item.canonicalId) === canonical); if (exact) return { status: "resolved", entity: exact }; }
+  if (canonical) {
+    const exact = allEntities(catalog).find((item) => key(item.canonicalId) === canonical);
+    if (exact && exactCanonicalCategoryCompatible(expected, exact)) return { status: "resolved", entity: exact };
+  }
   if (!raw) return { status: "not_found", candidates: [] };
   if (matches.length === 1) return { status: "resolved", entity: matches[0] };
   if (matches.length > 1 && ["room", "room_feature"].includes(expected)) return { status: "matched_set", entities: matches };

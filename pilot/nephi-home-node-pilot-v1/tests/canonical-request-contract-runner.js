@@ -214,6 +214,41 @@ function run() {
     guestCount: null
   });
 
+  const uncertainGuestFormal = buildCanonicalFormalRequest({
+    property: { propertyId: "property-alpha" },
+    canonicalRequest: request,
+    requestCycleId: "uncertain-guest-cycle",
+    confirmedInputs: {
+      stay: { checkIn: "2026-08-06", checkOut: "2026-08-07", guests: null },
+      inventory: { mode: "any", entityId: null, features: [] },
+      uncertainties: { guestCount: true }
+    }
+  });
+  assert.equal(uncertainGuestFormal.readiness.status, "missing_information", "an explicitly uncertain guest count must block availability execution");
+  assert.deepEqual(uncertainGuestFormal.readiness.missingFields, ["guestCount"]);
+
+  const absentGuestFormal = buildCanonicalFormalRequest({
+    property: { propertyId: "property-alpha" },
+    canonicalRequest: request,
+    requestCycleId: "absent-guest-cycle",
+    confirmedInputs: {
+      stay: { checkIn: "2026-08-06", checkOut: "2026-08-07", guests: null },
+      inventory: { mode: "any", entityId: null, features: [] }
+    }
+  });
+  assert.equal(absentGuestFormal.readiness.status, "ready", "ordinary availability without a guest-count request must remain executable");
+
+  const exactGuestFormal = buildCanonicalFormalRequest({
+    property: { propertyId: "property-alpha" },
+    canonicalRequest: request,
+    requestCycleId: "exact-guest-cycle",
+    confirmedInputs: {
+      stay: { checkIn: "2026-08-06", checkOut: "2026-08-07", guests: 7 },
+      inventory: { mode: "any", entityId: null, features: [] }
+    }
+  });
+  assert.equal(exactGuestFormal.readiness.status, "ready", "an exact guest count must remain executable");
+
   console.log("canonical request contract: PASS");
 }
 

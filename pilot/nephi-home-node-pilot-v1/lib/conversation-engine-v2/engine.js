@@ -559,6 +559,14 @@ class ConversationEngineV2 {
     }
     if (!requiresSemanticLedgerSynthesis) plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog, sourceEvents });
     const validation = validatePlannerOutput(plannerOutput);
+    const uncertainGuestCountTaskIds = new Set(
+      plannerOutput.semanticValidation && Array.isArray(plannerOutput.semanticValidation.repairedTasks)
+        ? plannerOutput.semanticValidation.repairedTasks
+          .filter((item) => item && item.reason === "guest_count_certainty_alignment")
+          .map((item) => String(item.taskId || ""))
+          .filter(Boolean)
+        : []
+    );
     const providerRepairTaskIds = new Set(providerRepairLinks.map((item) => item.taskId));
     const semanticLinks = semanticRepairLinks(plannerOutput, providerRepairTaskIds);
     const repairLinks = [...providerRepairLinks, ...semanticLinks];
@@ -718,7 +726,15 @@ class ConversationEngineV2 {
       canonicalRequest: item.canonicalRequest,
       candidateIndex: item.candidateIndex,
       requestCycleId: item.requestCycleId,
-      confirmedInputs: item.executionConditions
+      confirmedInputs: {
+        ...item.executionConditions,
+        ...(uncertainGuestCountTaskIds.has(String(item.task && item.task.taskId || "")) ? {
+          uncertainties: {
+            ...(item.executionConditions.uncertainties || {}),
+            guestCount: true
+          }
+        } : {})
+      }
     }));
     const queryPlans = formalRequests.map(buildCanonicalQueryPlan).filter(Boolean);
     this.trace(traceId, "entity_resolution", { tasks: formalRequests.map((request) => this.diagnosticDetail ? { taskId: request.taskId, resolved: request.entity } : { taskId: request.taskId, status: request.entity.status, canonicalId: request.entity.canonicalId, candidateCount: request.entity.canonicalSet.length }) });

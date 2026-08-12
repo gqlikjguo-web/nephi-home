@@ -143,7 +143,7 @@ function readinessTaskType(capability) {
   return capability;
 }
 
-function canonicalReadiness(canonicalRequest, stay) {
+function canonicalReadiness(canonicalRequest, stay, uncertainties = {}) {
   const temporalReasonCode = canonicalRequest.temporalState.resolutionStatus === "unresolved"
     && canonicalRequest.temporalState.repairReasonCode === "past_date"
     ? "past_date"
@@ -157,15 +157,28 @@ function canonicalReadiness(canonicalRequest, stay) {
     searchFrom: stay.searchRange && stay.searchRange.from,
     searchTo: stay.searchRange && stay.searchRange.to
   });
+  const guestCountUncertain = canonicalRequest.resolverId === "availability_resolver"
+    && uncertainties.guestCount === true
+    && stay.guests === null;
   if (readiness.status !== "ready") return {
     status: readiness.status === "missing"
       ? "missing_information"
       : readiness.status,
     knownFields: readiness.knownFields,
-    missingFields: readiness.missingFields,
+    missingFields: guestCountUncertain
+      ? [...new Set([...readiness.missingFields, "guestCount"])]
+      : readiness.missingFields,
     invalidFields: readiness.invalidFields,
     conflictingFields: [],
     reasonCode: temporalReasonCode
+  };
+  if (guestCountUncertain) return {
+    status: "missing_information",
+    knownFields: readiness.knownFields,
+    missingFields: ["guestCount"],
+    invalidFields: [],
+    conflictingFields: [],
+    reasonCode: ""
   };
   if (canonicalRequest.resolverId === "availability_resolver"
     && ["not_found", "ambiguous"].includes(canonicalRequest.canonicalEntity.status)
@@ -243,7 +256,7 @@ function buildCanonicalFormalRequest({
       sourceEvidenceRefs: request.evidenceRefs,
       temporalFieldRefs: request.temporalState.fields || {}
     },
-    readiness: canonicalReadiness(request, stay)
+    readiness: canonicalReadiness(request, stay, confirmedInputs.uncertainties)
   };
 }
 

@@ -194,6 +194,14 @@ function validateConversationTaskV3(value) {
     errors.push("knownFields.missingFields");
   }
   const readiness = evaluateTaskReadiness(task);
+  const explicitGuestCountUncertainty = task.taskType === "availability"
+    && task.guestCount === null
+    && task.missingFields.length === readiness.missingFields.length + 1
+    && task.missingFields.every((field) => field === "guestCount" || readiness.missingFields.includes(field))
+    && task.missingFields.includes("guestCount");
+  const effectiveReadiness = explicitGuestCountUncertainty
+    ? { ...readiness, status: "missing", missingFields: [...readiness.missingFields, "guestCount"] }
+    : readiness;
   const allowedStatuses = {
     ready: new Set([
       "ready",
@@ -208,12 +216,12 @@ function validateConversationTaskV3(value) {
   };
   const readinessMatches = sameArray(
     task.knownFields,
-    readiness.knownFields
-  ) && sameArray(task.missingFields, readiness.missingFields)
+    effectiveReadiness.knownFields
+  ) && sameArray(task.missingFields, effectiveReadiness.missingFields)
     && (
       ["expired", "cancelled"].includes(task.status)
-      || allowedStatuses[readiness.status]
-        && allowedStatuses[readiness.status].has(task.status)
+      || allowedStatuses[effectiveReadiness.status]
+        && allowedStatuses[effectiveReadiness.status].has(task.status)
     );
   if (!readinessMatches) errors.push("task_readiness_mismatch");
   if (!validTimestamp(task.createdAt)) errors.push("createdAt");

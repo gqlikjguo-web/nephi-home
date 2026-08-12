@@ -60,6 +60,20 @@ assert.equal(resolveEntity(catalog, { category: "other", rawText: "", canonicalC
 assert.equal(resolveEntity(catalog, { category: "room", rawText: "兩人房", canonicalCandidate: "r1" }).status, "resolved");
 assert.equal(resolveEntity(catalog, { category: "amenity", rawText: "卡拉 OK", canonicalCandidate: "ktv" }).entity.status, "confirmed_no");
 assert.equal(resolveEntity(catalog, { category: "amenity", rawText: "麻將", canonicalCandidate: "mahjong" }).status, "not_found");
+const faqBackedFeatureCatalog = {
+  rooms: [], amenities: [], policies: [],
+  faqs: [{ canonicalId: "bathing_fixture_information", category: "amenity", sourceKind: "faq", publicName: "Which rooms have soaking fixtures?", aliases: ["soaking fixture"], status: "confirmed_yes", answer: "Configured rooms have soaking fixtures." }]
+};
+assert.equal(
+  resolveEntity(faqBackedFeatureCatalog, { category: "room_feature", rawText: "soaking fixture", canonicalCandidate: "bathing_fixture_information" }).status,
+  "resolved",
+  "an exact safe FAQ-backed amenity identity must not be excluded by the room-feature pre-filter"
+);
+assert.equal(
+  resolveEntity(faqBackedFeatureCatalog, { category: "room", rawText: "soaking fixture", canonicalCandidate: "bathing_fixture_information" }).status,
+  "not_found",
+  "an incompatible inventory/category identity must remain fail-closed"
+);
 assert.deepEqual(
   buildApprovedPlan({ propertyId: property.propertyId, taskResults: [
     { taskId: "parking-first", type: "amenity", status: "answered", facts: { subject: "停車", status: "confirmed_yes", answer: "有停車位" } },
