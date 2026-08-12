@@ -192,10 +192,7 @@ async function operation(name, args) {
     if(!room.rows.length&&!bundle)throw new Error("invalid inventory");
     await client.query("BEGIN");
     try {
-      const current=await client.query("SELECT status FROM inventory_availability_days WHERE property_id=$1 AND inventory_id=$2 AND stay_date=$3 FOR UPDATE",[propertyId,roomId,date]);
-      const previousStatus=current.rows[0]?.status||"";
       await client.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES($1,$2,$3,$4,$5) ON CONFLICT(property_id,inventory_id,stay_date) DO UPDATE SET status=excluded.status,remaining=excluded.remaining,updated_at=now()",[propertyId,roomId,date,status,status==="available"?1:0]);
-      if(!bundle&&previousStatus==="available"&&status==="closed")for(const containingBundle of bundles.filter(item=>item.memberRoomIds.includes(roomId)))await client.query("UPDATE inventory_availability_days SET status='closed',remaining=0,updated_at=now() WHERE property_id=$1 AND inventory_id=$2 AND stay_date=$3 AND status='available'",[propertyId,containingBundle.id,date]);
       await client.query("COMMIT");
     } catch(error) {
       await client.query("ROLLBACK");

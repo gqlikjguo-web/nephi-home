@@ -39,7 +39,7 @@ function assertSiblingsAvailable(row, message) {
 function runToggleContract(availability, label) {
   let row = availability.setDay(PROPERTY_ID, "2026-08-02", ROOM_IDS[0], "closed");
   assert.equal(row[ROOM_IDS[0]], "closed", `${label}: closing a room must close that room`);
-  assert.equal(row[BUNDLE_ID], "closed", `${label}: closing an open room must close the open bundle`);
+  assert.equal(row[BUNDLE_ID], "available", `${label}: closing a room for individual sale must preserve the independently open bundle`);
   assertSiblingsAvailable(row, `${label}: room close`);
 
   for (const roomId of ROOM_IDS) availability.setDay(PROPERTY_ID, "2026-08-03", roomId, "closed");
@@ -57,10 +57,10 @@ function runToggleContract(availability, label) {
   assert.equal(row[BUNDLE_ID], "closed", `${label}: opening a room must not open a closed bundle`);
 
   row = availability.setDay(PROPERTY_ID, "2026-08-06", ROOM_IDS[0], "closed");
-  assert.equal(row[BUNDLE_ID], "closed", `${label}: room close must close the bundle before the reopen check`);
+  assert.equal(row[BUNDLE_ID], "available", `${label}: room close must not change the independently open bundle`);
   row = availability.setDay(PROPERTY_ID, "2026-08-06", ROOM_IDS[0], "available");
   assert.equal(row[ROOM_IDS[0]], "available", `${label}: the room must reopen`);
-  assert.equal(row[BUNDLE_ID], "closed", `${label}: reopening a room must not reopen the bundle`);
+  assert.equal(row[BUNDLE_ID], "available", `${label}: reopening a room must preserve the bundle state`);
 
   availability.setDay(PROPERTY_ID, "2026-08-07", BUNDLE_ID, "closed");
   row = availability.setDay(PROPERTY_ID, "2026-08-07", ROOM_IDS[0], "closed");
@@ -85,7 +85,7 @@ function runRangeContract(providers, label) {
   service.applyBatch({ customerId: PROPERTY_ID, year: 2026, month: 8, text: "15 Room B" });
   row = providers.availability.getRows(PROPERTY_ID, "2026-08-15", "2026-08-16")[0];
   assert.equal(row[ROOM_IDS[1]], "closed", `${label}: batch must close the selected room`);
-  assert.equal(row[BUNDLE_ID], "closed", `${label}: batch room close must close an open bundle`);
+  assert.equal(row[BUNDLE_ID], "available", `${label}: batch room close must preserve an independently open bundle`);
   assert.equal(row[ROOM_IDS[2]], "available", `${label}: batch room close must preserve sibling rooms`);
 }
 
@@ -120,9 +120,17 @@ function runSearchContract(providers, label) {
 
   setRooms("2026-08-23", "available");
   providers.availability.setDay(PROPERTY_ID, "2026-08-23", BUNDLE_ID, "available");
-  row = providers.availability.setDay(PROPERTY_ID, "2026-08-23", ROOM_IDS[0], "closed");
-  assert.equal(row[BUNDLE_ID], "closed", `${label}: room available-to-closed transition must close the open bundle`);
-  assert.deepEqual(search("2026-08-23", "bundle_only"), [], `${label}: search must respect the final closed bundle state after a room transition`);
+  setRooms("2026-08-23", "closed");
+  row = providers.availability.getRows(PROPERTY_ID, "2026-08-23", "2026-08-24")[0];
+  assert.equal(row[BUNDLE_ID], "available", `${label}: opening the bundle before closing every room must preserve bundle availability`);
+  assert.deepEqual(search("2026-08-23", "bundle_only"), [BUNDLE_ID], `${label}: bundle-only search must be independent of room-close ordering`);
+  assert.deepEqual(search("2026-08-23", "room_only"), [], `${label}: closing member rooms must still remove them from individual-room search`);
+
+  setRooms("2026-08-24", "closed");
+  row = providers.availability.setDay(PROPERTY_ID, "2026-08-24", BUNDLE_ID, "available");
+  assert.equal(row[BUNDLE_ID], "available", `${label}: opening the bundle after closing every room must produce the same state`);
+  assert.deepEqual(search("2026-08-24", "bundle_only"), [BUNDLE_ID], `${label}: reverse operation order must return the bundle`);
+  assert.deepEqual(search("2026-08-24", "room_only"), [], `${label}: reverse operation order must keep rooms unavailable individually`);
 }
 
 function createJsonFixture(temp) {
