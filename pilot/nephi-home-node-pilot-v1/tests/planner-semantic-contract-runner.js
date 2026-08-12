@@ -1236,6 +1236,21 @@ function main() {
     };
   }, "tasks representing the same semantic lodging unit must not be normalized");
 
+  const bundleCatalog = buildPropertyCatalog({
+    propertyId: "bundle-contract", displayName: "Bundle Contract", timezone: "Asia/Taipei",
+    rooms: [{ id: "whole-house", inventoryType: "bundle", publicDisplayName: "12人包棟", capacity: 12, memberRoomIds: [], enabled: true }]
+  });
+  const customBundle = task({ taskId: "custom-bundle", type: "bundle_availability", category: "bundle", rawText: "四人包棟", sourceText: "四人包棟，開兩間房", canonicalCandidate: "whole-house", requestedOutputs: ["bundle_availability"], dependsOnStayContext: true, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: 4 } });
+  const customBundleResult = applyPlannerSemanticContract(plan([customBundle]), { catalog: bundleCatalog });
+  assert.equal(customBundleResult.tasks[0].type, "unknown", "an explicitly custom lodging composition must not be coerced to a differently named formal bundle");
+  const exactBundle = { ...customBundle, taskId: "exact-bundle", sourceText: "12人包棟", entity: { ...customBundle.entity, rawText: "12人包棟" }, stayCandidate: { ...customBundle.stayCandidate, guestCountCandidate: 8 } };
+  assert.equal(applyPlannerSemanticContract(plan([exactBundle]), { catalog: bundleCatalog }).tasks[0].type, "bundle_availability", "a catalog-exact formal bundle request remains executable even below maximum capacity");
+
+  const bookingAction = task({ taskId: "booking-action", type: "availability", category: "room", rawText: "雙人房", sourceText: "我想預訂雙人房", canonicalCandidate: null, dependsOnStayContext: true, stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: 2 } });
+  assert.equal(applyPlannerSemanticContract(plan([bookingAction])).tasks[0].type, "booking_request", "an explicit booking action must retain mandatory handoff authority");
+  const availabilityQuestion = { ...bookingAction, taskId: "availability-question", sourceText: "雙人房可以預訂嗎", entity: { ...bookingAction.entity, rawText: "雙人房" } };
+  assert.equal(applyPlannerSemanticContract(plan([availabilityQuestion])).tasks[0].type, "availability", "an availability question must not be promoted to a booking action");
+
   const schema = plannerJsonSchema();
   assert.ok(schema.properties.tasks.items.required.includes("eligibilityEvidence"));
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
@@ -1246,7 +1261,7 @@ function main() {
   assert.ok(providerCandidateSchema.required.includes("provenanceRelationCandidateIndexes"));
   assert.equal(providerCandidateSchema.properties.evidenceRefs.minItems, 0, "bound lifecycle can represent its required empty raw-evidence field");
   assert.equal(providerCandidateSchema.properties.provenanceRelationCandidateIndexes.minItems, 0, "pending lifecycle can represent its required empty relation-provenance field");
-  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 46 + contradictoryFieldCaseCount, passCount: 46 + contradictoryFieldCaseCount, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 50 + contradictoryFieldCaseCount, passCount: 50 + contradictoryFieldCaseCount, failCount: 0 }));
 }
 
 main();
