@@ -292,7 +292,10 @@ class JsonFileRepository {
       const property = (state.homestays || []).find((item) => item.customerId === customerId);
       const inventory = propertyInventory(property).find((item) => item.id === roomId);
       if (!inventory) throw new Error("invalid inventory");
-      const row = rows[date] || availabilityRow(property, date, "available");
+      const row = rows[date] || availabilityRow(property, date, "closed");
+      for (const item of propertyInventory(property)) {
+        if (row[item.id] !== "available" && row[item.id] !== "closed") row[item.id] = "closed";
+      }
       row[roomId] = status;
       rows[date] = row;
       return { ...row };

@@ -13,6 +13,7 @@ const { createApp } = require("../server");
 const ROOT = path.resolve(__dirname, "..");
 const MIGRATION = path.join(ROOT, "migrations", "020_inventory_availability_authority.sql");
 const AUTHORITY_MIGRATION = "020_inventory_availability_authority.sql";
+const COMPLETENESS_MIGRATION = "022_inventory_date_completeness.sql";
 const PROPERTY_ID = "legacy_property";
 const OTHER_PROPERTY_ID = "other_property";
 
@@ -31,6 +32,7 @@ async function seedConflictingAuthority(connection) {
     }
     await client.query("INSERT INTO availability_days(property_id,stay_date,room301,room302,room401,room402,whole_house) VALUES ($1,'2026-08-05','closed','closed','available','available','closed'),($1,'2026-08-06','closed','closed','available','available','closed'),($1,'2026-08-07','available','available','available','available','available')", [PROPERTY_ID]);
     await client.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES ($1,'bundle_all','2026-08-05','closed',0),($1,'room301','2026-08-05','closed',0),($1,'room302','2026-08-05','closed',0),($1,'room401','2026-08-05','closed',0),($1,'room402','2026-08-05','closed',0),($1,'room301','2026-08-06','available',1),($1,'room401','2026-08-06','closed',0),($1,'room402','2026-08-06','closed',0),($1,'room301','2026-08-07','closed',0),($1,'room302','2026-08-07','closed',0),($1,'room401','2026-08-07','closed',0),($1,'room402','2026-08-07','closed',0),($2,'other_room','2026-08-06','available',1)", [PROPERTY_ID, OTHER_PROPERTY_ID]);
+    await client.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES ($1,'bundle_all','2026-09-01','available',1)", [PROPERTY_ID]);
   } finally {
     await client.close();
   }
@@ -40,6 +42,7 @@ async function markAuthorityMigrationPending(connection) {
   const client = await openPostgres(connection);
   try {
     await client.query("DELETE FROM schema_migrations WHERE filename=$1", [AUTHORITY_MIGRATION]);
+    await client.query("DELETE FROM schema_migrations WHERE filename=$1", [COMPLETENESS_MIGRATION]);
   } finally {
     await client.close();
   }
@@ -116,7 +119,14 @@ async function run() {
     await migratePostgres(connection);
     assert.deepEqual(await normalizedSnapshot(connection), first, "the one-time authority migration must be idempotent");
     assert.deepEqual(await appliedMigration(connection, AUTHORITY_MIGRATION), firstApplied, "second startup must not re-run an applied authority migration");
-    assert.equal(first.filter((row) => row.propertyId === PROPERTY_ID).length, 15, "all room and bundle dates must be initialized before any toggle");
+    assert.equal(first.filter((row) => row.propertyId === PROPERTY_ID).length, 20, "every managed date must contain all enabled rooms and bundles");
+    assert.deepEqual(first.filter((row) => row.propertyId === PROPERTY_ID && row.date === "2026-09-01"), [
+      { propertyId: PROPERTY_ID, inventoryId: "bundle_all", date: "2026-09-01", status: "available", remaining: 1 },
+      { propertyId: PROPERTY_ID, inventoryId: "room301", date: "2026-09-01", status: "closed", remaining: 0 },
+      { propertyId: PROPERTY_ID, inventoryId: "room302", date: "2026-09-01", status: "closed", remaining: 0 },
+      { propertyId: PROPERTY_ID, inventoryId: "room401", date: "2026-09-01", status: "closed", remaining: 0 },
+      { propertyId: PROPERTY_ID, inventoryId: "room402", date: "2026-09-01", status: "closed", remaining: 0 }
+    ], "migration must preserve existing authority and initialize only missing inventory as closed");
     assert.deepEqual(first.filter((row) => row.propertyId === OTHER_PROPERTY_ID), [{ propertyId: OTHER_PROPERTY_ID, inventoryId: "other_room", date: "2026-08-06", status: "available", remaining: 1 }], "another property must remain unchanged");
 
     providers = createPostgresProviders(connection);

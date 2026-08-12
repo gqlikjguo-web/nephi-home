@@ -131,6 +131,11 @@ function runSearchContract(providers, label) {
   assert.equal(row[BUNDLE_ID], "available", `${label}: opening the bundle after closing every room must produce the same state`);
   assert.deepEqual(search("2026-08-24", "bundle_only"), [BUNDLE_ID], `${label}: reverse operation order must return the bundle`);
   assert.deepEqual(search("2026-08-24", "room_only"), [], `${label}: reverse operation order must keep rooms unavailable individually`);
+
+  row = providers.availability.setDay(PROPERTY_ID, "2026-10-01", BUNDLE_ID, "available");
+  assert.equal(row[BUNDLE_ID], "available", `${label}: the explicitly opened inventory must retain its requested state on a new date`);
+  for (const roomId of ROOM_IDS) assert.equal(row[roomId], "closed", `${label}: entering a new date must initialize unknown ${roomId} as closed`);
+  assert.deepEqual(search("2026-10-01", "bundle_only"), [BUNDLE_ID], `${label}: a safely completed new date must be reliable for bundle search`);
 }
 
 function createJsonFixture(temp) {

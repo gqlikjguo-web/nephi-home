@@ -192,6 +192,7 @@ async function operation(name, args) {
     if(!room.rows.length&&!bundle)throw new Error("invalid inventory");
     await client.query("BEGIN");
     try {
+      await client.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) SELECT $1,inventory_id,$2,'closed',0 FROM (SELECT room_id inventory_id FROM room_types WHERE property_id=$1 AND enabled=true UNION ALL SELECT bundle_id inventory_id FROM bundle_offers WHERE property_id=$1 AND enabled=true) enabled_inventory ON CONFLICT(property_id,inventory_id,stay_date) DO NOTHING",[propertyId,date]);
       await client.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES($1,$2,$3,$4,$5) ON CONFLICT(property_id,inventory_id,stay_date) DO UPDATE SET status=excluded.status,remaining=excluded.remaining,updated_at=now()",[propertyId,roomId,date,status,status==="available"?1:0]);
       await client.query("COMMIT");
     } catch(error) {
