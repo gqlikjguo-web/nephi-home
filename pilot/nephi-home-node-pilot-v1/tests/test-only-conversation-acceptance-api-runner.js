@@ -442,7 +442,7 @@ async function integrityRequest(url, body, authorization = "") {
       testOnlyAcceptanceDataInitializer: async (input) => {
         dataInitializationCalls.push(input);
         return input.mode === "operational_read_only"
-          ? { status: "verified", mode: "operational_read_only", propertyId, businessHash: "b".repeat(64) }
+          ? { status: "verified", mode: "operational_read_only", propertyId, businessHash: "b".repeat(64), ...(input.includeSnapshot === true ? { snapshot: { rooms: [], priceOverrides: [], bundles: [], bundleMembers: [], knowledgeItems: [], availability: { legacy: [], inventory: [], bundles: [] } } } : {}) }
           : { status: "verified", mode: "fixture_snapshot", propertyId, snapshotHash: "a".repeat(64), roomCount: 4, bundleCount: 1, knowledgeItemCount: 18, availabilityDayCount: 49 };
       },
       testOnlyAcceptanceOidcVerifier: async (token) => token === "valid-oidc-token",
@@ -466,21 +466,26 @@ async function integrityRequest(url, body, authorization = "") {
       assert.equal(dataInitializationCalls[0].propertyId, propertyId);
       assert.equal(dataInitializationCalls[0].mode, "operational_read_only");
       assert.equal(Object.hasOwn(dataInitializationCalls[0], "expectedSnapshotHash"), false, "operational mode must not receive fixture authority");
+      const snapshotRead = await integrityRequest(oidcRunning.url, { mode: "operational_read_only", propertyId, includeSnapshot: true }, "Bearer valid-oidc-token");
+      assert.equal(snapshotRead.response.status, 200, "verified GitHub Actions OIDC may opt into the redacted operational snapshot");
+      assert.deepEqual(snapshotRead.body.snapshot, { rooms: [], priceOverrides: [], bundles: [], bundleMembers: [], knowledgeItems: [], availability: { legacy: [], inventory: [], bundles: [] } });
+      assert.equal(dataInitializationCalls[1].includeSnapshot, true);
+      assert.equal(dataInitializationCalls[1].identity.kind, "github_actions_oidc");
       const fixtureInitialized = await integrityRequest(oidcRunning.url, { mode: "fixture_snapshot", propertyId, expectedSnapshotHash: "a".repeat(64) }, "Bearer valid-oidc-token");
       assert.equal(fixtureInitialized.response.status, 200, "explicit isolated fixture mode must remain available");
       assert.equal(fixtureInitialized.body.mode, "fixture_snapshot");
-      assert.equal(dataInitializationCalls.length, 2);
+      assert.equal(dataInitializationCalls.length, 3);
       const missingMode = await integrityRequest(oidcRunning.url, { propertyId }, "Bearer valid-oidc-token");
       assert.equal(missingMode.response.status, 400, "missing mode must fail closed");
       const unknownMode = await integrityRequest(oidcRunning.url, { mode: "unknown_mode", propertyId }, "Bearer valid-oidc-token");
       assert.equal(unknownMode.response.status, 400, "unknown mode must fail closed");
-      assert.equal(dataInitializationCalls.length, 2, "invalid modes must not reach either data path");
+      assert.equal(dataInitializationCalls.length, 3, "invalid modes must not reach either data path");
       const wrongProperty = await integrityRequest(oidcRunning.url, { mode: "operational_read_only", propertyId: "demo_homestay_b" }, "Bearer valid-oidc-token");
       assert.equal(wrongProperty.response.status, 403, "the initializer must reject a property outside the configured acceptance scope");
-      assert.equal(dataInitializationCalls.length, 2, "wrong-property input must not reach either data path");
+      assert.equal(dataInitializationCalls.length, 3, "wrong-property input must not reach either data path");
       const rejectedInitialization = await integrityRequest(oidcRunning.url, { mode: "operational_read_only", propertyId }, "Bearer invalid-oidc-token");
       assert.equal(rejectedInitialization.response.status, 403, "invalid OIDC must not initialize data");
-      assert.equal(dataInitializationCalls.length, 2);
+      assert.equal(dataInitializationCalls.length, 3);
     } finally { console.log = originalConsoleLog; await oidcApp.stop(); }
     assert.equal(oidcLogs.some((entry) => entry.includes("valid-oidc-token") || entry.includes("invalid-oidc-token")), false, "OIDC tokens must never be written to logs");
 

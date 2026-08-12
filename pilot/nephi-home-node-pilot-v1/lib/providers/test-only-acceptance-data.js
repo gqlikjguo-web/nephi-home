@@ -106,24 +106,43 @@ async function readOperationalBusinessSnapshot(client, propertyId) {
   };
 }
 
+function redactedOperationalSnapshot(snapshot) {
+  return {
+    rooms: snapshot.rooms,
+    priceOverrides: snapshot.priceOverrides,
+    bundles: snapshot.bundles,
+    bundleMembers: snapshot.bundleMembers,
+    knowledgeItems: snapshot.knowledgeItems,
+    availability: {
+      legacy: snapshot.legacyAvailability,
+      inventory: snapshot.inventoryAvailability,
+      bundles: snapshot.bundleAvailability
+    }
+  };
+}
+
 async function readOperationalAcceptanceDataIntegrity(options = {}) {
   if (options.testOnly !== true) throw integrityError("TEST_ONLY_ACCEPTANCE_DATA_SCOPE_REQUIRED", "test-only acceptance data scope is required");
   const propertyId = String(options.acceptancePropertyId || "").trim();
   if (!propertyId) throw integrityError("TEST_ONLY_ACCEPTANCE_PROPERTY_MISMATCH", "operational acceptance property scope is required");
   const client = await openPostgres(options.connection);
   try {
-    const snapshot = await client.transaction((transaction) => readOperationalBusinessSnapshot(transaction, propertyId));
+    const snapshot = await client.transaction(async (transaction) => {
+      await transaction.query("SET TRANSACTION READ ONLY");
+      return readOperationalBusinessSnapshot(transaction, propertyId);
+    });
+    const redactedSnapshot = redactedOperationalSnapshot(snapshot);
     return {
       status: "verified",
       mode: "operational_read_only",
       propertyId,
-      businessHash: hashAcceptanceDataSnapshot(snapshot),
+      businessHash: hashAcceptanceDataSnapshot(redactedSnapshot),
       roomCount: snapshot.rooms.length,
       bundleCount: snapshot.bundles.length,
       knowledgeItemCount: snapshot.knowledgeItems.length,
       legacyAvailabilityDayCount: snapshot.legacyAvailability.length,
       inventoryAvailabilityRowCount: snapshot.inventoryAvailability.length,
-      lineBinding: snapshot.lineBinding
+      ...(options.includeSnapshot === true ? { snapshot: redactedSnapshot } : {})
     };
   } finally {
     await client.close();

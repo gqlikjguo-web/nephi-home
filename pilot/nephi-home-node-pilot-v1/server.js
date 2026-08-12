@@ -1125,17 +1125,20 @@ function createApp(options = {}) {
     ? async (body = {}, identity = null) => {
       const propertyId = String(body.propertyId || body.customerId || "").trim();
       const mode = String(body.mode || "").trim();
+      const includeSnapshot = body.includeSnapshot === true;
       const expectedSnapshotHash = String(body.expectedSnapshotHash || "").trim().toLowerCase();
       if (propertyId !== testOnlyAcceptancePropertyId) throw new AppError(403, "TEST_ONLY_ACCEPTANCE_PROPERTY_MISMATCH", "Acceptance property scope was rejected");
       if (mode !== "operational_read_only" && mode !== "fixture_snapshot") throw new AppError(400, "ACCEPTANCE_DATA_MODE_REQUIRED", "Explicit acceptance data mode is required");
+      if (includeSnapshot && mode !== "operational_read_only") throw new AppError(400, "OPERATIONAL_SNAPSHOT_MODE_REQUIRED", "Operational snapshot output requires operational_read_only mode");
+      if (includeSnapshot && (!identity || identity.kind !== "github_actions_oidc")) throw new AppError(403, "OPERATIONAL_SNAPSHOT_OIDC_REQUIRED", "Operational snapshot output requires GitHub Actions OIDC");
       if (mode === "fixture_snapshot" && !/^[0-9a-f]{64}$/.test(expectedSnapshotHash)) throw new AppError(400, "ACCEPTANCE_DATA_SNAPSHOT_HASH_REQUIRED", "Expected repository snapshot hash is required");
       if (!injectedAcceptanceDataInitializer && !acceptanceDataConnection) throw new AppError(503, "ACCEPTANCE_DATA_POSTGRES_REQUIRED", "Test-only PostgreSQL acceptance data is unavailable");
       let result;
       try {
         result = injectedAcceptanceDataInitializer
-          ? await injectedAcceptanceDataInitializer({ mode, propertyId, ...(mode === "fixture_snapshot" ? { expectedSnapshotHash } : {}), identity })
+          ? await injectedAcceptanceDataInitializer({ mode, propertyId, ...(includeSnapshot ? { includeSnapshot: true } : {}), ...(mode === "fixture_snapshot" ? { expectedSnapshotHash } : {}), identity })
           : mode === "operational_read_only"
-            ? await readOperationalAcceptanceDataIntegrity({ connection: acceptanceDataConnection, acceptancePropertyId: propertyId, testOnly: true })
+            ? await readOperationalAcceptanceDataIntegrity({ connection: acceptanceDataConnection, acceptancePropertyId: propertyId, testOnly: true, includeSnapshot })
             : { ...(await syncTestOnlyAcceptanceData({
             connection: acceptanceDataConnection,
             manifestPath: acceptanceDataManifestPath,
@@ -1148,7 +1151,9 @@ function createApp(options = {}) {
         throw new AppError(409, code, "Test-only acceptance data initialization failed");
       }
       const validResult = result && result.status === "verified" && result.mode === mode && result.propertyId === propertyId
-        && (mode === "operational_read_only" ? /^[0-9a-f]{64}$/.test(String(result.businessHash || "")) : result.snapshotHash === expectedSnapshotHash);
+        && (mode === "operational_read_only"
+          ? /^[0-9a-f]{64}$/.test(String(result.businessHash || "")) && (!includeSnapshot || result.snapshot && typeof result.snapshot === "object")
+          : result.snapshotHash === expectedSnapshotHash);
       if (!validResult) {
         throw new AppError(409, "ACCEPTANCE_DATA_INTEGRITY_FAILURE", "Test-only PostgreSQL snapshot verification failed");
       }

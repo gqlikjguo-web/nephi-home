@@ -14,6 +14,7 @@ on:
         options:
           - target_preflight
           - full_matrix
+          - operational_snapshot
 
 jobs:
   verify:
@@ -40,7 +41,7 @@ jobs:
       - run: npm test
 
   deployed-acceptance:
-    if: github.event_name == 'workflow_dispatch' && always() && needs.verify.result == 'skipped' || github.event_name == 'push' && always() && needs.verify.result == 'success' && (contains(github.event.head_commit.message, '[target-preflight]') || contains(github.event.head_commit.message, '[full-matrix]'))
+    if: github.event_name == 'workflow_dispatch' && inputs.acceptance_mode != 'operational_snapshot' && always() && needs.verify.result == 'skipped' || github.event_name == 'push' && always() && needs.verify.result == 'success' && (contains(github.event.head_commit.message, '[target-preflight]') || contains(github.event.head_commit.message, '[full-matrix]'))
     needs: [verify]
     runs-on: ubuntu-latest
     env:
@@ -81,3 +82,32 @@ jobs:
           path: ${{ runner.temp }}/junzan-${{ env.ACCEPTANCE_MODE }}-${{ github.sha }}
           if-no-files-found: error
           retention-days: 7
+
+  operational-snapshot:
+    if: github.event_name == 'workflow_dispatch' && inputs.acceptance_mode == 'operational_snapshot'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: pilot/nephi-home-node-pilot-v1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Download redacted operational PostgreSQL snapshot
+        env:
+          TEST_ONLY_ACCEPTANCE_BASE_URL: https://nephi-home-node-pilot-test-only-btye.onrender.com
+          TEST_ONLY_ACCEPTANCE_PROPERTY_ID: nephi_home
+          TEST_ONLY_OPERATIONAL_SNAPSHOT_REPORT_DIR: ${{ runner.temp }}/junzan-operational-snapshot-${{ github.sha }}
+        run: node scripts/download-operational-snapshot.js
+      - name: Upload private operational snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junzan-operational-snapshot-${{ github.sha }}
+          path: ${{ runner.temp }}/junzan-operational-snapshot-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 3

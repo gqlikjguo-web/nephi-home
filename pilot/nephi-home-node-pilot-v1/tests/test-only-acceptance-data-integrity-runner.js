@@ -188,16 +188,30 @@ async function run() {
     await assertLegacySeedLeavesStaleData(connection, seedInput);
 
     const {
+      hashAcceptanceDataSnapshot,
       loadAcceptanceDataSnapshot,
       readOperationalAcceptanceDataIntegrity,
       syncTestOnlyAcceptanceData,
       verifyTestOnlyAcceptanceData
     } = require("../lib/providers/test-only-acceptance-data");
+    const acceptanceDataSource = fs.readFileSync(path.resolve(__dirname, "../lib/providers/test-only-acceptance-data.js"), "utf8");
+    assert.match(acceptanceDataSource, /transaction\.query\("SET TRANSACTION READ ONLY"\)/, "operational snapshot collection must explicitly mark its PostgreSQL transaction read-only");
 
     const snapshot = loadAcceptanceDataSnapshot(MANIFEST_PATH);
     const operationalBefore = await readOperationalAcceptanceDataIntegrity({ connection, acceptancePropertyId: PROPERTY_ID, testOnly: true });
     assert.equal(operationalBefore.mode, "operational_read_only");
     assert.match(operationalBefore.businessHash, /^[0-9a-f]{64}$/);
+    assert.equal(Object.hasOwn(operationalBefore, "snapshot"), false, "operational integrity must not expose business data unless explicitly requested");
+    const operationalSnapshot = await readOperationalAcceptanceDataIntegrity({ connection, acceptancePropertyId: PROPERTY_ID, testOnly: true, includeSnapshot: true });
+    assert.deepEqual(Object.keys(operationalSnapshot.snapshot).sort(), ["availability", "bundles", "bundleMembers", "knowledgeItems", "priceOverrides", "rooms"].sort());
+    assert.equal(operationalSnapshot.businessHash, hashAcceptanceDataSnapshot(operationalSnapshot.snapshot), "the business hash must cover exactly the emitted redacted snapshot");
+    assert.equal(operationalSnapshot.snapshot.rooms.some((room) => room.id === "room301"), true);
+    assert.equal(operationalSnapshot.snapshot.bundles.some((bundle) => bundle.id === "bundle_four_room_whole_house"), true);
+    assert.equal(operationalSnapshot.snapshot.knowledgeItems.some((item) => item.knowledgeId === "faq_1"), true);
+    const serializedOperationalSnapshot = JSON.stringify(operationalSnapshot);
+    for (const forbidden of ["settings", "lineBinding", "channel_secret", "channel_access_token", "admin", "session", "conversation"]) {
+      assert.equal(serializedOperationalSnapshot.includes(forbidden), false, `snapshot must exclude sensitive domain: ${forbidden}`);
+    }
     assert.equal(
       (await withClient(connection, (client) => client.query("SELECT name FROM room_types WHERE property_id=$1 AND room_id='room301'", [PROPERTY_ID]))).rows[0].name,
       "Stale 301",
@@ -209,21 +223,16 @@ async function run() {
     });
     const operationalAfterRuntime = await readOperationalAcceptanceDataIntegrity({ connection, acceptancePropertyId: PROPERTY_ID, testOnly: true });
     assert.equal(operationalAfterRuntime.businessHash, operationalBefore.businessHash, "runtime logs and conversation state must be excluded from the business hash");
-    await withClient(connection, (client) => client.query("UPDATE properties SET display_name='Business mutation sentinel' WHERE property_id=$1", [PROPERTY_ID]));
+    await withClient(connection, (client) => client.query("UPDATE room_types SET display_name='Business mutation sentinel' WHERE property_id=$1 AND room_id='room301'", [PROPERTY_ID]));
     const operationalAfterBusiness = await readOperationalAcceptanceDataIntegrity({ connection, acceptancePropertyId: PROPERTY_ID, testOnly: true });
     assert.notEqual(operationalAfterBusiness.businessHash, operationalBefore.businessHash, "a business authority mutation must change the business hash");
-    await withClient(connection, (client) => client.query("UPDATE properties SET display_name='Stale property' WHERE property_id=$1", [PROPERTY_ID]));
+    await withClient(connection, (client) => client.query("UPDATE room_types SET display_name='Stale 301' WHERE property_id=$1 AND room_id='room301'", [PROPERTY_ID]));
     await withClient(connection, (client) => client.query(
       "INSERT INTO property_line_bindings(property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled) VALUES($1,$2,$3::jsonb,$4::jsonb,true)",
       [PROPERTY_ID, "private-webhook-key", JSON.stringify({ ciphertext: "private-secret-ciphertext" }), JSON.stringify({ ciphertext: "private-token-ciphertext" })]
     ));
     const operationalWithLine = await readOperationalAcceptanceDataIntegrity({ connection, acceptancePropertyId: PROPERTY_ID, testOnly: true });
-    assert.deepEqual(
-      { ...operationalWithLine.lineBinding, webhookKeyHash: "hash" },
-      { exists: true, enabled: true, hasChannelSecret: true, hasChannelAccessToken: true, webhookKeyHash: "hash" },
-      "LINE integrity state must expose only configured booleans and stable hashed identity"
-    );
-    assert.match(operationalWithLine.lineBinding.webhookKeyHash, /^[0-9a-f]{64}$/);
+    assert.equal(Object.hasOwn(operationalWithLine, "lineBinding"), false, "operational snapshot metadata must exclude the LINE binding domain entirely");
     for (const secret of ["private-webhook-key", "private-secret-ciphertext", "private-token-ciphertext"]) {
       assert.equal(JSON.stringify(operationalWithLine).includes(secret), false, "operational integrity results must not expose LINE credential material");
     }
