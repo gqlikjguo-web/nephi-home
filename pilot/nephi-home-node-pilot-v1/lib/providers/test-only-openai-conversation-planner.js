@@ -27,6 +27,7 @@ const RETRYABLE_ERROR_CATEGORIES = new Set(["timeout", "network", "rate_limit", 
 const ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const COVERAGE_CRITIC_RESULT_STATUSES = new Set(["budget_exhausted", "provider_failure", "invalid_output", "missing_detected", "complete"]);
 const COVERAGE_CRITIC_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "local_contract_failure", "unknown"]);
+const COVERAGE_CRITIC_FAILURE_CODES = new Set(["", "invalid_missing_requests_shape", "invalid_source_identity", "invalid_evidence", "invalid_source_overlap", "duplicate_or_overlap_conflict", "invalid_subject_identity", "other"]);
 const MAX_PRIMARY_ATTEMPTS = 2;
 const MAX_UNDERSTANDING_CALLS = 3;
 const MAX_MERGED_TASKS = 24;
@@ -1346,7 +1347,7 @@ function exactEvidenceRef(left, right) {
 }
 
 function validatedCriticMissingRequests(output, input, coveredRequests) {
-  if (!output || !Array.isArray(output.missingRequests) || output.missingRequests.length > MAX_MERGED_TASKS) return null;
+  if (!output || !Array.isArray(output.missingRequests) || output.missingRequests.length > MAX_MERGED_TASKS) return { targets: null, failureCode: "invalid_missing_requests_shape" };
   const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
   const coveredRefs = (Array.isArray(coveredRequests) ? coveredRequests : [])
     .flatMap((request) => Array.isArray(request && request.evidenceRefs) ? request.evidenceRefs : []);
@@ -1355,11 +1356,11 @@ function validatedCriticMissingRequests(output, input, coveredRequests) {
   for (const ref of output.missingRequests) {
     const eventId = String(ref && ref.eventId || "");
     const messageRef = String(ref && ref.messageRef || "");
-    if (eventId !== eventId.trim() || messageRef !== messageRef.trim()) return null;
+    if (eventId !== eventId.trim() || messageRef !== messageRef.trim()) return { targets: null, failureCode: "invalid_source_identity" };
     const byEvent = eventId ? sourceMaps.byEventId.get(eventId) : null;
     const byMessage = messageRef ? sourceMaps.byMessageRef.get(messageRef) : null;
     if ((!eventId && !messageRef) || eventId && !byEvent || messageRef && !byMessage
-      || byEvent && byMessage && byEvent !== byMessage) return null;
+      || byEvent && byMessage && byEvent !== byMessage) return { targets: null, failureCode: "invalid_source_identity" };
     const source = byEvent || byMessage;
     const startOffset = ref && ref.startOffset;
     const endOffset = ref && ref.endOffset;
@@ -1367,22 +1368,22 @@ function validatedCriticMissingRequests(output, input, coveredRequests) {
     if (!source || !Number.isInteger(startOffset) || !Number.isInteger(endOffset)
       || startOffset < 0 || endOffset <= startOffset
       || endOffset > String(source.messageText || "").length
-      || !quote || String(source.messageText || "").slice(startOffset, endOffset) !== quote) return null;
+      || !quote || String(source.messageText || "").slice(startOffset, endOffset) !== quote) return { targets: null, failureCode: "invalid_evidence" };
     const normalized = { eventId, messageRef, startOffset, endOffset, quote };
     const key = JSON.stringify(normalized);
     if (seen.has(key)) continue;
-    if (coveredRefs.some((coveredRef) => evidenceRefsOverlap(normalized, coveredRef, sourceMaps))
-      || acceptedRefs.some((acceptedRef) => evidenceRefsOverlap(normalized, acceptedRef, sourceMaps))) return null;
+    if (coveredRefs.some((coveredRef) => evidenceRefsOverlap(normalized, coveredRef, sourceMaps))) return { targets: null, failureCode: "invalid_source_overlap" };
+    if (acceptedRefs.some((acceptedRef) => evidenceRefsOverlap(normalized, acceptedRef, sourceMaps))) return { targets: null, failureCode: "duplicate_or_overlap_conflict" };
     seen.add(key);
     acceptedRefs.push(normalized);
   }
   const usedTargetIds = new Set();
-  return acceptedRefs.map((ref) => {
+  return { targets: acceptedRefs.map((ref) => {
     let targetCandidateId = crypto.randomUUID();
     while (usedTargetIds.has(targetCandidateId)) targetCandidateId = crypto.randomUUID();
     usedTargetIds.add(targetCandidateId);
     return Object.freeze({ targetCandidateId, ...ref });
-  });
+  }), failureCode: "" };
 }
 
 function invalidSemanticRepairUnits(output, input, diagnosticSummary, invalidCandidateIds, validCandidates) {
@@ -1779,7 +1780,7 @@ function mergeSemanticCandidateRepair(firstOutput, repairOutput, input, missingC
   if (semanticLedgerBoundary) Object.defineProperty(merged, SEMANTIC_LEDGER_BOUNDARY_DIAGNOSTIC, semanticLedgerBoundary);
   return merged;
 }
-function plannerFailure({ code, category, status = 0, timeout = false, model = "", name = "Error", providerErrorType = "", providerErrorCode = "", providerErrorParam = "", providerAttemptCount = 1, firstAttemptErrorCategory = category, finalErrorCategory = category, retryPerformed = false, retrySucceeded = false, retryable = false, responseBodyPresent = false, parsedOutputPresent = false, coverageCriticResultStatus = "", coverageCriticErrorCategory = "unknown", repairRequired = false, repairAllowed = false, understandingCallsUsed = 0 }) {
+function plannerFailure({ code, category, status = 0, timeout = false, model = "", name = "Error", providerErrorType = "", providerErrorCode = "", providerErrorParam = "", providerAttemptCount = 1, firstAttemptErrorCategory = category, finalErrorCategory = category, retryPerformed = false, retrySucceeded = false, retryable = false, responseBodyPresent = false, parsedOutputPresent = false, coverageCriticResultStatus = "", coverageCriticErrorCategory = "unknown", coverageCriticFailureCode = "", repairRequired = false, repairAllowed = false, understandingCallsUsed = 0 }) {
   const error = new Error(code);
   error.name = name;
   error.code = code;
@@ -1804,6 +1805,7 @@ function plannerFailure({ code, category, status = 0, timeout = false, model = "
     error.coverageCriticErrorCategory = COVERAGE_CRITIC_ERROR_CATEGORIES.has(coverageCriticErrorCategory)
       ? coverageCriticErrorCategory
       : "unknown";
+    error.coverageCriticFailureCode = COVERAGE_CRITIC_FAILURE_CODES.has(coverageCriticFailureCode) ? coverageCriticFailureCode : "other";
     error.repairRequired = Boolean(repairRequired);
     error.repairAllowed = Boolean(repairAllowed);
     error.understandingCallLimit = MAX_UNDERSTANDING_CALLS;
@@ -1942,12 +1944,20 @@ function annotateProviderSuccess(output, firstAttemptErrorCategory, providerAtte
       ...(coverageCritic ? {
         coverageCriticPerformed: true,
         coverageCriticResultStatus: String(coverageCritic.resultStatus || "unknown").slice(0, 40),
+        coverageCriticErrorCategory: "",
+        coverageCriticFailureCode: "",
+        repairRequired: coverageCritic.repairRequired === true,
+        repairAllowed: coverageCritic.repairAllowed === true,
         validatedMissingSpanCount: Number.isInteger(coverageCritic.validatedMissingSpanCount)
           ? Math.min(Math.max(coverageCritic.validatedMissingSpanCount, 0), MAX_MERGED_TASKS)
           : 0,
         understandingCallCount: Number.isInteger(understandingCallCount)
           ? Math.min(Math.max(understandingCallCount, 0), MAX_UNDERSTANDING_CALLS)
-          : attempts.length
+          : attempts.length,
+        understandingCallsUsed: Number.isInteger(understandingCallCount)
+          ? Math.min(Math.max(understandingCallCount, 0), MAX_UNDERSTANDING_CALLS)
+          : attempts.length,
+        understandingCallsLimit: MAX_UNDERSTANDING_CALLS
       } : {}),
       ...(repairLinks.length ? { repairLinks } : {}),
       ...(Array.isArray(semanticLedgerBoundaries) ? { semanticLedgerBoundaries } : {}),
@@ -2130,13 +2140,15 @@ class TestOnlyOpenAiConversationPlanner {
           errorCategory = "local_contract_failure",
           repairRequired = semanticRepairRequired,
           repairAllowed = false,
-          callsUsed = understandingCallCount
+          callsUsed = understandingCallCount,
+          failureCode = ""
         }) => plannerFailure({
           code: "planner_local_contract_failure",
           category: "local_contract_failure",
           model: this.model,
           coverageCriticResultStatus: resultStatus,
           coverageCriticErrorCategory: COVERAGE_CRITIC_ERROR_CATEGORIES.has(errorCategory) ? errorCategory : "unknown",
+          coverageCriticFailureCode: failureCode,
           repairRequired,
           repairAllowed,
           understandingCallsUsed: callsUsed
@@ -2181,7 +2193,8 @@ class TestOnlyOpenAiConversationPlanner {
               callsUsed: criticCallNumber
             });
           }
-          missingRequestTargets = validatedCriticMissingRequests(criticOutput, input, coveredRequests);
+          const criticValidation = validatedCriticMissingRequests(criticOutput, input, coveredRequests);
+          missingRequestTargets = criticValidation.targets;
           if (!missingRequestTargets) {
             captureTestOnlyAcceptanceCoverageCritic(input, {
               callNumber: criticCallNumber,
@@ -2192,6 +2205,7 @@ class TestOnlyOpenAiConversationPlanner {
             throw coverageContractFailure({
               resultStatus: "invalid_output",
               errorCategory: "local_contract_failure",
+              failureCode: criticValidation.failureCode,
               repairAllowed: false
             });
           }
@@ -2204,7 +2218,9 @@ class TestOnlyOpenAiConversationPlanner {
           coverageCriticDiagnostic = {
             resultStatus: providerCriticDiagnostic && providerCriticDiagnostic.resultStatus
               || (missingRequestTargets.length ? "missing_detected" : "complete"),
-            validatedMissingSpanCount: missingRequestTargets.length
+            validatedMissingSpanCount: missingRequestTargets.length,
+            repairRequired: semanticRepairRequired || missingRequestTargets.length > 0,
+            repairAllowed: (semanticRepairRequired || missingRequestTargets.length > 0) && understandingCallCount < MAX_UNDERSTANDING_CALLS
           };
           captureTestOnlyAcceptanceCoverageCritic(input, {
             callNumber: criticCallNumber,

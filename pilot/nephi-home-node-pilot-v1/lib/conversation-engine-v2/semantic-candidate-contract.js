@@ -75,6 +75,48 @@ function compilerEvidenceOverlaps(left, right, sourceMaps) {
     && left.startOffset < right.endOffset && right.startOffset < left.endOffset;
 }
 
+function normalizedRelatedLodgingScopes(rawCandidates, catalog, verifiedRelations, sourceMaps) {
+  const normalized = rawCandidates.map((candidate) => candidate && candidate.lodgingScopeCandidate);
+  const rooms = Array.isArray(catalog && catalog.rooms) ? catalog.rooms : [];
+  const bundles = rooms.filter((room) => room && room.inventoryType === "bundle"
+    && typeof room.canonicalId === "string" && Array.isArray(room.memberRoomIds));
+  const evidenceFor = (candidate) => (Array.isArray(candidate && candidate.provenanceRelationCandidateIndexes)
+    ? candidate.provenanceRelationCandidateIndexes.flatMap((index) => verifiedRelations.get(index) || [])
+    : []);
+  const compatible = (left, right) => JSON.stringify(stableValue(left && left.temporalSemanticCandidate)) === JSON.stringify(stableValue(right && right.temporalSemanticCandidate))
+    && left.lodgingScopeCandidate.guestCountCandidate === right.lodgingScopeCandidate.guestCountCandidate
+    && evidenceFor(left).some((leftRef) => evidenceFor(right).some((rightRef) => compilerEvidenceOverlaps(leftRef, rightRef, sourceMaps)));
+
+  for (const bundle of bundles) {
+    const bundleIndexes = rawCandidates.map((candidate, index) => ({ candidate, index })).filter(({ candidate }) => {
+      const scope = candidate && candidate.lodgingScopeCandidate;
+      return candidate && candidate[SEMANTIC_CANDIDATE_COMPILED] !== true && scope
+        && scope.bundleCanonicalCandidate === bundle.canonicalId;
+    });
+    if (bundleIndexes.length !== 1) continue;
+    const bundleEntry = bundleIndexes[0];
+    const memberIds = new Set(bundle.memberRoomIds.map(String));
+    const memberEntries = rawCandidates.map((candidate, index) => ({ candidate, index })).filter(({ candidate }) => {
+      const scope = candidate && candidate.lodgingScopeCandidate;
+      return candidate && candidate[SEMANTIC_CANDIDATE_COMPILED] !== true && scope
+        && scope.bundleCanonicalCandidate === null
+        && Array.isArray(scope.roomCanonicalCandidates) && scope.roomCanonicalCandidates.length === 1
+        && memberIds.has(String(scope.roomCanonicalCandidates[0]))
+        && compatible(bundleEntry.candidate, candidate);
+    });
+    if (!memberEntries.length) continue;
+    const explicitRooms = [...new Set(memberEntries.flatMap(({ candidate }) => candidate.lodgingScopeCandidate.roomCanonicalCandidates))].sort();
+    const unified = {
+      bundleCanonicalCandidate: bundle.canonicalId,
+      roomCanonicalCandidates: explicitRooms,
+      guestCountCandidate: bundleEntry.candidate.lodgingScopeCandidate.guestCountCandidate
+    };
+    normalized[bundleEntry.index] = unified;
+    for (const entry of memberEntries) normalized[entry.index] = unified;
+  }
+  return normalized;
+}
+
 function compileSemanticCandidates(output, input, { synthesizeMissingCandidates = false } = {}) {
   if (!output || !Array.isArray(output.tasks)) return output;
   const rawCandidates = Array.isArray(output.semanticCandidates)
@@ -108,6 +150,8 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
   const verifiedRelations = context.ok
     ? new Map(context.relations.map((relation) => [relation.candidateIndex, relation.evidenceRefs.map((ref) => ({ ...ref }))]))
     : new Map();
+  const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
+  const normalizedScopes = normalizedRelatedLodgingScopes(rawCandidates, input && input.catalog, verifiedRelations, sourceMaps);
   const scopeIds = new Map();
   const candidateProvenanceIndexes = new Map();
   const candidates = rawCandidates.slice(0, MAX_CANDIDATES).map((rawCandidate, index) => {
@@ -116,7 +160,7 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
         Array.isArray(rawCandidate[SEMANTIC_CANDIDATE_PROVENANCE]) ? rawCandidate[SEMANTIC_CANDIDATE_PROVENANCE] : []);
       return rawCandidate;
     }
-    const rawScope = rawCandidate && rawCandidate.lodgingScopeCandidate;
+    const rawScope = normalizedScopes[index];
     const scope = rawScope && typeof rawScope === "object" && !Array.isArray(rawScope)
       ? { bundleCanonicalCandidate: rawScope.bundleCanonicalCandidate, roomCanonicalCandidates: rawScope.roomCanonicalCandidates, guestCountCandidate: rawScope.guestCountCandidate }
       : null;
@@ -155,7 +199,6 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
     return compiledCandidate;
   });
   const validCandidates = validateSemanticCandidates({ semanticCandidates: candidates }, input).validCandidates;
-  const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
   const relations = Array.isArray(output.contextRelationCandidates) ? output.contextRelationCandidates : [];
   const pendingTaskMatches = new Map(validCandidates.map((candidate) => [candidate.candidateId,
     candidate[SEMANTIC_CANDIDATE_LIFECYCLE] === "pending_task" && recompiledCandidateIds.has(candidate.candidateId)

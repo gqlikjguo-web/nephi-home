@@ -130,6 +130,55 @@ function main() {
   }))) });
   assert.equal(verifiedRepairTask(inconsistentTemporalRepair, input, groupedPending.semanticCandidates.find((candidate) => candidate.semanticKind === "temporal_pattern")), null, "a temporal candidate must reject a room identity even when the mapping is marked unique");
 
+  const bundleMessage = "Whole House with Room A and Room B for five guests";
+  const bundleInput = {
+    catalog: {
+      propertyId: "bundle-property",
+      rooms: [
+        { canonicalId: "whole-house", inventoryType: "bundle", memberRoomIds: ["room-a", "room-b", "room-c"] },
+        { canonicalId: "room-a", inventoryType: "room" },
+        { canonicalId: "room-b", inventoryType: "room" },
+        { canonicalId: "room-c", inventoryType: "room" },
+        { canonicalId: "unrelated-room", inventoryType: "room" }
+      ], amenities: [], policies: [], faqs: []
+    },
+    sourceEvents: [{ eventId: "bundle-event", messageRef: "bundle-message", messageText: bundleMessage }]
+  };
+  const bundleEvidence = [{ eventId: "bundle-event", messageRef: "bundle-message", startOffset: 0, endOffset: bundleMessage.length, quote: bundleMessage }];
+  const bundleStay = { dateExpression: { rawText: "2026-08-27", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2026-08-27", checkOutCandidate: "2026-08-28", nightsCandidate: 1, guestCountCandidate: 5 };
+  const bundleScopeOutput = {
+    ...baseOutput(),
+    stay: bundleStay,
+    tasks: [
+      { ...baseOutput().tasks[0], candidateIndex: 0, taskId: "bundle", type: "bundle_availability", entity: { category: "bundle", rawText: "Whole House", canonicalCandidate: "whole-house", confidence: 1 }, stayCandidate: bundleStay },
+      { ...baseOutput().tasks[0], candidateIndex: 1, taskId: "room-a", entity: { category: "room", rawText: "Room A", canonicalCandidate: "room-a", confidence: 1 }, stayCandidate: bundleStay },
+      { ...baseOutput().tasks[0], candidateIndex: 2, taskId: "room-b", entity: { category: "room", rawText: "Room B", canonicalCandidate: "room-b", confidence: 1 }, stayCandidate: bundleStay }
+    ],
+    contextRelationCandidates: [0, 1, 2].map((candidateIndex) => ({ candidateIndex, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: bundleEvidence })),
+    semanticCandidates: [
+      { semanticKind: "lodging_scope", capability: "bundle_availability", canonicalIdentityCandidate: "whole-house", provenanceRelationCandidateIndexes: [0], lodgingScopeCandidate: { bundleCanonicalCandidate: "whole-house", roomCanonicalCandidates: [], guestCountCandidate: 5 }, temporalSemanticCandidate: bundleStay.dateExpression, propertyCatalogIdentity: "whole-house" },
+      { semanticKind: "lodging_scope", capability: "availability", canonicalIdentityCandidate: "room-a", provenanceRelationCandidateIndexes: [1], lodgingScopeCandidate: { bundleCanonicalCandidate: null, roomCanonicalCandidates: ["room-a"], guestCountCandidate: 5 }, temporalSemanticCandidate: bundleStay.dateExpression, propertyCatalogIdentity: "room-a" },
+      { semanticKind: "lodging_scope", capability: "availability", canonicalIdentityCandidate: "room-b", provenanceRelationCandidateIndexes: [2], lodgingScopeCandidate: { bundleCanonicalCandidate: null, roomCanonicalCandidates: ["room-b"], guestCountCandidate: 5 }, temporalSemanticCandidate: bundleStay.dateExpression, propertyCatalogIdentity: "room-b" }
+    ]
+  };
+  const unifiedBundleScope = compileSemanticCandidates(bundleScopeOutput, bundleInput);
+  assert.equal(new Set(unifiedBundleScope.tasks.map((item) => item.lodgingScopeId)).size, 1, "one source-bound bundle request and its catalog-proven member rooms must compile to one logical lodging scope");
+  assert.deepEqual(unifiedBundleScope.semanticCandidates[0].lodgingScopeCandidate.roomCanonicalCandidates, ["room-a", "room-b"], "the unified scope must retain explicitly requested member-room constraints");
+
+  const unrelatedScopeOutput = structuredClone(bundleScopeOutput);
+  unrelatedScopeOutput.tasks[2].entity = { category: "room", rawText: "Unrelated Room", canonicalCandidate: "unrelated-room", confidence: 1 };
+  unrelatedScopeOutput.semanticCandidates[2].canonicalIdentityCandidate = "unrelated-room";
+  unrelatedScopeOutput.semanticCandidates[2].propertyCatalogIdentity = "unrelated-room";
+  unrelatedScopeOutput.semanticCandidates[2].lodgingScopeCandidate.roomCanonicalCandidates = ["unrelated-room"];
+  const isolatedUnrelatedScope = compileSemanticCandidates(unrelatedScopeOutput, bundleInput);
+  assert.ok(new Set(isolatedUnrelatedScope.tasks.map((item) => item.lodgingScopeId)).size > 1, "a non-member room must remain isolated from a bundle scope");
+
+  const distinctGuestScopeOutput = structuredClone(bundleScopeOutput);
+  distinctGuestScopeOutput.tasks[2].stayCandidate.guestCountCandidate = 6;
+  distinctGuestScopeOutput.semanticCandidates[2].lodgingScopeCandidate.guestCountCandidate = 6;
+  const isolatedDistinctGuestScope = compileSemanticCandidates(distinctGuestScopeOutput, bundleInput);
+  assert.ok(new Set(isolatedDistinctGuestScope.tasks.map((item) => item.lodgingScopeId)).size > 1, "catalog membership must not merge lodging requests with distinct guest constraints");
+
   const inventedCapabilityPendingSource = baseOutput();
   inventedCapabilityPendingSource.semanticCandidates = [{
     semanticKind: "capability",

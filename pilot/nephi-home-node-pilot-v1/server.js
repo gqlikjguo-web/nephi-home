@@ -37,6 +37,7 @@ const SAFE_SEMANTIC_MISSING_REFS_REASONS = new Set(["", "pending_invalid_raw_evi
 const SAFE_PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "local_contract_failure", "unknown"]);
 const SAFE_PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const SAFE_COVERAGE_CRITIC_RESULT_STATUSES = new Set(["budget_exhausted", "provider_failure", "invalid_output", "missing_detected", "complete"]);
+const SAFE_COVERAGE_CRITIC_FAILURE_CODES = new Set(["", "invalid_missing_requests_shape", "invalid_source_identity", "invalid_evidence", "invalid_source_overlap", "duplicate_or_overlap_conflict", "invalid_subject_identity", "other"]);
 const SAFE_CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
 const SAFE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_REPAIR_KINDS = new Set(["coverage_repair", "task_collection_repair", "semantic_repair"]);
@@ -280,6 +281,7 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
   }
   if (details.stage === "planner") {
     const providerAttempts = safePlannerAttempts(details.providerAttempts);
+    const coverageCriticResultStatus = String(details.coverageCriticResultStatus || "");
     return {
       ...base,
       parserSucceeded: Boolean(details.parserSucceeded),
@@ -288,6 +290,15 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       shouldIgnore: Boolean(details.shouldIgnore),
       missingInformation: safePlannerMissingInformation(details.missingInformation),
       tasks: (details.tasks || []).map(safePlannerTraceTask),
+      ...(SAFE_COVERAGE_CRITIC_RESULT_STATUSES.has(coverageCriticResultStatus) ? {
+        coverageCriticResultStatus,
+        coverageCriticErrorCategory: "",
+        coverageCriticFailureCode: "",
+        repairRequired: Boolean(details.repairRequired),
+        repairAllowed: Boolean(details.repairAllowed),
+        understandingCallsUsed: Math.min(safeDiagnosticCount(details.understandingCallsUsed), 3),
+        understandingCallsLimit: Math.min(safeDiagnosticCount(details.understandingCallsLimit), 3)
+      } : {}),
       ...(providerAttempts.length ? {
         providerAttemptCount: providerAttempts.length,
         firstAttemptErrorCategory: details.retryPerformed === true ? safePlannerErrorCategory(details.firstAttemptErrorCategory) : "",
@@ -341,6 +352,7 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       ...(SAFE_COVERAGE_CRITIC_RESULT_STATUSES.has(coverageCriticResultStatus) ? {
         coverageCriticResultStatus,
         coverageCriticErrorCategory: safePlannerErrorCategory(details.coverageCriticErrorCategory),
+        coverageCriticFailureCode: SAFE_COVERAGE_CRITIC_FAILURE_CODES.has(String(details.coverageCriticFailureCode || "")) ? String(details.coverageCriticFailureCode || "") : "other",
         repairRequired: Boolean(details.repairRequired),
         repairAllowed: Boolean(details.repairAllowed),
         understandingCallLimit: Math.min(safeDiagnosticCount(details.understandingCallLimit), 3),

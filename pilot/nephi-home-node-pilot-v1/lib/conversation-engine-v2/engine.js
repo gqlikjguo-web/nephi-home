@@ -168,6 +168,7 @@ const SAFE_FALLBACK = SAFE_HANDOFF_TEXT;
 const PLANNER_ERROR_CATEGORIES = new Set(["timeout", "rate_limit", "provider_5xx", "invalid_request", "empty_response", "json_parse", "structured_output", "network", "local_contract_failure", "unknown"]);
 const PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network", "rate_limit", "provider_5xx", "provider_4xx", "empty_response", "parse_failure", "structured_output_failure", "local_contract_failure", "unknown"]);
 const COVERAGE_CRITIC_RESULT_STATUSES = new Set(["budget_exhausted", "provider_failure", "invalid_output", "missing_detected", "complete"]);
+const COVERAGE_CRITIC_FAILURE_CODES = new Set(["", "invalid_missing_requests_shape", "invalid_source_identity", "invalid_evidence", "invalid_source_overlap", "duplicate_or_overlap_conflict", "invalid_subject_identity", "other"]);
 const PLANNER_ERROR_NAMES = new Set(["Error", "AbortError", "SyntaxError", "TypeError"]);
 const PLANNER_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.plannerProviderDiagnostic");
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -223,12 +224,22 @@ function safePlannerRetrySuccessDiagnostic(plannerOutput) {
   const retried = diagnostic.retryPerformed === true;
   const repairLinks = privatePlannerRepairLinks(plannerOutput);
   const semanticLedgerBoundaries = safeSemanticLedgerBoundaries(diagnostic.semanticLedgerBoundaries);
+  const coverageCriticResultStatus = String(diagnostic.coverageCriticResultStatus || "");
   return {
     providerAttemptCount: providerAttempts.length,
     firstAttemptErrorCategory: retried ? safePlannerErrorCategory(diagnostic.firstAttemptErrorCategory) : "",
     finalErrorCategory: "",
     retryPerformed: retried,
     retrySucceeded: retried && diagnostic.retrySucceeded === true,
+    ...(COVERAGE_CRITIC_RESULT_STATUSES.has(coverageCriticResultStatus) ? {
+      coverageCriticResultStatus,
+      coverageCriticErrorCategory: "",
+      coverageCriticFailureCode: "",
+      repairRequired: Boolean(diagnostic.repairRequired),
+      repairAllowed: Boolean(diagnostic.repairAllowed),
+      understandingCallsUsed: Number.isInteger(diagnostic.understandingCallsUsed) ? Math.max(0, Math.min(diagnostic.understandingCallsUsed, 3)) : 0,
+      understandingCallsLimit: Number.isInteger(diagnostic.understandingCallsLimit) ? Math.max(1, Math.min(diagnostic.understandingCallsLimit, 3)) : 0
+    } : {}),
     ...(diagnostic.taskCollectionRepairPerformed === true ? {
       taskCollectionRepairPerformed: true,
       preservedTaskCount: Number.isInteger(diagnostic.preservedTaskCount)
@@ -426,6 +437,7 @@ function safePlannerErrorDiagnostic(error, planner) {
     ...(COVERAGE_CRITIC_RESULT_STATUSES.has(coverageCriticResultStatus) ? {
       coverageCriticResultStatus,
       coverageCriticErrorCategory: safePlannerErrorCategory(error && error.coverageCriticErrorCategory),
+      coverageCriticFailureCode: COVERAGE_CRITIC_FAILURE_CODES.has(String(error && error.coverageCriticFailureCode || "")) ? String(error && error.coverageCriticFailureCode || "") : "other",
       repairRequired: Boolean(error && error.repairRequired),
       repairAllowed: Boolean(error && error.repairAllowed),
       understandingCallLimit: Number.isInteger(understandingCallLimit) && understandingCallLimit >= 1 ? Math.min(understandingCallLimit, 3) : 0,

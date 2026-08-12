@@ -175,6 +175,7 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
   if (expected.coverageCriticResultStatus) expectedDiagnosticKeys.push(
     "coverageCriticResultStatus",
     "coverageCriticErrorCategory",
+    "coverageCriticFailureCode",
     "repairRequired",
     "repairAllowed",
     "understandingCallLimit",
@@ -202,6 +203,7 @@ async function plannerFailureDiagnostic({ name, planner, expected }) {
   if (expected.coverageCriticResultStatus) {
     assert.equal(diagnostic.coverageCriticResultStatus, expected.coverageCriticResultStatus);
     assert.equal(diagnostic.coverageCriticErrorCategory, expected.coverageCriticErrorCategory);
+    assert.equal(diagnostic.coverageCriticFailureCode, expected.coverageCriticFailureCode || "");
     assert.equal(diagnostic.repairRequired, expected.repairRequired);
     assert.equal(diagnostic.repairAllowed, expected.repairAllowed);
     assert.equal(diagnostic.understandingCallLimit, expected.understandingCallLimit);
@@ -400,6 +402,27 @@ async function main() {
   for (const forbidden of Object.values(sensitive)) {
     assert.equal(JSON.stringify(successfulPlannerTrace).includes(forbidden), false, `successful Planner trace leaked ${forbidden}`);
   }
+
+  const successfulCriticTrace = formatSafeTestOnlyConversationTrace({
+    traceId: "successful-critic-trace",
+    propertyId: property.propertyId,
+    stage: "planner",
+    parserSucceeded: true,
+    coverageCriticResultStatus: "complete",
+    coverageCriticErrorCategory: "",
+    coverageCriticFailureCode: "",
+    repairRequired: false,
+    repairAllowed: false,
+    understandingCallsUsed: 2,
+    understandingCallsLimit: 3
+  });
+  assert.equal(successfulCriticTrace.coverageCriticResultStatus, "complete", "successful Critic status must survive the safe trace projection");
+  assert.equal(successfulCriticTrace.coverageCriticErrorCategory, "");
+  assert.equal(successfulCriticTrace.coverageCriticFailureCode, "");
+  assert.equal(successfulCriticTrace.repairRequired, false);
+  assert.equal(successfulCriticTrace.repairAllowed, false);
+  assert.equal(successfulCriticTrace.understandingCallsUsed, 2);
+  assert.equal(successfulCriticTrace.understandingCallsLimit, 3);
 
   const coverageRepairTrace = formatSafeTestOnlyConversationTrace({
     traceId: "coverage-repair-trace",

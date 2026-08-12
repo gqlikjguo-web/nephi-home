@@ -248,6 +248,14 @@ function coverageRepairInput(body) {
   assert.equal(completeFlow.totalCalls(), 2, "Complete primary coverage must use exactly two understanding calls");
   assert.equal(completeResult.tasks.length, 1);
   assert.equal(completeResult.tasks[0].taskId, "preserved-policy");
+  const completeDiagnostic = completeResult[Symbol.for("junzan.plannerProviderDiagnostic")];
+  assert.equal(completeDiagnostic.coverageCriticResultStatus, "complete", "a successful Critic result must retain its safe status");
+  assert.equal(completeDiagnostic.coverageCriticErrorCategory, "", "a successful Critic result must expose the canonical empty error category");
+  assert.equal(completeDiagnostic.coverageCriticFailureCode, "", "a successful Critic result must expose the canonical empty failure code");
+  assert.equal(completeDiagnostic.repairRequired, false);
+  assert.equal(completeDiagnostic.repairAllowed, false);
+  assert.equal(completeDiagnostic.understandingCallsUsed, 2);
+  assert.equal(completeDiagnostic.understandingCallsLimit, 3);
 
   for (const identityMode of ["eventId", "messageRef"]) {
     const singleIdentityRef = {
@@ -279,11 +287,11 @@ function coverageRepairInput(body) {
 
   const secondEvent = { eventId: "other-event", messageRef: "other-message", messageText: "Unrelated source." };
   const invalidSpanCases = [
-    { name: "fake event identity", ref: { ...missingRef, eventId: "fake-event", messageRef: "" } },
-    { name: "wrong quote", ref: { ...missingRef, quote: "not the source slice" } },
-    { name: "wrong offset", ref: { ...missingRef, startOffset: missingRef.startOffset + 1 } },
-    { name: "cross-event identity", ref: { ...missingRef, messageRef: secondEvent.messageRef } },
-    { name: "ambiguous overlap with covered sibling", ref: { ...exactRef(sourceEvent, firstQuote), startOffset: exactRef(sourceEvent, firstQuote).startOffset + 1, quote: firstQuote.slice(1) } }
+    { name: "fake event identity", failureCode: "invalid_source_identity", ref: { ...missingRef, eventId: "fake-event", messageRef: "" } },
+    { name: "wrong quote", failureCode: "invalid_evidence", ref: { ...missingRef, quote: "not the source slice" } },
+    { name: "wrong offset", failureCode: "invalid_evidence", ref: { ...missingRef, startOffset: missingRef.startOffset + 1 } },
+    { name: "cross-event identity", failureCode: "invalid_source_identity", ref: { ...missingRef, messageRef: secondEvent.messageRef } },
+    { name: "ambiguous overlap with covered sibling", failureCode: "invalid_source_overlap", ref: { ...exactRef(sourceEvent, firstQuote), startOffset: exactRef(sourceEvent, firstQuote).startOffset + 1, quote: firstQuote.slice(1) } }
   ];
   for (const scenario of invalidSpanCases) {
     const flow = createPlanner({
@@ -297,6 +305,7 @@ function coverageRepairInput(body) {
         assert.equal(error.errorCategory, "local_contract_failure");
         assert.equal(error.coverageCriticResultStatus, "invalid_output");
         assert.equal(error.coverageCriticErrorCategory, "local_contract_failure");
+        assert.equal(error.coverageCriticFailureCode, scenario.failureCode, "the safe diagnostic must identify the exact local Critic predicate");
         assert.equal(error.repairRequired, false);
         assert.equal(error.repairAllowed, false);
         assert.equal(error.understandingCallLimit, 3);

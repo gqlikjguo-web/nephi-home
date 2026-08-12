@@ -302,6 +302,68 @@ function main() {
   assert.equal(coherentSourceIdentity.tasks[0].entity.canonicalCandidate, "bbq", "a source alias and matching canonical identity must remain valid");
   assert.notEqual(coherentSourceIdentity.tasks[0].type, "unknown");
 
+  const nestedIdentityCatalog = buildPropertyCatalog({
+    ...property,
+    commonAnswers: { ...property.commonAnswers, checkInTime: "15:00", latestArrivalTime: "22:00", checkOutTime: "11:00" }
+  });
+  const nestedSpecificIdentity = sourceBoundSemantic(task({
+    taskId: "nested-specific-source-identity",
+    type: "policy",
+    category: "policy",
+    rawText: "最晚入住時間",
+    canonicalCandidate: "check_in__latest_arrival_policy",
+    detailIntent: "latest_arrival_policy"
+  }), { catalogOverride: nestedIdentityCatalog });
+  assert.equal(nestedSpecificIdentity.tasks[0].entity.canonicalCandidate, "check_in__latest_arrival_policy", "a uniquely resolved specific source identity must not conflict merely because its text also contains a generic parent alias");
+  assert.notEqual(nestedSpecificIdentity.tasks[0].type, "unknown");
+
+  const exactStay = {
+    dateExpression: { rawText: "8/14-8/15", kind: "range", anchor: "message_time" },
+    checkInCandidate: "2026-08-14", checkOutCandidate: "2026-08-15", nightsCandidate: 1, guestCountCandidate: 7
+  };
+  const uncertainGuestPlan = plan([task({
+    taskId: "uncertain-guest-count",
+    type: "availability",
+    category: "other",
+    rawText: "8/14-8/15 人數大概6-8人",
+    requestedOutputs: ["availability"],
+    dependsOnStayContext: true,
+    stayCandidate: exactStay
+  })]);
+  uncertainGuestPlan.stay = { ...exactStay, guestCountCandidate: null };
+  uncertainGuestPlan.missingInformation = ["exact guest count"];
+  uncertainGuestPlan.semanticCandidates[0].lodgingScopeCandidate = {
+    scopeId: "80000000-0000-4000-8000-000000000001",
+    bundleCanonicalCandidate: null,
+    roomCanonicalCandidates: [],
+    guestCountCandidate: 7
+  };
+  const uncertainGuest = applyPlannerSemanticContract(uncertainGuestPlan, { catalog });
+  assert.equal(uncertainGuest.tasks[0].stayCandidate.guestCountCandidate, null, "a task-level integer must not become confirmed when the Planner's shared stay certainty leaves guest count unresolved");
+  assert.equal(uncertainGuest.semanticCandidates[0].lodgingScopeCandidate.guestCountCandidate, null, "the owned lodging scope must not retain a guest count rejected by the certainty contract");
+  assert.equal(uncertainGuest.tasks[0].stayCandidate.checkInCandidate, "2026-08-14", "guest certainty rejection must preserve temporal evidence");
+  assert.equal(uncertainGuest.tasks[0].stayCandidate.checkOutCandidate, "2026-08-15", "guest certainty rejection must preserve the date range");
+
+  const exactGuestPlan = plan([task({
+    taskId: "exact-guest-count",
+    type: "availability",
+    category: "other",
+    rawText: "8/14-8/15 7人",
+    requestedOutputs: ["availability"],
+    dependsOnStayContext: true,
+    stayCandidate: exactStay
+  })]);
+  exactGuestPlan.stay = { ...exactStay };
+  exactGuestPlan.semanticCandidates[0].lodgingScopeCandidate = {
+    scopeId: "80000000-0000-4000-8000-000000000002",
+    bundleCanonicalCandidate: null,
+    roomCanonicalCandidates: [],
+    guestCountCandidate: 7
+  };
+  const exactGuest = applyPlannerSemanticContract(exactGuestPlan, { catalog });
+  assert.equal(exactGuest.tasks[0].stayCandidate.guestCountCandidate, 7, "a cross-representation exact guest count must remain confirmed");
+  assert.equal(exactGuest.semanticCandidates[0].lodgingScopeCandidate.guestCountCandidate, 7, "an exact guest count must remain coherent in the owned lodging scope");
+
   const resolvedLocation = canonical(task({ taskId: "map", category: "transport", rawText: "directions" }));
   assert.equal(resolvedLocation.semantic.tasks[0].entity.canonicalCandidate, "location", "a uniquely property-catalog grounded transport entity must become location");
   assert.equal(resolvedLocation.item.canonicalRequest.capability, "location");

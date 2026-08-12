@@ -313,12 +313,19 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
       ? canonicalGrounded.entity.canonicalId
       : null
   ].filter(Boolean));
+  const directlyResolvedSourceIdentityIds = new Set([
+    rawGrounded && rawGrounded.status === "resolved" && rawGrounded.entity && rawGrounded.entity.canonicalId,
+    scopedRawGrounded && scopedRawGrounded.status === "resolved" && scopedRawGrounded.entity && scopedRawGrounded.entity.canonicalId
+  ].filter(Boolean));
+  const authoritativeSourceIdentityIds = directlyResolvedSourceIdentityIds.size === 1
+    ? directlyResolvedSourceIdentityIds
+    : sourceIdentityIds;
   const sourceBoundCanonicalConflict = sourceBoundRaw
     && verifiedSource.includes(sourceBoundRaw)
     && entity.canonicalCandidate
     && canonicalGrounded && canonicalGrounded.status === "resolved"
-    && (sourceIdentityIds.size > 0
-      ? sourceIdentityIds.size !== 1 || !sourceIdentityIds.has(canonicalGrounded.entity.canonicalId)
+    && (authoritativeSourceIdentityIds.size > 0
+      ? authoritativeSourceIdentityIds.size !== 1 || !authoritativeSourceIdentityIds.has(canonicalGrounded.entity.canonicalId)
       : entity.category !== canonicalGrounded.entity.category);
   if (sourceBoundCanonicalConflict) return {
     ...task,
@@ -1072,6 +1079,19 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     if (!repairedTasks.some((item) => item.index === index) && !rejectedTasks.some((item) => item.index === index)) acceptedTasks.push({ taskId: task.taskId, index });
     return task;
   });
+  let guestCountCertaintyAligned = false;
+  if (tasks.length === 1
+    && value.stay && value.stay.guestCountCandidate === null
+    && Array.isArray(value.missingInformation) && value.missingInformation.length > 0
+    && tasks[0] && tasks[0].dependsOnStayContext === true
+    && tasks[0].stayCandidate && Number.isInteger(tasks[0].stayCandidate.guestCountCandidate)) {
+    tasks[0] = {
+      ...tasks[0],
+      stayCandidate: { ...tasks[0].stayCandidate, guestCountCandidate: null }
+    };
+    guestCountCertaintyAligned = true;
+    repairedTasks.push({ taskId: tasks[0].taskId, index: 0, reason: "guest_count_certainty_alignment" });
+  }
   const acknowledgementWithActionableTask = value.discourse
     && value.discourse.relation === "acknowledgement"
     && tasks.some((task) => task && task.type !== "unknown");
@@ -1125,14 +1145,29 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     });
   }
   const { isolatedTaskIndexes: _isolatedTaskIndexes, ...contractValue } = value;
+  const ownedGuestCandidateIds = guestCountCertaintyAligned
+    ? new Set(Array.isArray(tasks[0].semanticCandidateIds) ? tasks[0].semanticCandidateIds.map(String) : [])
+    : new Set();
+  const semanticCandidates = (Array.isArray(value.semanticCandidates) ? value.semanticCandidates : []).map((candidate) => {
+    if (!guestCountCertaintyAligned || !ownedGuestCandidateIds.has(String(candidate && candidate.candidateId || ""))
+      || !candidate.lodgingScopeCandidate || !Number.isInteger(candidate.lodgingScopeCandidate.guestCountCandidate)) return candidate;
+    const alignedCandidate = {
+      ...candidate,
+      lodgingScopeCandidate: { ...candidate.lodgingScopeCandidate, guestCountCandidate: null }
+    };
+    for (const symbol of Object.getOwnPropertySymbols(candidate)) {
+      Object.defineProperty(alignedCandidate, symbol, Object.getOwnPropertyDescriptor(candidate, symbol));
+    }
+    return alignedCandidate;
+  });
   const result = {
     ...contractValue,
     tasks,
+    ...(Array.isArray(value.semanticCandidates) ? { semanticCandidates } : {}),
     contextRelationCandidates,
     shouldIgnore: silentOnly ? true : value.shouldIgnore,
     semanticValidation: { acceptedTasks, repairedTasks, rejectedTasks, repairedRelations }
   };
-  const semanticCandidates = Array.isArray(value.semanticCandidates) ? value.semanticCandidates : [];
   const candidatesById = new Map(semanticCandidates.map((candidate) => [String(candidate && candidate.candidateId || ""), candidate]));
   const repairCanonicalizationResult = Object.freeze(tasks.flatMap((task) => {
     const candidateIds = Array.isArray(task && task.semanticCandidateIds) ? task.semanticCandidateIds : [];

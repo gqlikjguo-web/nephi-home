@@ -44,7 +44,8 @@ const SAFE_KEYS = new Set([
   "blocked", "blockedDates", "availableDates", "dateFrom", "dateTo", "price", "totalPrice", "queryMode", "operation",
   "dateExpressionPresent", "expressionType", "repairReasonCode", "provenance", "ruleRefs", "fields", "produced",
   "responseMode", "riskLevel", "stayDependency", "shouldReply", "attempted", "delivered", "deliveryErrorCode",
-  "repairCorrelationId"
+  "repairCorrelationId", "coverageCriticResultStatus", "coverageCriticErrorCategory", "coverageCriticFailureCode",
+  "repairRequired", "repairAllowed", "understandingCallsUsed", "understandingCallsLimit"
 ]);
 const BLOCKED_KEY_PATTERN = /(secret|token|password|credential|authorization|cookie|database.?url|line.?user|source.?text|evidence|prompt|email|phone|contact|address)/i;
 
@@ -172,7 +173,7 @@ function diagnosticProjection(stage, entry) {
   if (stage === "state_before") return stateBeforeProjection(entry);
   if (stage === "planner") {
     return {
-      ...select(entry, ["parserSucceeded", "taskCount", "discourse", "shouldIgnore", "failure", "failureCode", "providerAttemptCount", "firstAttemptErrorCategory", "finalErrorCategory", "retryPerformed", "retrySucceeded", "taskCollectionRepairPerformed", "preservedTaskCount", "fallbackTaskCount", "coverageRepairPerformed", "coverageRepairSucceeded", "coverageRepairFallback"]),
+      ...select(entry, ["parserSucceeded", "taskCount", "discourse", "shouldIgnore", "failure", "failureCode", "providerAttemptCount", "firstAttemptErrorCategory", "finalErrorCategory", "retryPerformed", "retrySucceeded", "taskCollectionRepairPerformed", "preservedTaskCount", "fallbackTaskCount", "coverageRepairPerformed", "coverageRepairSucceeded", "coverageRepairFallback", "coverageCriticResultStatus", "coverageCriticErrorCategory", "coverageCriticFailureCode", "repairRequired", "repairAllowed", "understandingCallsUsed", "understandingCallsLimit"]),
       repairProvenance: safeRepairProvenance(entry && entry.repairProvenance),
       semanticLedgerBoundaries: safeSemanticLedgerBoundaries(entry && entry.semanticLedgerBoundaries),
       missingInformation: safePlannerMissingInformation(entry && entry.missingInformation),
