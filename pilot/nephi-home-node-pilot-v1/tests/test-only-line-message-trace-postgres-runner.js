@@ -13,8 +13,9 @@ const { createProviders } = require("../lib/providers/provider-factory");
   let providers;
   try {
     const migration = await migratePostgres(connection);
-    assert.equal(migration.files.at(-1), "021_test_only_line_message_traces.sql");
+    assert.ok(migration.files.includes("021_test_only_line_message_traces.sql"));
     assert.equal(migration.files.filter((file) => file.startsWith("021_")).length, 1);
+    assert.equal(migration.files.at(-1), "022_inventory_date_completeness.sql");
 
     providers = createProviders({ databaseUrl: "pglite:test", postgresConnection: connection });
     const base = {
