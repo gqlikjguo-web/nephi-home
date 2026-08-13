@@ -585,7 +585,7 @@ function listDatePriceClassifications(customerSettings, propertyId) {
     : [];
 }
 
-function adminPricingData(customerSettings, property) {
+function adminPricingData(customerSettings, property, dates = []) {
   const propertyId = property.propertyId;
   const rooms = typeof customerSettings.listRoomRecords === "function"
     ? customerSettings.listRoomRecords(propertyId)
@@ -593,15 +593,24 @@ function adminPricingData(customerSettings, property) {
   const bundles = typeof customerSettings.listBundles === "function"
     ? customerSettings.listBundles(propertyId)
     : (property.rooms || []).filter((item) => item.inventoryType === "bundle");
+  const inventories = [
+    ...rooms.map((item) => ({ ...item, inventoryType: "room" })),
+    ...bundles.map((item) => ({ ...item, inventoryType: "bundle" }))
+  ];
+  const overrides = listInventoryPriceOverrides(customerSettings, propertyId);
+  const datePriceClassifications = listDatePriceClassifications(customerSettings, propertyId);
   return {
     currency: property.currency || "TWD",
     rooms,
-    inventories: [
-      ...rooms.map((item) => ({ ...item, inventoryType: "room" })),
-      ...bundles.map((item) => ({ ...item, inventoryType: "bundle" }))
-    ],
-    overrides: listInventoryPriceOverrides(customerSettings, propertyId),
-    datePriceClassifications: listDatePriceClassifications(customerSettings, propertyId)
+    inventories,
+    overrides,
+    datePriceClassifications,
+    dailyPrices: dates.flatMap((date) => inventories.map((inventory) => ({
+      inventoryType: inventory.inventoryType,
+      inventoryId: inventory.id,
+      date,
+      ...resolveDatePrice({ inventory, date, priceOverrides: overrides, datePriceClassifications })
+    })))
   };
 }
 
@@ -1018,7 +1027,12 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "POST" && pathname === "/api/availability/batch") {
         return sendData(response, service.applyBatch(request.adminBody || await readJsonBody(request)));
       }
-      if(request.method==="GET"&&pathname==="/api/room-pricing"){const property=customerSettings.getProperty(url.searchParams.get("customerId"));return sendData(response,adminPricingData(customerSettings,property));}
+      if(request.method==="GET"&&pathname==="/api/room-pricing"){
+        const property=customerSettings.getProperty(url.searchParams.get("customerId")),dates=[...new Set(url.searchParams.getAll("date"))];
+        if(!property)throw new AppError(400,"UNKNOWN_PROPERTY","?????");
+        if(dates.length>62||dates.some((date)=>!isDateKey(date)))throw new AppError(400,"INVALID_PRICE_DATES","??????????");
+        return sendData(response,adminPricingData(customerSettings,property,dates));
+      }
       if(request.method==="PUT"&&pathname==="/api/room-pricing"){
         const body=request.adminBody||await readJsonBody(request),propertyId=String(body.propertyId||body.customerId||"").trim();
         if(!Array.isArray(body.rooms)||!body.rooms.length)throw new AppError(400,"INVALID_PRICING_MATRIX","請提供至少一個房型價格");

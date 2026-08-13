@@ -54,7 +54,7 @@ function seedDate(offsetDays) {
   assert.match(adminScript, /＋備註/, "admin must expose an explicit add-note action");
   assert.match(adminScript, /編輯備註/, "admin must expose an explicit edit-note action");
   assert.match(adminScript, /bundle-members/, "bundle cards must render member room names as structured content");
-  assert.match(adminScript, /已有特殊價格，確定覆蓋/, "overwriting a special price must require confirmation");
+  assert.doesNotMatch(adminScript, /已有特殊價格，確定覆蓋/, "saving a single-day price must not require a redundant overwrite confirmation");
   assert.match(adminScript, /bundleStatus/, "bundle writes must expose explicit success or failure feedback");
   assert.match(adminHtml, /id="monthlyInventoryControls"/, "availability admin must reserve an aligned monthly control row");
   assert.match(adminScript, /\/api\/availability\/month/, "monthly inventory controls must use the generic month endpoint");

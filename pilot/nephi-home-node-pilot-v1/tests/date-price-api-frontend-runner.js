@@ -23,11 +23,19 @@ async function publicAvailability(base) {
 async function run() {
   const adminHtml = fs.readFileSync(path.join(__dirname, "../public/admin.html"), "utf8");
   const adminScript = fs.readFileSync(path.join(__dirname, "../public/assets/admin.js"), "utf8");
-  assert.match(adminHtml, /id="dateClassificationForm"/, "admin must expose formal property date classifications");
-  assert.match(adminHtml, /id="overrideMode"/, "admin must let operators choose direct price or price type");
-  assert.match(adminHtml, /id="overrideClear"/, "admin must expose clearing an inventory date override");
+  assert.doesNotMatch(adminHtml, /id="dateClassificationForm"/, "the pricing tab must not retain the duplicate date-classification form");
+  assert.doesNotMatch(adminHtml, /id="overrideForm"/, "the pricing tab must not retain the duplicate inventory override form");
+  assert.match(adminHtml, /id="priceEditor"/, "availability must expose one inventory price editor");
+  assert.doesNotMatch(adminHtml, /id="priceEditorMode"/, "the cell editor must not expose price-type modes");
+  assert.match(adminHtml, /id="priceEditorSpecialPrice"[^>]*required/, "the cell editor must expose one required direct-price input");
+  assert.match(adminHtml, /id="priceEditorClear"/, "the cell editor must expose restoring automatic pricing");
+  assert.match(adminScript, /openInventoryPriceEditor/, "each availability inventory cell must open the shared price editor");
+  assert.doesNotMatch(adminScript, /openDatePriceEditor/, "availability date headings must not expose date-classification editing");
+  assert.doesNotMatch(adminScript, /date-price-button/, "availability date headings must remain simple date summaries");
+  assert.doesNotMatch(adminScript, /priceEditorMode/, "the inventory editor must not depend on a mode selector");
+  assert.match(adminScript, /body\.price\s*=\s*Number\(\$\("priceEditorSpecialPrice"\)\.value\)/, "the inventory editor must submit the direct single-day price");
   assert.match(adminScript, /\/api\/inventory-price-overrides/, "admin must use the generic room/bundle override API");
-  assert.match(adminScript, /\/api\/date-price-classifications/, "admin must save formal date classifications");
+  assert.doesNotMatch(adminScript, /\/api\/date-price-classifications/, "admin must not expose date-classification writes");
 
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "date-price-api-"));
   const seedFile = path.join(temp, "seed.json");
@@ -52,14 +60,24 @@ async function run() {
     let publicData = await publicAvailability(running.url);
     assert.equal(publicData.rooms.find((item) => item.id === "room-a").price, 1600, "public room price must use the formal holiday classification");
     assert.equal(publicData.bundles.find((item) => item.id === "bundle-a").price, 8000, "public bundle price must use the same formal holiday classification");
+    let adminPrices = await request(`${running.url}/api/room-pricing?customerId=property_a&date=2026-09-21`);
+    assert.deepEqual(adminPrices.body.data.dailyPrices.map((item) => [item.inventoryType, item.inventoryId, item.price, item.source]), [
+      ["room", "room-a", 1600, "property_date_classification"],
+      ["bundle", "bundle-a", 8000, "property_date_classification"]
+    ], "availability cells must receive room and bundle prices projected by the existing authority");
 
     const roomOverride = await write(running.url, "/api/inventory-price-overrides", "POST", { propertyId: "property_a", inventoryType: "room", inventoryId: "room-a", date: "2026-09-21", price: 2345 });
     assert.equal(roomOverride.response.status, 200);
-    const bundleOverride = await write(running.url, "/api/inventory-price-overrides", "POST", { propertyId: "property_a", inventoryType: "bundle", inventoryId: "bundle-a", date: "2026-09-21", priceType: "friday" });
+    const bundleOverride = await write(running.url, "/api/inventory-price-overrides", "POST", { propertyId: "property_a", inventoryType: "bundle", inventoryId: "bundle-a", date: "2026-09-21", price: 6789 });
     assert.equal(bundleOverride.response.status, 200);
     publicData = await publicAvailability(running.url);
     assert.equal(publicData.rooms.find((item) => item.id === "room-a").price, 2345, "direct special price must beat the holiday");
-    assert.equal(publicData.bundles.find((item) => item.id === "bundle-a").price, 6000, "bundle price-type override must beat the holiday");
+    assert.equal(publicData.bundles.find((item) => item.id === "bundle-a").price, 6789, "direct bundle price must beat the holiday");
+    adminPrices = await request(`${running.url}/api/room-pricing?customerId=property_a&date=2026-09-21`);
+    assert.deepEqual(adminPrices.body.data.dailyPrices.map((item) => [item.inventoryType, item.inventoryId, item.price, item.source]), [
+      ["room", "room-a", 2345, "price_override"],
+      ["bundle", "bundle-a", 6789, "price_override"]
+    ], "availability cells must refresh to the same saved room and bundle override authority");
 
     const pricing = await request(`${running.url}/api/room-pricing?customerId=property_a`);
     assert.deepEqual(pricing.body.data.inventories.map((item) => [item.inventoryType, item.id]), [["room","room-a"],["bundle","bundle-a"]]);
@@ -70,6 +88,9 @@ async function run() {
     assert.equal(cleared.response.status, 200);
     assert.equal((await publicAvailability(running.url)).rooms.find((item) => item.id === "room-a").price, 1600, "clearing an override must restore automatic holiday pricing");
 
+    const clearedBundle = await write(running.url, "/api/inventory-price-overrides", "DELETE", { propertyId: "property_a", inventoryType: "bundle", inventoryId: "bundle-a", date: "2026-09-21" });
+    assert.equal(clearedBundle.response.status, 200);
+    assert.equal((await publicAvailability(running.url)).bundles.find((item) => item.id === "bundle-a").price, 8000, "clearing a bundle override must restore automatic holiday pricing");
     await write(running.url, "/api/date-price-classifications", "DELETE", { propertyId: "property_a", date: "2026-09-21" });
     assert.equal((await publicAvailability(running.url)).rooms.find((item) => item.id === "room-a").price, 1000, "clearing the date classification must restore weekday pricing");
     console.log("date price API/frontend: PASS");

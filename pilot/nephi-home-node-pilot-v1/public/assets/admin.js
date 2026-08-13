@@ -16,7 +16,8 @@ const mutationVersions = new Map();
 const saveStates = new Map();
 const monthlySaveStates = new Map();
 let noteEditorState = null;
-const pricingState = { rooms: [], inventories: [], overrides: [], datePriceClassifications: [], original: new Map(), dirty: false, saving: false };
+let priceEditorState = null;
+const pricingState = { currency: "TWD", rooms: [], inventories: [], overrides: [], datePriceClassifications: [], dailyPrices: [], original: new Map(), dirty: false, saving: false };
 const expectedSlug = (() => { const parts = location.pathname.split("/").filter(Boolean); return parts.length === 2 && parts[1] === "admin" ? parts[0] : ""; })();
 
 async function api(path, options = {}) {
@@ -95,6 +96,9 @@ function inventoryKey(inventoryType, inventoryId) { return `${inventoryType}:${i
 function noteFor(date, room) { return availabilityState.notesByDate[date]?.[inventoryKey(inventoryTypeFor(room), room.id)] || null; }
 function setNoteFor(date, inventoryType, inventoryId, note) { const key = inventoryKey(inventoryType, inventoryId); availabilityState.notesByDate[date] = availabilityState.notesByDate[date] || {}; if (note) availabilityState.notesByDate[date][key] = note; else { delete availabilityState.notesByDate[date][key]; if (!Object.keys(availabilityState.notesByDate[date]).length) delete availabilityState.notesByDate[date]; } }
 function roomById(inventoryId) { return availabilityState.rooms.find(room => room.id === inventoryId); }
+function dailyPriceFor(date, room) { const inventoryType = inventoryTypeFor(room); return pricingState.dailyPrices.find(item => item.date === date && item.inventoryType === inventoryType && item.inventoryId === room.id) || null; }
+function priceOverrideFor(date, room) { const inventoryType = inventoryTypeFor(room); return pricingState.overrides.find(item => item.date === date && item.inventoryType === inventoryType && item.inventoryId === room.id) || null; }
+function moneyLabel(value) { return Number.isInteger(Number(value)) && Number(value) > 0 ? `NT$${new Intl.NumberFormat("zh-TW").format(Number(value))}` : "尚未設定"; }
 function hasUnsavedNote() { return Boolean(noteEditorState && $("noteText").value !== noteEditorState.original); }
 
 function renderSaveState(container, key) {
@@ -111,11 +115,21 @@ function createStatusControl(date, room) {
   return wrapper;
 }
 
+function createPriceButton(date, room) {
+  const resolved = dailyPriceFor(date, room), overridden = Boolean(priceOverrideFor(date, room)), button = element("button", `day-price-button${overridden ? " has-override" : ""}`);
+  button.type = "button";
+  button.setAttribute("aria-label", `${dateLabel(date)} ${room.name}當日實際價格${moneyLabel(resolved?.price)}，點擊調整`);
+  button.append(element("span", "day-price-caption", "當日實際價格"), element("strong", "day-price-value", moneyLabel(resolved?.price)));
+  button.onclick = () => openInventoryPriceEditor(date, room);
+  return button;
+}
+
 function createRoomRow(date, room) {
-  const row = element("article", "availability-room-row"), name = element("div", "room-label", room.name), actions = element("div", "room-actions"), statusArea = element("div", "room-save-area");
+  const row = element("article", "availability-room-row"), summary = element("div", "room-summary"), name = element("div", "room-label", room.name), actions = element("div", "room-actions"), statusArea = element("div", "room-save-area");
+  summary.append(name, createPriceButton(date, room));
   actions.append(createStatusControl(date, room));
   const note = noteFor(date, room), button = element("button", `note-button${note ? " has-note" : ""}`, note ? "編輯備註" : "＋備註"); button.type = "button"; button.setAttribute("aria-label", `${dateLabel(date)} ${room.name}${note ? "有內部備註，編輯備註" : "新增內部備註"}`); button.onclick = () => openNoteEditor(date, room.id); actions.append(button);
-  renderSaveState(statusArea, mutationKey("status", date, room.id)); row.append(name, actions, statusArea); return row;
+  renderSaveState(statusArea, mutationKey("status", date, room.id)); row.append(summary, actions, statusArea); return row;
 }
 
 function renderMonthlyInventoryControls() {
@@ -135,7 +149,16 @@ function renderMonthlyInventoryControls() {
   container.replaceChildren(heading, grid);
 }
 
-function createDayCard(date) { const day = availabilityState.days.get(date), card = element("section", `availability-day-card${date === currentDateKey() ? " is-today" : ""}`), heading = element("div", "availability-day-heading"), title = element("h3", "", dateLabel(date)), inventoryGrid = element("div", "availability-inventory-grid"); inventoryGrid.style.setProperty("--inventory-count", String(availabilityState.rooms.length)); const available = availabilityState.rooms.filter(room => day[room.id] === "available").length, summary = element("span", "day-summary", `${available} 可售／${availabilityState.rooms.length - available} 不可售`); heading.append(title, summary); if (!day._hasAvailability) heading.append(element("span", "missing-data", "尚無房況資料，依不可售顯示")); inventoryGrid.append(...availabilityState.rooms.map(room => createRoomRow(date, room))); card.append(heading, inventoryGrid); return card; }
+function createDayCard(date) {
+  const day = availabilityState.days.get(date), card = element("section", `availability-day-card${date === currentDateKey() ? " is-today" : ""}`), heading = element("div", "availability-day-heading"), title = element("h3", "", dateLabel(date)), inventoryGrid = element("div", "availability-inventory-grid");
+  inventoryGrid.style.setProperty("--inventory-count", String(availabilityState.rooms.length));
+  const available = availabilityState.rooms.filter(room => day[room.id] === "available").length, summary = element("span", "day-summary", `${available} 可售／${availabilityState.rooms.length - available} 不可售`);
+  heading.append(title, summary);
+  if (!day._hasAvailability) heading.append(element("span", "missing-data", "尚無房況資料，依不可售顯示"));
+  inventoryGrid.append(...availabilityState.rooms.map(room => createRoomRow(date, room)));
+  card.append(heading, inventoryGrid);
+  return card;
+}
 function renderDailyView() {
   const container = $("dailyAvailability");
   if (!availabilityState.rooms.length) { container.replaceChildren(element("div", "availability-empty", "目前沒有可管理的房型。")); return; }
@@ -208,7 +231,6 @@ function clearBundle() { $("bundleForm").reset(); $("bundleId").value = ""; $("b
 async function deleteBundle(bundle) { if (!confirm(`確定刪除「${bundle.name}」？已使用的方案不可刪除。`)) return; try { await api(`/api/bundles/${encodeURIComponent(bundle.id)}`, { method: "DELETE", body: JSON.stringify({ customerId: session.propertyId }) }); await Promise.all([loadBundles(), loadMonth()]); } catch (error) { alert(error.message); } }
 
 const priceKeys = ["mondayThursdayPrice", "fridayPrice", "saturdayHolidayPrice", "sundayPrice"];
-const priceTypeLabels = { monday_thursday: "週一至週四", friday: "週五", saturday_holiday: "週六及連續假期", sunday: "週日" };
 function currentPricingRows() { return [...$("roomPricing").querySelectorAll("tr[data-room-id]")].map(row => { const details=$("roomDetails").querySelector(`[data-room-detail-id="${CSS.escape(row.dataset.roomId)}"]`),item={roomTypeId:row.dataset.roomId,roomCode:details.querySelector('[data-room-field="roomCode"]').value,displayName:details.querySelector('[data-room-field="displayName"]').value,capacity:Number(details.querySelector('[data-room-field="capacity"]').value),highlights:[...details.querySelectorAll('[data-room-field="highlight"]')].map(input=>input.value),enabled:details.querySelector('[data-room-field="enabled"]').checked};for (const key of priceKeys) item[key] = Number(row.querySelector(`[data-price-key="${key}"]`).value); return item; }); }
 function updatePricingDirty() {
   pricingState.dirty = currentPricingRows().some(row => JSON.stringify(row)!==JSON.stringify(pricingState.original.get(row.roomTypeId)));
@@ -217,7 +239,7 @@ function updatePricingDirty() {
 }
 function setPricingInputsDisabled(disabled) { document.querySelectorAll("#roomPricing input, #roomDetails input").forEach(input => { input.disabled = disabled; }); }
 function renderPricingMatrix(data) {
-  pricingState.rooms = data.rooms; pricingState.inventories = data.inventories || data.rooms.map(item => ({ ...item, inventoryType: "room" })); pricingState.overrides = data.overrides; pricingState.datePriceClassifications = data.datePriceClassifications || []; pricingState.dirty = false;
+  pricingState.currency = data.currency || "TWD"; pricingState.rooms = data.rooms; pricingState.inventories = data.inventories || data.rooms.map(item => ({ ...item, inventoryType: "room" })); pricingState.overrides = data.overrides; pricingState.datePriceClassifications = data.datePriceClassifications || []; pricingState.dailyPrices = data.dailyPrices || []; pricingState.dirty = false;
   $("roomDetails").replaceChildren(...data.rooms.map(room=>{const card=element("article","room-detail-card");card.dataset.roomDetailId=room.id;const title=element("h3",undefined,room.displayName||room.name),fields=element("div","room-detail-grid");const input=(label,key,value,type="text")=>{const wrap=document.createElement("label"),node=document.createElement("input");wrap.append(document.createTextNode(label));node.type=type;node.value=value??"";node.dataset.roomField=key;if(key==="displayName"||key==="capacity")node.required=true;if(type==="number"){node.min="1";node.step="1";}node.oninput=updatePricingDirty;wrap.append(node);return wrap;};fields.append(input("房型代號／房號（選填）","roomCode",room.roomCode||""),input("房型顯示名稱","displayName",room.displayName||room.name),input("最多入住人數","capacity",room.capacity,"number"));const highlights=element("fieldset","room-highlight-fields"),legend=document.createElement("legend"),hint=element("p","hint","顯示於旅客查房頁；目前不提供 AI 回答。空白項目不會保存或顯示。");legend.textContent="房型特色（選填，最多3項）";highlights.append(legend,hint);for(let i=0;i<3;i++){const node=input(`特色 ${i+1}`,"highlight",(room.highlights||[])[i]||"");node.querySelector("input").maxLength=15;highlights.append(node);}const enabled=document.createElement("label"),toggle=document.createElement("input");toggle.type="checkbox";toggle.checked=room.enabled!==false;toggle.dataset.roomField="enabled";toggle.onchange=updatePricingDirty;enabled.append(toggle,document.createTextNode("啟用房型"));card.append(title,fields,highlights,enabled);return card;}));
   const wrap = element("div", "pricing-matrix-scroll"), table = element("table", "pricing-matrix"), head = document.createElement("thead"), headRow = document.createElement("tr"), body = document.createElement("tbody");
   for (const label of ["房型", "週一至週四", "週五", "週六及連續假期", "週日"]) headRow.append(cell("th", label)); head.append(headRow);
@@ -231,15 +253,13 @@ async function savePricingMatrix() {
   finally { pricingState.saving = false; setPricingInputsDisabled(false); $("pricingSave").disabled = !pricingState.dirty; }
 }
 async function loadPricing() {
-  const data = await api(`/api/room-pricing?customerId=${encodeURIComponent(session.propertyId)}`);
+  const params = new URLSearchParams({ customerId: session.propertyId });
+  for (const date of availabilityState.days.keys()) params.append("date", date);
+  const data = await api(`/api/room-pricing?${params}`);
   renderPricingMatrix(data);
-  $("overrideInventory").replaceChildren(...pricingState.inventories.map(item => { const option = document.createElement("option"); option.value = `${item.inventoryType}:${item.id}`; option.dataset.inventoryType = item.inventoryType; option.dataset.inventoryId = item.id; option.textContent = `${item.inventoryType === "bundle" ? "包棟" : "房型"}｜${item.name}`; return option; }));
-  $("overrideList").replaceChildren(...pricingState.overrides.map(item => { const inventory=pricingState.inventories.find(value=>value.inventoryType===item.inventoryType&&value.id===item.inventoryId),value=item.price!==null?`${item.price} 元`:priceTypeLabels[item.priceType]||"資料異常";return cell("p",`${item.date}｜${inventory?.name || item.inventoryId}｜${value}`); }));
-  $("classificationList").replaceChildren(...pricingState.datePriceClassifications.map(item => cell("p", `${item.date}｜${priceTypeLabels[item.priceType] || item.priceType}`)));
+  if (availabilityState.days.size) renderAvailability();
 }
 
-function selectedOverrideInventory() { const option=$("overrideInventory").selectedOptions[0];return option?{inventoryType:option.dataset.inventoryType,inventoryId:option.dataset.inventoryId}:null; }
-function toggleOverrideMode() { const usesType=$("overrideMode").value==="price_type";$("overridePriceField").hidden=usesType;$("overridePriceTypeField").hidden=!usesType;$("overridePrice").required=!usesType;$("overridePriceType").required=usesType; }
 
 async function loadProfile() {
   const profile = await api(`/api/property-profile?propertyId=${encodeURIComponent(session.propertyId)}`);
@@ -256,16 +276,14 @@ $("propertyFactsForm").onsubmit = async event => { event.preventDefault(); const
 $("customReplyScope").onchange=toggleCustomReplyRoomField;
 $("customReplyCancel").onclick=clearCustomReplyForm;
 $("customReplyForm").onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(!form.reportValidity())return;const id=$("customReplyId").value,payload={propertyId:session.propertyId,name:$("customReplyName").value,topic:$("customReplyTopic").value,scope:$("customReplyScope").value,roomTypeId:$("customReplyRoomType").value,stayStartDate:$("customReplyStayStart").value,stayEndDate:$("customReplyStayEnd").value,effectiveStartDate:$("customReplyEffectiveStart").value,effectiveEndDate:$("customReplyEffectiveEnd").value,approvedReply:$("customReplyText").value,enabled:$("customReplyEnabled").checked};$("customReplyStatus").textContent="儲存中…";try{await api(id?`/api/custom-replies/${encodeURIComponent(id)}`:"/api/custom-replies",{method:id?"PUT":"POST",body:JSON.stringify(payload)});await loadCustomReplies();clearCustomReplyForm();$("customReplyStatus").textContent="已儲存"}catch(error){$("customReplyStatus").textContent=`儲存失敗：${error.message}`}};
-$("overrideMode").onchange=toggleOverrideMode;toggleOverrideMode();
-$("overrideForm").onsubmit = async event => { event.preventDefault(); const inventory=selectedOverrideInventory(),date=$("overrideDate").value,status=$("overrideStatus"),exists=inventory&&pricingState.overrides.some(item=>item.inventoryType===inventory.inventoryType&&item.inventoryId===inventory.inventoryId&&item.date===date);if(exists&&!confirm("此房型或包棟在該日期已有特殊價格，確定覆蓋嗎？"))return;const payload={propertyId:session.propertyId,...inventory,date,...($("overrideMode").value==="price_type"?{priceType:$("overridePriceType").value}:{price:Number($("overridePrice").value)})};status.textContent="儲存中…";try{await api("/api/inventory-price-overrides",{method:"POST",body:JSON.stringify(payload)});await loadPricing();status.textContent="已儲存";}catch(error){status.textContent=`儲存失敗：${error.message}。輸入內容仍保留，請重試。`;} };
-$("overrideClear").onclick=async()=>{const inventory=selectedOverrideInventory(),date=$("overrideDate").value,status=$("overrideStatus");if(!inventory||!date)return status.textContent="請選擇房型或包棟與日期";status.textContent="清除中…";try{await api("/api/inventory-price-overrides",{method:"DELETE",body:JSON.stringify({propertyId:session.propertyId,...inventory,date})});await loadPricing();status.textContent="已清除，恢復自動價格";}catch(error){status.textContent=`清除失敗：${error.message}`;}};
-$("dateClassificationForm").onsubmit=async event=>{event.preventDefault();const status=$("classificationStatus");status.textContent="儲存中…";try{await api("/api/date-price-classifications",{method:"POST",body:JSON.stringify({propertyId:session.propertyId,date:$("classificationDate").value,priceType:$("classificationPriceType").value})});await loadPricing();status.textContent="已儲存";}catch(error){status.textContent=`儲存失敗：${error.message}`;}};
-$("classificationClear").onclick=async()=>{const date=$("classificationDate").value,status=$("classificationStatus");if(!date)return status.textContent="請選擇日期";status.textContent="清除中…";try{await api("/api/date-price-classifications",{method:"DELETE",body:JSON.stringify({propertyId:session.propertyId,date})});await loadPricing();status.textContent="已清除，恢復星期自動分類";}catch(error){status.textContent=`清除失敗：${error.message}`;}};
-async function enter(value) { if (value.requiresPropertySelection || !value.propertyId) return showPropertyChooser(value); if (expectedSlug) value = await api(`/api/admin/session?slug=${encodeURIComponent(expectedSlug)}`); session = value; $("login").hidden = true; $("propertyChooser").hidden = true; $("workspace").hidden = false; $("logout").hidden = false; $("propertyLabel").textContent = `業者：${value.propertyId}`; $("month").value = $("month").value || currentMonth(); let savedView = "recent"; try { savedView = localStorage.getItem("junzanAvailabilityView") || "recent"; } catch {} availabilityState.view = matchMedia("(max-width: 640px)").matches ? "recent" : ["recent", "calendar"].includes(savedView) ? savedView : "recent"; await Promise.all([loadMonth(), loadBundles(), loadPricing(), loadProfile(), loadPropertyFacts()]); fillCustomReplyOptions();clearCustomReplyForm();await loadCustomReplies(); }
+$("priceEditorForm").onsubmit = event => { event.preventDefault(); savePriceEditor(false); };
+$("priceEditorClear").onclick = () => savePriceEditor(true);
+$("priceEditorCancel").onclick = closePriceEditor;
+async function enter(value) { if (value.requiresPropertySelection || !value.propertyId) return showPropertyChooser(value); if (expectedSlug) value = await api(`/api/admin/session?slug=${encodeURIComponent(expectedSlug)}`); session = value; $("login").hidden = true; $("propertyChooser").hidden = true; $("workspace").hidden = false; $("logout").hidden = false; $("propertyLabel").textContent = `業者：${value.propertyId}`; $("month").value = $("month").value || currentMonth(); let savedView = "recent"; try { savedView = localStorage.getItem("junzanAvailabilityView") || "recent"; } catch {} availabilityState.view = matchMedia("(max-width: 640px)").matches ? "recent" : ["recent", "calendar"].includes(savedView) ? savedView : "recent"; await loadMonth(); await Promise.all([loadBundles(), loadPricing(), loadProfile(), loadPropertyFacts()]); fillCustomReplyOptions();clearCustomReplyForm();await loadCustomReplies(); }
 $("loginForm").onsubmit = async event => { event.preventDefault(); try { await enter(await api("/api/admin/login", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) })); } catch (error) { showLogin(error.message); } };
 document.querySelectorAll("[data-view]").forEach(button => { button.onclick = () => switchView(button.dataset.view); });
 $("noteText").oninput = updateNoteCount; $("noteSave").onclick = () => saveNote(); $("noteClear").onclick = () => saveNote(""); $("noteClose").onclick = closeNoteEditor;
-$("month").onchange = () => { if (hasUnsavedNote() && !confirm("備註尚未儲存，確定切換月份嗎？")) { $("month").value = availabilityState.loadedMonth; return; } noteEditorState = null; $("noteEditor").hidden = true; loadMonth(); };
+$("month").onchange = async () => { if (hasUnsavedNote() && !confirm("備註尚未儲存，確定切換月份嗎？")) { $("month").value = availabilityState.loadedMonth; return; } noteEditorState = null; $("noteEditor").hidden = true; closePriceEditor(); await loadMonth(); await loadPricing(); };
 $("bundleCancel").onclick = clearBundle; $("logout").onclick = async () => { await api("/api/admin/logout", { method: "POST", body: "{}" }); showLogin(); };
 window.addEventListener("beforeunload", event => { if (!hasUnsavedNote() && !pricingState.dirty && !mutationQueues.size) return; event.preventDefault(); event.returnValue = ""; });
 function populateAvailabilityRanges() {
@@ -283,8 +301,8 @@ function populateAvailabilityRanges() {
 initializeAdminNavigation();
 initializeAvailabilityBulkControls();
 populateAvailabilityRanges();
-$("availabilityRange").onchange = () => { availabilityState.selection = $("availabilityRange").value; noteEditorState = null; $("noteEditor").hidden = true; loadMonth(); };
-$("availabilityToday").onclick = () => { availabilityState.selection = "rolling"; $("availabilityRange").value = "rolling"; noteEditorState = null; $("noteEditor").hidden = true; loadMonth(); };
+$("availabilityRange").onchange = async () => { availabilityState.selection = $("availabilityRange").value; noteEditorState = null; $("noteEditor").hidden = true; closePriceEditor(); await loadMonth(); await loadPricing(); };
+$("availabilityToday").onclick = async () => { availabilityState.selection = "rolling"; $("availabilityRange").value = "rolling"; noteEditorState = null; $("noteEditor").hidden = true; closePriceEditor(); await loadMonth(); await loadPricing(); };
 function initializeAdminNavigation() {
   const panelMap = { availability: document.querySelector(".availability-card"), pricing: document.querySelector(".pricing-card"), bundles: document.querySelector(".bundles"), "custom-replies": document.querySelector(".custom-replies-card"), other: document.querySelector(".other-settings") };
   for (const [tab, panel] of Object.entries(panelMap)) if (panel) panel.dataset.adminPanel = tab;
@@ -343,3 +361,31 @@ function editCustomReply(rule) { $("customReplyId").value = rule.ruleId; $("cust
 initializeSimpleCustomReplies();
 updateCustomReplyPreview();
 api(`/api/admin/session${expectedSlug ? `?slug=${encodeURIComponent(expectedSlug)}` : ""}`).then(enter).catch(() => showLogin());
+function presentPriceEditor() {
+  $("priceEditorStatus").textContent = "";
+  if (!$("priceEditor").open) $("priceEditor").showModal();
+}
+function openInventoryPriceEditor(date, room) {
+  const inventoryType = inventoryTypeFor(room), override = priceOverrideFor(date, room), resolved = dailyPriceFor(date, room);
+  priceEditorState = { date, inventoryType, inventoryId: room.id };
+  $("priceEditorEyebrow").textContent = inventoryType === "bundle" ? "包棟單日價格" : "房型單日價格";
+  $("priceEditorTitle").textContent = `${dateLabel(date)}｜${room.name}`;
+  $("priceEditorCurrent").textContent = `目前價格：${moneyLabel(resolved?.price)}`;
+  $("priceEditorHint").textContent = "輸入此日期與此房型／包棟的新價格；按「恢復自動價格」可清除單日設定。";
+  $("priceEditorSpecialPrice").value = override?.price ?? resolved?.price ?? ""; $("priceEditorClear").disabled = !override;
+  presentPriceEditor();
+}
+function closePriceEditor() { priceEditorState = null; if ($("priceEditor").open) $("priceEditor").close(); }
+async function savePriceEditor(clear = false) {
+  if (!priceEditorState) return;
+  const state = priceEditorState;
+  if (!clear && !$("priceEditorSpecialPrice").reportValidity()) return;
+  const body = { propertyId: session.propertyId, date: state.date, inventoryType: state.inventoryType, inventoryId: state.inventoryId };
+  if (!clear) body.price = Number($("priceEditorSpecialPrice").value);
+  $("priceEditorStatus").textContent = clear ? "正在恢復自動價格…" : "儲存中…";
+  try {
+    await api("/api/inventory-price-overrides", { method: clear ? "DELETE" : "POST", body: JSON.stringify(body) });
+    await loadPricing();
+    closePriceEditor();
+  } catch (error) { $("priceEditorStatus").textContent = `${clear ? "恢復" : "儲存"}失敗：${error.message}。輸入內容仍保留，請重試。`; }
+}
