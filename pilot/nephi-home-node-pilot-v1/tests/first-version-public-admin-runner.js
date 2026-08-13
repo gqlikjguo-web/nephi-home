@@ -59,6 +59,8 @@ function seedDate(offsetDays) {
   assert.match(adminHtml, /id="monthlyInventoryControls"/, "availability admin must reserve an aligned monthly control row");
   assert.match(adminScript, /\/api\/availability\/month/, "monthly inventory controls must use the generic month endpoint");
   assert.match(adminScript, /renderMonthlyInventoryControls/, "monthly controls must be generated from current inventory data");
+  assert.match(adminScript, /\\u5404\\u623f\\u578b\\u6574\\u6708\\u5feb\\u901f\\u8a2d\\u5b9a/, "per-inventory section must use the distinct approved title");
+  assert.match(adminScript, /if \(!plan\.allowed\).*container\.replaceChildren\(heading\).*return/s, "rolling mode must render only one hint and no inventory buttons");
   assert.match(adminScript, /"\\u5168\\u958b"/, "each inventory must expose the compact monthly-open label");
   assert.match(adminScript, /"\\u5168\\u95dc"/, "each inventory must expose the compact monthly-close label");
   assert.doesNotMatch(adminScript, /\\u672c\\u6708\\u5168(?:\\u958b|\\u95dc)/, "compact controls must not repeat the month in every button");
@@ -71,6 +73,10 @@ function seedDate(offsetDays) {
   assert.equal(monthlyControlSource.includes("/api/availability/day"), false, "monthly actions must never degrade into per-day requests");
   assert.equal(monthlyControlSource.indexOf('value === "closed" && !confirm') < monthlyControlSource.indexOf('api("/api/availability/month"'), true, "cancel must return before the month API is called");
   for (const phase of ["saving", "success", "failed"]) assert.match(monthlyControlSource, new RegExp(`phase: "${phase}"`), `monthly controls must render ${phase} state`);
+  const bulkControlSource = adminScript.slice(adminScript.indexOf("function initializeAvailabilityBulkControls"), adminScript.indexOf("function initializeSimpleCustomReplies"));
+  assert.match(bulkControlSource, /\\u5168\\u90e8\\u623f\\u578b\\u6574\\u6708\\u8a2d\\u5b9a/, "all-inventory section must use the distinct approved title");
+  assert.match(bulkControlSource, /state === "closed".*year.*month/s, "all-inventory close confirmation must identify year and month");
+  assert.equal(bulkControlSource.indexOf("no.onclick") < bulkControlSource.indexOf('api("/api/availability/batch"'), true, "cancel must clear pending state before any batch API call");
   assert.match(adminCss, /monthly-inventory-controls/, "monthly controls must have an explicit aligned layout");
   assert.match(adminCss, /min-height:60px/, "mobile monthly inventory rows must use the compact 60px target");
   const checkInIndex = adminHtml.indexOf('id="profileCheckInTime"');
