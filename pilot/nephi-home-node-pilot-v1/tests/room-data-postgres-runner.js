@@ -44,7 +44,7 @@ const {cleanInput}=require("../lib/onboarding-service");
     assert.deepEqual({roomCode:materialized.roomCode,displayName:materialized.displayName,capacity:materialized.capacity,highlights:materialized.highlights},{roomCode:"B7",displayName:"庭院客房",capacity:4,highlights:["庭院","浴缸"]},"approval must materialize the shared property-scoped room record");
     const bundle=providers.customerSettings.listBundles("room_data_new")[0];
     assert.equal(bundle.entertainmentAmenities.find(item=>item.key==="singing").provided,true,"approval must materialize bundle entertainment facts");
-    assert.equal(bundle.entertainmentAmenities.find(item=>item.key==="bbq").provided,false,"unchecked remains unknown rather than no");
+    assert.equal(bundle.entertainmentAmenities.find(item=>item.key==="bbq").provided,null,"legacy unchecked remains unknown rather than no");
     assert.equal(providers.customerSettings.getProperty("room_data_new").rooms.find(item=>item.inventoryType==="bundle").entertainmentAmenities.find(item=>item.key==="singing").note,"使用至 22:00","runtime provider must expose the same formal bundle fact");
 
     await providers.close();console.log("room data PostgreSQL: PASS");

@@ -20,6 +20,14 @@ function property(propertyId, label) {
       type: "double",
       capacity: 2,
       enabled: true
+    }, {
+      id: `${propertyId}_bundle`,
+      name: `${label} Bundle`,
+      inventoryType: "bundle",
+      capacity: 2,
+      enabled: true,
+      memberRoomIds: [`${propertyId}_room`],
+      entertainmentAmenities: [{ key: "singing", provided: true, statusSource: "operator", source: "preset" }]
     }],
     propertyFacts: [
       {

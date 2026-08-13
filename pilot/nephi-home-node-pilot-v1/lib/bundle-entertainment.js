@@ -20,7 +20,11 @@ function clean(value, max) { const result = String(value || "").normalize("NFC")
 function customKey(name, position) { return `custom_${crypto.createHash("sha256").update(`${name}\n${position}`).digest("hex").slice(0, 12)}`; }
 function normalizeEntertainmentAmenities(input) {
   const customNames = new Set(), custom = [], supplied = new Map((Array.isArray(input) ? input : []).map((item) => [String(item && item.key || ""), item || {}]));
-  const presets = PRESET_AMENITIES.map((preset) => { const item = supplied.get(preset.key) || {}, provided = item.provided === true; return { key: preset.key, displayName: preset.displayName, provided, note: provided ? clean(item.note, 100) : "", source: "preset", position: preset.position }; });
+  const presets = PRESET_AMENITIES.map((preset) => {
+    const item = supplied.get(preset.key) || {};
+    const provided = item.provided === true ? true : item.provided === false && item.statusSource === "operator" ? false : null;
+    return { key: preset.key, displayName: preset.displayName, provided, statusSource: provided === null ? null : "operator", note: provided === true ? clean(item.note, 100) : "", source: "preset", position: preset.position };
+  });
   for (const item of Array.isArray(input) ? input : []) {
     if (!item || item.source !== "custom" || item.provided !== true) continue;
     const displayName = clean(item.displayName, 20); if (!displayName) continue;

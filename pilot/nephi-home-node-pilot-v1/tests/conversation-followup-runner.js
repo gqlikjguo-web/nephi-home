@@ -48,7 +48,7 @@ function property(propertyId, overrides = {}) {
       parking__quantity: overrides.parking__quantity || "",
       pool__eligibility: overrides.pool__eligibility || ""
     },
-    rooms: [],
+    rooms: [{ id: `${propertyId}_bundle`, name: "Bundle", inventoryType: "bundle", enabled: true, entertainmentAmenities: [{ key: "singing", provided: true, statusSource: "operator", source: "preset" }] }],
     faqs: [
       { knowledgeKey: "singing", question: "Singing", answer: "Singing is bundle-only from 08:00-22:00." },
       { knowledgeKey: "pool", question: "Pool", answer: "Pool is available." }

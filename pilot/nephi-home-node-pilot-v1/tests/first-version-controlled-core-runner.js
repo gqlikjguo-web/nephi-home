@@ -19,7 +19,11 @@ const property = {
   timezone: "Asia/Taipei",
   rooms: [
     { id: "room_double", name: "301 雙人房", type: "雙人房", capacity: 2, enabled: true },
-    { id: "room_quad", name: "302 四人房", type: "四人房", capacity: 4, enabled: true }
+    { id: "room_quad", name: "302 四人房", type: "四人房", capacity: 4, enabled: true },
+    { id: "bundle_all", name: "包棟", inventoryType: "bundle", capacity: 6, enabled: true, memberRoomIds: ["room_double", "room_quad"], entertainmentAmenities: [
+      { key: "singing", provided: true, statusSource: "operator", source: "preset" },
+      { key: "splash_pool", provided: true, statusSource: "operator", source: "preset" }
+    ] }
   ],
   commonAnswers: {
     parkingRule: "提供停車位。",
@@ -27,14 +31,14 @@ const property = {
   },
   faqs: [
     { knowledgeKey: "singing", question: "唱歌設備", answer: "提供唱歌設備。" },
-    { knowledgeKey: "pool", question: "戲水池", answer: "提供戲水池。" }
+    { knowledgeKey: "splash_pool", question: "戲水池", answer: "提供戲水池。" }
   ],
   semanticCatalog: {
     aliases: {
       room_double: ["雙人房"],
       room_quad: ["302"],
       singing: ["唱歌"],
-      pool: ["戲水池"],
+      splash_pool: ["戲水池"],
       parking: ["車位"],
       bbq: ["烤肉"]
     }
@@ -159,7 +163,7 @@ async function main() {
 
   const multiTasks = [
     task({ taskId: "singing", type: "amenity", sourceText: "有唱歌嗎", category: "amenity", rawText: "唱歌", canonicalCandidate: "singing" }),
-    task({ taskId: "pool", type: "amenity", sourceText: "有戲水池嗎", category: "amenity", rawText: "戲水池", canonicalCandidate: "pool" }),
+    task({ taskId: "pool", type: "amenity", sourceText: "有戲水池嗎", category: "amenity", rawText: "戲水池", canonicalCandidate: "splash_pool" }),
     task({ taskId: "parking", type: "amenity", sourceText: "有車位嗎", category: "amenity", rawText: "車位", canonicalCandidate: "parking" }),
     task({ taskId: "availability", type: "availability", sourceText: "7/23 還有房嗎", category: "room", rawText: "房" })
   ];

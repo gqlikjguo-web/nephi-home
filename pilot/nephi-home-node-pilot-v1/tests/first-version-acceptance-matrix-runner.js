@@ -16,7 +16,7 @@ const properties = [
     rooms: [
       { id: "nephi_sky_double", name: "晴空雙人房", type: "雙人房", capacity: 2, enabled: true },
       { id: "nephi_hill_quad", name: "山景四人房", type: "四人房", capacity: 4, enabled: true },
-      { id: "nephi_house", name: "星光包棟", type: "包棟", inventoryType: "bundle", capacity: 12, enabled: true }
+      { id: "nephi_house", name: "星光包棟", type: "包棟", inventoryType: "bundle", capacity: 12, enabled: true, entertainmentAmenities: [{ key: "kitchen", provided: true, statusSource: "operator", source: "preset" }] }
     ],
     commonAnswers: {
       parkingRule: "提供一個免費車位", bbqRule: "可使用戶外烤肉區，請先預約", checkInTime: "15:00 後入住",
@@ -40,7 +40,7 @@ const properties = [
     rooms: [
       { id: "orchid_couple", name: "蘭庭雙人套房", type: "雙人房", capacity: 2, enabled: true },
       { id: "orchid_family", name: "蘭庭家庭房", type: "四人房", capacity: 4, enabled: true },
-      { id: "orchid_villa", name: "蘭庭花園別墅", type: "包棟", inventoryType: "bundle", capacity: 10, enabled: true }
+      { id: "orchid_villa", name: "蘭庭花園別墅", type: "包棟", inventoryType: "bundle", capacity: 10, enabled: true, entertainmentAmenities: [{ key: "kitchen", provided: false, statusSource: "operator", source: "preset" }] }
     ],
     commonAnswers: {
       parkingRule: "附近合作停車場可停車", bbqRule: "館內不提供烤肉", checkInTime: "16:00 後入住",

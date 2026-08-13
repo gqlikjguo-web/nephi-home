@@ -28,7 +28,8 @@ const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property
     assert.ok(singing);
     assert.ok(singing.knowledgeId, "provider must preserve stable materialized knowledge ID");
     const catalog = buildPropertyCatalog(property);
-    assert.equal(catalog.faqs.find((item) => item.canonicalId === "singing").answer, singing.answer);
+    assert.equal(catalog.faqs.some((item) => item.canonicalId === "singing"), false, "FAQ alone must not materialize equipment existence");
+    assert.equal(catalog.amenities.some((item) => item.canonicalId === "singing"), false, "legacy FAQ must not backfill structured equipment state");
     assert.equal(catalog.policies.find((item) => item.canonicalId === "cancellation").answer, property.commonAnswers.cancellationRule);
     const rematerializeClient = await rawClient.openPostgres(connection);
     await rematerializeClient.query("UPDATE knowledge_items SET knowledge_key=NULL WHERE property_id=$1 AND question=$2", ["nephi_home", singing.question]);

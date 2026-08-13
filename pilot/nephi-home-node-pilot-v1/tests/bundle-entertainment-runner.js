@@ -28,7 +28,10 @@ const base = {
   assert.deepEqual(PRESET_AMENITIES.map((item) => item.key), expectedKeys);
   for (const type of ["單人房", "雙人房", "三人房", "四人房", "五人房", "六人房", "八人房", "家庭房", "親子房", "和室", "通鋪", "套房", "Villa", "其他"]) assert.ok(ROOM_TYPES.includes(type));
   const normalized = normalizeEntertainmentAmenities(base.bundles[0].entertainmentAmenities);
+  assert.equal(normalized.find((item) => item.key === "bbq").provided, null, "legacy checkbox false is not an explicit operator denial");
   assert.equal(normalized.find((item) => item.key === "bbq").note, "");
+  assert.equal(normalized.find((item) => item.key === "projector").provided, null, "missing preset data stays unknown");
+  assert.equal(normalizeEntertainmentAmenities([{ key: "bbq", provided: false, statusSource: "operator", source: "preset" }]).find((item) => item.key === "bbq").provided, false, "new explicit operator denial is preserved");
   assert.equal(normalized.filter((item) => item.displayName === "屋頂星空區").length, 1);
   assert.throws(() => normalizeEntertainmentAmenities([{ key: "custom_x", displayName: "超過二十個中文字的自訂娛樂設備名稱不可被接受測試", provided: true, note: "", source: "custom", position: 1 }]), /20/);
   assert.throws(() => normalizeEntertainmentAmenities([{ key: "singing", displayName: "KTV／歡唱設備", provided: true, note: "甲".repeat(101), source: "preset", position: 0 }]), /100/);
@@ -37,8 +40,8 @@ const base = {
   assert.equal(cleaned.bundles[0].entertainmentAmenities.find((item) => item.key === "singing").provided, true);
   const property = { propertyId: "property-a", displayName: "A", rooms: [
     { id: "bundle-a", name: "歡樂包棟", inventoryType: "bundle", enabled: true, entertainmentAmenities: cleaned.bundles[0].entertainmentAmenities },
-    { id: "bundle-b", name: "安靜包棟", inventoryType: "bundle", enabled: true, entertainmentAmenities: [{ key: "bbq", displayName: "烤肉區／烤肉設備", provided: true, note: "雨天不開放", source: "preset", position: 10 }] }
-  ], commonAnswers: { bbqRule: "舊 FAQ 僅說明一般政策" }, faqs: [] };
+    { id: "bundle-b", name: "安靜包棟", inventoryType: "bundle", enabled: true, entertainmentAmenities: [{ key: "bbq", displayName: "烤肉區／烤肉設備", provided: true, statusSource: "operator", note: "雨天不開放", source: "preset", position: 10 }] }
+  ], commonAnswers: { bbqRule: "舊 FAQ 僅說明一般政策" }, faqs: [{ knowledgeKey: "bbq", question: "烤肉使用時間", answer: "使用至 21:00" }] };
   const catalog = buildPropertyCatalog(property);
   const singing = catalog.amenities.find((item) => item.canonicalId === "singing");
   assert.equal(singing.status, "confirmed_yes");
@@ -47,6 +50,14 @@ const base = {
   const bbq = catalog.amenities.find((item) => item.canonicalId === "bbq");
   assert.deepEqual(bbq.applicableBundles.map((item) => item.name), ["安靜包棟"]);
   assert.doesNotMatch(bbq.answer, /舊 FAQ/);
+  assert.match(bbq.answer, /21:00/, "FAQ may supplement a structurally confirmed amenity");
+  assert.equal(catalog.faqs.some((item) => item.canonicalId === "bbq"), false, "the same canonical equipment ID is not emitted as a second fact");
+  const unknownWithFaq = buildPropertyCatalog({ propertyId: "property-unknown", displayName: "U", rooms: [{ id: "bundle-u", name: "U 包棟", inventoryType: "bundle", enabled: true, entertainmentAmenities: [] }], commonAnswers: {}, faqs: [{ knowledgeKey: "singing", question: "歡唱時間", answer: "使用至 22:00" }] });
+  assert.equal(unknownWithFaq.amenities.some((item) => item.canonicalId === "singing"), false, "unknown equipment has no answerable catalog fact");
+  assert.equal(unknownWithFaq.faqs.some((item) => item.canonicalId === "singing"), false);
+  const noWithFaq = buildPropertyCatalog({ propertyId: "property-no", displayName: "N", rooms: [{ id: "bundle-n", name: "N 包棟", inventoryType: "bundle", enabled: true, entertainmentAmenities: [{ key: "singing", provided: false, statusSource: "operator", source: "preset" }] }], commonAnswers: {}, faqs: [{ knowledgeKey: "singing", question: "歡唱時間", answer: "使用至 22:00" }] });
+  assert.equal(noWithFaq.amenities.find((item) => item.canonicalId === "singing").status, "confirmed_no");
+  assert.equal(noWithFaq.amenities.find((item) => item.canonicalId === "singing").answer, "", "FAQ cannot override an explicit no");
   const task = { taskId: "equipment", type: "property_fact", entity: { category: "amenity", canonicalCandidate: "singing", rawText: "KTV" }, detailIntent: "general" };
   const result = executeTasks({ property, catalog, tasks: [task], request: { inventory: { mode: "any" }, stay: {} } })[0];
   assert.equal(result.status, "answered");
@@ -60,6 +71,10 @@ const base = {
   assert.equal(onboardingHtml.includes("Channel ID"), false);
   assert.ok(onboardingJs.includes("房型名稱") && onboardingJs.includes("entertainmentAmenities"));
   assert.ok(adminHtml.includes("bundleAmenities") && adminJs.includes("entertainmentAmenities"));
+  assert.match(onboardingJs, /未知.*有.*沒有/s, "onboarding equipment must expose a tri-state choice");
+  assert.match(adminJs, /未知.*有.*沒有/s, "admin equipment must expose a tri-state choice");
+  assert.equal(onboardingJs.includes('pool:"是否有戲水池或游泳池"'), false, "onboarding FAQ must not duplicate equipment existence authority");
+  assert.equal(onboardingJs.includes('equipment:"盥洗用品與設備"'), false, "onboarding FAQ must not duplicate structured equipment authority");
   assert.ok(guestJs.includes("entertainmentAmenities"));
   assert.equal(guestJs.includes("✓ 可入住"), false);
   assert.match(read("migrations/014_bundle_entertainment_amenities.sql"), /entertainment_amenities\s+jsonb/i);

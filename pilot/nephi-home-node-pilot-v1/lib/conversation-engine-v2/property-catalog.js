@@ -1,7 +1,7 @@
 "use strict";
 
 const { normalizeGoogleMapsUrl, extractGoogleMapsUrl } = require("../google-maps-url");
-const { PRESET_AMENITIES, providedAmenities } = require("../bundle-entertainment");
+const { PRESET_AMENITIES, normalizeEntertainmentAmenities } = require("../bundle-entertainment");
 
 function clean(value, limit = 120) { return String(value || "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, limit); }
 function aliasesFor(property, id) { const map = property.semanticCatalog && property.semanticCatalog.aliases || {}; return Array.isArray(map[id]) ? map[id].map((x) => clean(x, 80)).filter(Boolean) : []; }
@@ -101,23 +101,39 @@ function buildPropertyCatalog(property) {
     canonicalId: clean(item.id), category: "amenity", publicName: clean(item.name, 80), aliases: (item.aliases || []).map((x) => clean(x, 80)), status: ["confirmed_yes", "confirmed_no", "unknown"].includes(item.status) ? item.status : "unknown", answer: clean(item.answer, 500)
   })) : (Array.isArray(confirmedEquipment) ? confirmedEquipment : []).map((name, index) => ({ canonicalId: `equipment_${index + 1}`, category: "amenity", publicName: clean(name, 80), aliases: [], status: "confirmed_yes", answer: "" }));
   const presetMap = new Map(PRESET_AMENITIES.map((item) => [item.key, item]));
+  const normalizedFaqs = (property.faqs || []).filter((item) => item && item.question && item.answer).map((item) => { const canonicalId = clean(item.knowledgeKey || item.knowledgeId || item.id, 120); return { canonicalId, category: "amenity", sourceKind: "faq", publicName: clean(item.question, 200), aliases: mergedAliases(property, canonicalId), status: "confirmed_yes", answer: clean(item.answer, 800) }; }).slice(0, 50);
+  const faqByCanonicalId = new Map(normalizedFaqs.map((item) => [item.canonicalId, item]));
+  const enabledBundles = (property.rooms || []).filter((item) => item.inventoryType === "bundle" && item.enabled !== false);
+  const bundleStates = new Map(PRESET_AMENITIES.map((item) => [item.key, []]));
   const bundleFacts = new Map();
-  for (const room of (property.rooms || []).filter((item) => item.inventoryType === "bundle" && item.enabled !== false)) {
-    for (const amenity of providedAmenities(room.entertainmentAmenities)) {
+  for (const room of enabledBundles) {
+    for (const amenity of normalizeEntertainmentAmenities(room.entertainmentAmenities)) {
+      if (amenity.source !== "preset") continue;
+      bundleStates.get(amenity.key).push(amenity.provided);
+      if (amenity.provided !== true) continue;
       const current = bundleFacts.get(amenity.key) || { canonicalId: amenity.key, category: "amenity", publicName: amenity.displayName, aliases: [...(presetMap.get(amenity.key)?.aliases || [])], status: "confirmed_yes", answer: "", applicableBundles: [] };
       current.applicableBundles.push({ id: clean(room.id), name: clean(room.publicDisplayName || room.displayName || room.name, 80), note: clean(amenity.note, 100) });
       bundleFacts.set(amenity.key, current);
     }
   }
-  for (const fact of bundleFacts.values()) {
-    fact.answer = fact.applicableBundles.map((bundle) => `${bundle.name}${bundle.note ? `：${bundle.note}` : ""}`).join("；");
+  for (const preset of PRESET_AMENITIES) {
+    const states = bundleStates.get(preset.key);
+    const explicitNo = states.length > 0 && states.every((state) => state === false);
+    if (!bundleFacts.has(preset.key) && !explicitNo) continue;
+    const fact = bundleFacts.get(preset.key) || { canonicalId: preset.key, category: "amenity", publicName: preset.displayName, aliases: [...preset.aliases], status: "confirmed_no", answer: "", applicableBundles: [] };
+    const bundleAnswer = fact.applicableBundles.map((bundle) => `${bundle.name}${bundle.note ? `：${bundle.note}` : ""}`).join("；");
+    fact.answer = bundleAnswer;
+    bundleFacts.set(preset.key, fact);
   }
-  const bundleFactIds = new Set(bundleFacts.keys());
-  const amenities = [
-    ...structuredFacts.filter((fact) => fact.category === "amenity"),
-    ...bundleFacts.values(),
-    ...legacyAmenities.filter((item) => !structuredIds.has(item.canonicalId) && !bundleFactIds.has(item.canonicalId))
-  ];
+  const amenityFacts = new Map();
+  for (const item of legacyAmenities) amenityFacts.set(item.canonicalId, item);
+  for (const item of bundleFacts.values()) amenityFacts.set(item.canonicalId, item);
+  for (const item of structuredFacts.filter((fact) => fact.category === "amenity")) amenityFacts.set(item.canonicalId, item);
+  for (const [canonicalId, fact] of amenityFacts) {
+    const faqAnswer = presetMap.has(canonicalId) && fact.status === "confirmed_yes" ? faqByCanonicalId.get(canonicalId)?.answer || "" : "";
+    if (faqAnswer && !fact.answer.includes(faqAnswer)) fact.answer = [fact.answer, faqAnswer].filter(Boolean).join("；");
+  }
+  const amenities = [...amenityFacts.values()];
   const answers = property.commonAnswers || {};
   // `transport` is the existing property-scoped storage key used before the
   // dedicated business profile field was introduced.  It is accepted only
@@ -138,7 +154,7 @@ function buildPropertyCatalog(property) {
     ...propertySettingFacts(property, answers).filter((fact) => !structuredIds.has(fact.canonicalId)),
     ...(structuredLocation ? [] : [{ canonicalId: "location", category: "transport", publicName: "位置與導航", aliases: [...new Set([...LOCATION_ALIASES, ...aliasesFor(property, "location")])], status: mapUrl ? "confirmed_yes" : "unknown", answer: mapUrl }])
   ];
-  const faqs = (property.faqs || []).filter((item) => item && item.question && item.answer).map((item) => { const canonicalId = clean(item.knowledgeKey || item.knowledgeId || item.id, 120); return { canonicalId, category: "amenity", sourceKind: "faq", publicName: clean(item.question, 200), aliases: mergedAliases(property, canonicalId), status: "confirmed_yes", answer: clean(item.answer, 800) }; }).slice(0, 50);
+  const faqs = normalizedFaqs.filter((item) => !presetMap.has(item.canonicalId) && !amenityFacts.has(item.canonicalId));
   return { propertyId: clean(property.propertyId), displayName: clean(property.displayName, 100), timezone: clean(property.timezone || "Asia/Taipei", 80), currency: clean(property.currency || "TWD", 10), rooms, amenities, policies, faqs, locationDiagnostics };
 }
 
