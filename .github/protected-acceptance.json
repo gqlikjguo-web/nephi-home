@@ -44,7 +44,7 @@
     },
     {
       "path": "pilot/nephi-home-node-pilot-v1/tests/v2-runtime-uniqueness-runner.js",
-      "sha256": "3102c9411779ab89e991c5595aadc4b66ab11d297c50c92c57a76237c98af95e",
+      "sha256": "76e1395f5b16d31828f0bf5f695ea031cceea263b427260f40ace3400b155e9d",
       "baseline": "accepted-current"
     },
     {
