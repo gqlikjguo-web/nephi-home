@@ -34,7 +34,7 @@
     },
     {
       "path": "pilot/nephi-home-node-pilot-v1/tests/first-version-acceptance-matrix-runner.js",
-      "sha256": "93632254252245b95943fe2a1d648665d1cb0cf057f5dd16d73f2da16b22fa21",
+      "sha256": "a4adf13223e55abf59f81296fec9ba7948d9f3b84fa45f51eed3369b6a3e2e6c",
       "baseline": "immutable"
     },
     {
