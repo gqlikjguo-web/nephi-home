@@ -15,12 +15,9 @@ const FORBIDDEN_FINAL_TEXT = ["一定有房", "已完成訂房"];
 
 const MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-fixed-matrix.json");
 const SUPPLEMENTAL_MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-supplemental-matrix.json");
+const GENERALIZATION_MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-generalization-matrix.json");
 const NOT_EXECUTABLE_STATUS = "NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API";
-const OPERATOR_CONTEXT_CASES = new Map([
-  ["rg-040-modify-guests-bed", "operator_prior_context_cannot_be_established"],
-  ["rg-041-modify-room-mix", "operator_prior_context_cannot_be_established"],
-  ["rg-042-modify-date", "operator_prior_context_cannot_be_established"]
-]);
+const OPERATOR_CONTEXT_CASES = new Map();
 const NON_TEXT_SEMANTICS = new Set(["non_text_event", "non_text_marker"]);
 const FORBIDDEN_PROVIDER_MARKERS = ["json", "seed", "fixture", "pglite", "fake_planner", "fake_composer"];
 const ACCEPTANCE_TIERS = Object.freeze(["TIER_1_CORE", "TIER_2_COMPLEX", "TIER_3_SAFETY", "TIER_4_EDGE"]);
@@ -83,6 +80,7 @@ function semanticCapabilityGroups(tags = []) {
 
 function executionReasonForTurn(item, turn) {
   if (turn && turn.requiresPriorContextFromSource === true) return "operator_prior_context_cannot_be_established";
+  if (turn && turn.lineEvent) return "";
   if (turn && (turn.eventKind || (turn.expectedSemantic || []).some((tag) => NON_TEXT_SEMANTICS.has(tag)))) return "native_non_text_event_requires_line_transport";
   if (item && item.channelCapabilityRequired === "real_non_text_event_injection") return "native_non_text_event_requires_line_transport";
   return "";
@@ -193,7 +191,27 @@ function loadSupplementalAcceptanceMatrix(filePath = SUPPLEMENTAL_MATRIX_PATH) {
 }
 
 const SUPPLEMENTAL_ACCEPTANCE_MATRIX = loadSupplementalAcceptanceMatrix();
-const DEPLOYED_ACCEPTANCE_MATRIX = [...ACCEPTANCE_MATRIX, ...SUPPLEMENTAL_ACCEPTANCE_MATRIX];
+
+function loadGeneralizationAcceptanceMatrix(filePath = GENERALIZATION_MATRIX_PATH) {
+  const source = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (!source || !Array.isArray(source.cases)) throw new Error("generalization_real_guest_matrix_cases_required");
+  const turnCount = source.cases.reduce((sum, item) => sum + (Array.isArray(item.turns) ? item.turns.length : 0), 0);
+  if (source.cases.length !== 36 || turnCount !== 45) throw new Error("generalization_real_guest_matrix_fixed_count_mismatch");
+  const tierAssignments = acceptanceTierAssignments(source, "generalization_real_guest_matrix");
+  return source.cases.map((item) => {
+    const tier = tierAssignments.get(item.id);
+    return {
+      id: item.id,
+      tier,
+      bucket: item.bucket,
+      sourceRef: item.sourceRef || source.source,
+      turns: item.turns.map((turn) => loadedAcceptanceTurn(turn, tier, item, "generalization_real_guest_matrix"))
+    };
+  });
+}
+
+const GENERALIZATION_ACCEPTANCE_MATRIX = loadGeneralizationAcceptanceMatrix();
+const DEPLOYED_ACCEPTANCE_MATRIX = [...ACCEPTANCE_MATRIX, ...SUPPLEMENTAL_ACCEPTANCE_MATRIX, ...GENERALIZATION_ACCEPTANCE_MATRIX];
 const TARGET_PREFLIGHT_TURNS = Object.freeze({
   "rg-003-price-nights": [1],
   "rg-004-bundle-price": [1],
@@ -874,6 +892,9 @@ function acceptanceReportMarkdown(report) {
     `- Commit: ${markdownText(report.commit)}`,
     `- Generated at: ${markdownText(report.generatedAt)}`,
     `- Total cases / turns: ${Number(report.summary && report.summary.caseCount) || 0} / ${Number(report.summary && report.summary.turnCount) || 0}`,
+    `- Turn PASS / FAIL: ${Number(report.summary && report.summary.turnResults && report.summary.turnResults.passCount) || 0} / ${Number(report.summary && report.summary.turnResults && report.summary.turnResults.failCount) || 0}`,
+    `- OpenAI text cases PASS / FAIL: ${Number(report.summary && report.summary.openAiTextUnderstanding && report.summary.openAiTextUnderstanding.passCount) || 0} / ${Number(report.summary && report.summary.openAiTextUnderstanding && report.summary.openAiTextUnderstanding.failCount) || 0}`,
+    `- OpenAI text turns PASS / FAIL: ${Number(report.summary && report.summary.openAiTextUnderstanding && report.summary.openAiTextUnderstanding.turnPassCount) || 0} / ${Number(report.summary && report.summary.openAiTextUnderstanding && report.summary.openAiTextUnderstanding.turnFailCount) || 0}`,
     "",
     ...metricLines("Core/Complex product outcome", groups.coreComplexProductOutcome),
     ...metricLines("Safety contract", groups.safetyContract),
@@ -883,6 +904,17 @@ function acceptanceReportMarkdown(report) {
     ...metricLines("Tier 3 SAFETY", tiers.TIER_3_SAFETY),
     ...metricLines("Tier 4 EDGE", tiers.TIER_4_EDGE)
   ];
+  const failureGroups = new Map();
+  for (const item of report.cases || []) for (const turn of item.turns || []) {
+    if (turn.status !== "FAIL") continue;
+    const reason = String(turn.errorCode || turn.assessment && turn.assessment.reasons && turn.assessment.reasons[0] || "unknown_failure");
+    const key = `${String(turn.earliestFailureLayer || "unknown_layer")}|${reason}`;
+    if (!failureGroups.has(key)) failureGroups.set(key, []);
+    failureGroups.get(key).push(`${item.caseId}/T${turn.turn}`);
+  }
+  lines.push("## FAIL common-root groups", "");
+  if (!failureGroups.size) lines.push("- None", "");
+  else for (const [key, cases] of failureGroups) lines.push(`- ${markdownText(key)}: ${markdownText(cases.join(", "))}`, "");
   for (const item of report.cases || []) {
     lines.push(`## ${markdownText(item.caseId)} — ${markdownText(item.tier)} — ${markdownText(item.status)}`, "");
     for (const turn of item.turns || []) {
@@ -893,9 +925,10 @@ function acceptanceReportMarkdown(report) {
         `- Native event: ${markdownText(turn.nativeEvent && turn.nativeEvent.type)}`,
         `- Result: ${markdownText(turn.status)}`,
         `- Earliest failure layer: ${markdownText(turn.earliestFailureLayer)}`,
+        `- Failure code: ${markdownText(turn.errorCode)}`,
         `- Planner / validation / canonical / state / query / resolver evidence: ${markdownText(JSON.stringify(turn.runtimeEvidence || {}))}`,
         `- Formal evidence: ${markdownText(JSON.stringify(turn.formalEvidence || []))}`,
-        `- Actual FinalResponse: ${markdownText(turn.finalResponse && turn.finalResponse.replyText)}`,
+        `- Actual FinalResponse: ${turn.finalResponse && turn.finalResponse.shouldReply === false ? "不回覆" : markdownText(turn.finalResponse && turn.finalResponse.replyText)}`,
         `- Complete answer: ${markdownText(turn.assessment && turn.assessment.completeAnswer)}`,
         `- Formal-data consistent: ${markdownText(turn.assessment && turn.assessment.formalDataConsistent)}`,
         `- Omission detected: ${markdownText(turn.assessment && turn.assessment.omissionDetected)}`,
@@ -1123,6 +1156,10 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
     reportCases.push(caseReport);
   }
   const separated = separatedAcceptanceSummary(matrix, reportCases);
+  const allReportedTurns = reportCases.flatMap((item) => (item.turns || []).map((turn) => ({ caseId: item.caseId, ...turn })));
+  const textReportedTurns = allReportedTurns.filter((turn) => !turn.nativeEvent);
+  const textCaseIds = [...new Set(textReportedTurns.map((turn) => turn.caseId))];
+  const textFailedCaseIds = new Set(textReportedTurns.filter((turn) => turn.status !== "PASS").map((turn) => turn.caseId));
   const summary = {
     caseCount: matrix.length,
     turnCount,
@@ -1133,6 +1170,18 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
     failCount: reportCases.filter((item) => item.status === "FAIL").length,
     notExecutableCaseCount,
     notExecutableTurnCount,
+    turnResults: {
+      passCount: allReportedTurns.filter((turn) => turn.status === "PASS").length,
+      failCount: allReportedTurns.filter((turn) => turn.status !== "PASS").length
+    },
+    openAiTextUnderstanding: {
+      caseCount: textCaseIds.length,
+      passCount: textCaseIds.length - textFailedCaseIds.size,
+      failCount: textFailedCaseIds.size,
+      turnCount: textReportedTurns.length,
+      turnPassCount: textReportedTurns.filter((turn) => turn.status === "PASS").length,
+      turnFailCount: textReportedTurns.filter((turn) => turn.status !== "PASS").length
+    },
     ...separated
   };
   const report = {
@@ -1397,11 +1446,13 @@ if (require.main === module) main().catch((error) => {
 module.exports = {
   ACCEPTANCE_MATRIX,
   SUPPLEMENTAL_ACCEPTANCE_MATRIX,
+  GENERALIZATION_ACCEPTANCE_MATRIX,
   DEPLOYED_ACCEPTANCE_MATRIX,
   TARGET_PREFLIGHT_CASE_IDS,
   TARGET_PREFLIGHT_TURNS,
   loadAcceptanceMatrix,
   loadSupplementalAcceptanceMatrix,
+  loadGeneralizationAcceptanceMatrix,
   NOT_EXECUTABLE_STATUS,
   pollForDeployment,
   requestGithubOidcToken,

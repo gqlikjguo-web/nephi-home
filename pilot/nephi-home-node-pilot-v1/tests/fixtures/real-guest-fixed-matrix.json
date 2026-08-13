@@ -84,7 +84,7 @@
       "bucket": "normal_high_frequency",
       "coverage": ["價格", "總價", "日期", "晚數", "人數"],
       "sourceRef": "Markdown §7 住宿日期／晚數；XLSX 實測題庫",
-      "turns": [{"input": "請問5月1-3\n兩個人住兩晚的價格大概多少呢", "expectedSemantic": ["date_range", "nights", "guests", "past_date"], "allowedActions": ["clarification", "handoff"], "requiresPostgres": true, "pastDatePolicy": "reject_if_resolved_past", "productOutcomes": [{"subject": "past_date", "disposition": "retain"}]}]
+      "turns": [{"input": "請問5月1-3\n兩個人住兩晚的價格大概多少呢", "expectedSemantic": ["date_range", "nights", "guests", "date_clarification"], "allowedActions": ["clarification"]}]
     },
     {
       "id": "rg-004-bundle-price",
@@ -342,7 +342,7 @@
       "sourceRef": "Markdown 對話-0001",
       "turns": [
         {"input": "您好，我想預訂8/18、19兩個晚上，雙人房含浴缸", "expectedSemantic": ["booking", "date_range", "nights", "double_room", "bathtub"], "allowedActions": ["handoff"], "productOutcomes": [{"subject": "booking", "disposition": "handoff"}, {"subject": "double_room", "disposition": "retain", "sourceText": "雙人房"}, {"subject": "bathtub", "disposition": "retain", "sourceText": "浴缸"}]},
-        {"input": "貼圖已傳送", "expectedSemantic": ["non_text_marker", "context_acknowledgement"], "allowedActions": ["no_reply", "clarification", "handoff"]},
+        {"input": "貼圖已傳送", "lineEvent": {"type":"message","message":{"type":"sticker","packageId":"test-only","stickerId":"test-only"}}, "expectedSemantic": ["non_text_marker", "context_acknowledgement"], "allowedActions": ["no_reply"]},
         {"input": "你好，我們的行程有異動，無法前往住宿，請問是否能申請退款呢？", "expectedSemantic": ["cancellation", "refund", "handoff_if_order_unknown"], "allowedActions": ["handoff"]}
       ]
     },
@@ -351,7 +351,7 @@
       "bucket": "context_edge",
       "coverage": ["修改人數", "修改加床", "兒童"],
       "sourceRef": "Markdown 修改前一輪需求 範例2",
-      "turns": [{"input": "不好意思\n如果床還沒加上去，就不用加了\n臨時有小朋友生病，我們現在改成8大3小\n如果來不及也沒關係\n謝謝你", "expectedSemantic": ["replace_guests", "remove_extra_bed", "children"], "allowedActions": ["handoff"], "requiresPriorContextFromSource": true}],
+      "turns": [{"input": "不好意思\n如果床還沒加上去，就不用加了\n臨時有小朋友生病，我們現在改成8大3小\n如果來不及也沒關係\n謝謝你", "expectedSemantic": ["replace_guests", "remove_extra_bed", "children"], "allowedActions": ["handoff"]}],
       "channelLimitation": "核准來源只保留這個修改 turn 與業者前文；現有入口不能注入業者 turn，故不得另造前一輪客問"
     },
     {
@@ -383,7 +383,7 @@
       "bucket": "context_edge",
       "coverage": ["一至三字短訊息", "晚數", "上下文"],
       "sourceRef": "Markdown 一至五字短訊息 排名74",
-      "turns": [{"input": "兩晚", "expectedSemantic": ["nights", "missing_context"], "allowedActions": ["clarification", "no_reply", "handoff"]}]
+      "turns": [{"input": "兩晚", "expectedSemantic": ["nights", "missing_context"], "allowedActions": ["clarification"]}]
     },
     {
       "id": "rg-045-short-meaningful-room",
@@ -418,7 +418,7 @@
       "bucket": "context_edge",
       "coverage": ["純標點", "上下文判斷"],
       "sourceRef": "Markdown 一至五字短訊息 排名107",
-      "turns": [{"input": "？", "expectedSemantic": ["punctuation_only"], "allowedActions": ["no_reply", "clarification"]}]
+      "turns": [{"input": "？", "expectedSemantic": ["punctuation_only"], "allowedActions": ["no_reply"]}]
     },
     {
       "id": "rg-050-nontext-markers",
@@ -426,10 +426,10 @@
       "coverage": ["LINE貼圖", "照片", "影片", "檔案", "非文字事件", "no_reply"],
       "sourceRef": "Markdown 純標點、表情、貼圖及其他非文字事件",
       "turns": [
-        {"input": "貼圖已傳送", "eventKind": "sticker_marker", "expectedSemantic": ["non_text_event"], "allowedActions": ["no_reply"]},
-        {"input": "照片已傳送", "eventKind": "image_marker", "expectedSemantic": ["non_text_event"], "allowedActions": ["no_reply", "handoff"]},
-        {"input": "影片已傳送", "eventKind": "video_marker", "expectedSemantic": ["non_text_event"], "allowedActions": ["no_reply", "handoff"]},
-        {"input": "檔案已傳送", "eventKind": "file_marker", "expectedSemantic": ["non_text_event"], "allowedActions": ["no_reply", "handoff"]}
+        {"input": "貼圖已傳送", "lineEvent": {"type":"message","message":{"type":"sticker","packageId":"test-only","stickerId":"test-only"}}, "expectedSemantic": ["non_text_event"], "allowedActions": ["no_reply"]},
+        {"input": "照片已傳送", "lineEvent": {"type":"message","message":{"type":"image","contentProvider":{"type":"line"}}}, "expectedSemantic": ["non_text_event"], "allowedActions": ["no_reply"]},
+        {"input": "影片已傳送", "lineEvent": {"type":"message","message":{"type":"video","contentProvider":{"type":"line"}}}, "expectedSemantic": ["non_text_event"], "allowedActions": ["no_reply"]},
+        {"input": "檔案已傳送", "lineEvent": {"type":"message","message":{"type":"file","fileName":"test-only.txt","fileSize":1}}, "expectedSemantic": ["non_text_event"], "allowedActions": ["no_reply"]}
       ],
       "channelCapabilityRequired": "real_non_text_event_injection"
     },

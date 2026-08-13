@@ -6,6 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const {
   ACCEPTANCE_MATRIX,
+  GENERALIZATION_ACCEPTANCE_MATRIX,
   DEPLOYED_ACCEPTANCE_MATRIX,
   pollForDeployment,
   requestGithubOidcToken,
@@ -36,6 +37,10 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.deepEqual(caseNumbers, Array.from({ length: 53 }, (_, index) => String(index + 1).padStart(3, "0")), "fixed case ordering and identity must remain complete");
   assert.equal(ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 61, "the source matrix must retain all 61 turns before channel exclusions");
   assert.ok(ACCEPTANCE_MATRIX.every((item) => Array.isArray(item.turns) && item.turns.length > 0));
+  assert.equal(GENERALIZATION_ACCEPTANCE_MATRIX.length, 36, "the approved generalization matrix must retain all 36 cases");
+  assert.equal(GENERALIZATION_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 45, "the approved generalization matrix must retain all 45 turns");
+  assert.equal(DEPLOYED_ACCEPTANCE_MATRIX.length, 113, "full_matrix must execute all 113 approved cases");
+  assert.equal(DEPLOYED_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 135, "full_matrix must execute all 135 approved turns");
 
   let healthCalls = 0;
   const health = await pollForDeployment({
@@ -299,6 +304,13 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
           formalEvidence: [{ capability: "parking", status: "answered", reason: "", dataSource: "property_catalog", facts: { subject: "parking", answer: "PRIVATE_FORMAL_FACT" } }],
           finalResponse: { action: "reply", shouldReply: true, replyText: "PRIVATE_FINAL_RESPONSE" },
           assessment: { status: "FAIL", reasons: ["reply_text_required_for_final_action"] }
+        }, {
+          turn: 2,
+          guestQuestion: "NO_REPLY_EVENT",
+          errorCode: "",
+          earliestFailureLayer: "",
+          finalResponse: { action: "no_reply", shouldReply: false, replyText: "" },
+          assessment: { status: "PASS", reasons: [] }
         }]
       }]
     };
@@ -309,6 +321,9 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
       assert.equal(json.includes(required), true, `private JSON artifact must contain ${required}`);
       assert.equal(markdown.includes(required), true, `private Markdown artifact must contain ${required}`);
     }
+    assert.equal(markdown.includes("Failure code:"), true, "each failed turn must expose its failureCode");
+    assert.equal(markdown.includes("Actual FinalResponse: 不回覆"), true, "no-reply turns must be explicit in the Markdown artifact");
+    assert.equal(markdown.includes("FAIL common-root groups"), true, "the Markdown artifact must group failures by common root cause");
     for (const heading of ["Core/Complex product outcome", "Safety contract", "Edge robustness", "Tier 1 CORE", "Tier 2 COMPLEX", "Tier 3 SAFETY", "Tier 4 EDGE"]) {
       assert.equal(markdown.includes(heading), true, `private Markdown artifact must report ${heading} separately`);
     }
@@ -816,7 +831,7 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   const targetedMatrix = acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "target_preflight", TEST_ONLY_ACCEPTANCE_CASE_IDS: targetIds.join(",") }).matrix;
   assert.deepEqual(targetedMatrix.map((item) => item.id), targetIds);
   assert.equal(targetedMatrix.reduce((sum, item) => sum + item.turns.length, 0), 18, "preflight must execute exactly the 18 previously failing turns");
-  assert.equal(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: "" }).matrix.length, 77);
+  assert.equal(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: "" }).matrix.length, 113);
   assert.throws(() => acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: targetIds[0] }), /full_matrix_case_filter_forbidden/);
   const correlationIdFor = (caseIndex, turnIndex) => `00000000-0000-4000-8000-${String(caseIndex * 10 + turnIndex + 1).padStart(12, "0")}`;
   const repairTargetFor = (caseId, correlationId) => {

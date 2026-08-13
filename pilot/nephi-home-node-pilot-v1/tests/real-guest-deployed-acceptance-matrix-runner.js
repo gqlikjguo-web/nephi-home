@@ -7,6 +7,7 @@ const path = require("node:path");
 const {
   ACCEPTANCE_MATRIX,
   SUPPLEMENTAL_ACCEPTANCE_MATRIX,
+  GENERALIZATION_ACCEPTANCE_MATRIX,
   DEPLOYED_ACCEPTANCE_MATRIX,
   loadAcceptanceMatrix,
   runAcceptanceMatrix
@@ -56,23 +57,25 @@ function safeResult(eventId, traceId) {
     );
     const whollyNotExecutable = ACCEPTANCE_MATRIX.filter((item) => item.executionStatus === "NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API");
     const notExecutableTurns = ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.filter((turn) => item.executionStatus === "NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API" || turn.executionStatus === "NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API").length, 0);
-    assert.deepEqual(whollyNotExecutable.map((item) => item.id), ["rg-040-modify-guests-bed", "rg-041-modify-room-mix", "rg-042-modify-date"]);
-    assert.equal(ACCEPTANCE_MATRIX.find((item) => item.id === "rg-050-nontext-markers").turns.every((turn) => turn.executionStatus === "NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API"), true);
-    assert.equal(ACCEPTANCE_MATRIX.find((item) => item.id === "rg-039-conversation-booking-refund").turns[1].executionStatus, "NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API");
-    assert.equal(notExecutableTurns, 9, "five native non-text markers and four operator-context turns must be excluded from text execution");
+    assert.deepEqual(whollyNotExecutable.map((item) => item.id), []);
+    assert.equal(ACCEPTANCE_MATRIX.find((item) => item.id === "rg-050-nontext-markers").turns.every((turn) => !turn.executionStatus), true);
+    assert.equal(ACCEPTANCE_MATRIX.find((item) => item.id === "rg-039-conversation-booking-refund").turns[1].executionStatus, undefined);
+    assert.equal(notExecutableTurns, 0, "every approved turn must leave actual execution evidence");
     assert.equal(SUPPLEMENTAL_ACCEPTANCE_MATRIX.length, 24, "the supplemental matrix must retain all 17 high-frequency variants plus three context and four native-event cases");
     assert.equal(SUPPLEMENTAL_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 29);
+    assert.equal(GENERALIZATION_ACCEPTANCE_MATRIX.length, 36);
+    assert.equal(GENERALIZATION_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 45);
     assert.deepEqual(
       SUPPLEMENTAL_ACCEPTANCE_MATRIX.slice(0, 17).map((item) => item.turns[0].messageText),
       ["離交流道近嗎", "雙人房", "可以烤肉嗎", "請問有早餐嗎", "有停車位嗎", "請問今天還有空房嗎", "請問費用", "請問價錢", "價格多少", "可以帶寵物嗎", "請問有飲水機嗎", "價格？", "還有空房嗎", "想詢問包棟價格", "請問有寵物友善嗎", "7/15可以訂房嗎", "我們想住兩天怎麼安排"],
       "the supplemental matrix must preserve every approved real wording exactly"
     );
-    assert.equal(SUPPLEMENTAL_ACCEPTANCE_MATRIX.find((item) => item.id === "rgs-016-past-or-future-date").turns[0].pastDatePolicy, "reject_if_resolved_past");
+    assert.equal(SUPPLEMENTAL_ACCEPTANCE_MATRIX.find((item) => item.id === "rgs-016-past-or-future-date").turns[0].pastDatePolicy, "");
     const expectedTierTotals = {
-      TIER_1_CORE: { cases: 34, turns: 34 },
-      TIER_2_COMPLEX: { cases: 21, turns: 31 },
-      TIER_3_SAFETY: { cases: 10, turns: 10 },
-      TIER_4_EDGE: { cases: 12, turns: 15 }
+      TIER_1_CORE: { cases: 48, turns: 50 },
+      TIER_2_COMPLEX: { cases: 34, turns: 50 },
+      TIER_3_SAFETY: { cases: 17, turns: 18 },
+      TIER_4_EDGE: { cases: 14, turns: 17 }
     };
     for (const [tier, expected] of Object.entries(expectedTierTotals)) {
       const cases = DEPLOYED_ACCEPTANCE_MATRIX.filter((item) => item.tier === tier);
@@ -82,7 +85,8 @@ function safeResult(eventId, traceId) {
         `${tier} must have the approved case/turn partition`
       );
     }
-    assert.equal(new Set(DEPLOYED_ACCEPTANCE_MATRIX.map((item) => item.id)).size, 77, "Tier metadata must retain exactly one assignment per case");
+    assert.equal(new Set(DEPLOYED_ACCEPTANCE_MATRIX.map((item) => item.id)).size, 113, "Tier metadata must retain exactly one assignment per case");
+    assert.equal(DEPLOYED_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 135);
     for (const item of DEPLOYED_ACCEPTANCE_MATRIX.filter((entry) => ["TIER_1_CORE", "TIER_2_COMPLEX"].includes(entry.tier))) {
       for (const turn of item.turns) {
         assert.equal(
@@ -105,14 +109,8 @@ function safeResult(eventId, traceId) {
 
     const rg003 = ACCEPTANCE_MATRIX.find((item) => item.id === "rg-003-price-nights");
     assert.equal(rg003.tier, "TIER_3_SAFETY");
-    assert.equal(rg003.turns[0].pastDatePolicy, "reject_if_resolved_past", "the stale May date must be a past-date safety case");
-    assert.equal(rg003.turns[0].expectedSemantic.includes("price"), false, "the stale May case must not remain a future-price auto-answer KPI");
-    assert.deepEqual(rg003.turns[0].productOutcomes, [{ subject: "past_date", disposition: "retain" }]);
-    assert.deepEqual(
-      SUPPLEMENTAL_ACCEPTANCE_MATRIX.find((item) => item.id === "rgs-016-past-or-future-date").turns[0].productOutcomes,
-      [{ subject: "past_date", disposition: "retain" }],
-      "the explicit past-date safety guard must require structured temporal evidence"
-    );
+    assert.deepEqual(rg003.turns[0].expectedActions, ["clarification"], "a month/day without a year must ask for the year");
+    assert.deepEqual(SUPPLEMENTAL_ACCEPTANCE_MATRIX.find((item) => item.id === "rgs-016-past-or-future-date").turns[0].expectedActions, ["clarification"]);
 
     const rg029 = ACCEPTANCE_MATRIX.find((item) => item.id === "rg-029-checkin-latest").turns[0];
     assert.deepEqual(rg029.expectedActions, ["reply", "handoff"], "requested-detail handling must accept the protected reply path or a safe handoff");
@@ -159,6 +157,8 @@ function safeResult(eventId, traceId) {
       assert.equal(item.turns[0].lineEvent.type, "message");
       assert.ok(["sticker", "image", "video", "file"].includes(item.turns[0].lineEvent.message.type));
     }
+    const fixedNative = ACCEPTANCE_MATRIX.find((item) => item.id === "rg-050-nontext-markers");
+    assert.equal(fixedNative.turns.every((turn) => turn.lineEvent && turn.messageText), true, "fixed event cases must retain original wording while using native event transport");
   } catch (error) {
     redFailures.push(error);
   }
@@ -228,7 +228,8 @@ function safeResult(eventId, traceId) {
     );
     assert.equal(requests[0].conversationId, requests[1].conversationId, "executable turns in a partial case must retain one conversation");
     assert.notEqual(requests[1].conversationId, requests[2].conversationId, "different cases must remain isolated");
-    assert.deepEqual(result, {
+    const { turnResults: partialTurnResults, openAiTextUnderstanding: partialTextResults, ...resultWithoutTurnScores } = result;
+    assert.deepEqual(resultWithoutTurnScores, {
       caseCount: 4,
       turnCount: 6,
       executableCaseCount: 2,
@@ -250,6 +251,8 @@ function safeResult(eventId, traceId) {
         edgeRobustness: { caseCount: 1, turnCount: 1, executableCaseCount: 0, executableTurnCount: 0, passCount: 0, partialCount: 0, failCount: 0, notExecutableCaseCount: 1, notExecutableTurnCount: 1 }
       }
     });
+    assert.deepEqual(partialTurnResults, { passCount: 3, failCount: 3 });
+    assert.deepEqual(partialTextResults, { caseCount: 4, passCount: 1, failCount: 3, turnCount: 6, turnPassCount: 3, turnFailCount: 3 });
     assert.equal(writes.filter((item) => item.status === "NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API").length, 3);
   } catch (error) {
     redFailures.push(error);
@@ -303,12 +306,14 @@ function safeResult(eventId, traceId) {
     reportWriter: (report) => { supplementalReport = report; },
     reportFinalizer: () => { throw new Error("TARGET_PASS_ATTRIBUTION_UNPROVEN"); }
   });
-  const { tiers: supplementalTiers, groups: supplementalGroups, ...supplementalTotals } = supplementalResult;
+  const { tiers: supplementalTiers, groups: supplementalGroups, turnResults, openAiTextUnderstanding, ...supplementalTotals } = supplementalResult;
   assert.deepEqual(supplementalTotals, { caseCount: 2, turnCount: 3, executableCaseCount: 2, executableTurnCount: 3, passCount: 2, partialCount: 0, failCount: 0, notExecutableCaseCount: 0, notExecutableTurnCount: 0 });
   assert.deepEqual(supplementalTiers.TIER_2_COMPLEX, { caseCount: 1, turnCount: 2, executableCaseCount: 1, executableTurnCount: 2, passCount: 1, partialCount: 0, failCount: 0, notExecutableCaseCount: 0, notExecutableTurnCount: 0 });
   assert.deepEqual(supplementalTiers.TIER_4_EDGE, { caseCount: 1, turnCount: 1, executableCaseCount: 1, executableTurnCount: 1, passCount: 1, partialCount: 0, failCount: 0, notExecutableCaseCount: 0, notExecutableTurnCount: 0 });
   assert.deepEqual(supplementalGroups.coreComplexProductOutcome, supplementalTiers.TIER_2_COMPLEX);
   assert.deepEqual(supplementalGroups.edgeRobustness, supplementalTiers.TIER_4_EDGE);
+  assert.deepEqual(turnResults, { passCount: 3, failCount: 0 });
+  assert.deepEqual(openAiTextUnderstanding, { caseCount: 1, passCount: 1, failCount: 0, turnCount: 2, turnPassCount: 2, turnFailCount: 0 });
   assert.equal(supplementalRequests[0].establishOperatorContext, true);
   assert.equal(supplementalReport.schemaVersion, 2, "tiered product-outcome reports must use the corrected report schema");
   assert.equal(supplementalRequests[0].messageText, "setup");
