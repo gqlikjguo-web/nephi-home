@@ -61,8 +61,8 @@ async function waitFor(predicate, timeoutMs = 1500) {
   try {
     const migration = await migratePostgres(connection);
     assert.ok(migration.files.includes("015_property_line_bindings.sql"), "the production binding migration must be applied");
-    assert.equal(migration.files.length, 22, "the migration chain must remain complete and uniquely numbered");
-    assert.deepEqual(migration.files.slice(-8), [
+    assert.equal(migration.files.length, 23, "the migration chain must remain complete and uniquely numbered");
+    assert.deepEqual(migration.files.slice(-9), [
       "015_property_line_bindings.sql",
       "016_onboarding_intake_invites.sql",
       "017_property_line_setup_tokens.sql",
@@ -70,8 +70,9 @@ async function waitFor(predicate, timeoutMs = 1500) {
       "019_property_line_binding_webhook_status.sql",
       "020_inventory_availability_authority.sql",
       "021_test_only_line_message_traces.sql",
-      "022_inventory_date_completeness.sql"
-    ], "inventory completeness must extend the existing authority chain without replacing prior migrations");
+      "022_inventory_date_completeness.sql",
+      "023_date_price_authority.sql"
+    ], "date price authority must extend the existing authority chain without replacing prior migrations");
     assert.equal(migration.files.includes("016_property_line_binding_webhook_status.sql"), false, "the removed duplicate migration number must not return");
     const setup = await openPostgres(connection);
     await setup.query("INSERT INTO properties(property_id,display_name) VALUES($1,$2),($3,$4)", ["pg_property_a", "Postgres Property A", "pg_property_b", "Postgres Property B"]);

@@ -3,6 +3,7 @@ const { parentPort, workerData } = require("node:worker_threads");
 const crypto = require("node:crypto");
 const { openPostgres } = require("./postgres-client");
 const { normalizeEntertainmentAmenities } = require("../bundle-entertainment");
+const { isDateKey, isPriceType } = require("../date-price-authority");
 let client;
 const ADMIN_INVITATION_EMAIL_SQL = "COALESCE(NULLIF(trim(i.email),''),NULLIF(trim(s.settings #>> '{businessProfile,email}'),''))";
 
@@ -152,8 +153,20 @@ async function operation(name, args) {
     }catch(error){await client.query("ROLLBACK");throw error;}
     return operation("getProperty",[propertyId]);
   }
-  if(name==="setRoomPriceOverride"){const [propertyId,roomId,date,price,currency]=args;await client.query("INSERT INTO room_price_overrides(property_id,room_id,stay_date,price,currency) VALUES($1,$2,$3,$4,$5) ON CONFLICT(property_id,room_id,stay_date) DO UPDATE SET price=excluded.price,currency=excluded.currency,updated_at=now()",[propertyId,roomId,date,price,currency]);return{propertyId,roomId,date,price,currency};}
-  if(name==="listRoomPriceOverrides"){const r=await client.query("SELECT room_id,stay_date::text date,price,currency FROM room_price_overrides WHERE property_id=$1 ORDER BY stay_date,room_id",[args[0]]);return r.rows.map(x=>({roomId:x.room_id,date:x.date.slice(0,10),price:Number(x.price),currency:x.currency}));}
+  if(name==="setRoomPriceOverride"){const [propertyId,roomId,date,price,currency]=args;return operation("setInventoryPriceOverride",[propertyId,{inventoryType:"room",inventoryId:roomId,date,price,currency}]);}
+  if(name==="setInventoryPriceOverride"){
+    const [propertyId,input]=args,inventoryType=String(input&&input.inventoryType||""),inventoryId=String(input&&input.inventoryId||"").trim(),date=String(input&&input.date||""),hasPrice=input&&input.price!==undefined&&input.price!==null&&input.price!=="",hasPriceType=input&&input.priceType!==undefined&&input.priceType!==null&&input.priceType!=="",price=hasPrice?Number(input.price):null,priceType=hasPriceType?String(input.priceType):null,currency=String(input&&input.currency||"TWD");
+    if(!["room","bundle"].includes(inventoryType)||!inventoryId||!isDateKey(date)||hasPrice===hasPriceType||(hasPrice&&(!Number.isInteger(price)||price<0))||(hasPriceType&&!isPriceType(priceType)))throw new Error("invalid inventory price override");
+    if(inventoryType==="room")await client.query("INSERT INTO room_price_overrides(property_id,room_id,bundle_id,stay_date,price,price_type,currency) VALUES($1,$2,NULL,$3,$4,$5,$6) ON CONFLICT(property_id,room_id,stay_date) WHERE room_id IS NOT NULL DO UPDATE SET price=excluded.price,price_type=excluded.price_type,currency=excluded.currency,updated_at=now()",[propertyId,inventoryId,date,price,priceType,currency]);
+    else await client.query("INSERT INTO room_price_overrides(property_id,room_id,bundle_id,stay_date,price,price_type,currency) VALUES($1,NULL,$2,$3,$4,$5,$6) ON CONFLICT(property_id,bundle_id,stay_date) WHERE bundle_id IS NOT NULL DO UPDATE SET price=excluded.price,price_type=excluded.price_type,currency=excluded.currency,updated_at=now()",[propertyId,inventoryId,date,price,priceType,currency]);
+    return{propertyId,inventoryType,inventoryId,roomId:inventoryType==="room"?inventoryId:null,bundleId:inventoryType==="bundle"?inventoryId:null,date,price,priceType,currency};
+  }
+  if(name==="deleteInventoryPriceOverride"){const [propertyId,inventoryType,inventoryId,date]=args;if(!["room","bundle"].includes(inventoryType)||!inventoryId||!isDateKey(date))throw new Error("invalid inventory price override");const column=inventoryType==="room"?"room_id":"bundle_id",r=await client.query(`DELETE FROM room_price_overrides WHERE property_id=$1 AND ${column}=$2 AND stay_date=$3 RETURNING 1`,[propertyId,inventoryId,date]);return r.rows.length>0;}
+  if(name==="listInventoryPriceOverrides"){const r=await client.query("SELECT room_id,bundle_id,stay_date::text date,price,price_type,currency FROM room_price_overrides WHERE property_id=$1 ORDER BY stay_date,COALESCE(room_id,bundle_id)",[args[0]]);return r.rows.map(x=>({inventoryType:x.bundle_id?"bundle":"room",inventoryId:x.bundle_id||x.room_id,roomId:x.room_id||null,bundleId:x.bundle_id||null,date:x.date.slice(0,10),price:x.price===null?null:Number(x.price),priceType:x.price_type||null,currency:x.currency}));}
+  if(name==="listRoomPriceOverrides"){return (await operation("listInventoryPriceOverrides",[args[0]])).filter(x=>x.inventoryType==="room");}
+  if(name==="setDatePriceClassification"){const [propertyId,date,priceType]=args;if(!isDateKey(date)||!isPriceType(priceType))throw new Error("invalid date price classification");await client.query("INSERT INTO property_date_price_classifications(property_id,stay_date,price_type) VALUES($1,$2,$3) ON CONFLICT(property_id,stay_date) DO UPDATE SET price_type=excluded.price_type,updated_at=now()",[propertyId,date,priceType]);return{date,priceType};}
+  if(name==="deleteDatePriceClassification"){const [propertyId,date]=args;if(!isDateKey(date))throw new Error("invalid date price classification");const r=await client.query("DELETE FROM property_date_price_classifications WHERE property_id=$1 AND stay_date=$2 RETURNING 1",[propertyId,date]);return r.rows.length>0;}
+  if(name==="listDatePriceClassifications"){const r=await client.query("SELECT stay_date::text date,price_type FROM property_date_price_classifications WHERE property_id=$1 ORDER BY stay_date",[args[0]]);return r.rows.map(x=>({date:x.date.slice(0,10),priceType:x.price_type}));}
   if (name === "getRows") {
     const [propertyId, from, to] = args;
     const normalized = await client.query("SELECT stay_date::text date,inventory_id,status FROM inventory_availability_days WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date,inventory_id",[propertyId,from||null,to||null]);

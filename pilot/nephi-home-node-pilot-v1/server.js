@@ -24,6 +24,7 @@ const { createTestOnlyLineMessageTrace } = require("./lib/test-only-line-message
 const { createGithubActionsOidcVerifier } = require("./lib/test-only-acceptance-oidc");
 const { readOperationalAcceptanceDataIntegrity, syncTestOnlyAcceptanceData } = require("./lib/providers/test-only-acceptance-data");
 const { runWithTestOnlyAcceptanceRawUnderstanding } = require("./lib/test-only-raw-understanding-diagnostic");
+const { isDateKey, isPriceType, resolveDatePrice } = require("./lib/date-price-authority");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -457,7 +458,7 @@ function cookieValue(request, name) {
 }
 
 function isAdminDataRoute(pathname) {
-  return pathname === "/api/test-only/line-message-traces" || pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname === "/api/property-profile" || pathname === "/api/property-facts" || pathname.startsWith("/api/custom-replies") || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
+  return pathname === "/api/test-only/line-message-traces" || pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname === "/api/property-profile" || pathname === "/api/property-facts" || pathname.startsWith("/api/custom-replies") || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname === "/api/inventory-price-overrides" || pathname === "/api/date-price-classifications" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
 }
 
 function sendData(response, data, status = 200) {
@@ -566,19 +567,52 @@ function nextDateKey(dateKey) {
   return date.toISOString().slice(0, 10);
 }
 
-function publicPriceForDate(room, date, overrides = []) {
-  const override = overrides.find((item) => item.roomId === room.id && item.date === date);
-  if (override && Number.isInteger(Number(override.price)) && Number(override.price) > 0) return Number(override.price);
-  const weekday = new Date(`${date}T00:00:00.000Z`).getUTCDay();
-  const key = weekday === 0 ? "sundayPrice" : weekday === 5 ? "fridayPrice" : weekday === 6 ? "saturdayHolidayPrice" : "mondayThursdayPrice";
-  const value = Number(room[key] ?? room.basePrice);
-  return Number.isInteger(value) && value > 0 ? value : null;
+function listInventoryPriceOverrides(customerSettings, propertyId) {
+  const legacy = typeof customerSettings.listRoomPriceOverrides === "function"
+    ? customerSettings.listRoomPriceOverrides(propertyId).map((item) => ({ inventoryType: "room", inventoryId: item.roomId, bundleId: null, ...item }))
+    : [];
+  const unified = typeof customerSettings.listInventoryPriceOverrides === "function"
+    ? customerSettings.listInventoryPriceOverrides(propertyId)
+    : [];
+  const byInventoryDate = new Map();
+  for (const item of [...legacy, ...unified]) byInventoryDate.set(`${item.inventoryType}:${item.inventoryId}:${item.date}`, item);
+  return [...byInventoryDate.values()];
 }
 
-function publicPriceForStay(room, checkIn, checkOut, overrides = []) {
+function listDatePriceClassifications(customerSettings, propertyId) {
+  return typeof customerSettings.listDatePriceClassifications === "function"
+    ? customerSettings.listDatePriceClassifications(propertyId)
+    : [];
+}
+
+function adminPricingData(customerSettings, property) {
+  const propertyId = property.propertyId;
+  const rooms = typeof customerSettings.listRoomRecords === "function"
+    ? customerSettings.listRoomRecords(propertyId)
+    : (property.rooms || []).filter((item) => item.inventoryType !== "bundle");
+  const bundles = typeof customerSettings.listBundles === "function"
+    ? customerSettings.listBundles(propertyId)
+    : (property.rooms || []).filter((item) => item.inventoryType === "bundle");
+  return {
+    currency: property.currency || "TWD",
+    rooms,
+    inventories: [
+      ...rooms.map((item) => ({ ...item, inventoryType: "room" })),
+      ...bundles.map((item) => ({ ...item, inventoryType: "bundle" }))
+    ],
+    overrides: listInventoryPriceOverrides(customerSettings, propertyId),
+    datePriceClassifications: listDatePriceClassifications(customerSettings, propertyId)
+  };
+}
+
+function publicPriceForDate(room, date, overrides = [], datePriceClassifications = []) {
+  return resolveDatePrice({ inventory: room, date, priceOverrides: overrides, datePriceClassifications }).price;
+}
+
+function publicPriceForStay(room, checkIn, checkOut, overrides = [], datePriceClassifications = []) {
   let date = checkIn, total = 0;
   while (date < checkOut) {
-    const nightly = publicPriceForDate(room, date, overrides);
+    const nightly = publicPriceForDate(room, date, overrides, datePriceClassifications);
     if (nightly === null) return null;
     total += nightly;
     date = nextDateKey(date);
@@ -586,17 +620,17 @@ function publicPriceForStay(room, checkIn, checkOut, overrides = []) {
   return total > 0 ? total : null;
 }
 
-function publicNightlyPrices(room, checkIn, checkOut, overrides = []) {
+function publicNightlyPrices(room, checkIn, checkOut, overrides = [], datePriceClassifications = []) {
   const nights = [];
   for (let date = checkIn; date < checkOut; date = nextDateKey(date)) {
-    const price = publicPriceForDate(room, date, overrides);
+    const price = publicPriceForDate(room, date, overrides, datePriceClassifications);
     if (price === null) return [];
     nights.push({ date, price });
   }
   return nights;
 }
 
-function publicAvailabilityResult(result, property, overrides = []) {
+function publicAvailabilityResult(result, property, overrides = [], datePriceClassifications = []) {
   let lineUrl = "";
   try {
     const parsed = new URL(String(result.lineUrl || ""));
@@ -613,8 +647,8 @@ function publicAvailabilityResult(result, property, overrides = []) {
     capacity: Number(room.capacity || 0),
     highlights: room.highlights,
     ...(input.inventoryType === "bundle" ? { entertainmentAmenities: providedAmenities(input.entertainmentAmenities).slice(0, 5).map(({ key, displayName, source, position }) => ({ key, displayName, source, position })) } : {}),
-    price: publicPriceForStay(room, result.checkIn, result.checkOut, overrides),
-    nightlyPrices: publicNightlyPrices(room, result.checkIn, result.checkOut, overrides),
+    price: publicPriceForStay(room, result.checkIn, result.checkOut, overrides, datePriceClassifications),
+    nightlyPrices: publicNightlyPrices(room, result.checkIn, result.checkOut, overrides, datePriceClassifications),
     currency: String(property.currency || "TWD")
   });};
   const rooms = result.rooms.filter((room) => room.inventoryType !== "bundle").map(item);
@@ -846,7 +880,7 @@ function createRequestHandler(service, options = {}) {
           roomType: String(url.searchParams.get("roomType") || "all").trim() || "all",
           queryMode
         });
-        return sendData(response, publicAvailabilityResult(result, property, customerSettings.listRoomPriceOverrides(propertyId)));
+        return sendData(response, publicAvailabilityResult(result, property, listInventoryPriceOverrides(customerSettings, propertyId), listDatePriceClassifications(customerSettings, propertyId)));
       }
 
       if (request.method === "POST" && pathname === "/api/admin/login") {
@@ -984,7 +1018,7 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "POST" && pathname === "/api/availability/batch") {
         return sendData(response, service.applyBatch(request.adminBody || await readJsonBody(request)));
       }
-      if(request.method==="GET"&&pathname==="/api/room-pricing"){const property=customerSettings.getProperty(url.searchParams.get("customerId")),rooms=typeof customerSettings.listRoomRecords==="function"?customerSettings.listRoomRecords(property.propertyId):property.rooms.filter(x=>x.inventoryType!=="bundle");return sendData(response,{currency:property.currency||"TWD",rooms,overrides:customerSettings.listRoomPriceOverrides(property.propertyId)});}
+      if(request.method==="GET"&&pathname==="/api/room-pricing"){const property=customerSettings.getProperty(url.searchParams.get("customerId"));return sendData(response,adminPricingData(customerSettings,property));}
       if(request.method==="PUT"&&pathname==="/api/room-pricing"){
         const body=request.adminBody||await readJsonBody(request),propertyId=String(body.propertyId||body.customerId||"").trim();
         if(!Array.isArray(body.rooms)||!body.rooms.length)throw new AppError(400,"INVALID_PRICING_MATRIX","請提供至少一個房型價格");
@@ -999,11 +1033,26 @@ function createRequestHandler(service, options = {}) {
           items.push(item);
         }
         const updated=customerSettings.updateRoomPricingBatch(propertyId,items),rooms=typeof customerSettings.listRoomRecords==="function"?customerSettings.listRoomRecords(propertyId):updated.rooms.filter((room)=>room.inventoryType!=="bundle");
-        return sendData(response,{currency:updated.currency||"TWD",rooms,overrides:customerSettings.listRoomPriceOverrides(propertyId)});
+        return sendData(response,{...adminPricingData(customerSettings,updated),rooms});
       }
       const pricingMatch=/^\/api\/room-pricing\/([^/]+)$/.exec(pathname);
       if(pricingMatch&&request.method==="PUT"){const b=request.adminBody||await readJsonBody(request),price={};for(const key of ["mondayThursdayPrice","fridayPrice","saturdayHolidayPrice","sundayPrice"]){price[key]=Number(b[key]);if(!Number.isInteger(price[key])||price[key]<0)throw new AppError(400,"INVALID_PRICE","價格必須是零或正整數");}return sendData(response,{property:customerSettings.updateRoomPricing(b.customerId,decodeURIComponent(pricingMatch[1]),price)});}
       if(request.method==="POST"&&pathname==="/api/room-price-overrides"){const b=request.adminBody||await readJsonBody(request),price=Number(b.price);if(!/^\d{4}-\d{2}-\d{2}$/.test(b.date)||!Number.isInteger(price)||price<0)throw new AppError(400,"INVALID_PRICE_OVERRIDE","請輸入有效日期與價格");return sendData(response,{override:customerSettings.setRoomPriceOverride(b.customerId,b.roomId,b.date,price,customerSettings.getProperty(b.customerId).currency||"TWD")});}
+      if(pathname==="/api/inventory-price-overrides"&&["POST","DELETE"].includes(request.method)){
+        const b=request.adminBody||await readJsonBody(request),propertyId=String(b.propertyId||b.customerId||"").trim(),inventoryType=String(b.inventoryType||""),inventoryId=String(b.inventoryId||"").trim(),date=String(b.date||""),property=customerSettings.getProperty(propertyId),inventory=property&&adminPricingData(customerSettings,property).inventories.find((item)=>item.inventoryType===inventoryType&&item.id===inventoryId);
+        if(!property||!inventory||!isDateKey(date))throw new AppError(400,"INVALID_PRICE_OVERRIDE","請選擇有效的房型或包棟與日期");
+        if(request.method==="DELETE")return sendData(response,{deleted:customerSettings.deleteInventoryPriceOverride(propertyId,inventoryType,inventoryId,date)});
+        const hasPrice=b.price!==undefined&&b.price!==null&&b.price!=="",hasPriceType=b.priceType!==undefined&&b.priceType!==null&&b.priceType!=="",price=hasPrice?Number(b.price):null,priceType=hasPriceType?String(b.priceType):null;
+        if(hasPrice===hasPriceType||(hasPrice&&(!Number.isInteger(price)||price<0))||(hasPriceType&&!isPriceType(priceType)))throw new AppError(400,"INVALID_PRICE_OVERRIDE","請選擇價格類型或輸入有效特殊價格");
+        return sendData(response,{override:customerSettings.setInventoryPriceOverride(propertyId,{inventoryType,inventoryId,date,price,priceType,currency:property.currency||"TWD"})});
+      }
+      if(pathname==="/api/date-price-classifications"&&["POST","DELETE"].includes(request.method)){
+        const b=request.adminBody||await readJsonBody(request),propertyId=String(b.propertyId||b.customerId||"").trim(),date=String(b.date||""),property=customerSettings.getProperty(propertyId);
+        if(!property||!isDateKey(date))throw new AppError(400,"INVALID_DATE_PRICE_CLASSIFICATION","請輸入有效日期");
+        if(request.method==="DELETE")return sendData(response,{deleted:customerSettings.deleteDatePriceClassification(propertyId,date)});
+        const priceType=String(b.priceType||"");if(!isPriceType(priceType))throw new AppError(400,"INVALID_DATE_PRICE_CLASSIFICATION","請選擇有效價格類型");
+        return sendData(response,{classification:customerSettings.setDatePriceClassification(propertyId,date,priceType)});
+      }
       if (request.method === "GET" && pathname === "/api/bundles") return sendData(response, { bundles: customerSettings.listBundles(url.searchParams.get("customerId")) });
       if (request.method === "POST" && pathname === "/api/bundles") { const body=request.adminBody||await readJsonBody(request);return sendData(response,{bundle:customerSettings.createBundle(body.customerId,body)},201); }
       const bundleMatch=/^\/api\/bundles\/([^/]+)$/.exec(pathname);

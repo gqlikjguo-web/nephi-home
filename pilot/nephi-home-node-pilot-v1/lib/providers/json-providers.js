@@ -3,6 +3,7 @@
 const { JsonFileRepository } = require("../json-repository");
 const { CustomerSettingsProvider, AvailabilityProvider, PersistenceProvider } = require("./contracts");
 const { normalizeRoomRecord } = require("../room-data");
+const { isDateKey, isPriceType } = require("../date-price-authority");
 
 function toProperty(homestay) {
   if (!homestay) return null;
@@ -25,7 +26,7 @@ function toProperty(homestay) {
 }
 
 class JsonCustomerSettingsProvider extends CustomerSettingsProvider {
-  constructor(repository) { super(); this.repository = repository; }
+  constructor(repository) { super(); this.repository = repository; this.priceOverrides = []; this.datePriceClassifications = []; }
   listProperties() { return this.repository.listHomestays().map(toProperty); }
   getProperty(propertyId) { return toProperty(this.repository.getHomestay(propertyId)); }
   listRoomRecords(propertyId) { const homestay=this.repository.getHomestay(propertyId);return homestay?(homestay.rooms||[]).filter(room=>room.inventoryType!=="bundle").map(normalizeRoomRecord):[]; }
@@ -68,7 +69,18 @@ class JsonCustomerSettingsProvider extends CustomerSettingsProvider {
     const updated = this.repository.updateHomestay(propertyId, { name: homestay.name, rooms: homestay.rooms.map((room) => changes.has(room.id) ? normalizeRoomRecord({ ...room, ...changes.get(room.id) }) : room), safeFacts: homestay.safeFacts || {} });
     return toProperty(updated);
   }
-  listRoomPriceOverrides() { return []; }
+  setRoomPriceOverride(propertyId, roomId, date, price, currency = "TWD") { return this.setInventoryPriceOverride(propertyId, { inventoryType: "room", inventoryId: roomId, date, price, currency }); }
+  setInventoryPriceOverride(propertyId, input) {
+    const inventoryType=String(input&&input.inventoryType||""),inventoryId=String(input&&input.inventoryId||""),date=String(input&&input.date||""),hasPrice=input&&input.price!==undefined&&input.price!==null&&input.price!=="",hasPriceType=input&&input.priceType!==undefined&&input.priceType!==null&&input.priceType!=="",price=hasPrice?Number(input.price):null,priceType=hasPriceType?String(input.priceType):null,currency=String(input&&input.currency||"TWD");
+    if(!["room","bundle"].includes(inventoryType)||!inventoryId||!isDateKey(date)||hasPrice===hasPriceType||(hasPrice&&(!Number.isInteger(price)||price<0))||(hasPriceType&&!isPriceType(priceType)))throw new Error("invalid inventory price override");
+    const item={propertyId,inventoryType,inventoryId,roomId:inventoryType==="room"?inventoryId:null,bundleId:inventoryType==="bundle"?inventoryId:null,date,price,priceType,currency},index=this.priceOverrides.findIndex(x=>x.propertyId===propertyId&&x.inventoryType===inventoryType&&x.inventoryId===inventoryId&&x.date===date);if(index>=0)this.priceOverrides[index]=item;else this.priceOverrides.push(item);return{...item};
+  }
+  deleteInventoryPriceOverride(propertyId, inventoryType, inventoryId, date) { const index=this.priceOverrides.findIndex(x=>x.propertyId===propertyId&&x.inventoryType===inventoryType&&x.inventoryId===inventoryId&&x.date===date);if(index<0)return false;this.priceOverrides.splice(index,1);return true; }
+  listInventoryPriceOverrides(propertyId) { return this.priceOverrides.filter(x=>x.propertyId===propertyId).map(({propertyId:ignored,...item})=>({...item})); }
+  listRoomPriceOverrides(propertyId) { return this.listInventoryPriceOverrides(propertyId).filter(x=>x.inventoryType==="room"); }
+  setDatePriceClassification(propertyId, date, priceType) { if(!isDateKey(date)||!isPriceType(priceType))throw new Error("invalid date price classification");const item={propertyId,date,priceType},index=this.datePriceClassifications.findIndex(x=>x.propertyId===propertyId&&x.date===date);if(index>=0)this.datePriceClassifications[index]=item;else this.datePriceClassifications.push(item);return{date,priceType}; }
+  deleteDatePriceClassification(propertyId, date) { const index=this.datePriceClassifications.findIndex(x=>x.propertyId===propertyId&&x.date===date);if(index<0)return false;this.datePriceClassifications.splice(index,1);return true; }
+  listDatePriceClassifications(propertyId) { return this.datePriceClassifications.filter(x=>x.propertyId===propertyId).map(({propertyId:ignored,...item})=>({...item})); }
 }
 
 class JsonAvailabilityProvider extends AvailabilityProvider {
