@@ -89,6 +89,31 @@ function runRangeContract(providers, label) {
   assert.equal(row[ROOM_IDS[2]], "available", `${label}: batch room close must preserve sibling rooms`);
 }
 
+function runMonthlyInventoryControlContract(providers, label) {
+  const service = createMvpService(providers, { now: () => NOW });
+  const search = (date, queryMode) => service.searchAvailability({
+    customerId: PROPERTY_ID, checkIn: date,
+    checkOut: new Date(Date.parse(`${date}T00:00:00.000Z`) + 86400000).toISOString().slice(0, 10),
+    queryMode, roomType: "all"
+  }).rooms.map((room) => room.id);
+
+  for (const inventoryId of [...ROOM_IDS, BUNDLE_ID]) {
+    service.setMonth({ customerId: PROPERTY_ID, year: 2026, month: 9, roomId: inventoryId, status: "available" });
+    assert.equal(providers.availability.getRows(PROPERTY_ID, "2026-09-10", "2026-09-11")[0][inventoryId], "available", `${label}: monthly open must work for ${inventoryId}`);
+    service.setMonth({ customerId: PROPERTY_ID, year: 2026, month: 9, roomId: inventoryId, status: "closed" });
+    assert.equal(providers.availability.getRows(PROPERTY_ID, "2026-09-10", "2026-09-11")[0][inventoryId], "closed", `${label}: monthly close must work for ${inventoryId}`);
+  }
+  service.setMonth({ customerId: PROPERTY_ID, year: 2026, month: 9, roomId: BUNDLE_ID, status: "available" });
+  for (const roomId of ROOM_IDS) service.setMonth({ customerId: PROPERTY_ID, year: 2026, month: 9, roomId, status: "closed" });
+  assert.deepEqual(search("2026-09-10", "bundle_only"), [BUNDLE_ID], `${label}: bundle-first monthly order must preserve bundle sale`);
+  assert.deepEqual(search("2026-09-10", "room_only"), [], `${label}: bundle-first monthly order must close individual rooms`);
+
+  for (const roomId of ROOM_IDS) service.setMonth({ customerId: PROPERTY_ID, year: 2026, month: 10, roomId, status: "closed" });
+  service.setMonth({ customerId: PROPERTY_ID, year: 2026, month: 10, roomId: BUNDLE_ID, status: "available" });
+  assert.deepEqual(search("2026-10-10", "bundle_only"), [BUNDLE_ID], `${label}: room-first monthly order must preserve bundle sale in another month`);
+  assert.deepEqual(search("2026-10-10", "room_only"), [], `${label}: room-first monthly order must close individual rooms in another month`);
+}
+
 function runSearchContract(providers, label) {
   const service = createMvpService(providers, { now: () => NOW });
   const search = (date, queryMode) => service.searchAvailability({
@@ -138,6 +163,55 @@ function runSearchContract(providers, label) {
   assert.deepEqual(search("2026-10-01", "bundle_only"), [BUNDLE_ID], `${label}: a safely completed new date must be reliable for bundle search`);
 }
 
+function runJsonInventoryCompletenessContract(providers) {
+  const property = providers.customerSettings.getProperty(PROPERTY_ID);
+  providers.customerSettings.updateProperty(PROPERTY_ID, {
+    ...property,
+    rooms: [
+      ...property.rooms.map((room) => room.id === ROOM_IDS[0] ? { ...room, enabled: false } : room),
+      { id: "room_new", name: "New room", capacity: 2, type: "room", enabled: true }
+    ]
+  });
+  let row = providers.availability.getRows(PROPERTY_ID, "2026-08-02", "2026-08-03")[0];
+  assert.equal(row.room_new, "closed", "JSON: adding enabled inventory must backfill managed dates as closed");
+  assert.equal(row[ROOM_IDS[1]], "available", "JSON: backfill must not overwrite an existing state");
+
+  const disabled = providers.customerSettings.getProperty(PROPERTY_ID);
+  providers.customerSettings.updateProperty(PROPERTY_ID, {
+    ...disabled,
+    rooms: disabled.rooms.map((room) => room.id === ROOM_IDS[0] ? { ...room, enabled: true } : room)
+  });
+  row = providers.availability.getRows(PROPERTY_ID, "2026-08-02", "2026-08-03")[0];
+  assert.equal(row[ROOM_IDS[0]], "closed", "JSON: re-enabling inventory must preserve its existing managed-date state");
+  assert.equal(row.room_new, "closed", "JSON: re-enable backfill must preserve other inventory state");
+}
+
+function runPostgresInventoryCompletenessContract(providers) {
+  providers.customerSettings.updateRoomPricingBatch(PROPERTY_ID, [{
+    roomTypeId: ROOM_IDS[0], mondayThursdayPrice: 0, fridayPrice: 0,
+    saturdayHolidayPrice: 0, sundayPrice: 0, enabled: true
+  }]);
+  let row = providers.availability.getRows(PROPERTY_ID, "2026-09-01", "2026-09-02")[0];
+  assert.equal(row[ROOM_IDS[0]], "closed", "PostgreSQL: re-enabling a room must backfill managed dates as closed");
+  assert.equal(row[BUNDLE_ID], "available", "PostgreSQL: room re-enable backfill must not overwrite bundle state");
+
+  const bundle = providers.customerSettings.createBundle(PROPERTY_ID, {
+    name: "Second bundle", capacity: 4, memberRoomIds: ROOM_IDS.slice(0, 2), enabled: true,
+    mondayThursdayPrice: 4000, fridayPrice: 4000, saturdayHolidayPrice: 4000, sundayPrice: 4000
+  });
+  row = providers.availability.getRows(PROPERTY_ID, "2026-09-01", "2026-09-02")[0];
+  assert.equal(row[bundle.id], "closed", "PostgreSQL: creating an enabled bundle must backfill managed dates as closed");
+  assert.equal(row[BUNDLE_ID], "available", "PostgreSQL: bundle-create backfill must not overwrite existing state");
+
+  const disabledBundle = providers.customerSettings.createBundle(PROPERTY_ID, {
+    name: "Disabled bundle", capacity: 4, memberRoomIds: ROOM_IDS.slice(2), enabled: false,
+    mondayThursdayPrice: 4000, fridayPrice: 4000, saturdayHolidayPrice: 4000, sundayPrice: 4000
+  });
+  providers.customerSettings.updateBundle(PROPERTY_ID, disabledBundle.id, { ...disabledBundle, enabled: true });
+  row = providers.availability.getRows(PROPERTY_ID, "2026-09-01", "2026-09-02")[0];
+  assert.equal(row[disabledBundle.id], "closed", "PostgreSQL: re-enabling a bundle must backfill managed dates as closed");
+}
+
 function createJsonFixture(temp) {
   const seedFile = path.join(temp, "seed.json");
   fs.writeFileSync(seedFile, JSON.stringify(propertySeed()), "utf8");
@@ -183,6 +257,8 @@ async function run() {
     runToggleContract(providers.availability, "JSON provider");
     runRangeContract(providers, "JSON service range path");
     runSearchContract(providers, "JSON service search path");
+    runMonthlyInventoryControlContract(providers, "JSON monthly inventory controls");
+    runJsonInventoryCompletenessContract(providers);
   } finally {
     fs.rmSync(jsonTemp, { recursive: true, force: true });
   }
@@ -197,6 +273,17 @@ async function run() {
     runToggleContract(providers.availability, "PostgreSQL provider");
     runRangeContract(providers, "PostgreSQL service range path");
     runSearchContract(providers, "PostgreSQL service search path");
+    runMonthlyInventoryControlContract(providers, "PostgreSQL monthly inventory controls");
+    await providers.close();
+    providers = null;
+    const client = await openPostgres(connection);
+    try {
+      await client.query("UPDATE room_types SET enabled=false WHERE property_id=$1 AND room_id=$2", [PROPERTY_ID, ROOM_IDS[0]]);
+      await client.query("DELETE FROM inventory_availability_days WHERE property_id=$1 AND inventory_id=$2 AND stay_date='2026-09-01'", [PROPERTY_ID, ROOM_IDS[0]]);
+      await client.query("UPDATE inventory_availability_days SET status='available',remaining=1 WHERE property_id=$1 AND inventory_id=$2 AND stay_date='2026-09-01'", [PROPERTY_ID, BUNDLE_ID]);
+    } finally { await client.close(); }
+    providers = createPostgresProviders(connection);
+    runPostgresInventoryCompletenessContract(providers);
   } finally {
     if (providers) await providers.close();
     fs.rmSync(postgresTemp, { recursive: true, force: true });

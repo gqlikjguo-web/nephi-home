@@ -32,6 +32,13 @@ async function protectedSnapshot(db) {
   for (const [table, orderBy] of Object.entries(tables)) result[table] = await rows(db, table, orderBy);
   return result;
 }
+function withoutInventoryBackfill(snapshot) { const copy = { ...snapshot }; delete copy.inventory_availability_days; return copy; }
+function inventoryBackfillIsClosedOnly(before, after) {
+  const key = row => `${row.property_id}:${row.inventory_id}:${String(row.stay_date).slice(0, 10)}`;
+  const beforeByKey = new Map(before.map(row => [key(row), row]));
+  return before.every(row => JSON.stringify(after.find(item => key(item) === key(row))) === JSON.stringify(row))
+    && after.filter(row => !beforeByKey.has(key(row))).every(row => row.status === "closed" && Number(row.remaining) === 0);
+}
 
 (async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "onboarding-existing-apply-")), connection = { kind: "pglite", dataDir: path.join(temp, "database") };
@@ -86,7 +93,7 @@ async function protectedSnapshot(db) {
     check("房型依明確 ID 更新", room301.name === "301 更新名稱" && Number(room301.monday_thursday_price) === 2100 && Number(room301.sunday_price) === 2200);
     check("0 與缺漏價格不覆蓋", Number(room302.monday_thursday_price) === 2200 && Number(room302.saturday_holiday_price) === 2800 && Number(room401.monday_thursday_price) === 1700);
     check("不完整 12 人包棟價格保留", bundle.name === "12 人包棟" && Number(bundle.base_price) === 12500 && Number(bundle.monday_thursday_price) === 13000 && Number(bundle.saturday_holiday_price) === 18000);
-    check("營運與帳號敏感資料全部不變", JSON.stringify(protectedAfter) === JSON.stringify(protectedBefore));
+    check("營運與帳號敏感資料全部不變，房況僅補 closed 缺列", JSON.stringify(withoutInventoryBackfill(protectedAfter)) === JSON.stringify(withoutInventoryBackfill(protectedBefore)) && inventoryBackfillIsClosedOnly(protectedBefore.inventory_availability_days, protectedAfter.inventory_availability_days));
     result = await approve("apply_success", validPayload()); check("重複核准回 409", result.response.status === 409 && result.body.error.code === "APPLICATION_ALREADY_REVIEWED");
     result = await approve("apply_missing_property", { ...validPayload(), propertyId: "missing_property", confirmPropertyId: "missing_property" }); check("property 不存在回 404", result.response.status === 404 && result.body.error.code === "PROPERTY_NOT_FOUND");
     result = await approve("apply_wrong_target", { ...validPayload(), propertyId: "other_property", confirmPropertyId: "other_property" }); check("通用 target 仍依正式 mapping 安全拒絕", result.response.status === 409 && result.body.error.code === "ROOM_MAPPING_INVALID");

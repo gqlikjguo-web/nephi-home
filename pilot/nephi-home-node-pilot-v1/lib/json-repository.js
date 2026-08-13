@@ -70,6 +70,14 @@ function recomputeBundleAvailability(property, row) {
   }
 }
 
+function backfillEnabledInventoryRows(state, property) {
+  const rows = (state.availability || {})[property.customerId] || {};
+  const enabledIds = propertyInventory(property).filter((item) => item.enabled !== false).map((item) => item.id);
+  for (const row of Object.values(rows)) for (const inventoryId of enabledIds) {
+    if (row[inventoryId] !== "available" && row[inventoryId] !== "closed") row[inventoryId] = "closed";
+  }
+}
+
 function migrateDailyRoomNotes(state) {
   state.dailyRoomNotes = state.dailyRoomNotes || {};
   for (const dates of Object.values(state.dailyRoomNotes)) {
@@ -208,6 +216,7 @@ class JsonFileRepository {
       if (Object.hasOwn(input, "propertyFacts")) homestay.propertyFacts = JSON.parse(JSON.stringify(input.propertyFacts || []));
       if (input.businessProfile) homestay.businessProfile = { ...input.businessProfile };
       if (Object.hasOwn(input, "lineUrl")) homestay.lineUrl = input.lineUrl;
+      backfillEnabledInventoryRows(state, homestay);
       homestay.updatedAt = this.now().toISOString();
       return JSON.parse(JSON.stringify(homestay));
     });
@@ -273,7 +282,7 @@ class JsonFileRepository {
           const date = dateKey(addUtcDays(start, offset));
           state.availability[input.customerId][date] = availabilityRow(homestay, date, "closed");
         }
-      }
+      } else backfillEnabledInventoryRows(state, homestay);
       return { created, homestay: JSON.parse(JSON.stringify(homestay)) };
     });
   }

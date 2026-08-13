@@ -56,6 +56,12 @@ function seedDate(offsetDays) {
   assert.match(adminScript, /bundle-members/, "bundle cards must render member room names as structured content");
   assert.match(adminScript, /已有特殊價格，確定覆蓋/, "overwriting a special price must require confirmation");
   assert.match(adminScript, /bundleStatus/, "bundle writes must expose explicit success or failure feedback");
+  assert.match(adminHtml, /id="monthlyInventoryControls"/, "availability admin must reserve an aligned monthly control row");
+  assert.match(adminScript, /\/api\/availability\/month/, "monthly inventory controls must use the generic month endpoint");
+  assert.match(adminScript, /renderMonthlyInventoryControls/, "monthly controls must be generated from current inventory data");
+  assert.match(adminScript, /\\u672c\\u6708\\u5168\\u958b/, "each inventory must expose a monthly-open action");
+  assert.match(adminScript, /\\u672c\\u6708\\u5168\\u95dc/, "each inventory must expose a monthly-close action");
+  assert.match(adminCss, /monthly-inventory-controls/, "monthly controls must have an explicit aligned layout");
   const checkInIndex = adminHtml.indexOf('id="profileCheckInTime"');
   const latestArrivalIndex = adminHtml.indexOf('id="profileLatestArrivalTime"');
   const checkOutIndex = adminHtml.indexOf('id="profileCheckOutTime"');

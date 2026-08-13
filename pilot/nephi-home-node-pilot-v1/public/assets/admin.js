@@ -117,6 +117,20 @@ function createRoomRow(date, room) {
   renderSaveState(statusArea, mutationKey("status", date, room.id)); row.append(name, actions, statusArea); return row;
 }
 
+function renderMonthlyInventoryControls() {
+  const container = $("monthlyInventoryControls"); if (!container) return;
+  const plan = AdminAvailabilityWindow.availabilityBulkPlan(currentDateKey(), availabilityState.selection);
+  if (!availabilityState.rooms.length) { container.replaceChildren(); return; }
+  const heading = element("div", "monthly-inventory-heading", plan.allowed ? "\u672c\u6708\u623f\u6cc1" : "\u8acb\u5148\u9078\u64c7\u6708\u4efd"), grid = element("div", "monthly-inventory-grid");
+  for (const room of availabilityState.rooms) {
+    const card = element("article", "monthly-inventory-item"), name = element("strong", "room-label", room.name), actions = element("div", "monthly-inventory-actions"), status = element("span", "save-state");
+    const open = element("button", "", "\u672c\u6708\u5168\u958b"), close = element("button", "secondary", "\u672c\u6708\u5168\u95dc"); open.type = close.type = "button"; open.disabled = close.disabled = !plan.allowed;
+    const save = async value => { const [year, month] = availabilityState.selection.split("-").map(Number); open.disabled = close.disabled = true; status.textContent = "\u5132\u5b58\u4e2d\u2026"; try { await api("/api/availability/month", { method: "POST", body: JSON.stringify({ customerId: session.propertyId, year, month, roomId: room.id, status: value }) }); status.textContent = "\u5df2\u5132\u5b58"; await loadMonth(); } catch (error) { status.textContent = `\u5132\u5b58\u5931\u6557\uff1a${error.message}`; open.disabled = close.disabled = !plan.allowed; } };
+    open.onclick = () => save("available"); close.onclick = () => save("closed"); actions.append(open, close); card.append(name, actions, status); grid.append(card);
+  }
+  container.replaceChildren(heading, grid);
+}
+
 function createDayCard(date) { const day = availabilityState.days.get(date), card = element("section", `availability-day-card${date === currentDateKey() ? " is-today" : ""}`), heading = element("div", "availability-day-heading"), title = element("h3", "", dateLabel(date)), inventoryGrid = element("div", "availability-inventory-grid"); const available = availabilityState.rooms.filter(room => day[room.id] === "available").length, summary = element("span", "day-summary", `${available} 可售／${availabilityState.rooms.length - available} 不可售`); heading.append(title, summary); if (!day._hasAvailability) heading.append(element("span", "missing-data", "尚無房況資料，依不可售顯示")); inventoryGrid.append(...availabilityState.rooms.map(room => createRoomRow(date, room))); card.append(heading, inventoryGrid); return card; }
 function renderDailyView() {
   const container = $("dailyAvailability");
@@ -139,6 +153,7 @@ function renderCalendarView() {
 }
 
 function renderAvailability() {
+  renderMonthlyInventoryControls();
   $("dailyAvailability").hidden = false; $("availabilityCalendar").hidden = true; renderDailyView();
 }
 
