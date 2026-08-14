@@ -61,8 +61,45 @@ function propertyFactRow(fact = {}) {
   );
   row.append(legend, grid, remove); return row;
 }
-function renderPropertyFacts(facts = []) { propertyFacts = facts; $("propertyFactsList").replaceChildren(...facts.map(propertyFactRow)); }
-function collectPropertyFactDrafts() { return [...$("propertyFactsList").querySelectorAll(".property-fact-row")].map(row => Object.fromEntries([...row.querySelectorAll("[data-property-fact-field]")].map(control => [control.dataset.propertyFactField, control.value]))); }
+function hiddenPropertyFactField(field, value) { const input = propertyFactInput(field, value); input.type = "hidden"; return input; }
+function equipmentFactRow(fact) {
+  const row = element("article", "equipment-fact-row property-fact-row"), title = element("h4", "", fact.publicName), grid = element("div", "property-fact-grid");
+  const status = propertyFactSelect("status", fact.status, [["unknown", "未知"], ["allowed", "有"], ["not_allowed", "沒有"]]);
+  const appliesTo = propertyFactSelect("appliesTo", fact.appliesTo, [["whole_property", "整間旅宿"], ["room_only", "僅房間"], ["both", "整間與房間"]]);
+  const publicText = propertyFactInput("publicText", fact.publicText, { multiline: true, rows: 3, placeholder: "可直接回覆旅客的正式說明" });
+  const notes = propertyFactInput("notes", fact.notes, { multiline: true, rows: 2, placeholder: "業者內部備註（選填）" });
+  const syncStatus = () => {
+    const policy = PropertyFactsFormData.equipmentFieldPolicy(status.value);
+    appliesTo.closest("label").hidden = !policy.showScope;
+    publicText.closest("label").hidden = !policy.showPublicText;
+    notes.closest("label").hidden = !policy.showNotes;
+    publicText.disabled = !policy.showPublicText;
+    publicText.required = policy.publicTextRequired;
+    if (status.value === "unknown") publicText.value = "";
+  };
+  status.onchange = syncStatus;
+  grid.append(propertyFactField("狀態", status), propertyFactField("適用範圍", appliesTo), propertyFactField("正式對客說明", publicText), propertyFactField("備註", notes));
+  const notesLabel = notes.closest("label");
+  const noteHint = element("small", "equipment-internal-note", "\u50c5\u696d\u8005\u5167\u90e8\uff0c\u4e0d\u76f4\u63a5\u56de\u8986\u65c5\u5ba2");
+  notes.placeholder = "\u50c5\u696d\u8005\u5167\u90e8\uff0c\u4e0d\u76f4\u63a5\u56de\u8986\u65c5\u5ba2";
+  notesLabel.insertBefore(noteHint, notes);
+  syncStatus();
+  row.append(title, grid,
+    hiddenPropertyFactField("canonicalId", fact.canonicalId), hiddenPropertyFactField("publicName", fact.publicName),
+    hiddenPropertyFactField("category", "amenity"), hiddenPropertyFactField("source", fact.source), hiddenPropertyFactField("updatedAt", fact.updatedAt));
+  return row;
+}
+function renderEquipmentFacts(facts) {
+  const drafts = PropertyFactsFormData.buildHighFrequencyEquipmentDrafts(facts, "operator_form");
+  const groups = HighFrequencyEquipment.HIGH_FREQUENCY_EQUIPMENT_GROUPS.map(group => {
+    const section = element("section", "equipment-group"), heading = element("h4", "", group.publicName), grid = element("div", "equipment-grid");
+    grid.append(...group.items.map(item => equipmentFactRow(drafts.find(fact => fact.canonicalId === item.canonicalId))));
+    section.append(heading, grid); return section;
+  });
+  $("equipmentFactsList").replaceChildren(...groups);
+}
+function renderPropertyFacts(facts = []) { propertyFacts = facts; renderEquipmentFacts(facts); $("propertyFactsList").replaceChildren(...facts.filter(fact => !PropertyFactsFormData.equipmentByCanonicalId(fact.canonicalId)).map(propertyFactRow)); }
+function collectPropertyFactDrafts() { return [...$("propertyFactsForm").querySelectorAll(".property-fact-row")].map(row => Object.fromEntries([...row.querySelectorAll("[data-property-fact-field]")].map(control => [control.dataset.propertyFactField, control.value]))); }
 async function loadPropertyFacts() { const data = await api(`/api/property-facts?propertyId=${encodeURIComponent(session.propertyId)}`); renderPropertyFacts(data.facts || []); }
 function customReplyStateLabel(state){return({active:"啟用中",pending:"尚未生效",expired:"已失效",disabled:"已停用"}[state]||"已停用")}
 function fillCustomReplyOptions(){

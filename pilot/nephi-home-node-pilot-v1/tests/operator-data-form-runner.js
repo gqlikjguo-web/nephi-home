@@ -36,13 +36,20 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
     for (const id of ["propertyFactsForm", "propertyFactsList", "propertyFactAdd", "propertyFactsStatus"]) {
       assert.equal(html.includes(`id="${id}"`), true, `admin form must expose ${id}`);
     }
+    assert.equal(html.includes('id="equipmentFactsList"'), true, "admin form must expose controlled high-frequency equipment");
+    assert.ok(html.indexOf("/assets/high-frequency-equipment.js") < html.indexOf("/assets/property-facts-form.js"));
     assert.equal(html.includes("/assets/property-facts-form.js"), true);
+    const onboardingResponse = await fetch(`${running.url}/onboarding`);
+    assert.equal(onboardingResponse.status, 200);
+    const onboardingHtml = await onboardingResponse.text();
+    assert.equal(onboardingHtml.includes('id="equipmentFacts"'), true, "onboarding must expose the same controlled equipment form");
+    assert.ok(onboardingHtml.indexOf("/assets/high-frequency-equipment.js") < onboardingHtml.indexOf("/assets/onboarding.js"));
 
     const assetResponse = await fetch(`${running.url}/assets/property-facts-form.js`);
     assert.equal(assetResponse.status, 200);
     assert.match(assetResponse.headers.get("content-type") || "", /javascript/);
 
-    const { buildPropertyFactsPayload } = require("../public/assets/property-facts-form");
+    const { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts } = require("../public/assets/property-facts-form");
     const payload = buildPropertyFactsPayload("property_alpha", [{
       canonicalId: "parking",
       category: "amenity",
@@ -64,6 +71,7 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
       propertyId: "property_alpha",
       facts: [{
         canonicalId: "parking",
+        publicName: "停車",
         category: "amenity",
         status: "conditional",
         appliesTo: "whole_property",
@@ -80,6 +88,36 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
         updatedAt: "2026-07-27T02:00:00.000Z"
       }]
     });
+
+    const equipmentDrafts = buildHighFrequencyEquipmentDrafts([{
+      canonicalId: "wifi",
+      publicName: "不可採用的名稱",
+      category: "amenity",
+      status: "allowed",
+      appliesTo: "both",
+      publicText: "全館與房內皆提供免費 Wi-Fi。",
+      fees: [],
+      advanceNoticeRequired: null,
+      reservationRequired: null,
+      conditions: [],
+      restrictions: [],
+      operatingHours: [],
+      availablePeriods: [],
+      notes: "密碼於入住時提供",
+      source: "operator_form",
+      updatedAt: "2026-08-13T00:00:00.000Z"
+    }]);
+    assert.equal(equipmentDrafts.length, 15);
+    const wifi = equipmentDrafts.find((item) => item.canonicalId === "wifi");
+    assert.equal(wifi.publicName, "Wi-Fi");
+    assert.equal(wifi.status, "allowed");
+    assert.equal(wifi.appliesTo, "both");
+    const unknown = equipmentDrafts.find((item) => item.canonicalId === "tv");
+    assert.equal(unknown.status, "unknown");
+    assert.equal(unknown.publicText, "");
+    const equipmentPayload = buildPropertyFactsPayload("property_alpha", equipmentDrafts, () => new Date("2026-08-13T01:00:00.000Z"));
+    assert.equal(equipmentPayload.facts.find((item) => item.canonicalId === "wifi").publicName, "Wi-Fi");
+    assert.equal(equipmentPayload.facts.find((item) => item.canonicalId === "tv").publicText, "");
     console.log("operator data form: PASS");
   } finally {
     if (app) await app.stop();

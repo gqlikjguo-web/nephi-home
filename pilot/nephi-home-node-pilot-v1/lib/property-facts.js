@@ -1,5 +1,7 @@
 "use strict";
 
+const { equipmentByCanonicalId } = require("../public/assets/high-frequency-equipment");
+
 const FACT_CATEGORIES = new Set([
   "amenity",
   "policy",
@@ -19,6 +21,7 @@ const UNIT_PATTERN = /^[a-z][a-z0-9_]{0,39}$/;
 const SOURCE_PATTERN = /^[a-z][a-z0-9_:-]{0,79}$/;
 const FACT_KEYS = new Set([
   "canonicalId",
+  "publicName",
   "category",
   "status",
   "appliesTo",
@@ -106,10 +109,13 @@ function normalizePropertyFact(value, index) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw invalid(path);
   if (Object.keys(value).some((key) => !FACT_KEYS.has(key))) throw invalid(path);
   const canonicalId = clean(value.canonicalId, 80).toLowerCase();
+  const equipment = equipmentByCanonicalId(canonicalId);
+  const hasPublicName = Object.hasOwn(value, "publicName");
+  const publicName = hasPublicName ? (equipment ? equipment.publicName : clean(value.publicName, 120)) : "";
   const category = clean(value.category, 40).toLowerCase();
   const status = clean(value.status, 40).toLowerCase();
   const appliesTo = clean(value.appliesTo, 40).toLowerCase();
-  const publicText = clean(value.publicText, 1000);
+  const submittedPublicText = clean(value.publicText, 1000);
   const source = clean(value.source, 80).toLowerCase();
   const updatedAt = clean(value.updatedAt, 40);
   if (!CANONICAL_ID_PATTERN.test(canonicalId)) throw invalid(`${path}.canonicalId`);
@@ -118,9 +124,11 @@ function normalizePropertyFact(value, index) {
   if (!APPLIES_TO.has(appliesTo)) throw invalid(`${path}.appliesTo`);
   if (!SOURCE_PATTERN.test(source)) throw invalid(`${path}.source`);
   if (!updatedAt || Number.isNaN(Date.parse(updatedAt))) throw invalid(`${path}.updatedAt`);
-  if (status !== "unknown" && !publicText) throw invalid(`${path}.publicText`);
+  const publicText = status === "unknown" ? "" : submittedPublicText;
+  if (["allowed", "conditional"].includes(status) && !publicText) throw invalid(`${path}.publicText`);
   return {
     canonicalId,
+    ...(publicName ? { publicName } : {}),
     category,
     status,
     appliesTo,

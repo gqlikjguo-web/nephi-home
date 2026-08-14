@@ -75,7 +75,7 @@ function structuredPropertyFacts(property) {
     return {
       canonicalId: clean(fact.canonicalId, 120),
       category,
-      publicName: clean(fact.canonicalId, 120),
+      publicName: clean(fact.publicName || fact.canonicalId, 120),
       aliases: mergedAliases(property, fact.canonicalId),
       status: answer || status === "confirmed_no" ? status : "unknown",
       answer,

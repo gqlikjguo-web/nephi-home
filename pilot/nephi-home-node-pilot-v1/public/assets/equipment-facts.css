@@ -1,0 +1,37 @@
+.scope-warning {
+  padding: 10px 12px;
+  border-left: 4px solid #a16a16;
+  background: #fff7df;
+  color: #60430e;
+}
+.equipment-group { margin: 16px 0; }
+.equipment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.equipment-fact-row {
+  padding: 14px;
+  border: 1px solid #d9dfdb;
+  border-radius: 12px;
+  background: #fbfdfb;
+}
+.equipment-fact-row h4 { margin: 0 0 8px; }
+.equipment-internal-note {
+  display: block;
+  margin: 4px 0 6px;
+  color: #66736b;
+  font-size: 0.82rem;
+}
+.equipment-fact-row textarea:disabled {
+  background: #edf1ee;
+  color: #66736b;
+}
+.additional-facts-section {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #dce6df;
+}
+@media (max-width: 640px) {
+  .equipment-grid { grid-template-columns: 1fr; }
+}
