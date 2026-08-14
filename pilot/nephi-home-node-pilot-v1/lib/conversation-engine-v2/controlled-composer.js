@@ -26,6 +26,7 @@ function composeSection(section) {
     return facts.prices.map((item) => item.total === null ? `${item.inventory.publicName}價格需要請業者確認。` : `${item.inventory.publicName}共 ${money(item.total)} ${item.currency}。`).join(" ");
   }
   if (facts.amenities) return facts.amenities.length ? `目前確認的主要設備有：${facts.amenities.join("、")}。` : "設備資料需要請業者確認。";
+  if (facts.locationAddress) return [`\u5730\u5740\uff1a${facts.locationAddress}`, facts.locationMapUrl ? `Google \u5730\u5716\uff1a${facts.locationMapUrl}` : ""].filter(Boolean).join("\n");
   if (facts.locationMapUrl) return `Google 地圖：${facts.locationMapUrl}\n請直接開啟地圖查看路線與周邊位置。`;
   if (facts.status === "confirmed_yes") return facts.answer || `${facts.subject}有提供。`;
   if (facts.status === "confirmed_no") return `${facts.subject}目前沒有提供。`;

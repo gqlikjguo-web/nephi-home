@@ -111,7 +111,7 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
     const wifi = equipmentDrafts.find((item) => item.canonicalId === "wifi");
     assert.equal(wifi.publicName, "Wi-Fi");
     assert.equal(wifi.status, "allowed");
-    assert.equal(wifi.appliesTo, "both");
+    assert.equal(wifi.appliesTo, "whole_property");
     const unknown = equipmentDrafts.find((item) => item.canonicalId === "tv");
     assert.equal(unknown.status, "unknown");
     assert.equal(unknown.publicText, "");

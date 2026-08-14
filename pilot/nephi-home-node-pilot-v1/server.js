@@ -655,7 +655,7 @@ function publicAvailabilityResult(result, property, overrides = [], datePriceCla
     roomCode: room.roomCode,
     capacity: Number(room.capacity || 0),
     highlights: room.highlights,
-    ...(input.inventoryType === "bundle" ? { entertainmentAmenities: providedAmenities(input.entertainmentAmenities).slice(0, 5).map(({ key, displayName, source, position }) => ({ key, displayName, source, position })) } : {}),
+    ...(input.inventoryType === "bundle" ? { entertainmentAmenities: providedAmenities(input.entertainmentAmenities).slice(0, 5).map(({ key, displayName, note, source, position }) => ({ key, displayName, note, source, position })) } : {}),
     price: publicPriceForStay(room, result.checkIn, result.checkOut, overrides, datePriceClassifications),
     nightlyPrices: publicNightlyPrices(room, result.checkIn, result.checkOut, overrides, datePriceClassifications),
     currency: String(property.currency || "TWD")

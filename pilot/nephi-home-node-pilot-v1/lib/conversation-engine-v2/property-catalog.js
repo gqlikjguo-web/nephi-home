@@ -2,6 +2,7 @@
 
 const { normalizeGoogleMapsUrl, extractGoogleMapsUrl } = require("../google-maps-url");
 const { PRESET_AMENITIES, normalizeEntertainmentAmenities } = require("../bundle-entertainment");
+const { equipmentByCanonicalId } = require("../../public/assets/high-frequency-equipment");
 
 function clean(value, limit = 120) { return String(value || "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, limit); }
 function aliasesFor(property, id) { const map = property.semanticCatalog && property.semanticCatalog.aliases || {}; return Array.isArray(map[id]) ? map[id].map((x) => clean(x, 80)).filter(Boolean) : []; }
@@ -64,14 +65,24 @@ function structuredPropertyFacts(property) {
       : fact.category === "location"
         ? "transport"
         : "policy";
-    const status = fact.status === "unknown"
+    let status = fact.status === "unknown"
       ? "unknown"
       : fact.status === "not_allowed"
         ? "confirmed_no"
         : "confirmed_yes";
-    const answer = fact.canonicalId === "location"
+    let answer = fact.canonicalId === "location"
       ? normalizeGoogleMapsUrl(fact.publicText)
       : clean(fact.publicText, 1000);
+    const equipment = equipmentByCanonicalId(fact.canonicalId);
+    let appliesTo = fact.appliesTo || "whole_property";
+    if (equipment && appliesTo === "both") appliesTo = "whole_property";
+    if (equipment && appliesTo === "room_only") {
+      status = "unknown";
+      appliesTo = "whole_property";
+    }
+    if (equipment && status !== "confirmed_yes") appliesTo = "whole_property";
+    if (equipment && appliesTo === "bundle_only" && status === "confirmed_yes" && answer) answer = `\u50c5\u5305\u68df\u5ba2\u9069\u7528\uff1a${answer}`;
+
     return {
       canonicalId: clean(fact.canonicalId, 120),
       category,
@@ -79,7 +90,8 @@ function structuredPropertyFacts(property) {
       aliases: mergedAliases(property, fact.canonicalId),
       status: answer || status === "confirmed_no" ? status : "unknown",
       answer,
-      propertyFact: fact
+      propertyFact: fact,
+      appliesTo,
     };
   }).filter((fact) => fact.canonicalId);
 }
@@ -111,26 +123,28 @@ function buildPropertyCatalog(property) {
       if (amenity.source !== "preset") continue;
       bundleStates.get(amenity.key).push(amenity.provided);
       if (amenity.provided !== true) continue;
-      const current = bundleFacts.get(amenity.key) || { canonicalId: amenity.key, category: "amenity", publicName: amenity.displayName, aliases: [...(presetMap.get(amenity.key)?.aliases || [])], status: "confirmed_yes", answer: "", applicableBundles: [] };
+      const current = bundleFacts.get(amenity.key) || { canonicalId: amenity.key, category: "amenity", publicName: amenity.displayName, aliases: [...(presetMap.get(amenity.key)?.aliases || [])], status: "confirmed_yes", answer: "", appliesTo: "bundle_only", applicableBundles: [] };
       current.applicableBundles.push({ id: clean(room.id), name: clean(room.publicDisplayName || room.displayName || room.name, 80), note: clean(amenity.note, 100) });
       bundleFacts.set(amenity.key, current);
     }
   }
+  const explicitBundleIds = new Set([...bundleStates].filter(([, states]) => states.some((state) => state !== null)).map(([canonicalId]) => canonicalId));
   for (const preset of PRESET_AMENITIES) {
     const states = bundleStates.get(preset.key);
     const explicitNo = states.length > 0 && states.every((state) => state === false);
     if (!bundleFacts.has(preset.key) && !explicitNo) continue;
-    const fact = bundleFacts.get(preset.key) || { canonicalId: preset.key, category: "amenity", publicName: preset.displayName, aliases: [...preset.aliases], status: "confirmed_no", answer: "", applicableBundles: [] };
+    const fact = bundleFacts.get(preset.key) || { canonicalId: preset.key, category: "amenity", publicName: preset.displayName, aliases: [...preset.aliases], status: "confirmed_no", answer: "", appliesTo: "bundle_only", applicableBundles: [] };
     const bundleAnswer = fact.applicableBundles.map((bundle) => `${bundle.name}${bundle.note ? `：${bundle.note}` : ""}`).join("；");
     fact.answer = bundleAnswer;
     bundleFacts.set(preset.key, fact);
   }
   const amenityFacts = new Map();
   for (const item of legacyAmenities) amenityFacts.set(item.canonicalId, item);
+  for (const item of structuredFacts.filter((fact) => fact.category === "amenity" && !explicitBundleIds.has(fact.canonicalId))) amenityFacts.set(item.canonicalId, item);
   for (const item of bundleFacts.values()) amenityFacts.set(item.canonicalId, item);
-  for (const item of structuredFacts.filter((fact) => fact.category === "amenity")) amenityFacts.set(item.canonicalId, item);
   for (const [canonicalId, fact] of amenityFacts) {
-    const faqAnswer = presetMap.has(canonicalId) && fact.status === "confirmed_yes" ? faqByCanonicalId.get(canonicalId)?.answer || "" : "";
+    const bundleFact = bundleFacts.get(canonicalId), hasAuthoritativeBundleDetail = bundleFact?.status === "confirmed_no" || bundleFact?.applicableBundles?.some((bundle) => bundle.note);
+    const faqAnswer = hasAuthoritativeBundleDetail ? "" : faqByCanonicalId.get(canonicalId)?.answer || "";
     if (faqAnswer && !fact.answer.includes(faqAnswer)) fact.answer = [fact.answer, faqAnswer].filter(Boolean).join("；");
   }
   const amenities = [...amenityFacts.values()];
@@ -140,6 +154,7 @@ function buildPropertyCatalog(property) {
   // when its complete value is a validated Google Maps URL; arbitrary
   // transport prose can never become a location fact.
   const profileMapUrl = normalizeGoogleMapsUrl(property.businessProfile && property.businessProfile.googleMapsUrl);
+  const profileAddress = clean(property.businessProfile && property.businessProfile.address, 500);
   const legacyTransportMapUrl = extractGoogleMapsUrl(answers.transport);
   const mapUrl = profileMapUrl || legacyTransportMapUrl;
   const locationDiagnostics = {
@@ -154,6 +169,13 @@ function buildPropertyCatalog(property) {
     ...propertySettingFacts(property, answers).filter((fact) => !structuredIds.has(fact.canonicalId)),
     ...(structuredLocation ? [] : [{ canonicalId: "location", category: "transport", publicName: "位置與導航", aliases: [...new Set([...LOCATION_ALIASES, ...aliasesFor(property, "location")])], status: mapUrl ? "confirmed_yes" : "unknown", answer: mapUrl }])
   ];
+  if (!structuredLocation) {
+    const location = policies.find((fact) => fact.canonicalId === "location");
+    location.status = mapUrl || profileAddress ? "confirmed_yes" : "unknown";
+    location.answer = mapUrl || profileAddress;
+    location.address = profileAddress;
+    location.mapUrl = mapUrl;
+  }
   const faqs = normalizedFaqs.filter((item) => !presetMap.has(item.canonicalId) && !amenityFacts.has(item.canonicalId));
   return { propertyId: clean(property.propertyId), displayName: clean(property.displayName, 100), timezone: clean(property.timezone || "Asia/Taipei", 80), currency: clean(property.currency || "TWD", 10), rooms, amenities, policies, faqs, locationDiagnostics };
 }

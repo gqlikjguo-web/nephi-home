@@ -11,7 +11,7 @@
   const equipment = registry && registry.HIGH_FREQUENCY_EQUIPMENT || [];
   const equipmentByCanonicalId = registry && registry.equipmentByCanonicalId || (() => null);
   const validStatuses = new Set(["allowed", "not_allowed", "unknown"]);
-  const validScopes = new Set(["whole_property", "room_only", "both"]);
+  const validScopes = new Set(["whole_property", "bundle_only"]);
 
   function equipmentFieldPolicy(status) {
     if (status === "allowed") return { showScope: true, showPublicText: true, showNotes: true, publicTextRequired: true };
@@ -47,13 +47,17 @@
     const byId = new Map((facts || []).map((fact) => [String(fact && fact.canonicalId || ""), fact || {}]));
     return equipment.map((definition) => {
       const fact = byId.get(definition.canonicalId) || {};
-      const status = validStatuses.has(fact.status) ? fact.status : "unknown";
+      let status = validStatuses.has(fact.status) ? fact.status : "unknown";
+      let appliesTo = validScopes.has(fact.appliesTo) ? fact.appliesTo : "whole_property";
+      if (fact.appliesTo === "both") appliesTo = "whole_property";
+      if (fact.appliesTo === "room_only") status = "unknown";
+      if (status !== "allowed") appliesTo = "whole_property";
       return {
         canonicalId: definition.canonicalId,
         publicName: definition.publicName,
         category: "amenity",
         status,
-        appliesTo: validScopes.has(fact.appliesTo) ? fact.appliesTo : "whole_property",
+        appliesTo,
         publicText: status === "unknown" ? "" : String(fact.publicText || ""),
         fees: arrayField(fact.fees),
         advanceNoticeRequired: fact.advanceNoticeRequired === true ? "true" : fact.advanceNoticeRequired === false ? "false" : "",

@@ -38,6 +38,27 @@ function catalogFactByCanonicalId(catalog, canonicalIds) {
   return [...(catalog.amenities || []), ...(catalog.policies || []), ...(catalog.faqs || [])]
     .find((item) => wanted.has(String(item.canonicalId || "").toLocaleLowerCase("en-US")) && item.status !== "unknown") || null;
 }
+function scopedCatalogEntity(entity, inventoryMode = "any") {
+  if (!entity || entity.appliesTo !== "bundle_only" || inventoryMode !== "room_only") return entity;
+  return { ...entity, status: "confirmed_no", answer: "", applicableBundles: [] };
+}
+
+function catalogAmenityNames(catalog, inventoryMode = "any") {
+  return (catalog.amenities || [])
+    .filter((item) => item.status === "confirmed_yes")
+    .filter((item) => inventoryMode !== "room_only" || item.appliesTo !== "bundle_only")
+    .map((item) => item.appliesTo === "bundle_only" && inventoryMode === "any"
+      ? `${item.publicName}\uff08\u50c5\u5305\u68df\u5ba2\u9069\u7528\uff09`
+      : item.publicName);
+}
+
+function catalogFactMetadata(entity) {
+  return {
+    ...(entity.appliesTo ? { appliesTo: entity.appliesTo } : {}),
+    ...(entity.canonicalId === "location" ? { locationMapUrl: entity.mapUrl === undefined ? entity.answer || "" : entity.mapUrl, locationAddress: entity.address || "" } : {})
+  };
+}
+
 
 function baseAnswerProvidesControlledDetail(entity, detailIntent) {
   const answer = String(entity && entity.answer || "");
@@ -52,12 +73,12 @@ function baseAnswerProvidesControlledDetail(entity, detailIntent) {
   return false;
 }
 
-function executePropertyFactTask({ property, catalog, task, resolved }) {
+function executePropertyFactTask({ property, catalog, task, resolved, request = {} }) {
   if (!resolved || resolved.status !== "resolved") return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "property_fact_unknown", facts: { subject: task.entity && task.entity.rawText || "question" }, review: true };
-  const entity = resolved.entity;
+  const entity = scopedCatalogEntity(resolved.entity, request.inventory && request.inventory.mode);
   if (entity.status === "unknown") return { taskId: task.taskId, type: task.type, status: "needs_human", reason: "property_fact_unknown", facts: { subject: entity.publicName }, review: true };
   const detailIntent = normalizeDetailIntent(task.detailIntent);
-  if (detailIntent === "general") return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", ...(entity.canonicalId === "location" ? { locationMapUrl: entity.answer || "" } : {}), ...(Array.isArray(entity.applicableBundles) ? { applicableBundles: entity.applicableBundles } : {}), source: "property_catalog", propertyId: property.propertyId, detailIntent } };
+  if (detailIntent === "general") return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", ...catalogFactMetadata(entity), ...(Array.isArray(entity.applicableBundles) ? { applicableBundles: entity.applicableBundles } : {}), source: "property_catalog", propertyId: property.propertyId, detailIntent } };
   if (Array.isArray(entity.applicableBundles) && entity.applicableBundles.some((bundle) => bundle.note)) return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", applicableBundles: entity.applicableBundles, source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: true } };
   const detail = catalogFactByCanonicalId(catalog, detailFactCandidates(entity.canonicalId, detailIntent));
   if (detail) return { taskId: task.taskId, type: task.type, status: "answered", facts: { subject: entity.publicName, status: detail.status, answer: detail.answer || "", source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: true } };
@@ -71,8 +92,8 @@ function executeTasks({ property, catalog, tasks, request, availabilityResolver,
     const genericAvailabilityEntity = isGenericAvailabilityEntity(task);
     const resolved = task._resolvedEntity || (task.entity && task.entity.rawText && !genericAvailabilityEntity ? resolveEntity(catalog, task.entity) : null);
     if (resolved && resolved.status === "ambiguous") return { taskId: task.taskId, type: task.type, status: "needs_clarification", question: "想確認您指的是哪一個？", candidates: resolved.candidates, facts: {}, missingInputs: ["entity.canonicalId"] };
-    if (["amenity", "policy", "property_fact"].includes(task.type)) return executePropertyFactTask({ property, catalog, task, resolved });
-    if (task.type === "amenity_list") return { taskId: task.taskId, type: task.type, status: "answered", facts: { amenities: catalog.amenities.filter((x) => x.status === "confirmed_yes").map((x) => x.publicName), source: "property_catalog", propertyId: property.propertyId } };
+    if (["amenity", "policy", "property_fact"].includes(task.type)) return executePropertyFactTask({ property, catalog, task, resolved, request });
+    if (task.type === "amenity_list") return { taskId: task.taskId, type: task.type, status: "answered", facts: { amenities: catalogAmenityNames(catalog, request.inventory && request.inventory.mode), source: "property_catalog", propertyId: property.propertyId } };
     if (task.type === "available_dates") {
       const range = request.stay.searchRange;
       if (!range || !range.from || !range.to) return { taskId: task.taskId, type: task.type, status: "needs_clarification", question: "想查哪一段日期呢？", facts: {}, missingInputs: ["stay.searchRange"] };
@@ -142,13 +163,13 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
   );
   try {
     if (resolverId === "property_catalog" && queryPlan.capability === "amenity_list") {
-      return queryOutcome(queryPlan, "answered", { facts: { amenities: (catalog.amenities || []).filter((item) => item.status === "confirmed_yes").map((item) => item.publicName), source: "property_catalog", propertyId: property.propertyId }, resolverAttempted: false });
+      return queryOutcome(queryPlan, "answered", { facts: { amenities: catalogAmenityNames(catalog, request.inventory && request.inventory.mode), source: "property_catalog", propertyId: property.propertyId }, resolverAttempted: false });
     }
     if (resolverId === "property_catalog") {
-      const entity = resolved && resolved.status === "resolved" && resolved.entity;
+      const entity = scopedCatalogEntity(resolved && resolved.status === "resolved" && resolved.entity, request.inventory && request.inventory.mode);
       if (!entity || entity.status === "unknown") return queryOutcome(queryPlan, "unknown", { reason: "property_fact_unknown", facts: { subject: queryPlan.entity && queryPlan.entity.rawText || "question" } });
       const detailIntent = normalizeDetailIntent(queryPlan.detailIntent);
-      if (detailIntent === "general") return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", ...(entity.canonicalId === "location" ? { locationMapUrl: entity.answer || "" } : {}), ...(Array.isArray(entity.applicableBundles) ? { applicableBundles: entity.applicableBundles } : {}), source: "property_catalog", propertyId: property.propertyId, detailIntent }, resolverAttempted: false });
+      if (detailIntent === "general") return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", ...catalogFactMetadata(entity), ...(Array.isArray(entity.applicableBundles) ? { applicableBundles: entity.applicableBundles } : {}), source: "property_catalog", propertyId: property.propertyId, detailIntent }, resolverAttempted: false });
       if (Array.isArray(entity.applicableBundles) && entity.applicableBundles.some((bundle) => bundle.note)) return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", applicableBundles: entity.applicableBundles, source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: true }, resolverAttempted: false });
       const detail = catalogFactByCanonicalId(catalog, detailFactCandidates(entity.canonicalId, detailIntent));
       const baseDetailProvided = baseAnswerProvidesControlledDetail(entity, detailIntent);

@@ -12,7 +12,7 @@ const FACT_CATEGORIES = new Set([
   "contact"
 ]);
 const FACT_STATUSES = new Set(["allowed", "conditional", "not_allowed", "unknown"]);
-const APPLIES_TO = new Set(["whole_property", "room_only", "both"]);
+const APPLIES_TO = new Set(["whole_property", "bundle_only", "room_only", "both"]);
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const CANONICAL_ID_PATTERN = /^[a-z][a-z0-9_]{0,79}$/;
@@ -113,8 +113,8 @@ function normalizePropertyFact(value, index) {
   const hasPublicName = Object.hasOwn(value, "publicName");
   const publicName = hasPublicName ? (equipment ? equipment.publicName : clean(value.publicName, 120)) : "";
   const category = clean(value.category, 40).toLowerCase();
-  const status = clean(value.status, 40).toLowerCase();
-  const appliesTo = clean(value.appliesTo, 40).toLowerCase();
+  let status = clean(value.status, 40).toLowerCase();
+  let appliesTo = clean(value.appliesTo, 40).toLowerCase();
   const submittedPublicText = clean(value.publicText, 1000);
   const source = clean(value.source, 80).toLowerCase();
   const updatedAt = clean(value.updatedAt, 40);
@@ -122,6 +122,14 @@ function normalizePropertyFact(value, index) {
   if (!FACT_CATEGORIES.has(category)) throw invalid(`${path}.category`);
   if (!FACT_STATUSES.has(status)) throw invalid(`${path}.status`);
   if (!APPLIES_TO.has(appliesTo)) throw invalid(`${path}.appliesTo`);
+  if (equipment) {
+    if (appliesTo === "both") appliesTo = "whole_property";
+    else if (appliesTo === "room_only") {
+      status = "unknown";
+      appliesTo = "whole_property";
+    }
+    if (!["allowed", "conditional"].includes(status)) appliesTo = "whole_property";
+  }
   if (!SOURCE_PATTERN.test(source)) throw invalid(`${path}.source`);
   if (!updatedAt || Number.isNaN(Date.parse(updatedAt))) throw invalid(`${path}.updatedAt`);
   const publicText = status === "unknown" ? "" : submittedPublicText;

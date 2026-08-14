@@ -8,8 +8,8 @@ const {
 const { PRESET_AMENITIES } = require("../lib/bundle-entertainment");
 const { normalizePropertyFacts } = require("../lib/property-facts");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
-const { executeTasks } = require("../lib/conversation-engine-v2/capability-executor");
-const { equipmentFieldPolicy } = require("../public/assets/property-facts-form");
+const { executeTasks, executeQueryPlan } = require("../lib/conversation-engine-v2/capability-executor");
+const { buildHighFrequencyEquipmentDrafts, equipmentFieldPolicy } = require("../public/assets/property-facts-form");
 
 const EXPECTED = [
   ["parking", "停車"],
@@ -35,7 +35,7 @@ function draft(canonicalId, status, publicText, publicName = "偽造名稱") {
     publicName,
     category: "amenity",
     status,
-    appliesTo: "whole_property",
+    appliesTo: arguments[4] || "whole_property",
     publicText,
     fees: [],
     advanceNoticeRequired: null,
@@ -138,5 +138,54 @@ assert.deepEqual(
     { status: "needs_human", factStatus: undefined, answer: "", subject: "嬰兒床" }
   ]
 );
+
+const scopeNormalized = normalizePropertyFacts([
+  draft("wifi", "allowed", "Bundle Wi-Fi.", undefined, "bundle_only"),
+  draft("tv", "allowed", "Every guest can use the TV.", undefined, "both"),
+  draft("refrigerator", "allowed", "Legacy room-only refrigerator.", undefined, "room_only")
+]);
+assert.equal(scopeNormalized[0].appliesTo, "bundle_only");
+assert.equal(scopeNormalized[1].appliesTo, "whole_property");
+assert.equal(scopeNormalized[2].status, "unknown");
+assert.equal(scopeNormalized[2].appliesTo, "whole_property");
+assert.equal(scopeNormalized[2].publicText, "");
+const legacyDrafts = buildHighFrequencyEquipmentDrafts([
+  draft("wifi", "allowed", "Legacy room Wi-Fi.", undefined, "room_only"),
+  draft("tv", "allowed", "Every guest can use the TV.", undefined, "both")
+]);
+assert.equal(legacyDrafts.find((item) => item.canonicalId === "wifi").status, "unknown");
+assert.equal(legacyDrafts.find((item) => item.canonicalId === "tv").appliesTo, "whole_property");
+
+const scopeCatalog = buildPropertyCatalog({
+  propertyId: "equipment_scope_property",
+  displayName: "Equipment Scope Property",
+  rooms: [],
+  commonAnswers: {},
+  propertyFacts: scopeNormalized,
+  faqs: []
+});
+const scopedWifi = scopeCatalog.amenities.find((item) => item.canonicalId === "wifi");
+assert.equal(scopedWifi.appliesTo, "bundle_only");
+assert.equal(scopedWifi.answer, "\u50c5\u5305\u68df\u5ba2\u9069\u7528\uff1aBundle Wi-Fi.");
+
+function scopedQuery(mode) {
+  return executeQueryPlan({
+    property: { propertyId: "equipment_scope_property", rooms: [] },
+    catalog: scopeCatalog,
+    queryPlan: {
+      propertyId: "equipment_scope_property",
+      taskId: `wifi-${mode}`,
+      capability: "amenity",
+      resolverId: "property_catalog",
+      detailIntent: "general",
+      conditions: { stay: {}, inventory: { mode } },
+      entity: { status: "resolved", canonicalId: "wifi", category: "amenity" },
+      resolvedEntity: { status: "resolved", entity: scopedWifi }
+    }
+  });
+}
+assert.equal(scopedQuery("bundle_only").facts.status, "confirmed_yes");
+assert.equal(scopedQuery("any").facts.answer, "\u50c5\u5305\u68df\u5ba2\u9069\u7528\uff1aBundle Wi-Fi.");
+assert.equal(scopedQuery("room_only").facts.status, "confirmed_no");
 
 console.log("high-frequency equipment: PASS");

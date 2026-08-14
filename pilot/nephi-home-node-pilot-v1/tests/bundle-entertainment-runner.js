@@ -42,6 +42,24 @@ const base = {
     { id: "bundle-a", name: "歡樂包棟", inventoryType: "bundle", enabled: true, entertainmentAmenities: cleaned.bundles[0].entertainmentAmenities },
     { id: "bundle-b", name: "安靜包棟", inventoryType: "bundle", enabled: true, entertainmentAmenities: [{ key: "bbq", displayName: "烤肉區／烤肉設備", provided: true, statusSource: "operator", note: "雨天不開放", source: "preset", position: 10 }] }
   ], commonAnswers: { bbqRule: "舊 FAQ 僅說明一般政策" }, faqs: [{ knowledgeKey: "bbq", question: "烤肉使用時間", answer: "使用至 21:00" }] };
+  property.propertyFacts = [{
+    canonicalId: "bbq",
+    category: "amenity",
+    status: "allowed",
+    appliesTo: "whole_property",
+    publicText: "Legacy propertyFacts BBQ description.",
+    fees: [],
+    advanceNoticeRequired: null,
+    reservationRequired: null,
+    conditions: [],
+    restrictions: [],
+    operatingHours: [],
+    availablePeriods: [],
+    notes: "",
+    source: "operator_form",
+    updatedAt: "2026-08-13T00:00:00.000Z"
+  }];
+
   const catalog = buildPropertyCatalog(property);
   const singing = catalog.amenities.find((item) => item.canonicalId === "singing");
   assert.equal(singing.status, "confirmed_yes");
@@ -50,7 +68,7 @@ const base = {
   const bbq = catalog.amenities.find((item) => item.canonicalId === "bbq");
   assert.deepEqual(bbq.applicableBundles.map((item) => item.name), ["安靜包棟"]);
   assert.doesNotMatch(bbq.answer, /舊 FAQ/);
-  assert.match(bbq.answer, /21:00/, "FAQ may supplement a structurally confirmed amenity");
+  assert.doesNotMatch(bbq.answer, /21:00/, "legacy FAQ must not supplement current bundle entertainment");
   assert.equal(catalog.faqs.some((item) => item.canonicalId === "bbq"), false, "the same canonical equipment ID is not emitted as a second fact");
   const unknownWithFaq = buildPropertyCatalog({ propertyId: "property-unknown", displayName: "U", rooms: [{ id: "bundle-u", name: "U 包棟", inventoryType: "bundle", enabled: true, entertainmentAmenities: [] }], commonAnswers: {}, faqs: [{ knowledgeKey: "singing", question: "歡唱時間", answer: "使用至 22:00" }] });
   assert.equal(unknownWithFaq.amenities.some((item) => item.canonicalId === "singing"), false, "unknown equipment has no answerable catalog fact");
@@ -78,5 +96,15 @@ const base = {
   assert.ok(guestJs.includes("entertainmentAmenities"));
   assert.equal(guestJs.includes("✓ 可入住"), false);
   assert.match(read("migrations/014_bundle_entertainment_amenities.sql"), /entertainment_amenities\s+jsonb/i);
+  assert.doesNotMatch(bbq.answer, /Legacy propertyFacts/);
+  assert.match(adminHtml, /id="bundleAmenityEditor"/);
+  assert.match(onboardingHtml, /id="onboardingAmenityEditor"/);
+  assert.match(adminJs, /openBundleAmenityEditor/);
+  assert.match(onboardingJs, /openOnboardingAmenityEditor/);
+  assert.doesNotMatch(adminHtml, /<details class="card other-settings"/);
+  assert.match(onboardingHtml, /name="latestArrivalTime"/);
+  assert.match(adminJs, /profileAddress/);
+  assert.match(guestJs, /amenity\.note/);
+
   console.log("bundle entertainment contract: PASS");
 })();

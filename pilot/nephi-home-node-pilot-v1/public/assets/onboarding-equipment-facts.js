@@ -25,8 +25,7 @@
             </select></label>
             <label>適用範圍<select data-equipment-scope>
               <option value="whole_property" ${fact.appliesTo === "whole_property" ? "selected" : ""}>整間旅宿</option>
-              <option value="room_only" ${fact.appliesTo === "room_only" ? "selected" : ""}>僅房間</option>
-              <option value="both" ${fact.appliesTo === "both" ? "selected" : ""}>整間與房間</option>
+              <option value="bundle_only" ${fact.appliesTo === "bundle_only" ? "selected" : ""}>僅包棟客適用</option>
             </select></label>
             <label>正式對客說明<textarea data-equipment-public-text rows="3" placeholder="可直接回覆旅客的正式說明">${escapeHtml(fact.publicText)}</textarea></label>
             <label>備註<textarea data-equipment-notes rows="2" placeholder="業者內部備註（選填）">${escapeHtml(fact.notes)}</textarea></label>
@@ -92,7 +91,7 @@
       const item = document.createElement("article"), title = document.createElement("strong"), status = document.createElement("p");
       item.className = "item";
       title.textContent = definition.publicName;
-      status.textContent = `${({ allowed: "有", not_allowed: "沒有", unknown: "未知" })[fact.status] || "未知"}｜${({ whole_property: "整間旅宿", room_only: "僅房間", both: "整間與房間" })[fact.appliesTo] || "整間旅宿"}`;
+      status.textContent = `${({ allowed: "有", not_allowed: "沒有", unknown: "未知" })[fact.status] || "未知"}｜${({ whole_property: "整間旅宿", bundle_only: "僅包棟客適用" })[fact.appliesTo] || "整間旅宿"}`;
       if (!formData.equipmentFieldPolicy(fact.status).showScope) status.textContent = status.textContent.split("\uff5c")[0];
       item.append(title, status);
       if (fact.publicText) { const text = document.createElement("p"); text.textContent = fact.publicText; item.append(text); }
