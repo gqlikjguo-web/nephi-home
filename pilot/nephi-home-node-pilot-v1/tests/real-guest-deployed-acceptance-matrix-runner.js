@@ -167,6 +167,7 @@ function safeResult(eventId, traceId) {
   const requests = [];
   const writes = [];
   let result;
+  let matrixFailure = null;
   try {
     ACCEPTANCE_MATRIX.push(
       {
@@ -219,8 +220,12 @@ function safeResult(eventId, traceId) {
         };
       },
       write: (value) => writes.push(value)
+    }).catch((error) => {
+      matrixFailure = error;
+      return error;
     });
 
+    assert.equal(matrixFailure && matrixFailure.code, "deployed_acceptance_matrix_failed", "NOT_EXECUTABLE and PARTIAL_NOT_EXECUTABLE must block successful acceptance exit");
     assert.deepEqual(
       requests.map((item) => item.messageText),
       ["partial-first", "partial-last", "ordinary"],
@@ -228,7 +233,7 @@ function safeResult(eventId, traceId) {
     );
     assert.equal(requests[0].conversationId, requests[1].conversationId, "executable turns in a partial case must retain one conversation");
     assert.notEqual(requests[1].conversationId, requests[2].conversationId, "different cases must remain isolated");
-    const { turnResults: partialTurnResults, openAiTextUnderstanding: partialTextResults, ...resultWithoutTurnScores } = result;
+    const { code: _matrixFailureCode, report: _matrixFailureReport, turnResults: partialTurnResults, openAiTextUnderstanding: partialTextResults, ...resultWithoutTurnScores } = result;
     assert.deepEqual(resultWithoutTurnScores, {
       caseCount: 4,
       turnCount: 6,
@@ -305,9 +310,11 @@ function safeResult(eventId, traceId) {
     write: () => {},
     reportWriter: (report) => { supplementalReport = report; },
     reportFinalizer: () => { throw new Error("TARGET_PASS_ATTRIBUTION_UNPROVEN"); }
-  });
-  const { tiers: supplementalTiers, groups: supplementalGroups, turnResults, openAiTextUnderstanding, ...supplementalTotals } = supplementalResult;
+  }).catch((error) => error);
+  assert.equal(supplementalResult && supplementalResult.message, "TARGET_PASS_ATTRIBUTION_UNPROVEN", "unproven target attribution must block successful acceptance exit");
+  const { report: supplementalFailureReport, tiers: supplementalTiers, groups: supplementalGroups, turnResults, openAiTextUnderstanding, ...supplementalTotals } = supplementalResult;
   assert.deepEqual(supplementalTotals, { caseCount: 2, turnCount: 3, executableCaseCount: 2, executableTurnCount: 3, passCount: 2, partialCount: 0, failCount: 0, notExecutableCaseCount: 0, notExecutableTurnCount: 0 });
+  assert.equal(supplementalFailureReport, supplementalReport, "the non-zero attribution failure must retain the bounded private report");
   assert.deepEqual(supplementalTiers.TIER_2_COMPLEX, { caseCount: 1, turnCount: 2, executableCaseCount: 1, executableTurnCount: 2, passCount: 1, partialCount: 0, failCount: 0, notExecutableCaseCount: 0, notExecutableTurnCount: 0 });
   assert.deepEqual(supplementalTiers.TIER_4_EDGE, { caseCount: 1, turnCount: 1, executableCaseCount: 1, executableTurnCount: 1, passCount: 1, partialCount: 0, failCount: 0, notExecutableCaseCount: 0, notExecutableTurnCount: 0 });
   assert.deepEqual(supplementalGroups.coreComplexProductOutcome, supplementalTiers.TIER_2_COMPLEX);
@@ -325,7 +332,7 @@ function safeResult(eventId, traceId) {
   assert.deepEqual(
     supplementalReport.attribution,
     { status: "ENGINEERING_DIAGNOSTIC_UNPROVEN", errorCode: "acceptance_case_failed" },
-    "legacy repair attribution must remain visible but cannot override product-outcome PASS"
+    "unproven repair attribution must remain visible and block successful acceptance exit"
   );
 
   const runFailingTier = (tier) => runAcceptanceMatrix({
@@ -340,9 +347,11 @@ function safeResult(eventId, traceId) {
     },
     write: () => {}
   });
-  const edgeOnlyResult = await runFailingTier("TIER_4_EDGE");
-  assert.equal(edgeOnlyResult.failCount, 1, "an Edge failure remains visible in the report summary");
-  assert.equal(edgeOnlyResult.groups.edgeRobustness.failCount, 1);
+  await assert.rejects(
+    runFailingTier("TIER_4_EDGE"),
+    (error) => error && error.code === "deployed_acceptance_matrix_failed" && error.groups.edgeRobustness.failCount === 1,
+    "an Edge failure must remain visible and block successful acceptance exit"
+  );
   await assert.rejects(
     runFailingTier("TIER_3_SAFETY"),
     (error) => error && error.code === "deployed_acceptance_matrix_failed" && error.groups.safetyContract.failCount === 1,

@@ -96,6 +96,12 @@ Protected PASS set 只能增加，不能縮小。修 B 造成 A 從 PASS 變 FAI
 
 Section 3 的禁止旁路永久適用，並明確包括 case／question hardcode、keyword、regex、alias、fuzzy patch、fallback masking、broad validator relaxation、unrelated refactor、順便修改 frontend／backend／DB，以及為製造 GREEN 改產品行為。
 
+### Formal deployed acceptance fail-closed Gates
+
+- **Render／environment／migration deployment preflight：** 任何 deployed acceptance 或部署完成聲明開始前，必須以唯讀、可核對證據同時確認 exact authorized Render service、repository、branch、live commit、全部必要 runtime environment 設定，以及目標 migration／schema readiness。缺值、未知、錯配、檢查錯誤或無法證明時一律 `INTEGRITY_FAILURE` 並以 non-zero 結束。Preflight 本身不得執行 migration、seed、sync、initialization 或其他寫入；任何寫入仍須遵守本契約的逐次授權。
+- **Diagnostic／finalizer 不得取代正式驗收：** Diagnostic、trace、report attribution 與 finalizer 都是非權威證據層，不能取代 production acceptance、改變正式結果或將未證明狀態降級為成功。任何本次驗收要求的 diagnostic／finalizer／attribution 未完成、拋錯或無法證明時，必須保留 bounded evidence 並以 non-zero 結束；不得只寫入 `UNPROVEN` marker 後繼續回報 PASS。
+- **所有未通過狀態一律阻擋成功退出：** 任一 case 或 turn 為 `FAIL`、`PARTIAL_NOT_EXECUTABLE`、`NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API` 或其他 `NOT_EXECUTABLE` 狀態時，整個 acceptance run 必須以 non-zero 結束。Tier、分類、group、optional／edge 標記不得豁免；unavailable、expired 或日期失效的測試資料只能如實 FAIL／NOT_EXECUTABLE 並回報，禁止修改題目、expected result、case count、分類或產品 runtime 來製造 PASS。
+
 ## 11. 外部系統與部署授權
 
 沒有使用者對特定外部動作的當次明確授權，不得 push、建立 PR、merge、部署或操作 Render、LINE Console、PostgreSQL、credentials 與 production environment。測試或本機完成不能解除：

@@ -25,6 +25,7 @@ const {
   acceptanceMatrixForMode,
   validateTargetPreflightAttribution,
   TARGET_PREFLIGHT_TURNS,
+  NOT_EXECUTABLE_STATUS,
   TEST_ONLY_ACCEPTANCE_AUDIENCE
 } = require("../scripts/run-deployed-conversation-acceptance");
 
@@ -266,6 +267,86 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     { reviewRequired: true, reviewPersisted: true, reviewPending: true, detailProvided: false, detailNeedsConfirmation: true },
     "the private artifact must retain strict detail and review evidence without exposing review identity"
   );
+
+  const failClosedFetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, data: { ...safeResult, eventId: body.eventId, traceId: `trace-${body.messageText}` } })
+    };
+  };
+  const failClosedBase = {
+    baseUrl: "https://test-only.example",
+    propertyId: "nephi_home",
+    oidcToken: "PRIVATE_OIDC_TOKEN",
+    commit: expectedCommit,
+    fetchImpl: failClosedFetch,
+    write: () => {}
+  };
+  const attributionError = new Error("target attribution is unproven");
+  attributionError.code = "TARGET_PASS_ATTRIBUTION_UNPROVEN";
+  const failClosedScenarios = [
+    {
+      name: "FAIL",
+      expectedCode: "deployed_acceptance_matrix_failed",
+      options: {
+        matrix: [{ id: "fail-closed-tier-four", tier: "TIER_4_EDGE", turns: [{ messageText: "parking", expectedActions: ["clarification"], expectedCapabilities: ["parking"] }] }]
+      }
+    },
+    {
+      name: "PARTIAL_NOT_EXECUTABLE",
+      expectedCode: "deployed_acceptance_matrix_failed",
+      options: {
+        matrix: [{
+          id: "fail-closed-partial",
+          tier: "TIER_1_CORE",
+          turns: [
+            { messageText: "expired", executionStatus: NOT_EXECUTABLE_STATUS, executionReasonCode: "acceptance_data_expired", expectedActions: ["reply"] },
+            { messageText: "parking", expectedActions: ["reply"], expectedCapabilities: ["parking"] }
+          ]
+        }]
+      }
+    },
+    {
+      name: "NOT_EXECUTABLE",
+      expectedCode: "deployed_acceptance_matrix_failed",
+      options: {
+        matrix: [{ id: "fail-closed-not-executable", tier: "TIER_1_CORE", executionStatus: NOT_EXECUTABLE_STATUS, executionReasonCode: "acceptance_data_expired", turns: [{ messageText: "expired", expectedActions: ["reply"] }] }]
+      }
+    },
+    {
+      name: "TARGET_ATTRIBUTION_RETURNED_UNPROVEN",
+      expectedCode: "TARGET_PASS_ATTRIBUTION_UNPROVEN",
+      options: {
+        matrix: [{ id: "fail-closed-returned-attribution", tier: "TIER_1_CORE", turns: [{ messageText: "parking", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] }],
+        reportFinalizer: () => ({ status: "ENGINEERING_DIAGNOSTIC_UNPROVEN" })
+      }
+    },
+    {
+      name: "TARGET_ATTRIBUTION_UNPROVEN",
+      expectedCode: "TARGET_PASS_ATTRIBUTION_UNPROVEN",
+      options: {
+        matrix: [{ id: "fail-closed-attribution", tier: "TIER_1_CORE", turns: [{ messageText: "parking", expectedActions: ["reply"], expectedCapabilities: ["parking"] }] }],
+        reportFinalizer: () => { throw attributionError; }
+      }
+    }
+  ];
+  const failClosedOutcomes = [];
+  for (const scenario of failClosedScenarios) {
+    try {
+      await runAcceptanceMatrix({ ...failClosedBase, ...scenario.options });
+      failClosedOutcomes.push({ name: scenario.name, code: "RESOLVED_WITH_EXIT_ZERO" });
+    } catch (error) {
+      failClosedOutcomes.push({ name: scenario.name, code: String(error && (error.code || error.message) || "UNKNOWN_ERROR") });
+    }
+  }
+  assert.deepEqual(
+    failClosedOutcomes,
+    failClosedScenarios.map((scenario) => ({ name: scenario.name, code: scenario.expectedCode })),
+    "FAIL, PARTIAL_NOT_EXECUTABLE, NOT_EXECUTABLE, and both returned or thrown unproven target attribution must all reject the deployed acceptance run"
+  );
+
   const supportedAssessment = assessFinalResponseEvidence(safeResult, { expectedActions: ["reply"], expectedCapabilities: ["parking"] });
   assert.equal(supportedAssessment.status, "PASS", "an exact Engine FinalResponse grounded in allowlisted formal facts may pass");
   assert.deepEqual(supportedAssessment.reasons, []);

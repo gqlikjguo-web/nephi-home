@@ -1208,15 +1208,27 @@ async function runAcceptanceMatrix({ baseUrl, propertyId, oidcToken, refreshOidc
     summary,
     cases: reportCases
   };
+  let finalizerError = null;
   if (!failures.length && typeof reportFinalizer === "function") {
     try {
       report.attribution = reportFinalizer(report);
+      if (!report.attribution || report.attribution.status !== "TARGET_PASS_ATTRIBUTION_PROVEN") {
+        const error = new Error("TARGET_PASS_ATTRIBUTION_UNPROVEN");
+        error.code = "TARGET_PASS_ATTRIBUTION_UNPROVEN";
+        throw error;
+      }
     } catch (error) {
+      finalizerError = error;
       report.attribution = { status: "ENGINEERING_DIAGNOSTIC_UNPROVEN", errorCode: safeErrorCode(error) };
     }
   }
   if (typeof reportWriter === "function") reportWriter(report);
-  const blockingFailures = reportCases.filter((item) => item.status === "FAIL" && item.tier !== "TIER_4_EDGE");
+  if (finalizerError) {
+    Object.assign(finalizerError, summary);
+    finalizerError.report = report;
+    throw finalizerError;
+  }
+  const blockingFailures = reportCases.filter((item) => item.status !== "PASS");
   if (blockingFailures.length) {
     const error = new Error("deployed_acceptance_matrix_failed");
     error.code = "deployed_acceptance_matrix_failed";
