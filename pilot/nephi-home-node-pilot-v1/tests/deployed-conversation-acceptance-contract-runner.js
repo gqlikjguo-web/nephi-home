@@ -43,6 +43,12 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.equal(DEPLOYED_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 135, "full_matrix must execute all 135 approved turns");
 
   let healthCalls = 0;
+  const expectedDeployment = {
+    serviceName: "nephi-home-node-pilot-test-only",
+    repoSlug: "gqlikjguo-web/nephi-home",
+    branch: "test-only/node-pilot-integration",
+    commit: expectedCommit
+  };
   const health = await pollForDeployment({
     baseUrl: "https://test-only.example",
     expectedCommit,
@@ -51,13 +57,16 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     fetchImpl: async () => {
       healthCalls += 1;
       const data = healthCalls === 1
-        ? { status: "ready", testOnly: true, commit: "0000000000000000000000000000000000000000" }
-        : { status: "ready", testOnly: true, commit: expectedCommit };
+        ? { status: "ready", testOnly: true, commit: "0000000000000000000000000000000000000000", deployment: { ...expectedDeployment, commit: "0000000000000000000000000000000000000000" } }
+        : healthCalls === 2
+          ? { status: "ready", testOnly: true, commit: expectedCommit, deployment: { ...expectedDeployment, repoSlug: "untrusted/repository" } }
+          : { status: "ready", testOnly: true, commit: expectedCommit, deployment: expectedDeployment };
       return { ok: true, status: 200, json: async () => ({ ok: true, data }) };
     }
   });
   assert.equal(health.commit, expectedCommit);
-  assert.equal(healthCalls, 2, "health may be polled, but acceptance cases must not be retried");
+  assert.deepEqual(health.deployment, expectedDeployment);
+  assert.equal(healthCalls, 3, "health must reject a wrong commit or Render repository identity without retrying acceptance cases");
 
   let oidcRequest = null;
   const oidcToken = await requestGithubOidcToken({

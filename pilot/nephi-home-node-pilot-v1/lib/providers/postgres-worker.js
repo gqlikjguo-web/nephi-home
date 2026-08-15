@@ -526,7 +526,34 @@ async function operation(name, args) {
     const r=await client.query("SELECT * FROM test_only_line_message_traces WHERE property_id=$1 AND expires_at>$2 AND ($3::text='' OR event_id=$3) AND ($4::text='' OR trace_id=$4) AND ($5::text='' OR message_text_hash=$5) ORDER BY created_at DESC,event_id DESC LIMIT $6",[propertyId,now,eventId,traceId,messageTextHash,limit]);
     return r.rows.map(testOnlyLineTraceRow);
   }
-  if (name === "listMessageLogs") { const r=await client.query("SELECT payload FROM message_logs WHERE property_id=$1 ORDER BY created_at",[args[0]]); return r.rows.map(payload).map((x)=>({...x,customerId:args[0]})); }
+  if (name === "listMessageLogs") {
+    const [propertyId,options] = args;
+    if (options && typeof options === "object") {
+      const status=String(options.status||"pending"),requestedLimit=Number(options.limit);
+      const limit=Number.isFinite(requestedLimit)&&requestedLimit>0?Math.min(100,Math.floor(requestedLimit)):50;
+      const r=await client.query(
+        "SELECT review_id,line_user_id,processing_status,status,created_at,payload->>'guestId' guest_id,payload->>'guestMessage' guest_message,payload->>'replyText' reply_text,payload->>'reviewReason' review_reason,payload->>'reviewNote' review_note,payload->>'decisionReason' decision_reason,payload->>'ownerAction' owner_action FROM message_logs WHERE property_id=$1 AND ($2::text='all' OR status=$2) ORDER BY created_at DESC LIMIT $3",
+        [propertyId,status,limit]
+      );
+      return r.rows.map((row)=>({
+        customerId:propertyId,
+        reviewId:row.review_id||"",
+        guestId:row.guest_id||"",
+        lineUserId:row.line_user_id||"",
+        processingStatus:row.processing_status||"",
+        status:row.status||"pending",
+        createdAt:iso(row.created_at),
+        guestMessage:row.guest_message||"",
+        replyText:row.reply_text||"",
+        reviewReason:row.review_reason||"",
+        reviewNote:row.review_note||"",
+        decisionReason:row.decision_reason||"",
+        ownerAction:row.owner_action||""
+      }));
+    }
+    const r=await client.query("SELECT payload FROM message_logs WHERE property_id=$1 ORDER BY created_at",[propertyId]);
+    return r.rows.map(payload).map((x)=>({...x,customerId:propertyId}));
+  }
   if (name === "findMessageByEventId") { const r=await client.query("SELECT payload FROM message_logs WHERE property_id=$1 AND event_id=$2 AND ($3::text IS NULL OR channel_id=$3) ORDER BY created_at LIMIT 1",[args[0],args[1],args[2]||null]); const x=payload(r.rows[0]); return x?{...x,customerId:args[0]}:null; }
   if (name === "appendMessageLog") {
     const [propertyId,input]=args; const createdAt=input.createdAt||new Date().toISOString(); const item={...input,reviewId:input.reviewId||`message_${crypto.randomUUID()}`,createdAt};

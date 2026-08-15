@@ -2,6 +2,31 @@
 
 本文件只記錄目前可由 Repository、Git 歷史與已執行命令核對的狀態。規則權威與優先順序以 [RULES_INDEX](RULES_INDEX.md) 為準；未完成工作是否已獲授權以使用者當次明確指示為準。
 
+## 2026-08-15 formal handoff closure current snapshot
+
+- Task-start `HEAD` and the local remote-tracking ref `origin/test-only/node-pilot-integration` both resolve to `08f94ed118dc0f880c06d4dab725b1071cc251db`. The worktree is detached; no network fetch was performed, so this statement does not claim current GitHub state.
+- `/api/reviews` now sends property, status, descending creation order, and bounded limit into the existing persistence path. PostgreSQL performs those constraints in SQL, defaults to 50, clamps at 100, and projects only the existing Admin fields plus bounded processing/decision diagnostics.
+- `/api/health` now derives `testOnly` from the actual runtime configuration and exposes only validated Render `serviceName`, `repoSlug`, `branch`, and `commit`. The existing deployed acceptance poller requires the authorized test-only identity and exact commit together.
+- The existing production-safe diagnostics, trace persistence, provider composition, and service boundaries are reused. No second trace, table, provider, service, decision layer, or response path is introduced.
+- Planner, semantic compilation, Temporal Resolver, Conversation State, Resolver authority, FinalDecision, FinalResponse, database schema, Render Blueprint, LINE runtime, and production data are outside this closure and unchanged.
+
+### Fresh local evidence
+
+- `admin-reviews-bounded-query-runner.js`: 4/4 PASS, exit 0, `FAKE_INTEGRATION` using PGlite; it is not `REAL_POSTGRESQL_PROVIDER` evidence.
+- `health-deployment-identity-runner.js`: 2/2 PASS, exit 0, `FAKE_INTEGRATION` using JSON persistence and local HTTP; it is not `REAL_RENDER_DEPLOYMENT` evidence.
+- `deployed-conversation-acceptance-contract-runner.js`: 24/24 PASS, exit 0, `STRUCTURED_CONTRACT_TEST`; it performs no Render request.
+- Affected local regressions passed with exit 0: final-decision contract, Render Blueprint onboarding contract (15 checks), phase-6 transport, acceptance API (37/37), OIDC (10/10), SaaS LINE safety (24/24), and friendly onboarding (13/13). These remain local contract/runtime evidence and do not prove external providers.
+
+### Current external boundary
+
+- This closure performs no push, PR, deployment, Render/DB/LINE/DNS/environment mutation, migration, seed, reset, or sync.
+- Exact-candidate GitHub, CI, Render, formal PostgreSQL, real OpenAI, and real LINE results remain `UNPROVEN` until separately authorized and executed.
+- `DEPLOYMENT_BLOCKED_TEST_ONLY_LINE_BINDING_MIGRATION` remains active and is not changed by local health identity or contract GREEN.
+
+## Historical record boundary
+
+The remaining pre-existing sections are retained only as repository evidence of earlier tasks and runs. They are historical, not the current project snapshot, and cannot override the current section above, `RULES_INDEX.md`, `SECURITY.md`, `PRODUCT_BASELINE.md`, or the current task's explicit authority.
+
 ## Codex 執行完整性規則狀態
 
 - Codex 執行完整性規則的制定與 Checkpoint A 已完成。

@@ -1031,10 +1031,14 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     };
   }
 
-  function listReviews(customerId, status = "pending") {
+  function listReviews(customerId, status = "pending", limit = 50) {
     const homestay = requireCustomerId(customerId);
-    return repository.listMessageLogs(homestay.customerId)
-      .filter((item) => status === "all" || item.status === status)
+    const normalizedStatus = String(status || "pending").trim() || "pending";
+    const requestedLimit = Number(limit);
+    const normalizedLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(100, Math.floor(requestedLimit))
+      : 50;
+    return repository.listMessageLogs(homestay.customerId, { status: normalizedStatus, limit: normalizedLimit })
       .map((item) => ({
         reviewId: item.reviewId,
         guestId: item.guestId || "",
@@ -1042,7 +1046,9 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
         createdAt: item.createdAt,
         guestMessage: item.guestMessage,
         replyText: item.replyText,
-        reviewReason: item.reviewNote || "需要業者確認後再回覆客人。",
+        processingStatus: item.processingStatus || "",
+        decisionReason: item.decisionReason || "",
+        reviewReason: item.reviewReason || item.reviewNote || "需要業者確認後再回覆客人。",
         availableActions: [
           { action: "correct", label: "確認內容正確" },
           { action: "edit", label: "修改後採用" },

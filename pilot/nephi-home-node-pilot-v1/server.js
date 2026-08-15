@@ -691,6 +691,21 @@ function publicPropertyMetadata(property) {
   };
 }
 
+function safeDeploymentValue(value, pattern, maxLength) {
+  const normalized = String(value || "").trim();
+  return normalized.length > 0 && normalized.length <= maxLength && pattern.test(normalized) ? normalized : "";
+}
+
+function deploymentIdentityFromEnv(env = process.env, commitOverride = "") {
+  const commit = safeDeploymentValue(commitOverride || env.RENDER_GIT_COMMIT, /^[0-9a-f]{7,64}$/i, 64).toLowerCase();
+  return {
+    serviceName: safeDeploymentValue(env.RENDER_SERVICE_NAME, /^[A-Za-z0-9][A-Za-z0-9._-]*$/, 100),
+    branch: safeDeploymentValue(env.RENDER_GIT_BRANCH, /^[A-Za-z0-9][A-Za-z0-9._/-]*$/, 200),
+    commit,
+    repoSlug: safeDeploymentValue(env.RENDER_GIT_REPO_SLUG, /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 200)
+  };
+}
+
 function createRequestHandler(service, options = {}) {
   const sharedLineWebhookHandler = options.sharedLineWebhookHandler;
   const lineBindingService = options.lineBindingService;
@@ -706,7 +721,9 @@ function createRequestHandler(service, options = {}) {
   const testOnlyLineMessageTrace = options.testOnlyLineMessageTrace;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
   const publicBrand = options.publicBrand || createPublicBrand();
-  const deploymentCommit = String(options.deploymentCommit || process.env.RENDER_GIT_COMMIT || "");
+  const testOnlyEnvironment = options.testOnlyEnvironment === true;
+  const deploymentIdentity = options.deploymentIdentity || deploymentIdentityFromEnv();
+  const deploymentCommit = deploymentIdentity.commit;
   async function authorizeTestOnlyAcceptance(request) {
     const sessionToken = cookieValue(request, "nephi_admin_session");
     const session = sessionToken && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(sessionToken)) : null;
@@ -725,7 +742,7 @@ function createRequestHandler(service, options = {}) {
 
     try {
       if (request.method === "GET" && pathname === "/api/health") {
-        return sendData(response, { status: "ready", testOnly: true, commit: deploymentCommit });
+        return sendData(response, { status: "ready", testOnly: testOnlyEnvironment, commit: deploymentCommit, deployment: deploymentIdentity });
       }
       if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
       if (request.method === "POST" && pathname === "/api/admin/test-only/conversation-acceptance") {
@@ -1118,7 +1135,7 @@ function createRequestHandler(service, options = {}) {
       }
       if (request.method === "GET" && pathname === "/api/reviews") {
         return sendData(response, {
-          items: service.listReviews(url.searchParams.get("customerId"), url.searchParams.get("status") || "pending")
+          items: service.listReviews(url.searchParams.get("customerId"), url.searchParams.get("status") || "pending", url.searchParams.get("limit"))
         });
       }
       const reviewMatch = /^\/api\/reviews\/([^/]+)\/resolve$/.exec(pathname);
@@ -1137,7 +1154,8 @@ function createRequestHandler(service, options = {}) {
 }
 
 function createApp(options = {}) {
-  const config = runtimeConfig();
+  const runtimeEnv = options.runtimeEnv && typeof options.runtimeEnv === "object" ? options.runtimeEnv : process.env;
+  const config = runtimeConfig(runtimeEnv);
   const publicBrand = options.publicBrand || createPublicBrand(options.publicBrandEnv || process.env);
   const dataFile = options.dataFile || config.dataFile;
   const seedFile = options.seedFile || config.seedFile;
@@ -1172,7 +1190,8 @@ function createApp(options = {}) {
   const testOnlyEnvironment = Object.hasOwn(options, "testOnlyEnvironment") ? options.testOnlyEnvironment === true : config.testOnlyEnvironment === true;
   const testOnlyAcceptanceEnabled = Object.hasOwn(options, "testOnlyAcceptanceEnabled") ? options.testOnlyAcceptanceEnabled === true : config.testOnlyAcceptanceEnabled === true;
   const testOnlyAcceptancePropertyId = String(options.testOnlyAcceptancePropertyId || config.testOnlyAcceptancePropertyId || "").trim();
-  const deploymentCommit = String(options.deploymentCommit || process.env.RENDER_GIT_COMMIT || "").trim().toLowerCase();
+  const deploymentCommit = String(options.deploymentCommit || runtimeEnv.RENDER_GIT_COMMIT || "").trim().toLowerCase();
+  const deploymentIdentity = deploymentIdentityFromEnv(runtimeEnv, deploymentCommit);
   const testOnlyAcceptanceOidcVerifier = typeof options.testOnlyAcceptanceOidcVerifier === "function"
     ? options.testOnlyAcceptanceOidcVerifier
     : testOnlyEnvironment && testOnlyAcceptanceEnabled && deploymentCommit
@@ -1401,7 +1420,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, deploymentCommit }));
+  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
 }
 

@@ -22,6 +22,14 @@
 - `propertyId` query parameter 不能作為 Channel 身分證明。
 - 正式／test-only Channel 必須各自使用 property-scoped binding 與防誤設機制；尚未完成的真實遷移由本文件的部署 blocker 約束，不能沿用 legacy 例外。
 
+## Health 與 Render deployment identity
+
+- `/api/health` 的 `testOnly` 必須來自實際 runtime `TEST_ONLY_ENVIRONMENT`，不得固定回報 `true` 或用 commit、service name、host 推測環境。
+- 公開 deployment identity 只有 `serviceName`、`repoSlug`、`branch`、`commit` 四個非敏感 Render metadata；每個值都必須通過封閉字元集及長度限制，無效值回報空字串。
+- Health 不得反射任意 environment key/value，也不得包含 database URL、API key、token、credential、header、provider response、guest/property data 或其他 operational state。
+- Test-only deployed acceptance 必須同時精確匹配既有允許的 Render service、GitHub repository、branch 與 commit。只匹配 commit、HTTP 200 或 `ready` 不足以證明請求落在正確部署。
+- Health identity 是 bounded diagnostic，不是部署、外部 provider、LINE 或正式資料庫成功證據；只有另行授權且可核對的 exact-SHA 外部驗收才可分類為 `REAL_RENDER_DEPLOYMENT`。
+
 ## LINE Channel Identity Types
 
 - `NEPHI_PILOT_LINE_CHANNEL_ID` stores the numeric Channel ID shown by LINE Developers for configuration identity and audits.

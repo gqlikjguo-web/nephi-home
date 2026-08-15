@@ -352,7 +352,7 @@ async function main() {
     const health = await response.json();
     assert.equal(response.status, 200);
     assert.equal(health.data.status, "ready");
-    assert.equal(health.data.testOnly, true);
+    assert.equal(health.data.testOnly, false, "health must report the actual runtime test-only flag");
     assert.equal(health.data.commit, "0123456789abcdef");
   } finally {
     await app.stop();

@@ -7,6 +7,8 @@ const { TEST_ONLY_ACCEPTANCE_AUDIENCE, EXPECTED_REPOSITORY, EXPECTED_REF, EXPECT
 const { getCapabilityDefinition } = require("../lib/conversation-engine-v2/capability-registry");
 
 const DEFAULT_BASE_URL = "https://nephi-home-node-pilot-test-only-btye.onrender.com";
+const EXPECTED_RENDER_SERVICE_NAME = "nephi-home-node-pilot-test-only";
+const EXPECTED_RENDER_BRANCH = EXPECTED_REF.replace(/^refs\/heads\//, "");
 const SAFE_FACT_KEYS = new Set(["subject", "status", "answer", "locationMapUrl", "detailIntent", "availability", "checkIn", "checkOut", "detailProvided", "detailNeedsConfirmation", "amenities", "availableDates", "range", "availableInventory", "applicableBundles", "prices"]);
 const COMMON_TRACE_STAGES = ["planner", "validation", "semantic_contract", "claim_validator", "final_decision"];
 const FORMAL_TRACE_STAGES = [...COMMON_TRACE_STAGES, "canonical_request", "formal_request", "query_plan", "executor"];
@@ -302,7 +304,16 @@ async function pollForDeployment({ baseUrl, expectedCommit, fetchImpl = globalTh
       const response = await fetchImpl(`${String(baseUrl).replace(/\/$/, "")}/api/health`, { method: "GET", headers: { accept: "application/json" } });
       lastStatus = Number(response && response.status) || 0;
       const health = response && response.ok ? responseData(await response.json()) : null;
-      if (health && health.status === "ready" && health.testOnly === true && health.commit === expectedCommit) return health;
+      const deployment = health && health.deployment;
+      if (health
+        && health.status === "ready"
+        && health.testOnly === true
+        && health.commit === expectedCommit
+        && deployment
+        && deployment.serviceName === EXPECTED_RENDER_SERVICE_NAME
+        && deployment.repoSlug === EXPECTED_REPOSITORY
+        && deployment.branch === EXPECTED_RENDER_BRANCH
+        && deployment.commit === expectedCommit) return health;
     } catch { lastStatus = 0; }
     if (Date.now() >= deadline) break;
     await delay(intervalMs);
@@ -1405,7 +1416,7 @@ async function main(env = process.env) {
   const reportDirectory = String(env.TEST_ONLY_ACCEPTANCE_REPORT_DIR || "").trim();
   if (!reportDirectory) throw new Error("acceptance_report_directory_required");
   const health = await pollForDeployment({ baseUrl, expectedCommit: commit });
-  console.log(JSON.stringify({ stage: "deployment-ready", status: health.status, testOnly: health.testOnly, commit: health.commit }));
+  console.log(JSON.stringify({ stage: "deployment-ready", status: health.status, testOnly: health.testOnly, commit: health.commit, deployment: health.deployment }));
   const oidcRequest = { requestUrl: env.ACTIONS_ID_TOKEN_REQUEST_URL, requestToken: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN };
   const oidcToken = await requestGithubOidcToken(oidcRequest);
   const summary = await runOperationalReadOnlyAcceptance({

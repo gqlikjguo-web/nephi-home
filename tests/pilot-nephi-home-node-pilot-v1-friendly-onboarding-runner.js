@@ -98,7 +98,7 @@ function validInput(overrides = {}) {
       assert.equal(response.status, 200);
       const health = await response.json();
       assert.equal(health.data.status, "ready");
-      assert.equal(health.data.testOnly, true);
+      assert.equal(health.data.testOnly, false, "health must report the actual runtime test-only flag");
     } finally {
       await app.stop();
     }
@@ -149,8 +149,8 @@ function validInput(overrides = {}) {
   const startSource = fs.readFileSync(START_SCRIPT, "utf8");
   assert.match(startSource, /PORT_IN_USE/);
   assert.match(startSource, /\/api\/health/);
-  assert.match(startSource, /\/api\/test-line\/webhook/);
-  assert.match(startSource, /customerId=\{\{propertyId\}\}/);
+  assert.match(startSource, /\/api\/line\/webhooks\/\{webhookKey\}/);
+  assert.doesNotMatch(startSource, /customerId=\{\{propertyId\}\}/);
   assert.doesNotMatch(startSource, /Write-(?:Host|Output).*OPENAI_TEST_API_KEY.*\$/);
 
   console.log(JSON.stringify({ caseCount: 13, passCount: 13, failCount: 0 }));

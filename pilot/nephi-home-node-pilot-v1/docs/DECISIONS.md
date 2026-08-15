@@ -41,6 +41,31 @@
 | D-031 | active | — |
 | D-032 | active | — |
 | D-033 | active | — |
+| D-034 | active | — |
+| D-035 | active | — |
+| D-036 | active | — |
+| D-037 | active | — |
+| D-038 | active | — |
+| D-039 | active | — |
+| D-040 | active | — |
+| D-041 | active | — |
+| D-042 | superseded | superseded by D-043 |
+| D-043 | active | supersedes D-042 |
+| D-044 | active | — |
+| D-045 | active | refined by D-046 |
+| D-046 | active | refines D-045 |
+| D-047 | superseded | superseded by D-048 |
+| D-048 | active | supersedes D-047 |
+| D-049 | active | — |
+| D-050 | active | — |
+| D-051 | superseded | superseded by D-052 |
+| D-052 | active | supersedes D-051 |
+| D-053 | active | — |
+| D-054 | active | — |
+| D-055 | active | refines D-054 |
+| D-056 | active | refines D-054 and D-055 |
+| D-057 | active | renumbers the duplicate historical D-025 heading |
+| D-058 | active | — |
 
 ## 舊標題到唯一 ID crosswalk
 
@@ -53,6 +78,7 @@
 | `2026-07-29 — Onboarding intake starts from a scoped invitation` | D-029 | active |
 | `2026-07-29 — Test-only onboarding URLs are deployment-scoped` | D-030 | active |
 | `2026-07-29 — One-time property-scoped LINE setup authority` | D-031 | active |
+| `D-025 — Deployed test-only acceptance uses commit-bound GitHub OIDC` | D-057 | active; duplicate historical ID renumbered without changing the decision |
 
 ## D-001：AI 負責理解，不負責創造事實
 
@@ -314,7 +340,9 @@
 
 **Constraint:** The trace cannot change Planner, CanonicalRequest, V3 state, temporal resolution, Resolver, FinalDecision, FinalResponse, or transport authority. Unknown fields, source/evidence text, credentials, tokens, cookies, database URLs, raw LINE identities, and guest personal data are excluded. Diagnostic failures cannot affect delivery. The table and wiring must be removed after the two real traces are compared and the incident is resolved.
 
-## D-025 — Deployed test-only acceptance uses commit-bound GitHub OIDC
+## D-057 — Deployed test-only acceptance uses commit-bound GitHub OIDC
+
+**原始標題（verbatim）：** `D-025 — Deployed test-only acceptance uses commit-bound GitHub OIDC`
 
 **Decision:** The deployed conversation-acceptance route exists only when both the test-only environment and its dedicated acceptance flag are enabled. It retains platform-admin session authorization and additionally accepts GitHub Actions OIDC only after official-signature verification and exact audience, repository, branch, workflow, and deployed-commit checks.
 
@@ -521,3 +549,11 @@
 **Reason:** The prior validator independently accepted any repair marker and any matching canonical evidence in the same turn. An unrelated task could therefore execute repair while a directly generated target task supplied the expected evidence, falsely certifying the repair boundary. Semantic repair for `rg-023` had the same detached-marker weakness.
 
 **Constraint:** Correlation IDs are opaque, bounded, per-turn values and cannot encode task text, property or inventory identifiers, canonical subjects, prompts, provider bodies, or credentials. Existing semantic task IDs remain private to engine correlation and are never projected as repair provenance. Missing, malformed, unknown, duplicate, conflicting, or one-to-many joins fail closed; one canonical task cannot claim different correlations. Task-collection provenance names only actual fallback replacements, and `validation` is the sole safe stage for semantic repair provenance. This decision does not change Planner understanding, coverage behavior, formal CanonicalRequest objects, product responses, fixtures, acceptance expectations, or Product Baseline.
+
+## D-058 -- Health exposes actual runtime scope and bounded deployment identity
+
+**Decision:** `/api/health` reports the actual runtime `testOnly` flag and a closed deployment object containing only validated Render service name, GitHub repository slug, branch, and commit. The deployed acceptance poller accepts readiness only when all four identity fields match the existing authorized test-only deployment.
+
+**Reason:** The former route always returned `testOnly: true`, including non-test runtime configuration, while the deployed poller checked only readiness, a test-only boolean, and commit. That combination could misidentify runtime scope or certify a different Render service or repository that happened to expose the same commit.
+
+**Constraint:** Invalid or absent identity values become empty strings; arbitrary environment values and secrets are never reflected. Health remains a diagnostic and cannot prove deployment, OpenAI, PostgreSQL, LINE, DNS, environment mutation, or operational-state success without separately authorized external evidence.

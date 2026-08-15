@@ -426,12 +426,11 @@ class JsonFileRepository {
     });
   }
 
-  listMessageLogs(customerId) {
+  listMessageLogs(customerId, options = null) {
     const stored = (this.read().messageLogs[customerId] || []).map((item) => ({ ...item, customerId }));
     const seen = new Set(stored.map((item) => `${item.channelId || ""}\u0000${item.eventId || ""}`));
     const claimDirectory = `${this.dataFile}.event-claims`;
-    if (!fs.existsSync(claimDirectory)) return stored;
-    for (const entry of fs.readdirSync(claimDirectory, { withFileTypes: true })) {
+    for (const entry of fs.existsSync(claimDirectory) ? fs.readdirSync(claimDirectory, { withFileTypes: true }) : []) {
       if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
       try {
         const claim = JSON.parse(fs.readFileSync(path.join(claimDirectory, entry.name), "utf8"));
@@ -445,7 +444,16 @@ class JsonFileRepository {
         // stopped while writing; malformed marker contents are never trusted.
       }
     }
-    return stored;
+    if (!options || typeof options !== "object") return stored;
+    const status = String(options.status || "pending");
+    const requestedLimit = Number(options.limit);
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(100, Math.floor(requestedLimit))
+      : 50;
+    return stored
+      .filter((item) => status === "all" || item.status === status)
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+      .slice(0, limit);
   }
 
   listRecentMessages(customerId, channelId, lineUserId, options = {}) {
