@@ -63,6 +63,23 @@ function compilerCompatibleCapability(taskType, capability) {
     && [taskType, capability].every((value) => ["availability", "bundle_availability"].includes(value));
 }
 
+function controlledPendingTask(candidate, tasks, verifiedRelations, identities) {
+  if (!candidate || !CAPABILITIES.has(candidate.capability)) return null;
+  const catalogIdentity = candidate.propertyCatalogIdentity;
+  const canonicalIdentity = candidate.canonicalIdentityCandidate;
+  const matches = tasks.filter((task) => {
+    if (!verifiedRelations.has(task && task.candidateIndex)
+      || !compilerCompatibleCapability(task && task.type, candidate.capability)) return false;
+    if (catalogIdentity !== null && catalogIdentity !== undefined) {
+      return typeof catalogIdentity === "string" && identities.has(catalogIdentity)
+        && canonicalIdentity === catalogIdentity
+        && String(task && task.entity && task.entity.canonicalCandidate || "") === catalogIdentity;
+    }
+    return candidate.semanticKind === "capability" && canonicalIdentity === candidate.capability;
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
 function compilerEvidenceOverlaps(left, right, sourceMaps) {
   const byEvent = left && left.eventId ? sourceMaps.byEventId.get(String(left.eventId)) : null;
   const byMessage = left && left.messageRef ? sourceMaps.byMessageRef.get(String(left.messageRef)) : null;
@@ -162,6 +179,7 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
   const verifiedRelations = context.ok
     ? new Map(context.relations.map((relation) => [relation.candidateIndex, relation.evidenceRefs.map((ref) => ({ ...ref }))]))
     : new Map();
+  const identities = catalogIdentities(input && input.catalog);
   const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
   const normalizedScopes = normalizedRelatedLodgingScopes(rawCandidates, input && input.catalog, verifiedRelations, sourceMaps);
   const scopeIds = new Map();
@@ -181,18 +199,24 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
     if (scope !== null) scopeIds.set(scopeSignature, scopeId);
     const provenance = rawCandidate && rawCandidate.provenanceRelationCandidateIndexes;
     const pendingCoverage = rawCandidate && rawCandidate.coverageStatus === "pending_task";
-    const provenanceIndexes = Array.isArray(provenance) && provenance.length >= 1 && provenance.length <= 12
+    const rawProvenanceIndexes = Array.isArray(provenance) && provenance.length >= 1 && provenance.length <= 12
       && provenance.every((value) => Number.isInteger(value) && value >= 0)
       && new Set(provenance).size === provenance.length
       ? provenance
       : [];
-    const evidenceRefs = pendingCoverage
-      ? (!provenanceIndexes.length && validEvidenceRefs(rawCandidate && rawCandidate.evidenceRefs, input)
-        ? rawCandidate.evidenceRefs.map((ref) => ({ ...ref }))
-        : [])
-      : provenanceIndexes.length && provenanceIndexes.every((candidateIndex) => verifiedRelations.has(candidateIndex))
-        ? provenanceIndexes.flatMap((candidateIndex) => verifiedRelations.get(candidateIndex).map((ref) => ({ ...ref })))
-        : [];
+    const controlledTask = pendingCoverage
+      ? controlledPendingTask(rawCandidate, output.tasks, verifiedRelations, identities)
+      : null;
+    const provenanceIndexes = controlledTask ? [controlledTask.candidateIndex] : rawProvenanceIndexes;
+    const evidenceRefs = controlledTask
+      ? verifiedRelations.get(controlledTask.candidateIndex).map((ref) => ({ ...ref }))
+      : pendingCoverage
+        ? (!provenanceIndexes.length && validEvidenceRefs(rawCandidate && rawCandidate.evidenceRefs, input)
+          ? rawCandidate.evidenceRefs.map((ref) => ({ ...ref }))
+          : [])
+        : provenanceIndexes.length && provenanceIndexes.every((candidateIndex) => verifiedRelations.has(candidateIndex))
+          ? provenanceIndexes.flatMap((candidateIndex) => verifiedRelations.get(candidateIndex).map((ref) => ({ ...ref })))
+          : [];
     const payload = {
       semanticKind: rawCandidate && rawCandidate.semanticKind,
       capability: rawCandidate && rawCandidate.capability,
@@ -207,7 +231,7 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
     const compiledCandidate = { ...payload, candidateId, lodgingScopeCandidate: scope === null ? null : { scopeId, ...scope } };
     Object.defineProperty(compiledCandidate, SEMANTIC_CANDIDATE_COMPILED, { enumerable: false, value: true });
     Object.defineProperty(compiledCandidate, SEMANTIC_CANDIDATE_PROVENANCE, { enumerable: false, value: Object.freeze([...provenanceIndexes]) });
-    Object.defineProperty(compiledCandidate, SEMANTIC_CANDIDATE_LIFECYCLE, { enumerable: false, value: pendingCoverage ? "pending_task" : "bound" });
+    Object.defineProperty(compiledCandidate, SEMANTIC_CANDIDATE_LIFECYCLE, { enumerable: false, value: pendingCoverage && !controlledTask ? "pending_task" : "bound" });
     return compiledCandidate;
   });
   const validCandidates = validateSemanticCandidates({ semanticCandidates: candidates }, input).validCandidates;

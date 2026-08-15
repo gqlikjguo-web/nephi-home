@@ -49,6 +49,32 @@ function main() {
   assert.deepEqual(provenanceCompiled.semanticCandidates[0].evidenceRefs, evidenceRefs, "compiler must replace model coordinates only with the explicitly referenced verified relation evidence");
   assert.equal(validateSemanticCandidates(provenanceCompiled, input).invalidCandidateIds.length, 0, "verified provenance must preserve strict source validation");
 
+  const misclassifiedPending = baseOutput();
+  misclassifiedPending.semanticCandidates[0].coverageStatus = "pending_task";
+  misclassifiedPending.semanticCandidates[0].provenanceRelationCandidateIndexes = [];
+  misclassifiedPending.semanticCandidates[0].evidenceRefs = [{
+    ...evidenceRefs[0],
+    endOffset: message.length + 5,
+    quote: "model coordinate drift"
+  }];
+  const controlledOwnership = compileSemanticCandidates(misclassifiedPending, input);
+  assert.deepEqual(controlledOwnership.semanticCandidates[0].evidenceRefs, evidenceRefs, "one compatible task with one verified relation must supply bound evidence even when the model mislabels lifecycle and coordinates");
+  assert.deepEqual(controlledOwnership.tasks[0].semanticCandidateIds, [controlledOwnership.semanticCandidates[0].candidateId], "controlled lifecycle must bind the uniquely proven candidate to its existing task");
+  assert.equal(validateSemanticCandidates(controlledOwnership, input).invalidCandidateIds.length, 0, "controlled bound ownership must remain structurally valid");
+
+  const ambiguousPendingOwnership = structuredClone(misclassifiedPending);
+  ambiguousPendingOwnership.tasks.push({ ...ambiguousPendingOwnership.tasks[0], candidateIndex: 1, taskId: "availability-ambiguous" });
+  ambiguousPendingOwnership.contextRelationCandidates.push({ ...ambiguousPendingOwnership.contextRelationCandidates[0], candidateIndex: 1 });
+  const ambiguousPendingCompiled = compileSemanticCandidates(ambiguousPendingOwnership, input);
+  assert.equal(validateSemanticCandidates(ambiguousPendingCompiled, input).invalidCandidateIds.length, 1, "multiple compatible verified relations must remain fail-closed instead of guessing ownership");
+  assert.equal(ambiguousPendingCompiled.tasks.every((task) => task.semanticCandidateIds.length === 0), true, "ambiguous lifecycle ownership must not bind either task");
+
+  const invalidRelationPending = structuredClone(misclassifiedPending);
+  invalidRelationPending.contextRelationCandidates[0].evidenceRefs[0].quote = "invalid relation evidence";
+  const invalidRelationPendingCompiled = compileSemanticCandidates(invalidRelationPending, input);
+  assert.equal(validateSemanticCandidates(invalidRelationPendingCompiled, input).invalidCandidateIds.length, 1, "an invalid relation must not authorize lifecycle ownership");
+  assert.deepEqual(invalidRelationPendingCompiled.tasks[0].semanticCandidateIds, [], "invalid relation evidence must remain unowned");
+
   const missingProvenance = baseOutput();
   delete missingProvenance.semanticCandidates[0].provenanceRelationCandidateIndexes;
   assert.equal(validateSemanticCandidates(compileSemanticCandidates(missingProvenance, input), input).invalidCandidateIds.length, 1, "missing provenance must remain fail-closed");
@@ -68,6 +94,8 @@ function main() {
   const pendingSource = baseOutput();
   pendingSource.semanticCandidates[0].coverageStatus = "pending_task";
   delete pendingSource.semanticCandidates[0].provenanceRelationCandidateIndexes;
+  pendingSource.tasks.push({ ...pendingSource.tasks[0], candidateIndex: 1, taskId: "availability-alternative" });
+  pendingSource.contextRelationCandidates.push({ ...pendingSource.contextRelationCandidates[0], candidateIndex: 1 });
   const compiledPending = compileSemanticCandidates(pendingSource, input);
   const repairWithoutCanonicalization = compileSemanticCandidates(baseOutput(), input);
   assert.equal(verifiedRepairTask(repairWithoutCanonicalization, input, compiledPending.semanticCandidates[0]), null, "semantic repair must fail closed when canonicalization handoff is missing");
@@ -105,6 +133,8 @@ function main() {
     propertyCatalogIdentity: null
   }];
   groupedPendingSource.semanticCandidates.forEach((candidate) => { delete candidate.provenanceRelationCandidateIndexes; });
+  groupedPendingSource.tasks.push({ ...groupedPendingSource.tasks[0], candidateIndex: 1, taskId: "availability-group-alternative" });
+  groupedPendingSource.contextRelationCandidates.push({ ...groupedPendingSource.contextRelationCandidates[0], candidateIndex: 1 });
   const groupedPending = compileSemanticCandidates(groupedPendingSource, input);
   const groupedRepairSource = baseOutput();
   groupedRepairSource.semanticCandidates = groupedPendingSource.semanticCandidates.map((candidate) => ({
@@ -212,7 +242,7 @@ function main() {
   const authoritativeCapabilityRepair = applyPlannerSemanticContract(inventedCapabilityRepair, { catalog: input.catalog, sourceEvents: input.sourceEvents });
   assert.equal(verifiedRepairTask(authoritativeCapabilityRepair, input, inventedCapabilityPending.semanticCandidates[0]), null, "canonicalization authority must reject a Planner-invented capability identity");
 
-  console.log(JSON.stringify({ suite: "semantic-candidate-ledger-compiler", caseCount: 19, passCount: 19, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "semantic-candidate-ledger-compiler", caseCount: 22, passCount: 22, failCount: 0 }));
 }
 
 main();

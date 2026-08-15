@@ -137,6 +137,8 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const pendingInvalidRaw = JSON.parse(JSON.stringify(invalidRawEvidenceOutput));
   pendingInvalidRaw.semanticCandidates[0].coverageStatus = "pending_task";
   pendingInvalidRaw.semanticCandidates[0].provenanceRelationCandidateIndexes = [];
+  pendingInvalidRaw.tasks.push({ ...pendingInvalidRaw.tasks[0], candidateIndex: 1, taskId: "raw-policy-alternative" });
+  pendingInvalidRaw.contextRelationCandidates.push({ ...pendingInvalidRaw.contextRelationCandidates[0], candidateIndex: 1 });
   assert.equal(diagnosticCandidate(compileSemanticCandidates(pendingInvalidRaw, rawEvidenceInput), { originOutput: pendingInvalidRaw }).missingRefsReason, "pending_invalid_raw_evidence", "diagnostics must distinguish invalid pending raw evidence");
   const compiledLoss = compileSemanticCandidates(validRawEvidenceOutput, rawEvidenceInput);
   compiledLoss.semanticCandidates[0] = { ...compiledLoss.semanticCandidates[0], evidenceRefs: [] };
@@ -213,9 +215,10 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     provenanceRelationCandidateIndexes: [],
     evidenceRefs: [{ ...validRawEvidenceCandidate.evidenceRefs[0], quote: "paraphrased policy request" }]
   };
-  const invalidPendingResult = await classifyProviderOutput(providerOutput(invalidPendingCandidate, invalidPendingCandidate.evidenceRefs[0]));
-  assert.equal(invalidPendingResult.semanticCandidates.length, 0, "invalid pending raw evidence must never be promoted into formal provenance by relation normalization");
-  assert.deepEqual(invalidPendingResult.tasks[0].semanticCandidateIds, [], "an invalid pending candidate must remain unowned and fail closed");
+  const invalidPendingResult = await classifyProviderOutput(providerOutput(invalidPendingCandidate, validRawEvidenceCandidate.evidenceRefs[0]));
+  assert.equal(invalidPendingResult.semanticCandidates.length, 1, "classify must retain a candidate whose existing task ownership is uniquely proven by the verified relation");
+  assert.deepEqual(invalidPendingResult.semanticCandidates[0].evidenceRefs, validRawEvidenceCandidate.evidenceRefs, "classify must use only the verified relation evidence for controlled bound ownership");
+  assert.deepEqual(invalidPendingResult.tasks[0].semanticCandidateIds, [invalidPendingResult.semanticCandidates[0].candidateId], "classify must preserve the compiler-established ownership instead of deleting the mislabelled candidate");
   const secondCompiledExact = compileSemanticCandidates(exactProviderResult, rawEvidenceInput);
   assert.deepEqual(secondCompiledExact.semanticCandidates, exactProviderResult.semanticCandidates, "second compile must preserve verified evidence and candidate identity");
   assert.deepEqual(secondCompiledExact.tasks, exactProviderResult.tasks, "second compile must preserve verified ownership");
