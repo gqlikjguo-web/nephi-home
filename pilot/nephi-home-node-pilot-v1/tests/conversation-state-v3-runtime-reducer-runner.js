@@ -326,7 +326,7 @@ assert.equal(decideContextExecutionV3({
   now: NOW
 }).resumedPending, false, "guest count cannot satisfy a date-only pending task");
 
-assert.throws(() => createConversationStateV3({
+const pendingCapacity = createConversationStateV3({
   ...scope,
   tasks: [pendingPricingTask({
     taskId: "capacity-task",
@@ -340,7 +340,28 @@ assert.throws(() => createConversationStateV3({
   createdAt: NOW,
   updatedAt: NOW,
   expiresAt: FUTURE
-}), /task_readiness_mismatch/, "the obsolete guest-count-pending capacity contract must be rejected");
+});
+assert.equal(decideContextExecutionV3({
+  state: pendingCapacity,
+  relations: [],
+  plannerTasks: [guestOnlyPlannerTask],
+  now: NOW
+}).resumedPending, false, "raw guest-count wording must not create context continuation authority");
+assert.equal(decideContextExecutionV3({
+  state: pendingCapacity,
+  relations: [{ candidateIndex: guestOnlyPlannerTask.candidateIndex, stateAction: "continue", requestCycleId: "capacity-task", relationKind: "supplement_existing", evidenceRefs: [] }],
+  plannerTasks: [guestOnlyPlannerTask],
+  now: NOW
+}).resumedPending, true, "an explicit structured continuation must remain the context authority");
+assert.equal(decideContextExecutionV3({
+  state: pendingCapacity,
+  relations: [],
+  plannerTasks: [{
+    ...guestOnlyPlannerTask,
+    sourceText: "4 guests, also can I check in early?"
+  }],
+  now: NOW
+}).resumedPending, false, "additional semantics must prevent automatic guest-slot recovery");
 
 const expired = createConversationStateV3({
   ...scope,

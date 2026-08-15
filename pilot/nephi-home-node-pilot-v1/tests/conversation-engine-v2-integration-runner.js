@@ -706,13 +706,10 @@ function latestConditions(result) {
     uncertainGuestAvailabilityCalls += 1;
     return temporalAvailabilityResolver(query);
   });
-  assert.equal(uncertainGuest.finalDecision.action, "handoff", "an unresolved capacity sibling must fail closed while availability still clarifies");
+  assert.equal(uncertainGuest.finalDecision.action, "clarification", "an explicitly uncertain guest count must clarify");
   const uncertainAvailability = uncertainGuest.taskResults.find((item) => item.taskId === "uncertain-guest-availability");
   assert.equal(uncertainAvailability.status, "needs_clarification");
   assert.deepEqual(uncertainAvailability.missingInputs, ["guestCount"]);
-  const uncertainCapacity = uncertainGuest.taskResults.find((item) => item.taskId === "uncertain-guest-capacity");
-  assert.equal(uncertainCapacity.status, "needs_human");
-  assert.equal(uncertainCapacity.reason, "capacity_unknown");
   assert.equal(uncertainGuestAvailabilityCalls, 0, "an explicitly uncertain guest count must not execute availability");
 
   const multiDateTasks = [

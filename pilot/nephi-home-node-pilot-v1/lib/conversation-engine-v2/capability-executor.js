@@ -149,24 +149,6 @@ function queryResolvedEntity(queryPlan, catalog) {
       || { canonicalId: entity.canonicalId, category: entity.category }
   };
 }
-function resolvedCapacityFact(queryPlan, catalog) {
-  const entity = queryPlan.entity || {};
-  if (entity.status !== "resolved"
-    || !["room", "bundle"].includes(entity.category)
-    || !entity.canonicalId) return null;
-  const matches = (catalog.rooms || []).filter((item) => (
-    item && item.canonicalId === entity.canonicalId && item.category === entity.category
-  ));
-  if (matches.length !== 1) return null;
-  const capacity = Number(matches[0].capacity);
-  if (!Number.isInteger(capacity) || capacity < 1) return null;
-  return {
-    subject: matches[0].publicName,
-    capacity,
-    source: "property_catalog",
-    propertyId: queryPlan.propertyId
-  };
-}
 function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, availableDatesResolver, priceOverrides = [], datePriceClassifications = [] }) {
   if (!queryPlan || queryPlan.propertyId !== property.propertyId) return queryOutcome(queryPlan || {}, "invalid_query_plan", { reason: "property_scope_mismatch" });
   const request = queryPlan.conditions || {};
@@ -182,12 +164,6 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
   try {
     if (resolverId === "property_catalog" && queryPlan.capability === "amenity_list") {
       return queryOutcome(queryPlan, "answered", { facts: { amenities: catalogAmenityNames(catalog, request.inventory && request.inventory.mode), source: "property_catalog", propertyId: property.propertyId }, resolverAttempted: false });
-    }
-    if (resolverId === "property_catalog" && queryPlan.capability === "capacity") {
-      const facts = resolvedCapacityFact(queryPlan, catalog);
-      return facts
-        ? queryOutcome(queryPlan, "answered", { facts, resolverAttempted: false })
-        : queryOutcome(queryPlan, "unknown", { reason: "capacity_unknown" });
     }
     if (resolverId === "property_catalog") {
       const entity = scopedCatalogEntity(resolved && resolved.status === "resolved" && resolved.entity, request.inventory && request.inventory.mode);

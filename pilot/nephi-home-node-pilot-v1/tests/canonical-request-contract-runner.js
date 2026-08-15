@@ -14,18 +14,8 @@ const {
   validateCapabilityRegistry
 } = require("../lib/conversation-engine-v2/capability-registry");
 const {
-  buildCanonicalFormalRequest,
-  buildCanonicalQueryPlan
+  buildCanonicalFormalRequest
 } = require("../lib/conversation-engine-v2/formal-request");
-const {
-  executeCanonicalQueryPlans
-} = require("../lib/conversation-engine-v2/capability-executor");
-const {
-  buildPropertyCatalog
-} = require("../lib/conversation-engine-v2/property-catalog");
-const {
-  composeSection
-} = require("../lib/conversation-engine-v2/controlled-composer");
 
 const REQUIRED_CAPABILITIES = [
   "availability",
@@ -174,125 +164,55 @@ function run() {
   assert.ok(changedValidation.errors.includes("resolverId_registry_mismatch"));
 
   const capacityDefinition = getCapabilityDefinition("capacity");
-  const capacityProperty = {
-    propertyId: "property-capacity-contract",
-    displayName: "Capacity Contract Property",
-    timezone: "Asia/Taipei",
-    rooms: [
-      { id: "orchid-suite", name: "蘭花套房", capacity: 3, enabled: true },
-      { id: "harbor-villa", name: "海港包棟", capacity: 11, enabled: true, inventoryType: "bundle", memberRoomIds: ["orchid-suite"] }
-    ]
-  };
-  const capacityCatalog = buildPropertyCatalog(capacityProperty);
-  let availabilityResolverCalls = 0;
-  function runCapacityFlow({ taskId, canonicalEntity, lodgingProduct, catalog = capacityCatalog }) {
-    const canonicalRequest = createCanonicalRequest({
-      taskId,
-      capability: "capacity",
-      canonicalEntity,
-      lodgingProduct,
-      detailIntent: "general",
-      temporalState: {
-        resolutionStatus: "absent",
-        checkIn: null,
-        checkOut: null,
-        nights: null,
-        searchRange: null,
-        timezone: "Asia/Taipei",
-        applicableTaskIds: [taskId]
-      },
-      stayDependency: capacityDefinition.stayDependency,
-      requiredFields: capacityDefinition.requiredFields,
-      resolverId: capacityDefinition.resolverId,
-      riskLevel: capacityDefinition.riskLevel,
-      responseMode: capacityDefinition.responseMode,
-      evidenceRefs: evidenceRefs()
-    });
-    const formalRequest = buildCanonicalFormalRequest({
-      property: capacityProperty,
-      canonicalRequest,
-      requestCycleId: `${taskId}-cycle`,
-      confirmedInputs: {
-        stay: { checkIn: null, checkOut: null, guests: null },
-        inventory: { mode: "any", entityId: canonicalEntity.canonicalId, features: [] }
-      }
-    });
-    const queryPlan = buildCanonicalQueryPlan(formalRequest);
-    const outcomes = executeCanonicalQueryPlans({
-      property: capacityProperty,
-      catalog,
-      queryPlans: queryPlan ? [queryPlan] : [],
-      availabilityResolver: () => {
-        availabilityResolverCalls += 1;
-        throw new Error("capacity_must_not_call_availability");
-      }
-    });
-    return { canonicalRequest, formalRequest, queryPlan, outcomes };
-  }
-
-  for (const target of [
-    { taskId: "capacity-room", canonicalId: "orchid-suite", category: "room", productType: "room_type", capacity: 3, publicName: "蘭花套房" },
-    { taskId: "capacity-bundle", canonicalId: "harbor-villa", category: "bundle", productType: "bundle", capacity: 11, publicName: "海港包棟" }
-  ]) {
-    const flow = runCapacityFlow({
-      taskId: target.taskId,
-      canonicalEntity: { status: "resolved", category: target.category, canonicalId: target.canonicalId, canonicalSet: [], rawText: target.publicName },
-      lodgingProduct: {
-        productType: target.productType,
-        productId: target.canonicalId,
-        roomTypeId: target.productType === "room_type" ? target.canonicalId : null,
-        bundleId: target.productType === "bundle" ? target.canonicalId : null
-      }
-    });
-    assert.equal(flow.outcomes.length, 1, `capacity production flow stopped before Executor: ${JSON.stringify({ definition: capacityDefinition, readiness: flow.formalRequest.readiness })}`);
-    assert.equal(flow.formalRequest.readiness.status, "ready");
-    assert.equal(flow.queryPlan.resolverId, "property_catalog");
-    assert.equal(flow.outcomes[0].outcome, "answered");
-    assert.equal(flow.outcomes[0].resolverAttempted, false);
-    assert.deepEqual(flow.outcomes[0].facts, {
-      subject: target.publicName,
-      capacity: target.capacity,
-      source: "property_catalog",
-      propertyId: capacityProperty.propertyId
-    });
-    assert.equal(composeSection({ type: "capacity", status: "answered", facts: flow.outcomes[0].facts }), `${target.publicName}最多可住 ${target.capacity} 人。`);
-  }
-  assert.equal(availabilityResolverCalls, 0);
-  assert.deepEqual({
+  const capacityRequest = createCanonicalRequest({
+    taskId: "capacity-0",
+    capability: "capacity",
+    canonicalEntity: {
+      category: "other",
+      canonicalId: null
+    },
+    lodgingProduct: {
+      productType: "any",
+      productId: null,
+      roomTypeId: null,
+      bundleId: null
+    },
+    detailIntent: "general",
+    temporalState: {
+      ...temporalState(),
+      applicableTaskIds: ["capacity-0"]
+    },
     stayDependency: capacityDefinition.stayDependency,
     requiredFields: capacityDefinition.requiredFields,
-    resolverId: capacityDefinition.resolverId
-  }, {
-    stayDependency: false,
-    requiredFields: [],
-    resolverId: "property_catalog"
+    resolverId: capacityDefinition.resolverId,
+    riskLevel: capacityDefinition.riskLevel,
+    responseMode: capacityDefinition.responseMode,
+    evidenceRefs: evidenceRefs()
   });
-
-  const missingCapacityCatalog = buildPropertyCatalog({
-    ...capacityProperty,
-    rooms: [{ id: "capacity-missing", name: "容量未設定房型", capacity: 0, enabled: true }]
+  const capacityFormal = buildCanonicalFormalRequest({
+    property: { propertyId: "property-alpha" },
+    canonicalRequest: capacityRequest,
+    requestCycleId: "capacity-cycle",
+    confirmedInputs: {
+      stay: {
+        checkIn: "2026-08-06",
+        checkOut: "2026-08-07",
+        guests: null
+      },
+      inventory: { mode: "any", entityId: null, features: [] }
+    }
   });
-  const missingCapacity = runCapacityFlow({
-    taskId: "capacity-missing",
-    canonicalEntity: { status: "resolved", category: "room", canonicalId: "capacity-missing", canonicalSet: [], rawText: "容量未設定房型" },
-    lodgingProduct: { productType: "room_type", productId: "capacity-missing", roomTypeId: "capacity-missing", bundleId: null },
-    catalog: missingCapacityCatalog
+  assert.equal(capacityFormal.readiness.status, "missing_information");
+  assert.deepEqual(capacityFormal.readiness.missingFields, ["guestCount"]);
+  assert.deepEqual(capacityFormal.resolverTask, {
+    propertyId: "property-alpha",
+    taskType: "capacity",
+    productType: "any",
+    productId: null,
+    checkIn: "2026-08-06",
+    checkOut: "2026-08-07",
+    guestCount: null
   });
-  assert.equal(missingCapacity.outcomes[0].outcome, "unknown");
-  assert.equal(missingCapacity.outcomes[0].reason, "capacity_unknown");
-
-  for (const unresolvedEntity of [
-    { status: "not_found", category: "room", canonicalId: null, canonicalSet: [], rawText: "未解析房型" },
-    { status: "matched_set", category: "room", canonicalId: null, canonicalSet: ["orchid-suite", "harbor-villa"], rawText: "模糊房型" }
-  ]) {
-    const unresolved = runCapacityFlow({
-      taskId: `capacity-${unresolvedEntity.status}`,
-      canonicalEntity: unresolvedEntity,
-      lodgingProduct: { productType: "any", productId: null, roomTypeId: null, bundleId: null }
-    });
-    assert.equal(unresolved.outcomes[0].outcome, "unknown");
-    assert.equal(unresolved.outcomes[0].reason, "capacity_unknown");
-  }
 
   const uncertainGuestFormal = buildCanonicalFormalRequest({
     property: { propertyId: "property-alpha" },

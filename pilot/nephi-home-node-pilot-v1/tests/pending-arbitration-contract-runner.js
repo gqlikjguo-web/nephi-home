@@ -264,7 +264,7 @@ async function testSharedSlotContract() {
       message: "2 guests",
       plan: plan([task("capacity", "guests-candidate", { sourceText: "2 guests" })], { relation: "continue", contextRequestCycleRefs: ["original-availability"], guests: 2 }),
       expectedType: "capacity",
-      expectedAvailabilityCalls: 0,
+      expectedAvailabilityCalls: 1,
       assertState: (state) => assert.equal(state.tasks.some((entry) => entry.guestCount === 2), true)
     },
     {
