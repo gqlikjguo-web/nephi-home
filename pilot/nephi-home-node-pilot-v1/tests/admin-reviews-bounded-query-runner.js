@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createMvpService } = require("../lib/mvp-service");
+const { formatSafeTestOnlyConversationTrace } = require("../server");
 const { migratePostgres } = require("../lib/providers/postgres-migrate");
 const { openPostgres } = require("../lib/providers/postgres-client");
 const { createPostgresProviders } = require("../lib/providers/postgres-providers");
@@ -47,10 +48,28 @@ async function main() {
     const client = await openPostgres(connection);
     await insertLogs(client, "nephi_home", 1500);
     await insertLogs(client, "other_home", 120);
+    await client.query(
+      `UPDATE message_logs
+       SET payload=jsonb_set(payload,'{safeTrace}',(
+         SELECT jsonb_agg(jsonb_build_object(
+           'scope','conversation-engine-v2',
+           'traceId','11111111-1111-4111-8111-111111111111',
+           'propertyId',$1,
+           'stage','planner',
+           'taskCount',stage_number,
+           'rawOpenAiPrompt','must-not-be-returned',
+           'credential','must-not-be-returned',
+           'rawOpenAiResponse','must-not-be-returned'
+         ) ORDER BY stage_number)
+         FROM generate_series(1,45) AS stages(stage_number)
+       ))
+       WHERE property_id=$1 AND review_id='review-1500'`,
+      ["nephi_home"]
+    );
     await client.close();
 
     providers = createPostgresProviders(connection);
-    const service = createMvpService(providers);
+    const service = createMvpService(providers, { safeTraceFormatter: formatSafeTestOnlyConversationTrace });
 
     const defaults = service.listReviews("nephi_home", "all");
     assert.equal(defaults.length, 50, "reviews must default to a bounded 50-row provider query");
@@ -69,11 +88,14 @@ async function main() {
 
     assert.deepEqual(
       Object.keys(defaults[0]).sort(),
-      ["availableActions", "createdAt", "decisionReason", "guestId", "guestMessage", "lineUserId", "ownerAction", "processingStatus", "replyText", "reviewId", "reviewReason", "status"].sort(),
+      ["availableActions", "createdAt", "decisionReason", "guestId", "guestMessage", "lineUserId", "ownerAction", "processingStatus", "replyText", "reviewId", "reviewReason", "safeTrace", "status"].sort(),
       "reviews must expose only the existing admin fields plus safe processing diagnostics"
     );
+    assert.equal(defaults[0].safeTrace.length, 40, "reviews must cap persisted safe traces at the newest 40 stages");
+    assert.equal(defaults[0].safeTrace[0].taskCount, 6, "reviews must retain the newest bounded stages");
+    assert.equal(defaults[0].safeTrace.at(-1).taskCount, 45);
     const serialized = JSON.stringify(defaults);
-    for (const forbidden of ["must-not-be-returned", "rawOpenAiPrompt", "padding"]) {
+    for (const forbidden of ["must-not-be-returned", "rawOpenAiPrompt", "rawOpenAiResponse", "credential", "padding"]) {
       assert.equal(serialized.includes(forbidden), false, `reviews leaked ${forbidden}`);
     }
 

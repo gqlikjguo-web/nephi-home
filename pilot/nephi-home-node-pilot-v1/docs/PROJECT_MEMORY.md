@@ -4,15 +4,16 @@
 
 ## 2026-08-15 formal handoff closure current snapshot
 
-- Task-start `HEAD` and the local remote-tracking ref `origin/test-only/node-pilot-integration` both resolve to `08f94ed118dc0f880c06d4dab725b1071cc251db`. The worktree is detached; no network fetch was performed, so this statement does not claim current GitHub state.
-- `/api/reviews` now sends property, status, descending creation order, and bounded limit into the existing persistence path. PostgreSQL performs those constraints in SQL, defaults to 50, clamps at 100, and projects only the existing Admin fields plus bounded processing/decision diagnostics.
+- Task-start `HEAD` and the local remote-tracking ref `origin/test-only/node-pilot-integration` both resolve to `70168346130e9223d4f3822132827c9cd5f2d8c2`. The worktree is detached; this local task performs no fetch and does not claim newer GitHub state.
+- `/api/reviews` sends property, status, descending creation order, and bounded limit into the existing persistence path. PostgreSQL performs those constraints in SQL, defaults to 50, clamps at 100, and projects only the existing Admin fields plus a newest-40 production-safe trace that is re-formatted through the existing allowlist.
 - `/api/health` derives `testOnly` from the actual runtime configuration and exposes only validated Render `serviceId`, `serviceName`, `repoSlug`, `branch`, and `commit`. `serviceName` is informational; formal production identity requires an exact `https://app.junzanai.com` request plus matching non-empty `serviceId`, repository, branch, and commit, while the existing test-only deployed acceptance identity gate remains unchanged.
-- The existing production-safe diagnostics, trace persistence, provider composition, and service boundaries are reused. No second trace, table, provider, service, decision layer, or response path is introduced.
-- Planner, semantic compilation, Temporal Resolver, Conversation State, Resolver authority, FinalDecision, FinalResponse, database schema, Render Blueprint, LINE runtime, and production data are outside this closure and unchanged.
+- The shared LINE webhook persists the existing `captureSafeTrace` output in the same event's existing `message_logs` payload as part of the existing FinalDecision status update, then clears the in-memory trace after persistence succeeds. No second formatter, trace table, migration, provider, service, writer, decision layer, or response path is introduced.
+- Planner, semantic compilation, Temporal Resolver, Conversation State, Resolver authority, FinalDecision, FinalResponse, database schema, Render Blueprint, LINE identity/credentials/transport behavior, and production data are unchanged; only the authorized diagnostic persistence and projection boundary changes.
 
 ### Fresh local evidence
 
 - `admin-reviews-bounded-query-runner.js`: 4/4 PASS, exit 0, `FAKE_INTEGRATION` using PGlite; it is not `REAL_POSTGRESQL_PROVIDER` evidence.
+- `property-line-binding-postgres-webhook-runner.js`: PASS, exit 0, `RUNTIME_COMPONENT_TEST` with PGlite, a fake Planner, and a fake LINE reply client; it proves the production shared-webhook/message-log/reviews path locally but is not `REAL_POSTGRESQL_PROVIDER` or `REAL_LINE` evidence.
 - `health-deployment-identity-runner.js`: 2/2 PASS, exit 0, `FAKE_INTEGRATION` using JSON persistence and local HTTP; it is not `REAL_RENDER_DEPLOYMENT` evidence.
 - `deployed-conversation-acceptance-contract-runner.js`: 24/24 PASS, exit 0, `STRUCTURED_CONTRACT_TEST`; it performs no Render request.
 - Affected local regressions passed with exit 0: final-decision contract, Render Blueprint onboarding contract (15 checks), phase-6 transport, acceptance API (37/37), OIDC (10/10), SaaS LINE safety (24/24), and friendly onboarding (13/13). These remain local contract/runtime evidence and do not prove external providers.

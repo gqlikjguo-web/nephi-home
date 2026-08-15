@@ -67,6 +67,7 @@
 | D-057 | active | renumbers the duplicate historical D-025 heading |
 | D-058 | active | refined by D-059 |
 | D-059 | active | refines D-058 |
+| D-060 | active | reuses D-024 safe formatting without its test-only persistence path |
 
 ## 舊標題到唯一 ID crosswalk
 
@@ -566,3 +567,11 @@
 **Reason:** The formal Render service can retain an older runtime service name even when the authorized dashboard service and exact deployed commit are correct. A mutable display/name field is therefore insufficient as the sole formal service boundary, while Render's immutable service ID can be compared to the authorized service independently of its name.
 
 **Constraint:** `serviceId` accepts only bounded `srv-[a-z0-9]+` values; invalid or absent values become an empty string. This refinement does not change the existing authorized test-only deployed-acceptance service gate, create another deployment path, or modify Render service, domain, environment, database, LINE, OpenAI, or product runtime behavior. Health remains a diagnostic and external evidence is still required.
+
+## D-060 -- Production LINE traces reuse the existing message log and safe formatter
+
+**Decision:** After the shared LINE webhook receives a controlled Engine result, it attaches the newest 40 entries from the existing `captureSafeTrace` buffer to the same event's existing `message_logs.payload.safeTrace` as part of the already-required FinalDecision status update. `/api/reviews` retrieves that field through its existing bounded property-scoped query and applies `formatSafeTestOnlyConversationTrace` again before returning it.
+
+**Reason:** Production Application Logs did not provide reliable per-message retrieval even though the existing formatter already produced sanitized stage diagnostics. The gap was the missing Engine-result-to-message-log persistence boundary and the missing reviews projection, not the Engine, resolver, database schema, or LINE transport.
+
+**Constraint:** No second formatter, trace table, migration, service, writer, provider, resolver, deployment path, or data authority may be introduced. Persisted and returned traces remain bounded, property scoped, non-authoritative, and free of prompts, guest text, credentials, tokens, secrets, raw provider/OpenAI responses, headers, stacks, and arbitrary payload fields. Successful persistence clears the in-memory trace; diagnostic retrieval cannot change user-visible behavior.

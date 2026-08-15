@@ -415,7 +415,9 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
       resolverId: String(item && item.resolverId || ""),
       riskLevel: String(item && item.riskLevel || ""),
       responseMode: String(item && item.responseMode || ""),
-      evidenceRefCount: safeDiagnosticCount(item && item.evidenceRefs && item.evidenceRefs.length)
+      evidenceRefCount: safeDiagnosticCount(item && Object.hasOwn(item, "evidenceRefCount")
+        ? item.evidenceRefCount
+        : item && item.evidenceRefs && item.evidenceRefs.length)
     }))
   };
   if (details.stage === "context_execution") return { ...base, items: (details.items || []).map((item) => ({ taskId: String(item.taskId || ""), reasonCode: String(item.reasonCode || ""), contextTaskId: String(item.contextTaskId || ""), slotSources: { checkIn: String(item.slotSources && item.slotSources.checkIn || ""), checkOut: String(item.slotSources && item.slotSources.checkOut || ""), product: String(item.slotSources && item.slotSources.product || "") } })) };
@@ -1164,7 +1166,7 @@ function createApp(options = {}) {
   const timeZone = options.timeZone || config.timeZone;
   const providers = options.providers || createProviders({ databaseUrl: config.databaseUrl, dataFile, seedFile, now });
   const adminAuthRequired = Object.hasOwn(options, "adminAuthRequired") ? Boolean(options.adminAuthRequired) : providers.kind === "postgres";
-  const service = createMvpService(providers, { now });
+  const service = createMvpService(providers, { now, safeTraceFormatter: formatSafeTestOnlyConversationTrace });
   const onboardingEmailNotifier=createOnboardingEmailNotifier({env:options.onboardingEmailEnv||process.env,fetchImpl:options.onboardingEmailFetch||globalThis.fetch,publicBaseUrl:publicBrand.publicBaseUrl});
   const onboarding = createOnboardingService(providers.onboarding,{emailNotifier:onboardingEmailNotifier});
   const lineBindingService = createLineBindingService({ provider: providers.lineBindings, env: options.lineBindingEnv || process.env });
@@ -1400,11 +1402,13 @@ function createApp(options = {}) {
       testOnlyLineMessageTrace.begin({ propertyId: id, ...input });
       void root.coordinator.enqueue(input).then(async (result) => {
         const finalResponseShouldReply = result.finalResponse && result.finalResponse.shouldReply;
+        const safeTrace = (acceptanceTraces.get(result.traceId) || []).slice(-40);
         const finalResponseReplyText = String(result.finalResponse && result.finalResponse.replyText || "");
         const decision = String(result.finalDecision && result.finalDecision.action || result.finalResponse && result.finalResponse.action || "no_reply");
         testOnlyLineMessageTrace.finalResponse({ traceId: result.traceId, eventId: input.eventId, propertyId: id, finalDecision: result.finalDecision, finalResponse: result.finalResponse });
         const traceTransport = (details) => { const { replyText: _replyText, ...diagnostic } = details; emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
-        await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired) });
+        const persistedDecision = await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired), safeTrace });
+        if (persistedDecision) acceptanceTraces.delete(result.traceId);
         if (finalResponseShouldReply === false) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "final_response_should_reply_false", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
         if (!finalResponseReplyText.trim()) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_empty_reply", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); }
         try {

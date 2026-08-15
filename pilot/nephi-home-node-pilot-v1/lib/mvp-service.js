@@ -251,7 +251,7 @@ function isGenericRecentAvailabilityQuery(messageText) {
   return /(?:還有|最近|近期).*(?:空房|有房|房間)|(?:空房|有房).*(?:最近|近期)/.test(text);
 }
 
-function createMvpService(providers, { now = () => new Date() } = {}) {
+function createMvpService(providers, { now = () => new Date(), safeTraceFormatter = () => null } = {}) {
   const repository = createServiceDataAccess(providers);
   function requireCustomerId(customerId) {
     const id = String(customerId || "").trim();
@@ -1038,6 +1038,7 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
     const normalizedLimit = Number.isFinite(requestedLimit) && requestedLimit > 0
       ? Math.min(100, Math.floor(requestedLimit))
       : 50;
+    const formatSafeTrace = typeof safeTraceFormatter === "function" ? safeTraceFormatter : () => null;
     return repository.listMessageLogs(homestay.customerId, { status: normalizedStatus, limit: normalizedLimit })
       .map((item) => ({
         reviewId: item.reviewId,
@@ -1048,6 +1049,10 @@ function createMvpService(providers, { now = () => new Date() } = {}) {
         replyText: item.replyText,
         processingStatus: item.processingStatus || "",
         decisionReason: item.decisionReason || "",
+        safeTrace: (Array.isArray(item.safeTrace) ? item.safeTrace : [])
+          .slice(-40)
+          .map((entry) => formatSafeTrace(entry))
+          .filter(Boolean),
         reviewReason: item.reviewReason || item.reviewNote || "需要業者確認後再回覆客人。",
         availableActions: [
           { action: "correct", label: "確認內容正確" },

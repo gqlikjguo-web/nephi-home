@@ -532,7 +532,7 @@ async function operation(name, args) {
       const status=String(options.status||"pending"),requestedLimit=Number(options.limit);
       const limit=Number.isFinite(requestedLimit)&&requestedLimit>0?Math.min(100,Math.floor(requestedLimit)):50;
       const r=await client.query(
-        "SELECT review_id,line_user_id,processing_status,status,created_at,payload->>'guestId' guest_id,payload->>'guestMessage' guest_message,payload->>'replyText' reply_text,payload->>'reviewReason' review_reason,payload->>'reviewNote' review_note,payload->>'decisionReason' decision_reason,payload->>'ownerAction' owner_action FROM message_logs WHERE property_id=$1 AND ($2::text='all' OR status=$2) ORDER BY created_at DESC LIMIT $3",
+        "SELECT review_id,line_user_id,processing_status,status,created_at,payload->>'guestId' guest_id,payload->>'guestMessage' guest_message,payload->>'replyText' reply_text,payload->>'reviewReason' review_reason,payload->>'reviewNote' review_note,payload->>'decisionReason' decision_reason,payload->>'ownerAction' owner_action,payload->'safeTrace' safe_trace FROM message_logs WHERE property_id=$1 AND ($2::text='all' OR status=$2) ORDER BY created_at DESC LIMIT $3",
         [propertyId,status,limit]
       );
       return r.rows.map((row)=>({
@@ -548,7 +548,8 @@ async function operation(name, args) {
         reviewReason:row.review_reason||"",
         reviewNote:row.review_note||"",
         decisionReason:row.decision_reason||"",
-        ownerAction:row.owner_action||""
+        ownerAction:row.owner_action||"",
+        safeTrace:Array.isArray(row.safe_trace)?row.safe_trace:[]
       }));
     }
     const r=await client.query("SELECT payload FROM message_logs WHERE property_id=$1 ORDER BY created_at",[propertyId]);

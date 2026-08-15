@@ -87,6 +87,7 @@ async function waitFor(predicate, timeoutMs = 1500) {
 
     app = createApp({
       providers,
+      adminAuthRequired: false,
       lineBindingEnv: env,
       conversationDebounceMs: 1,
       conversationPlannerV2: { classify: async ({ catalog, sourceEvents }) => { plannerProperties.push(catalog.propertyId); return planParking(sourceEvents[0]); } },
@@ -102,6 +103,26 @@ async function waitFor(predicate, timeoutMs = 1500) {
     assert.deepEqual(replies.map((reply) => reply.channelAccessToken).sort(), [tokenA, tokenB].sort(), "each bound property must reply with its own stored token");
     assert.match(replies.find((reply) => reply.channelAccessToken === tokenA).body.messages[0].text, /Postgres Parking A/);
     assert.match(replies.find((reply) => reply.channelAccessToken === tokenB).body.messages[0].text, /Postgres Parking B/);
+    const storedMessage = providers.persistence.findMessageByEventId("pg_property_a", "pg-a");
+    assert.ok(Array.isArray(storedMessage.safeTrace), "shared LINE webhook must persist its sanitized Engine trace in the existing message log payload");
+    assert.ok(storedMessage.safeTrace.length > 0 && storedMessage.safeTrace.length <= 40, "the persisted production-safe trace must be non-empty and bounded to 40 stages");
+    const storedStages = storedMessage.safeTrace.map((entry) => entry.stage);
+    for (const stage of ["planner", "validation", "canonical_request", "executor", "final_decision"]) {
+      assert.ok(storedStages.includes(stage), `persisted production-safe trace must include ${stage}`);
+    }
+    const canonicalTrace = storedMessage.safeTrace.find((entry) => entry.stage === "canonical_request");
+    assert.ok(canonicalTrace.items[0].temporalState, "canonical trace must retain the existing safe temporal disposition");
+
+    const reviewsResponse = await fetch(`${running.url}/api/reviews?customerId=pg_property_a&status=all&limit=10`);
+    assert.equal(reviewsResponse.status, 200);
+    const reviewsPayload = await reviewsResponse.json();
+    const review = reviewsPayload.data.items.find((item) => item.reviewId === storedMessage.reviewId);
+    assert.ok(review, "the same LINE event must be retrievable through the existing reviews API");
+    assert.deepEqual(review.safeTrace, storedMessage.safeTrace, "reviews must project the same bounded production-safe trace persisted in message_logs");
+    const serializedTrace = JSON.stringify(review.safeTrace);
+    for (const forbidden of ["Parking?", "postgres-user", secretA, tokenA, "rawOpenAiPrompt", "rawOpenAiResponse", "Bearer "]) {
+      assert.equal(serializedTrace.includes(forbidden), false, `production-safe reviews trace leaked ${forbidden}`);
+    }
     assert.ok(bindings.status("pg_property_a").lastWebhookObservedAt, "PostgreSQL must persist the admitted webhook receipt time");
     assert.ok(bindings.status("pg_property_a").lastValidWebhookAt, "PostgreSQL must persist the valid webhook receipt time");
 

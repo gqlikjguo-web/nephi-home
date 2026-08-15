@@ -32,6 +32,14 @@
 - 正式 production handoff 必須從精確的 `https://app.junzanai.com` origin 取得 health，並同時匹配非空 `serviceId`、`repoSlug`、`branch` 與 `commit`；domain 或任一 metadata 缺值、錯配都不得宣稱正式服務身分已證明。
 - Health identity 是 bounded diagnostic，不是部署、外部 provider、LINE 或正式資料庫成功證據；只有另行授權且可核對的 exact-SHA 外部驗收才可分類為 `REAL_RENDER_DEPLOYMENT`。
 
+## Production-safe LINE review traces
+
+- The shared production LINE webhook may attach only entries produced by the existing `captureSafeTrace` and `formatSafeTestOnlyConversationTrace` path to the same event's existing `message_logs.payload.safeTrace`. Only the newest 40 stages may be retained.
+- Persistence must piggyback on the existing FinalDecision message-log update. It must not add a table, migration, service, writer, provider, or data authority; the in-memory trace is deleted only after that existing update succeeds.
+- The property-scoped `/api/reviews` query applies the same formatter again before returning the bounded trace and retains the existing property, status, descending-order, and limit constraints.
+- Raw prompts, guest message text, LINE identities, credentials, secrets, tokens, authorization values, headers, provider messages, raw OpenAI responses, database URLs, stacks, and arbitrary payload fields must never enter the persisted or returned trace.
+- This trace is non-authoritative diagnostics only. It cannot alter Planner, validation, CanonicalRequest, Temporal, State, Resolver, FinalDecision, FinalResponse, review status, or LINE transport behavior.
+
 ## LINE Channel Identity Types
 
 - `NEPHI_PILOT_LINE_CHANNEL_ID` stores the numeric Channel ID shown by LINE Developers for configuration identity and audits.
