@@ -16,12 +16,14 @@ async function main() {
     seedFile: path.resolve(__dirname, "../fixtures/seed.json")
   });
   const commit = "08f94ed118dc0f880c06d4dab725b1071cc251db";
+  const serviceId = "srv-formalhandoff123";
   const app = createApp({
     providers,
     adminAuthRequired: false,
     runtimeEnv: {
       TEST_ONLY_ENVIRONMENT: "false",
-      RENDER_SERVICE_NAME: "junzan-ai",
+      RENDER_SERVICE_ID: serviceId,
+      RENDER_SERVICE_NAME: "nephi-home-node-pilot-test-only",
       RENDER_GIT_BRANCH: "test-only/node-pilot-integration",
       RENDER_GIT_COMMIT: commit,
       RENDER_GIT_REPO_SLUG: "gqlikjguo-web/nephi-home",
@@ -42,7 +44,8 @@ async function main() {
         testOnly: false,
         commit,
         deployment: {
-          serviceName: "junzan-ai",
+          serviceId,
+          serviceName: "nephi-home-node-pilot-test-only",
           branch: "test-only/node-pilot-integration",
           commit,
           repoSlug: "gqlikjguo-web/nephi-home"

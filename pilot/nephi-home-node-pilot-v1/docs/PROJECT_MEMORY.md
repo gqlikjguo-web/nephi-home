@@ -6,7 +6,7 @@
 
 - Task-start `HEAD` and the local remote-tracking ref `origin/test-only/node-pilot-integration` both resolve to `08f94ed118dc0f880c06d4dab725b1071cc251db`. The worktree is detached; no network fetch was performed, so this statement does not claim current GitHub state.
 - `/api/reviews` now sends property, status, descending creation order, and bounded limit into the existing persistence path. PostgreSQL performs those constraints in SQL, defaults to 50, clamps at 100, and projects only the existing Admin fields plus bounded processing/decision diagnostics.
-- `/api/health` now derives `testOnly` from the actual runtime configuration and exposes only validated Render `serviceName`, `repoSlug`, `branch`, and `commit`. The existing deployed acceptance poller requires the authorized test-only identity and exact commit together.
+- `/api/health` derives `testOnly` from the actual runtime configuration and exposes only validated Render `serviceId`, `serviceName`, `repoSlug`, `branch`, and `commit`. `serviceName` is informational; formal production identity requires an exact `https://app.junzanai.com` request plus matching non-empty `serviceId`, repository, branch, and commit, while the existing test-only deployed acceptance identity gate remains unchanged.
 - The existing production-safe diagnostics, trace persistence, provider composition, and service boundaries are reused. No second trace, table, provider, service, decision layer, or response path is introduced.
 - Planner, semantic compilation, Temporal Resolver, Conversation State, Resolver authority, FinalDecision, FinalResponse, database schema, Render Blueprint, LINE runtime, and production data are outside this closure and unchanged.
 

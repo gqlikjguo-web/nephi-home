@@ -25,9 +25,11 @@
 ## Health 與 Render deployment identity
 
 - `/api/health` 的 `testOnly` 必須來自實際 runtime `TEST_ONLY_ENVIRONMENT`，不得固定回報 `true` 或用 commit、service name、host 推測環境。
-- 公開 deployment identity 只有 `serviceName`、`repoSlug`、`branch`、`commit` 四個非敏感 Render metadata；每個值都必須通過封閉字元集及長度限制，無效值回報空字串。
+- 公開 deployment identity 只有 `serviceId`、`serviceName`、`repoSlug`、`branch`、`commit` 五個非敏感 Render metadata；每個值都必須通過封閉字元集及長度限制，無效值回報空字串。
+- `serviceId` 只可來自符合 `srv-[a-z0-9]+` 的 `RENDER_SERVICE_ID`。`serviceName` 保留為 informational metadata，不得單獨作為正式服務身分 Gate。
 - Health 不得反射任意 environment key/value，也不得包含 database URL、API key、token、credential、header、provider response、guest/property data 或其他 operational state。
 - Test-only deployed acceptance 必須同時精確匹配既有允許的 Render service、GitHub repository、branch 與 commit。只匹配 commit、HTTP 200 或 `ready` 不足以證明請求落在正確部署。
+- 正式 production handoff 必須從精確的 `https://app.junzanai.com` origin 取得 health，並同時匹配非空 `serviceId`、`repoSlug`、`branch` 與 `commit`；domain 或任一 metadata 缺值、錯配都不得宣稱正式服務身分已證明。
 - Health identity 是 bounded diagnostic，不是部署、外部 provider、LINE 或正式資料庫成功證據；只有另行授權且可核對的 exact-SHA 外部驗收才可分類為 `REAL_RENDER_DEPLOYMENT`。
 
 ## LINE Channel Identity Types

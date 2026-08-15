@@ -699,6 +699,7 @@ function safeDeploymentValue(value, pattern, maxLength) {
 function deploymentIdentityFromEnv(env = process.env, commitOverride = "") {
   const commit = safeDeploymentValue(commitOverride || env.RENDER_GIT_COMMIT, /^[0-9a-f]{7,64}$/i, 64).toLowerCase();
   return {
+    serviceId: safeDeploymentValue(env.RENDER_SERVICE_ID, /^srv-[a-z0-9]+$/, 100),
     serviceName: safeDeploymentValue(env.RENDER_SERVICE_NAME, /^[A-Za-z0-9][A-Za-z0-9._-]*$/, 100),
     branch: safeDeploymentValue(env.RENDER_GIT_BRANCH, /^[A-Za-z0-9][A-Za-z0-9._/-]*$/, 200),
     commit,

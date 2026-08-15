@@ -65,7 +65,8 @@
 | D-055 | active | refines D-054 |
 | D-056 | active | refines D-054 and D-055 |
 | D-057 | active | renumbers the duplicate historical D-025 heading |
-| D-058 | active | — |
+| D-058 | active | refined by D-059 |
+| D-059 | active | refines D-058 |
 
 ## 舊標題到唯一 ID crosswalk
 
@@ -557,3 +558,11 @@
 **Reason:** The former route always returned `testOnly: true`, including non-test runtime configuration, while the deployed poller checked only readiness, a test-only boolean, and commit. That combination could misidentify runtime scope or certify a different Render service or repository that happened to expose the same commit.
 
 **Constraint:** Invalid or absent identity values become empty strings; arbitrary environment values and secrets are never reflected. Health remains a diagnostic and cannot prove deployment, OpenAI, PostgreSQL, LINE, DNS, environment mutation, or operational-state success without separately authorized external evidence.
+
+## D-059 -- Formal Render identity uses immutable service ID
+
+**Decision:** `/api/health` adds the allowlisted `RENDER_SERVICE_ID` as `serviceId`. `serviceName` remains informational metadata. Formal production identity requires a request to the exact `https://app.junzanai.com` origin plus matching non-empty service ID, repository slug, branch, and commit.
+
+**Reason:** The formal Render service can retain an older runtime service name even when the authorized dashboard service and exact deployed commit are correct. A mutable display/name field is therefore insufficient as the sole formal service boundary, while Render's immutable service ID can be compared to the authorized service independently of its name.
+
+**Constraint:** `serviceId` accepts only bounded `srv-[a-z0-9]+` values; invalid or absent values become an empty string. This refinement does not change the existing authorized test-only deployed-acceptance service gate, create another deployment path, or modify Render service, domain, environment, database, LINE, OpenAI, or product runtime behavior. Health remains a diagnostic and external evidence is still required.
