@@ -33,6 +33,7 @@ assert.deepEqual(TASK_READINESS_REQUIREMENTS.available_dates, [
   "searchFrom",
   "searchTo"
 ]);
+assert.deepEqual(TASK_READINESS_REQUIREMENTS.capacity, []);
 
 for (const product of [
   {
@@ -70,6 +71,24 @@ for (const product of [
       invalidFields: []
     },
     "room_type and bundle availability must use the same readiness contract"
+  );
+  assert.deepEqual(
+    readiness({
+      taskType: "capacity",
+      ...product
+    }),
+    {
+      status: "ready",
+      knownFields: [
+        "productType",
+        ...(product.productId ? ["productId"] : []),
+        ...(product.roomTypeId ? ["roomTypeId"] : []),
+        ...(product.bundleId ? ["bundleId"] : [])
+      ],
+      missingFields: [],
+      invalidFields: []
+    },
+    "room and bundle capacity must be a date-free catalog fact"
   );
 }
 
@@ -180,7 +199,7 @@ assert.deepEqual(
 
 console.log(JSON.stringify({
   suite: "task-readiness-contract",
-  caseCount: 15,
-  passCount: 15,
+  caseCount: 18,
+  passCount: 18,
   failCount: 0
 }));

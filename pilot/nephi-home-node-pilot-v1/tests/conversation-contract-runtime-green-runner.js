@@ -682,20 +682,22 @@ async function capacityThenGuestCount() {
     "evt-capacity-followup-2",
     secondMessage
   ));
-  const providerRequest = runtime.resolverCalls[0] || {};
   return {
     caseId: "capacity_then_guest_count",
     actual: {
-      firstMissing: first.taskResults[0].missingInputs,
+      firstStatus: first.taskResults[0].status,
+      firstFacts: first.taskResults[0].facts,
       secondStatus: second.taskResults[0].status,
-      providerRequest
+      secondFacts: second.taskResults[0].facts,
+      resolverCallCount: runtime.resolverCalls.length
     },
-    passed: first.taskResults[0].status === "needs_clarification"
-      && first.taskResults[0].missingInputs.includes("guestCount")
+    passed: first.taskResults[0].status === "answered"
+      && first.taskResults[0].facts.capacity === 4
+      && first.taskResults[0].facts.source === "property_catalog"
       && second.taskResults[0].status === "answered"
-      && providerRequest.guests === 4
-      && providerRequest.roomType === "alpha-family"
-      && providerRequest.checkIn === "2026-08-04"
+      && second.taskResults[0].facts.capacity === 4
+      && second.taskResults[0].facts.source === "property_catalog"
+      && runtime.resolverCalls.length === 0
   };
 }
 

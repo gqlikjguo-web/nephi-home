@@ -165,9 +165,9 @@ const REGISTRY_BLUEPRINT = {
     capability: "capacity",
     acceptedCandidateTypes: ["capacity"],
     acceptedEntityCategories: ["room", "bundle", "other"],
-    stayDependency: "required",
-    requiredFields: ["stay.checkIn", "stay.checkOut", "stay.guests"],
-    resolverId: "availability_resolver",
+    stayDependency: false,
+    requiredFields: [],
+    resolverId: "property_catalog",
     riskLevel: "low",
     responseMode: "answer"
   },
