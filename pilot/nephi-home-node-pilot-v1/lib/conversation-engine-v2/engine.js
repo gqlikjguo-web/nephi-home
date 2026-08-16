@@ -495,7 +495,7 @@ class ConversationEngineV2 {
     if (this.diagnosticDetail) this.trace(traceId, "state_before", { state: traceState(previous) });
     let plannerOutput, parserSucceeded = false;
     try {
-      plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], sourceEvents, eventTimestamp: input.eventTimestamp, catalog, contextSnapshot });
+      plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], sourceEvents, eventTimestamp: input.eventTimestamp, catalog, contextSnapshot, lineUserId: input.lineUserId });
       parserSucceeded = true;
     } catch (error) {
       plannerOutput = null;
@@ -813,7 +813,7 @@ class ConversationEngineV2 {
     const composerEligible = !(hasAnswerSection && hasIncompleteSection);
     if (composerEligible && this.composer && typeof this.composer.compose === "function") {
       try {
-        const composed = mergeComposedSections(responsePlan, await this.composer.compose(responsePlan));
+        const composed = mergeComposedSections(responsePlan, await this.composer.compose(responsePlan, { lineUserId: input.lineUserId }));
         if (composed.ok) {
           const adoptionValidation = validateClaims(composed.replyText, responsePlan, composed.factTaskIds, composed.sections);
           if (adoptionValidation.ok) {

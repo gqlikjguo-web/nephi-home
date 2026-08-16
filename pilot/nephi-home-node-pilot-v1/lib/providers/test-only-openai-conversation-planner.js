@@ -11,6 +11,7 @@ const {
   captureTestOnlyAcceptanceCoverageCritic,
   captureTestOnlyAcceptanceRawUnderstanding
 } = require("../test-only-raw-understanding-diagnostic");
+const { sha256 } = require("../test-only-line-message-trace");
 const {
   COVERAGE_CRITIC_DIAGNOSTIC,
   createTestOnlyOpenAiCoverageCriticFromEnv
@@ -1999,7 +2000,7 @@ class TestOnlyOpenAiConversationPlanner {
     let output;
     let failure;
     try {
-      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] }, ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {}) }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerProviderSchemaForCatalog(input.catalog, this.model, input.coverageRepair) } } }) });
+      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, safety_identifier: sha256(input.lineUserId), input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] }, ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {}) }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerProviderSchemaForCatalog(input.catalog, this.model, input.coverageRepair) } } }) });
       const status = Number(response.status || response.statusCode || 0);
       httpStatus = Number.isInteger(status) ? status : 0;
       providerRequestId = safeResponseRequestId(response);
@@ -2173,7 +2174,8 @@ class TestOnlyOpenAiConversationPlanner {
             if (criticRemainingMs <= 0) throw plannerFailure({ code: "planner_timeout", category: "timeout", timeout: true, model: this.model, name: "AbortError" });
             criticOutput = await this.coverageCritic.review({
               sourceEvents: input.sourceEvents || [],
-              coveredRequests
+              coveredRequests,
+              lineUserId: input.lineUserId
             }, {
               callNumber: criticCallNumber,
               timeoutMs: Math.min(this.timeoutMs, criticRemainingMs)

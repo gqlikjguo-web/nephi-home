@@ -22,6 +22,10 @@ let canonicalizer = read("../lib/conversation-engine-v2/canonicalizer.js");
 const canonicalRequest = read("../lib/conversation-engine-v2/canonical-request.js");
 const capabilityRegistry = read("../lib/conversation-engine-v2/capability-registry.js");
 const composer = read("../lib/conversation-engine-v2/controlled-composer.js");
+const openAiPlanner = read("../lib/providers/test-only-openai-conversation-planner.js");
+const coverageCritic = read("../lib/providers/test-only-openai-coverage-critic.js");
+const openAiComposer = read("../lib/providers/test-only-openai-controlled-composer.js");
+const lineTrace = read("../lib/test-only-line-message-trace.js");
 const claimValidator = read("../lib/conversation-engine-v2/claim-validator.js");
 const finalResponseRendererFiles = fs.readdirSync(path.resolve(__dirname, "../lib/conversation-engine-v2"))
   .filter((file) => /^final-response.*\.js$/.test(file));
@@ -72,6 +76,10 @@ assert.equal((runtime.match(/const \{ replyText: _replyText, \.\.\.diagnostic \}
 assert.equal((runtime.match(/testOnlyLineMessageTrace\.transport\(\{ traceId: result\.traceId, eventId: input\.eventId, propertyId: id, \.\.\.details \}\)/g) || []).length, 1, "the sole shared transport must persist the bounded test-only transport trace through its dedicated service");
 assert.equal((root.match(/createTestOnlyOpenAiConversationPlannerFromEnv/g) || []).length, 2, "only the composition root wires the planner");
 assert.equal((root.match(/createTestOnlyOpenAiControlledComposerFromEnv/g) || []).length, 2, "only the composition root wires the controlled composer");
+assert.match(engine, /planner\.classify\(\{[^}]*lineUserId: input\.lineUserId/, "the active Engine must pass its existing guest identity to the sole Planner path");
+assert.match(engine, /composer\.compose\(responsePlan, \{ lineUserId: input\.lineUserId \}\)/, "the active Engine must pass the same guest identity outside customer-visible responsePlan data");
+assert.equal([openAiPlanner, coverageCritic, openAiComposer].filter((source) => source.includes('require("../test-only-line-message-trace")')).length, 3, "all three OpenAI providers must reuse one existing hash utility");
+assert.equal((lineTrace.match(/function sha256\(/g) || []).length, 1, "the safety identifier path must not introduce a second SHA-256 helper");
 assert.match(root, /availabilityResolver: overrides\.availabilityResolver \|\| \(\(query\) => service\.searchAvailability\(query\)\)/);
 assert.match(root, /availableDatesResolver: overrides\.availableDatesResolver \|\| \(\(query\) => service\.searchAvailableDates\(query\)\)/);
 assert.doesNotMatch(engine, /availability\.getRows\s*\(/, "V2 must not bypass the property-scoped resolver");
@@ -144,4 +152,4 @@ if (!mutation) {
   }
 }
 
-console.log(JSON.stringify({ caseCount: 52, passCount: 52, failCount: 0, mutation: mutation || "none", mutationCount: MUTATIONS.length }));
+console.log(JSON.stringify({ caseCount: 56, passCount: 56, failCount: 0, mutation: mutation || "none", mutationCount: MUTATIONS.length }));

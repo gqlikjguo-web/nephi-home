@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { sha256 } = require("../test-only-line-message-trace");
 
 const RESPONSES_URL = "https://api.openai.com/v1/responses";
 const DEFAULT_PROVIDER_TIMEOUT_MS = 30000;
@@ -162,6 +163,7 @@ class TestOnlyOpenAiCoverageCritic {
         signal: controller.signal,
         body: JSON.stringify({
           model: this.model,
+          safety_identifier: sha256(input.lineUserId),
           input: [
             { role: "system", content: [{ type: "input_text", text: coverageCriticInstructions() }] },
             { role: "user", content: [{ type: "input_text", text: JSON.stringify(safeCriticInput(input)) }] }
