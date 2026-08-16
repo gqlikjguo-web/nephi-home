@@ -21,8 +21,10 @@
 | `docs/SECURITY.md` | Security and external services | active | Credentials、外部服務、LINE binding 與資料安全邊界；衝突時停止 |
 | `docs/PRODUCT_BASELINE.md` | Accepted product behavior | active | 已接受且有證據的產品行為；未驗證聲明不得寫入 |
 | `docs/DECISIONS.md` | Architecture decisions | active | 以唯一編號、狀態與 crosswalk 保存決策；不得改寫歷史原文 |
-| `docs/PROJECT_MEMORY.md` | Current project facts | active | 當前已證明事實、限制與 blocker；不保存歷史完成流水帳 |
-| `docs/NEXT_TASKS.md` | Unfinished work queue | active | 尚未完成且可執行的工作順序；不保存完成歷史 |
+| `docs/LESSONS_LEARNED.md` | Production incidents and proven failures | active | production 事故、rollback、退化與已證明失敗方案；只讀本次相關章節 |
+| `docs/CONTROLLED_ARCHITECTURE_RULES.md` | Controlled core architecture | active | 受控核心架構與責任邊界；衝突時停止 |
+| `docs/PROJECT_MEMORY.md` | Current project facts | active | 當前已證明事實、限制與 blocker；不保存歷史完成流水帳；不得作為即時 Git／部署狀態證據 |
+| `docs/NEXT_TASKS.md` | Unfinished work queue | active | 尚未完成且可執行的工作順序；不保存完成歷史；不是正式版本、production 狀態或修改授權來源 |
 | `docs/CONTROLLED_ARCHITECTURE_TEST_ACCEPTANCE.md` | Core architecture acceptance | active | 既有核心驗收標準；本次 byte-identical，不得自行修改 |
 
 ## Historical routing
