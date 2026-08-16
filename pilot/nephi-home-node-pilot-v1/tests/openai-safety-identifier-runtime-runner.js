@@ -37,6 +37,7 @@ function providerResponse(output) {
 
 (async () => {
   const requestBodies = { planner: [], critic: [], composer: [] };
+  let internalContextSnapshot = null;
   const critic = new TestOnlyOpenAiCoverageCritic({
     apiKey: "test-key",
     model: "test-model",
@@ -67,6 +68,7 @@ function providerResponse(output) {
   });
   const enginePlanner = {
     classify: async (input) => {
+      internalContextSnapshot = input.contextSnapshot;
       const output = await planner.classify(input);
       const tasks = output.tasks.map((task, candidateIndex) => ({ ...task, candidateIndex }));
       return migrateFakePlannerOutput({
@@ -103,8 +105,12 @@ function providerResponse(output) {
   }
   assert.deepEqual(missingSafetyIdentifiers, [], `requests missing sha256(lineUserId) safety_identifier: ${missingSafetyIdentifiers.join(", ")}`);
   assert.equal(new Set(Object.values(requestBodies).map(([body]) => body.safety_identifier)).size, 1, "all three requests must use the same guest safety_identifier");
+  const plannerInput = JSON.parse(requestBodies.planner[0].input[1].content[0].text);
+  assert.equal(Object.hasOwn(plannerInput.contextSnapshot.scope, "userId"), false, "Planner OpenAI input must omit raw contextSnapshot.scope.userId");
+  assert.equal(JSON.stringify(requestBodies.planner[0]).includes(lineUserId), false, "Planner OpenAI payload must not contain raw lineUserId");
+  assert.equal(internalContextSnapshot.scope.userId, lineUserId, "provider serialization must not mutate the Engine contextSnapshot");
 
-  console.log(JSON.stringify({ caseCount: 4, passCount: 4, failCount: 0, requests: Object.fromEntries(Object.entries(requestBodies).map(([key, value]) => [key, value.length])) }));
+  console.log(JSON.stringify({ caseCount: 7, passCount: 7, failCount: 0, requests: Object.fromEntries(Object.entries(requestBodies).map(([key, value]) => [key, value.length])) }));
 })().catch((error) => {
   console.error(error.stack || error);
   process.exitCode = 1;

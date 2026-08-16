@@ -1991,6 +1991,8 @@ class TestOnlyOpenAiConversationPlanner {
   async requestOnce(input, attemptNumber, timeoutMs = this.timeoutMs) {
     const generatedRequestId = String(this.requestIdFactory() || "");
     const clientRequestId = UUID_PATTERN.test(generatedRequestId) ? generatedRequestId : crypto.randomUUID();
+    const providerContextSnapshot = JSON.parse(JSON.stringify(input.contextSnapshot || { scope: {}, cycles: [] }));
+    if (providerContextSnapshot.scope && typeof providerContextSnapshot.scope === "object") delete providerContextSnapshot.scope.userId;
     const startedAtMs = Number(this.nowMs());
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs);
     let httpStatus = 0;
@@ -2000,7 +2002,7 @@ class TestOnlyOpenAiConversationPlanner {
     let output;
     let failure;
     try {
-      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, safety_identifier: sha256(input.lineUserId), input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: input.contextSnapshot || { scope: {}, cycles: [] }, ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {}) }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerProviderSchemaForCatalog(input.catalog, this.model, input.coverageRepair) } } }) });
+      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, safety_identifier: sha256(input.lineUserId), input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: providerContextSnapshot, ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {}) }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerProviderSchemaForCatalog(input.catalog, this.model, input.coverageRepair) } } }) });
       const status = Number(response.status || response.statusCode || 0);
       httpStatus = Number.isInteger(status) ? status : 0;
       providerRequestId = safeResponseRequestId(response);
