@@ -59,6 +59,34 @@ Production bug 只使用「未定位」、「已定位未驗證」、「已修�
 3. 本輪明確不做的事項。
 
 只有第 2 項明列的內容屬於本輪授權範圍。任何未明列的延伸工作，包括後續階段、優化、重構、文件、測試、CI、PR、部署、外部操作或「順便修正」，即使看似有幫助，也不得自行加入。發現額外問題只能回報，除非使用者另外明確批准。不得把建議、可能的後續方案、設計備選或未授權計畫解讀成本輪任務。
+### 任務證據包 Gate
+
+任何 production 核心修改交給 Codex 前，必須先有一份本次任務專用的證據包。
+證據包不是新的事實來源；所有內容都必須可追溯至 Repository、Git、測試、正式資料或 production 證據。
+
+固定欄位：
+
+1. 唯一目標：這輪只要修好的客人可見問題。
+2. 真實 FAIL：客人輸入、實際錯誤結果、預期產品行為。
+3. Production 證據：trace／正式執行證據與對應版本。
+4. 最早失敗位置：earliest failure layer。
+5. 精確修改位置：exact production function／transition。
+6. 直接因果：為什麼此位置直接造成該 FAIL。
+7. 現有系統契約：本次涉及的真實 capability、schema、state、resolver 或其他 Contract。
+8. 直接使用者：所有直接使用此 Contract 的 production 程式。
+9. 相關歷史教訓：只讀 LESSONS_LEARNED 與 rollback 中本次相關章節。
+10. 受影響正常功能：本次修改可能退化的既有 PASS。
+11. 已批准方案：使用者實際批准的修法；方案本質改變即失效。
+12. 修改允許清單：精確 repository-relative files。
+13. 明確禁止範圍：不得順便修改的層、資料、測試或正式環境。
+14. 修改前失敗重現：必須重現真實 production failure shape。
+15. 修改後驗證：targeted GREEN、affected regression、必要時完整測試一次。
+16. 回退方式：若既有 PASS 退化，停止並恢復已知較安全版本。
+
+任何必要欄位為「未證明」、來源不明、互相矛盾或只能靠猜測：
+BLOCKED，不得產生 production 修改指令。
+
+Codex 只能執行已批准證據包，不得自行補完、改寫或擴張證據包。
 
 ### 全系統 Protected Baseline（DEFAULT DENY）
 
