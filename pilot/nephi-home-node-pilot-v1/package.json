@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "start": "node server.js",
+    "preflight:task": "node scripts/task-preflight.js",
     "migrate:postgres": "node scripts/migrate-postgres.js",
     "seed:postgres": "node scripts/seed-postgres.js",
     "admin:user": "node scripts/admin-user.js",
