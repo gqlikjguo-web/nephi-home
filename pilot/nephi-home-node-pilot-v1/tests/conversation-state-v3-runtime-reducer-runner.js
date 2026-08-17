@@ -250,6 +250,81 @@ const nightsPriceContinuation = decideContextExecutionV3({
 assert.equal(nightsPriceContinuation.executionItems[0].requestCycleId, "pricing-task");
 assert.equal(nightsPriceContinuation.executionItems[0].task.type, "price");
 
+const answeredPricingTask = pendingPricingTask({
+  checkIn: "2026-07-30",
+  checkOut: "2026-07-31",
+  knownFields: ["productType", "checkIn", "checkOut"],
+  missingFields: [],
+  status: "answered"
+});
+const answeredPricingState = createConversationStateV3({
+  ...scope,
+  tasks: [answeredPricingTask],
+  createdAt: NOW,
+  updatedAt: NOW,
+  expiresAt: FUTURE
+});
+const durationOnlyCandidate = {
+  ...dateOnlyPlannerTask,
+  taskId: "duration-only-candidate",
+  type: "availability",
+  sourceText: "duration follow-up",
+  stayCandidate: {
+    dateExpression: { rawText: "", kind: "none", anchor: "none" },
+    checkInCandidate: null,
+    checkOutCandidate: null,
+    nightsCandidate: 1,
+    guestCountCandidate: null
+  }
+};
+const answeredPriceDurationContinuation = decideContextExecutionV3({
+  state: answeredPricingState,
+  relations: [{
+    candidateIndex: 0,
+    relationKind: "new_request",
+    stateAction: "start",
+    requestCycleId: null,
+    evidenceRefs: []
+  }],
+  plannerTasks: [durationOnlyCandidate],
+  catalog,
+  now: NOW
+});
+assert.equal(answeredPriceDurationContinuation.executionItems[0].requestCycleId, "pricing-task");
+assert.equal(answeredPriceDurationContinuation.executionItems[0].task.type, "price");
+assert.equal(answeredPriceDurationContinuation.executionItems[0].task.stayCandidate.nightsCandidate, 1);
+assert.equal(answeredPriceDurationContinuation.contextDecision.reasonCode, "unique_pending_slot_update");
+
+const ambiguousAnsweredPricingState = createConversationStateV3({
+  ...scope,
+  tasks: [answeredPricingTask, pendingPricingTask({
+    taskId: "second-answered-pricing-task",
+    checkIn: "2026-08-01",
+    checkOut: "2026-08-02",
+    knownFields: ["productType", "checkIn", "checkOut"],
+    missingFields: [],
+    status: "answered"
+  })],
+  createdAt: NOW,
+  updatedAt: NOW,
+  expiresAt: FUTURE
+});
+const ambiguousAnsweredDuration = decideContextExecutionV3({
+  state: ambiguousAnsweredPricingState,
+  relations: [{
+    candidateIndex: 0,
+    relationKind: "new_request",
+    stateAction: "start",
+    requestCycleId: null,
+    evidenceRefs: []
+  }],
+  plannerTasks: [durationOnlyCandidate],
+  catalog,
+  now: NOW
+});
+assert.notEqual(ambiguousAnsweredDuration.executionItems[0].requestCycleId, "pricing-task");
+assert.notEqual(ambiguousAnsweredDuration.executionItems[0].requestCycleId, "second-answered-pricing-task");
+
 const answeredAvailability = createConversationStateV3({
   ...scope,
   tasks: [pendingPricingTask({

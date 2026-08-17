@@ -284,8 +284,7 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
       return candidate.missingFields.some((field) => supplied.has(field))
         || supplied.has("productId");
     }
-    return candidate.status === "answered"
-      && (supplied.has("guestCount") || supplied.has("productId"));
+    return candidate.status === "answered";
   });
   if (candidates.length !== 1) return null;
   const target = candidates[0];
