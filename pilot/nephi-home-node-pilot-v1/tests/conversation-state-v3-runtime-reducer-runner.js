@@ -192,6 +192,59 @@ assert.notEqual(
   "a repeated Planner task id must not merge a new request into stale state"
 );
 
+const pendingCapacityState = createConversationStateV3({
+  ...scope,
+  tasks: [pendingPricingTask({
+    taskId: "pending-capacity-task",
+    taskType: "capacity",
+    productType: "room_type",
+    productId: "room-double",
+    roomTypeId: "room-double",
+    entityId: "room-double",
+    entityCategory: "room",
+    knownFields: ["productType", "productId", "roomTypeId"],
+    missingFields: ["checkIn", "checkOut", "guestCount"]
+  })],
+  createdAt: NOW,
+  updatedAt: NOW,
+  expiresAt: FUTURE
+});
+const newBundlePriceRequest = decideContextExecutionV3({
+  state: pendingCapacityState,
+  relations: [{
+    candidateIndex: 0,
+    relationKind: "new_request",
+    stateAction: "start",
+    requestCycleId: null,
+    evidenceRefs: []
+  }],
+  plannerTasks: [{
+    ...dateOnlyPlannerTask,
+    taskId: "bundle-price-request",
+    type: "price",
+    sourceText: "bundle price request",
+    requestedOutputs: ["price"],
+    entity: {
+      category: "bundle",
+      rawText: "whole property",
+      canonicalCandidate: "bundle-all",
+      confidence: 0.99
+    },
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  }],
+  catalog,
+  now: NOW
+});
+assert.equal(newBundlePriceRequest.executionItems[0].requestCycleId, "bundle-price-request");
+assert.equal(newBundlePriceRequest.executionItems[0].task.type, "price");
+assert.equal(newBundlePriceRequest.contextDecision.action, "start");
+
 const saturdayPriceContinuation = decideContextExecutionV3({
   state: previous,
   relations: [{

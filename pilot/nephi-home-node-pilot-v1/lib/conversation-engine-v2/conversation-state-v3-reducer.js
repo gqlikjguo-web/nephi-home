@@ -280,6 +280,9 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
     if (!currentTask(candidate, now) || !lodgingTaskTypes.has(candidate.taskType)) {
       return false;
     }
+    if (supplied.has("productId") && candidate.taskType !== contractTaskType(task.type)) {
+      return false;
+    }
     if (PENDING_STATUSES.has(candidate.status)) {
       return candidate.missingFields.some((field) => supplied.has(field))
         || supplied.has("productId");
