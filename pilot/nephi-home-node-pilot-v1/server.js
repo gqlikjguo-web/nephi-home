@@ -420,7 +420,30 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
         : item && item.evidenceRefs && item.evidenceRefs.length)
     }))
   };
-  if (details.stage === "context_execution") return { ...base, items: (details.items || []).map((item) => ({ taskId: String(item.taskId || ""), reasonCode: String(item.reasonCode || ""), contextTaskId: String(item.contextTaskId || ""), slotSources: { checkIn: String(item.slotSources && item.slotSources.checkIn || ""), checkOut: String(item.slotSources && item.slotSources.checkOut || ""), product: String(item.slotSources && item.slotSources.product || "") } })) };
+  if (details.stage === "context_execution") {
+    const automatic = details.automaticPendingRelation || {};
+    const safeReasons = new Set([
+      "planner_task_count_not_one",
+      "explicit_relation_present",
+      "not_slot_only_lodging_turn",
+      "clarification_focus_ambiguous",
+      "no_unique_compatible_candidate",
+      "continuation_selected"
+    ]);
+    return {
+      ...base,
+      items: (details.items || []).map((item) => ({ taskId: String(item.taskId || ""), reasonCode: String(item.reasonCode || ""), contextTaskId: String(item.contextTaskId || ""), slotSources: { checkIn: String(item.slotSources && item.slotSources.checkIn || ""), checkOut: String(item.slotSources && item.slotSources.checkOut || ""), product: String(item.slotSources && item.slotSources.product || "") } })),
+      automaticPendingRelation: {
+        reasonCode: safeReasons.has(automatic.reasonCode) ? automatic.reasonCode : "",
+        plannerTaskCount: safeDiagnosticCount(automatic.plannerTaskCount),
+        explicitRelationPresent: Boolean(automatic.explicitRelationPresent),
+        slotOnlyLodgingTurn: Boolean(automatic.slotOnlyLodgingTurn),
+        clarificationCandidateCount: safeDiagnosticCount(automatic.clarificationCandidateCount),
+        compatibleCandidateCount: safeDiagnosticCount(automatic.compatibleCandidateCount),
+        continuationSelected: Boolean(automatic.continuationSelected)
+      }
+    };
+  }
   if (details.stage === "formal_request") return { ...base, items: (details.items || []).map((item) => ({ taskId: String(item.taskId || ""), readiness: String(item.readiness || "") })) };
   if (details.stage === "query_plan") return { ...base, count: safeDiagnosticCount(details.count), items: (details.items || []).map((item) => ({ taskId: String(item.taskId || ""), capability: String(item.capability || ""), operation: String(item.operation || "") })) };
   if (details.stage === "state") return { ...base, contextAction: String(details.contextAction || ""), revision: safeDiagnosticCount(details.revision), tasks: (details.tasks || []).map((item) => ({ taskId: String(item.taskId || ""), taskType: String(item.taskType || ""), status: String(item.status || ""), missingFields: (item.missingFields || []).map(String) })) };

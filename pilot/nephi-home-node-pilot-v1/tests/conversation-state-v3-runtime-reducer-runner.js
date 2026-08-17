@@ -542,6 +542,58 @@ assert.equal(focusedDateContinuation.executionItems[0].task.type, "price");
 assert.equal(focusedDateContinuation.executionItems[0].task.entity.category, "bundle");
 assert.equal(focusedDateContinuation.executionItems[0].task.entity.canonicalCandidate, "bundle-all");
 assert.equal(focusedDateContinuation.executionItems[0].task.stayCandidate.checkInCandidate, "2026-09-05");
+assert.deepEqual(focusedDateContinuation.automaticPendingDiagnostic, {
+  reasonCode: "continuation_selected",
+  plannerTaskCount: 1,
+  explicitRelationPresent: false,
+  slotOnlyLodgingTurn: true,
+  clarificationCandidateCount: 1,
+  compatibleCandidateCount: 1,
+  continuationSelected: true
+});
+
+const rawEntityDateOnlyDecision = decideContextExecutionV3({
+  state: clarificationFocusedPricingState,
+  relations: [{
+    candidateIndex: 0,
+    relationKind: "new_request",
+    stateAction: "start",
+    requestCycleId: null,
+    evidenceRefs: []
+  }],
+  plannerTasks: [{
+    ...dateOnlyPlannerTask,
+    taskId: "availability-date-only-with-raw-entity",
+    type: "availability",
+    sourceText: "9/5",
+    entity: {
+      ...dateOnlyPlannerTask.entity,
+      rawText: "9/5"
+    },
+    stayCandidate: {
+      ...dateOnlyPlannerTask.stayCandidate,
+      dateExpression: {
+        rawText: "9/5",
+        kind: "absolute",
+        anchor: "message_time"
+      },
+      checkInCandidate: "2026-09-05"
+    }
+  }],
+  catalog,
+  now: NOW
+});
+assert.equal(rawEntityDateOnlyDecision.executionItems[0].transition.reasonCode, "new_task");
+assert.equal(rawEntityDateOnlyDecision.contextDecision.action, "start");
+assert.deepEqual(rawEntityDateOnlyDecision.automaticPendingDiagnostic, {
+  reasonCode: "not_slot_only_lodging_turn",
+  plannerTaskCount: 1,
+  explicitRelationPresent: false,
+  slotOnlyLodgingTurn: false,
+  clarificationCandidateCount: 0,
+  compatibleCandidateCount: 0,
+  continuationSelected: false
+});
 const bundleFollowup = decideContextExecutionV3({
   state: answeredAvailability,
   relations: [{

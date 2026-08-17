@@ -259,15 +259,35 @@ function isSlotOnlyLodgingTurn(task) {
 }
 
 function automaticPendingRelation(state, plannerTasks, relations, now) {
-  if (!Array.isArray(plannerTasks) || plannerTasks.length !== 1) return null;
+  const plannerTaskCount = Array.isArray(plannerTasks) ? plannerTasks.length : 0;
+  const result = (reasonCode, relation = null, details = {}) => ({
+    relation,
+    diagnostic: {
+      reasonCode,
+      plannerTaskCount,
+      explicitRelationPresent: false,
+      slotOnlyLodgingTurn: false,
+      clarificationCandidateCount: 0,
+      compatibleCandidateCount: 0,
+      continuationSelected: false,
+      ...details
+    }
+  });
+  if (plannerTaskCount !== 1) {
+    return result("planner_task_count_not_one");
+  }
   const task = plannerTasks[0];
   const relation = (relations || []).find(
     (candidate) => candidate.candidateIndex === task.candidateIndex
   );
   if (relation && ["continue", "replace", "end"].includes(
     relation.stateAction
-  )) return null;
-  if (!isSlotOnlyLodgingTurn(task)) return null;
+  )) return result("explicit_relation_present", null, {
+    explicitRelationPresent: true
+  });
+  if (!isSlotOnlyLodgingTurn(task)) {
+    return result("not_slot_only_lodging_turn");
+  }
   const supplied = suppliedSlotFields(task);
   const lodgingTaskTypes = new Set([
     "availability",
@@ -289,16 +309,29 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
     }
     return candidate.status === "answered";
   };
-  const clarificationCandidates = state.tasks.filter((candidate) => (
-    candidate.status === "needs_clarification" && slotCompatible(candidate)
+  const compatibleCandidates = state.tasks.filter(slotCompatible);
+  const clarificationCandidates = compatibleCandidates.filter((candidate) => (
+    candidate.status === "needs_clarification"
   ));
-  if (clarificationCandidates.length > 1) return null;
+  if (clarificationCandidates.length > 1) {
+    return result("clarification_focus_ambiguous", null, {
+      slotOnlyLodgingTurn: true,
+      clarificationCandidateCount: clarificationCandidates.length,
+      compatibleCandidateCount: compatibleCandidates.length
+    });
+  }
   const candidates = clarificationCandidates.length === 1
     ? clarificationCandidates
-    : state.tasks.filter(slotCompatible);
-  if (candidates.length !== 1) return null;
+    : compatibleCandidates;
+  if (candidates.length !== 1) {
+    return result("no_unique_compatible_candidate", null, {
+      slotOnlyLodgingTurn: true,
+      clarificationCandidateCount: clarificationCandidates.length,
+      compatibleCandidateCount: candidates.length
+    });
+  }
   const target = candidates[0];
-  return {
+  return result("continuation_selected", {
     ...(relation || {
       candidateIndex: task.candidateIndex,
       evidenceRefs: []
@@ -307,7 +340,12 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
     stateAction: "continue",
     requestCycleId: target.taskId,
     reasonCode: "unique_pending_slot_update"
-  };
+  }, {
+    slotOnlyLodgingTurn: true,
+    clarificationCandidateCount: clarificationCandidates.length,
+    compatibleCandidateCount: candidates.length,
+    continuationSelected: true
+  });
 }
 
 function decideContextExecutionV3({
@@ -318,12 +356,13 @@ function decideContextExecutionV3({
   now
 }) {
   const effectiveRelations = [...(relations || [])];
-  const automaticRelation = automaticPendingRelation(
+  const automaticPending = automaticPendingRelation(
     state,
     plannerTasks,
     effectiveRelations,
     now
   );
+  const automaticRelation = automaticPending.relation;
   if (automaticRelation) {
     const relationIndex = effectiveRelations.findIndex(
       (relation) => relation.candidateIndex === automaticRelation.candidateIndex
@@ -426,7 +465,8 @@ function decideContextExecutionV3({
     executionTasks: executionItems.map((item) => item.task),
     relations: effectiveRelations,
     endedTaskIds,
-    resumedPending
+    resumedPending,
+    automaticPendingDiagnostic: automaticPending.diagnostic
   };
 }
 

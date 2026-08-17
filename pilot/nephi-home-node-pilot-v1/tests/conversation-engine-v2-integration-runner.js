@@ -182,6 +182,15 @@ function latestConditions(result) {
   assert.deepEqual(safeContextValidation.rejectionReasons, []);
   const safeContextExecution = safeDiagnostics.find((item) => item.stage === "context_execution");
   assert.deepEqual(safeContextExecution.items.map((item) => item.reasonCode), ["new_task", "new_task", "new_task"]);
+  assert.deepEqual(safeContextExecution.automaticPendingRelation, {
+    reasonCode: "planner_task_count_not_one",
+    plannerTaskCount: 3,
+    explicitRelationPresent: false,
+    slotOnlyLodgingTurn: false,
+    clarificationCandidateCount: 0,
+    compatibleCandidateCount: 0,
+    continuationSelected: false
+  });
   assert.deepEqual(safeContextValidation.candidates, [
     { candidateIndex: 0, relationKind: "new_request", candidateRequestCycleRefCount: 0, evidenceRefCount: 1, evidenceSourceMatches: [true] },
     { candidateIndex: 1, relationKind: "new_request", candidateRequestCycleRefCount: 0, evidenceRefCount: 1, evidenceSourceMatches: [true] },
