@@ -14,6 +14,7 @@ on:
         options:
           - target_preflight
           - full_matrix
+          - core_common_23
           - operational_snapshot
 
 jobs:

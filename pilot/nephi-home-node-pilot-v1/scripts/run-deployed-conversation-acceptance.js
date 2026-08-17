@@ -18,6 +18,7 @@ const FORBIDDEN_FINAL_TEXT = ["一定有房", "已完成訂房"];
 const MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-fixed-matrix.json");
 const SUPPLEMENTAL_MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-supplemental-matrix.json");
 const GENERALIZATION_MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-generalization-matrix.json");
+const CORE_COMMON_23_MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/core-common-23-matrix.json");
 const NOT_EXECUTABLE_STATUS = "NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API";
 const OPERATOR_CONTEXT_CASES = new Map();
 const NON_TEXT_SEMANTICS = new Set(["non_text_event", "non_text_marker"]);
@@ -74,6 +75,7 @@ function semanticCapabilityGroups(tags = []) {
   if ([...values].some((tag) => ["location", "navigation"].includes(tag))) add(["location", "property_fact"]);
   if ([...values].some((tag) => ["booking", "booking_process"].includes(tag))) add(["booking_request", "availability", "policy"]);
   if (values.has("bundle_capacity")) add(["capacity", "bundle_availability", "property_fact"]);
+  if (values.has("capacity")) add(["capacity"]);
   if (values.has("sensitive_access_info")) add(["high_risk", "human_help", "unknown"]);
   if (values.has("payment_claim")) add(["policy", "high_risk", "human_help", "unknown"]);
   if (values.has("unknown_property_fact")) add(["property_fact", "unknown", "human_help"]);
@@ -213,6 +215,25 @@ function loadGeneralizationAcceptanceMatrix(filePath = GENERALIZATION_MATRIX_PAT
 }
 
 const GENERALIZATION_ACCEPTANCE_MATRIX = loadGeneralizationAcceptanceMatrix();
+function loadCoreCommon23Matrix(filePath = CORE_COMMON_23_MATRIX_PATH) {
+  const source = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (!source || !Array.isArray(source.cases)) throw new Error("core_common_23_cases_required");
+  const turnCount = source.cases.reduce((sum, item) => sum + (Array.isArray(item.turns) ? item.turns.length : 0), 0);
+  if (source.cases.length !== 23 || turnCount !== 27) throw new Error("core_common_23_fixed_count_mismatch");
+  const tierAssignments = acceptanceTierAssignments(source, "core_common_23");
+  return source.cases.map((item) => {
+    const tier = tierAssignments.get(item.id);
+    return {
+      id: item.id,
+      tier,
+      bucket: item.bucket,
+      sourceRef: item.sourceRef || source.source,
+      turns: item.turns.map((turn) => loadedAcceptanceTurn(turn, tier, item, "core_common_23"))
+    };
+  });
+}
+
+const CORE_COMMON_23_MATRIX = loadCoreCommon23Matrix();
 const DEPLOYED_ACCEPTANCE_MATRIX = [...ACCEPTANCE_MATRIX, ...SUPPLEMENTAL_ACCEPTANCE_MATRIX, ...GENERALIZATION_ACCEPTANCE_MATRIX];
 const TARGET_PREFLIGHT_TURNS = Object.freeze({
   "rg-003-price-nights": [1],
@@ -256,6 +277,10 @@ function validateWorkflowIdentity(env) {
 
 function acceptanceMatrixForMode(env) {
   const mode = String(env.TEST_ONLY_ACCEPTANCE_MODE || "").trim();
+  if (mode === "core_common_23") {
+    if (String(env.TEST_ONLY_ACCEPTANCE_CASE_IDS || "").trim()) throw new Error("core_common_23_case_filter_forbidden");
+    return { mode, matrix: CORE_COMMON_23_MATRIX };
+  }
   if (mode === "full_matrix") {
     if (String(env.TEST_ONLY_ACCEPTANCE_CASE_IDS || "").trim()) throw new Error("full_matrix_case_filter_forbidden");
     return { mode, matrix: DEPLOYED_ACCEPTANCE_MATRIX };
@@ -935,11 +960,14 @@ function acceptanceReportMarkdown(report) {
         `- Guest question: ${markdownText(turn.guestQuestion)}`,
         `- Native event: ${markdownText(turn.nativeEvent && turn.nativeEvent.type)}`,
         `- Result: ${markdownText(turn.status)}`,
+        `- Trace ID: ${markdownText(turn.traceId)}`,
         `- Earliest failure layer: ${markdownText(turn.earliestFailureLayer)}`,
         `- Failure code: ${markdownText(turn.errorCode)}`,
+        `- FinalDecision: action=${markdownText(turn.finalDecision && turn.finalDecision.action)}; reasonCode=${markdownText(turn.finalDecision && turn.finalDecision.reasonCode)}`,
         `- Planner / validation / canonical / state / query / resolver evidence: ${markdownText(JSON.stringify(turn.runtimeEvidence || {}))}`,
         `- Formal evidence: ${markdownText(JSON.stringify(turn.formalEvidence || []))}`,
         `- Actual FinalResponse: ${turn.finalResponse && turn.finalResponse.shouldReply === false ? "不回覆" : markdownText(turn.finalResponse && turn.finalResponse.replyText)}`,
+        `- Actual FinalResponse replyText: ${markdownText(JSON.stringify(turn.finalResponse && typeof turn.finalResponse.replyText === "string" ? turn.finalResponse.replyText : ""))}`,
         `- Complete answer: ${markdownText(turn.assessment && turn.assessment.completeAnswer)}`,
         `- Formal-data consistent: ${markdownText(turn.assessment && turn.assessment.formalDataConsistent)}`,
         `- Omission detected: ${markdownText(turn.assessment && turn.assessment.omissionDetected)}`,
@@ -1470,12 +1498,14 @@ module.exports = {
   ACCEPTANCE_MATRIX,
   SUPPLEMENTAL_ACCEPTANCE_MATRIX,
   GENERALIZATION_ACCEPTANCE_MATRIX,
+  CORE_COMMON_23_MATRIX,
   DEPLOYED_ACCEPTANCE_MATRIX,
   TARGET_PREFLIGHT_CASE_IDS,
   TARGET_PREFLIGHT_TURNS,
   loadAcceptanceMatrix,
   loadSupplementalAcceptanceMatrix,
   loadGeneralizationAcceptanceMatrix,
+  loadCoreCommon23Matrix,
   NOT_EXECUTABLE_STATUS,
   pollForDeployment,
   requestGithubOidcToken,
@@ -1489,6 +1519,7 @@ module.exports = {
   assessFinalResponseEvidence,
   missingProductOutcomes,
   writeAcceptanceReport,
+  acceptanceReportMarkdown,
   runAcceptanceMatrix,
   selectAcceptanceMatrix,
   validateWorkflowIdentity,

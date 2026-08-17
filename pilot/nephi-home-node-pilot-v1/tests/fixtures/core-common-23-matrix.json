@@ -1,0 +1,58 @@
+{
+  "matrixId": "junzan-core-common-23-20260817-v1",
+  "propertyId": "nephi_home",
+  "source": "User-approved core_common_23 acceptance set, 2026-08-17",
+  "executionPolicy": {
+    "continueAfterFailure": true,
+    "isolateConversationPerCase": true,
+    "sameConversationWithinCase": true,
+    "requiredDeploymentProviders": ["postgresql", "openai"],
+    "forbidProviders": ["json", "seed", "fixture", "pglite", "fake_planner", "fake_composer"]
+  },
+  "tiers": {
+    "TIER_1_CORE": [
+      "core-common-01", "core-common-02", "core-common-03", "core-common-04", "core-common-05", "core-common-06",
+      "core-common-07", "core-common-08", "core-common-09", "core-common-10", "core-common-11", "core-common-12",
+      "core-common-13", "core-common-14", "core-common-15", "core-common-16", "core-common-17", "core-common-18",
+      "core-common-22"
+    ],
+    "TIER_2_COMPLEX": ["core-common-19", "core-common-20", "core-common-21"],
+    "TIER_3_SAFETY": [],
+    "TIER_4_EDGE": ["core-common-23"]
+  },
+  "cases": [
+    {"id":"core-common-01","bucket":"core_common","turns":[{"input":"301可以住幾個人？","expectedSemantic":["capacity","room_301"],"allowedActions":["reply"],"requiresFormalPropertyData":true}]},
+    {"id":"core-common-02","bucket":"core_common","turns":[{"input":"8/29還有雙人房嗎？","expectedSemantic":["availability","room_type"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"core-common-03","bucket":"core_common","turns":[{"input":"明天還有空房嗎？","expectedSemantic":["availability"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"core-common-04","bucket":"core_common","turns":[{"input":"還有空房嗎？","expectedSemantic":["availability","date_clarification"],"allowedActions":["clarification"]}]},
+    {"id":"core-common-05","bucket":"core_common","turns":[{"input":"8/29四人房多少錢？","expectedSemantic":["price","four_person_room"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"core-common-06","bucket":"core_common","turns":[{"input":"301多少錢？","expectedSemantic":["price","room_301"],"allowedActions":["clarification"]}]},
+    {"id":"core-common-07","bucket":"core_common","turns":[{"input":"9月哪些週六還能包棟？","expectedSemantic":["availability","bundle"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"core-common-08","bucket":"core_common","turns":[{"input":"我們6個人適合住哪個房型？","expectedSemantic":["availability","guests","lodging_scope"],"allowedActions":["clarification"]}]},
+    {"id":"core-common-09","bucket":"core_common","turns":[{"input":"有停車位嗎？","expectedSemantic":["parking"],"allowedActions":["reply"],"requiresFormalPropertyData":true}]},
+    {"id":"core-common-10","bucket":"core_common","turns":[{"input":"戲水池可以用嗎？多少錢？","expectedSemantic":["pool","pool_fee"],"allowedActions":["reply"],"requiresFormalPropertyData":true}]},
+    {"id":"core-common-11","bucket":"core_common","turns":[{"input":"有早餐嗎？","expectedSemantic":["breakfast","amenity"],"allowedActions":["reply"],"requiresFormalPropertyData":true}]},
+    {"id":"core-common-12","bucket":"core_common","turns":[{"input":"現在還有唱歌設備嗎？","expectedSemantic":["ktv","amenity"],"allowedActions":["reply"],"requiresFormalPropertyData":true}]},
+    {"id":"core-common-13","bucket":"core_common","turns":[{"input":"402可以帶小朋友住嗎？","expectedSemantic":["room_402","property_rule"],"allowedActions":["reply"],"requiresFormalPropertyData":true}]},
+    {"id":"core-common-14","bucket":"core_common","turns":[{"input":"幾點可以入住？幾點退房？","expectedSemantic":["check_in","property_rule"],"allowedActions":["reply"],"requiresFormalPropertyData":true}]},
+    {"id":"core-common-15","bucket":"core_common","turns":[{"input":"可以下午1點入住嗎？","expectedSemantic":["check_in","early_arrival","property_rule"],"allowedActions":["handoff"],"requiresFormalPropertyData":true}]},
+    {"id":"core-common-16","bucket":"core_common","turns":[{"input":"地址在哪？","expectedSemantic":["location"],"allowedActions":["reply"],"requiresFormalPropertyData":true}]},
+    {"id":"core-common-17","bucket":"core_common","turns":[{"input":"離羅東夜市遠嗎？","expectedSemantic":["location","navigation"],"allowedActions":["handoff"],"requiresFormalPropertyData":true}]},
+    {"id":"core-common-18","bucket":"core_common","turns":[{"input":"8/29有雙人房嗎？另外可以烤肉嗎？","expectedSemantic":["availability","room_type","bbq"],"allowedActions":["reply"],"requiresPostgres":true,"requiresFormalPropertyData":true}]},
+    {"id":"core-common-19","bucket":"core_common_multiturn","turns":[
+      {"input":"包棟多少？","expectedSemantic":["bundle","price"],"allowedActions":["clarification"]},
+      {"input":"星期六","expectedSemantic":["date_clarification","price"],"allowedActions":["clarification"]},
+      {"input":"住一晚","expectedSemantic":["nights","price"],"allowedActions":["clarification"]}
+    ]},
+    {"id":"core-common-20","bucket":"core_common_multiturn","turns":[
+      {"input":"8/29住一晚，2個人","expectedSemantic":["availability","nights","guests"],"allowedActions":["reply"],"requiresPostgres":true},
+      {"input":"改四個","expectedSemantic":["availability","guests"],"allowedActions":["reply"],"requiresPostgres":true}
+    ]},
+    {"id":"core-common-21","bucket":"core_common_multiturn","turns":[
+      {"input":"8/29有雙人房嗎？","expectedSemantic":["availability","room_type"],"allowedActions":["reply"],"requiresPostgres":true},
+      {"input":"那四人房呢？","expectedSemantic":["availability","room_type"],"allowedActions":["reply"],"requiresPostgres":true}
+    ]},
+    {"id":"core-common-22","bucket":"core_common","turns":[{"input":"8/29還有雙人ㄉㄇ","expectedSemantic":["availability","room_type"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"core-common-23","bucket":"core_common_edge","turns":[{"input":"謝謝","expectedSemantic":["acknowledgement"],"allowedActions":["no_reply"]}]}
+  ]
+}

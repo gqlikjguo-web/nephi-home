@@ -7,6 +7,7 @@ const path = require("node:path");
 const {
   ACCEPTANCE_MATRIX,
   GENERALIZATION_ACCEPTANCE_MATRIX,
+  CORE_COMMON_23_MATRIX,
   DEPLOYED_ACCEPTANCE_MATRIX,
   pollForDeployment,
   requestGithubOidcToken,
@@ -19,6 +20,7 @@ const {
   assessFinalResponseEvidence,
   missingProductOutcomes,
   writeAcceptanceReport,
+  acceptanceReportMarkdown,
   runAcceptanceMatrix,
   selectAcceptanceMatrix,
   validateWorkflowIdentity,
@@ -42,6 +44,36 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.equal(GENERALIZATION_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 45, "the approved generalization matrix must retain all 45 turns");
   assert.equal(DEPLOYED_ACCEPTANCE_MATRIX.length, 113, "full_matrix must execute all 113 approved cases");
   assert.equal(DEPLOYED_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 135, "full_matrix must execute all 135 approved turns");
+  const coreCommonQuestions = [
+    "301可以住幾個人？", "8/29還有雙人房嗎？", "明天還有空房嗎？", "還有空房嗎？", "8/29四人房多少錢？", "301多少錢？", "9月哪些週六還能包棟？", "我們6個人適合住哪個房型？", "有停車位嗎？", "戲水池可以用嗎？多少錢？", "有早餐嗎？", "現在還有唱歌設備嗎？", "402可以帶小朋友住嗎？", "幾點可以入住？幾點退房？", "可以下午1點入住嗎？", "地址在哪？", "離羅東夜市遠嗎？", "8/29有雙人房嗎？另外可以烤肉嗎？", "包棟多少？", "星期六", "住一晚", "8/29住一晚，2個人", "改四個", "8/29有雙人房嗎？", "那四人房呢？", "8/29還有雙人ㄉㄇ", "謝謝"
+  ];
+  assert.equal(CORE_COMMON_23_MATRIX.length, 23, "core_common_23 must contain exactly 23 isolated cases");
+  assert.equal(CORE_COMMON_23_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 27, "core_common_23 must contain exactly 27 turns");
+  assert.deepEqual(CORE_COMMON_23_MATRIX.flatMap((item) => item.turns.map((turn) => turn.messageText)), coreCommonQuestions, "core_common_23 must preserve every approved question byte-for-byte and in order");
+  assert.deepEqual(CORE_COMMON_23_MATRIX.filter((item) => item.turns.length > 1).map((item) => [item.id, item.turns.length]), [["core-common-19", 3], ["core-common-20", 2], ["core-common-21", 2]], "only cases 19-21 may share conversation state across turns");
+  assert.ok(CORE_COMMON_23_MATRIX.every((item) => item.turns.every((turn) => turn.expectedActions.length === 1)), "every core_common_23 turn must use one exact expected action");
+  const noReplyMarkdown = acceptanceReportMarkdown({
+    commit: expectedCommit,
+    generatedAt: "2026-08-17T00:00:00.000Z",
+    summary: {},
+    cases: [{ caseId: "core-common-23", tier: "TIER_4_EDGE", status: "PASS", turns: [{
+      turn: 1,
+      guestQuestion: "謝謝",
+      nativeEvent: null,
+      status: "PASS",
+      earliestFailureLayer: "",
+      errorCode: "",
+      traceId: "trace-no-reply",
+      runtimeEvidence: {},
+      formalEvidence: [{ capability: "unknown", status: "ignored", dataSource: "" }],
+      finalDecision: { action: "no_reply", reasonCode: "acknowledgement", reviewRequired: false },
+      finalResponse: { action: "no_reply", shouldReply: false, replyText: "" },
+      assessment: { reasons: [] }
+    }] }]
+  });
+  assert.match(noReplyMarkdown, /Trace ID: trace-no-reply/);
+  assert.match(noReplyMarkdown, /FinalDecision: action=no_reply; reasonCode=acknowledgement/);
+  assert.match(noReplyMarkdown, /Actual FinalResponse replyText: ""/, "no_reply must explicitly report replyText as an empty string");
 
   let healthCalls = 0;
   const expectedDeployment = {
@@ -892,6 +924,7 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.match(workflow, /workflow_dispatch:/, "manual deployed acceptance must be explicitly dispatchable");
   assert.match(workflow, /target_preflight/);
   assert.match(workflow, /full_matrix/);
+  assert.match(workflow, /options:\s*[\s\S]*?- target_preflight\s*[\s\S]*?- full_matrix\s*[\s\S]*?- core_common_23\s*[\s\S]*?- operational_snapshot/, "workflow dispatch must expose the approved core_common_23 mode through the existing deployed acceptance job");
   assert.match(workflow, /verify:\s*\r?\n\s*if:\s*github\.event_name != 'workflow_dispatch'/, "manual acceptance must not repeat verify");
   assert.match(workflow, /deployed-acceptance:\s*\r?\n\s*if:\s*github\.event_name == 'workflow_dispatch'/, "push and pull request must not start deployed acceptance");
   assert.match(workflow, /id-token:\s*write/);
@@ -922,6 +955,8 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.deepEqual(targetedMatrix.map((item) => item.id), targetIds);
   assert.equal(targetedMatrix.reduce((sum, item) => sum + item.turns.length, 0), 18, "preflight must execute exactly the 18 previously failing turns");
   assert.equal(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: "" }).matrix.length, 113);
+  assert.equal(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "core_common_23", TEST_ONLY_ACCEPTANCE_CASE_IDS: "" }).matrix, CORE_COMMON_23_MATRIX);
+  assert.throws(() => acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "core_common_23", TEST_ONLY_ACCEPTANCE_CASE_IDS: "core-common-01" }), /core_common_23_case_filter_forbidden/);
   assert.throws(() => acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: targetIds[0] }), /full_matrix_case_filter_forbidden/);
   const correlationIdFor = (caseIndex, turnIndex) => `00000000-0000-4000-8000-${String(caseIndex * 10 + turnIndex + 1).padStart(12, "0")}`;
   const repairTargetFor = (caseId, correlationId) => {
