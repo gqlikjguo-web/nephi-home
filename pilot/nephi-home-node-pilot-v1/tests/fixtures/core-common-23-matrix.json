@@ -41,8 +41,8 @@
     {"id":"core-common-18","bucket":"core_common","turns":[{"input":"8/29有雙人房嗎？另外可以烤肉嗎？","expectedSemantic":["availability","room_type","bbq"],"allowedActions":["reply"],"requiresPostgres":true,"requiresFormalPropertyData":true}]},
     {"id":"core-common-19","bucket":"core_common_multiturn","turns":[
       {"input":"包棟多少？","expectedSemantic":["bundle","price"],"allowedActions":["clarification"]},
-      {"input":"星期六","expectedSemantic":["date_clarification","price"],"allowedActions":["clarification"]},
-      {"input":"住一晚","expectedSemantic":["nights","price"],"allowedActions":["clarification"]}
+      {"input":"星期六","expectedSemantic":["date_clarification","price"],"allowedActions":["reply"]},
+      {"input":"住一晚","expectedSemantic":["nights","price"],"allowedActions":["reply"]}
     ]},
     {"id":"core-common-20","bucket":"core_common_multiturn","turns":[
       {"input":"8/29住一晚，2個人","expectedSemantic":["availability","nights","guests"],"allowedActions":["reply"],"requiresPostgres":true},

@@ -52,6 +52,10 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.deepEqual(CORE_COMMON_23_MATRIX.flatMap((item) => item.turns.map((turn) => turn.messageText)), coreCommonQuestions, "core_common_23 must preserve every approved question byte-for-byte and in order");
   assert.deepEqual(CORE_COMMON_23_MATRIX.filter((item) => item.turns.length > 1).map((item) => [item.id, item.turns.length]), [["core-common-19", 3], ["core-common-20", 2], ["core-common-21", 2]], "only cases 19-21 may share conversation state across turns");
   assert.ok(CORE_COMMON_23_MATRIX.every((item) => item.turns.every((turn) => turn.expectedActions.length === 1)), "every core_common_23 turn must use one exact expected action");
+  const coreCommon19 = CORE_COMMON_23_MATRIX.find((item) => item.id === "core-common-19");
+  assert.deepEqual(coreCommon19.turns.map((turn) => turn.messageText), ["包棟多少？", "星期六", "住一晚"], "Case19 questions must remain byte-for-byte stable");
+  assert.deepEqual(coreCommon19.turns.map((turn) => turn.expectedActions), [["clarification"], ["reply"], ["reply"]], "Case19 readiness must clarify only before date and night slots are supplied");
+  assert.deepEqual(coreCommon19.turns.map((turn) => turn.expectedSemantic), [["bundle", "price"], ["date_clarification", "price"], ["nights", "price"]], "Case19 must retain its price semantics across both follow-up turns");
   const noReplyMarkdown = acceptanceReportMarkdown({
     commit: expectedCommit,
     generatedAt: "2026-08-17T00:00:00.000Z",
