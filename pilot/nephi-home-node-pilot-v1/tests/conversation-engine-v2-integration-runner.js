@@ -6,9 +6,13 @@ const { formatSafeTestOnlyConversationTrace } = require("../server");
 const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
 const states = new Map(), logs = [];
+let stateWriteCount = 0;
 const persistence = {
   getConversationState: (p, c, u) => states.get(`${p}:${c}:${u}`) || null,
-  setConversationState: (p, c, u, value) => states.set(`${p}:${c}:${u}`, value),
+  setConversationState: (p, c, u, value) => {
+    stateWriteCount += 1;
+    return states.set(`${p}:${c}:${u}`, value);
+  },
   appendMessageLog: (p, value) => { const item = { ...value, customerId: p, reviewId: value.needsReview ? `review-${logs.length + 1}` : "" }; logs.push(item); return item; }
 };
 
@@ -113,8 +117,12 @@ function latestConditions(result) {
   assert.equal(pricingResult.taskResults[0].facts.checkIn, "2026-08-06");
   assert.equal(pricingResult.taskResults[0].facts.checkOut, "2026-08-08");
 
+  let rejectedPricingStateWrittenBeforeComposer = false;
   const rejectedPricingEngine = new ConversationEngineV2({
-    planner: explicitPlanner(pricingPlanner), composer: { compose: async () => ({ replyText: "unverified", factTaskIds: [] }) }, persistence, getProperty: () => property,
+    planner: explicitPlanner(pricingPlanner), composer: { compose: async () => {
+      rejectedPricingStateWrittenBeforeComposer = states.has("p1:pricing-rejected:pricing-rejected-user");
+      return { replyText: "unverified", factTaskIds: [] };
+    } }, persistence, getProperty: () => property,
     availabilityResolver: (query) => ({ ...query, availabilityReliable: true, rooms: property.rooms, lineUrl: "" }),
     availableDatesResolver: () => ({ status: "answered", dates: [] }), listPriceOverrides: () => [], now: () => new Date("2026-07-17T02:00:00.000Z")
   });
@@ -124,6 +132,7 @@ function latestConditions(result) {
   assert.equal(rejectedPricing.finalDecision.reviewRequired, false);
   assert.equal(rejectedPricing.claimValidation.ok, true);
   assert.equal(rejectedPricing.replyText.includes("unverified"), false, "claim-validator-rejected text must not reach the reply");
+  assert.equal(rejectedPricingStateWrittenBeforeComposer, true, "V3 state must persist before the async Composer boundary");
 
   const result = await engine.process({ customerId: "p1", channelId: "c1", lineUserId: "u1", eventId: "e1", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6雙人房有空嗎 有車位嗎 有麻將嗎" });
   assert.equal(result.shouldReply, true);
@@ -145,7 +154,7 @@ function latestConditions(result) {
   assert.ok(guarded.replyText.includes("停車位"));
   assert.ok(guarded.replyText.includes("麻將"));
   assert.deepEqual(guarded.claimValidation.coveredTaskIds.sort(), ["a", "b", "c"]);
-  assert.deepEqual(diagnostics.map((item) => item.stage), ["property_catalog", "planner", "validation", "semantic_contract", "context_validation", "pending_request", "no_reply_gate", "context_execution", "canonical_request", "temporal", "entity_resolution", "formal_request", "query_plan", "state", "pending_request", "executor", "response_plan", "composer", "claim_validator", "line_ready", "final_decision"]);
+  assert.deepEqual(diagnostics.map((item) => item.stage), ["property_catalog", "planner", "validation", "semantic_contract", "context_validation", "pending_request", "no_reply_gate", "context_execution", "canonical_request", "temporal", "entity_resolution", "formal_request", "query_plan", "executor", "response_plan", "state", "pending_request", "composer", "claim_validator", "line_ready", "final_decision"]);
   assert.equal(new Set(diagnostics.map((item) => item.traceId)).size, 1);
   assert.equal(guarded.replyText, result.replyText);
   const safeDiagnostics = diagnostics.map(formatSafeTestOnlyConversationTrace).filter(Boolean);
@@ -453,6 +462,7 @@ function latestConditions(result) {
 
   async function runMixedResult({ id, messageText, tasks }) {
     let composerCalls = 0;
+    const writesBefore = stateWriteCount;
     const mixedPlanner = { classify: async () => ({
       schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
       stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
@@ -466,7 +476,12 @@ function latestConditions(result) {
       onDiagnostic: (item) => diagnostics.push(item)
     });
     const result = await mixedEngine.process({ customerId: "p1", channelId: "mixed", lineUserId: id, eventId: id, eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText });
-    return { result, diagnostics, composerCalls };
+    return {
+      result,
+      diagnostics,
+      composerCalls,
+      stateWrites: stateWriteCount - writesBefore
+    };
   }
 
   const parkingTask = { taskId: "parking", type: "amenity", sourceText: "有車位嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 };
@@ -493,6 +508,12 @@ function latestConditions(result) {
   assert.equal(mixedClarification.diagnostics.find((item) => item.stage === "composer").validationResult, "accepted");
   assert.equal(mixedClarification.result.claimValidation.ok, true);
   assert.equal(mixedClarification.result.finalDecision.action, "clarification");
+  assert.equal(
+    mixedClarification.result.state.tasks.find((task) => task.taskId === "room").status,
+    "needs_clarification",
+    "the FinalDecision not-ready task must be the persisted clarification focus"
+  );
+  assert.equal(mixedClarification.stateWrites, 1, "a clarification turn must persist V3 state exactly once");
   assert.ok(mixedClarification.result.replyText.includes("有一個停車位"));
   assert.ok(mixedClarification.result.replyText.includes("請補充入住日期。"));
 
@@ -504,6 +525,12 @@ function latestConditions(result) {
   assert.equal(mixedHighRisk.composerCalls, 0);
   assert.equal(mixedHighRisk.result.claimValidation.ok, true);
   assert.equal(mixedHighRisk.result.finalDecision.action, "handoff");
+  assert.notEqual(
+    mixedHighRisk.result.state.tasks.find((task) => task.taskId === "risk").status,
+    "needs_clarification",
+    "a handoff must not create clarification focus"
+  );
+  assert.equal(mixedHighRisk.stateWrites, 1, "a handoff turn must persist V3 state exactly once");
   assert.equal(mixedHighRisk.result.finalDecision.reasonCode, "high_risk");
   assert.ok(mixedHighRisk.result.replyText.includes("有一個停車位"));
   assert.ok(mixedHighRisk.result.replyText.includes("需要請業者確認"));
@@ -770,9 +797,21 @@ function latestConditions(result) {
   assert.equal(latestConditions(replacedGuests).stay.guests, 4);
   assert.equal(latestConditions(replacedGuests).stay.nights, null);
   assert.deepEqual(latestConditions(replacedGuests).inventory.features, []);
+  const guestCycleId = replacedGuests.state.tasks.at(-1).taskId;
   const clearedFeature = await runTemporal("no bathtub needed", temporalPlanner({
-    message: "no bathtub needed", operations: [{ field: "inventory.features", operation: "clear", value: null, sourceText: "no bathtub" }]
+    message: "no bathtub needed",
+    tasks: [{
+      taskId: "bathtub-feature",
+      type: "property_fact",
+      sourceText: "no bathtub needed",
+      requestedOutputs: ["answer"],
+      dependsOnStayContext: false,
+      entity: { category: "room_feature", rawText: "bathtub", canonicalCandidate: "r1", confidence: 0.98 },
+      stayCandidate: null,
+      confidence: 0.98
+    }]
   }), conditionStateUser);
+  assert.notEqual(clearedFeature.state.tasks.at(-1).taskId, guestCycleId, "a substantive room-feature request must start a new cycle");
   assert.equal(latestConditions(clearedFeature).stay.guests, null);
   assert.equal(latestConditions(clearedFeature).stay.nights, null);
   assert.deepEqual(latestConditions(clearedFeature).inventory.features, []);

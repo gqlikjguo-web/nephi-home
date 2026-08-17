@@ -152,7 +152,7 @@ async function main() {
   assert.equal(firstPending.taskId, "availability");
   assert.equal(firstPending.taskType, "availability");
   assert.deepEqual(firstPending.missingFields, ["checkIn", "checkOut"]);
-  assert.equal(firstPending.status, "pending");
+  assert.equal(firstPending.status, "needs_clarification");
   assert.equal(Object.hasOwn(first.state, "pendingRequests"), false);
   assert.equal(Object.hasOwn(first.state, "requestCycles"), false);
   assert.equal(JSON.stringify(firstPending).includes("facts"), false);

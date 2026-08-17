@@ -761,12 +761,52 @@ class ConversationEngineV2 {
       taskResults = [...taskResults, ...executorCoverage.missingTaskIds.map((taskId) => ({ taskId, type: "unknown", status: "failed", reason: "executor_missing_task", facts: { subject: "這個問題" }, review: true }))];
       executorCoverage = assertTaskCoverage(inputTaskIds, coverageByStatus(taskResults));
     }
+    this.trace(traceId, "executor", { results: this.diagnosticDetail ? taskResults : taskResults.map((item) => ({ taskId: item.taskId, status: item.status, reason: item.reason || "", locationFactProvided: Boolean(item.facts && item.facts.locationMapUrl), factSource: item.facts && item.facts.source || "" })), resolverCalls: this.diagnosticDetail ? resolverCalls : undefined, coverage: executorCoverage });
+    const reviewIds = [];
+    for (const result of taskResults.filter((item) => item.review)) {
+      const sourceTask = executionTasks.find((task) => task.taskId === result.taskId);
+      const item = this.persistReview(input, result.reason || result.status, `「${sourceTask && sourceTask.sourceText || "該問題"}」需要業者確認。`, result.taskId);
+      if (item.reviewId) reviewIds.push(item.reviewId);
+    }
+    const responsePlan = buildResponsePlan({
+      propertyId: input.customerId,
+      taskResults,
+      inputTaskIds,
+      canonicalRequests: canonicalItems.map((item) => item.canonicalRequest),
+      reviewActions: reviewIds.map((reviewId) => ({ reviewId, created: true }))
+    });
+    this.trace(traceId, "response_plan", { sectionCount: responsePlan.sections.length, sections: this.diagnosticDetail ? responsePlan.sections : responsePlan.sections.map((section) => ({ taskId: section.taskId, status: section.status, factKeys: Object.keys(section.facts || {}) })), reviewCount: responsePlan.reviewActions.length, coverage: responsePlan.coverageValidation });
+    const deterministicReply = composeControlledReply(responsePlan);
+    const fallbackClaimValidation = validateClaims(
+      deterministicReply,
+      responsePlan,
+      inputTaskIds
+    );
+    if (!fallbackClaimValidation.ok) {
+      const reason = fallbackClaimValidation.errors.includes("incomplete_task_coverage")
+        ? "composer_incomplete_coverage"
+        : "claim_validation_failed";
+      const item = this.persistReview(
+        input,
+        reason,
+        "回覆未完整涵蓋所有問題，已改用安全完整回覆。",
+        ""
+      );
+      if (item.reviewId) reviewIds.push(item.reviewId);
+    }
+    const finalDecision = decideFinal({
+      executionOutcomes,
+      claimValidation: fallbackClaimValidation
+    });
     const state = this.persistConversationStateV3(input, {
       previous,
       canonicalItems,
       formalRequests,
       executionOutcomes,
       endedTaskIds: contextExecution.endedTaskIds,
+      clarificationTaskIds: finalDecision.action === "clarification"
+        ? finalDecision.executionSummary.notReadyTaskIds
+        : [],
       scope
     });
     this.trace(traceId, "state", {
@@ -790,50 +830,26 @@ class ConversationEngineV2 {
         })
       )
     });
-    this.trace(traceId, "executor", { results: this.diagnosticDetail ? taskResults : taskResults.map((item) => ({ taskId: item.taskId, status: item.status, reason: item.reason || "", locationFactProvided: Boolean(item.facts && item.facts.locationMapUrl), factSource: item.facts && item.facts.source || "" })), resolverCalls: this.diagnosticDetail ? resolverCalls : undefined, coverage: executorCoverage });
-    const reviewIds = [];
-    for (const result of taskResults.filter((item) => item.review)) {
-      const sourceTask = executionTasks.find((task) => task.taskId === result.taskId);
-      const item = this.persistReview(input, result.reason || result.status, `「${sourceTask && sourceTask.sourceText || "該問題"}」需要業者確認。`, result.taskId);
-      if (item.reviewId) reviewIds.push(item.reviewId);
-    }
-    const responsePlan = buildResponsePlan({
-      propertyId: input.customerId,
-      taskResults,
-      inputTaskIds,
-      canonicalRequests: canonicalItems.map((item) => item.canonicalRequest),
-      reviewActions: reviewIds.map((reviewId) => ({ reviewId, created: true }))
-    });
-    this.trace(traceId, "response_plan", { sectionCount: responsePlan.sections.length, sections: this.diagnosticDetail ? responsePlan.sections : responsePlan.sections.map((section) => ({ taskId: section.taskId, status: section.status, factKeys: Object.keys(section.facts || {}) })), reviewCount: responsePlan.reviewActions.length, coverage: responsePlan.coverageValidation });
-    const deterministicReply = composeControlledReply(responsePlan);
     let replyText = deterministicReply, claimedTaskIds = null, composedSections = null;
+    let claimValidation = fallbackClaimValidation;
     let composerSource = "deterministic", fallbackOccurred = false, rejectionReasonCodes = [];
     const hasAnswerSection = responsePlan.sections.some((section) => section.responseMode === "answer");
     const hasIncompleteSection = responsePlan.sections.some((section) => section.responseMode !== "answer");
     const composerEligible = !(hasAnswerSection && hasIncompleteSection);
-    if (composerEligible && this.composer && typeof this.composer.compose === "function") {
+    if (fallbackClaimValidation.ok && composerEligible && this.composer && typeof this.composer.compose === "function") {
       try {
         const composed = mergeComposedSections(responsePlan, await this.composer.compose(responsePlan, { lineUserId: input.lineUserId }));
         if (composed.ok) {
           const adoptionValidation = validateClaims(composed.replyText, responsePlan, composed.factTaskIds, composed.sections);
           if (adoptionValidation.ok) {
-            replyText = composed.replyText; claimedTaskIds = composed.factTaskIds; composedSections = composed.sections; composerSource = "openai";
+            replyText = composed.replyText; claimedTaskIds = composed.factTaskIds; composedSections = composed.sections; claimValidation = adoptionValidation; composerSource = "openai";
           } else rejectionReasonCodes = adoptionValidation.errors;
         } else rejectionReasonCodes = composed.errors;
       } catch { rejectionReasonCodes = ["composer_exception"]; }
       fallbackOccurred = composerSource !== "openai";
     }
-    let claimValidation = validateClaims(replyText, responsePlan, claimedTaskIds, composedSections);
     this.trace(traceId, "composer", { outputLength: replyText.length, coveredTaskIds: claimedTaskIds || inputTaskIds, missingTaskIds: claimValidation.missingTaskIds, composerSource, validationResult: rejectionReasonCodes.length ? "rejected" : "accepted", rejectionReasonCodes, fallbackOccurred, ...(this.diagnosticDetail ? { composerInput: responsePlan, finalOutput: replyText } : {}), sections: responsePlan.sections.map((section) => ({ taskId: section.taskId, responseMode: section.responseMode, type: section.type })) });
-    if (!claimValidation.ok) {
-      const reason = claimValidation.errors.includes("incomplete_task_coverage") ? "composer_incomplete_coverage" : "claim_validation_failed";
-      const item = this.persistReview(input, reason, "回覆未完整涵蓋所有問題，已改用安全完整回覆。", "");
-      if (item.reviewId) reviewIds.push(item.reviewId);
-      replyText = composeControlledReply(responsePlan);
-      claimValidation = validateClaims(replyText, responsePlan, inputTaskIds);
-    }
     this.trace(traceId, "claim_validator", { errors: claimValidation.errors, coveredTaskIds: claimValidation.coveredTaskIds, missingTaskIds: claimValidation.missingTaskIds });
-    const finalDecision = decideFinal({ executionOutcomes, claimValidation });
     const finalResponse = renderFinal({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation });
     const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "multi_task_v2", replyType: `${finalResponse.action}_v2`, replyText: finalResponse.replyText, route: `final_decision_${finalResponse.action}`, shouldReply: finalResponse.shouldReply, noReply: !finalResponse.shouldReply, needsReview: finalDecision.reviewRequired, humanHandoff: finalDecision.action === "handoff", status: finalDecision.reviewRequired ? "pending" : "resolved", processingStatus: "decided", decisionReason: finalDecision.reasonCode };
     if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);

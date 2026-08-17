@@ -276,7 +276,7 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
     "room_options",
     "capacity"
   ]);
-  const candidates = state.tasks.filter((candidate) => {
+  const slotCompatible = (candidate) => {
     if (!currentTask(candidate, now) || !lodgingTaskTypes.has(candidate.taskType)) {
       return false;
     }
@@ -288,7 +288,14 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
         || supplied.has("productId");
     }
     return candidate.status === "answered";
-  });
+  };
+  const clarificationCandidates = state.tasks.filter((candidate) => (
+    candidate.status === "needs_clarification" && slotCompatible(candidate)
+  ));
+  if (clarificationCandidates.length > 1) return null;
+  const candidates = clarificationCandidates.length === 1
+    ? clarificationCandidates
+    : state.tasks.filter(slotCompatible);
   if (candidates.length !== 1) return null;
   const target = candidates[0];
   return {
@@ -480,7 +487,7 @@ function executionConditionsV3(state, item) {
   };
 }
 
-function statusForOutcome(outcome, readiness) {
+function statusForOutcome(outcome, readiness, clarificationSelected = false) {
   if (!outcome) {
     return readiness.status === "ready" ? "ready"
       : readiness.status === "missing" ? "pending"
@@ -492,7 +499,7 @@ function statusForOutcome(outcome, readiness) {
   if (outcome.outcome === "not_ready") {
     return ["missing_information", "past_date"].includes(outcome.readinessStatus)
       && readiness.status === "missing"
-      ? "pending"
+      ? clarificationSelected ? "needs_clarification" : "pending"
       : "needs_human";
   }
   if (outcome.outcome === "unknown") return "unknown";
@@ -505,12 +512,19 @@ function reduceConversationStateV3({
   formalRequests = [],
   executionOutcomes = [],
   endedTaskIds = [],
+  clarificationTaskIds = [],
   scope = {}
 }) {
   const now = String(scope.now || new Date().toISOString());
   const byTaskId = new Map(
-    (previous && previous.tasks || []).map((task) => [task.taskId, task])
+    (previous && previous.tasks || []).map((task) => [
+      task.taskId,
+      task.status === "needs_clarification"
+        ? createConversationTaskV3({ ...task, status: "pending" })
+        : task
+    ])
   );
+  const clarificationIds = new Set(clarificationTaskIds.map(String));
   for (const taskId of new Set(endedTaskIds)) {
     const prior = byTaskId.get(taskId);
     if (!prior) continue;
@@ -563,7 +577,8 @@ function reduceConversationStateV3({
       missingFields: readiness.missingFields,
       status: statusForOutcome(
         outcomeByTaskId.get(request.taskId),
-        readiness
+        readiness,
+        clarificationIds.has(request.taskId)
       ),
       createdAt: prior && prior.createdAt || now,
       updatedAt: now,

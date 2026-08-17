@@ -476,6 +476,72 @@ const ambiguousContinuation = decideContextExecutionV3({
 assert.equal(ambiguousContinuation.resumedPending, false);
 assert.notEqual(ambiguousContinuation.executionItems[0].requestCycleId, "pricing-task");
 assert.notEqual(ambiguousContinuation.executionItems[0].requestCycleId, "second-pricing-task");
+
+const clarificationFocusedPricingState = createConversationStateV3({
+  ...scope,
+  tasks: [
+    pendingPricingTask({
+      taskId: "bundle-pricing-focus",
+      productType: "bundle",
+      productId: "bundle-all",
+      bundleId: "bundle-all",
+      entityId: "bundle-all",
+      entityCategory: "bundle",
+      knownFields: ["productType", "productId", "bundleId"],
+      status: "needs_clarification"
+    }),
+    pendingPricingTask({ taskId: "dormant-pricing-cycle" }),
+    pendingPricingTask({
+      taskId: "dormant-capacity-cycle",
+      taskType: "capacity",
+      missingFields: ["checkIn", "checkOut", "guestCount"]
+    }),
+    pendingPricingTask({
+      taskId: "answered-availability-cycle",
+      taskType: "availability",
+      checkIn: "2026-08-29",
+      checkOut: "2026-08-30",
+      knownFields: ["productType", "checkIn", "checkOut"],
+      missingFields: [],
+      status: "answered"
+    })
+  ],
+  createdAt: NOW,
+  updatedAt: NOW,
+  expiresAt: FUTURE
+});
+const focusedDateContinuation = decideContextExecutionV3({
+  state: clarificationFocusedPricingState,
+  relations: [{
+    candidateIndex: 0,
+    relationKind: "new_request",
+    stateAction: "start",
+    requestCycleId: null,
+    evidenceRefs: []
+  }],
+  plannerTasks: [{
+    ...dateOnlyPlannerTask,
+    taskId: "availability-date-only",
+    type: "availability",
+    sourceText: "9/5",
+    stayCandidate: {
+      ...dateOnlyPlannerTask.stayCandidate,
+      dateExpression: {
+        rawText: "9/5",
+        kind: "absolute",
+        anchor: "message_time"
+      },
+      checkInCandidate: "2026-09-05"
+    }
+  }],
+  catalog,
+  now: NOW
+});
+assert.equal(focusedDateContinuation.executionItems[0].requestCycleId, "bundle-pricing-focus");
+assert.equal(focusedDateContinuation.executionItems[0].task.type, "price");
+assert.equal(focusedDateContinuation.executionItems[0].task.entity.category, "bundle");
+assert.equal(focusedDateContinuation.executionItems[0].task.entity.canonicalCandidate, "bundle-all");
+assert.equal(focusedDateContinuation.executionItems[0].task.stayCandidate.checkInCandidate, "2026-09-05");
 const bundleFollowup = decideContextExecutionV3({
   state: answeredAvailability,
   relations: [{
@@ -772,6 +838,118 @@ assert.equal(reduced.tasks[0].checkOut, "2026-07-31");
 assert.equal(reduced.tasks[0].status, "answered");
 assert.equal(Object.hasOwn(reduced, "pendingRequests"), false);
 assert.equal(Object.hasOwn(reduced, "requestCycles"), false);
+
+const clarificationReduction = reduceConversationStateV3({
+  previous: clarificationFocusedPricingState,
+  canonicalItems: [{
+    requestCycleId: "current-clarification-cycle",
+    task: { taskId: "current-clarification-task" },
+    canonicalRequest: {
+      taskId: "current-clarification-task",
+      capability: "price",
+      lodgingProduct: {
+        productType: "bundle",
+        productId: "bundle-all",
+        roomTypeId: null,
+        bundleId: "bundle-all"
+      },
+      canonicalEntity: {
+        status: "resolved",
+        category: "bundle",
+        canonicalId: "bundle-all"
+      },
+      detailIntent: "general"
+    }
+  }],
+  formalRequests: [{
+    taskId: "current-clarification-task",
+    readiness: {
+      status: "missing_information",
+      knownFields: ["productType", "productId", "bundleId"],
+      missingFields: ["checkIn", "checkOut"],
+      invalidFields: [],
+      conflictingFields: []
+    },
+    stay: {
+      checkIn: null,
+      checkOut: null,
+      guests: null,
+      searchRange: null
+    }
+  }],
+  executionOutcomes: [{
+    taskId: "current-clarification-task",
+    outcome: "not_ready",
+    readinessStatus: "missing_information",
+    missingFields: ["checkIn", "checkOut"]
+  }],
+  clarificationTaskIds: ["current-clarification-task"],
+  scope: {
+    ...scope,
+    eventId: "event-current-clarification",
+    now: NOW
+  }
+});
+assert.equal(
+  clarificationReduction.tasks.find((task) => task.taskId === "bundle-pricing-focus").status,
+  "pending",
+  "the prior clarification focus must become dormant on the next valid reduction"
+);
+assert.equal(
+  clarificationReduction.tasks.find((task) => task.taskId === "current-clarification-cycle").status,
+  "needs_clarification",
+  "only a FinalDecision-selected not-ready task may become clarification focus"
+);
+
+const handoffReduction = reduceConversationStateV3({
+  previous: clarificationFocusedPricingState,
+  canonicalItems: clarificationReduction.tasks
+    .filter((task) => task.taskId === "current-clarification-cycle")
+    .map(() => ({
+      requestCycleId: "handoff-cycle",
+      task: { taskId: "handoff-task" },
+      canonicalRequest: {
+        taskId: "handoff-task",
+        capability: "price",
+        lodgingProduct: {
+          productType: "bundle",
+          productId: "bundle-all",
+          roomTypeId: null,
+          bundleId: "bundle-all"
+        },
+        canonicalEntity: {
+          status: "resolved",
+          category: "bundle",
+          canonicalId: "bundle-all"
+        },
+        detailIntent: "general"
+      }
+    })),
+  formalRequests: [{
+    taskId: "handoff-task",
+    readiness: {
+      status: "missing_information",
+      knownFields: ["productType", "productId", "bundleId"],
+      missingFields: ["checkIn", "checkOut"],
+      invalidFields: [],
+      conflictingFields: []
+    },
+    stay: { checkIn: null, checkOut: null, guests: null, searchRange: null }
+  }],
+  executionOutcomes: [{
+    taskId: "handoff-task",
+    outcome: "not_ready",
+    readinessStatus: "missing_information",
+    missingFields: ["checkIn", "checkOut"]
+  }],
+  clarificationTaskIds: [],
+  scope: { ...scope, eventId: "event-handoff", now: NOW }
+});
+assert.equal(
+  handoffReduction.tasks.find((task) => task.taskId === "handoff-cycle").status,
+  "pending",
+  "a not-ready task not selected by a clarification FinalDecision must remain dormant"
+);
 
 console.log(JSON.stringify({
   suite: "conversation-state-v3-runtime-reducer",

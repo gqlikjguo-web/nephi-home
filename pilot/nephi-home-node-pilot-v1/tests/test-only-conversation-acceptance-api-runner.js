@@ -224,7 +224,7 @@ async function integrityRequest(url, body, authorization = "") {
 
     const first = await post("A", "need dates", "a-1");
     const firstState = clone(stateFor("A"));
-    assert.equal(first.response.status, 200); assert.equal(firstState.schemaVersion, 3); assert.equal(firstState.tasks[0].status, "pending");
+    assert.equal(first.response.status, 200); assert.equal(firstState.schemaVersion, 3); assert.equal(firstState.tasks[0].status, "needs_clarification");
     const second = await post("A", "2026-08-06", "a-2");
     const secondState = stateFor("A");
     assert.equal(second.response.status, 200); assert.equal(secondState.schemaVersion, 3); assert.equal(secondState.tasks.length, 1); assert.equal(secondState.tasks[0].taskId, "availability"); assert.equal(secondState.tasks[0].status, "answered");
