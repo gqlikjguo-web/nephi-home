@@ -7,7 +7,7 @@ const { TEST_ONLY_ACCEPTANCE_AUDIENCE, EXPECTED_REPOSITORY, EXPECTED_REF, EXPECT
 const { getCapabilityDefinition } = require("../lib/conversation-engine-v2/capability-registry");
 
 const DEFAULT_BASE_URL = "https://nephi-home-node-pilot-test-only-btye.onrender.com";
-const EXPECTED_RENDER_SERVICE_NAME = "nephi-home-node-pilot-test-only";
+const EXPECTED_RENDER_SERVICE_ID = "srv-d9bqupbbc2fs73aselig";
 const EXPECTED_RENDER_BRANCH = EXPECTED_REF.replace(/^refs\/heads\//, "");
 const SAFE_FACT_KEYS = new Set(["subject", "status", "answer", "locationMapUrl", "detailIntent", "availability", "checkIn", "checkOut", "detailProvided", "detailNeedsConfirmation", "amenities", "availableDates", "range", "availableInventory", "applicableBundles", "prices"]);
 const COMMON_TRACE_STAGES = ["planner", "validation", "semantic_contract", "claim_validator", "final_decision"];
@@ -335,7 +335,7 @@ async function pollForDeployment({ baseUrl, expectedCommit, fetchImpl = globalTh
         && health.testOnly === true
         && health.commit === expectedCommit
         && deployment
-        && deployment.serviceName === EXPECTED_RENDER_SERVICE_NAME
+        && deployment.serviceId === EXPECTED_RENDER_SERVICE_ID
         && deployment.repoSlug === EXPECTED_REPOSITORY
         && deployment.branch === EXPECTED_RENDER_BRANCH
         && deployment.commit === expectedCommit) return health;

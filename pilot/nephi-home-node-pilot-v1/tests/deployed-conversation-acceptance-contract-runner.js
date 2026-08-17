@@ -77,6 +77,7 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
 
   let healthCalls = 0;
   const expectedDeployment = {
+    serviceId: "srv-d9bqupbbc2fs73aselig",
     serviceName: "nephi-home-node-pilot-test-only",
     repoSlug: "gqlikjguo-web/nephi-home",
     branch: "test-only/node-pilot-integration",

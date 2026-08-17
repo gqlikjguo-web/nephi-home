@@ -6,6 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
+const { pollForDeployment } = require("../scripts/run-deployed-conversation-acceptance");
 
 async function main() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "health-deployment-identity-"));
@@ -16,14 +17,15 @@ async function main() {
     seedFile: path.resolve(__dirname, "../fixtures/seed.json")
   });
   const commit = "08f94ed118dc0f880c06d4dab725b1071cc251db";
-  const serviceId = "srv-formalhandoff123";
+  const serviceId = "srv-d9bqupbbc2fs73aselig";
+  const serviceName = "nephi-home-node-pilot-test-only-btye";
   const app = createApp({
     providers,
     adminAuthRequired: false,
     runtimeEnv: {
       TEST_ONLY_ENVIRONMENT: "false",
       RENDER_SERVICE_ID: serviceId,
-      RENDER_SERVICE_NAME: "nephi-home-node-pilot-test-only",
+      RENDER_SERVICE_NAME: serviceName,
       RENDER_GIT_BRANCH: "test-only/node-pilot-integration",
       RENDER_GIT_COMMIT: commit,
       RENDER_GIT_REPO_SLUG: "gqlikjguo-web/nephi-home",
@@ -45,7 +47,7 @@ async function main() {
         commit,
         deployment: {
           serviceId,
-          serviceName: "nephi-home-node-pilot-test-only",
+          serviceName,
           branch: "test-only/node-pilot-integration",
           commit,
           repoSlug: "gqlikjguo-web/nephi-home"
@@ -53,7 +55,20 @@ async function main() {
       }
     });
     assert.equal(JSON.stringify(body).includes(sensitiveSentinel), false);
-    console.log(JSON.stringify({ caseCount: 2, passCount: 2, failCount: 0 }));
+    const acceptedDeployment = { ...body.data.deployment, serviceName: "stale-informational-name" };
+    const acceptedHealth = await pollForDeployment({
+      baseUrl: url,
+      expectedCommit: commit,
+      timeoutMs: 0,
+      intervalMs: 0,
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, data: { ...body.data, testOnly: true, deployment: acceptedDeployment } })
+      })
+    });
+    assert.deepEqual(acceptedHealth, { ...body.data, testOnly: true, deployment: acceptedDeployment }, "serviceName must remain diagnostic while immutable serviceId controls test-only authority");
+    console.log(JSON.stringify({ caseCount: 3, passCount: 3, failCount: 0 }));
     console.log("health deployment identity: PASS");
   } finally {
     await app.stop();
