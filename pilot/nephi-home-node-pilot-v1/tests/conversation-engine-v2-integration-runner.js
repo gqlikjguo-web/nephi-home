@@ -191,6 +191,42 @@ function latestConditions(result) {
     compatibleCandidateCount: 0,
     continuationSelected: false
   });
+  const safeSlotPredicateTrace = formatSafeTestOnlyConversationTrace({
+    traceId: "slot-predicate-trace",
+    propertyId: "p1",
+    stage: "context_execution",
+    items: [],
+    automaticPendingRelation: {
+      reasonCode: "not_slot_only_lodging_turn",
+      plannerTaskCount: 1,
+      slotPredicateDiagnostic: {
+        hasDate: true,
+        hasRangeOrCheckOut: false,
+        hasStandaloneNights: false,
+        hasGuests: false,
+        hasProduct: false,
+        hasOtherEntity: false,
+        suppliedSlotKindCount: 1,
+        entityRawTextPresent: true,
+        sourceEqualsDateExpression: true,
+        finalSlotOnlyResult: false,
+        rawText: "PRIVATE GUEST TEXT"
+      }
+    }
+  });
+  assert.deepEqual(safeSlotPredicateTrace.automaticPendingRelation.slotPredicateDiagnostic, {
+    hasDate: true,
+    hasRangeOrCheckOut: false,
+    hasStandaloneNights: false,
+    hasGuests: false,
+    hasProduct: false,
+    hasOtherEntity: false,
+    suppliedSlotKindCount: 1,
+    entityRawTextPresent: true,
+    sourceEqualsDateExpression: true,
+    finalSlotOnlyResult: false
+  });
+  assert.equal(JSON.stringify(safeSlotPredicateTrace).includes("PRIVATE GUEST TEXT"), false);
   assert.deepEqual(safeContextValidation.candidates, [
     { candidateIndex: 0, relationKind: "new_request", candidateRequestCycleRefCount: 0, evidenceRefCount: 1, evidenceSourceMatches: [true] },
     { candidateIndex: 1, relationKind: "new_request", candidateRequestCycleRefCount: 0, evidenceRefCount: 1, evidenceSourceMatches: [true] },

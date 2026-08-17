@@ -549,7 +549,19 @@ assert.deepEqual(focusedDateContinuation.automaticPendingDiagnostic, {
   slotOnlyLodgingTurn: true,
   clarificationCandidateCount: 1,
   compatibleCandidateCount: 1,
-  continuationSelected: true
+  continuationSelected: true,
+  slotPredicateDiagnostic: {
+    hasDate: true,
+    hasRangeOrCheckOut: false,
+    hasStandaloneNights: false,
+    hasGuests: false,
+    hasProduct: false,
+    hasOtherEntity: false,
+    suppliedSlotKindCount: 1,
+    entityRawTextPresent: false,
+    sourceEqualsDateExpression: true,
+    finalSlotOnlyResult: true
+  }
 });
 
 const rawEntityDateOnlyDecision = decideContextExecutionV3({
@@ -592,7 +604,19 @@ assert.deepEqual(rawEntityDateOnlyDecision.automaticPendingDiagnostic, {
   slotOnlyLodgingTurn: false,
   clarificationCandidateCount: 0,
   compatibleCandidateCount: 0,
-  continuationSelected: false
+  continuationSelected: false,
+  slotPredicateDiagnostic: {
+    hasDate: true,
+    hasRangeOrCheckOut: false,
+    hasStandaloneNights: false,
+    hasGuests: false,
+    hasProduct: false,
+    hasOtherEntity: false,
+    suppliedSlotKindCount: 1,
+    entityRawTextPresent: true,
+    sourceEqualsDateExpression: true,
+    finalSlotOnlyResult: false
+  }
 });
 const bundleFollowup = decideContextExecutionV3({
   state: answeredAvailability,

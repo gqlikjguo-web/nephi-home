@@ -220,9 +220,8 @@ function suppliedSlotFields(task) {
 }
 
 function isSlotOnlyLodgingTurn(task) {
-  if (!task || !LODGING_PLANNER_TYPES.has(task.type)) return false;
-  const stay = task.stayCandidate || {};
-  const entity = task.entity || {};
+  const stay = task && task.stayCandidate || {};
+  const entity = task && task.entity || {};
   const hasDate = Boolean(
     stay.checkInCandidate
     || stay.checkOutCandidate
@@ -239,23 +238,48 @@ function isSlotOnlyLodgingTurn(task) {
     entity.canonicalCandidate
     && !["room", "bundle"].includes(entity.category)
   );
-  if (hasOtherEntity) return false;
-  const suppliedSlotKinds = [hasDate, hasStandaloneNights, hasGuests, hasProduct]
+  const hasRangeOrCheckOut = Boolean(
+    stay.checkOutCandidate
+    || stay.dateExpression && stay.dateExpression.kind === "range"
+  );
+  const suppliedSlotKindCount = [hasDate, hasStandaloneNights, hasGuests, hasProduct]
     .filter(Boolean).length;
-  if (suppliedSlotKinds !== 1) return false;
-  if (hasDate) {
-    if (stay.checkOutCandidate || (
-      stay.dateExpression && stay.dateExpression.kind === "range"
-    )) return false;
-    return !String(entity.rawText || "").trim()
-      && String(task.sourceText || "").trim()
-        === String(stay.dateExpression && stay.dateExpression.rawText || "").trim();
+  const entityRawTextPresent = Boolean(String(entity.rawText || "").trim());
+  const sourceEqualsDateExpression = String(task && task.sourceText || "").trim()
+    === String(stay.dateExpression && stay.dateExpression.rawText || "").trim();
+  let finalSlotOnlyResult = Boolean(
+    task && LODGING_PLANNER_TYPES.has(task.type)
+  );
+  if (finalSlotOnlyResult && hasOtherEntity) finalSlotOnlyResult = false;
+  if (finalSlotOnlyResult && suppliedSlotKindCount !== 1) {
+    finalSlotOnlyResult = false;
   }
-  if (hasStandaloneNights) {
-    return !String(entity.rawText || "").trim();
+  if (finalSlotOnlyResult && hasDate) {
+    finalSlotOnlyResult = !hasRangeOrCheckOut
+      && !entityRawTextPresent
+      && sourceEqualsDateExpression;
+  } else if (finalSlotOnlyResult && hasStandaloneNights) {
+    finalSlotOnlyResult = !entityRawTextPresent;
+  } else if (finalSlotOnlyResult && hasProduct) {
+    finalSlotOnlyResult = true;
+  } else if (finalSlotOnlyResult) {
+    finalSlotOnlyResult = hasGuests && !entityRawTextPresent;
   }
-  if (hasProduct) return true;
-  return hasGuests && !String(entity.rawText || "").trim();
+  return {
+    result: finalSlotOnlyResult,
+    diagnostic: {
+      hasDate,
+      hasRangeOrCheckOut,
+      hasStandaloneNights,
+      hasGuests,
+      hasProduct,
+      hasOtherEntity,
+      suppliedSlotKindCount,
+      entityRawTextPresent,
+      sourceEqualsDateExpression,
+      finalSlotOnlyResult
+    }
+  };
 }
 
 function automaticPendingRelation(state, plannerTasks, relations, now) {
@@ -285,8 +309,11 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
   )) return result("explicit_relation_present", null, {
     explicitRelationPresent: true
   });
-  if (!isSlotOnlyLodgingTurn(task)) {
-    return result("not_slot_only_lodging_turn");
+  const slotPredicate = isSlotOnlyLodgingTurn(task);
+  if (!slotPredicate.result) {
+    return result("not_slot_only_lodging_turn", null, {
+      slotPredicateDiagnostic: slotPredicate.diagnostic
+    });
   }
   const supplied = suppliedSlotFields(task);
   const lodgingTaskTypes = new Set([
@@ -317,7 +344,8 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
     return result("clarification_focus_ambiguous", null, {
       slotOnlyLodgingTurn: true,
       clarificationCandidateCount: clarificationCandidates.length,
-      compatibleCandidateCount: compatibleCandidates.length
+      compatibleCandidateCount: compatibleCandidates.length,
+      slotPredicateDiagnostic: slotPredicate.diagnostic
     });
   }
   const candidates = clarificationCandidates.length === 1
@@ -327,7 +355,8 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
     return result("no_unique_compatible_candidate", null, {
       slotOnlyLodgingTurn: true,
       clarificationCandidateCount: clarificationCandidates.length,
-      compatibleCandidateCount: candidates.length
+      compatibleCandidateCount: candidates.length,
+      slotPredicateDiagnostic: slotPredicate.diagnostic
     });
   }
   const target = candidates[0];
@@ -344,7 +373,8 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
     slotOnlyLodgingTurn: true,
     clarificationCandidateCount: clarificationCandidates.length,
     compatibleCandidateCount: candidates.length,
-    continuationSelected: true
+    continuationSelected: true,
+    slotPredicateDiagnostic: slotPredicate.diagnostic
   });
 }
 

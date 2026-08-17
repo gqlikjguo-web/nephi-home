@@ -422,6 +422,7 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
   };
   if (details.stage === "context_execution") {
     const automatic = details.automaticPendingRelation || {};
+    const predicate = automatic.slotPredicateDiagnostic;
     const safeReasons = new Set([
       "planner_task_count_not_one",
       "explicit_relation_present",
@@ -440,7 +441,21 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
         slotOnlyLodgingTurn: Boolean(automatic.slotOnlyLodgingTurn),
         clarificationCandidateCount: safeDiagnosticCount(automatic.clarificationCandidateCount),
         compatibleCandidateCount: safeDiagnosticCount(automatic.compatibleCandidateCount),
-        continuationSelected: Boolean(automatic.continuationSelected)
+        continuationSelected: Boolean(automatic.continuationSelected),
+        ...(predicate && typeof predicate === "object" ? {
+          slotPredicateDiagnostic: {
+            hasDate: Boolean(predicate.hasDate),
+            hasRangeOrCheckOut: Boolean(predicate.hasRangeOrCheckOut),
+            hasStandaloneNights: Boolean(predicate.hasStandaloneNights),
+            hasGuests: Boolean(predicate.hasGuests),
+            hasProduct: Boolean(predicate.hasProduct),
+            hasOtherEntity: Boolean(predicate.hasOtherEntity),
+            suppliedSlotKindCount: safeDiagnosticCount(predicate.suppliedSlotKindCount),
+            entityRawTextPresent: Boolean(predicate.entityRawTextPresent),
+            sourceEqualsDateExpression: Boolean(predicate.sourceEqualsDateExpression),
+            finalSlotOnlyResult: Boolean(predicate.finalSlotOnlyResult)
+          }
+        } : {})
       }
     };
   }
