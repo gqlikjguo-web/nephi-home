@@ -239,8 +239,7 @@ function isSlotOnlyLodgingTurn(task) {
     && !["room", "bundle"].includes(entity.category)
   );
   const hasRangeOrCheckOut = Boolean(
-    stay.checkOutCandidate
-    || stay.dateExpression && stay.dateExpression.kind === "range"
+    stay.dateExpression && stay.dateExpression.kind === "range"
   );
   const suppliedSlotKindCount = [hasDate, hasStandaloneNights, hasGuests, hasProduct]
     .filter(Boolean).length;

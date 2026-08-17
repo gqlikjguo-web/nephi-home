@@ -564,6 +564,73 @@ assert.deepEqual(focusedDateContinuation.automaticPendingDiagnostic, {
   }
 });
 
+const absoluteDateWithDerivedCheckout = decideContextExecutionV3({
+  state: clarificationFocusedPricingState,
+  relations: [{
+    candidateIndex: 0,
+    relationKind: "new_request",
+    stateAction: "start",
+    requestCycleId: null,
+    evidenceRefs: []
+  }],
+  plannerTasks: [{
+    ...dateOnlyPlannerTask,
+    taskId: "availability-absolute-date-with-checkout",
+    type: "availability",
+    sourceText: "9/5",
+    stayCandidate: {
+      ...dateOnlyPlannerTask.stayCandidate,
+      dateExpression: {
+        rawText: "9/5",
+        kind: "absolute",
+        anchor: "message_time"
+      },
+      checkInCandidate: "2026-09-05",
+      checkOutCandidate: "2026-09-06"
+    }
+  }],
+  catalog,
+  now: NOW
+});
+assert.equal(absoluteDateWithDerivedCheckout.executionItems[0].requestCycleId, "bundle-pricing-focus");
+assert.equal(absoluteDateWithDerivedCheckout.executionItems[0].task.type, "price");
+assert.equal(absoluteDateWithDerivedCheckout.executionItems[0].transition.reasonCode, "unique_pending_slot_update");
+assert.equal(absoluteDateWithDerivedCheckout.automaticPendingDiagnostic.slotPredicateDiagnostic.hasRangeOrCheckOut, false);
+assert.equal(absoluteDateWithDerivedCheckout.automaticPendingDiagnostic.slotPredicateDiagnostic.finalSlotOnlyResult, true);
+
+const explicitDateRange = decideContextExecutionV3({
+  state: clarificationFocusedPricingState,
+  relations: [{
+    candidateIndex: 0,
+    relationKind: "new_request",
+    stateAction: "start",
+    requestCycleId: null,
+    evidenceRefs: []
+  }],
+  plannerTasks: [{
+    ...dateOnlyPlannerTask,
+    taskId: "availability-explicit-date-range",
+    type: "availability",
+    sourceText: "9/5-9/6",
+    stayCandidate: {
+      ...dateOnlyPlannerTask.stayCandidate,
+      dateExpression: {
+        rawText: "9/5-9/6",
+        kind: "range",
+        anchor: "message_time"
+      },
+      checkInCandidate: "2026-09-05",
+      checkOutCandidate: "2026-09-06"
+    }
+  }],
+  catalog,
+  now: NOW
+});
+assert.equal(explicitDateRange.executionItems[0].transition.reasonCode, "new_task");
+assert.equal(explicitDateRange.automaticPendingDiagnostic.reasonCode, "not_slot_only_lodging_turn");
+assert.equal(explicitDateRange.automaticPendingDiagnostic.slotPredicateDiagnostic.hasRangeOrCheckOut, true);
+assert.equal(explicitDateRange.automaticPendingDiagnostic.slotPredicateDiagnostic.finalSlotOnlyResult, false);
+
 const rawEntityDateOnlyDecision = decideContextExecutionV3({
   state: clarificationFocusedPricingState,
   relations: [{
