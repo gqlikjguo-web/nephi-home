@@ -96,7 +96,13 @@ function replaceExecutionAuthorityCoverage() {
     assert.notEqual(item.transition.reasonCode, "new_task", "verified replace must not degrade to a new task");
     assert.equal(item.transition.contextTask.taskId, requestCycleId, "verified replace must preserve existing-request context authority");
     assert.equal(item.requestCycleId, requestCycleId, "verified replace must retain the referenced request cycle identity");
-    assert.equal(item.task.type, "booking_request", "verified replacement of an existing request must retain handoff authority");
+    assert.equal(item.task.taskId, requestCycleId, "verified replace must keep the original request task identity");
+    assert.equal(item.task.type, "availability", "verified replace must preserve the original availability capability");
+    assert.notEqual(item.task.type, "booking_request", "verified replace must not manufacture a booking request");
+    assert.equal(item.task.stayCandidate.checkInCandidate, replacement.checkInCandidate, "verified replace must apply only the supplied check-in slot");
+    assert.equal(item.task.stayCandidate.checkOutCandidate, replacement.checkOutCandidate, "verified replace must apply only the supplied check-out slot");
+    assert.equal(item.task.stayCandidate.nightsCandidate, replacement.nightsCandidate, "verified replace must apply only the supplied nights slot");
+    assert.equal(item.task.entity.canonicalCandidate, "bundle-all", "date replacement must preserve the existing lodging scope");
   }
 }
 function projectStateForLegacyAssertions(state) {

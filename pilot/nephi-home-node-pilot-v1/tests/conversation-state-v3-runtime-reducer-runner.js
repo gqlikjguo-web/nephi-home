@@ -19,6 +19,15 @@ const scope = {
   channel: "line:alpha",
   userId: "Ualpha"
 };
+const catalog = {
+  rooms: [
+    { canonicalId: "room-double", category: "room" },
+    { canonicalId: "room-quad", category: "room" }
+  ],
+  amenities: [],
+  policies: [],
+  faqs: []
+};
 
 function pendingPricingTask(overrides = {}) {
   return createConversationTaskV3({
@@ -157,8 +166,8 @@ const mixedDecision = decideContextExecutionV3({
   plannerTasks: [dateOnlyPlannerTask],
   now: NOW
 });
-assert.equal(mixedDecision.resumedPending, false);
-assert.notEqual(mixedDecision.executionItems[0].requestCycleId, "pricing-task");
+assert.equal(mixedDecision.resumedPending, true);
+assert.equal(mixedDecision.executionItems[0].requestCycleId, "pricing-task");
 
 const repeatedNewRequest = decideContextExecutionV3({
   state: previous,
@@ -183,6 +192,64 @@ assert.notEqual(
   "a repeated Planner task id must not merge a new request into stale state"
 );
 
+const saturdayPriceContinuation = decideContextExecutionV3({
+  state: previous,
+  relations: [{
+    candidateIndex: 0,
+    relationKind: "new_request",
+    stateAction: "start",
+    requestCycleId: null,
+    evidenceRefs: []
+  }],
+  plannerTasks: [{
+    ...dateOnlyPlannerTask,
+    taskId: "planner-availability",
+    type: "availability",
+    sourceText: "星期六",
+    stayCandidate: {
+      ...dateOnlyPlannerTask.stayCandidate,
+      dateExpression: {
+        rawText: "星期六",
+        kind: "weekday",
+        anchor: "message_time"
+      },
+      checkInCandidate: null
+    }
+  }],
+  catalog,
+  now: NOW
+});
+assert.equal(saturdayPriceContinuation.executionItems[0].requestCycleId, "pricing-task");
+assert.equal(saturdayPriceContinuation.executionItems[0].task.type, "price");
+
+const nightsPriceContinuation = decideContextExecutionV3({
+  state: previous,
+  relations: [{
+    candidateIndex: 0,
+    relationKind: "new_request",
+    stateAction: "start",
+    requestCycleId: null,
+    evidenceRefs: []
+  }],
+  plannerTasks: [{
+    ...dateOnlyPlannerTask,
+    taskId: "planner-availability-nights",
+    type: "availability",
+    sourceText: "住一晚",
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: 1,
+      guestCountCandidate: null
+    }
+  }],
+  catalog,
+  now: NOW
+});
+assert.equal(nightsPriceContinuation.executionItems[0].requestCycleId, "pricing-task");
+assert.equal(nightsPriceContinuation.executionItems[0].task.type, "price");
+
 const answeredAvailability = createConversationStateV3({
   ...scope,
   tasks: [pendingPricingTask({
@@ -198,6 +265,89 @@ const answeredAvailability = createConversationStateV3({
   updatedAt: NOW,
   expiresAt: FUTURE
 });
+const modifiedGuestCount = decideContextExecutionV3({
+  state: answeredAvailability,
+  relations: [{
+    candidateIndex: 0,
+    relationKind: "modify_existing",
+    stateAction: "replace",
+    requestCycleId: "availability-task",
+    evidenceRefs: []
+  }],
+  plannerTasks: [{
+    ...dateOnlyPlannerTask,
+    taskId: "change-guests",
+    type: "booking_request",
+    sourceText: "改四個",
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: 4
+    }
+  }],
+  catalog,
+  now: NOW
+});
+assert.equal(modifiedGuestCount.executionItems[0].requestCycleId, "availability-task");
+assert.equal(modifiedGuestCount.executionItems[0].task.type, "availability");
+assert.equal(modifiedGuestCount.executionItems[0].task.stayCandidate.guestCountCandidate, 4);
+
+const changedRoomScope = decideContextExecutionV3({
+  state: answeredAvailability,
+  relations: [{
+    candidateIndex: 0,
+    relationKind: "new_request",
+    stateAction: "start",
+    requestCycleId: null,
+    evidenceRefs: []
+  }],
+  plannerTasks: [{
+    ...dateOnlyPlannerTask,
+    taskId: "availability-room-quad",
+    type: "availability",
+    sourceText: "那四人房呢？",
+    entity: {
+      category: "room",
+      rawText: "四人房",
+      canonicalCandidate: "room-quad",
+      confidence: 0.99
+    },
+    stayCandidate: null
+  }],
+  catalog,
+  now: NOW
+});
+assert.equal(changedRoomScope.executionItems[0].requestCycleId, "availability-task");
+assert.equal(changedRoomScope.executionItems[0].task.type, "availability");
+assert.deepEqual(changedRoomScope.executionItems[0].transition.approvedProduct, {
+  productType: "room_type",
+  productId: "room-quad",
+  roomTypeId: "room-quad",
+  bundleId: null
+});
+
+const ambiguousPendingState = createConversationStateV3({
+  ...scope,
+  tasks: [
+    pendingPricingTask(),
+    pendingPricingTask({ taskId: "second-pricing-task" })
+  ],
+  createdAt: NOW,
+  updatedAt: NOW,
+  expiresAt: FUTURE
+});
+const ambiguousContinuation = decideContextExecutionV3({
+  state: ambiguousPendingState,
+  relations: [],
+  plannerTasks: [dateOnlyPlannerTask],
+  catalog,
+  now: NOW
+});
+assert.equal(ambiguousContinuation.resumedPending, false);
+assert.notEqual(ambiguousContinuation.executionItems[0].requestCycleId, "pricing-task");
+assert.notEqual(ambiguousContinuation.executionItems[0].requestCycleId, "second-pricing-task");
 const bundleFollowup = decideContextExecutionV3({
   state: answeredAvailability,
   relations: [{
@@ -341,12 +491,14 @@ const pendingCapacity = createConversationStateV3({
   updatedAt: NOW,
   expiresAt: FUTURE
 });
-assert.equal(decideContextExecutionV3({
+const automaticGuestContinuation = decideContextExecutionV3({
   state: pendingCapacity,
   relations: [],
   plannerTasks: [guestOnlyPlannerTask],
   now: NOW
-}).resumedPending, false, "raw guest-count wording must not create context continuation authority");
+});
+assert.equal(automaticGuestContinuation.resumedPending, true);
+assert.equal(automaticGuestContinuation.executionItems[0].requestCycleId, "capacity-task");
 assert.equal(decideContextExecutionV3({
   state: pendingCapacity,
   relations: [{ candidateIndex: guestOnlyPlannerTask.candidateIndex, stateAction: "continue", requestCycleId: "capacity-task", relationKind: "supplement_existing", evidenceRefs: [] }],
@@ -356,12 +508,22 @@ assert.equal(decideContextExecutionV3({
 assert.equal(decideContextExecutionV3({
   state: pendingCapacity,
   relations: [],
-  plannerTasks: [{
-    ...guestOnlyPlannerTask,
-    sourceText: "4 guests, also can I check in early?"
+  plannerTasks: [guestOnlyPlannerTask, {
+    ...dateOnlyPlannerTask,
+    candidateIndex: 1,
+    taskId: "early-arrival",
+    type: "policy",
+    dependsOnStayContext: false,
+    entity: {
+      category: "policy",
+      rawText: "early arrival",
+      canonicalCandidate: "check_in",
+      confidence: 0.99
+    },
+    stayCandidate: null
   }],
   now: NOW
-}).resumedPending, false, "additional semantics must prevent automatic guest-slot recovery");
+}).resumedPending, false, "a multi-task turn must not be absorbed into one pending cycle");
 
 const expired = createConversationStateV3({
   ...scope,
@@ -485,7 +647,7 @@ assert.equal(Object.hasOwn(reduced, "requestCycles"), false);
 
 console.log(JSON.stringify({
   suite: "conversation-state-v3-runtime-reducer",
-  caseCount: 22,
-  passCount: 22,
+  caseCount: 28,
+  passCount: 28,
   failCount: 0
 }));

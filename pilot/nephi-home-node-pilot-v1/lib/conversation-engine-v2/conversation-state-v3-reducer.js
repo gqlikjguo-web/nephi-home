@@ -219,35 +219,6 @@ function suppliedSlotFields(task) {
   return supplied;
 }
 
-function normalizeSlotExpression(value) {
-  return String(value || "")
-    .normalize("NFKC")
-    .toLowerCase()
-    .trim()
-    .replace(/[。.!！?？]+$/u, "")
-    .replace(/\s+/gu, " ");
-}
-
-function isExactGuestCountExpression(sourceText, guestCount) {
-  if (!Number.isInteger(guestCount)) return false;
-  const count = String(guestCount);
-  const expressions = new Set([
-    count,
-    `${count}人`,
-    `${count} 人`,
-    `${count}位`,
-    `${count} 位`,
-    `${count}名`,
-    `${count} 名`,
-    `${count}位客人`,
-    `${count} 位客人`,
-    `${count} guest`,
-    `${count} guests`,
-    `${count} people`
-  ]);
-  return expressions.has(normalizeSlotExpression(sourceText));
-}
-
 function isSlotOnlyLodgingTurn(task) {
   if (!task || !LODGING_PLANNER_TYPES.has(task.type)) return false;
   const stay = task.stayCandidate || {};
@@ -284,12 +255,7 @@ function isSlotOnlyLodgingTurn(task) {
     return !String(entity.rawText || "").trim();
   }
   if (hasProduct) return true;
-  return hasGuests
-    && !String(entity.rawText || "").trim()
-    && isExactGuestCountExpression(
-      task.sourceText,
-      stay.guestCountCandidate
-    );
+  return hasGuests && !String(entity.rawText || "").trim();
 }
 
 function automaticPendingRelation(state, plannerTasks, relations, now) {
@@ -302,20 +268,27 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
     relation.stateAction
   )) return null;
   if (!isSlotOnlyLodgingTurn(task)) return null;
-  const pending = state.tasks.filter((candidate) => (
-    currentTask(candidate, now)
-    && PENDING_STATUSES.has(candidate.status)
-  ));
-  if (pending.length !== 1) return null;
-  const target = pending[0];
   const supplied = suppliedSlotFields(task);
-  const suppliesMissingField = target.missingFields.some(
-    (field) => supplied.has(field)
-  );
-  const suppliesLodgingProduct = supplied.has("productId")
-    && ["availability", "pricing", "available_dates", "room_options", "capacity"]
-      .includes(target.taskType);
-  if (!suppliesMissingField && !suppliesLodgingProduct) return null;
+  const lodgingTaskTypes = new Set([
+    "availability",
+    "pricing",
+    "available_dates",
+    "room_options",
+    "capacity"
+  ]);
+  const candidates = state.tasks.filter((candidate) => {
+    if (!currentTask(candidate, now) || !lodgingTaskTypes.has(candidate.taskType)) {
+      return false;
+    }
+    if (PENDING_STATUSES.has(candidate.status)) {
+      return candidate.missingFields.some((field) => supplied.has(field))
+        || supplied.has("productId");
+    }
+    return candidate.status === "answered"
+      && (supplied.has("guestCount") || supplied.has("productId"));
+  });
+  if (candidates.length !== 1) return null;
+  const target = candidates[0];
   return {
     ...(relation || {
       candidateIndex: task.candidateIndex,
@@ -336,6 +309,19 @@ function decideContextExecutionV3({
   now
 }) {
   const effectiveRelations = [...(relations || [])];
+  const automaticRelation = automaticPendingRelation(
+    state,
+    plannerTasks,
+    effectiveRelations,
+    now
+  );
+  if (automaticRelation) {
+    const relationIndex = effectiveRelations.findIndex(
+      (relation) => relation.candidateIndex === automaticRelation.candidateIndex
+    );
+    if (relationIndex === -1) effectiveRelations.push(automaticRelation);
+    else effectiveRelations[relationIndex] = automaticRelation;
+  }
   const relationByCandidate = new Map(effectiveRelations.map(
     (relation) => [relation.candidateIndex, relation]
   ));
@@ -370,9 +356,7 @@ function decideContextExecutionV3({
         return [{
           candidateIndex: task.candidateIndex,
           requestCycleId: target.taskId,
-          task: relation.stateAction === "replace"
-            ? { ...contextTask, type: "booking_request", dependsOnStayContext: false }
-            : contextTask,
+          task: contextTask,
           transition: {
             reasonCode: relation.reasonCode || (
               relation.stateAction === "replace"
