@@ -38,6 +38,7 @@ function providerResponse(output) {
 (async () => {
   const requestBodies = { planner: [], critic: [], composer: [] };
   let internalContextSnapshot = null;
+  let internalPlannerInput = null;
   const critic = new TestOnlyOpenAiCoverageCritic({
     apiKey: "test-key",
     model: "test-model",
@@ -68,6 +69,7 @@ function providerResponse(output) {
   });
   const enginePlanner = {
     classify: async (input) => {
+      internalPlannerInput = input;
       internalContextSnapshot = input.contextSnapshot;
       const output = await planner.classify(input);
       const tasks = output.tasks.map((task, candidateIndex) => ({ ...task, candidateIndex }));
@@ -110,7 +112,15 @@ function providerResponse(output) {
   assert.equal(JSON.stringify(requestBodies.planner[0]).includes(lineUserId), false, "Planner OpenAI payload must not contain raw lineUserId");
   assert.equal(internalContextSnapshot.scope.userId, lineUserId, "provider serialization must not mutate the Engine contextSnapshot");
 
-  console.log(JSON.stringify({ caseCount: 7, passCount: 7, failCount: 0, requests: Object.fromEntries(Object.entries(requestBodies).map(([key, value]) => [key, value.length])) }));
+  await planner.requestOnce({ ...internalPlannerInput, lineUserId: "" }, 1);
+  await critic.review({ sourceEvents: [], coveredRequests: [], lineUserId: "" });
+  await composer.compose({ sections: [] }, { lineUserId: "" });
+  for (const [consumer, bodies] of Object.entries(requestBodies)) {
+    assert.equal(bodies.length, 2, `${consumer} must issue one identified and one anonymous request`);
+    assert.equal(Object.hasOwn(bodies[1], "safety_identifier"), false, `${consumer} must omit safety_identifier without lineUserId`);
+  }
+
+  console.log(JSON.stringify({ caseCount: 13, passCount: 13, failCount: 0, requests: Object.fromEntries(Object.entries(requestBodies).map(([key, value]) => [key, value.length])) }));
 })().catch((error) => {
   console.error(error.stack || error);
   process.exitCode = 1;
