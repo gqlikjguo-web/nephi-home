@@ -266,6 +266,13 @@ function selectAcceptanceMatrix({ matrix = DEPLOYED_ACCEPTANCE_MATRIX, caseIds }
   return trimmed.map((id) => byId.get(id));
 }
 
+function optionallySelectAcceptanceMatrix(matrix, rawCaseIds) {
+  const caseIds = String(rawCaseIds || "").trim();
+  return caseIds
+    ? selectAcceptanceMatrix({ matrix, caseIds: caseIds.split(",") })
+    : matrix;
+}
+
 function validateWorkflowIdentity(env) {
   if (env.GITHUB_REPOSITORY !== EXPECTED_REPOSITORY
     || env.GITHUB_REF !== EXPECTED_REF
@@ -278,26 +285,22 @@ function validateWorkflowIdentity(env) {
 function acceptanceMatrixForMode(env) {
   const mode = String(env.TEST_ONLY_ACCEPTANCE_MODE || "").trim();
   if (mode === "core_common_23") {
-    if (String(env.TEST_ONLY_ACCEPTANCE_CASE_IDS || "").trim()) throw new Error("core_common_23_case_filter_forbidden");
-    return { mode, matrix: CORE_COMMON_23_MATRIX };
+    return { mode, matrix: optionallySelectAcceptanceMatrix(CORE_COMMON_23_MATRIX, env.TEST_ONLY_ACCEPTANCE_CASE_IDS) };
   }
   if (mode === "full_matrix") {
-    if (String(env.TEST_ONLY_ACCEPTANCE_CASE_IDS || "").trim()) throw new Error("full_matrix_case_filter_forbidden");
-    return { mode, matrix: DEPLOYED_ACCEPTANCE_MATRIX };
+    return { mode, matrix: optionallySelectAcceptanceMatrix(DEPLOYED_ACCEPTANCE_MATRIX, env.TEST_ONLY_ACCEPTANCE_CASE_IDS) };
   }
   if (mode !== "target_preflight") throw new Error("acceptance_mode_invalid");
-  const rawIds = String(env.TEST_ONLY_ACCEPTANCE_CASE_IDS || "").split(",");
-  const selected = selectAcceptanceMatrix({ caseIds: rawIds });
-  const matrix = selected.map((item) => ({
+  const targetMatrix = selectAcceptanceMatrix({ caseIds: TARGET_PREFLIGHT_CASE_IDS }).map((item) => ({
     ...item,
     turns: TARGET_PREFLIGHT_TURNS[item.id].map((turnNumber) => item.turns[turnNumber - 1])
   }));
-  if (matrix.length !== TARGET_PREFLIGHT_CASE_IDS.length
-    || matrix.some((item, index) => item.id !== TARGET_PREFLIGHT_CASE_IDS[index] || item.turns.some((turn) => !turn))
-    || matrix.reduce((sum, item) => sum + item.turns.length, 0) !== 18) {
-    throw new Error("target_preflight_case_set_mismatch");
-  }
-  return { mode, matrix };
+  const caseIds = String(env.TEST_ONLY_ACCEPTANCE_CASE_IDS || "").trim();
+  return {
+    mode,
+    matrix: optionallySelectAcceptanceMatrix(targetMatrix, caseIds),
+    targetAttribution: !caseIds
+  };
 }
 
 function delay(milliseconds) { return milliseconds > 0 ? new Promise((resolve) => setTimeout(resolve, milliseconds)) : Promise.resolve(); }
@@ -1470,7 +1473,7 @@ async function main(env = process.env) {
       refreshOidcToken: () => requestGithubOidcToken(oidcRequest),
       commit,
       matrix: acceptance.matrix,
-      reportFinalizer: acceptance.mode === "target_preflight" ? validateTargetPreflightAttribution : null,
+      reportFinalizer: acceptance.targetAttribution === true ? validateTargetPreflightAttribution : null,
       reportWriter: (report) => writeAcceptanceReport(report, reportDirectory)
     }
   });

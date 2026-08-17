@@ -16,6 +16,10 @@ on:
           - full_matrix
           - core_common_23
           - operational_snapshot
+      acceptance_case_ids:
+        description: Optional comma-separated acceptance case IDs
+        required: false
+        type: string
 
 jobs:
   verify:
@@ -47,6 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ACCEPTANCE_MODE: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[full-matrix]') && 'full_matrix' || github.event_name == 'push' && 'target_preflight' || inputs.acceptance_mode }}
+      ACCEPTANCE_CASE_IDS: ${{ github.event_name == 'workflow_dispatch' && inputs.acceptance_case_ids || '' }}
     permissions:
       contents: read
       id-token: write
@@ -64,7 +69,7 @@ jobs:
           TEST_ONLY_ACCEPTANCE_PROPERTY_ID: nephi_home
           TEST_ONLY_ACCEPTANCE_MODE: ${{ env.ACCEPTANCE_MODE }}
           TEST_ONLY_ACCEPTANCE_DATA_MODE: operational_read_only
-          TEST_ONLY_ACCEPTANCE_CASE_IDS: ${{ env.ACCEPTANCE_MODE == 'target_preflight' && 'rg-003-price-nights,rg-004-bundle-price,rg-006-named-room-availability,rg-013-booking-request-full,rg-023-pool-fee,rg-029-checkin-latest,rg-033-kitchen,rg-037-multi-pool-price-checkin,rg-038-conversation-room-price-payment,rg-039-conversation-booking-refund,rgs-003-bbq,rgs-005-parking,rgs-010-pets,rgs-014-bundle-price,rgs-019-modify-room-mix,rgs-020-modify-date' || '' }}
+          TEST_ONLY_ACCEPTANCE_CASE_IDS: ${{ env.ACCEPTANCE_CASE_IDS }}
           TEST_ONLY_ACCEPTANCE_REPORT_DIR: ${{ runner.temp }}/junzan-${{ env.ACCEPTANCE_MODE }}-${{ github.sha }}
         run: node scripts/run-deployed-conversation-acceptance.js
       - name: Upload private deployed acceptance report

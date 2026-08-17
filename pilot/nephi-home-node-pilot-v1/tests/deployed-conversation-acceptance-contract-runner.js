@@ -935,6 +935,9 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.match(workflow, /name:\s*junzan-\$\{\{ inputs\.acceptance_mode \}\}-\$\{\{ github\.sha \}\}/);
   assert.match(workflow, /if:\s*always\(\)/, "the private report must upload even when the deployed matrix exits 1");
   assert.match(workflow, /TEST_ONLY_ACCEPTANCE_REPORT_DIR/);
+  assert.match(workflow, /acceptance_case_ids:\s*\r?\n\s*description:[^\n]*\r?\n\s*required:\s*false\s*\r?\n\s*type:\s*string/, "workflow dispatch must expose an optional acceptance case filter");
+  assert.match(workflow, /ACCEPTANCE_CASE_IDS:\s*\$\{\{[^\n]*inputs\.acceptance_case_ids[^\n]*\}\}/, "workflow must capture the optional dispatch filter");
+  assert.match(workflow, /TEST_ONLY_ACCEPTANCE_CASE_IDS:\s*\$\{\{[^\n]*env\.ACCEPTANCE_CASE_IDS[^\n]*\}\}/, "workflow must pass the optional case filter to the runner");
   assert.doesNotMatch(workflow, /continue-on-error|forced success/i);
 
   const targetIds = Object.keys(TARGET_PREFLIGHT_TURNS);
@@ -952,13 +955,31 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.doesNotThrow(() => validateWorkflowIdentity({ ...trustedIdentity, GITHUB_EVENT_NAME: "workflow_dispatch" }));
   assert.doesNotThrow(() => validateWorkflowIdentity({ ...trustedIdentity, GITHUB_EVENT_NAME: "push" }));
   assert.throws(() => validateWorkflowIdentity({ ...trustedIdentity, GITHUB_EVENT_NAME: "pull_request" }), /github_workflow_identity_mismatch/);
-  const targetedMatrix = acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "target_preflight", TEST_ONLY_ACCEPTANCE_CASE_IDS: targetIds.join(",") }).matrix;
-  assert.deepEqual(targetedMatrix.map((item) => item.id), targetIds);
-  assert.equal(targetedMatrix.reduce((sum, item) => sum + item.turns.length, 0), 18, "preflight must execute exactly the 18 previously failing turns");
-  assert.equal(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: "" }).matrix.length, 113);
-  assert.equal(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "core_common_23", TEST_ONLY_ACCEPTANCE_CASE_IDS: "" }).matrix, CORE_COMMON_23_MATRIX);
-  assert.throws(() => acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "core_common_23", TEST_ONLY_ACCEPTANCE_CASE_IDS: "core-common-01" }), /core_common_23_case_filter_forbidden/);
-  assert.throws(() => acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: targetIds[0] }), /full_matrix_case_filter_forbidden/);
+  const targetedSubset = acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "target_preflight", TEST_ONLY_ACCEPTANCE_CASE_IDS: targetIds.slice(0, 1).join(",") });
+  assert.deepEqual(targetedSubset.matrix.map((item) => item.id), targetIds.slice(0, 1));
+  assert.equal(targetedSubset.targetAttribution, false, "a filtered target-preflight run must not claim full target attribution");
+  assert.equal(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "target_preflight", TEST_ONLY_ACCEPTANCE_CASE_IDS: "" }).targetAttribution, true, "only the complete target-preflight mode keeps its dedicated attribution gate");
+  assert.equal(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: "" }).matrix, DEPLOYED_ACCEPTANCE_MATRIX, "blank full-matrix filter must preserve the complete matrix");
+  assert.equal(acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "core_common_23", TEST_ONLY_ACCEPTANCE_CASE_IDS: "" }).matrix, CORE_COMMON_23_MATRIX, "blank core-common filter must preserve the complete matrix");
+  assert.deepEqual(
+    acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "core_common_23", TEST_ONLY_ACCEPTANCE_CASE_IDS: "core-common-01" }).matrix.map((item) => item.id),
+    ["core-common-01"],
+    "core_common_23 must support a one-case subset"
+  );
+  const g5Subset = acceptanceMatrixForMode({
+    TEST_ONLY_ACCEPTANCE_MODE: "core_common_23",
+    TEST_ONLY_ACCEPTANCE_CASE_IDS: "core-common-19,core-common-20,core-common-21"
+  }).matrix;
+  assert.deepEqual(g5Subset.map((item) => item.id), ["core-common-19", "core-common-20", "core-common-21"]);
+  assert.equal(g5Subset.reduce((sum, item) => sum + item.turns.length, 0), 7, "G5 subset must preserve all seven turns and per-case conversations");
+  assert.deepEqual(
+    acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: `${targetIds[1]},${targetIds[0]}` }).matrix.map((item) => item.id),
+    [targetIds[1], targetIds[0]],
+    "full_matrix must support arbitrary subsets in requested order"
+  );
+  assert.throws(() => acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "core_common_23", TEST_ONLY_ACCEPTANCE_CASE_IDS: "core-common-999" }), /acceptance_case_id_unknown/);
+  assert.throws(() => acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "core_common_23", TEST_ONLY_ACCEPTANCE_CASE_IDS: "core-common-19,core-common-19" }), /acceptance_case_id_duplicate/);
+  assert.throws(() => acceptanceMatrixForMode({ TEST_ONLY_ACCEPTANCE_MODE: "full_matrix", TEST_ONLY_ACCEPTANCE_CASE_IDS: `${targetIds[0]},${targetIds[0]}` }), /acceptance_case_id_duplicate/);
   const correlationIdFor = (caseIndex, turnIndex) => `00000000-0000-4000-8000-${String(caseIndex * 10 + turnIndex + 1).padStart(12, "0")}`;
   const repairTargetFor = (caseId, correlationId) => {
     const byCase = {
