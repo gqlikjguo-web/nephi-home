@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { migratePostgres } = require("../lib/providers/postgres-migrate");
+const { openPostgres } = require("../lib/providers/postgres-client");
 const { createProviders } = require("../lib/providers/provider-factory");
 const { cleanInput } = require("../lib/onboarding-service");
 const { sessionTokenHash } = require("../lib/admin-auth");
@@ -14,6 +15,7 @@ const { executeTasks } = require("../lib/conversation-engine-v2/capability-execu
 
 const PROPERTY_ID = "formal_roundtrip";
 const SESSION_TOKEN = "formal-roundtrip-session";
+const SECOND_ROOM_ID = "room_secondary";
 
 function day(offset) {
   const value = new Date();
@@ -64,6 +66,18 @@ function onboardingInput() {
       fridayPrice: 1200,
       saturdayHolidayPrice: 1500,
       sundayPrice: 1100,
+      enabled: true
+    }, {
+      key: "secondary",
+      roomCode: "B",
+      displayName: "Secondary Room",
+      type: "double",
+      capacity: 2,
+      highlights: [],
+      mondayThursdayPrice: 1100,
+      fridayPrice: 1300,
+      saturdayHolidayPrice: 1600,
+      sundayPrice: 1200,
       enabled: true
     }],
     bundles: [{
@@ -150,7 +164,15 @@ function resolvedAmenity(property, canonicalId) {
     assert.equal(approved.commonAnswers.checkInTime, "15:00");
     assert.equal(approved.commonAnswers.latestArrivalTime, "21:30");
     assert.equal(approved.commonAnswers.checkOutTime, "11:00");
-    assert.equal(approved.rooms.find((item) => item.inventoryType === "bundle").entertainmentAmenities.find((item) => item.key === "singing").note, "Onboarding guest detail.");
+    const onboardingBundle = approved.rooms.find((item) => item.inventoryType === "bundle");
+    assert.equal(onboardingBundle.entertainmentAmenities.find((item) => item.key === "singing").note, "Onboarding guest detail.");
+    const inventoryGapDate = day(30);
+    const gapClient = await openPostgres(connection);
+    await gapClient.query(
+      "DELETE FROM inventory_availability_days WHERE property_id=$1 AND inventory_id=$2 AND stay_date=$3",
+      [PROPERTY_ID, onboardingBundle.id, inventoryGapDate]
+    );
+    await gapClient.close();
 
     providers.persistence.getAdminSession = async (hash) => hash === sessionTokenHash(SESSION_TOKEN)
       ? { propertyId: PROPERTY_ID, username: "owner" }
@@ -183,15 +205,54 @@ function resolvedAmenity(property, canonicalId) {
     const bundles = await request(running.url, `/api/bundles?customerId=${PROPERTY_ID}`);
     assert.equal(bundles.response.status, 200);
     const bundle = bundles.body.data.bundles[0];
+    const rejectedCreate = await request(running.url, "/api/bundles", {
+      method: "POST",
+      body: JSON.stringify({ ...bundle, customerId: PROPERTY_ID, name: "Duplicate bundle" })
+    });
+    assert.equal(rejectedCreate.response.status, 403, "operators must not create a second bundle after onboarding");
     const updatedAmenities = bundle.entertainmentAmenities.map((item) => item.key === "singing"
       ? { ...item, provided: true, statusSource: "operator", note: "Updated guest detail." }
       : item);
     const savedBundle = await request(running.url, `/api/bundles/${bundle.id}`, {
       method: "PUT",
-      body: JSON.stringify({ ...bundle, customerId: PROPERTY_ID, entertainmentAmenities: updatedAmenities })
+      body: JSON.stringify({
+        ...bundle,
+        customerId: PROPERTY_ID,
+        name: "Forbidden renamed bundle",
+        capacity: bundle.capacity + 1,
+        memberRoomIds: [SECOND_ROOM_ID],
+        enabled: false,
+        entertainmentAmenities: updatedAmenities,
+        mondayThursdayPrice: 6100,
+        fridayPrice: 7100,
+        saturdayHolidayPrice: 8100,
+        sundayPrice: 6600
+      })
     });
     assert.equal(savedBundle.response.status, 200);
-    assert.equal(savedBundle.body.data.bundle.entertainmentAmenities.find((item) => item.key === "singing").note, "Updated guest detail.");
+    assert.equal(savedBundle.body.data.bundle.name, bundle.name, "operator price writes must preserve bundle identity");
+    assert.equal(savedBundle.body.data.bundle.capacity, bundle.capacity, "operator price writes must preserve capacity");
+    assert.deepEqual(savedBundle.body.data.bundle.memberRoomIds, bundle.memberRoomIds, "operator price writes must preserve members");
+    assert.equal(savedBundle.body.data.bundle.enabled, bundle.enabled, "operator price writes must preserve enabled state");
+    assert.deepEqual(savedBundle.body.data.bundle.entertainmentAmenities, bundle.entertainmentAmenities, "operator price writes must preserve amenities");
+    assert.deepEqual(
+      ["mondayThursdayPrice", "fridayPrice", "saturdayHolidayPrice", "sundayPrice"].map((key) => savedBundle.body.data.bundle[key]),
+      [6100, 7100, 8100, 6600],
+      "operator price writes must update exactly the four approved prices"
+    );
+    const noBackfillClient = await openPostgres(connection);
+    const preservedGap = await noBackfillClient.query(
+      "SELECT count(*)::int rows FROM inventory_availability_days WHERE property_id=$1 AND inventory_id=$2 AND stay_date=$3",
+      [PROPERTY_ID, bundle.id, inventoryGapDate]
+    );
+    await noBackfillClient.close();
+    assert.equal(preservedGap.rows[0].rows, 0, "bundle price updates must not backfill inventory availability");
+
+    const rejectedDelete = await request(running.url, `/api/bundles/${bundle.id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ customerId: PROPERTY_ID })
+    });
+    assert.equal(rejectedDelete.response.status, 403, "operators must not delete an onboarding-created bundle");
 
     const checkIn = day(1);
     const checkOut = day(2);
@@ -207,30 +268,19 @@ function resolvedAmenity(property, canonicalId) {
       false
     );
     assert.equal(publicAvailability.response.status, 200);
-    assert.equal(publicAvailability.body.data.bundles[0].entertainmentAmenities.find((item) => item.key === "singing").note, "Updated guest detail.");
+    assert.equal(publicAvailability.body.data.bundles[0].entertainmentAmenities.find((item) => item.key === "singing").note, "Onboarding guest detail.");
 
     const latestProperty = providers.customerSettings.getProperty(PROPERTY_ID);
     const singing = resolvedAmenity(latestProperty, "singing");
-    assert.equal(singing.entity.answer.includes("Updated guest detail."), true);
+    assert.equal(singing.entity.answer.includes("Onboarding guest detail."), true);
     assert.equal(singing.entity.answer.includes("Legacy FAQ detail."), false);
-    assert.equal(singing.outcome.facts.answer.includes("Updated guest detail."), true);
+    assert.equal(singing.outcome.facts.answer.includes("Onboarding guest detail."), true);
     const location = singing.catalog.policies.find((item) => item.canonicalId === "location");
     assert.equal(location.address, "Newest formal address");
     assert.equal(location.mapUrl, "https://maps.app.goo.gl/NewestFormal");
     assert.equal(singing.catalog.policies.find((item) => item.canonicalId === "check_in").answer, "16:00");
     assert.equal(singing.catalog.policies.find((item) => item.canonicalId === "check_in__latest_arrival_policy").answer, "22:00");
     assert.equal(singing.catalog.policies.find((item) => item.canonicalId === "check_out").answer, "10:00");
-
-    const newestAmenities = savedBundle.body.data.bundle.entertainmentAmenities.map((item) => item.key === "singing"
-      ? { ...item, note: "Newest guest detail." }
-      : item);
-    await request(running.url, `/api/bundles/${bundle.id}`, {
-      method: "PUT",
-      body: JSON.stringify({ ...savedBundle.body.data.bundle, customerId: PROPERTY_ID, entertainmentAmenities: newestAmenities })
-    });
-    const nextQuery = resolvedAmenity(providers.customerSettings.getProperty(PROPERTY_ID), "singing");
-    assert.equal(nextQuery.outcome.facts.answer.includes("Newest guest detail."), true);
-    assert.equal(nextQuery.outcome.facts.answer.includes("Updated guest detail."), false);
 
     const publicProperty = await request(running.url, "/api/public/property?slug=formal-roundtrip", {}, false);
     assert.equal(publicProperty.response.status, 200);

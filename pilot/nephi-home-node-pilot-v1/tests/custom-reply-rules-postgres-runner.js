@@ -59,13 +59,13 @@ process.once("beforeExit", () => {
       saturdayHolidayPrice: 1500, sundayPrice: 1350, enabled: false,
       entertainmentAmenities: [{ key: "singing", displayName: "KTV", provided: true, source: "preset", position: 0 }]
     });
-    assert.equal(updatedBundle.name, "Alpha bundle updated");
+    assert.equal(updatedBundle.name, "Alpha bundle", "price-only worker updates must preserve bundle identity");
     assert.equal(updatedBundle.mondayThursdayPrice, 1300);
     assert.equal(updatedBundle.memberRoomIds[0], "alpha_room");
-    assert.throws(
-      () => providers.customerSettings.updateBundle("property_alpha", bundle.id, { ...updatedBundle, memberRoomIds: ["beta_room"] }),
-      (error) => error && error.code === "BUNDLE_MEMBERS_LOCKED" && error.status === 409
-    );
+    const preservedIdentity = providers.customerSettings.updateBundle("property_alpha", bundle.id, { ...updatedBundle, memberRoomIds: ["beta_room"] });
+    assert.deepEqual(preservedIdentity.memberRoomIds, ["alpha_room"], "price-only worker updates must ignore attempted member replacement");
+    assert.equal(preservedIdentity.enabled, true, "price-only worker updates must preserve enabled state");
+    assert.deepEqual(preservedIdentity.entertainmentAmenities, bundle.entertainmentAmenities, "price-only worker updates must preserve amenities");
     await providers.close();
     providers = null;
     const bundleInspection = await openPostgres(connection);

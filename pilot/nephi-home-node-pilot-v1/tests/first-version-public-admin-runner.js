@@ -56,6 +56,15 @@ function seedDate(offsetDays) {
   assert.match(adminScript, /bundle-members/, "bundle cards must render member room names as structured content");
   assert.doesNotMatch(adminScript, /已有特殊價格，確定覆蓋/, "saving a single-day price must not require a redundant overwrite confirmation");
   assert.match(adminScript, /bundleStatus/, "bundle writes must expose explicit success or failure feedback");
+  const bundleSubmitSource = adminScript.slice(adminScript.indexOf('$("bundleForm").onsubmit'), adminScript.indexOf('$("pricingMatrixForm").onsubmit'));
+  assert.match(bundleSubmitSource, /if \(!id\)/, "bundle price editing must require an onboarding-created identity");
+  assert.doesNotMatch(bundleSubmitSource, /method:\s*id\s*\?\s*"PUT"\s*:\s*"POST"/, "bundle UI must not retain a create path");
+  assert.doesNotMatch(bundleSubmitSource, /name:|capacity:|memberRoomIds:|entertainmentAmenities:|enabled:/, "bundle UI payload must contain only property scope and four prices");
+  assert.doesNotMatch(adminScript, /async function deleteBundle/, "bundle UI must not expose a delete action");
+  assert.match(adminHtml, /id="bundleForm" hidden/, "bundle editor must stay hidden until an existing bundle is selected");
+  assert.match(adminHtml, /id="bundleName" disabled/, "bundle identity fields must be locked");
+  assert.match(adminHtml, /<fieldset disabled><legend>包含房型/, "bundle members must be locked");
+  assert.match(adminHtml, /id="bundleEnabled" type="checkbox" disabled/, "bundle enabled state must be locked");
   assert.match(adminHtml, /id="monthlyInventoryControls"/, "availability admin must reserve an aligned monthly control row");
   assert.match(adminScript, /\/api\/availability\/month/, "monthly inventory controls must use the generic month endpoint");
   assert.match(adminScript, /renderMonthlyInventoryControls/, "monthly controls must be generated from current inventory data");

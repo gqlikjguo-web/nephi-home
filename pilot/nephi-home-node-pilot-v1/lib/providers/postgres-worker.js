@@ -131,10 +131,9 @@ async function operation(name, args) {
       const existing=await operation("listBundles",[propertyId]);
       const current=existing.find((bundle)=>bundle.id===bundleId);
       if(!current)throw new Error("bundle not found");
-      const requested=[...new Set((input.memberRoomIds||[]).map(String))].sort();
-      const currentMembers=[...current.memberRoomIds].sort();
-      const used=await client.query("SELECT 1 FROM bundle_availability_days WHERE property_id=$1 AND bundle_id=$2 LIMIT 1",[propertyId,bundleId]);
-      if(used.rows.length&&JSON.stringify(requested)!==JSON.stringify(currentMembers)){const error=new Error("bundle members cannot change after availability exists");error.code="BUNDLE_MEMBERS_LOCKED";error.statusCode=409;throw error;}
+      const prices={};for(const key of ["mondayThursdayPrice","fridayPrice","saturdayHolidayPrice","sundayPrice"]){const value=Number(input[key]);if(!Number.isInteger(value)||value<0)throw new Error("invalid bundle price");prices[key]=value;}
+      await client.query("UPDATE bundle_offers SET base_price=$3,monday_thursday_price=$3,friday_price=$4,saturday_holiday_price=$5,sunday_price=$6,updated_at=now() WHERE property_id=$1 AND bundle_id=$2",[propertyId,bundleId,prices.mondayThursdayPrice,prices.fridayPrice,prices.saturdayHolidayPrice,prices.sundayPrice]);
+      return (await operation("listBundles",[propertyId])).find(x=>x.id===bundleId)||null;
     }
     const members=[...new Set((input.memberRoomIds||[]).map(String))],amenities=normalizeEntertainmentAmenities(input.entertainmentAmenities),legacy=Number(input.basePrice),prices={};for(const key of ["mondayThursdayPrice","fridayPrice","saturdayHolidayPrice","sundayPrice"]){const raw=input[key]===undefined||input[key]===null||input[key]===""?legacy:Number(input[key]);if(!Number.isInteger(raw)||raw<0)throw new Error("invalid bundle price");prices[key]=raw;} if(!input.name||!members.length||!Number.isInteger(Number(input.capacity))||Number(input.capacity)<1)throw new Error("invalid bundle");
     const rooms=await client.query("SELECT room_id FROM room_types WHERE property_id=$1 AND room_id=ANY($2::text[])",[propertyId,members]);if(rooms.rows.length!==members.length)throw new Error("invalid bundle member");
