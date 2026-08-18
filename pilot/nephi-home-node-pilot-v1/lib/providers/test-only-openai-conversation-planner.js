@@ -148,50 +148,6 @@ function plannerProviderSchemaForCatalog(catalog, model = "", coverageRepair = n
   return schema;
 }
 
-function plannerTaskSchemaForCatalog(catalog, model = "", coverageRepair = null) {
-  const schema = plannerProviderSchemaForCatalog(catalog, model, coverageRepair);
-  delete schema.properties.contextRelationCandidates;
-  schema.required = schema.required.filter((field) => field !== "contextRelationCandidates");
-  return schema;
-}
-
-function contextLinkerSchema() {
-  return {
-    type: "object",
-    additionalProperties: false,
-    required: ["relations"],
-    properties: {
-      relations: {
-        type: "array",
-        minItems: 1,
-        maxItems: MAX_MERGED_TASKS,
-        items: {
-          type: "object",
-          additionalProperties: false,
-          required: ["candidateIndex", "kind", "historyTurn"],
-          properties: {
-            candidateIndex: { type: "integer", minimum: 0 },
-            kind: { type: "string", enum: ["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"] },
-            historyTurn: { type: ["integer", "null"], minimum: 1 }
-          }
-        }
-      }
-    }
-  };
-}
-
-function contextLinkerInstructions() {
-  return [
-    "You are JunZan AI Context Linker. Return only the strict schema.",
-    "The task semantics are already fixed and must not be changed, reclassified, added, or removed.",
-    "For each candidateIndex, decide only whether the current task is independent, continues, modifies, ends, or is ambiguously related to one bounded prior history turn.",
-    "Use new_request only when the task is semantically independent of every prior turn. Use supplement_existing when it relies on prior-turn context without changing a confirmed condition, including same-capability and cross-capability follow-ups. Use modify_existing only when it changes or removes a confirmed condition. Use end_existing only when it ends the prior request. Use relation_uncertain when either relation or antecedent is ambiguous.",
-    "For supplement_existing, modify_existing, or end_existing, select exactly one supplied historyTurn. For new_request or relation_uncertain, historyTurn must be null.",
-    "Prefer the immediately preceding natural antecedent identified by conversationLineage.latestTurnRefs; select an older turn only when the current meaning clearly refers to it.",
-    "Prior assistant text is dialogue context only, never a property fact or answer authority. Never output an internal requestCycleId."
-  ].join(" ");
-}
-
 function safeProviderErrorField(value, maxLength) {
   const text = String(value || "");
   return /^[A-Za-z0-9._:-]+$/.test(text) ? text.slice(0, maxLength) : "";
@@ -1882,7 +1838,7 @@ function httpFailure(status, model, providerError, responseBodyPresent) {
   return plannerFailure({ code: "planner_http_error", category: "invalid_request", status, model, responseBodyPresent, ...providerError });
 }
 
-function instructions({ includeContextRelation = true } = {}) {
+function instructions() {
   return [
     "You are JunZan AI Conversation Understanding and Planning Engine v2 for Taiwan lodging.",
     "Return only the strict schema. Split every independent clause that asks a substantive guest question into its own task and preserve each sourceText. Retain every coordinated subject or requested fact as a separate task even when subjects share one question word, date, or sentence.",
@@ -1892,12 +1848,11 @@ function instructions({ includeContextRelation = true } = {}) {
     "Use policy only for property rules or conditions, permissions, restrictions, processes, or exceptions; policy is not a monetary lodging amount classification.",
     "Requests to disclose access credentials, authentication secrets, entry codes, private keys, or other sensitive access information must use type high_risk, detailIntent general, requestedOutputs answer, dependsOnStayContext false, and entity category other. They must never be policy or property_fact and must remain human handoff.",
     "A pure social acknowledgement with no substantive request is discourse acknowledgement and shouldIgnore true. A message containing only punctuation or emoji with no contextual semantic request is also non-actionable; do not invent a property task. If punctuation is a genuine clarification signal in active context, use the explicit context relation rather than guessing a new fact.",
-    "stateOperations is a legacy compatibility field and must always be an empty array. Never emit a state action. Every task is a request candidate and must have a unique candidateIndex.",
-    ...(includeContextRelation ? ["Emit exactly one contextRelationCandidate for every task: new_request, supplement_existing, modify_existing, end_existing, or relation_uncertain. Every relation must cite the matching candidateIndex and at least one exact evidenceRef. An evidenceRef must cite one supplied source eventId or messageRef and copy the exact source message substring using its startOffset/endOffset and quote. A contextual relation may cite only one supplied conversationLineage historyTurn through candidateHistoryTurnRefs. Never emit or invent an internal requestCycleId. A relation_uncertain candidate must not choose a history turn."] : []),
+    "stateOperations is a legacy compatibility field and must always be an empty array. Never emit a state action. Every task is a request candidate and must have a unique candidateIndex. Emit exactly one contextRelationCandidate for every task: new_request, supplement_existing, modify_existing, end_existing, or relation_uncertain. Every relation must cite the matching candidateIndex and at least one exact evidenceRef. An evidenceRef must cite one supplied source eventId or messageRef and copy the exact source message substring using its startOffset/endOffset and quote. A contextual relation may cite only one supplied conversationLineage historyTurn through candidateHistoryTurnRefs. Never emit or invent an internal requestCycleId. A relation_uncertain candidate must not choose a history turn.",
     "EvidenceRefs are a source-coordinate contract for contextRelationCandidates and pending_task semanticCandidates. Every evidenceRef must include at least one non-empty eventId or messageRef copied only from one supplied sourceEvents item; if both are non-empty, they must identify that same item. startOffset is 0-based UTF-16 JavaScript string index inclusive and endOffset is exclusive: require 0 <= startOffset < endOffset <= that source messageText length. Set quote exactly to sourceEvents[].messageText.slice(startOffset, endOffset), with no paraphrase, normalization, translation, or guessed span. Independently verify every pending_task semanticCandidates evidenceRef before returning; bound candidates must rely on their verified relation provenance instead of model-calculated final evidence.",
-    ...(includeContextRelation ? ["Relation kinds are mutually exclusive. new_request means the current request is semantically independent and does not need prior-turn context; it must have zero history-turn references. supplement_existing means any follow-up that uses prior-turn context without modifying or removing a confirmed slot or product, including supplying a missing slot, repeating the same capability, or asking another capability within the same lodging context. modify_existing means the guest explicitly modifies or removes a confirmed slot or product from the referenced turn. end_existing means the guest ends the request from the referenced turn. If the intended relation or referenced turn is ambiguous, emit relation_uncertain and choose no history turn."] : []),
+    "Relation kinds are mutually exclusive. new_request means the current request is semantically independent and does not need prior-turn context; it must have zero history-turn references. supplement_existing means any follow-up that uses prior-turn context without modifying or removing a confirmed slot or product, including supplying a missing slot, repeating the same capability, or asking another capability within the same lodging context. modify_existing means the guest explicitly modifies or removes a confirmed slot or product from the referenced turn. end_existing means the guest ends the request from the referenced turn. If the intended relation or referenced turn is ambiguous, emit relation_uncertain and choose no history turn.",
     "The preceding user and assistant messages are bounded same-scope dialogue supplied only for semantic understanding. They are not a property fact source and not evidence authority. sourceEvents are the only evidence authority for the current tasks and relations; relation evidenceRefs must still cite exact current sourceEvents spans.",
-    ...(includeContextRelation ? ["Classify relation and capability independently. When the immediately preceding turn is the natural antecedent, prefer its historyTurn from conversationLineage.latestTurnRefs. Select an earlier historyTurn only when the semantics clearly refer to that earlier turn. When a substantive follow-up omits the subject, use the preceding dialogue plus conversationLineage to understand the latest turn and cite the uniquely intended historyTurn; JunZan deterministically maps that turn to an internal cycle. Do not copy prior reply text into facts, evidenceRefs, dates, products, or answers."] : []),
+    "Classify relation and capability independently. When the immediately preceding turn is the natural antecedent, prefer its historyTurn from conversationLineage.latestTurnRefs. Select an earlier historyTurn only when the semantics clearly refer to that earlier turn. When a substantive follow-up omits the subject, use the preceding dialogue plus conversationLineage to understand the latest turn and cite the uniquely intended historyTurn; JunZan deterministically maps that turn to an internal cycle. Do not copy prior reply text into facts, evidenceRefs, dates, products, or answers.",
     "Every task must emit a controlled detailIntent: general, time, start_time, end_time, latest_arrival_policy, early_arrival_policy, late_departure_policy, fee, quantity, eligibility, reservation_required, usage_restrictions, room_or_bundle_restriction, child_restrictions, seasonal_restrictions, weather_restrictions, conditions, or missing_information. For a follow-up whose wording omits the subject, cite only a clearly intended conversationLineage historyTurn; never reuse a prior reply as fact, because the runtime resolves the current property catalog again.",
     "A base availability or permission question about an existing facility, amenity, activity, or service must use detailIntent general and requestedOutputs answer. Use detailIntent eligibility with requestedOutputs eligibility only when the guest explicitly asks which person, plan, room, booking mode, identity, or stated condition is eligible. Do not infer eligibility from a generic permission word such as can, may, 可以, or 能不能.",
     "For every task, put only that request candidate's raw date expression, candidate check-in/check-out, nights, and guest count in task.stayCandidate. Set stayCandidate to null when that task has no stay context. Do not use task array order to associate conditions. The legacy top-level stay is retained only for one-task compatibility; for more than one task, do not place conditions only in top-level stay. Do not create canonical state fields, state patches, or arbitrary state paths.",
@@ -2037,75 +1992,6 @@ function bindProviderHistoryTurnRelations(output, authority) {
   };
 }
 
-function exactTaskEvidenceRefs(task, sourceEvents) {
-  const sourceText = String(task && task.sourceText || "");
-  if (!sourceText) return [];
-  const matches = [];
-  for (const event of Array.isArray(sourceEvents) ? sourceEvents : []) {
-    const messageText = String(event && event.messageText || "");
-    let offset = messageText.indexOf(sourceText);
-    while (offset >= 0) {
-      matches.push({
-        eventId: String(event && event.eventId || ""),
-        messageRef: String(event && event.messageRef || ""),
-        startOffset: offset,
-        endOffset: offset + sourceText.length,
-        quote: sourceText
-      });
-      offset = messageText.indexOf(sourceText, offset + 1);
-    }
-  }
-  return matches.length === 1 ? matches : [];
-}
-
-function contextLinkerMetadata(conversationContext, output) {
-  return {
-    contextSnapshot: conversationContext.metadata.contextSnapshot,
-    conversationLineage: conversationContext.metadata.conversationLineage,
-    tasks: (Array.isArray(output && output.tasks) ? output.tasks : []).map((task) => ({
-      candidateIndex: task.candidateIndex,
-      type: task.type,
-      requestedOutputs: task.requestedOutputs,
-      dependsOnStayContext: task.dependsOnStayContext,
-      entity: task.entity,
-      stayCandidate: task.stayCandidate
-    }))
-  };
-}
-
-function linkedPlannerOutput(output, linkerOutput, input) {
-  const tasksByCandidate = new Map((Array.isArray(output && output.tasks) ? output.tasks : [])
-    .map((task) => [task && task.candidateIndex, task]));
-  const relations = Array.isArray(linkerOutput && linkerOutput.relations)
-    ? linkerOutput.relations
-    : Array.isArray(linkerOutput && linkerOutput.contextRelationCandidates)
-      ? linkerOutput.contextRelationCandidates.map((relation) => ({
-          candidateIndex: relation.candidateIndex,
-          kind: relation.kind,
-          historyTurn: Array.isArray(relation.candidateHistoryTurnRefs) && relation.candidateHistoryTurnRefs.length === 1
-            ? relation.candidateHistoryTurnRefs[0]
-            : null
-        }))
-      : [];
-  return {
-    ...output,
-    contextRelationCandidates: relations.map((relation) => {
-      const contextual = ["supplement_existing", "modify_existing", "end_existing"].includes(relation && relation.kind);
-      return {
-        candidateIndex: relation && relation.candidateIndex,
-        kind: relation && relation.kind,
-        candidateHistoryTurnRefs: contextual && Number.isInteger(relation && relation.historyTurn) ? [relation.historyTurn] : [],
-        evidenceRefs: exactTaskEvidenceRefs(tasksByCandidate.get(relation && relation.candidateIndex), input && input.sourceEvents)
-      };
-    })
-  };
-}
-
-function hasReferenceableContext(conversationContext) {
-  return conversationContext.authority.turns.some((turn) => turn.requestCycleRefs.length > 0)
-    && conversationContext.metadata.contextSnapshot.cycles.length > 0;
-}
-
 function providerConversationContext(input) {
   const recentConversation = (Array.isArray(input.recentConversation)
     ? input.recentConversation.slice(-50)
@@ -2236,7 +2122,6 @@ class TestOnlyOpenAiConversationPlanner {
     const generatedRequestId = String(this.requestIdFactory() || "");
     const clientRequestId = UUID_PATTERN.test(generatedRequestId) ? generatedRequestId : crypto.randomUUID();
     const conversationContext = providerConversationContext(input);
-    const linkContext = hasReferenceableContext(conversationContext);
     const startedAtMs = Number(this.nowMs());
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs);
     let httpStatus = 0;
@@ -2261,7 +2146,7 @@ class TestOnlyOpenAiConversationPlanner {
           });
         } catch { /* diagnostics must never affect provider behavior */ }
       }
-      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, ...(String(input.lineUserId || "").trim() ? { safety_identifier: sha256(input.lineUserId) } : {}), input: [{ role: "system", content: [{ type: "input_text", text: instructions({ includeContextRelation: !linkContext }) }] }, { role: "developer", content: [{ type: "input_text", text: JSON.stringify(conversationContext.metadata) }] }, ...conversationContext.messages, { role: "user", content: [{ type: "input_text", text: String(input.currentMessage || "") }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: linkContext ? plannerTaskSchemaForCatalog(input.catalog, this.model, input.coverageRepair) : plannerProviderSchemaForCatalog(input.catalog, this.model, input.coverageRepair) } } }) });
+      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, ...(String(input.lineUserId || "").trim() ? { safety_identifier: sha256(input.lineUserId) } : {}), input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "developer", content: [{ type: "input_text", text: JSON.stringify(conversationContext.metadata) }] }, ...conversationContext.messages, { role: "user", content: [{ type: "input_text", text: String(input.currentMessage || "") }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerProviderSchemaForCatalog(input.catalog, this.model, input.coverageRepair) } } }) });
       const status = Number(response.status || response.statusCode || 0);
       httpStatus = Number.isInteger(status) ? status : 0;
       providerRequestId = safeResponseRequestId(response);
@@ -2281,32 +2166,7 @@ class TestOnlyOpenAiConversationPlanner {
       }
       if (!text) throw plannerFailure({ code: "planner_empty_response", category: "empty_response", status, model: this.model, responseBodyPresent: true });
       try {
-        output = JSON.parse(text);
-        if (linkContext) {
-          const linkerRequestId = crypto.randomUUID();
-          const linkerResponse = await this.fetchImpl(RESPONSES_URL, {
-            method: "POST",
-            headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": linkerRequestId },
-            signal: controller.signal,
-            body: JSON.stringify({
-              model: this.model,
-              ...(String(input.lineUserId || "").trim() ? { safety_identifier: sha256(input.lineUserId) } : {}),
-              input: [
-                { role: "system", content: [{ type: "input_text", text: contextLinkerInstructions() }] },
-                { role: "developer", content: [{ type: "input_text", text: JSON.stringify(contextLinkerMetadata(conversationContext, output)) }] },
-                ...conversationContext.messages,
-                { role: "user", content: [{ type: "input_text", text: String(input.currentMessage || "") }] }
-              ],
-              text: { format: { type: "json_schema", name: "junzan_context_link_v1", strict: true, schema: contextLinkerSchema() } }
-            })
-          });
-          const linkerPayload = await readProviderPayload(linkerResponse);
-          if (!linkerResponse.ok) throw httpFailure(Number(linkerResponse.status || 0), this.model, safeProviderError(linkerPayload.payload), linkerPayload.responseBodyPresent);
-          const linkerText = outputText(linkerPayload.payload);
-          if (!linkerText) throw plannerFailure({ code: "planner_empty_response", category: "empty_response", model: this.model, responseBodyPresent: linkerPayload.responseBodyPresent });
-          output = linkedPlannerOutput(output, JSON.parse(linkerText), input);
-        }
-        output = bindProviderHistoryTurnRelations(output, conversationContext.authority);
+        output = bindProviderHistoryTurnRelations(JSON.parse(text), conversationContext.authority);
         parsedOutputPresent = true;
       }
       catch { throw plannerFailure({ code: "planner_parse_error", category: "json_parse", status, model: this.model, name: "SyntaxError", responseBodyPresent: true, parsedOutputPresent: true }); }

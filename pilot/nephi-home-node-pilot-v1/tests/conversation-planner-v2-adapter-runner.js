@@ -1,7 +1,7 @@
 "use strict";
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
-const { TestOnlyOpenAiConversationPlanner, instructions } = require("../lib/providers/test-only-openai-conversation-planner");
+const { TestOnlyOpenAiConversationPlanner } = require("../lib/providers/test-only-openai-conversation-planner");
 const { TestOnlyOpenAiControlledComposer } = require("../lib/providers/test-only-openai-controlled-composer");
 const { runtimeConfig } = require("../config/runtime");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
@@ -21,9 +21,8 @@ const { mentionedFaqSubjects } = require("../lib/conversation-engine-v2/entity-r
 
 const output = { schemaVersion: 2, discourse: { relation: "new_request", confidence: 1 }, stateOperations: [], stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, tasks: [{ taskId: "1", type: "property_fact", sourceText: "你好", requestedOutputs: ["greeting"], dependsOnStayContext: false, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 1 }, confidence: 1 }], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "greeting" };
 let requestBody;
-let contextLinkerBody;
 const providerBoundaryDiagnostics = [];
-const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", onDiagnostic: (item) => providerBoundaryDiagnostics.push(item), fetchImpl: async (_url, options) => { const body = JSON.parse(options.body); if (body.text.format.name === "junzan_context_link_v1") contextLinkerBody = body; else requestBody = body; return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(output) }) }; } });
+const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", onDiagnostic: (item) => providerBoundaryDiagnostics.push(item), fetchImpl: async (_url, options) => { requestBody = JSON.parse(options.body); return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(output) }) }; } });
 
 (async () => {
   const recentConversation = [
@@ -36,12 +35,12 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(requestBody.text.format.name, "junzan_conversation_plan_v2");
   assert.equal(requestBody.text.format.strict, true);
   assert.equal(requestBody.text.format.schema.properties.tasks.minItems, 1);
-  assert.equal(Object.hasOwn(requestBody.text.format.schema.properties, "contextRelationCandidates"), false, "first-phase Planner schema must contain task semantics without relation selection");
-  assert.equal(contextLinkerBody.text.format.name, "junzan_context_link_v1");
-  assert.deepEqual(Object.keys(contextLinkerBody.text.format.schema.properties), ["relations"], "second-phase schema must be limited to context linking");
-  const taskPlannerInstructions = requestBody.input[0].content[0].text;
-  const plannerInstructions = instructions();
-  assert.doesNotMatch(taskPlannerInstructions, /supplement_existing|candidateHistoryTurnRefs/, "first-phase Planner instructions must not decide context relation or history turn");
+  const providerRelationSchema = requestBody.text.format.schema.properties.contextRelationCandidates.items;
+  assert.equal(Object.hasOwn(providerRelationSchema.properties, "candidateRequestCycleRefs"), false, "OpenAI provider schema must not expose internal requestCycleId authority");
+  assert.equal(Object.hasOwn(providerRelationSchema.properties, "candidateHistoryTurnRefs"), true, "OpenAI provider schema must expose only bounded history-turn relation references");
+  assert.ok(providerRelationSchema.required.includes("candidateHistoryTurnRefs"));
+  assert.ok(!providerRelationSchema.required.includes("candidateRequestCycleRefs"));
+  const plannerInstructions = requestBody.input[0].content[0].text;
   assert.deepEqual(requestBody.input.map((item) => item.role), ["system", "developer", "user", "assistant", "user", "assistant", "user"], "Responses API input must use native multi-turn roles with the current guest as the final user message");
   assert.equal(requestBody.input.at(-1).content[0].text, "費用多少", "current guest text must be the final user message rather than JSON context");
   const plannerInput = JSON.parse(requestBody.input[1].content[0].text);
@@ -139,9 +138,6 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
       model: "test-model",
       fetchImpl: async (_url, options) => {
         const body = JSON.parse(options.body);
-        if (body.text.format.name === "junzan_context_link_v1") {
-          return { ok: true, json: async () => ({ output_text: JSON.stringify({ relations: [{ candidateIndex: 0, kind: "supplement_existing", historyTurn }] }) }) };
-        }
         assert.equal(JSON.stringify(body.text.format.schema), relationContractSchema, "relation instruction changes must not alter the strict Planner schema");
         const providerInput = JSON.parse(body.input.find((item) => item.role === "developer").content[0].text);
         assert.equal(Object.hasOwn(providerInput, "recentConversation"), false);
@@ -189,62 +185,6 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(relationB.tasks[0].type, "availability", "cross-capability follow-up must preserve its current capability");
   assert.deepEqual(relationB.contextRelationCandidates[0].candidateRequestCycleRefs, ["answered-price-b"]);
   assert.equal(relationB.contextRelationCandidates[0].kind, "supplement_existing");
-
-  const linkerHistory = [
-    { guestMessage: "prior bundle price", replyText: "priced reply", createdAt: "2026-08-18T10:00:00.000Z", requestCycleRefs: ["linker-price-cycle"] }
-  ];
-  const linkerCases = [
-    { message: "same capability follow-up", type: "price" },
-    { message: "cross capability follow-up", type: "availability" }
-  ];
-  for (const linkerCase of linkerCases) {
-    let providerCall = 0;
-    let linkerSchemaSeen = false;
-    const firstPhase = migrateFakePlannerOutput({
-      ...JSON.parse(JSON.stringify(output)),
-      discourse: { relation: "new_request", confidence: 0.99 },
-      tasks: [{
-        candidateIndex: 0,
-        taskId: `linker-${linkerCase.type}`,
-        type: linkerCase.type,
-        sourceText: linkerCase.message,
-        detailIntent: "general",
-        requestedOutputs: [linkerCase.type === "price" ? "price" : "availability"],
-        eligibilityEvidence: { kind: "none", sourceText: "" },
-        dependsOnStayContext: true,
-        entity: { category: "bundle", rawText: "bundle", canonicalCandidate: null, confidence: 0.99 },
-        stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
-        confidence: 0.99
-      }],
-      contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateHistoryTurnRefs: [], evidenceRefs: [{ eventId: "linker-current", messageRef: "", startOffset: 0, endOffset: linkerCase.message.length, quote: linkerCase.message }] }]
-    });
-    const linkerPlanner = new TestOnlyOpenAiConversationPlanner({
-      apiKey: "test-key",
-      model: "test-model",
-      fetchImpl: async (_url, options) => {
-        providerCall += 1;
-        const body = JSON.parse(options.body);
-        if (providerCall === 1) return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(firstPhase) }) };
-        linkerSchemaSeen = body.text.format.name === "junzan_context_link_v1"
-          && JSON.stringify(Object.keys(body.text.format.schema.properties)) === JSON.stringify(["relations"]);
-        if (!linkerSchemaSeen) return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(firstPhase) }) };
-        return { ok: true, json: async () => ({ output_text: JSON.stringify({ relations: [{ candidateIndex: 0, kind: "supplement_existing", historyTurn: 1 }] }) }) };
-      }
-    });
-    const linkerResult = await linkerPlanner.classify({
-      currentMessage: linkerCase.message,
-      currentMessages: [linkerCase.message],
-      recentConversation: linkerHistory,
-      sourceEvents: [{ eventId: "linker-current", messageText: linkerCase.message }],
-      eventTimestamp: Date.parse("2026-08-18T10:01:00.000Z"),
-      catalog: { propertyId: "p1", rooms: [], bundles: [] },
-      contextSnapshot: { scope: {}, cycles: [{ requestCycleId: "linker-price-cycle", requestKind: "pricing", status: "answered", confirmedInputs: { stay: { checkIn: "2026-09-25", checkOut: "2026-09-26" }, inventory: { mode: "bundle_only", entityId: "bundle-all" } }, contextReuseExpiresAt: "2026-08-19T10:00:00.000Z" }] }
-    });
-    assert.equal(linkerSchemaSeen, true, "referenceable context must separate task semantics from context linking through the narrow schema");
-    assert.equal(linkerResult.tasks[0].type, linkerCase.type, "Context Linker must not alter Planner task capability");
-    assert.equal(linkerResult.contextRelationCandidates[0].kind, "supplement_existing");
-    assert.deepEqual(linkerResult.contextRelationCandidates[0].candidateRequestCycleRefs, ["linker-price-cycle"]);
-  }
   const olderTurn = await followupPlanner({ message: "older follow-up", type: "availability", cycleId: "older-orphan-availability", history: relationBHistory, historyTurn: 1, extraCycles: [{ requestCycleId: "answered-price-b", requestKind: "pricing", status: "answered", confirmedInputs: { stay: { checkIn: "2026-10-02", checkOut: "2026-10-03" }, inventory: { mode: "bundle_only", entityId: "bundle-all" } }, contextReuseExpiresAt: "2026-08-19T09:52:56.000Z" }] });
   assert.deepEqual(olderTurn.contextRelationCandidates[0].candidateRequestCycleRefs, ["older-orphan-availability"], "an explicit older-turn relation must resolve through that turn's deterministic lineage");
   const multiCycleHistory = [{ guestMessage: "multi-cycle turn", replyText: "multi-cycle reply", createdAt: "2026-08-18T09:54:00.000Z", requestCycleRefs: ["same-turn-price", "same-turn-availability"] }];
@@ -317,8 +257,8 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(plannerInstructions, /pure social acknowledgement/i, "planner must classify non-actionable acknowledgements without inventing a task");
   assert.match(requestBody.input[0].content[0].text, /punctuation or emoji/i, "planner must classify non-semantic punctuation and emoji by dialogue act");
   assert.match(requestBody.input[0].content[0].text, /price or total price/i, "planner must distinguish pricing from availability and policy");
-  assert.match(contextLinkerBody.input[0].content[0].text, /modify_existing.*changes or removes a confirmed condition/i, "Context Linker must express multi-turn replacement through the formal relation contract");
-  assert.match(contextLinkerBody.input[0].content[0].text, /new_request.*semantically independent/i, "Context Linker must not attach stale state to an independent request");
+  assert.match(requestBody.input[0].content[0].text, /modify_existing means.*explicitly modifies or removes a confirmed slot or product/i, "planner must express multi-turn replacement through the formal context relation");
+  assert.match(requestBody.input[0].content[0].text, /new_request means.*must have zero history-turn references/i, "planner must not attach stale state to a new request");
   assert.match(plannerInstructions, /EvidenceRefs are a source-coordinate contract/i, "planner must receive the validator's source-coordinate evidence contract");
   assert.match(plannerInstructions, /at least one non-empty eventId or messageRef/i, "planner must receive the source identity requirement");
   assert.match(plannerInstructions, /0-based UTF-16 JavaScript string index inclusive.*endOffset is exclusive/i, "planner must receive exact JavaScript offset semantics");

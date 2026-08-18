@@ -1,13 +1,12 @@
 {
   "schemaVersion": 1,
-  "expectedHead": "743e7663fab9927b2df3a6e8d4751352a057a5c5",
-  "baseline": "743e7663fab9927b2df3a6e8d4751352a057a5c5",
+  "expectedHead": "e72f7bcd87be144455033a65212fcd7080979615",
+  "baseline": "e72f7bcd87be144455033a65212fcd7080979615",
   "earliestFailure": {
-    "transition": "TestOnlyOpenAiConversationPlanner.requestOnce combined task-and-relation generation -> new_request despite correct bounded history",
+    "transition": "TestOnlyOpenAiConversationPlanner.requestOnce provider relation output -> deterministic requestCycleId authority",
     "file": "lib/providers/test-only-openai-conversation-planner.js",
     "functions": [
-      "requestOnce",
-      "instructions"
+      "requestOnce"
     ]
   },
   "contextCases": {
