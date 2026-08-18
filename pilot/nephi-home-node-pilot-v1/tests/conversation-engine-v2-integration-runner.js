@@ -1,5 +1,6 @@
 "use strict";
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { composeSection } = require("../lib/conversation-engine-v2/controlled-composer");
 const { formatSafeTestOnlyConversationTrace } = require("../server");
@@ -24,7 +25,8 @@ const persistence = {
     if (channelId !== "planner-history") return [];
     return [
       { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z", processingStatus: "reply_succeeded" },
-      { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", processingStatus: "reply_succeeded" }
+      { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", processingStatus: "reply_succeeded" },
+      { guestMessage: "費用多少", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:30.000Z", processingStatus: "reply_succeeded" }
     ];
   }
 };
@@ -126,6 +128,7 @@ function latestConditions(result) {
     expiresAt: "2026-08-19T09:50:16.000Z"
   }));
   let plannerHistoryInput = null;
+  const historyDiagnostics = [];
   const historyEngine = new ConversationEngineV2({
     planner: { classify: async (input) => {
       plannerHistoryInput = input;
@@ -135,7 +138,8 @@ function latestConditions(result) {
     getProperty: () => property,
     availabilityResolver,
     listPriceOverrides: () => [],
-    recentMessageLimit: 2,
+    recentMessageLimit: 3,
+    onDiagnostic: (item) => historyDiagnostics.push(item),
     now: () => new Date(historyNow)
   });
   await historyEngine.process({
@@ -149,14 +153,59 @@ function latestConditions(result) {
   });
   assert.deepEqual(plannerHistoryInput.recentConversation, [
     { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z" },
-    { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z" }
+    { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z" },
+    { guestMessage: "費用多少", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:30.000Z" }
   ], "Engine must provide bounded completed same-scope conversation history to Planner");
   assert.deepEqual(recentMessageQueries.at(-1), {
     propertyId: "p1",
     channelId: "planner-history",
     lineUserId: "planner-history-user",
-    options: { limit: 2, since: "2026-08-17T09:50:39.000Z" }
+    options: { limit: 3, since: "2026-08-17T09:50:39.000Z" }
   }, "Planner history must use the existing provider limit and 24-hour context reuse window");
+  const shortHash = (value) => crypto.createHash("sha256").update(value).digest("hex").slice(0, 16);
+  const historyLoad = historyDiagnostics.find((item) => item.stage === "recent_conversation_load");
+  assert.deepEqual(historyLoad && {
+    loadSuccess: historyLoad.loadSuccess,
+    count: historyLoad.count,
+    cycleCount: historyLoad.cycleCount,
+    reasonCode: historyLoad.reasonCode,
+    items: historyLoad.items
+  }, {
+    loadSuccess: true,
+    count: 3,
+    cycleCount: 1,
+    reasonCode: "loaded",
+    items: [
+      { createdAt: "2026-08-18T09:50:00.000Z", guestMessageHash: shortHash("包棟多少錢"), replyTextHash: shortHash("請補充入住日期。") },
+      { createdAt: "2026-08-18T09:50:16.000Z", guestMessageHash: shortHash("9/5"), replyTextHash: shortHash("12人包棟共18,000 TWD。") },
+      { createdAt: "2026-08-18T09:50:30.000Z", guestMessageHash: shortHash("費用多少"), replyTextHash: shortHash("請補充入住日期。") }
+    ]
+  }, "Engine diagnostic must record only bounded hashes, count, load status, and ContextSnapshot cycle count");
+  assert.doesNotMatch(JSON.stringify(historyLoad), /包棟多少錢|入住日期|18,000/, "Engine history diagnostic must not retain dialogue text");
+  const safeHistoryLoad = formatSafeTestOnlyConversationTrace(historyLoad);
+  assert.equal(safeHistoryLoad.count, 3);
+  assert.deepEqual(safeHistoryLoad.items, historyLoad.items, "safeTrace formatter must preserve only the already-hashed sequence");
+  assert.doesNotMatch(JSON.stringify(safeHistoryLoad), /包棟多少錢|入住日期|18,000/, "persistable safeTrace must not contain dialogue text");
+
+  const failedHistoryDiagnostics = [];
+  let failedHistoryPlannerInput = null;
+  const failedHistoryEngine = new ConversationEngineV2({
+    planner: { classify: async (input) => { failedHistoryPlannerInput = input; throw new Error("stop_after_failed_history_capture"); } },
+    persistence: { ...persistence, listRecentMessages: () => { throw new Error("sensitive provider detail"); } },
+    getProperty: () => property,
+    availabilityResolver,
+    listPriceOverrides: () => [],
+    recentMessageLimit: 3,
+    now: () => new Date(historyNow),
+    onDiagnostic: (item) => failedHistoryDiagnostics.push(item)
+  });
+  await failedHistoryEngine.process({ customerId: "p1", channelId: "planner-history", lineUserId: "planner-history-user", eventId: "planner-history-failed", eventTimestamp: historyNow, messageText: "費用多少" });
+  assert.deepEqual(failedHistoryPlannerInput.recentConversation, [], "history failure must retain the existing empty-history fail-safe");
+  const failedHistoryLoad = failedHistoryDiagnostics.find((item) => item.stage === "recent_conversation_load");
+  assert.deepEqual(failedHistoryLoad && { loadSuccess: failedHistoryLoad.loadSuccess, count: failedHistoryLoad.count, cycleCount: failedHistoryLoad.cycleCount, reasonCode: failedHistoryLoad.reasonCode, items: failedHistoryLoad.items }, {
+    loadSuccess: false, count: 0, cycleCount: 1, reasonCode: "list_recent_messages_failed", items: []
+  });
+  assert.doesNotMatch(JSON.stringify(failedHistoryLoad), /sensitive provider detail/, "history exception diagnostic must expose only a fixed reason code");
 
   const pricingCalls = [];
   let pricingAvailableDatesCalls = 0;
@@ -231,7 +280,7 @@ function latestConditions(result) {
   assert.ok(guarded.replyText.includes("停車位"));
   assert.ok(guarded.replyText.includes("麻將"));
   assert.deepEqual(guarded.claimValidation.coveredTaskIds.sort(), ["a", "b", "c"]);
-  assert.deepEqual(diagnostics.map((item) => item.stage), ["property_catalog", "planner", "validation", "semantic_contract", "context_validation", "pending_request", "no_reply_gate", "context_execution", "canonical_request", "temporal", "entity_resolution", "formal_request", "query_plan", "executor", "response_plan", "state", "pending_request", "composer", "claim_validator", "line_ready", "final_decision"]);
+  assert.deepEqual(diagnostics.map((item) => item.stage), ["recent_conversation_load", "property_catalog", "planner", "validation", "semantic_contract", "context_validation", "pending_request", "no_reply_gate", "context_execution", "canonical_request", "temporal", "entity_resolution", "formal_request", "query_plan", "executor", "response_plan", "state", "pending_request", "composer", "claim_validator", "line_ready", "final_decision"]);
   assert.equal(new Set(diagnostics.map((item) => item.traceId)).size, 1);
   assert.equal(guarded.replyText, result.replyText);
   const safeDiagnostics = diagnostics.map(formatSafeTestOnlyConversationTrace).filter(Boolean);

@@ -1,5 +1,6 @@
 "use strict";
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const { TestOnlyOpenAiConversationPlanner } = require("../lib/providers/test-only-openai-conversation-planner");
 const { TestOnlyOpenAiControlledComposer } = require("../lib/providers/test-only-openai-controlled-composer");
 const { runtimeConfig } = require("../config/runtime");
@@ -20,14 +21,15 @@ const { mentionedFaqSubjects } = require("../lib/conversation-engine-v2/entity-r
 
 const output = { schemaVersion: 2, discourse: { relation: "new_request", confidence: 1 }, stateOperations: [], stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null }, tasks: [{ taskId: "1", type: "property_fact", sourceText: "你好", requestedOutputs: ["greeting"], dependsOnStayContext: false, entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 1 }, confidence: 1 }], ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "greeting" };
 let requestBody;
-const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", fetchImpl: async (_url, options) => { requestBody = JSON.parse(options.body); return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(output) }) }; } });
+const providerBoundaryDiagnostics = [];
+const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", onDiagnostic: (item) => providerBoundaryDiagnostics.push(item), fetchImpl: async (_url, options) => { requestBody = JSON.parse(options.body); return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(output) }) }; } });
 
 (async () => {
   const recentConversation = [
     { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z" },
     { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z" }
   ];
-  const result = await planner.classify({ currentMessage: "你好", currentMessages: ["你好"], recentConversation, eventTimestamp: 1, catalog: { propertyId: "p1", rooms: [] }, conversationState: { schemaVersion: 2 } });
+  const result = await planner.classify({ traceId: "trace-history-boundary", currentMessage: "你好", currentMessages: ["你好"], recentConversation, eventTimestamp: 1, catalog: { propertyId: "p1", rooms: [] }, contextSnapshot: { scope: { propertyId: "p1", channelId: "line", userId: "must-not-leak" }, cycles: [{ requestCycleId: "must-not-leak-cycle" }] }, conversationState: { schemaVersion: 2 } });
   assert.equal(result.schemaVersion, 2);
   assert.equal(Array.isArray(result[Symbol.for("junzan.plannerProviderDiagnostic")].semanticLedgerBoundaries), true, "direct provider output must retain semantic-ledger boundary diagnostics");
   assert.equal(requestBody.text.format.name, "junzan_conversation_plan_v2");
@@ -36,6 +38,34 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const plannerInstructions = requestBody.input[0].content[0].text;
   const plannerInput = JSON.parse(requestBody.input[1].content[0].text);
   assert.deepEqual(plannerInput.recentConversation, recentConversation, "the Planner provider must receive bounded completed cross-turn conversation history");
+  const shortHash = (value) => crypto.createHash("sha256").update(value).digest("hex").slice(0, 16);
+  assert.deepEqual(providerBoundaryDiagnostics[0], {
+    traceId: "trace-history-boundary",
+    propertyId: "p1",
+    stage: "planner_provider_input",
+    loadSuccess: true,
+    count: 2,
+    cycleCount: 1,
+    reasonCode: "provider_input_ready",
+    items: [
+      { createdAt: "2026-08-18T09:50:00.000Z", guestMessageHash: shortHash("包棟多少錢"), replyTextHash: shortHash("請補充入住日期。") },
+      { createdAt: "2026-08-18T09:50:16.000Z", guestMessageHash: shortHash("9/5"), replyTextHash: shortHash("12人包棟共18,000 TWD。") }
+    ]
+  }, "provider must emit the exact hashed history sequence immediately before fetch");
+  assert.doesNotMatch(JSON.stringify(providerBoundaryDiagnostics[0]), /包棟多少錢|入住日期|18,000|must-not-leak/, "provider-boundary diagnostic must not retain dialogue, user, or cycle identity");
+  let diagnosticFailureFetchCalled = false;
+  const diagnosticFailurePlanner = new TestOnlyOpenAiConversationPlanner({
+    apiKey: "test-key",
+    model: "test-model",
+    onDiagnostic: () => { throw new Error("diagnostic_failure_must_be_isolated"); },
+    fetchImpl: async () => {
+      diagnosticFailureFetchCalled = true;
+      return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(output) }) };
+    }
+  });
+  const diagnosticFailureResult = await diagnosticFailurePlanner.classify({ traceId: "trace-diagnostic-failure", currentMessage: "你好", currentMessages: ["你好"], recentConversation, eventTimestamp: 1, catalog: { propertyId: "p1", rooms: [] }, contextSnapshot: { scope: {}, cycles: [] } });
+  assert.equal(diagnosticFailureFetchCalled, true, "diagnostic failure must not prevent the provider fetch");
+  assert.equal(diagnosticFailureResult.schemaVersion, result.schemaVersion, "diagnostic failure must not alter Planner output");
   assert.match(plannerInstructions, /recentConversation.*semantic understanding.*not.*fact.*not.*evidence/i, "recent conversation must be explicitly non-authoritative semantic context");
   assert.match(plannerInstructions, /sourceEvents.*only.*evidence/i, "current sourceEvents must remain the sole evidence authority");
   assert.match(plannerInstructions, /relation.*capability.*independent/i, "Planner must classify follow-up relation independently from capability");

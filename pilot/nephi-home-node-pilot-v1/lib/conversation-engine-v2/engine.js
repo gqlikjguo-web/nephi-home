@@ -34,6 +34,7 @@ const { buildCanonicalFormalRequest, buildCanonicalQueryPlan, resultForNotReady 
 const { buildFinalDecision } = require("./final-decision");
 const { SAFE_HANDOFF_TEXT, buildFinalResponse } = require("./final-response-renderer");
 const { applyControlledReplyRules } = require("../custom-reply-rules");
+const { recentConversationSafeSummary } = require("../recent-conversation-safe-diagnostic");
 
 const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
 const TEMPORAL_FAILURE_STATUSES = new Set(["unresolved"]);
@@ -491,6 +492,10 @@ class ConversationEngineV2 {
     const contextSnapshot = buildContextSnapshotV3(previous, scope);
     this.traceContexts.set(traceId, { timestamp: new Date().toISOString(), correlationId: traceId, eventId: input.eventId, sourceEventIds: sourceEvents.map((event) => event.eventId).filter(Boolean), propertyId: input.customerId, ...(this.diagnosticDetail ? { userKeyHash: crypto.createHash("sha256").update(String(input.lineUserId || "")).digest("hex").slice(0, 16), messageText: input.messageText, sourceEvents } : {}) });
     let recentConversation = [];
+    let recentConversationLoadSuccess = true;
+    let recentConversationReasonCode = contextSnapshot.cycles.length > 0
+      ? "loaded"
+      : "context_snapshot_empty";
     if (
       contextSnapshot.cycles.length > 0
       && this.persistence
@@ -512,14 +517,25 @@ class ConversationEngineV2 {
         })).filter((item) => item.guestMessage);
       } catch {
         recentConversation = [];
+        recentConversationLoadSuccess = false;
+        recentConversationReasonCode = "list_recent_messages_failed";
       }
+    } else if (contextSnapshot.cycles.length > 0) {
+      recentConversationLoadSuccess = false;
+      recentConversationReasonCode = "list_recent_messages_unavailable";
     }
+    this.trace(traceId, "recent_conversation_load", {
+      loadSuccess: recentConversationLoadSuccess,
+      reasonCode: recentConversationReasonCode,
+      cycleCount: contextSnapshot.cycles.length,
+      ...recentConversationSafeSummary(recentConversation)
+    });
     const catalog = buildPropertyCatalog(property);
     this.trace(traceId, "property_catalog", { providerType: this.diagnosticMetadata.providerType || "unknown", location: catalog.locationDiagnostics || { source: "none", profileValuePresent: false, transportValuePresent: false, urlValidation: "fail" } });
     if (this.diagnosticDetail) this.trace(traceId, "state_before", { state: traceState(previous) });
     let plannerOutput, parserSucceeded = false;
     try {
-      plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], recentConversation, sourceEvents, eventTimestamp: input.eventTimestamp, catalog, contextSnapshot, lineUserId: input.lineUserId });
+      plannerOutput = await this.planner.classify({ traceId, currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], recentConversation, sourceEvents, eventTimestamp: input.eventTimestamp, catalog, contextSnapshot, lineUserId: input.lineUserId });
       parserSucceeded = true;
     } catch (error) {
       plannerOutput = null;

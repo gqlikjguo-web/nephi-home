@@ -271,6 +271,20 @@ function safePlannerAttempts(value) {
 
 function formatSafeTestOnlyConversationTrace(details = {}) {
   const base = { scope: "conversation-engine-v2", traceId: String(details.traceId || ""), propertyId: String(details.propertyId || ""), stage: String(details.stage || "") };
+  if (details.stage === "recent_conversation_load" || details.stage === "planner_provider_input") return {
+    ...base,
+    loadSuccess: Boolean(details.loadSuccess),
+    count: safeDiagnosticCount(details.count),
+    cycleCount: safeDiagnosticCount(details.cycleCount),
+    reasonCode: ["loaded", "context_snapshot_empty", "list_recent_messages_failed", "list_recent_messages_unavailable", "provider_input_ready"].includes(String(details.reasonCode || ""))
+      ? String(details.reasonCode)
+      : "",
+    items: (Array.isArray(details.items) ? details.items : []).slice(0, 50).map((item) => ({
+      createdAt: String(item && item.createdAt || "").slice(0, 40),
+      guestMessageHash: /^[a-f0-9]{16}$/.test(String(item && item.guestMessageHash || "")) ? String(item.guestMessageHash) : "",
+      replyTextHash: /^[a-f0-9]{16}$/.test(String(item && item.replyTextHash || "")) ? String(item.replyTextHash) : ""
+    }))
+  };
   if (details.stage === "property_catalog") {
     const location = details.location || {};
     return { ...base, providerType: String(details.providerType || "unknown"), location: {

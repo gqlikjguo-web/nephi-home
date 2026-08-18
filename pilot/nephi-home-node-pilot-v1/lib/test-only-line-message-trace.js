@@ -15,6 +15,8 @@ const SAFE_SEMANTIC_LIFECYCLES = new Set(["bound", "pending_task", "unknown"]);
 const SAFE_SEMANTIC_MISSING_REFS_REASONS = new Set(["", "pending_invalid_raw_evidence", "bound_missing_provenance", "bound_unknown_provenance_relation", "bound_relation_context_invalid", "bound_relation_evidence_invalid", "compiled_evidence_lost", "other"]);
 const TRACE_STAGES = new Set([
   "state_before",
+  "recent_conversation_load",
+  "planner_provider_input",
   "planner",
   "validation",
   "context_validation",
@@ -45,7 +47,8 @@ const SAFE_KEYS = new Set([
   "dateExpressionPresent", "expressionType", "repairReasonCode", "provenance", "ruleRefs", "fields", "produced",
   "responseMode", "riskLevel", "stayDependency", "shouldReply", "attempted", "delivered", "deliveryErrorCode",
   "repairCorrelationId", "coverageCriticResultStatus", "coverageCriticErrorCategory", "coverageCriticFailureCode",
-  "repairRequired", "repairAllowed", "understandingCallsUsed", "understandingCallsLimit"
+  "repairRequired", "repairAllowed", "understandingCallsUsed", "understandingCallsLimit",
+  "loadSuccess", "count", "cycleCount", "guestMessageHash", "replyTextHash", "items"
 ]);
 const BLOCKED_KEY_PATTERN = /(secret|token|password|credential|authorization|cookie|database.?url|line.?user|source.?text|evidence|prompt|email|phone|contact|address)/i;
 
@@ -171,6 +174,9 @@ function stateBeforeProjection(entry) {
 
 function diagnosticProjection(stage, entry) {
   if (stage === "state_before") return stateBeforeProjection(entry);
+  if (stage === "recent_conversation_load" || stage === "planner_provider_input") {
+    return select(entry, ["loadSuccess", "count", "cycleCount", "reasonCode", "items"]);
+  }
   if (stage === "planner") {
     return {
       ...select(entry, ["parserSucceeded", "taskCount", "discourse", "shouldIgnore", "failure", "failureCode", "providerAttemptCount", "firstAttemptErrorCategory", "finalErrorCategory", "retryPerformed", "retrySucceeded", "taskCollectionRepairPerformed", "preservedTaskCount", "fallbackTaskCount", "coverageRepairPerformed", "coverageRepairSucceeded", "coverageRepairFallback", "coverageCriticResultStatus", "coverageCriticErrorCategory", "coverageCriticFailureCode", "repairRequired", "repairAllowed", "understandingCallsUsed", "understandingCallsLimit"]),

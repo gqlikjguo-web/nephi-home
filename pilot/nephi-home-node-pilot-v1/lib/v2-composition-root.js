@@ -8,7 +8,7 @@ const { ConversationEngineV2Coordinator } = require("./conversation-engine-v2/co
 function createV2CompositionRoot({ providers, service, env = process.env, now = () => new Date(), debounceMs = 2000, planner, composer, onDiagnostic, diagnosticDetail = false, testOnlyOverrides = null } = {}) {
   const overrides = testOnlyOverrides || {};
   const engine = new ConversationEngineV2({
-    planner: overrides.planner || planner || createTestOnlyOpenAiConversationPlannerFromEnv({ env }),
+    planner: overrides.planner || planner || createTestOnlyOpenAiConversationPlannerFromEnv({ env, onDiagnostic: overrides.onDiagnostic || onDiagnostic }),
     composer: overrides.composer || composer || createTestOnlyOpenAiControlledComposerFromEnv({ env }),
     persistence: overrides.persistence || providers.persistence,
     getProperty: overrides.getProperty || ((propertyId) => providers.customerSettings.getProperty(propertyId)),

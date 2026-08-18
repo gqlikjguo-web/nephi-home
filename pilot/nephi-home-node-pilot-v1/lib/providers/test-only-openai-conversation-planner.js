@@ -12,6 +12,7 @@ const {
   captureTestOnlyAcceptanceRawUnderstanding
 } = require("../test-only-raw-understanding-diagnostic");
 const { sha256 } = require("../test-only-line-message-trace");
+const { recentConversationSafeSummary } = require("../recent-conversation-safe-diagnostic");
 const {
   COVERAGE_CRITIC_DIAGNOSTIC,
   createTestOnlyOpenAiCoverageCriticFromEnv
@@ -1971,7 +1972,7 @@ function annotateProviderSuccess(output, firstAttemptErrorCategory, providerAtte
 }
 
 class TestOnlyOpenAiConversationPlanner {
-  constructor({ apiKey, model, fetchImpl = globalThis.fetch, coverageCritic = null, timeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS, roundTimeoutMs, retryDelayMs = DEFAULT_RETRY_DELAY_MS, waitImpl = waitForRetry, nowMs = Date.now, requestIdFactory = crypto.randomUUID }) {
+  constructor({ apiKey, model, fetchImpl = globalThis.fetch, coverageCritic = null, timeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS, roundTimeoutMs, retryDelayMs = DEFAULT_RETRY_DELAY_MS, waitImpl = waitForRetry, nowMs = Date.now, requestIdFactory = crypto.randomUUID, onDiagnostic = null }) {
     if (!apiKey || !model) throw plannerFailure({ code: "planner_configuration_error", category: "unknown", model, providerAttemptCount: 0 });
     this.apiKey = apiKey;
     this.model = model;
@@ -1989,6 +1990,7 @@ class TestOnlyOpenAiConversationPlanner {
     this.waitImpl = typeof waitImpl === "function" ? waitImpl : waitForRetry;
     this.nowMs = typeof nowMs === "function" ? nowMs : Date.now;
     this.requestIdFactory = typeof requestIdFactory === "function" ? requestIdFactory : crypto.randomUUID;
+    this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null;
   }
   async requestOnce(input, attemptNumber, timeoutMs = this.timeoutMs) {
     const generatedRequestId = String(this.requestIdFactory() || "");
@@ -2004,6 +2006,21 @@ class TestOnlyOpenAiConversationPlanner {
     let output;
     let failure;
     try {
+      if (this.onDiagnostic) {
+        try {
+          this.onDiagnostic({
+            traceId: String(input.traceId || ""),
+            propertyId: String(input.catalog && input.catalog.propertyId || ""),
+            stage: "planner_provider_input",
+            loadSuccess: true,
+            reasonCode: "provider_input_ready",
+            cycleCount: Array.isArray(input.contextSnapshot && input.contextSnapshot.cycles)
+              ? input.contextSnapshot.cycles.length
+              : 0,
+            ...recentConversationSafeSummary(input.recentConversation)
+          });
+        } catch { /* diagnostics must never affect provider behavior */ }
+      }
       const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, ...(String(input.lineUserId || "").trim() ? { safety_identifier: sha256(input.lineUserId) } : {}), input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, recentConversation: Array.isArray(input.recentConversation) ? input.recentConversation.slice(-50).map((item) => ({ guestMessage: String(item && item.guestMessage || ""), replyText: String(item && item.replyText || ""), createdAt: String(item && item.createdAt || "") })) : [], sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: providerContextSnapshot, ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {}) }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerProviderSchemaForCatalog(input.catalog, this.model, input.coverageRepair) } } }) });
       const status = Number(response.status || response.statusCode || 0);
       httpStatus = Number.isInteger(status) ? status : 0;
@@ -2398,12 +2415,12 @@ class TestOnlyOpenAiConversationPlanner {
     throw plannerFailure({ code: "planner_unknown_error", category: "unknown", model: this.model });
   }
 }
-function createTestOnlyOpenAiConversationPlannerFromEnv({ env = process.env, fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS } = {}) {
+function createTestOnlyOpenAiConversationPlannerFromEnv({ env = process.env, fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS, onDiagnostic = null } = {}) {
   const apiKey = String(env.OPENAI_TEST_API_KEY || "").trim();
   const model = String(env.OPENAI_TEST_MODEL || "").trim();
   if (!apiKey || !model) return null;
   const coverageCritic = createTestOnlyOpenAiCoverageCriticFromEnv({ env, fetchImpl, timeoutMs });
-  return new TestOnlyOpenAiConversationPlanner({ apiKey, model, fetchImpl, coverageCritic, timeoutMs });
+  return new TestOnlyOpenAiConversationPlanner({ apiKey, model, fetchImpl, coverageCritic, timeoutMs, onDiagnostic });
 }
 
 module.exports = { TestOnlyOpenAiConversationPlanner, createTestOnlyOpenAiConversationPlannerFromEnv, instructions };
