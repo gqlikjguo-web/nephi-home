@@ -1,13 +1,12 @@
 {
   "schemaVersion": 1,
-  "expectedHead": "b39b540acc58f9b3e2a9d097afb15de6b97011e0",
-  "baseline": "b39b540acc58f9b3e2a9d097afb15de6b97011e0",
+  "expectedHead": "fac7988d937394b8570000060f9dd1efab48ea10",
+  "baseline": "fac7988d937394b8570000060f9dd1efab48ea10",
   "earliestFailure": {
-    "transition": "ConversationEngineV2.process -> Planner context input and relation selection",
-    "file": "lib/conversation-engine-v2/engine.js",
+    "transition": "TestOnlyOpenAiConversationPlanner.instructions -> OpenAI relation selection",
+    "file": "lib/providers/test-only-openai-conversation-planner.js",
     "functions": [
-      "ConversationEngineV2",
-      "process"
+      "instructions"
     ]
   },
   "contextCases": {
@@ -29,32 +28,24 @@
   },
   "proposedChanges": [
     {
-      "path": "lib/conversation-engine-v2/engine.js",
-      "functions": [
-        "process"
-      ]
-    },
-    {
       "path": "lib/providers/test-only-openai-conversation-planner.js",
       "functions": [
-        "classify",
-        "requestOnce",
         "instructions"
       ]
     }
   ],
   "productionCallers": [
     {
-      "name": "ConversationEngineV2 bounded history and lineage assembly",
-      "path": "lib/conversation-engine-v2/engine.js",
-      "function": "process"
+      "name": "Test-only OpenAI Planner request assembly",
+      "path": "lib/providers/test-only-openai-conversation-planner.js",
+      "function": "requestOnce"
     }
   ],
   "productionConsumers": [
     {
       "name": "Test-only OpenAI Planner Responses API request",
       "path": "lib/providers/test-only-openai-conversation-planner.js",
-      "function": "requestOnce"
+      "function": "classify"
     },
     {
       "name": "Planner understanding-context validation",
@@ -103,7 +94,6 @@
     "tests/conversation-planner-v2-adapter-runner.js"
   ],
   "allowedCoreFiles": [
-    "lib/conversation-engine-v2/engine.js",
     "lib/providers/test-only-openai-conversation-planner.js"
   ]
 }

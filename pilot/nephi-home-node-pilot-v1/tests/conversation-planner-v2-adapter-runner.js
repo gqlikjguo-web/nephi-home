@@ -83,6 +83,16 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(plannerInstructions, /sourceEvents.*only.*evidence/i, "current sourceEvents must remain the sole evidence authority");
   assert.match(plannerInstructions, /relation.*capability.*independent/i, "Planner must classify follow-up relation independently from capability");
   assert.match(plannerInstructions, /omits the subject.*ContextSnapshot.*requestCycleId/i, "subject-omitting follow-ups must cite the intended live ContextSnapshot cycle");
+  assert.doesNotMatch(plannerInstructions, /A supplement adds a missing value/i, "supplement_existing must not be restricted to missing-slot updates");
+  assert.equal((plannerInstructions.match(/supplement_existing means/gi) || []).length, 1, "instructions must define supplement_existing exactly once");
+  assert.match(plannerInstructions, /new_request means.*semantically independent.*does not (?:need|require).*prior-turn context/i, "new_request must be independent from prior-turn context");
+  assert.match(plannerInstructions, /supplement_existing means.*any follow-up.*uses prior-turn context.*without modifying or removing.*confirmed (?:slot or product|condition)/i, "supplement_existing must cover all non-modifying contextual follow-ups");
+  assert.match(plannerInstructions, /supplying a missing slot.*same capability.*another capability.*same lodging context/i, "supplement_existing must explicitly cover missing-slot, same-capability, and cross-capability follow-ups");
+  assert.match(plannerInstructions, /modify_existing means.*explicitly modifies or removes.*confirmed (?:slot or product|condition)/i, "modify_existing must be reserved for explicit confirmed-condition changes");
+  assert.match(plannerInstructions, /end_existing means.*ends.*referenced cycle/i, "end_existing must end the referenced cycle");
+  assert.match(plannerInstructions, /ambiguous.*relation_uncertain/i, "ambiguous relations must fail closed as relation_uncertain");
+  assert.match(plannerInstructions, /immediately preceding turn.*natural antecedent.*conversationLineage\.latestTurnRefs.*earlier lineage.*semantic(?:s|ally).*earlier turn/i, "lineage selection must prefer the natural latest antecedent and use older turns only when explicit semantics require it");
+  const relationContractSchema = JSON.stringify(requestBody.text.format.schema);
   const followupPlanner = async ({ message, type, cycleId, history, extraCycles = [] }) => {
     const evidenceRef = { eventId: `event-${type}`, messageRef: "", startOffset: 0, endOffset: message.length, quote: message };
     const planned = migrateFakePlannerOutput({
@@ -121,6 +131,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
       model: "test-model",
       fetchImpl: async (_url, options) => {
         const body = JSON.parse(options.body);
+        assert.equal(JSON.stringify(body.text.format.schema), relationContractSchema, "relation instruction changes must not alter the strict Planner schema");
         const providerInput = JSON.parse(body.input.find((item) => item.role === "developer").content[0].text);
         assert.equal(Object.hasOwn(providerInput, "recentConversation"), false);
         assert.deepEqual(body.input.filter((item) => item.role === "user").map((item) => item.content[0].text), [...history.map((item) => item.guestMessage), message]);
@@ -187,8 +198,8 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(plannerInstructions, /pure social acknowledgement/i, "planner must classify non-actionable acknowledgements without inventing a task");
   assert.match(requestBody.input[0].content[0].text, /punctuation or emoji/i, "planner must classify non-semantic punctuation and emoji by dialogue act");
   assert.match(requestBody.input[0].content[0].text, /price or total price/i, "planner must distinguish pricing from availability and policy");
-  assert.match(requestBody.input[0].content[0].text, /replace or remove a prior stay or room condition/i, "planner must express multi-turn replacement through the formal context relation");
-  assert.match(requestBody.input[0].content[0].text, /new_request must have zero request-cycle references/i, "planner must not attach stale state to a new request");
+  assert.match(requestBody.input[0].content[0].text, /modify_existing means.*explicitly modifies or removes a confirmed slot or product/i, "planner must express multi-turn replacement through the formal context relation");
+  assert.match(requestBody.input[0].content[0].text, /new_request means.*must have zero request-cycle references/i, "planner must not attach stale state to a new request");
   assert.match(plannerInstructions, /EvidenceRefs are a source-coordinate contract/i, "planner must receive the validator's source-coordinate evidence contract");
   assert.match(plannerInstructions, /at least one non-empty eventId or messageRef/i, "planner must receive the source identity requirement");
   assert.match(plannerInstructions, /0-based UTF-16 JavaScript string index inclusive.*endOffset is exclusive/i, "planner must receive exact JavaScript offset semantics");
