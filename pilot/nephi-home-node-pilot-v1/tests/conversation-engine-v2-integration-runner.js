@@ -4,16 +4,29 @@ const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine")
 const { composeSection } = require("../lib/conversation-engine-v2/controlled-composer");
 const { formatSafeTestOnlyConversationTrace } = require("../server");
 const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
+const {
+  createConversationStateV3,
+  createConversationTaskV3
+} = require("../lib/conversation-contracts/conversation-state-v3");
 
 const states = new Map(), logs = [];
 let stateWriteCount = 0;
+const recentMessageQueries = [];
 const persistence = {
   getConversationState: (p, c, u) => states.get(`${p}:${c}:${u}`) || null,
   setConversationState: (p, c, u, value) => {
     stateWriteCount += 1;
     return states.set(`${p}:${c}:${u}`, value);
   },
-  appendMessageLog: (p, value) => { const item = { ...value, customerId: p, reviewId: value.needsReview ? `review-${logs.length + 1}` : "" }; logs.push(item); return item; }
+  appendMessageLog: (p, value) => { const item = { ...value, customerId: p, reviewId: value.needsReview ? `review-${logs.length + 1}` : "" }; logs.push(item); return item; },
+  listRecentMessages: (propertyId, channelId, lineUserId, options) => {
+    recentMessageQueries.push({ propertyId, channelId, lineUserId, options });
+    if (channelId !== "planner-history") return [];
+    return [
+      { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z", processingStatus: "reply_succeeded" },
+      { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", processingStatus: "reply_succeeded" }
+    ];
+  }
 };
 
 function explicitPlanner(basePlanner) {
@@ -81,6 +94,70 @@ function latestConditions(result) {
 }
 
 (async () => {
+  const historyNow = "2026-08-18T09:50:39.000Z";
+  states.set("p1:planner-history:planner-history-user", createConversationStateV3({
+    propertyId: "p1",
+    channel: "planner-history",
+    userId: "planner-history-user",
+    tasks: [createConversationTaskV3({
+      taskId: "answered-price-cycle",
+      taskType: "pricing",
+      productType: "room_type",
+      productId: "r1",
+      roomTypeId: "r1",
+      bundleId: null,
+      checkIn: "2026-09-05",
+      checkOut: "2026-09-06",
+      guestCount: null,
+      searchFrom: null,
+      searchTo: null,
+      entityId: "r1",
+      entityCategory: "room",
+      detailIntent: "general",
+      knownFields: ["productType", "productId", "roomTypeId", "checkIn", "checkOut"],
+      missingFields: [],
+      status: "answered",
+      createdAt: "2026-08-18T09:50:00.000Z",
+      updatedAt: "2026-08-18T09:50:16.000Z",
+      expiresAt: "2026-08-19T09:50:16.000Z"
+    })],
+    createdAt: "2026-08-18T09:50:00.000Z",
+    updatedAt: "2026-08-18T09:50:16.000Z",
+    expiresAt: "2026-08-19T09:50:16.000Z"
+  }));
+  let plannerHistoryInput = null;
+  const historyEngine = new ConversationEngineV2({
+    planner: { classify: async (input) => {
+      plannerHistoryInput = input;
+      throw new Error("stop_after_planner_history_capture");
+    } },
+    persistence,
+    getProperty: () => property,
+    availabilityResolver,
+    listPriceOverrides: () => [],
+    recentMessageLimit: 2,
+    now: () => new Date(historyNow)
+  });
+  await historyEngine.process({
+    customerId: "p1",
+    channelId: "planner-history",
+    lineUserId: "planner-history-user",
+    eventId: "planner-history-current",
+    eventTimestamp: historyNow,
+    messageText: "費用多少",
+    sourceEvents: [{ eventId: "planner-history-current", messageText: "費用多少" }]
+  });
+  assert.deepEqual(plannerHistoryInput.recentConversation, [
+    { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z" },
+    { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z" }
+  ], "Engine must provide bounded completed same-scope conversation history to Planner");
+  assert.deepEqual(recentMessageQueries.at(-1), {
+    propertyId: "p1",
+    channelId: "planner-history",
+    lineUserId: "planner-history-user",
+    options: { limit: 2, since: "2026-08-17T09:50:39.000Z" }
+  }, "Planner history must use the existing provider limit and 24-hour context reuse window");
+
   const pricingCalls = [];
   let pricingAvailableDatesCalls = 0;
   const pricingPlanner = { classify: async () => ({

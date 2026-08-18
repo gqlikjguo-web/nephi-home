@@ -17,6 +17,7 @@ function createV2CompositionRoot({ providers, service, env = process.env, now = 
     listPriceOverrides: (propertyId) => typeof providers.customerSettings.listInventoryPriceOverrides === "function" ? providers.customerSettings.listInventoryPriceOverrides(propertyId) : providers.customerSettings.listRoomPriceOverrides(propertyId),
     listDatePriceClassifications: (propertyId) => typeof providers.customerSettings.listDatePriceClassifications === "function" ? providers.customerSettings.listDatePriceClassifications(propertyId) : [],
     listCustomReplies: (propertyId) => providers.customReplies ? providers.customReplies.list(propertyId) : [],
+    recentMessageLimit: Number(env.NEPHI_PILOT_RECENT_MESSAGE_LIMIT || 10),
     now,
     onDiagnostic: overrides.onDiagnostic || onDiagnostic,
     diagnosticDetail,

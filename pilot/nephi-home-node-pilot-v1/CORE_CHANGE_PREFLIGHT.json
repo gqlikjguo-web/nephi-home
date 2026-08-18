@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "expectedHead": "df6556d5a6bf1ec53a81d89f00351f1968a956c7",
+  "baseline": "df6556d5a6bf1ec53a81d89f00351f1968a956c7",
+  "earliestFailure": {
+    "transition": "decideContextExecutionV3 -> plannerTaskFromState",
+    "file": "lib/conversation-engine-v2/conversation-state-v3-reducer.js",
+    "functions": [
+      "decideContextExecutionV3",
+      "plannerTaskFromState"
+    ]
+  },
+  "contextCases": {
+    "crossCapabilityB": {
+      "currentCapability": "availability",
+      "relationKind": "supplement_existing",
+      "stateAction": "continue",
+      "referencedCapability": "pricing"
+    },
+    "case20": {
+      "currentCapability": "booking_request",
+      "relationKind": "modify_existing",
+      "stateAction": "replace",
+      "referencedCapability": "availability",
+      "suppliedSlots": [
+        "guestCount"
+      ]
+    }
+  },
+  "proposedChanges": [
+    {
+      "path": "lib/conversation-engine-v2/engine.js",
+      "functions": [
+        "process"
+      ]
+    },
+    {
+      "path": "lib/providers/test-only-openai-conversation-planner.js",
+      "functions": [
+        "classify"
+      ]
+    },
+    {
+      "path": "lib/v2-composition-root.js",
+      "functions": [
+        "createV2CompositionRoot"
+      ]
+    },
+    {
+      "path": "lib/conversation-engine-v2/conversation-state-v3-reducer.js",
+      "functions": [
+        "decideContextExecutionV3",
+        "plannerTaskFromState"
+      ]
+    }
+  ],
+  "productionCallers": [
+    {
+      "name": "ConversationEngineV2 context execution",
+      "path": "lib/conversation-engine-v2/engine.js",
+      "function": "process"
+    }
+  ],
+  "productionConsumers": [
+    {
+      "name": "CanonicalRequest construction",
+      "path": "lib/conversation-engine-v2/canonicalizer.js",
+      "function": "canonicalizeExecutionItem"
+    },
+    {
+      "name": "Conversation State V3 reduction",
+      "path": "lib/conversation-engine-v2/conversation-state-v3-reducer.js",
+      "function": "reduceConversationStateV3"
+    }
+  ],
+  "affectedPasses": [
+    {
+      "name": "same-capability continue",
+      "runner": "tests/planner-boundary-contract-runner.js"
+    },
+    {
+      "name": "Case20 guest replacement",
+      "runner": "tests/conversation-state-v3-runtime-reducer-runner.js"
+    },
+    {
+      "name": "Case21 product replacement",
+      "runner": "tests/conversation-state-v3-runtime-reducer-runner.js"
+    },
+    {
+      "name": "pending slot-only continuation",
+      "runner": "tests/pending-arbitration-contract-runner.js"
+    },
+    {
+      "name": "unrelated new request isolation",
+      "runner": "tests/multi-cycle-context-runner.js"
+    }
+  ],
+  "lessons": [
+    {
+      "commit": "7e15da0",
+      "purpose": "preserve referenced context capability for slot replacement"
+    },
+    {
+      "commit": "5c09df2",
+      "purpose": "accept verified replace relations and preserve context"
+    },
+    {
+      "commit": "953a5d3",
+      "purpose": "bind semantic lifecycle to verified relation evidence"
+    }
+  ],
+  "redCommand": [
+    "node",
+    "tests/cross-capability-context-red-runner.js"
+  ],
+  "allowedCoreFiles": [
+    "lib/conversation-engine-v2/engine.js",
+    "lib/providers/test-only-openai-conversation-planner.js",
+    "lib/v2-composition-root.js",
+    "lib/conversation-engine-v2/conversation-state-v3-reducer.js"
+  ]
+}

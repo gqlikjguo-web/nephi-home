@@ -447,8 +447,8 @@ function safePlannerErrorDiagnostic(error, planner) {
 }
 
 class ConversationEngineV2 {
-  constructor({ planner, composer, persistence, getProperty, availabilityResolver, availableDatesResolver, listPriceOverrides, listDatePriceClassifications, listCustomReplies, now = () => new Date(), onDiagnostic, diagnosticDetail = false, diagnosticMetadata = {} }) {
-    this.planner = planner; this.composer = composer; this.persistence = persistence; this.getProperty = getProperty; this.availabilityResolver = availabilityResolver; this.availableDatesResolver = availableDatesResolver; this.listPriceOverrides = listPriceOverrides || (() => []); this.listDatePriceClassifications = listDatePriceClassifications || (() => []); this.listCustomReplies = listCustomReplies || (() => []); this.now = now; this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null; this.diagnosticDetail = Boolean(diagnosticDetail); this.diagnosticMetadata = diagnosticMetadata || {}; this.traceContexts = new Map();
+  constructor({ planner, composer, persistence, getProperty, availabilityResolver, availableDatesResolver, listPriceOverrides, listDatePriceClassifications, listCustomReplies, recentMessageLimit = 10, now = () => new Date(), onDiagnostic, diagnosticDetail = false, diagnosticMetadata = {} }) {
+    this.planner = planner; this.composer = composer; this.persistence = persistence; this.getProperty = getProperty; this.availabilityResolver = availabilityResolver; this.availableDatesResolver = availableDatesResolver; this.listPriceOverrides = listPriceOverrides || (() => []); this.listDatePriceClassifications = listDatePriceClassifications || (() => []); this.listCustomReplies = listCustomReplies || (() => []); this.recentMessageLimit = Math.max(1, Math.min(50, Number(recentMessageLimit) || 10)); this.now = now; this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null; this.diagnosticDetail = Boolean(diagnosticDetail); this.diagnosticMetadata = diagnosticMetadata || {}; this.traceContexts = new Map();
   }
 
   trace(traceId, stage, details) {
@@ -490,12 +490,36 @@ class ConversationEngineV2 {
     );
     const contextSnapshot = buildContextSnapshotV3(previous, scope);
     this.traceContexts.set(traceId, { timestamp: new Date().toISOString(), correlationId: traceId, eventId: input.eventId, sourceEventIds: sourceEvents.map((event) => event.eventId).filter(Boolean), propertyId: input.customerId, ...(this.diagnosticDetail ? { userKeyHash: crypto.createHash("sha256").update(String(input.lineUserId || "")).digest("hex").slice(0, 16), messageText: input.messageText, sourceEvents } : {}) });
+    let recentConversation = [];
+    if (
+      contextSnapshot.cycles.length > 0
+      && this.persistence
+      && typeof this.persistence.listRecentMessages === "function"
+    ) {
+      try {
+        const since = new Date(
+          Date.parse(scope.now) - 24 * 60 * 60 * 1000
+        ).toISOString();
+        recentConversation = this.persistence.listRecentMessages(
+          input.customerId,
+          input.channelId,
+          input.lineUserId,
+          { limit: this.recentMessageLimit, since }
+        ).slice(-this.recentMessageLimit).map((item) => ({
+          guestMessage: String(item && item.guestMessage || ""),
+          replyText: String(item && item.replyText || ""),
+          createdAt: String(item && item.createdAt || "")
+        })).filter((item) => item.guestMessage);
+      } catch {
+        recentConversation = [];
+      }
+    }
     const catalog = buildPropertyCatalog(property);
     this.trace(traceId, "property_catalog", { providerType: this.diagnosticMetadata.providerType || "unknown", location: catalog.locationDiagnostics || { source: "none", profileValuePresent: false, transportValuePresent: false, urlValidation: "fail" } });
     if (this.diagnosticDetail) this.trace(traceId, "state_before", { state: traceState(previous) });
     let plannerOutput, parserSucceeded = false;
     try {
-      plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], sourceEvents, eventTimestamp: input.eventTimestamp, catalog, contextSnapshot, lineUserId: input.lineUserId });
+      plannerOutput = await this.planner.classify({ currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], recentConversation, sourceEvents, eventTimestamp: input.eventTimestamp, catalog, contextSnapshot, lineUserId: input.lineUserId });
       parserSucceeded = true;
     } catch (error) {
       plannerOutput = null;

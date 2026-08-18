@@ -6,7 +6,7 @@ const { runtimeConfig } = require("../config/runtime");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { validatePlannerOutput, applyPlannerSemanticContract } = require("../lib/conversation-engine-v2/planner-schema");
 const { compileSemanticCandidates, validateSemanticCandidates, semanticCandidateDiagnosticSummary } = require("../lib/conversation-engine-v2/semantic-candidate-contract");
-const { encodeFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
+const { encodeFakePlannerOutput, migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 const POOL_CANDIDATE_ID = "71000000-0000-4000-8000-000000000001";
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
 const PARKING_CANDIDATE_ID = "71000000-0000-4000-8000-000000000002";
@@ -23,13 +23,89 @@ let requestBody;
 const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", model: "test-model", fetchImpl: async (_url, options) => { requestBody = JSON.parse(options.body); return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(output) }) }; } });
 
 (async () => {
-  const result = await planner.classify({ currentMessage: "你好", currentMessages: ["你好"], eventTimestamp: 1, catalog: { propertyId: "p1", rooms: [] }, conversationState: { schemaVersion: 2 } });
+  const recentConversation = [
+    { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z" },
+    { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z" }
+  ];
+  const result = await planner.classify({ currentMessage: "你好", currentMessages: ["你好"], recentConversation, eventTimestamp: 1, catalog: { propertyId: "p1", rooms: [] }, conversationState: { schemaVersion: 2 } });
   assert.equal(result.schemaVersion, 2);
   assert.equal(Array.isArray(result[Symbol.for("junzan.plannerProviderDiagnostic")].semanticLedgerBoundaries), true, "direct provider output must retain semantic-ledger boundary diagnostics");
   assert.equal(requestBody.text.format.name, "junzan_conversation_plan_v2");
   assert.equal(requestBody.text.format.strict, true);
   assert.equal(requestBody.text.format.schema.properties.tasks.minItems, 1);
   const plannerInstructions = requestBody.input[0].content[0].text;
+  const plannerInput = JSON.parse(requestBody.input[1].content[0].text);
+  assert.deepEqual(plannerInput.recentConversation, recentConversation, "the Planner provider must receive bounded completed cross-turn conversation history");
+  assert.match(plannerInstructions, /recentConversation.*semantic understanding.*not.*fact.*not.*evidence/i, "recent conversation must be explicitly non-authoritative semantic context");
+  assert.match(plannerInstructions, /sourceEvents.*only.*evidence/i, "current sourceEvents must remain the sole evidence authority");
+  assert.match(plannerInstructions, /relation.*capability.*independent/i, "Planner must classify follow-up relation independently from capability");
+  assert.match(plannerInstructions, /omits the subject.*ContextSnapshot.*requestCycleId/i, "subject-omitting follow-ups must cite the intended live ContextSnapshot cycle");
+  const followupPlanner = async ({ message, type, cycleId, history }) => {
+    const evidenceRef = { eventId: `event-${type}`, messageRef: "", startOffset: 0, endOffset: message.length, quote: message };
+    const planned = migrateFakePlannerOutput({
+      schemaVersion: 2,
+      discourse: { relation: "continue", confidence: 0.99 },
+      stateOperations: [],
+      stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
+      tasks: [{
+        candidateIndex: 0,
+        taskId: `followup-${type}`,
+        type,
+        sourceText: message,
+        detailIntent: "general",
+        requestedOutputs: [type === "price" ? "price" : "availability"],
+        eligibilityEvidence: { kind: "none", sourceText: "" },
+        dependsOnStayContext: true,
+        entity: { category: "other", rawText: "", canonicalCandidate: null, confidence: 0.99 },
+        stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
+        confidence: 0.99
+      }],
+      contextRelationCandidates: [{ candidateIndex: 0, kind: "supplement_existing", candidateRequestCycleRefs: [cycleId], evidenceRefs: [evidenceRef] }],
+      ambiguities: [],
+      missingInformation: [],
+      needsHuman: false,
+      shouldIgnore: false,
+      reason: "semantic follow-up"
+    });
+    planned.semanticCandidates = planned.semanticCandidates.map((candidate) => ({
+      ...candidate,
+      coverageStatus: "bound",
+      provenanceRelationCandidateIndexes: [0],
+      evidenceRefs: []
+    }));
+    const followup = new TestOnlyOpenAiConversationPlanner({
+      apiKey: "test-key",
+      model: "test-model",
+      fetchImpl: async (_url, options) => {
+        const body = JSON.parse(options.body);
+        const providerInput = JSON.parse(body.input[1].content[0].text);
+        assert.deepEqual(providerInput.recentConversation, history);
+        return { ok: true, json: async () => ({ output_text: encodeFakePlannerOutput(planned) }) };
+      }
+    });
+    return followup.classify({
+      currentMessage: message,
+      currentMessages: [message],
+      recentConversation: history,
+      sourceEvents: [{ eventId: `event-${type}`, messageText: message }],
+      eventTimestamp: Date.parse("2026-08-18T09:53:11.000Z"),
+      catalog: { propertyId: "p1", rooms: [], bundles: [] },
+      contextSnapshot: {
+        scope: { propertyId: "p1", channelId: "line", userId: "private" },
+        generatedAt: "2026-08-18T09:53:11.000Z",
+        cycles: [{ requestCycleId: cycleId, requestKind: "pricing", status: "answered", confirmedInputs: { stay: { checkIn: "2026-10-02", checkOut: "2026-10-03" }, inventory: { mode: "bundle_only", entityId: "bundle-all" } }, contextReuseExpiresAt: "2026-08-19T09:52:56.000Z" }]
+      }
+    });
+  };
+  const relationA = await followupPlanner({ message: "費用多少", type: "price", cycleId: "answered-price-a", history: recentConversation });
+  assert.equal(relationA.tasks[0].type, "price", "same-capability follow-up must preserve price");
+  assert.deepEqual(relationA.contextRelationCandidates[0].candidateRequestCycleRefs, ["answered-price-a"]);
+  assert.equal(relationA.contextRelationCandidates[0].kind, "supplement_existing");
+  const relationBHistory = [{ guestMessage: "10/2 包棟多少錢", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:52:56.000Z" }];
+  const relationB = await followupPlanner({ message: "還能預訂嗎？", type: "availability", cycleId: "answered-price-b", history: relationBHistory });
+  assert.equal(relationB.tasks[0].type, "availability", "cross-capability follow-up must preserve its current capability");
+  assert.deepEqual(relationB.contextRelationCandidates[0].candidateRequestCycleRefs, ["answered-price-b"]);
+  assert.equal(relationB.contextRelationCandidates[0].kind, "supplement_existing");
   const taskSchema = requestBody.text.format.schema.properties.tasks.items;
   const semanticCandidateItems = requestBody.text.format.schema.properties.semanticCandidates.items;
   const semanticCandidateSchema = semanticCandidateItems.anyOf ? semanticCandidateItems.anyOf[0] : semanticCandidateItems;
