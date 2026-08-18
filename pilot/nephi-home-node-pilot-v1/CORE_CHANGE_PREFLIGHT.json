@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "expectedHead": "df6556d5a6bf1ec53a81d89f00351f1968a956c7",
-  "baseline": "df6556d5a6bf1ec53a81d89f00351f1968a956c7",
+  "expectedHead": "b39b540acc58f9b3e2a9d097afb15de6b97011e0",
+  "baseline": "b39b540acc58f9b3e2a9d097afb15de6b97011e0",
   "earliestFailure": {
-    "transition": "decideContextExecutionV3 -> plannerTaskFromState",
-    "file": "lib/conversation-engine-v2/conversation-state-v3-reducer.js",
+    "transition": "ConversationEngineV2.process -> Planner context input and relation selection",
+    "file": "lib/conversation-engine-v2/engine.js",
     "functions": [
-      "decideContextExecutionV3",
-      "plannerTaskFromState"
+      "ConversationEngineV2",
+      "process"
     ]
   },
   "contextCases": {
@@ -37,40 +37,29 @@
     {
       "path": "lib/providers/test-only-openai-conversation-planner.js",
       "functions": [
-        "classify"
-      ]
-    },
-    {
-      "path": "lib/v2-composition-root.js",
-      "functions": [
-        "createV2CompositionRoot"
-      ]
-    },
-    {
-      "path": "lib/conversation-engine-v2/conversation-state-v3-reducer.js",
-      "functions": [
-        "decideContextExecutionV3",
-        "plannerTaskFromState"
+        "classify",
+        "requestOnce",
+        "instructions"
       ]
     }
   ],
   "productionCallers": [
     {
-      "name": "ConversationEngineV2 context execution",
+      "name": "ConversationEngineV2 bounded history and lineage assembly",
       "path": "lib/conversation-engine-v2/engine.js",
       "function": "process"
     }
   ],
   "productionConsumers": [
     {
-      "name": "CanonicalRequest construction",
-      "path": "lib/conversation-engine-v2/canonicalizer.js",
-      "function": "canonicalizeExecutionItem"
+      "name": "Test-only OpenAI Planner Responses API request",
+      "path": "lib/providers/test-only-openai-conversation-planner.js",
+      "function": "requestOnce"
     },
     {
-      "name": "Conversation State V3 reduction",
-      "path": "lib/conversation-engine-v2/conversation-state-v3-reducer.js",
-      "function": "reduceConversationStateV3"
+      "name": "Planner understanding-context validation",
+      "path": "lib/conversation-engine-v2/understanding-validator.js",
+      "function": "validateUnderstandingContext"
     }
   ],
   "affectedPasses": [
@@ -111,12 +100,10 @@
   ],
   "redCommand": [
     "node",
-    "tests/cross-capability-context-red-runner.js"
+    "tests/conversation-planner-v2-adapter-runner.js"
   ],
   "allowedCoreFiles": [
     "lib/conversation-engine-v2/engine.js",
-    "lib/providers/test-only-openai-conversation-planner.js",
-    "lib/v2-composition-root.js",
-    "lib/conversation-engine-v2/conversation-state-v3-reducer.js"
+    "lib/providers/test-only-openai-conversation-planner.js"
   ]
 }

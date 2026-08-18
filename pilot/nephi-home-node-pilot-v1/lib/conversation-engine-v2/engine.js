@@ -51,6 +51,11 @@ function sourceEventsForInput(input = {}) {
   if (normalized.length) return normalized;
   return [{ eventId: String(input.eventId || "").trim(), messageRef: String(input.messageRef || "").trim(), messageText: String(input.messageText || "") }];
 }
+function requestCycleRefs(values) {
+  return [...new Set((Array.isArray(values) ? values : [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean))].slice(0, 20);
+}
 function traceState(state) {
   const copy = JSON.parse(JSON.stringify(state || {}));
   if (copy.scope) {
@@ -513,7 +518,8 @@ class ConversationEngineV2 {
         ).slice(-this.recentMessageLimit).map((item) => ({
           guestMessage: String(item && item.guestMessage || ""),
           replyText: String(item && item.replyText || ""),
-          createdAt: String(item && item.createdAt || "")
+          createdAt: String(item && item.createdAt || ""),
+          requestCycleRefs: requestCycleRefs(item && item.requestCycleRefs)
         })).filter((item) => item.guestMessage);
       } catch {
         recentConversation = [];
@@ -685,7 +691,7 @@ class ConversationEngineV2 {
       const finalDecision = decideFinal({ noReplyReason: "no_reply_gate_hit" });
       const claimValidation = { ok: true, errors: [], coveredTaskIds: [], missingTaskIds: [] };
       const finalResponse = renderFinal({ finalDecision, responsePlan: null, validatedReplyText: "", claimValidation });
-      const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "acknowledgement", replyType: "no_reply_v2", replyText: finalResponse.replyText, route: "no_reply_silent_ignore", decisionReason: finalDecision.reasonCode, shouldReply: finalResponse.shouldReply, noReply: !finalResponse.shouldReply, needsReview: false, humanHandoff: false, status: "resolved", processingStatus: "decided" };
+      const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "acknowledgement", replyType: "no_reply_v2", replyText: finalResponse.replyText, route: "no_reply_silent_ignore", decisionReason: finalDecision.reasonCode, shouldReply: finalResponse.shouldReply, noReply: !finalResponse.shouldReply, needsReview: false, humanHandoff: false, status: "resolved", processingStatus: "decided", requestCycleRefs: [] };
       if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
       else this.persistence.appendMessageLog(input.customerId, messageRecord);
       this.trace(traceId, "controlled_decision", { decision: finalDecision.action, reason: messageRecord.decisionReason, actionableTaskCount: 0 });
@@ -894,7 +900,7 @@ class ConversationEngineV2 {
     this.trace(traceId, "composer", { outputLength: replyText.length, coveredTaskIds: claimedTaskIds || inputTaskIds, missingTaskIds: claimValidation.missingTaskIds, composerSource, validationResult: rejectionReasonCodes.length ? "rejected" : "accepted", rejectionReasonCodes, fallbackOccurred, ...(this.diagnosticDetail ? { composerInput: responsePlan, finalOutput: replyText } : {}), sections: responsePlan.sections.map((section) => ({ taskId: section.taskId, responseMode: section.responseMode, type: section.type })) });
     this.trace(traceId, "claim_validator", { errors: claimValidation.errors, coveredTaskIds: claimValidation.coveredTaskIds, missingTaskIds: claimValidation.missingTaskIds });
     const finalResponse = renderFinal({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation });
-    const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "multi_task_v2", replyType: `${finalResponse.action}_v2`, replyText: finalResponse.replyText, route: `final_decision_${finalResponse.action}`, shouldReply: finalResponse.shouldReply, noReply: !finalResponse.shouldReply, needsReview: finalDecision.reviewRequired, humanHandoff: finalDecision.action === "handoff", status: finalDecision.reviewRequired ? "pending" : "resolved", processingStatus: "decided", decisionReason: finalDecision.reasonCode };
+    const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "multi_task_v2", replyType: `${finalResponse.action}_v2`, replyText: finalResponse.replyText, route: `final_decision_${finalResponse.action}`, shouldReply: finalResponse.shouldReply, noReply: !finalResponse.shouldReply, needsReview: finalDecision.reviewRequired, humanHandoff: finalDecision.action === "handoff", status: finalDecision.reviewRequired ? "pending" : "resolved", processingStatus: "decided", decisionReason: finalDecision.reasonCode, requestCycleRefs: requestCycleRefs(canonicalItems.map((item) => item.requestCycleId)) };
     if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
     else this.persistence.appendMessageLog(input.customerId, messageRecord);
     this.trace(traceId, "line_ready", { coveredTaskIds: claimValidation.coveredTaskIds, missingTaskIds: claimValidation.missingTaskIds, replyLength: finalResponse.replyText.length });

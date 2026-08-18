@@ -24,9 +24,9 @@ const persistence = {
     recentMessageQueries.push({ propertyId, channelId, lineUserId, options });
     if (channelId !== "planner-history") return [];
     return [
-      { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z", processingStatus: "reply_succeeded" },
-      { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", processingStatus: "reply_succeeded" },
-      { guestMessage: "費用多少", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:30.000Z", processingStatus: "reply_succeeded" }
+      { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z", processingStatus: "reply_succeeded", requestCycleRefs: ["answered-price-cycle"] },
+      { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", processingStatus: "reply_succeeded", requestCycleRefs: ["answered-price-cycle"] },
+      { guestMessage: "費用多少", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:30.000Z", processingStatus: "reply_succeeded", requestCycleRefs: ["answered-price-cycle"] }
     ];
   }
 };
@@ -152,9 +152,9 @@ function latestConditions(result) {
     sourceEvents: [{ eventId: "planner-history-current", messageText: "費用多少" }]
   });
   assert.deepEqual(plannerHistoryInput.recentConversation, [
-    { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z" },
-    { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z" },
-    { guestMessage: "費用多少", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:30.000Z" }
+    { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z", requestCycleRefs: ["answered-price-cycle"] },
+    { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", requestCycleRefs: ["answered-price-cycle"] },
+    { guestMessage: "費用多少", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:30.000Z", requestCycleRefs: ["answered-price-cycle"] }
   ], "Engine must provide bounded completed same-scope conversation history to Planner");
   assert.deepEqual(recentMessageQueries.at(-1), {
     propertyId: "p1",
@@ -225,6 +225,7 @@ function latestConditions(result) {
     listPriceOverrides: () => [{ roomId: "r1", date: "2026-08-07", price: 2500 }], now: () => new Date("2026-07-17T02:00:00.000Z")
   });
   const pricingResult = await pricingEngine.process({ customerId: "p1", channelId: "pricing", lineUserId: "pricing-user", eventId: "pricing-event", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6 price request" });
+  assert.deepEqual(logs.find((item) => item.eventId === "pricing-event").requestCycleRefs, ["active-engine-price"], "completed message payload must persist request-cycle lineage from the actual canonical item");
   assert.equal(pricingResult.taskResults[0].status, "answered", "active Engine pricing runtime must execute QueryPlan pricing");
   assert.equal(pricingCalls.length, 1, "active Engine pricing runtime must execute QueryPlan pricing through availability Resolver once");
   assert.equal(pricingAvailableDatesCalls, 0, "active Engine pricing runtime must not call available-dates Resolver for price");

@@ -1840,8 +1840,8 @@ function instructions() {
     "stateOperations is a legacy compatibility field and must always be an empty array. Never emit a state action. Every task is a request candidate and must have a unique candidateIndex. Emit exactly one contextRelationCandidate for every task: new_request, supplement_existing, modify_existing, end_existing, or relation_uncertain. Every relation must cite the matching candidateIndex and at least one exact evidenceRef. An evidenceRef must cite one supplied source eventId or messageRef and copy the exact source message substring using its startOffset/endOffset and quote. Every referenced requestCycleId must come from ContextSnapshot; do not invent an ID. A relation_uncertain candidate must not choose a cycle.",
     "EvidenceRefs are a source-coordinate contract for contextRelationCandidates and pending_task semanticCandidates. Every evidenceRef must include at least one non-empty eventId or messageRef copied only from one supplied sourceEvents item; if both are non-empty, they must identify that same item. startOffset is 0-based UTF-16 JavaScript string index inclusive and endOffset is exclusive: require 0 <= startOffset < endOffset <= that source messageText length. Set quote exactly to sourceEvents[].messageText.slice(startOffset, endOffset), with no paraphrase, normalization, translation, or guessed span. Independently verify every pending_task semanticCandidates evidenceRef before returning; bound candidates must rely on their verified relation provenance instead of model-calculated final evidence.",
     "When the guest asks to replace or remove a prior stay or room condition, emit modify_existing and cite exactly the active requestCycleId being modified. A supplement adds a missing value without replacing a confirmed one. new_request must have zero request-cycle references. Never label a modification new_request merely because it is a complete sentence.",
-    "recentConversation is bounded same-scope dialogue supplied only for semantic understanding. It is not a property fact source and not evidence authority. sourceEvents are the only evidence authority for the current tasks and relations; relation evidenceRefs must still cite exact current sourceEvents spans.",
-    "Classify relation and capability independently. A follow-up can keep the same capability or ask a different capability while referring to one prior ContextSnapshot cycle. When a substantive follow-up omits the subject, use recentConversation to understand the dialogue and cite the uniquely intended live ContextSnapshot requestCycleId; do not copy prior reply text into facts, evidenceRefs, dates, products, or answers.",
+    "The preceding user and assistant messages are bounded same-scope dialogue supplied only for semantic understanding. They are not a property fact source and not evidence authority. sourceEvents are the only evidence authority for the current tasks and relations; relation evidenceRefs must still cite exact current sourceEvents spans.",
+    "Classify relation and capability independently. A follow-up can keep the same capability or ask a different capability while referring to one prior ContextSnapshot cycle. When a substantive follow-up omits the subject, use the preceding dialogue plus conversationLineage to understand the latest turn and cite the uniquely intended exposed ContextSnapshot requestCycleId; do not copy prior reply text into facts, evidenceRefs, dates, products, or answers.",
     "Every task must emit a controlled detailIntent: general, time, start_time, end_time, latest_arrival_policy, early_arrival_policy, late_departure_policy, fee, quantity, eligibility, reservation_required, usage_restrictions, room_or_bundle_restriction, child_restrictions, seasonal_restrictions, weather_restrictions, conditions, or missing_information. For a follow-up whose wording omits the subject, use ContextSnapshot only to cite a clearly intended requestCycleId; never reuse a prior reply as fact, because the runtime resolves the current property catalog again.",
     "A base availability or permission question about an existing facility, amenity, activity, or service must use detailIntent general and requestedOutputs answer. Use detailIntent eligibility with requestedOutputs eligibility only when the guest explicitly asks which person, plan, room, booking mode, identity, or stated condition is eligible. Do not infer eligibility from a generic permission word such as can, may, 可以, or 能不能.",
     "For every task, put only that request candidate's raw date expression, candidate check-in/check-out, nights, and guest count in task.stayCandidate. Set stayCandidate to null when that task has no stay context. Do not use task array order to associate conditions. The legacy top-level stay is retained only for one-task compatibility; for more than one task, do not place conditions only in top-level stay. Do not create canonical state fields, state patches, or arbitrary state paths.",
@@ -1916,6 +1916,56 @@ function privateRepairLinks(output) {
       kind: item.kind,
       correlationId: crypto.randomUUID()
     })));
+}
+
+function normalizedRequestCycleRefs(values) {
+  return [...new Set((Array.isArray(values) ? values : [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean))].slice(0, 20);
+}
+
+function providerConversationContext(input) {
+  const recentConversation = (Array.isArray(input.recentConversation)
+    ? input.recentConversation.slice(-50)
+    : []).map((item, index) => ({
+    historyTurn: index + 1,
+    guestMessage: String(item && item.guestMessage || ""),
+    replyText: String(item && item.replyText || ""),
+    createdAt: String(item && item.createdAt || ""),
+    requestCycleRefs: normalizedRequestCycleRefs(item && item.requestCycleRefs)
+  })).filter((item) => item.guestMessage);
+  const turnsByCycle = new Map();
+  for (const turn of recentConversation) {
+    for (const requestCycleId of turn.requestCycleRefs) {
+      const turns = turnsByCycle.get(requestCycleId) || [];
+      turns.push(turn.historyTurn);
+      turnsByCycle.set(requestCycleId, turns);
+    }
+  }
+  const providerContextSnapshot = JSON.parse(JSON.stringify(input.contextSnapshot || { scope: {}, cycles: [] }));
+  if (providerContextSnapshot.scope && typeof providerContextSnapshot.scope === "object") delete providerContextSnapshot.scope.userId;
+  providerContextSnapshot.cycles = (Array.isArray(providerContextSnapshot.cycles)
+    ? providerContextSnapshot.cycles
+    : []).filter((cycle) => turnsByCycle.has(String(cycle && cycle.requestCycleId || ""))).map((cycle) => ({
+    ...cycle,
+    historyTurns: turnsByCycle.get(String(cycle.requestCycleId))
+  }));
+  const metadata = {
+    sourceEvents: input.sourceEvents || [],
+    eventTimestamp: input.eventTimestamp,
+    propertyCatalog: input.catalog,
+    contextSnapshot: providerContextSnapshot,
+    conversationLineage: {
+      turns: recentConversation.map(({ historyTurn, createdAt, requestCycleRefs }) => ({ historyTurn, createdAt, requestCycleRefs })),
+      latestTurnRefs: recentConversation.length ? recentConversation.at(-1).requestCycleRefs : []
+    },
+    ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {})
+  };
+  const messages = recentConversation.flatMap((turn) => [
+    { role: "user", content: [{ type: "input_text", text: turn.guestMessage }] },
+    ...(turn.replyText ? [{ role: "assistant", content: [{ type: "output_text", text: turn.replyText }] }] : [])
+  ]);
+  return { metadata, messages };
 }
 
 function annotateProviderSuccess(output, firstAttemptErrorCategory, providerAttempts, coverageRepair = null, coverageCritic = null, understandingCallCount = null) {
@@ -1995,8 +2045,7 @@ class TestOnlyOpenAiConversationPlanner {
   async requestOnce(input, attemptNumber, timeoutMs = this.timeoutMs) {
     const generatedRequestId = String(this.requestIdFactory() || "");
     const clientRequestId = UUID_PATTERN.test(generatedRequestId) ? generatedRequestId : crypto.randomUUID();
-    const providerContextSnapshot = JSON.parse(JSON.stringify(input.contextSnapshot || { scope: {}, cycles: [] }));
-    if (providerContextSnapshot.scope && typeof providerContextSnapshot.scope === "object") delete providerContextSnapshot.scope.userId;
+    const conversationContext = providerConversationContext(input);
     const startedAtMs = Number(this.nowMs());
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs);
     let httpStatus = 0;
@@ -2014,14 +2063,14 @@ class TestOnlyOpenAiConversationPlanner {
             stage: "planner_provider_input",
             loadSuccess: true,
             reasonCode: "provider_input_ready",
-            cycleCount: Array.isArray(input.contextSnapshot && input.contextSnapshot.cycles)
-              ? input.contextSnapshot.cycles.length
+            cycleCount: Array.isArray(conversationContext.metadata.contextSnapshot && conversationContext.metadata.contextSnapshot.cycles)
+              ? conversationContext.metadata.contextSnapshot.cycles.length
               : 0,
             ...recentConversationSafeSummary(input.recentConversation)
           });
         } catch { /* diagnostics must never affect provider behavior */ }
       }
-      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, ...(String(input.lineUserId || "").trim() ? { safety_identifier: sha256(input.lineUserId) } : {}), input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "user", content: [{ type: "input_text", text: JSON.stringify({ currentMessage: input.currentMessage, currentMessages: input.currentMessages, recentConversation: Array.isArray(input.recentConversation) ? input.recentConversation.slice(-50).map((item) => ({ guestMessage: String(item && item.guestMessage || ""), replyText: String(item && item.replyText || ""), createdAt: String(item && item.createdAt || "") })) : [], sourceEvents: input.sourceEvents || [], eventTimestamp: input.eventTimestamp, propertyCatalog: input.catalog, contextSnapshot: providerContextSnapshot, ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {}) }) }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerProviderSchemaForCatalog(input.catalog, this.model, input.coverageRepair) } } }) });
+      const response = await this.fetchImpl(RESPONSES_URL, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "X-Client-Request-Id": clientRequestId }, signal: controller.signal, body: JSON.stringify({ model: this.model, ...(String(input.lineUserId || "").trim() ? { safety_identifier: sha256(input.lineUserId) } : {}), input: [{ role: "system", content: [{ type: "input_text", text: instructions() }] }, { role: "developer", content: [{ type: "input_text", text: JSON.stringify(conversationContext.metadata) }] }, ...conversationContext.messages, { role: "user", content: [{ type: "input_text", text: String(input.currentMessage || "") }] }], text: { format: { type: "json_schema", name: "junzan_conversation_plan_v2", strict: true, schema: plannerProviderSchemaForCatalog(input.catalog, this.model, input.coverageRepair) } } }) });
       const status = Number(response.status || response.statusCode || 0);
       httpStatus = Number.isInteger(status) ? status : 0;
       providerRequestId = safeResponseRequestId(response);
