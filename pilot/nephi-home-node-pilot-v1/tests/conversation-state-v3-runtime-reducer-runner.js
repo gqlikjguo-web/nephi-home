@@ -22,7 +22,8 @@ const scope = {
 const catalog = {
   rooms: [
     { canonicalId: "room-double", category: "room" },
-    { canonicalId: "room-quad", category: "room" }
+    { canonicalId: "room-quad", category: "room" },
+    { canonicalId: "bundle-all", category: "bundle" }
   ],
   amenities: [],
   policies: [],
@@ -377,6 +378,71 @@ const ambiguousAnsweredDuration = decideContextExecutionV3({
 });
 assert.notEqual(ambiguousAnsweredDuration.executionItems[0].requestCycleId, "pricing-task");
 assert.notEqual(ambiguousAnsweredDuration.executionItems[0].requestCycleId, "second-answered-pricing-task");
+
+const answeredBundlePricingTasks = Array.from({ length: 7 }, (_, index) => {
+  const minute = String(10 + index).padStart(2, "0");
+  return pendingPricingTask({
+    taskId: `answered-bundle-pricing-${index + 1}`,
+    productType: "bundle",
+    productId: "bundle-all",
+    bundleId: "bundle-all",
+    checkIn: index === 6 ? "2026-09-05" : "2026-08-29",
+    checkOut: index === 6 ? "2026-09-06" : "2026-08-30",
+    entityId: "bundle-all",
+    entityCategory: "bundle",
+    knownFields: ["productType", "productId", "bundleId", "checkIn", "checkOut"],
+    missingFields: [],
+    status: "answered",
+    createdAt: `2026-07-30T06:${minute}:00.000Z`,
+    updatedAt: `2026-07-30T06:${minute}:00.000Z`
+  });
+});
+const repeatedBundlePriceState = createConversationStateV3({
+  ...scope,
+  tasks: answeredBundlePricingTasks,
+  createdAt: answeredBundlePricingTasks[0].createdAt,
+  updatedAt: answeredBundlePricingTasks.at(-1).updatedAt,
+  expiresAt: FUTURE
+});
+const repeatedBundlePriceFollowup = decideContextExecutionV3({
+  state: repeatedBundlePriceState,
+  relations: [{
+    candidateIndex: 0,
+    relationKind: "new_request",
+    stateAction: "start",
+    requestCycleId: null,
+    evidenceRefs: []
+  }],
+  plannerTasks: [{
+    ...dateOnlyPlannerTask,
+    taskId: "current-bundle-price",
+    type: "price",
+    sourceText: "bundle price follow-up",
+    entity: {
+      category: "bundle",
+      rawText: "bundle",
+      canonicalCandidate: "bundle-all",
+      confidence: 0.99
+    },
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  }],
+  catalog,
+  now: NOW
+});
+assert.equal(
+  repeatedBundlePriceFollowup.executionItems[0].requestCycleId,
+  "answered-bundle-pricing-7",
+  "an exact bundle price follow-up must continue the unique latest answered cycle"
+);
+assert.equal(repeatedBundlePriceFollowup.executionItems[0].task.type, "price");
+assert.equal(repeatedBundlePriceFollowup.executionItems[0].transition.contextTask.checkIn, "2026-09-05");
+assert.equal(repeatedBundlePriceFollowup.executionItems[0].transition.contextTask.checkOut, "2026-09-06");
 
 const answeredAvailability = createConversationStateV3({
   ...scope,
@@ -1096,7 +1162,7 @@ assert.equal(
 
 console.log(JSON.stringify({
   suite: "conversation-state-v3-runtime-reducer",
-  caseCount: 28,
-  passCount: 28,
+  caseCount: 29,
+  passCount: 29,
   failCount: 0
 }));

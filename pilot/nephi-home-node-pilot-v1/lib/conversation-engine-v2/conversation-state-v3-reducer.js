@@ -347,9 +347,44 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
       slotPredicateDiagnostic: slotPredicate.diagnostic
     });
   }
-  const candidates = clarificationCandidates.length === 1
+  let candidates = clarificationCandidates.length === 1
     ? clarificationCandidates
     : compatibleCandidates;
+  if (
+    clarificationCandidates.length === 0
+    && candidates.length > 1
+    && candidates.every((candidate) => candidate.status === "answered")
+  ) {
+    const taskType = contractTaskType(task.type);
+    const entity = task.entity || {};
+    const productScope = entity.category === "bundle" && entity.canonicalCandidate
+      ? `bundle:${entity.canonicalCandidate}`
+      : entity.category === "room" && entity.canonicalCandidate
+        ? `room_type:${entity.canonicalCandidate}`
+        : null;
+    const candidateScope = (candidate) => candidate.productType === "bundle"
+      ? `bundle:${candidate.bundleId || candidate.productId || ""}`
+      : candidate.productType === "room_type"
+        ? `room_type:${candidate.roomTypeId || candidate.productId || ""}`
+        : null;
+    if (
+      productScope
+      && candidates.every((candidate) => (
+        candidate.taskType === taskType
+        && candidateScope(candidate) === productScope
+      ))
+    ) {
+      const latestTimestamp = Math.max(...candidates.map(
+        (candidate) => Date.parse(candidate.updatedAt)
+      ));
+      const latest = candidates.filter(
+        (candidate) => Date.parse(candidate.updatedAt) === latestTimestamp
+      );
+      if (Number.isFinite(latestTimestamp) && latest.length === 1) {
+        candidates = latest;
+      }
+    }
+  }
   if (candidates.length !== 1) {
     return result("no_unique_compatible_candidate", null, {
       slotOnlyLodgingTurn: true,
