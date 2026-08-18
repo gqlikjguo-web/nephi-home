@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "expectedHead": "fac7988d937394b8570000060f9dd1efab48ea10",
-  "baseline": "fac7988d937394b8570000060f9dd1efab48ea10",
+  "expectedHead": "e72f7bcd87be144455033a65212fcd7080979615",
+  "baseline": "e72f7bcd87be144455033a65212fcd7080979615",
   "earliestFailure": {
-    "transition": "TestOnlyOpenAiConversationPlanner.instructions -> OpenAI relation selection",
+    "transition": "TestOnlyOpenAiConversationPlanner.requestOnce provider relation output -> deterministic requestCycleId authority",
     "file": "lib/providers/test-only-openai-conversation-planner.js",
     "functions": [
-      "instructions"
+      "requestOnce"
     ]
   },
   "contextCases": {
@@ -30,27 +30,55 @@
     {
       "path": "lib/providers/test-only-openai-conversation-planner.js",
       "functions": [
+        "plannerProviderSchemaForCatalog",
+        "providerConversationContext",
+        "requestOnce",
         "instructions"
       ]
     }
   ],
   "productionCallers": [
     {
-      "name": "Test-only OpenAI Planner request assembly",
+      "name": "Test-only OpenAI Planner classification pipeline",
       "path": "lib/providers/test-only-openai-conversation-planner.js",
-      "function": "requestOnce"
+      "function": "classify"
     }
   ],
   "productionConsumers": [
     {
-      "name": "Test-only OpenAI Planner Responses API request",
-      "path": "lib/providers/test-only-openai-conversation-planner.js",
-      "function": "classify"
+      "name": "Existing Planner structural contract",
+      "path": "lib/conversation-engine-v2/planner-schema.js",
+      "function": "validatePlannerOutput"
     },
     {
-      "name": "Planner understanding-context validation",
+      "name": "Existing Planner understanding-context validation",
       "path": "lib/conversation-engine-v2/understanding-validator.js",
       "function": "validateUnderstandingContext"
+    },
+    {
+      "name": "Existing Context execution relation consumer",
+      "path": "lib/conversation-engine-v2/conversation-state-v3-reducer.js",
+      "function": "decideContextExecutionV3"
+    },
+    {
+      "name": "Engine safe context-validation diagnostics",
+      "path": "lib/conversation-engine-v2/engine.js",
+      "function": "contextValidationCandidateDiagnostics"
+    },
+    {
+      "name": "Test-only raw understanding diagnostic projection",
+      "path": "lib/test-only-raw-understanding-diagnostic.js",
+      "function": "relationSnapshot"
+    },
+    {
+      "name": "HTTP safe diagnostic path projection",
+      "path": "server.js",
+      "function": "safeContextValidationReason"
+    },
+    {
+      "name": "Test-only OpenAI Planner Responses API request",
+      "path": "lib/providers/test-only-openai-conversation-planner.js",
+      "function": "requestOnce"
     }
   ],
   "affectedPasses": [
@@ -73,6 +101,18 @@
     {
       "name": "unrelated new request isolation",
       "runner": "tests/multi-cycle-context-runner.js"
+    },
+    {
+      "name": "explicit older-turn reference and cross-capability lineage",
+      "runner": "tests/conversation-planner-v2-adapter-runner.js"
+    },
+    {
+      "name": "acknowledgement and no-reply",
+      "runner": "tests/conversation-engine-v2-integration-runner.js"
+    },
+    {
+      "name": "semantic contract",
+      "runner": "tests/planner-semantic-contract-runner.js"
     }
   ],
   "lessons": [

@@ -66,6 +66,17 @@ function compatibleCatalogCapabilities(entity, capabilityValues) {
 
 function plannerProviderSchemaForCatalog(catalog, model = "", coverageRepair = null) {
   const schema = JSON.parse(JSON.stringify(plannerProviderJsonSchema()));
+  const relationSchema = schema.properties.contextRelationCandidates.items;
+  relationSchema.required = relationSchema.required.map((field) => (
+    field === "candidateRequestCycleRefs" ? "candidateHistoryTurnRefs" : field
+  ));
+  delete relationSchema.properties.candidateRequestCycleRefs;
+  relationSchema.properties.candidateHistoryTurnRefs = {
+    type: "array",
+    maxItems: 1,
+    description: "Bounded conversation history-turn ordinal selected for this relation. Use [] for new_request and relation_uncertain.",
+    items: { type: "integer", minimum: 1 }
+  };
   const catalogIdentities = propertyCatalogIdentityValues(catalog);
   const taskIdentity = schema.properties.tasks.items.properties.entity.properties.canonicalCandidate;
   const candidateSchema = schema.properties.semanticCandidates.items;
@@ -1837,12 +1848,12 @@ function instructions() {
     "Use policy only for property rules or conditions, permissions, restrictions, processes, or exceptions; policy is not a monetary lodging amount classification.",
     "Requests to disclose access credentials, authentication secrets, entry codes, private keys, or other sensitive access information must use type high_risk, detailIntent general, requestedOutputs answer, dependsOnStayContext false, and entity category other. They must never be policy or property_fact and must remain human handoff.",
     "A pure social acknowledgement with no substantive request is discourse acknowledgement and shouldIgnore true. A message containing only punctuation or emoji with no contextual semantic request is also non-actionable; do not invent a property task. If punctuation is a genuine clarification signal in active context, use the explicit context relation rather than guessing a new fact.",
-    "stateOperations is a legacy compatibility field and must always be an empty array. Never emit a state action. Every task is a request candidate and must have a unique candidateIndex. Emit exactly one contextRelationCandidate for every task: new_request, supplement_existing, modify_existing, end_existing, or relation_uncertain. Every relation must cite the matching candidateIndex and at least one exact evidenceRef. An evidenceRef must cite one supplied source eventId or messageRef and copy the exact source message substring using its startOffset/endOffset and quote. Every referenced requestCycleId must come from ContextSnapshot; do not invent an ID. A relation_uncertain candidate must not choose a cycle.",
+    "stateOperations is a legacy compatibility field and must always be an empty array. Never emit a state action. Every task is a request candidate and must have a unique candidateIndex. Emit exactly one contextRelationCandidate for every task: new_request, supplement_existing, modify_existing, end_existing, or relation_uncertain. Every relation must cite the matching candidateIndex and at least one exact evidenceRef. An evidenceRef must cite one supplied source eventId or messageRef and copy the exact source message substring using its startOffset/endOffset and quote. A contextual relation may cite only one supplied conversationLineage historyTurn through candidateHistoryTurnRefs. Never emit or invent an internal requestCycleId. A relation_uncertain candidate must not choose a history turn.",
     "EvidenceRefs are a source-coordinate contract for contextRelationCandidates and pending_task semanticCandidates. Every evidenceRef must include at least one non-empty eventId or messageRef copied only from one supplied sourceEvents item; if both are non-empty, they must identify that same item. startOffset is 0-based UTF-16 JavaScript string index inclusive and endOffset is exclusive: require 0 <= startOffset < endOffset <= that source messageText length. Set quote exactly to sourceEvents[].messageText.slice(startOffset, endOffset), with no paraphrase, normalization, translation, or guessed span. Independently verify every pending_task semanticCandidates evidenceRef before returning; bound candidates must rely on their verified relation provenance instead of model-calculated final evidence.",
-    "Relation kinds are mutually exclusive. new_request means the current request is semantically independent and does not need prior-turn context; it must have zero request-cycle references. supplement_existing means any follow-up that uses prior-turn context without modifying or removing a confirmed slot or product, including supplying a missing slot, repeating the same capability, or asking another capability within the same lodging context. modify_existing means the guest explicitly modifies or removes a confirmed slot or product from the referenced cycle. end_existing means the guest ends the referenced cycle. If the intended relation or referenced cycle is ambiguous, emit relation_uncertain and choose no cycle.",
+    "Relation kinds are mutually exclusive. new_request means the current request is semantically independent and does not need prior-turn context; it must have zero history-turn references. supplement_existing means any follow-up that uses prior-turn context without modifying or removing a confirmed slot or product, including supplying a missing slot, repeating the same capability, or asking another capability within the same lodging context. modify_existing means the guest explicitly modifies or removes a confirmed slot or product from the referenced turn. end_existing means the guest ends the request from the referenced turn. If the intended relation or referenced turn is ambiguous, emit relation_uncertain and choose no history turn.",
     "The preceding user and assistant messages are bounded same-scope dialogue supplied only for semantic understanding. They are not a property fact source and not evidence authority. sourceEvents are the only evidence authority for the current tasks and relations; relation evidenceRefs must still cite exact current sourceEvents spans.",
-    "Classify relation and capability independently. When the immediately preceding turn is the natural antecedent, prefer its exact requestCycleIds from conversationLineage.latestTurnRefs. Select an earlier lineage cycle only when the semantics clearly refer to that earlier turn. When a substantive follow-up omits the subject, use the preceding dialogue plus conversationLineage to understand the latest turn and cite the uniquely intended exposed ContextSnapshot requestCycleId; do not copy prior reply text into facts, evidenceRefs, dates, products, or answers.",
-    "Every task must emit a controlled detailIntent: general, time, start_time, end_time, latest_arrival_policy, early_arrival_policy, late_departure_policy, fee, quantity, eligibility, reservation_required, usage_restrictions, room_or_bundle_restriction, child_restrictions, seasonal_restrictions, weather_restrictions, conditions, or missing_information. For a follow-up whose wording omits the subject, use ContextSnapshot only to cite a clearly intended requestCycleId; never reuse a prior reply as fact, because the runtime resolves the current property catalog again.",
+    "Classify relation and capability independently. When the immediately preceding turn is the natural antecedent, prefer its historyTurn from conversationLineage.latestTurnRefs. Select an earlier historyTurn only when the semantics clearly refer to that earlier turn. When a substantive follow-up omits the subject, use the preceding dialogue plus conversationLineage to understand the latest turn and cite the uniquely intended historyTurn; JunZan deterministically maps that turn to an internal cycle. Do not copy prior reply text into facts, evidenceRefs, dates, products, or answers.",
+    "Every task must emit a controlled detailIntent: general, time, start_time, end_time, latest_arrival_policy, early_arrival_policy, late_departure_policy, fee, quantity, eligibility, reservation_required, usage_restrictions, room_or_bundle_restriction, child_restrictions, seasonal_restrictions, weather_restrictions, conditions, or missing_information. For a follow-up whose wording omits the subject, cite only a clearly intended conversationLineage historyTurn; never reuse a prior reply as fact, because the runtime resolves the current property catalog again.",
     "A base availability or permission question about an existing facility, amenity, activity, or service must use detailIntent general and requestedOutputs answer. Use detailIntent eligibility with requestedOutputs eligibility only when the guest explicitly asks which person, plan, room, booking mode, identity, or stated condition is eligible. Do not infer eligibility from a generic permission word such as can, may, 可以, or 能不能.",
     "For every task, put only that request candidate's raw date expression, candidate check-in/check-out, nights, and guest count in task.stayCandidate. Set stayCandidate to null when that task has no stay context. Do not use task array order to associate conditions. The legacy top-level stay is retained only for one-task compatibility; for more than one task, do not place conditions only in top-level stay. Do not create canonical state fields, state patches, or arbitrary state paths.",
     "For dates, identify expression kind and anchor. Candidates are only candidates; deterministic code validates dates.",
@@ -1924,6 +1935,63 @@ function normalizedRequestCycleRefs(values) {
     .filter(Boolean))].slice(0, 20);
 }
 
+function cycleAcceptsPlannerCapability(cycle, task) {
+  const requestKind = String(cycle && cycle.requestKind || "");
+  const taskType = String(task && task.type || "");
+  if (requestKind === "pricing") return ["price", "total_price"].includes(taskType);
+  if (requestKind === "location") return taskType === "property_fact";
+  const definition = getCapabilityDefinition(requestKind);
+  return requestKind === taskType || Boolean(definition && definition.acceptedCandidateTypes.includes(taskType));
+}
+
+function cycleProductId(cycle) {
+  return String(cycle && cycle.confirmedInputs && cycle.confirmedInputs.inventory
+    && cycle.confirmedInputs.inventory.entityId || "").trim();
+}
+
+function plannerProductId(task) {
+  return task && task.entity && ["room", "bundle"].includes(task.entity.category)
+    ? String(task.entity.canonicalCandidate || "").trim()
+    : "";
+}
+
+function deterministicCycleForHistoryTurn(authority, historyTurn, task) {
+  const turn = authority.turns.find((candidate) => candidate.historyTurn === historyTurn);
+  const cycles = turn ? turn.requestCycleRefs.map((requestCycleId) => authority.cyclesById.get(requestCycleId)).filter(Boolean) : [];
+  if (cycles.length === 1) return String(cycles[0].requestCycleId);
+  if (cycles.length < 2) return null;
+  const capabilityMatches = cycles.filter((cycle) => cycleAcceptsPlannerCapability(cycle, task));
+  const productId = plannerProductId(task);
+  const productMatches = productId ? cycles.filter((cycle) => cycleProductId(cycle) === productId) : [];
+  if (productId && productMatches.length === 0) return null;
+  const constraints = [capabilityMatches, productMatches].filter((matches) => matches.length > 0);
+  if (!constraints.length) return null;
+  const selected = cycles.filter((cycle) => constraints.every((matches) => matches.includes(cycle)));
+  return selected.length === 1 ? String(selected[0].requestCycleId) : null;
+}
+
+function bindProviderHistoryTurnRelations(output, authority) {
+  if (!output || typeof output !== "object" || !Array.isArray(output.contextRelationCandidates)) return output;
+  const tasksByCandidate = new Map((Array.isArray(output.tasks) ? output.tasks : [])
+    .map((task) => [task && task.candidateIndex, task]));
+  return {
+    ...output,
+    contextRelationCandidates: output.contextRelationCandidates.map((candidate) => {
+      if (!candidate || typeof candidate !== "object") return candidate;
+      const { candidateHistoryTurnRefs, candidateRequestCycleRefs: _untrustedCycleRefs, ...relation } = candidate;
+      if (["new_request", "relation_uncertain"].includes(candidate.kind)) {
+        return { ...relation, candidateRequestCycleRefs: [] };
+      }
+      const turns = [...new Set((Array.isArray(candidateHistoryTurnRefs) ? candidateHistoryTurnRefs : [])
+        .filter((value) => Number.isInteger(value) && value >= 1))];
+      const requestCycleId = turns.length === 1
+        ? deterministicCycleForHistoryTurn(authority, turns[0], tasksByCandidate.get(candidate.candidateIndex))
+        : null;
+      return { ...relation, candidateRequestCycleRefs: requestCycleId ? [requestCycleId] : [] };
+    })
+  };
+}
+
 function providerConversationContext(input) {
   const recentConversation = (Array.isArray(input.recentConversation)
     ? input.recentConversation.slice(-50)
@@ -1944,20 +2012,21 @@ function providerConversationContext(input) {
   }
   const providerContextSnapshot = JSON.parse(JSON.stringify(input.contextSnapshot || { scope: {}, cycles: [] }));
   if (providerContextSnapshot.scope && typeof providerContextSnapshot.scope === "object") delete providerContextSnapshot.scope.userId;
-  providerContextSnapshot.cycles = (Array.isArray(providerContextSnapshot.cycles)
+  const authorityCycles = (Array.isArray(providerContextSnapshot.cycles)
     ? providerContextSnapshot.cycles
-    : []).filter((cycle) => turnsByCycle.has(String(cycle && cycle.requestCycleId || ""))).map((cycle) => ({
-    ...cycle,
-    historyTurns: turnsByCycle.get(String(cycle.requestCycleId))
-  }));
+    : []).filter((cycle) => turnsByCycle.has(String(cycle && cycle.requestCycleId || "")));
+  providerContextSnapshot.cycles = authorityCycles.map((cycle) => {
+    const { requestCycleId, pendingRequestId: _pendingRequestId, ...safeCycle } = cycle;
+    return { ...safeCycle, historyTurns: turnsByCycle.get(String(requestCycleId)) };
+  });
   const metadata = {
     sourceEvents: input.sourceEvents || [],
     eventTimestamp: input.eventTimestamp,
     propertyCatalog: input.catalog,
     contextSnapshot: providerContextSnapshot,
     conversationLineage: {
-      turns: recentConversation.map(({ historyTurn, createdAt, requestCycleRefs }) => ({ historyTurn, createdAt, requestCycleRefs })),
-      latestTurnRefs: recentConversation.length ? recentConversation.at(-1).requestCycleRefs : []
+      turns: recentConversation.map(({ historyTurn, createdAt, requestCycleRefs }) => ({ historyTurn, createdAt, cycleCount: requestCycleRefs.length })),
+      latestTurnRefs: recentConversation.length ? [recentConversation.at(-1).historyTurn] : []
     },
     ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {})
   };
@@ -1965,7 +2034,14 @@ function providerConversationContext(input) {
     { role: "user", content: [{ type: "input_text", text: turn.guestMessage }] },
     ...(turn.replyText ? [{ role: "assistant", content: [{ type: "output_text", text: turn.replyText }] }] : [])
   ]);
-  return { metadata, messages };
+  return {
+    metadata,
+    messages,
+    authority: {
+      turns: recentConversation.map(({ historyTurn, requestCycleRefs }) => ({ historyTurn, requestCycleRefs })),
+      cyclesById: new Map(authorityCycles.map((cycle) => [String(cycle.requestCycleId), cycle]))
+    }
+  };
 }
 
 function annotateProviderSuccess(output, firstAttemptErrorCategory, providerAttempts, coverageRepair = null, coverageCritic = null, understandingCallCount = null) {
@@ -2090,7 +2166,7 @@ class TestOnlyOpenAiConversationPlanner {
       }
       if (!text) throw plannerFailure({ code: "planner_empty_response", category: "empty_response", status, model: this.model, responseBodyPresent: true });
       try {
-        output = JSON.parse(text);
+        output = bindProviderHistoryTurnRelations(JSON.parse(text), conversationContext.authority);
         parsedOutputPresent = true;
       }
       catch { throw plannerFailure({ code: "planner_parse_error", category: "json_parse", status, model: this.model, name: "SyntaxError", responseBodyPresent: true, parsedOutputPresent: true }); }
