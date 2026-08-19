@@ -37,6 +37,7 @@ const DEFAULT_PROVIDER_TIMEOUT_MS = 30000;
 const DEFAULT_RETRY_DELAY_MS = 750;
 const MAX_RETRY_DELAY_MS = 1000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const FIELD_PROVENANCE_KEYS = Object.freeze(["checkIn", "checkOut", "guestCount", "product", "searchRange"]);
 
 function propertyCatalogIdentityValues(catalog) {
   return [...new Set(Object.values(catalog && typeof catalog === "object" ? catalog : {})
@@ -76,6 +77,30 @@ function plannerProviderSchemaForCatalog(catalog, model = "", coverageRepair = n
     maxItems: 1,
     description: "Bounded conversation history-turn ordinal selected for this relation. Use [] for new_request and relation_uncertain.",
     items: { type: "integer", minimum: 1 }
+  };
+  const fieldSourceSchema = {
+    type: "object",
+    additionalProperties: false,
+    required: ["provenance", "sourceHistoryTurnRefs"],
+    properties: {
+      provenance: {
+        type: ["string", "null"],
+        enum: ["explicit", "context", null],
+        description: "Use explicit only when this task supplies the field now, context only when one bounded history turn supplies it, and null when this task must not inherit it."
+      },
+      sourceHistoryTurnRefs: {
+        type: "array",
+        maxItems: 1,
+        items: { type: "integer", minimum: 1 }
+      }
+    }
+  };
+  relationSchema.required.push("fieldProvenance");
+  relationSchema.properties.fieldProvenance = {
+    type: "object",
+    additionalProperties: false,
+    required: [...FIELD_PROVENANCE_KEYS],
+    properties: Object.fromEntries(FIELD_PROVENANCE_KEYS.map((field) => [field, fieldSourceSchema]))
   };
   const catalogIdentities = propertyCatalogIdentityValues(catalog);
   const taskIdentity = schema.properties.tasks.items.properties.entity.properties.canonicalCandidate;
@@ -1853,6 +1878,7 @@ function instructions() {
     "Relation kinds are mutually exclusive. new_request means the current request is semantically independent and does not need prior-turn context; it must have zero history-turn references. supplement_existing means any follow-up that uses prior-turn context without modifying or removing a confirmed slot or product, including supplying a missing slot, repeating the same capability, or asking another capability within the same lodging context. modify_existing means the guest explicitly modifies or removes a confirmed slot or product from the referenced turn. end_existing means the guest ends the request from the referenced turn. If the intended relation or referenced turn is ambiguous, emit relation_uncertain and choose no history turn.",
     "The preceding user and assistant messages are bounded same-scope dialogue supplied only for semantic understanding. They are not a property fact source and not evidence authority. sourceEvents are the only evidence authority for the current tasks and relations; relation evidenceRefs must still cite exact current sourceEvents spans.",
     "Classify relation and capability independently. When the immediately preceding turn is the natural antecedent, prefer its historyTurn from conversationLineage.latestTurnRefs. Select an earlier historyTurn only when the semantics clearly refer to that earlier turn. When a substantive follow-up omits the subject, use the preceding dialogue plus conversationLineage to understand the latest turn and cite the uniquely intended historyTurn; JunZan deterministically maps that turn to an internal cycle. Do not copy prior reply text into facts, evidenceRefs, dates, products, or answers.",
+    "For every relation emit fieldProvenance for checkIn, checkOut, guestCount, product, and searchRange. This is source attribution only, never a state operation. Use provenance explicit with no history turn only when that task explicitly supplies the field in the current message. Use provenance context with exactly one bounded sourceHistoryTurnRef only when the current task semantically depends on that field from that prior guest turn. Use null with no history turn when the field is neither explicit nor required from history. Never output a prior value, request cycle ID, keep, clear, replace, or another state instruction. A new_request relation may still cite field-level context because relation lifecycle and field source are independent.",
     "Every task must emit a controlled detailIntent: general, time, start_time, end_time, latest_arrival_policy, early_arrival_policy, late_departure_policy, fee, quantity, eligibility, reservation_required, usage_restrictions, room_or_bundle_restriction, child_restrictions, seasonal_restrictions, weather_restrictions, conditions, or missing_information. For a follow-up whose wording omits the subject, cite only a clearly intended conversationLineage historyTurn; never reuse a prior reply as fact, because the runtime resolves the current property catalog again.",
     "A base availability or permission question about an existing facility, amenity, activity, or service must use detailIntent general and requestedOutputs answer. Use detailIntent eligibility with requestedOutputs eligibility only when the guest explicitly asks which person, plan, room, booking mode, identity, or stated condition is eligible. Do not infer eligibility from a generic permission word such as can, may, 可以, or 能不能.",
     "For every task, put only that request candidate's raw date expression, candidate check-in/check-out, nights, and guest count in task.stayCandidate. Set stayCandidate to null when that task has no stay context. Do not use task array order to associate conditions. The legacy top-level stay is retained only for one-task compatibility; for more than one task, do not place conditions only in top-level stay. Do not create canonical state fields, state patches, or arbitrary state paths.",
@@ -1978,16 +2004,33 @@ function bindProviderHistoryTurnRelations(output, authority) {
     ...output,
     contextRelationCandidates: output.contextRelationCandidates.map((candidate) => {
       if (!candidate || typeof candidate !== "object") return candidate;
-      const { candidateHistoryTurnRefs, candidateRequestCycleRefs: _untrustedCycleRefs, ...relation } = candidate;
+      const { candidateHistoryTurnRefs, candidateRequestCycleRefs: _untrustedCycleRefs, fieldProvenance, ...relation } = candidate;
+      const fieldProvenancePresent = Boolean(fieldProvenance && typeof fieldProvenance === "object"
+        && !Array.isArray(fieldProvenance)
+        && FIELD_PROVENANCE_KEYS.every((field) => Object.hasOwn(fieldProvenance, field)));
+      const boundFieldProvenance = fieldProvenancePresent ? Object.fromEntries(FIELD_PROVENANCE_KEYS.map((field) => {
+        const source = fieldProvenance && fieldProvenance[field] || {};
+        const historyTurns = [...new Set((Array.isArray(source.sourceHistoryTurnRefs) ? source.sourceHistoryTurnRefs : [])
+          .filter((value) => Number.isInteger(value) && value >= 1))];
+        const turn = historyTurns.length === 1
+          ? authority.turns.find((candidateTurn) => candidateTurn.historyTurn === historyTurns[0])
+          : null;
+        return [field, {
+          provenance: ["explicit", "context"].includes(source.provenance) ? source.provenance : null,
+          sourceHistoryTurnRefs: historyTurns,
+          candidateRequestCycleRefs: turn ? [...turn.requestCycleRefs] : [],
+          ...(source.provenance === "context" ? { historyTurnBound: Boolean(turn) } : {})
+        }];
+      })) : null;
       if (["new_request", "relation_uncertain"].includes(candidate.kind)) {
-        return { ...relation, candidateRequestCycleRefs: [] };
+        return { ...relation, candidateRequestCycleRefs: [], ...(boundFieldProvenance ? { fieldProvenance: boundFieldProvenance } : {}) };
       }
       const turns = [...new Set((Array.isArray(candidateHistoryTurnRefs) ? candidateHistoryTurnRefs : [])
         .filter((value) => Number.isInteger(value) && value >= 1))];
       const requestCycleId = turns.length === 1
         ? deterministicCycleForHistoryTurn(authority, turns[0], tasksByCandidate.get(candidate.candidateIndex))
         : null;
-      return { ...relation, candidateRequestCycleRefs: requestCycleId ? [requestCycleId] : [] };
+      return { ...relation, candidateRequestCycleRefs: requestCycleId ? [requestCycleId] : [], ...(boundFieldProvenance ? { fieldProvenance: boundFieldProvenance } : {}) };
     })
   };
 }

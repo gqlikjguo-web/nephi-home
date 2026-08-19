@@ -9,6 +9,13 @@ const ACTION_BY_KIND = {
   end_existing: "end",
   relation_uncertain: "none"
 };
+const FIELD_PROVENANCE_KEYS = Object.freeze([
+  "checkIn",
+  "checkOut",
+  "guestCount",
+  "product",
+  "searchRange"
+]);
 
 function validEvidenceRef(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -98,6 +105,83 @@ function referenceableCycle(cycle, generatedAt) {
   return Number.isFinite(expiresAt) && Number.isFinite(now) && expiresAt > now;
 }
 
+function currentTaskProvidesField(task, field) {
+  const stay = task && task.stayCandidate || {};
+  const entity = task && task.entity || {};
+  if (field === "checkIn") return Boolean(stay.checkInCandidate || stay.dateExpression && stay.dateExpression.rawText);
+  if (field === "checkOut") return Boolean(stay.checkOutCandidate || Number.isInteger(stay.nightsCandidate));
+  if (field === "guestCount") return Number.isInteger(stay.guestCountCandidate);
+  if (field === "product") return Boolean(entity.canonicalCandidate && ["room", "bundle"].includes(entity.category));
+  return field === "searchRange" && Boolean(stay.dateExpression && stay.dateExpression.kind === "range");
+}
+
+function cycleProvidesField(cycle, field) {
+  const confirmed = cycle && cycle.confirmedInputs || {};
+  const stay = confirmed.stay || {};
+  const inventory = confirmed.inventory || {};
+  if (field === "checkIn") return Boolean(stay.checkIn);
+  if (field === "checkOut") return Boolean(stay.checkOut);
+  if (field === "guestCount") return Number.isInteger(stay.guests);
+  if (field === "product") return Boolean(inventory.entityId && ["room_only", "bundle_only"].includes(inventory.mode));
+  return field === "searchRange" && Boolean(stay.searchRange && stay.searchRange.from && stay.searchRange.to);
+}
+
+function validateFieldProvenance(candidate, task, cycles, path, errors) {
+  if (!Object.hasOwn(candidate, "fieldProvenance")) return null;
+  const input = candidate.fieldProvenance;
+  if (!input || typeof input !== "object" || Array.isArray(input)
+    || Object.keys(input).length !== FIELD_PROVENANCE_KEYS.length
+    || !FIELD_PROVENANCE_KEYS.every((field) => Object.hasOwn(input, field))) {
+    errors.push(`${path}.fieldProvenance`);
+    return null;
+  }
+  const validated = {};
+  const contextCycleIds = new Set();
+  for (const field of FIELD_PROVENANCE_KEYS) {
+    const source = input[field];
+    const fieldPath = `${path}.fieldProvenance.${field}`;
+    if (!source || typeof source !== "object" || Array.isArray(source)
+      || ![null, "explicit", "context"].includes(source.provenance)
+      || !Array.isArray(source.sourceHistoryTurnRefs)
+      || !Array.isArray(source.candidateRequestCycleRefs)) {
+      errors.push(fieldPath);
+      continue;
+    }
+    const historyTurns = [...new Set(source.sourceHistoryTurnRefs)];
+    const cycleRefs = [...new Set(source.candidateRequestCycleRefs.map(String))];
+    if (source.provenance === null) {
+      if (historyTurns.length || cycleRefs.length) errors.push(fieldPath);
+      validated[field] = { provenance: null, requestCycleId: null };
+      continue;
+    }
+    if (source.provenance === "explicit") {
+      if (historyTurns.length || cycleRefs.length || !currentTaskProvidesField(task, field)) errors.push(fieldPath);
+      validated[field] = { provenance: "explicit", requestCycleId: null };
+      continue;
+    }
+    if (currentTaskProvidesField(task, field)
+      || historyTurns.length !== 1
+      || source.historyTurnBound !== true) {
+      errors.push(fieldPath);
+      continue;
+    }
+    const matchingCycles = cycleRefs
+      .map((requestCycleId) => cycles.get(requestCycleId))
+      .filter((cycle) => cycle && cycleProvidesField(cycle, field));
+    if (matchingCycles.length !== 1) {
+      errors.push(fieldPath);
+      continue;
+    }
+    const requestCycleId = String(matchingCycles[0].requestCycleId);
+    contextCycleIds.add(requestCycleId);
+    validated[field] = { provenance: "context", requestCycleId };
+  }
+  if (contextCycleIds.size > 1) errors.push(`${path}.fieldProvenance.requestCycle`);
+  return FIELD_PROVENANCE_KEYS.every((field) => Object.hasOwn(validated, field))
+    ? validated
+    : null;
+}
+
 function validateUnderstandingContext(plannerOutput, snapshot, { sourceEvents = [], scope = null } = {}) {
   const errors = [];
   const snapshotScopeValid = !scope || sameSnapshotScope(snapshot && snapshot.scope, scope);
@@ -130,8 +214,25 @@ function validateUnderstandingContext(plannerOutput, snapshot, { sourceEvents = 
       errors.push(`${path}.candidateRequestCycleRefs`);
       return;
     }
+    const task = (plannerOutput.tasks || []).find((item) => item && item.candidateIndex === candidate.candidateIndex);
+    const fieldProvenance = validateFieldProvenance(candidate, task, cycles, path, errors);
+    if (fieldProvenance && uniqueRefs[0]) {
+      const contextCycleIds = [...new Set(Object.values(fieldProvenance)
+        .filter((source) => source.provenance === "context")
+        .map((source) => source.requestCycleId))];
+      if (contextCycleIds.some((requestCycleId) => requestCycleId !== uniqueRefs[0])) {
+        errors.push(`${path}.fieldProvenance.relationCycle`);
+      }
+    }
     relatedCandidateIndexes.add(candidate.candidateIndex);
-    relations.push({ candidateIndex: candidate.candidateIndex, kind: candidate.kind, requestCycleId: uniqueRefs[0] || null, stateAction: ACTION_BY_KIND[candidate.kind], evidenceRefs: candidate.evidenceRefs });
+    relations.push({
+      candidateIndex: candidate.candidateIndex,
+      kind: candidate.kind,
+      requestCycleId: uniqueRefs[0] || null,
+      stateAction: ACTION_BY_KIND[candidate.kind],
+      evidenceRefs: candidate.evidenceRefs,
+      ...(fieldProvenance ? { fieldProvenance } : {})
+    });
   });
   for (const candidateIndex of requestCandidates.indexes) {
     if (!relatedCandidateIndexes.has(candidateIndex)) errors.push(`tasks.${candidateIndex}.contextRelationCandidate`);

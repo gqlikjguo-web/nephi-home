@@ -38,7 +38,9 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const providerRelationSchema = requestBody.text.format.schema.properties.contextRelationCandidates.items;
   assert.equal(Object.hasOwn(providerRelationSchema.properties, "candidateRequestCycleRefs"), false, "OpenAI provider schema must not expose internal requestCycleId authority");
   assert.equal(Object.hasOwn(providerRelationSchema.properties, "candidateHistoryTurnRefs"), true, "OpenAI provider schema must expose only bounded history-turn relation references");
+  assert.equal(Object.hasOwn(providerRelationSchema.properties, "fieldProvenance"), true, "OpenAI provider schema must expose bounded field provenance without values or cycle IDs");
   assert.ok(providerRelationSchema.required.includes("candidateHistoryTurnRefs"));
+  assert.ok(providerRelationSchema.required.includes("fieldProvenance"));
   assert.ok(!providerRelationSchema.required.includes("candidateRequestCycleRefs"));
   const plannerInstructions = requestBody.input[0].content[0].text;
   assert.deepEqual(requestBody.input.map((item) => item.role), ["system", "developer", "user", "assistant", "user", "assistant", "user"], "Responses API input must use native multi-turn roles with the current guest as the final user message");
@@ -90,6 +92,8 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(plannerInstructions, /sourceEvents.*only.*evidence/i, "current sourceEvents must remain the sole evidence authority");
   assert.match(plannerInstructions, /relation.*capability.*independent/i, "Planner must classify follow-up relation independently from capability");
   assert.match(plannerInstructions, /omits the subject.*conversationLineage.*historyTurn/i, "subject-omitting follow-ups must cite the intended bounded history turn");
+  assert.match(plannerInstructions, /fieldProvenance.*checkIn.*checkOut.*guestCount.*product.*searchRange/i, "Planner must attribute each controlled context field independently");
+  assert.match(plannerInstructions, /never output a prior value.*request cycle ID.*keep.*clear.*replace/i, "field provenance must not become a state-operation or value authority");
   assert.doesNotMatch(plannerInstructions, /A supplement adds a missing value/i, "supplement_existing must not be restricted to missing-slot updates");
   assert.equal((plannerInstructions.match(/supplement_existing means/gi) || []).length, 1, "instructions must define supplement_existing exactly once");
   assert.match(plannerInstructions, /new_request means.*semantically independent.*does not (?:need|require).*prior-turn context/i, "new_request must be independent from prior-turn context");
@@ -100,7 +104,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(plannerInstructions, /ambiguous.*relation_uncertain/i, "ambiguous relations must fail closed as relation_uncertain");
   assert.match(plannerInstructions, /immediately preceding turn.*natural antecedent.*conversationLineage\.latestTurnRefs.*earlier historyTurn.*semantic(?:s|ally).*earlier turn/i, "lineage selection must prefer the natural latest antecedent and use older turns only when explicit semantics require it");
   const relationContractSchema = JSON.stringify(requestBody.text.format.schema);
-  const followupPlanner = async ({ message, type, cycleId, history, extraCycles = [], historyTurn = history.length, cycleRequestKind = "pricing", entity = { category: "other", rawText: "", canonicalCandidate: null, confidence: 0.99 }, cycleEntityId = "bundle-all" }) => {
+  const followupPlanner = async ({ message, type, cycleId, history, extraCycles = [], historyTurn = history.length, cycleRequestKind = "pricing", entity = { category: "other", rawText: "", canonicalCandidate: null, confidence: 0.99 }, cycleEntityId = "bundle-all", relationKind = "supplement_existing", fieldProvenance }) => {
     const evidenceRef = { eventId: `event-${type}`, messageRef: "", startOffset: 0, endOffset: message.length, quote: message };
     const planned = migrateFakePlannerOutput({
       schemaVersion: 2,
@@ -120,7 +124,7 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
         stayCandidate: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
         confidence: 0.99
       }],
-      contextRelationCandidates: [{ candidateIndex: 0, kind: "supplement_existing", candidateHistoryTurnRefs: [historyTurn], candidateRequestCycleRefs: ["model-cycle-id-must-be-ignored"], evidenceRefs: [evidenceRef] }],
+      contextRelationCandidates: [{ candidateIndex: 0, kind: relationKind, candidateHistoryTurnRefs: relationKind === "new_request" ? [] : [historyTurn], candidateRequestCycleRefs: ["model-cycle-id-must-be-ignored"], ...(fieldProvenance ? { fieldProvenance } : {}), evidenceRefs: [evidenceRef] }],
       ambiguities: [],
       missingInformation: [],
       needsHuman: false,
@@ -185,6 +189,40 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(relationB.tasks[0].type, "availability", "cross-capability follow-up must preserve its current capability");
   assert.deepEqual(relationB.contextRelationCandidates[0].candidateRequestCycleRefs, ["answered-price-b"]);
   assert.equal(relationB.contextRelationCandidates[0].kind, "supplement_existing");
+  const contextualFields = ({ dateTurn, productTurn = dateTurn }) => Object.fromEntries([
+    ["checkIn", "context", dateTurn],
+    ["checkOut", "context", dateTurn],
+    ["guestCount", null, null],
+    ["product", "context", productTurn],
+    ["searchRange", null, null]
+  ].map(([field, provenance, historyTurn]) => [field, {
+    provenance,
+    sourceHistoryTurnRefs: provenance === "context" ? [historyTurn] : []
+  }]));
+  const relationDriftA = await followupPlanner({
+    message: "費用多少",
+    type: "price",
+    cycleId: "answered-price-a",
+    history: relationAHistory,
+    relationKind: "new_request",
+    fieldProvenance: contextualFields({ dateTurn: 3, productTurn: 2 }),
+    extraCycles: [{ requestCycleId: "older-availability-a", requestKind: "availability", status: "pending", confirmedInputs: { stay: { checkIn: null, checkOut: null }, inventory: { mode: "any", entityId: null } }, contextReuseExpiresAt: "2026-08-19T09:00:00.000Z" }]
+  });
+  assert.equal(relationDriftA.contextRelationCandidates[0].kind, "new_request", "field provenance must not repair or rewrite raw relation lifecycle");
+  assert.deepEqual(relationDriftA.contextRelationCandidates[0].candidateRequestCycleRefs, []);
+  assert.equal(relationDriftA.contextRelationCandidates[0].fieldProvenance.checkIn.requestCycleId, undefined, "validated provider output must not expose a single model-selected cycle field");
+  assert.deepEqual(relationDriftA.contextRelationCandidates[0].fieldProvenance.checkIn.candidateRequestCycleRefs, ["answered-price-a"]);
+  const relationDriftB = await followupPlanner({
+    message: "還能預訂嗎？",
+    type: "availability",
+    cycleId: "answered-price-b",
+    history: relationBHistory,
+    relationKind: "new_request",
+    fieldProvenance: contextualFields({ dateTurn: 2 }),
+    extraCycles: [{ requestCycleId: "older-orphan-availability", requestKind: "availability", status: "pending", confirmedInputs: { stay: { checkIn: null, checkOut: null }, inventory: { mode: "any", entityId: null } }, contextReuseExpiresAt: "2026-08-19T09:00:00.000Z" }]
+  });
+  assert.equal(relationDriftB.tasks[0].type, "availability");
+  assert.deepEqual(relationDriftB.contextRelationCandidates[0].fieldProvenance.product.candidateRequestCycleRefs, ["answered-price-b"]);
   const olderTurn = await followupPlanner({ message: "older follow-up", type: "availability", cycleId: "older-orphan-availability", history: relationBHistory, historyTurn: 1, extraCycles: [{ requestCycleId: "answered-price-b", requestKind: "pricing", status: "answered", confirmedInputs: { stay: { checkIn: "2026-10-02", checkOut: "2026-10-03" }, inventory: { mode: "bundle_only", entityId: "bundle-all" } }, contextReuseExpiresAt: "2026-08-19T09:52:56.000Z" }] });
   assert.deepEqual(olderTurn.contextRelationCandidates[0].candidateRequestCycleRefs, ["older-orphan-availability"], "an explicit older-turn relation must resolve through that turn's deterministic lineage");
   const multiCycleHistory = [{ guestMessage: "multi-cycle turn", replyText: "multi-cycle reply", createdAt: "2026-08-18T09:54:00.000Z", requestCycleRefs: ["same-turn-price", "same-turn-availability"] }];

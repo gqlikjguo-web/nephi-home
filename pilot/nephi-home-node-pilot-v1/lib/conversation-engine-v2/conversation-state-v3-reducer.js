@@ -89,6 +89,48 @@ function approvedProductForTask(task, catalog) {
   return { productType: "any", productId: null, roomTypeId: null, bundleId: null };
 }
 
+function contextTaskFromFieldProvenance(state, relation, now) {
+  const sources = relation && relation.fieldProvenance;
+  if (!sources) return null;
+  const contextSources = Object.entries(sources)
+    .filter(([, source]) => source && source.provenance === "context" && source.requestCycleId);
+  if (!contextSources.length) return null;
+  const cycleIds = [...new Set(contextSources.map(([, source]) => String(source.requestCycleId)))];
+  if (cycleIds.length !== 1) return null;
+  const sourceTask = state.tasks.find((task) => task.taskId === cycleIds[0] && currentTask(task, now));
+  if (!sourceTask) return null;
+  const uses = (field) => sources[field] && sources[field].provenance === "context";
+  return {
+    taskId: sourceTask.taskId,
+    checkIn: uses("checkIn") ? sourceTask.checkIn : null,
+    checkOut: uses("checkOut") ? sourceTask.checkOut : null,
+    guestCount: uses("guestCount") ? sourceTask.guestCount : null,
+    searchFrom: uses("searchRange") ? sourceTask.searchFrom : null,
+    searchTo: uses("searchRange") ? sourceTask.searchTo : null,
+    productType: uses("product") ? sourceTask.productType : "any",
+    productId: uses("product") ? sourceTask.productId : null,
+    roomTypeId: uses("product") ? sourceTask.roomTypeId : null,
+    bundleId: uses("product") ? sourceTask.bundleId : null
+  };
+}
+
+function productForContextTask(task) {
+  if (task && task.productType === "bundle" && task.bundleId) {
+    return { productType: "bundle", productId: task.productId, roomTypeId: null, bundleId: task.bundleId };
+  }
+  if (task && task.productType === "room_type" && task.roomTypeId) {
+    return { productType: "room_type", productId: task.productId, roomTypeId: task.roomTypeId, bundleId: null };
+  }
+  return { productType: "any", productId: null, roomTypeId: null, bundleId: null };
+}
+
+function newRequestCycleId(state, task) {
+  const requestedCycleId = String(task.lodgingScopeId || task.taskId);
+  return state.tasks.some((candidate) => candidate.taskId === requestedCycleId)
+    ? `${requestedCycleId}#${Number(state.revision || 0) + 1}-${task.candidateIndex}`
+    : requestedCycleId;
+}
+
 function buildContextSnapshotV3(state, scope = {}) {
   const now = String(scope.now || new Date().toISOString());
   const expectedScope = runtimeScope(scope);
@@ -450,6 +492,37 @@ function decideContextExecutionV3({
   const executionItems = plannerTasks.flatMap((task) => {
     const relation = relationByCandidate.get(task.candidateIndex);
     if (relation && relation.stateAction === "end") return [];
+    if (relation && relation.fieldProvenance) {
+      const projectedContext = contextTaskFromFieldProvenance(state, relation, now);
+      const currentProduct = approvedProductForTask(task, catalog);
+      const contextProduct = productForContextTask(projectedContext);
+      const lifecycleTarget = relation.requestCycleId && state.tasks.find(
+        (candidate) => candidate.taskId === relation.requestCycleId && currentTask(candidate, now)
+      );
+      const slotOnly = isSlotOnlyLodgingTurn(task).result;
+      const updatesExisting = Boolean(lifecycleTarget && (
+        relation.stateAction === "replace"
+        || relation.stateAction === "continue" && slotOnly
+      ));
+      if (updatesExisting) resumedPending = resumedPending || PENDING_STATUSES.has(lifecycleTarget.status);
+      return [{
+        candidateIndex: task.candidateIndex,
+        requestCycleId: updatesExisting ? lifecycleTarget.taskId : newRequestCycleId(state, task),
+        task: updatesExisting ? plannerTaskFromState(lifecycleTarget, task) : task,
+        transition: {
+          reasonCode: projectedContext ? "validated_field_provenance" : relation.reasonCode || "field_provenance_no_context",
+          contextTask: projectedContext,
+          approvedProduct: currentProduct.productType === "any" ? contextProduct : currentProduct,
+          slotSources: {
+            checkIn: relation.fieldProvenance.checkIn.provenance || "absent",
+            checkOut: relation.fieldProvenance.checkOut.provenance || "absent",
+            guestCount: relation.fieldProvenance.guestCount.provenance || "absent",
+            product: relation.fieldProvenance.product.provenance || "absent",
+            searchRange: relation.fieldProvenance.searchRange.provenance || "absent"
+          }
+        }
+      }];
+    }
     if (relation && ["continue", "replace"].includes(relation.stateAction)) {
       const target = state.tasks.find(
         (candidate) => candidate.taskId === relation.requestCycleId
@@ -486,17 +559,10 @@ function decideContextExecutionV3({
         }];
       }
     }
-    const requestedCycleId = String(task.lodgingScopeId || task.taskId);
-    const repeatedTaskId = state.tasks.some(
-      (candidate) => candidate.taskId === requestedCycleId
-    );
-    const newRequestCycleId = repeatedTaskId
-      ? `${requestedCycleId}#${Number(state.revision || 0) + 1}-${task.candidateIndex}`
-      : requestedCycleId;
     return [{
       candidateIndex: task.candidateIndex,
       requestCycleId: relation && relation.requestCycleId
-        || newRequestCycleId,
+        || newRequestCycleId(state, task),
       task,
       transition: { reasonCode: "new_task", contextTask: null, approvedProduct: approvedProductForTask(task, catalog), slotSources: { checkIn: task.stayCandidate && task.stayCandidate.checkInCandidate ? "current_turn" : "absent", checkOut: task.stayCandidate && (task.stayCandidate.checkOutCandidate || Number.isInteger(task.stayCandidate.nightsCandidate)) ? "current_turn" : "absent", product: task.entity && task.entity.canonicalCandidate ? "current_turn" : "absent" } }
     }];
@@ -543,7 +609,7 @@ function contractTaskType(capability) {
 function executionConditionsV3(state, item) {
   const request = item.canonicalRequest;
   const temporal = request.temporalState || {};
-  const prior = (state && state.tasks || []).find(
+  const prior = item.transition && item.transition.contextTask || (state && state.tasks || []).find(
     (task) => task.taskId === item.requestCycleId
   );
   const currentGuests = item.stateInput
