@@ -52,6 +52,14 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.deepEqual(CORE_COMMON_23_MATRIX.flatMap((item) => item.turns.map((turn) => turn.messageText)), coreCommonQuestions, "core_common_23 must preserve every approved question byte-for-byte and in order");
   assert.deepEqual(CORE_COMMON_23_MATRIX.filter((item) => item.turns.length > 1).map((item) => [item.id, item.turns.length]), [["core-common-19", 3], ["core-common-20", 2], ["core-common-21", 2]], "only cases 19-21 may share conversation state across turns");
   assert.ok(CORE_COMMON_23_MATRIX.every((item) => item.turns.every((turn) => turn.expectedActions.length === 1)), "every core_common_23 turn must use one exact expected action");
+  const coreCommon10 = CORE_COMMON_23_MATRIX.find((item) => item.id === "core-common-10").turns[0];
+  const coreCommon13 = CORE_COMMON_23_MATRIX.find((item) => item.id === "core-common-13").turns[0];
+  const coreCommon17 = CORE_COMMON_23_MATRIX.find((item) => item.id === "core-common-17").turns[0];
+  assert.deepEqual(coreCommon10.expectedCanonicalIdentities, ["splash_pool"], "Case10 must use the formal property-catalog identity");
+  assert.equal(coreCommon10.requireAllTasksAnswered, true, "Case10 must not hide an unresolved fee task behind the answered amenity task");
+  assert.deepEqual(coreCommon13.expectedLodgingProducts, [{ productType: "room_type", productId: "room402" }], "Case13 must express room scope as a lodging product contract");
+  assert.deepEqual(coreCommon17.expectedActions, ["reply"], "Case17 must follow D-019 and answer with the approved map");
+  assert.deepEqual(coreCommon17.requiredFactKeys, ["locationMapUrl"], "Case17 must prove the formal map fact, not merely any location reply");
   const coreCommon19 = CORE_COMMON_23_MATRIX.find((item) => item.id === "core-common-19");
   assert.deepEqual(coreCommon19.turns.map((turn) => turn.messageText), ["包棟多少？", "星期六", "住一晚"], "Case19 questions must remain byte-for-byte stable");
   assert.deepEqual(coreCommon19.turns.map((turn) => turn.expectedActions), [["clarification"], ["reply"], ["reply"]], "Case19 readiness must clarify only before date and night slots are supplied");
@@ -237,6 +245,61 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
     ]
   };
   assert.equal(validateAcceptanceResult(safeResult, { expectedActions: ["reply"], expectedCapabilities: ["parking"] }).action, "reply");
+  const splashPoolResult = {
+    ...safeResult,
+    taskResults: [{ ...safeResult.taskResults[0], taskId: "pool", capability: "amenity", type: "amenity" }],
+    trace: safeResult.trace.map((entry) => entry.stage === "canonical_request" ? {
+      ...entry,
+      items: [{ taskId: "pool", capability: "amenity", canonicalEntity: { category: "amenity", canonicalId: "splash_pool", status: "resolved" } }]
+    } : entry)
+  };
+  assert.doesNotThrow(() => validateAcceptanceResult(splashPoolResult, {
+    expectedActions: ["reply"],
+    expectedCanonicalIdentities: ["splash_pool"],
+    requireAllTasksAnswered: true
+  }));
+  assert.throws(() => validateAcceptanceResult({
+    ...splashPoolResult,
+    taskResults: [...splashPoolResult.taskResults, { taskId: "fee", capability: "unknown", type: "unknown", status: "needs_human", reason: "unknown", dataSource: "", facts: {} }]
+  }, {
+    expectedActions: ["reply"],
+    expectedCanonicalIdentities: ["splash_pool"],
+    requireAllTasksAnswered: true
+  }), /expected_all_tasks_answered/);
+  assert.throws(() => validateAcceptanceResult({
+    ...splashPoolResult,
+    trace: splashPoolResult.trace.map((entry) => entry.stage === "canonical_request" ? {
+      ...entry,
+      items: [{ taskId: "pool", capability: "amenity", canonicalEntity: { category: "amenity", canonicalId: "pool", status: "resolved" } }]
+    } : entry)
+  }, { expectedActions: ["reply"], expectedCanonicalIdentities: ["splash_pool"] }), /expected_canonical_identity_missing:splash_pool/);
+  const roomScopedResult = {
+    ...safeResult,
+    taskResults: [{ ...safeResult.taskResults[0], taskId: "children", capability: "policy", type: "policy" }],
+    trace: safeResult.trace.map((entry) => entry.stage === "canonical_request" ? {
+      ...entry,
+      items: [{
+        taskId: "children",
+        capability: "policy",
+        canonicalEntity: { category: "policy", canonicalId: "children", status: "resolved" },
+        lodgingProduct: { productType: "room_type", productId: "room402", roomTypeId: "room402", bundleId: null }
+      }]
+    } : entry)
+  };
+  assert.doesNotThrow(() => validateAcceptanceResult(roomScopedResult, {
+    expectedActions: ["reply"],
+    expectedLodgingProducts: [{ productType: "room_type", productId: "room402" }]
+  }));
+  assert.throws(() => validateAcceptanceResult(roomScopedResult, {
+    expectedActions: ["reply"],
+    expectedLodgingProducts: [{ productType: "room_type", productId: "room301" }]
+  }), /expected_lodging_product_missing:room_type:room301/);
+  const mapResult = {
+    ...safeResult,
+    taskResults: [{ ...safeResult.taskResults[0], taskId: "location", capability: "location", type: "location", facts: { subject: "位置與導航", locationMapUrl: "https://maps.example/property" } }]
+  };
+  assert.doesNotThrow(() => validateAcceptanceResult(mapResult, { expectedActions: ["reply"], requiredFactKeys: ["locationMapUrl"] }));
+  assert.throws(() => validateAcceptanceResult(safeResult, { expectedActions: ["reply"], requiredFactKeys: ["locationMapUrl"] }), /required_formal_fact_missing:locationMapUrl/);
   const missingDetailResult = {
     ...safeResult,
     finalDecision: { action: "reply", reasonCode: "execution_answered", reviewRequired: true },

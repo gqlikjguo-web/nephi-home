@@ -138,6 +138,21 @@ function loadedAcceptanceTurn(turn, tier, item, errorPrefix) {
     throw new Error(`${errorPrefix}_product_action_contract_too_broad`);
   }
   const turnReason = executionReasonForTurn(item, turn);
+  const expectedCanonicalIdentities = Array.isArray(turn.expectedCanonicalIdentities)
+    ? turn.expectedCanonicalIdentities.map((value) => String(value || "").trim())
+    : [];
+  if (expectedCanonicalIdentities.some((value) => !value)) throw new Error(`${errorPrefix}_canonical_identity_invalid`);
+  const expectedLodgingProducts = Array.isArray(turn.expectedLodgingProducts)
+    ? turn.expectedLodgingProducts.map((value) => ({
+      productType: String(value && value.productType || "").trim(),
+      productId: String(value && value.productId || "").trim()
+    }))
+    : [];
+  if (expectedLodgingProducts.some((value) => !["room_type", "bundle"].includes(value.productType) || !value.productId)) throw new Error(`${errorPrefix}_lodging_product_invalid`);
+  const requiredFactKeys = Array.isArray(turn.requiredFactKeys)
+    ? turn.requiredFactKeys.map((value) => String(value || "").trim())
+    : [];
+  if (requiredFactKeys.some((value) => !SAFE_FACT_KEYS.has(value))) throw new Error(`${errorPrefix}_required_fact_key_invalid`);
   return {
     tier,
     ...(typeof turn.input === "string" ? { messageText: turn.input } : {}),
@@ -145,6 +160,11 @@ function loadedAcceptanceTurn(turn, tier, item, errorPrefix) {
     expectedActions,
     expectedSemantic: turn.expectedSemantic || [],
     expectedCapabilities: semanticCapabilityGroups(turn.expectedSemantic || []),
+    expectedCanonicalIdentities,
+    expectedLodgingProducts,
+    expectedDataSource: String(turn.expectedDataSource || ""),
+    requiredFactKeys,
+    requireAllTasksAnswered: turn.requireAllTasksAnswered === true,
     productOutcomes: validatedProductOutcomes(turn, errorPrefix),
     forbidClaims: turn.forbidClaims || [],
     strictDetailReview: turn.strictDetailReview === true,
@@ -649,6 +669,24 @@ function validateAcceptanceResult(result, expectation = {}) {
     if (!alternatives.some((capability) => capabilities.has(capability))) throw new Error(`expected_capability_missing:${alternatives.join("|")}`);
   }
   if (expectation.expectedDataSource && !result.taskResults.some((task) => task.dataSource === expectation.expectedDataSource)) throw new Error(`expected_data_source_missing:${expectation.expectedDataSource}`);
+  for (const canonicalId of expectation.expectedCanonicalIdentities || []) {
+    if (!canonicalItems.some((item) => String(item && item.canonicalEntity && item.canonicalEntity.canonicalId || "") === canonicalId)) throw new Error(`expected_canonical_identity_missing:${canonicalId}`);
+  }
+  for (const expectedProduct of expectation.expectedLodgingProducts || []) {
+    const productMatch = canonicalItems.some((item) => {
+      const product = item && item.lodgingProduct || {};
+      if (product.productType === expectedProduct.productType && product.productId === expectedProduct.productId) return true;
+      const entity = item && item.canonicalEntity || {};
+      return expectedProduct.productType === "room_type"
+        && entity.category === "room"
+        && entity.canonicalId === expectedProduct.productId;
+    });
+    if (!productMatch) throw new Error(`expected_lodging_product_missing:${expectedProduct.productType}:${expectedProduct.productId}`);
+  }
+  for (const factKey of expectation.requiredFactKeys || []) {
+    if (!result.taskResults.some((task) => task.status === "answered" && task.facts && task.facts[factKey])) throw new Error(`required_formal_fact_missing:${factKey}`);
+  }
+  if (expectation.requireAllTasksAnswered === true && result.taskResults.some((task) => task.status !== "answered")) throw new Error("expected_all_tasks_answered");
   const semanticTags = new Set(expectation.expectedSemantic || []);
   const missingSemanticEvidence = missingExpectedSemanticEvidence(result, expectation);
   if (missingSemanticEvidence.length) throw new Error(`expected_semantic_evidence_missing:${missingSemanticEvidence.join("|")}`);
