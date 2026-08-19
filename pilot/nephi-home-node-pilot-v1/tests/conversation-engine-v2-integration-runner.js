@@ -24,9 +24,9 @@ const persistence = {
     recentMessageQueries.push({ propertyId, channelId, lineUserId, options });
     if (channelId !== "planner-history") return [];
     return [
-      { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z", processingStatus: "reply_succeeded", requestCycleRefs: ["answered-price-cycle"] },
-      { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", processingStatus: "reply_succeeded", requestCycleRefs: ["answered-price-cycle"] },
-      { guestMessage: "費用多少", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:30.000Z", processingStatus: "reply_succeeded", requestCycleRefs: ["answered-price-cycle"] }
+      { eventId: "history-price", messageRef: "history-price-message", guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z", processingStatus: "reply_succeeded", requestCycleRefs: ["answered-price-cycle"] },
+      { eventId: "history-date", messageRef: "history-date-message", guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", processingStatus: "reply_succeeded", requestCycleRefs: ["answered-price-cycle"] },
+      { eventId: "history-followup", messageRef: "history-followup-message", guestMessage: "費用多少", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:30.000Z", processingStatus: "reply_succeeded", requestCycleRefs: ["answered-price-cycle"] }
     ];
   }
 };
@@ -152,9 +152,9 @@ function latestConditions(result) {
     sourceEvents: [{ eventId: "planner-history-current", messageText: "費用多少" }]
   });
   assert.deepEqual(plannerHistoryInput.recentConversation, [
-    { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z", requestCycleRefs: ["answered-price-cycle"] },
-    { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", requestCycleRefs: ["answered-price-cycle"] },
-    { guestMessage: "費用多少", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:30.000Z", requestCycleRefs: ["answered-price-cycle"] }
+    { eventId: "history-price", messageRef: "history-price-message", guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z", requestCycleRefs: ["answered-price-cycle"], propertyId: "p1", channelId: "planner-history", lineUserId: "planner-history-user" },
+    { eventId: "history-date", messageRef: "history-date-message", guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", requestCycleRefs: ["answered-price-cycle"], propertyId: "p1", channelId: "planner-history", lineUserId: "planner-history-user" },
+    { eventId: "history-followup", messageRef: "history-followup-message", guestMessage: "費用多少", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:30.000Z", requestCycleRefs: ["answered-price-cycle"], propertyId: "p1", channelId: "planner-history", lineUserId: "planner-history-user" }
   ], "Engine must provide bounded completed same-scope conversation history to Planner");
   assert.deepEqual(recentMessageQueries.at(-1), {
     propertyId: "p1",

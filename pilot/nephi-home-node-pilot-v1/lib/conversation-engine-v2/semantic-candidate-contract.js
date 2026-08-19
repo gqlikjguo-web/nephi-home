@@ -1,7 +1,16 @@
 "use strict";
 
 const crypto = require("node:crypto");
-const { validateUnderstandingContext, evidenceMatchesSource, sourceEventMaps, evidenceRefsFailureCodes } = require("./understanding-validator");
+const {
+  validateUnderstandingContext,
+  evidenceMatchesSource,
+  sourceEventMaps,
+  evidenceRefsFailureCodes,
+  boundedHistoricalUserSources,
+  validateHistoricalUserEvidence
+} = require("./understanding-validator");
+const { resolveCanonicalTemporal } = require("./temporal-resolver");
+const { mentionedInventoryEntities } = require("./entity-resolver");
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SEMANTIC_CANDIDATE_COMPILED = Symbol("junzan.semanticCandidateCompiled");
@@ -22,8 +31,73 @@ function catalogIdentities(catalog) {
 
 function validEvidenceRefs(refs, input) {
   if (!Array.isArray(refs) || refs.length < 1 || refs.length > 12) return false;
-  const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
+  const historicalSources = boundedHistoricalUserSources(
+    input && input.recentConversation,
+    input && input.contextSnapshot,
+    input && input.scope
+  );
+  const sourceMaps = sourceEventMaps([...(input && input.sourceEvents || []), ...historicalSources]);
   return refs.every((ref) => ref && evidenceMatchesSource(ref, sourceMaps));
+}
+
+function nightsBetween(checkIn, checkOut) {
+  const start = Date.parse(`${String(checkIn || "")}T00:00:00.000Z`);
+  const end = Date.parse(`${String(checkOut || "")}T00:00:00.000Z`);
+  const nights = (end - start) / (24 * 60 * 60 * 1000);
+  return Number.isInteger(nights) && nights > 0 ? nights : null;
+}
+
+function historicalCandidateGrounding(candidate, input) {
+  if (!candidate || !["temporal_pattern", "lodging_scope"].includes(candidate.semanticKind)) return null;
+  const binding = validateHistoricalUserEvidence(candidate.evidenceRefs, {
+    recentConversation: input && input.recentConversation,
+    contextSnapshot: input && input.contextSnapshot,
+    scope: input && input.scope
+  });
+  if (!binding.ok) return null;
+  const confirmed = binding.cycle && binding.cycle.confirmedInputs || {};
+  if (candidate.semanticKind === "temporal_pattern") {
+    const stay = confirmed.stay || {};
+    if (!stay.checkIn || !stay.checkOut || candidate.evidenceRefs.length !== 1) return null;
+    const quote = String(candidate.evidenceRefs[0].quote || "");
+    const temporal = resolveCanonicalTemporal({
+      guestMessage: binding.source.messageText,
+      candidateSourceText: binding.source.messageText,
+      plannerCandidate: {
+        dateExpression: {
+          rawText: quote,
+          kind: candidate.temporalSemanticCandidate && candidate.temporalSemanticCandidate.kind || "absolute",
+          anchor: candidate.temporalSemanticCandidate && candidate.temporalSemanticCandidate.anchor || "message_time"
+        },
+        checkInCandidate: null,
+        checkOutCandidate: null,
+        nightsCandidate: nightsBetween(stay.checkIn, stay.checkOut),
+        guestCountCandidate: null
+      },
+      eventTimestamp: binding.source.createdAt,
+      timezone: input && input.catalog && input.catalog.timezone || "Asia/Taipei",
+      sourceEvidenceRefs: candidate.evidenceRefs,
+      applicableTaskIds: []
+    });
+    if (temporal.resolutionStatus !== "resolved" || temporal.checkIn !== stay.checkIn || temporal.checkOut !== stay.checkOut) return null;
+    return { kind: "temporal_pattern", source: binding.source, cycle: binding.cycle, evidenceRefs: candidate.evidenceRefs, temporal };
+  }
+  const inventory = confirmed.inventory || {};
+  const matches = mentionedInventoryEntities(input && input.catalog, binding.source.messageText);
+  if (matches.length !== 1 || !inventory.entityId || matches[0].entity.canonicalId !== inventory.entityId) return null;
+  const scope = candidate.lodgingScopeCandidate || {};
+  const candidateIds = [scope.bundleCanonicalCandidate, ...(scope.roomCanonicalCandidates || [])].filter(Boolean);
+  if (candidateIds.length !== 1 || candidateIds[0] !== inventory.entityId) return null;
+  return { kind: "lodging_scope", source: binding.source, cycle: binding.cycle, evidenceRefs: candidate.evidenceRefs, entity: matches[0].entity };
+}
+
+function candidateUsesHistoricalEvidence(candidate, input) {
+  const maps = sourceEventMaps(boundedHistoricalUserSources(
+    input && input.recentConversation,
+    input && input.contextSnapshot,
+    input && input.scope
+  ));
+  return Array.isArray(candidate && candidate.evidenceRefs) && candidate.evidenceRefs.some((ref) => evidenceMatchesSource(ref, maps));
 }
 
 function validTemporalCandidate(value) {
@@ -180,7 +254,10 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
     ? new Map(context.relations.map((relation) => [relation.candidateIndex, relation.evidenceRefs.map((ref) => ({ ...ref }))]))
     : new Map();
   const identities = catalogIdentities(input && input.catalog);
-  const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
+  const sourceMaps = sourceEventMaps([
+    ...(input && input.sourceEvents || []),
+    ...boundedHistoricalUserSources(input && input.recentConversation, input && input.contextSnapshot, input && input.scope)
+  ]);
   const normalizedScopes = normalizedRelatedLodgingScopes(rawCandidates, input && input.catalog, verifiedRelations, sourceMaps);
   const scopeIds = new Map();
   const candidateProvenanceIndexes = new Map();
@@ -208,7 +285,10 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
       ? controlledPendingTask(rawCandidate, output.tasks, verifiedRelations, identities)
       : null;
     const provenanceIndexes = controlledTask ? [controlledTask.candidateIndex] : rawProvenanceIndexes;
-    const evidenceRefs = controlledTask
+    const historicalGrounding = historicalCandidateGrounding(rawCandidate, input);
+    const evidenceRefs = historicalGrounding
+      ? rawCandidate.evidenceRefs.map((ref) => ({ ...ref }))
+      : controlledTask
       ? verifiedRelations.get(controlledTask.candidateIndex).map((ref) => ({ ...ref }))
       : pendingCoverage
         ? (!provenanceIndexes.length && validEvidenceRefs(rawCandidate && rawCandidate.evidenceRefs, input)
@@ -253,11 +333,27 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
       && (candidateProvenanceIndexes.get(candidate.candidateId).includes(task && task.candidateIndex)
         || pendingTaskMatches.get(candidate.candidateId).length === 1 && pendingTaskMatches.get(candidate.candidateId)[0] === task)
       && relation && validEvidenceRefs(relation.evidenceRefs, input)
-      && candidate.evidenceRefs.every((candidateRef) => relation.evidenceRefs.some((taskRef) => compilerEvidenceOverlaps(candidateRef, taskRef, sourceMaps))));
+      && (historicalCandidateGrounding(candidate, input)
+        || candidate.evidenceRefs.every((candidateRef) => relation.evidenceRefs.some((taskRef) => compilerEvidenceOverlaps(candidateRef, taskRef, sourceMaps)))));
     const scopes = [...new Set(matching.map((candidate) => String(candidate.lodgingScopeCandidate && candidate.lodgingScopeCandidate.scopeId || "")))];
     const scopeId = scopes.length === 1 ? scopes[0] : "";
     const owned = scopes.length === 1 ? matching : [];
-    return { ...task, semanticCandidateIds: owned.map((candidate) => candidate.candidateId), lodgingScopeId: scopeId || null };
+    const historicalProduct = owned.map((candidate) => historicalCandidateGrounding(candidate, input))
+      .filter((grounding) => grounding && grounding.kind === "lodging_scope");
+    const groundedEntity = historicalProduct.length === 1 ? historicalProduct[0].entity : null;
+    return {
+      ...task,
+      ...(groundedEntity ? {
+        entity: {
+          category: groundedEntity.category === "bundle" ? "room" : groundedEntity.category,
+          rawText: historicalProduct[0].evidenceRefs[0].quote,
+          canonicalCandidate: groundedEntity.canonicalId,
+          confidence: task.entity && task.entity.confidence || 1
+        }
+      } : {}),
+      semanticCandidateIds: owned.map((candidate) => candidate.candidateId),
+      lodgingScopeId: scopeId || null
+    };
   });
   return { ...output, tasks, semanticCandidates: candidates };
 }
@@ -292,6 +388,7 @@ function validateSemanticCandidates(output, input) {
       && (catalogIdentity === null || typeof catalogIdentity === "string" && identities.has(catalogIdentity))
       && (!catalogIdentity || canonicalIdentity === catalogIdentity)
       && validEvidenceRefs(candidate.evidenceRefs, input)
+      && (!candidateUsesHistoricalEvidence(candidate, input) || Boolean(historicalCandidateGrounding(candidate, input)))
       && validLodgingScope(candidate.lodgingScopeCandidate, identities)
       && lodgingScopeMatchesCatalog(candidate.lodgingScopeCandidate, input && input.catalog)
       && !(candidate.lodgingScopeCandidate && conflictingScopeIds.has(candidate.lodgingScopeCandidate.scopeId))
@@ -555,6 +652,7 @@ module.exports = {
   MAX_CANDIDATES,
   SEMANTIC_KINDS,
   compileSemanticCandidates,
+  historicalCandidateGrounding,
   validateSemanticCandidates,
   semanticCandidateDiagnosticSummary,
   missingSemanticCandidates,

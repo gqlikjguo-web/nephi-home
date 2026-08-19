@@ -26,8 +26,8 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
 
 (async () => {
   const recentConversation = [
-    { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z", requestCycleRefs: ["price-cycle"] },
-    { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", requestCycleRefs: ["price-cycle"] }
+    { eventId: "history-price", messageRef: "history-price-message", guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z", requestCycleRefs: ["price-cycle"] },
+    { eventId: "history-date", messageRef: "history-date-message", guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", requestCycleRefs: ["price-cycle"] }
   ];
   const result = await planner.classify({ traceId: "trace-history-boundary", currentMessage: "費用多少", currentMessages: ["費用多少"], recentConversation, sourceEvents: [{ eventId: "current-event", messageText: "費用多少" }], eventTimestamp: 1, catalog: { propertyId: "p1", rooms: [] }, contextSnapshot: { scope: { propertyId: "p1", channelId: "line", userId: "must-not-leak" }, cycles: [{ requestCycleId: "orphan-availability-cycle", requestKind: "availability", status: "pending" }, { requestCycleId: "price-cycle", requestKind: "pricing", status: "answered" }] }, conversationState: { schemaVersion: 2 } });
   assert.equal(result.schemaVersion, 2);
@@ -48,8 +48,12 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(Object.hasOwn(plannerInput, "currentMessage"), false, "current guest text must not be duplicated as a JSON field");
   assert.equal(Object.hasOwn(plannerInput, "currentMessages"), false, "current guest burst must remain represented by sourceEvents and the final user message");
   assert.deepEqual(plannerInput.conversationLineage.turns, [
-    { historyTurn: 1, createdAt: "2026-08-18T09:50:00.000Z", cycleCount: 1 },
-    { historyTurn: 2, createdAt: "2026-08-18T09:50:16.000Z", cycleCount: 1 }
+    { historyTurn: 1, eventId: "history-price", messageRef: "history-price-message", createdAt: "2026-08-18T09:50:00.000Z", cycleCount: 1 },
+    { historyTurn: 2, eventId: "history-date", messageRef: "history-date-message", createdAt: "2026-08-18T09:50:16.000Z", cycleCount: 1 }
+  ]);
+  assert.deepEqual(plannerInput.conversationLineage.userSources, [
+    { historyTurn: 1, eventId: "history-price", messageRef: "history-price-message", messageText: "包棟多少錢", createdAt: "2026-08-18T09:50:00.000Z" },
+    { historyTurn: 2, eventId: "history-date", messageRef: "history-date-message", messageText: "9/5", createdAt: "2026-08-18T09:50:16.000Z" }
   ]);
   assert.deepEqual(plannerInput.conversationLineage.latestTurnRefs, [2]);
   assert.equal(plannerInput.contextSnapshot.cycles.length, 1, "orphan cycles without bounded-turn lineage must not reach Planner candidates");

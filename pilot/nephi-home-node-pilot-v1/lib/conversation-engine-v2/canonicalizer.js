@@ -7,6 +7,7 @@ const {
 const { createCanonicalRequest } = require("./canonical-request");
 const { resolveEntity } = require("./entity-resolver");
 const { resolveCanonicalTemporal } = require("./temporal-resolver");
+const { historicalCandidateGrounding } = require("./semantic-candidate-contract");
 const {
   createLodgingProduct
 } = require("../conversation-contracts/lodging-product");
@@ -148,20 +149,45 @@ function canonicalizeExecutionItem({
   catalog,
   guestMessage,
   eventTimestamp,
+  recentConversation = [],
+  semanticCandidates = [],
+  scope = {},
   allowSharedMessageInference = false
 }) {
   const plannerTask = item.task;
   const plannerStay = normalizedTaskStay(plannerTask);
   const evidenceRefs = sourceEvidenceRefsForRelation(relation);
+  const ownedCandidateIds = new Set(Array.isArray(plannerTask.semanticCandidateIds) ? plannerTask.semanticCandidateIds.map(String) : []);
+  const historicalTemporal = semanticCandidates
+    .filter((candidate) => ownedCandidateIds.has(String(candidate && candidate.candidateId || "")))
+    .map((candidate) => historicalCandidateGrounding(candidate, { catalog, recentConversation, contextSnapshot, scope }))
+    .filter((grounding) => grounding && grounding.kind === "temporal_pattern");
+  const rawAppearsInCurrentMessage = Boolean(plannerStay.dateExpression.rawText
+    && String(guestMessage || "").normalize("NFKC").includes(String(plannerStay.dateExpression.rawText).normalize("NFKC")));
+  const groundedHistoricalTemporal = !rawAppearsInCurrentMessage && historicalTemporal.length === 1
+    ? historicalTemporal[0]
+    : null;
+  const temporalPlannerCandidate = groundedHistoricalTemporal ? {
+    ...plannerStay,
+    dateExpression: {
+      rawText: groundedHistoricalTemporal.evidenceRefs[0].quote,
+      kind: plannerStay.dateExpression.kind,
+      anchor: plannerStay.dateExpression.anchor
+    },
+    checkInCandidate: null,
+    checkOutCandidate: null,
+    nightsCandidate: groundedHistoricalTemporal.temporal.nights
+      || plannerStay.nightsCandidate
+  } : plannerStay;
   const reducerContext = item.transition && item.transition.contextTask || null;
   const approvedContext = reducerContext && !plannerStay.dateExpression.rawText
     ? { checkIn: reducerContext.checkIn, checkOut: reducerContext.checkOut, nights: null, sourceEvidenceRefs: [] }
     : null;
   const temporalState = resolveCanonicalTemporal({
-    guestMessage,
-    candidateSourceText: plannerTask.sourceText,
-    plannerCandidate: plannerStay,
-    eventTimestamp,
+    guestMessage: groundedHistoricalTemporal ? groundedHistoricalTemporal.source.messageText : guestMessage,
+    candidateSourceText: groundedHistoricalTemporal ? groundedHistoricalTemporal.source.messageText : plannerTask.sourceText,
+    plannerCandidate: temporalPlannerCandidate,
+    eventTimestamp: groundedHistoricalTemporal ? groundedHistoricalTemporal.source.createdAt : eventTimestamp,
     timezone: catalog.timezone,
     defaultNights: INVENTORY_CANDIDATE_TYPES.has(plannerTask.type) ? 1 : null,
     defaultNightsRuleRef: SINGLE_DATE_DEFAULT_NIGHT_RULE_REF,
@@ -171,7 +197,7 @@ function canonicalizeExecutionItem({
     defaultSearchRangeRuleRef: plannerTask.type === "available_dates"
       ? AVAILABLE_DATES_LOOKAHEAD_RULE_REF
       : null,
-    sourceEvidenceRefs: evidenceRefs,
+    sourceEvidenceRefs: groundedHistoricalTemporal ? groundedHistoricalTemporal.evidenceRefs : evidenceRefs,
     approvedContext,
     allowContextReuse: Boolean(approvedContext),
     allowSharedMessageInference: plannerTask.dependsOnStayContext === true
@@ -207,8 +233,8 @@ function canonicalizeExecutionItem({
       },
       temporalResult: temporalState,
       hasNewDateExpression: Boolean(
-        plannerStay.dateExpression.rawText
-        && plannerStay.dateExpression.kind !== "none"
+        temporalPlannerCandidate.dateExpression.rawText
+        && temporalPlannerCandidate.dateExpression.kind !== "none"
       ),
       sourceEvidenceRefs: evidenceRefs
     }

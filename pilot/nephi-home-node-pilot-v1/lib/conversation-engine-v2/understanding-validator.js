@@ -25,12 +25,70 @@ function sourceEventMaps(sourceEvents) {
     const normalized = {
       eventId: String(sourceEvent.eventId || "").trim(),
       messageRef: String(sourceEvent.messageRef || "").trim(),
-      messageText: String(sourceEvent.messageText || "")
+      messageText: String(sourceEvent.messageText || ""),
+      sourceKind: String(sourceEvent.sourceKind || "current_user"),
+      createdAt: String(sourceEvent.createdAt || ""),
+      requestCycleRefs: [...new Set((Array.isArray(sourceEvent.requestCycleRefs) ? sourceEvent.requestCycleRefs : [])
+        .map((value) => String(value || "").trim()).filter(Boolean))],
+      propertyId: String(sourceEvent.propertyId || ""),
+      channelId: String(sourceEvent.channelId || ""),
+      lineUserId: String(sourceEvent.lineUserId || "")
     };
     if (normalized.eventId) byEventId.set(normalized.eventId, byEventId.has(normalized.eventId) ? null : normalized);
     if (normalized.messageRef) byMessageRef.set(normalized.messageRef, byMessageRef.has(normalized.messageRef) ? null : normalized);
   }
   return { byEventId, byMessageRef };
+}
+
+function boundedHistoricalUserSources(recentConversation, snapshot, scope = {}) {
+  if (!sameSnapshotScope(snapshot && snapshot.scope, scope)) return [];
+  const generatedAt = Date.parse(snapshot && snapshot.generatedAt || "");
+  if (!Number.isFinite(generatedAt)) return [];
+  return (Array.isArray(recentConversation) ? recentConversation : []).flatMap((item) => {
+    const createdAt = Date.parse(item && item.createdAt || "");
+    const propertyId = String(item && item.propertyId || "");
+    const channelId = String(item && item.channelId || "");
+    const lineUserId = String(item && item.lineUserId || "");
+    const eventId = String(item && item.eventId || "").trim();
+    const messageRef = String(item && item.messageRef || "").trim();
+    const messageText = String(item && item.guestMessage || "");
+    if ((!eventId && !messageRef) || !messageText || !Number.isFinite(createdAt)
+      || createdAt > generatedAt || generatedAt - createdAt > 24 * 60 * 60 * 1000
+      || propertyId !== String(scope.propertyId || "")
+      || channelId !== String(scope.channelId || "")
+      || lineUserId !== String(scope.lineUserId || "")) return [];
+    return [{
+      eventId,
+      messageRef,
+      messageText,
+      sourceKind: "historical_user",
+      createdAt: new Date(createdAt).toISOString(),
+      requestCycleRefs: [...new Set((Array.isArray(item.requestCycleRefs) ? item.requestCycleRefs : [])
+        .map((value) => String(value || "").trim()).filter(Boolean))],
+      propertyId,
+      channelId,
+      lineUserId
+    }];
+  });
+}
+
+function validateHistoricalUserEvidence(refs, { recentConversation = [], contextSnapshot = {}, scope = {} } = {}) {
+  const sources = boundedHistoricalUserSources(recentConversation, contextSnapshot, scope);
+  const maps = sourceEventMaps(sources);
+  if (!Array.isArray(refs) || refs.length < 1 || !refs.every((ref) => evidenceMatchesSource(ref, maps))) {
+    return { ok: false, reasonCode: "historical_evidence_invalid", source: null, cycle: null };
+  }
+  const matched = refs.map((ref) => maps.byEventId.get(String(ref.eventId || "").trim())
+    || maps.byMessageRef.get(String(ref.messageRef || "").trim()));
+  const uniqueSources = [...new Set(matched)];
+  if (uniqueSources.length !== 1) return { ok: false, reasonCode: "historical_source_not_unique", source: null, cycle: null };
+  const source = uniqueSources[0];
+  const cycles = (contextSnapshot.cycles || []).filter((cycle) => (
+    source.requestCycleRefs.includes(String(cycle && cycle.requestCycleId || ""))
+    && referenceableCycle(cycle, contextSnapshot.generatedAt)
+  ));
+  if (cycles.length !== 1) return { ok: false, reasonCode: "historical_cycle_not_unique", source, cycle: null };
+  return { ok: true, reasonCode: "historical_user_evidence_verified", source, cycle: cycles[0] };
 }
 
 function evidenceMatchesSource(evidenceRef, sourceMaps) {
@@ -139,4 +197,13 @@ function validateUnderstandingContext(plannerOutput, snapshot, { sourceEvents = 
   return { ok: errors.length === 0, errors, relations };
 }
 
-module.exports = { validateUnderstandingContext, validEvidenceRef, sourceEventMaps, evidenceMatchesSource, evidenceRefFailureCodes, evidenceRefsFailureCodes };
+module.exports = {
+  validateUnderstandingContext,
+  validEvidenceRef,
+  sourceEventMaps,
+  evidenceMatchesSource,
+  evidenceRefFailureCodes,
+  evidenceRefsFailureCodes,
+  boundedHistoricalUserSources,
+  validateHistoricalUserEvidence
+};
