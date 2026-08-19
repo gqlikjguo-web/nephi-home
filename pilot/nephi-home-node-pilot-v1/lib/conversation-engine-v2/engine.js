@@ -516,15 +516,10 @@ class ConversationEngineV2 {
           input.lineUserId,
           { limit: this.recentMessageLimit, since }
         ).slice(-this.recentMessageLimit).map((item) => ({
-          eventId: String(item && item.eventId || ""),
-          messageRef: String(item && item.messageRef || ""),
           guestMessage: String(item && item.guestMessage || ""),
           replyText: String(item && item.replyText || ""),
           createdAt: String(item && item.createdAt || ""),
-          requestCycleRefs: requestCycleRefs(item && item.requestCycleRefs),
-          propertyId: String(input.customerId || ""),
-          channelId: String(input.channelId || ""),
-          lineUserId: String(input.lineUserId || "")
+          requestCycleRefs: requestCycleRefs(item && item.requestCycleRefs)
         })).filter((item) => item.guestMessage);
       } catch {
         recentConversation = [];
@@ -546,7 +541,7 @@ class ConversationEngineV2 {
     if (this.diagnosticDetail) this.trace(traceId, "state_before", { state: traceState(previous) });
     let plannerOutput, parserSucceeded = false;
     try {
-      plannerOutput = await this.planner.classify({ traceId, currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], recentConversation, sourceEvents, eventTimestamp: input.eventTimestamp, catalog, contextSnapshot, scope, lineUserId: input.lineUserId });
+      plannerOutput = await this.planner.classify({ traceId, currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], recentConversation, sourceEvents, eventTimestamp: input.eventTimestamp, catalog, contextSnapshot, lineUserId: input.lineUserId });
       parserSucceeded = true;
     } catch (error) {
       plannerOutput = null;
@@ -594,7 +589,7 @@ class ConversationEngineV2 {
     const requiresSemanticLedgerSynthesis = !Array.isArray(plannerOutput.semanticCandidates);
     if (requiresSemanticLedgerSynthesis) {
       plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog, sourceEvents });
-      plannerOutput = compileSemanticCandidates(plannerOutput, { catalog, sourceEvents, recentConversation, contextSnapshot, scope }, { synthesizeMissingCandidates: true });
+      plannerOutput = compileSemanticCandidates(plannerOutput, { catalog, sourceEvents }, { synthesizeMissingCandidates: true });
     }
     const structuralValidation = validatePlannerOutput(plannerOutput);
     if (!structuralValidation.ok) {
@@ -722,9 +717,6 @@ class ConversationEngineV2 {
       catalog,
       guestMessage: input.messageText,
       eventTimestamp: input.eventTimestamp,
-      recentConversation,
-      semanticCandidates: plannerOutput.semanticCandidates,
-      scope,
       allowSharedMessageInference: stayDependentTaskCount === 1
     }));
     for (const item of canonicalItems) {
