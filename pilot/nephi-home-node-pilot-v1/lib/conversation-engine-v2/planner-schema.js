@@ -10,7 +10,7 @@ const ELIGIBILITY_EVIDENCE_KINDS = new Set(["none", "person", "room", "plan", "b
 const CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
 const SEMANTIC_KINDS = new Set(["capability", "catalog_subject", "temporal_pattern", "lodging_scope"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const { DETAIL_INTENTS } = require("./detail-intent");
+const { DETAIL_INTENTS, detailFactCandidates } = require("./detail-intent");
 const { resolveEntity, mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures } = require("./entity-resolver");
 const { getCapabilityDefinition } = require("./capability-registry");
 const { sourceEventMaps, evidenceMatchesSource } = require("./understanding-validator");
@@ -320,6 +320,46 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
   const authoritativeSourceIdentityIds = directlyResolvedSourceIdentityIds.size === 1
     ? directlyResolvedSourceIdentityIds
     : sourceIdentityIds;
+  const sourceBaseCanonicalId = authoritativeSourceIdentityIds.size === 1
+    ? [...authoritativeSourceIdentityIds][0]
+    : "";
+  const sourceBaseGrounded = sourceBaseCanonicalId
+    ? resolveEntity(catalog, {
+        category: "other",
+        rawText: "",
+        canonicalCandidate: sourceBaseCanonicalId
+      })
+    : null;
+  const sourceBaseEntity = sourceBaseGrounded
+    && sourceBaseGrounded.status === "resolved"
+    && sourceBaseGrounded.entity;
+  const capabilityDefinition = getCapabilityDefinition(task.type);
+  const sourceBoundFormalDetail = sourceBoundRaw
+    && verifiedSource.includes(sourceBoundRaw)
+    && task.type === "policy"
+    && task.detailIntent !== "general"
+    && entity.canonicalCandidate
+    && canonicalGrounded && canonicalGrounded.status === "resolved"
+    && sourceBaseEntity
+    && sourceBaseEntity.canonicalId !== canonicalGrounded.entity.canonicalId
+    && sourceBaseEntity.category === canonicalGrounded.entity.category
+    && detailFactCandidates(sourceBaseEntity.canonicalId, task.detailIntent)
+      .includes(canonicalGrounded.entity.canonicalId)
+    && capabilityDefinition
+    && capabilityDefinition.resolverId === "property_catalog"
+    && capabilityDefinition.stayDependency === false
+    && capabilityDefinition.riskLevel === "low"
+    && capabilityDefinition.responseMode === "answer"
+    && capabilityDefinition.acceptedCandidateTypes.includes(task.type)
+    && capabilityDefinition.acceptedEntityCategories.includes(sourceBaseEntity.category);
+  if (sourceBoundFormalDetail) return {
+    ...task,
+    entity: {
+      ...entity,
+      category: sourceBaseEntity.category,
+      canonicalCandidate: sourceBaseEntity.canonicalId
+    }
+  };
   const sourceBoundCanonicalConflict = sourceBoundRaw
     && verifiedSource.includes(sourceBoundRaw)
     && entity.canonicalCandidate

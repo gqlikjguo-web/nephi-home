@@ -316,6 +316,62 @@ function main() {
   assert.equal(nestedSpecificIdentity.tasks[0].entity.canonicalCandidate, "check_in__latest_arrival_policy", "a uniquely resolved specific source identity must not conflict merely because its text also contains a generic parent alias");
   assert.notEqual(nestedSpecificIdentity.tasks[0].type, "unknown");
 
+  const earlyArrivalCatalog = buildPropertyCatalog({
+    ...property,
+    commonAnswers: {
+      ...property.commonAnswers,
+      checkInTime: "15:00",
+      early_checkin: "Early arrival requires confirmation."
+    }
+  });
+  const earlyArrivalDetailIdentity = sourceBoundSemantic(task({
+    taskId: "base-topic-detail-identity",
+    type: "policy",
+    category: "policy",
+    rawText: "下午1點入住",
+    canonicalCandidate: "early_checkin",
+    detailIntent: "early_arrival_policy"
+  }), { catalogOverride: earlyArrivalCatalog });
+  assert.equal(earlyArrivalDetailIdentity.tasks[0].type, "policy", "a formal detail fact must retain the registered property-policy capability");
+  assert.equal(earlyArrivalDetailIdentity.tasks[0].entity.canonicalCandidate, "check_in", "a formal detail fact must bind to its uniquely source-grounded base topic");
+  assert.equal(earlyArrivalDetailIdentity.tasks[0].detailIntent, "early_arrival_policy", "base-topic grounding must preserve the controlled detail intent");
+  assert.equal(earlyArrivalDetailIdentity.tasks[0].entity.rawText, "下午1點入住", "base-topic grounding must preserve current source evidence");
+
+  const lateDepartureCatalog = buildPropertyCatalog({
+    ...property,
+    commonAnswers: {
+      ...property.commonAnswers,
+      checkOutTime: "11:00",
+      late_checkout: "Late departure requires confirmation."
+    }
+  });
+  const lateDepartureDetailIdentity = sourceBoundSemantic(task({
+    taskId: "checkout-base-topic-detail-identity",
+    type: "policy",
+    category: "policy",
+    rawText: "下午1點退房",
+    canonicalCandidate: "late_checkout",
+    detailIntent: "late_departure_policy"
+  }), { catalogOverride: lateDepartureCatalog });
+  assert.equal(lateDepartureDetailIdentity.tasks[0].type, "policy");
+  assert.equal(lateDepartureDetailIdentity.tasks[0].entity.canonicalCandidate, "check_out");
+  assert.equal(lateDepartureDetailIdentity.tasks[0].detailIntent, "late_departure_policy");
+
+  const propertyWithoutDetail = buildPropertyCatalog({
+    ...property,
+    propertyId: "property_without_detail",
+    commonAnswers: { ...property.commonAnswers, checkOutTime: "10:00" }
+  });
+  const missingCurrentPropertyDetail = sourceBoundSemantic(task({
+    taskId: "missing-current-property-detail",
+    type: "policy",
+    category: "policy",
+    rawText: "下午1點退房",
+    canonicalCandidate: "late_checkout",
+    detailIntent: "late_departure_policy"
+  }), { catalogOverride: propertyWithoutDetail });
+  assert.notEqual(missingCurrentPropertyDetail.tasks[0].entity.canonicalCandidate, "check_out", "a detail fact from another property must not authorize base-topic grounding");
+
   const exactStay = {
     dateExpression: { rawText: "8/14-8/15", kind: "range", anchor: "message_time" },
     checkInCandidate: "2026-08-14", checkOutCandidate: "2026-08-15", nightsCandidate: 1, guestCountCandidate: 7
