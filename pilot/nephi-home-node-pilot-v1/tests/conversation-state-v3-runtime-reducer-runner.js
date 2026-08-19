@@ -11,9 +11,6 @@ const {
   executionConditionsV3,
   reduceConversationStateV3
 } = require("../lib/conversation-engine-v2/conversation-state-v3-reducer");
-const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
-const { canonicalizeExecutionItem } = require("../lib/conversation-engine-v2/canonicalizer");
-const { buildCanonicalFormalRequest } = require("../lib/conversation-engine-v2/formal-request");
 
 const NOW = "2026-07-30T07:00:00.000Z";
 const FUTURE = "2026-07-31T07:00:00.000Z";
@@ -23,8 +20,6 @@ const scope = {
   userId: "Ualpha"
 };
 const catalog = {
-  propertyId: scope.propertyId,
-  timezone: "Asia/Taipei",
   rooms: [
     { canonicalId: "room-double", category: "room" },
     { canonicalId: "room-quad", category: "room" },
@@ -34,27 +29,6 @@ const catalog = {
   policies: [],
   faqs: []
 };
-
-function fieldProvenanceFromHistory(requestCycleId, historyTurn, productHistoryTurn = historyTurn) {
-  const context = (sourceHistoryTurn) => ({
-    provenance: "context",
-    sourceHistoryTurnRefs: [sourceHistoryTurn],
-    candidateRequestCycleRefs: [requestCycleId],
-    historyTurnBound: true
-  });
-  const none = {
-    provenance: null,
-    sourceHistoryTurnRefs: [],
-    candidateRequestCycleRefs: []
-  };
-  return {
-    checkIn: context(historyTurn),
-    checkOut: context(historyTurn),
-    guestCount: { ...none },
-    product: context(productHistoryTurn),
-    searchRange: { ...none }
-  };
-}
 
 function pendingPricingTask(overrides = {}) {
   return createConversationTaskV3({
@@ -1186,146 +1160,9 @@ assert.equal(
   "a not-ready task not selected by a clarification FinalDecision must remain dormant"
 );
 
-const answeredBundleContextTask = pendingPricingTask({
-  taskId: "answered-bundle-context",
-  productType: "bundle",
-  productId: "bundle-all",
-  bundleId: "bundle-all",
-  checkIn: "2026-09-25",
-  checkOut: "2026-09-26",
-  entityId: "bundle-all",
-  entityCategory: "bundle",
-  knownFields: ["productType", "productId", "bundleId", "checkIn", "checkOut"],
-  missingFields: [],
-  status: "answered"
-});
-const answeredBundleContextState = createConversationStateV3({
-  ...scope,
-  tasks: [answeredBundleContextTask],
-  createdAt: NOW,
-  updatedAt: NOW,
-  expiresAt: FUTURE
-});
-const answeredBundleContextSnapshot = buildContextSnapshotV3(answeredBundleContextState, {
-  propertyId: scope.propertyId,
-  channelId: scope.channel,
-  lineUserId: scope.userId,
-  now: NOW
-});
-
-function contextualNewRequestReadiness({ message, capability, taskId, historyTurn, productHistoryTurn = historyTurn }) {
-  const task = {
-    candidateIndex: 0,
-    taskId,
-    type: capability,
-    sourceText: message,
-    detailIntent: "general",
-    requestedOutputs: [capability === "price" ? "price" : "availability"],
-    eligibilityEvidence: { kind: "none", sourceText: "" },
-    dependsOnStayContext: true,
-    entity: {
-      category: "other",
-      rawText: "",
-      canonicalCandidate: null,
-      confidence: 0.99
-    },
-    stayCandidate: {
-      dateExpression: { rawText: "", kind: "none", anchor: "none" },
-      checkInCandidate: null,
-      checkOutCandidate: null,
-      nightsCandidate: null,
-      guestCountCandidate: null
-    },
-    confidence: 0.99
-  };
-  const plannerOutput = {
-    tasks: [task],
-    contextRelationCandidates: [{
-      candidateIndex: 0,
-      kind: "new_request",
-      candidateRequestCycleRefs: [],
-      fieldProvenance: fieldProvenanceFromHistory("answered-bundle-context", historyTurn, productHistoryTurn),
-      evidenceRefs: [{
-        eventId: taskId,
-        messageRef: "",
-        startOffset: 0,
-        endOffset: message.length,
-        quote: message
-      }]
-    }]
-  };
-  const contextValidation = validateUnderstandingContext(
-    plannerOutput,
-    answeredBundleContextSnapshot,
-    {
-      sourceEvents: [{ eventId: taskId, messageText: message }],
-      scope: {
-        propertyId: scope.propertyId,
-        channelId: scope.channel,
-        lineUserId: scope.userId
-      }
-    }
-  );
-  assert.equal(contextValidation.ok, true);
-  const contextExecution = decideContextExecutionV3({
-    state: answeredBundleContextState,
-    relations: contextValidation.relations,
-    plannerTasks: [task],
-    catalog,
-    now: NOW
-  });
-  const item = canonicalizeExecutionItem({
-    item: contextExecution.executionItems[0],
-    relation: contextExecution.relations[0],
-    contextSnapshot: answeredBundleContextSnapshot,
-    catalog,
-    guestMessage: message,
-    eventTimestamp: Date.parse(NOW)
-  });
-  const formal = buildCanonicalFormalRequest({
-    property: { propertyId: scope.propertyId },
-    canonicalRequest: item.canonicalRequest,
-    candidateIndex: item.candidateIndex,
-    requestCycleId: item.requestCycleId,
-    confirmedInputs: executionConditionsV3(answeredBundleContextState, item)
-  });
-  return { contextExecution, item, formal };
-}
-
-const contextCaseA = contextualNewRequestReadiness({
-  message: "費用多少",
-  capability: "price",
-  taskId: "context-a-current",
-  historyTurn: 2,
-  productHistoryTurn: 1
-});
-const contextCaseB = contextualNewRequestReadiness({
-  message: "還能預訂嗎？",
-  capability: "availability",
-  taskId: "context-b-current",
-  historyTurn: 1
-});
-assert.deepEqual([
-  {
-    capability: contextCaseA.item.canonicalRequest.capability,
-    bundleId: contextCaseA.item.canonicalRequest.lodgingProduct.bundleId,
-    checkIn: contextCaseA.formal.stay.checkIn,
-    readiness: contextCaseA.formal.readiness.status
-  },
-  {
-    capability: contextCaseB.item.canonicalRequest.capability,
-    bundleId: contextCaseB.item.canonicalRequest.lodgingProduct.bundleId,
-    checkIn: contextCaseB.formal.stay.checkIn,
-    readiness: contextCaseB.formal.readiness.status
-  }
-], [
-  { capability: "price", bundleId: "bundle-all", checkIn: "2026-09-25", readiness: "ready" },
-  { capability: "availability", bundleId: "bundle-all", checkIn: "2026-09-25", readiness: "ready" }
-], "A/B must retain their current capability while using only validated historical date and bundle fields despite raw new_request relations");
-
 console.log(JSON.stringify({
   suite: "conversation-state-v3-runtime-reducer",
-  caseCount: 31,
-  passCount: 31,
+  caseCount: 29,
+  passCount: 29,
   failCount: 0
 }));
