@@ -301,6 +301,43 @@ function main() {
   assert.equal(coherentSourceIdentity.tasks[0].entity.canonicalCandidate, "bbq", "a source alias and matching canonical identity must remain valid");
   assert.notEqual(coherentSourceIdentity.tasks[0].type, "unknown");
 
+  const policyCategoryCatalog = buildPropertyCatalog({
+    ...property,
+    commonAnswers: { ...property.commonAnswers, checkInTime: "15:00", checkOutTime: "11:00" }
+  });
+  for (const [canonicalCandidate, category, rawText] of [
+    ["check_in", "check_in", "入住"],
+    ["check_out", "check_out", "退房"]
+  ]) {
+    const sameCanonicalPolicyFact = sourceBoundSemantic(task({
+      taskId: `same-canonical-policy-category-${canonicalCandidate}`,
+      type: "policy",
+      category,
+      rawText,
+      canonicalCandidate,
+      detailIntent: "time"
+    }), { catalogOverride: policyCategoryCatalog });
+    assert.equal(sameCanonicalPolicyFact.tasks[0].type, "policy");
+    assert.equal(sameCanonicalPolicyFact.tasks[0].entity.category, "policy", "a unique current-property canonical fact must use its formal catalog category");
+    assert.equal(sameCanonicalPolicyFact.tasks[0].entity.canonicalCandidate, canonicalCandidate);
+    const canonicalized = canonicalizeExecutionItem({
+      item: {
+        candidateIndex: 0,
+        requestCycleId: sameCanonicalPolicyFact.tasks[0].taskId,
+        task: sameCanonicalPolicyFact.tasks[0],
+        transition: { approvedProduct: { productType: "any", productId: null, roomTypeId: null, bundleId: null } }
+      },
+      relation: null,
+      contextSnapshot: { cycles: [] },
+      catalog: policyCategoryCatalog,
+      guestMessage: rawText,
+      eventTimestamp
+    });
+    assert.equal(canonicalized.canonicalRequest.canonicalEntity.status, "resolved");
+    assert.equal(canonicalized.canonicalRequest.canonicalEntity.canonicalId, canonicalCandidate);
+    assert.equal(canonicalized.canonicalRequest.resolverId, "property_catalog");
+  }
+
   const nestedIdentityCatalog = buildPropertyCatalog({
     ...property,
     commonAnswers: { ...property.commonAnswers, checkInTime: "15:00", latestArrivalTime: "22:00", checkOutTime: "11:00" }

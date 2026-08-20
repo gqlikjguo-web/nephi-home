@@ -360,6 +360,35 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
       canonicalCandidate: sourceBaseEntity.canonicalId
     }
   };
+  const canonicalFormalMatches = entity.canonicalCandidate
+    && canonicalGrounded && canonicalGrounded.status === "resolved"
+    ? Object.values(catalog)
+      .filter(Array.isArray)
+      .flat()
+      .filter((fact) => fact && fact.canonicalId === canonicalGrounded.entity.canonicalId)
+    : [];
+  const sourceBoundFormalCategory = sourceBoundRaw
+    && verifiedSource.includes(sourceBoundRaw)
+    && entity.canonicalCandidate
+    && canonicalGrounded && canonicalGrounded.status === "resolved"
+    && canonicalFormalMatches.length === 1
+    && authoritativeSourceIdentityIds.size === 1
+    && authoritativeSourceIdentityIds.has(canonicalGrounded.entity.canonicalId)
+    && capabilityDefinition
+    && capabilityDefinition.resolverId === "property_catalog"
+    && capabilityDefinition.stayDependency === false
+    && capabilityDefinition.riskLevel === "low"
+    && capabilityDefinition.responseMode === "answer"
+    && capabilityDefinition.acceptedCandidateTypes.includes(task.type)
+    && capabilityDefinition.acceptedEntityCategories.includes(canonicalGrounded.entity.category);
+  if (sourceBoundFormalCategory) return {
+    ...task,
+    entity: {
+      ...entity,
+      category: canonicalGrounded.entity.category,
+      canonicalCandidate: canonicalGrounded.entity.canonicalId
+    }
+  };
   const sourceBoundCanonicalConflict = sourceBoundRaw
     && verifiedSource.includes(sourceBoundRaw)
     && entity.canonicalCandidate
