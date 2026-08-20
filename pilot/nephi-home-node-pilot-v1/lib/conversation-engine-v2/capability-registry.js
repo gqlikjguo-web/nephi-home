@@ -171,6 +171,16 @@ const REGISTRY_BLUEPRINT = {
     riskLevel: "low",
     responseMode: "answer"
   },
+  lodging_product_capacity: {
+    capability: "lodging_product_capacity",
+    acceptedCandidateTypes: ["lodging_product_capacity"],
+    acceptedEntityCategories: ["room", "bundle"],
+    stayDependency: false,
+    requiredFields: [],
+    resolverId: "property_catalog",
+    riskLevel: "low",
+    responseMode: "answer"
+  },
   price: {
     capability: "price",
     acceptedCandidateTypes: ["price"],

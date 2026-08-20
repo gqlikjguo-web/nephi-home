@@ -6,7 +6,7 @@ const {
 } = require("../conversation-contracts/task-readiness");
 
 const INVENTORY_CAPABILITIES = new Set(["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"]);
-const SUPPORTED_CAPABILITIES = new Set([...INVENTORY_CAPABILITIES, "available_dates", "amenity", "policy", "property_fact", "amenity_list", "booking_request", "human_help", "high_risk", "unknown"]);
+const SUPPORTED_CAPABILITIES = new Set([...INVENTORY_CAPABILITIES, "available_dates", "lodging_product_capacity", "amenity", "policy", "property_fact", "amenity_list", "booking_request", "human_help", "high_risk", "unknown"]);
 
 function stableFormalRequestId({ requestCycleId, task }) {
   return `${String(requestCycleId || "none")}:${String(task && task.taskId || "task")}`;
@@ -183,6 +183,17 @@ function canonicalReadiness(canonicalRequest, stay, uncertainties = {}) {
   if (canonicalRequest.resolverId === "availability_resolver"
     && ["not_found", "ambiguous"].includes(canonicalRequest.canonicalEntity.status)
     && canonicalRequest.canonicalEntity.category !== "other") {
+    return {
+      status: "entity_unresolved",
+      knownFields: readiness.knownFields,
+      missingFields: [],
+      invalidFields: [],
+      conflictingFields: []
+    };
+  }
+  if (canonicalRequest.capability === "lodging_product_capacity"
+    && (canonicalRequest.canonicalEntity.status !== "resolved"
+      || !["room", "bundle"].includes(canonicalRequest.canonicalEntity.category))) {
     return {
       status: "entity_unresolved",
       knownFields: readiness.knownFields,

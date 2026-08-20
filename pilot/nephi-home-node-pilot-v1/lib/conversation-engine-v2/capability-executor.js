@@ -168,6 +168,13 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
     if (resolverId === "property_catalog") {
       const entity = scopedCatalogEntity(resolved && resolved.status === "resolved" && resolved.entity, request.inventory && request.inventory.mode);
       if (!entity || entity.status === "unknown") return queryOutcome(queryPlan, "unknown", { reason: "property_fact_unknown", facts: { subject: queryPlan.entity && queryPlan.entity.rawText || "question" } });
+      if (queryPlan.capability === "lodging_product_capacity") {
+        const capacity = Number(entity.capacity);
+        if (!["room", "bundle"].includes(entity.category) || !Number.isInteger(capacity) || capacity < 1) {
+          return queryOutcome(queryPlan, "unknown", { reason: "lodging_product_capacity_unknown", facts: { subject: entity.publicName } });
+        }
+        return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, maxGuests: capacity, source: "property_catalog", propertyId: property.propertyId }, resolverAttempted: false });
+      }
       const detailIntent = normalizeDetailIntent(queryPlan.detailIntent);
       if (detailIntent === "general") return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", ...catalogFactMetadata(entity), ...(Array.isArray(entity.applicableBundles) ? { applicableBundles: entity.applicableBundles } : {}), source: "property_catalog", propertyId: property.propertyId, detailIntent }, resolverAttempted: false });
       if (Array.isArray(entity.applicableBundles) && entity.applicableBundles.some((bundle) => bundle.note)) return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", applicableBundles: entity.applicableBundles, source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: true }, resolverAttempted: false });

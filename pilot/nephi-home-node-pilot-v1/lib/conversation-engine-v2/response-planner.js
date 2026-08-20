@@ -4,7 +4,7 @@ const { coverageByStatus, assertTaskCoverage } = require("./task-coverage");
 
 const TASK_PRIORITY = Object.freeze({
   availability: 10, available_dates: 10, room_options: 10, bundle_availability: 10, booking_request: 10,
-  capacity: 20,
+  capacity: 20, lodging_product_capacity: 20,
   price: 30, total_price: 30,
   amenity: 40, amenity_list: 40,
   policy: 50,
