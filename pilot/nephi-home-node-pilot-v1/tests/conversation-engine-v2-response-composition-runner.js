@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
-const { composeControlledReply, mergeComposedSections } = require("../lib/conversation-engine-v2/controlled-composer");
+const { composeSection, composeControlledReply, mergeComposedSections } = require("../lib/conversation-engine-v2/controlled-composer");
 
 function buildApprovedPlan(options) {
   return buildResponsePlan(options);
@@ -59,6 +59,44 @@ const unnecessaryClarification = mergeComposedSections(plan, {
 });
 assert.equal(unnecessaryClarification.ok, false);
 assert.ok(unnecessaryClarification.errors.includes("response_mode_mismatch"));
+
+const availableDatedPrice = composeSection({
+  status: "answered",
+  facts: {
+    availability: "available",
+    checkIn: "2026-10-12",
+    prices: [{
+      inventory: { publicName: "海景套房" },
+      total: 4800,
+      currency: "TWD"
+    }]
+  }
+});
+assert.equal(availableDatedPrice, "2026-10-12 入住目前可預訂。海景套房共 4,800 TWD。");
+
+const unavailableDatedPrice = composeSection({
+  status: "answered",
+  facts: {
+    availability: "full",
+    checkIn: "2026-10-12",
+    prices: []
+  }
+});
+assert.equal(unavailableDatedPrice, "2026-10-12 入住目前已滿房。");
+
+const incompleteDatedPrice = composeSection({
+  status: "property_data_missing",
+  facts: {
+    availability: "available",
+    checkIn: "2026-10-12",
+    prices: [{
+      inventory: { publicName: "海景套房" },
+      total: null,
+      currency: "TWD"
+    }]
+  }
+});
+assert.equal(incompleteDatedPrice, "這部分需要請業者確認。");
 
 const handoffPlan = buildApprovedPlan({
   propertyId: "property_alpha",

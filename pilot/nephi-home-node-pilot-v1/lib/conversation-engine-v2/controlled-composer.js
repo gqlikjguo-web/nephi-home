@@ -23,7 +23,10 @@ function composeSection(section) {
   if (facts.availableDates) return facts.availableDates.length ? `這段期間可查詢的日期有：${facts.availableDates.join("、")}。` : "這段期間目前沒有可售日期。";
   if (facts.prices) {
     if (facts.availability === "full") return `${facts.checkIn} 入住目前已滿房。`;
-    return facts.prices.map((item) => item.total === null ? `${item.inventory.publicName}價格需要請業者確認。` : `${item.inventory.publicName}共 ${money(item.total)} ${item.currency}。`).join(" ");
+    const prices = facts.prices.map((item) => item.total === null ? `${item.inventory.publicName}價格需要請業者確認。` : `${item.inventory.publicName}共 ${money(item.total)} ${item.currency}。`).join(" ");
+    return facts.availability === "available"
+      ? `${facts.checkIn} 入住目前可預訂。${prices}`
+      : prices;
   }
   if (facts.amenities) return facts.amenities.length ? `目前確認的主要設備有：${facts.amenities.join("、")}。` : "設備資料需要請業者確認。";
   if (facts.locationAddress) return [`\u5730\u5740\uff1a${facts.locationAddress}`, facts.locationMapUrl ? `Google \u5730\u5716\uff1a${facts.locationMapUrl}` : ""].filter(Boolean).join("\n");
