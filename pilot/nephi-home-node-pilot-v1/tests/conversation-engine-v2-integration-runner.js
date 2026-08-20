@@ -156,6 +156,14 @@ function latestConditions(result) {
     { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", requestCycleRefs: ["answered-price-cycle"] },
     { guestMessage: "費用多少", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:30.000Z", requestCycleRefs: ["answered-price-cycle"] }
   ], "Engine must provide bounded completed same-scope conversation history to Planner");
+  assert.deepEqual(plannerHistoryInput.contextCandidates, [{
+    candidateId: "lodging_context_1",
+    requestCycleId: "answered-price-cycle",
+    taskType: "pricing",
+    status: "answered",
+    stay: { checkIn: "2026-09-05", checkOut: "2026-09-06", guestCount: null, searchRange: null },
+    inventory: { mode: "room_only", entityId: "r1", features: [] }
+  }], "Engine must derive bounded lodging candidates from active V3 state before Planner selection");
   assert.deepEqual(recentMessageQueries.at(-1), {
     propertyId: "p1",
     channelId: "planner-history",
@@ -201,6 +209,7 @@ function latestConditions(result) {
   });
   await failedHistoryEngine.process({ customerId: "p1", channelId: "planner-history", lineUserId: "planner-history-user", eventId: "planner-history-failed", eventTimestamp: historyNow, messageText: "費用多少" });
   assert.deepEqual(failedHistoryPlannerInput.recentConversation, [], "history failure must retain the existing empty-history fail-safe");
+  assert.deepEqual(failedHistoryPlannerInput.contextCandidates, [], "history-load failure must expose no carryover candidates");
   const failedHistoryLoad = failedHistoryDiagnostics.find((item) => item.stage === "recent_conversation_load");
   assert.deepEqual(failedHistoryLoad && { loadSuccess: failedHistoryLoad.loadSuccess, count: failedHistoryLoad.count, cycleCount: failedHistoryLoad.cycleCount, reasonCode: failedHistoryLoad.reasonCode, items: failedHistoryLoad.items }, {
     loadSuccess: false, count: 0, cycleCount: 1, reasonCode: "list_recent_messages_failed", items: []
