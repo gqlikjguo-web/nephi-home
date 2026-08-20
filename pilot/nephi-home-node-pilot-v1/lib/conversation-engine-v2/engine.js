@@ -18,7 +18,6 @@ const {
 } = require("../conversation-contracts/conversation-state-v3");
 const {
   buildContextSnapshotV3,
-  buildLodgingContextCandidatesV3,
   decideContextExecutionV3,
   executionConditionsV3,
   reduceConversationStateV3
@@ -537,15 +536,12 @@ class ConversationEngineV2 {
       cycleCount: contextSnapshot.cycles.length,
       ...recentConversationSafeSummary(recentConversation)
     });
-    const boundedCycleRefs = new Set(recentConversation.flatMap((item) => item.requestCycleRefs));
-    const contextCandidates = buildLodgingContextCandidatesV3(previous, scope.now)
-      .filter((candidate) => boundedCycleRefs.has(candidate.requestCycleId));
     const catalog = buildPropertyCatalog(property);
     this.trace(traceId, "property_catalog", { providerType: this.diagnosticMetadata.providerType || "unknown", location: catalog.locationDiagnostics || { source: "none", profileValuePresent: false, transportValuePresent: false, urlValidation: "fail" } });
     if (this.diagnosticDetail) this.trace(traceId, "state_before", { state: traceState(previous) });
     let plannerOutput, parserSucceeded = false;
     try {
-      plannerOutput = await this.planner.classify({ traceId, currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], recentConversation, sourceEvents, eventTimestamp: input.eventTimestamp, catalog, contextSnapshot, contextCandidates, lineUserId: input.lineUserId });
+      plannerOutput = await this.planner.classify({ traceId, currentMessage: input.messageText, currentMessages: input.currentMessages || [input.messageText], recentConversation, sourceEvents, eventTimestamp: input.eventTimestamp, catalog, contextSnapshot, lineUserId: input.lineUserId });
       parserSucceeded = true;
     } catch (error) {
       plannerOutput = null;
@@ -666,7 +662,6 @@ class ConversationEngineV2 {
       state: previous,
       relations: contextValidation.relations,
       plannerTasks: plannerOutput.tasks,
-      contextCandidates,
       catalog,
       now: scope.now
     });

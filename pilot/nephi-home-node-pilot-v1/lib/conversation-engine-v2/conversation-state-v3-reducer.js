@@ -44,26 +44,6 @@ function currentTask(task, now) {
     && Date.parse(task.expiresAt) > Date.parse(now);
 }
 
-function buildLodgingContextCandidatesV3(state, now) {
-  return (state && Array.isArray(state.tasks) ? state.tasks : [])
-    .filter((task) => currentTask(task, now) && LODGING_PLANNER_TYPES.has(plannerTypeForTask(task)))
-    .map((task, index) => ({
-      candidateId: `lodging_context_${index + 1}`,
-      requestCycleId: task.taskId,
-      taskType: task.taskType,
-      status: task.status,
-      stay: {
-        checkIn: task.checkIn,
-        checkOut: task.checkOut,
-        guestCount: task.guestCount,
-        searchRange: task.searchFrom && task.searchTo
-          ? { from: task.searchFrom, to: task.searchTo }
-          : null
-      },
-      inventory: inventoryForTask(task)
-    }));
-}
-
 function inventoryForTask(task) {
   if (task.productType === "bundle") {
     return {
@@ -436,7 +416,6 @@ function decideContextExecutionV3({
   state,
   relations = [],
   plannerTasks = [],
-  contextCandidates = [],
   catalog,
   now
 }) {
@@ -458,8 +437,6 @@ function decideContextExecutionV3({
   const relationByCandidate = new Map(effectiveRelations.map(
     (relation) => [relation.candidateIndex, relation]
   ));
-  const constrainedCandidates = new Map((Array.isArray(contextCandidates) ? contextCandidates : [])
-    .map((candidate) => [candidate.candidateId, candidate]));
   const endedTaskIds = [...new Set(effectiveRelations
     .filter((relation) => (
       relation.stateAction === "end"
@@ -473,54 +450,7 @@ function decideContextExecutionV3({
   const executionItems = plannerTasks.flatMap((task) => {
     const relation = relationByCandidate.get(task.candidateIndex);
     if (relation && relation.stateAction === "end") return [];
-    const usesConstrainedCandidateContract = Object.hasOwn(task, "selectedContextCandidateId");
-    const selectedCandidateId = usesConstrainedCandidateContract
-      ? String(task.selectedContextCandidateId || "")
-      : "";
-    const selectedCandidate = selectedCandidateId
-      ? constrainedCandidates.get(selectedCandidateId)
-      : null;
-    const definition = getCapabilityDefinition(task.type);
-    const candidateEligible = Boolean(
-      selectedCandidate
-      && definition
-      && definition.stayDependency !== "none"
-      && LODGING_PLANNER_TYPES.has(task.type)
-    );
-    if (candidateEligible) {
-      const target = state.tasks.find((candidate) => (
-        candidate.taskId === selectedCandidate.requestCycleId
-        && currentTask(candidate, now)
-      ));
-      if (target) {
-        const currentProduct = approvedProductForTask(task, catalog);
-        const contextInventory = inventoryForTask(target);
-        const contextProduct = contextInventory.mode === "bundle_only"
-          ? { productType: "bundle", productId: target.productId, roomTypeId: null, bundleId: target.bundleId }
-          : contextInventory.mode === "room_only"
-            ? { productType: "room_type", productId: target.productId, roomTypeId: target.roomTypeId, bundleId: null }
-            : { productType: "any", productId: null, roomTypeId: null, bundleId: null };
-        resumedPending = resumedPending || PENDING_STATUSES.has(target.status);
-        return [{
-          candidateIndex: task.candidateIndex,
-          requestCycleId: target.taskId,
-          task: clone(task),
-          transition: {
-            reasonCode: "constrained_context_candidate_selected",
-            contextTask: target,
-            approvedProduct: currentProduct.productType === "any" ? contextProduct : currentProduct,
-            slotSources: {
-              checkIn: task.stayCandidate && task.stayCandidate.checkInCandidate ? "current_turn" : target.checkIn ? "constrained_context_candidate" : "absent",
-              checkOut: task.stayCandidate && (task.stayCandidate.checkOutCandidate || Number.isInteger(task.stayCandidate.nightsCandidate)) ? "current_turn" : target.checkOut ? "constrained_context_candidate" : "absent",
-              guestCount: task.stayCandidate && Number.isInteger(task.stayCandidate.guestCountCandidate) ? "current_turn" : Number.isInteger(target.guestCount) ? "constrained_context_candidate" : "absent",
-              product: task.entity && task.entity.canonicalCandidate ? "current_turn" : target.productId ? "constrained_context_candidate" : "absent"
-            }
-          }
-        }];
-      }
-    }
-    if (relation && ["continue", "replace"].includes(relation.stateAction)
-      && (!usesConstrainedCandidateContract || relation.reasonCode === "unique_pending_slot_update")) {
+    if (relation && ["continue", "replace"].includes(relation.stateAction)) {
       const target = state.tasks.find(
         (candidate) => candidate.taskId === relation.requestCycleId
           && currentTask(candidate, now)
@@ -565,7 +495,7 @@ function decideContextExecutionV3({
       : requestedCycleId;
     return [{
       candidateIndex: task.candidateIndex,
-      requestCycleId: !usesConstrainedCandidateContract && relation && relation.requestCycleId
+      requestCycleId: relation && relation.requestCycleId
         || newRequestCycleId,
       task,
       transition: { reasonCode: "new_task", contextTask: null, approvedProduct: approvedProductForTask(task, catalog), slotSources: { checkIn: task.stayCandidate && task.stayCandidate.checkInCandidate ? "current_turn" : "absent", checkOut: task.stayCandidate && (task.stayCandidate.checkOutCandidate || Number.isInteger(task.stayCandidate.nightsCandidate)) ? "current_turn" : "absent", product: task.entity && task.entity.canonicalCandidate ? "current_turn" : "absent" } }
@@ -777,7 +707,6 @@ function reduceConversationStateV3({
 
 module.exports = {
   buildContextSnapshotV3,
-  buildLodgingContextCandidatesV3,
   decideContextExecutionV3,
   executionConditionsV3,
   reduceConversationStateV3

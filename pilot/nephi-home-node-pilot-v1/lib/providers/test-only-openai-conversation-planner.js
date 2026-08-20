@@ -1856,7 +1856,6 @@ function instructions() {
     "Every task must emit a controlled detailIntent: general, time, start_time, end_time, latest_arrival_policy, early_arrival_policy, late_departure_policy, fee, quantity, eligibility, reservation_required, usage_restrictions, room_or_bundle_restriction, child_restrictions, seasonal_restrictions, weather_restrictions, conditions, or missing_information. For a follow-up whose wording omits the subject, cite only a clearly intended conversationLineage historyTurn; never reuse a prior reply as fact, because the runtime resolves the current property catalog again.",
     "A base availability or permission question about an existing facility, amenity, activity, or service must use detailIntent general and requestedOutputs answer. Use detailIntent eligibility with requestedOutputs eligibility only when the guest explicitly asks which person, plan, room, booking mode, identity, or stated condition is eligible. Do not infer eligibility from a generic permission word such as can, may, 可以, or 能不能.",
     "For every task, put only that request candidate's raw date expression, candidate check-in/check-out, nights, and guest count in task.stayCandidate. Set stayCandidate to null when that task has no stay context. Do not use task array order to associate conditions. The legacy top-level stay is retained only for one-task compatibility; for more than one task, do not place conditions only in top-level stay. Do not create canonical state fields, state patches, or arbitrary state paths.",
-    "For every task emit selectedContextCandidateId. Use null unless this current task semantically continues exactly one supplied lodgingContextCandidates item. Select only its opaque candidateId; never invent a candidate, date, product, guest count, cycle ID, or state operation. Current explicit stay or product input remains on the task and overrides the selected candidate. Non-stay property facts, policies, amenities, locations, acknowledgements, and independent requests must use null. If continuation is uncertain or more than one candidate could apply, use null.",
     "For dates, identify expression kind and anchor. Candidates are only candidates; deterministic code validates dates.",
     "For a request for the nearest, next, earliest, or recent available date, emit available_dates (not availability) and do not model generic words such as 空房 as a room entity.",
     "For generic availability wording (房、房間、空房、有房、還有房、可以訂), emit an availability task with an empty entity rawText and canonicalCandidate null. Only use a room entity for an explicitly named room, exact room name, or property-grounded room class.",
@@ -2029,19 +2028,6 @@ function providerConversationContext(input) {
       turns: recentConversation.map(({ historyTurn, createdAt, requestCycleRefs }) => ({ historyTurn, createdAt, cycleCount: requestCycleRefs.length })),
       latestTurnRefs: recentConversation.length ? [recentConversation.at(-1).historyTurn] : []
     },
-    lodgingContextCandidates: (Array.isArray(input.contextCandidates) ? input.contextCandidates : []).flatMap((candidate) => {
-      const requestCycleId = String(candidate && candidate.requestCycleId || "");
-      const historyTurns = turnsByCycle.get(requestCycleId) || [];
-      if (!requestCycleId || !historyTurns.length) return [];
-      return [{
-        candidateId: String(candidate.candidateId || ""),
-        historyTurns,
-        taskType: String(candidate.taskType || ""),
-        status: String(candidate.status || ""),
-        stay: candidate.stay || {},
-        inventory: candidate.inventory || { mode: "any", entityId: null, features: [] }
-      }];
-    }),
     ...(input.coverageRepair ? { coverageRepair: input.coverageRepair } : {})
   };
   const messages = recentConversation.flatMap((turn) => [

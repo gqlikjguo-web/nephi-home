@@ -29,13 +29,12 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
     { guestMessage: "包棟多少錢", replyText: "請補充入住日期。", createdAt: "2026-08-18T09:50:00.000Z", requestCycleRefs: ["price-cycle"] },
     { guestMessage: "9/5", replyText: "12人包棟共18,000 TWD。", createdAt: "2026-08-18T09:50:16.000Z", requestCycleRefs: ["price-cycle"] }
   ];
-  const result = await planner.classify({ traceId: "trace-history-boundary", currentMessage: "費用多少", currentMessages: ["費用多少"], recentConversation, sourceEvents: [{ eventId: "current-event", messageText: "費用多少" }], eventTimestamp: 1, catalog: { propertyId: "p1", rooms: [] }, contextSnapshot: { scope: { propertyId: "p1", channelId: "line", userId: "must-not-leak" }, cycles: [{ requestCycleId: "orphan-availability-cycle", requestKind: "availability", status: "pending" }, { requestCycleId: "price-cycle", requestKind: "pricing", status: "answered" }] }, contextCandidates: [{ candidateId: "lodging_context_1", requestCycleId: "price-cycle", taskType: "pricing", status: "answered", stay: { checkIn: "2026-09-05", checkOut: "2026-09-06", guestCount: null, searchRange: null }, inventory: { mode: "bundle_only", entityId: "bundle-a", features: [] } }], conversationState: { schemaVersion: 2 } });
+  const result = await planner.classify({ traceId: "trace-history-boundary", currentMessage: "費用多少", currentMessages: ["費用多少"], recentConversation, sourceEvents: [{ eventId: "current-event", messageText: "費用多少" }], eventTimestamp: 1, catalog: { propertyId: "p1", rooms: [] }, contextSnapshot: { scope: { propertyId: "p1", channelId: "line", userId: "must-not-leak" }, cycles: [{ requestCycleId: "orphan-availability-cycle", requestKind: "availability", status: "pending" }, { requestCycleId: "price-cycle", requestKind: "pricing", status: "answered" }] }, conversationState: { schemaVersion: 2 } });
   assert.equal(result.schemaVersion, 2);
   assert.equal(Array.isArray(result[Symbol.for("junzan.plannerProviderDiagnostic")].semanticLedgerBoundaries), true, "direct provider output must retain semantic-ledger boundary diagnostics");
   assert.equal(requestBody.text.format.name, "junzan_conversation_plan_v2");
   assert.equal(requestBody.text.format.strict, true);
   assert.equal(requestBody.text.format.schema.properties.tasks.minItems, 1);
-  assert.ok(requestBody.text.format.schema.properties.tasks.items.required.includes("selectedContextCandidateId"), "provider tasks must explicitly select one JunZan candidate or null");
   const providerRelationSchema = requestBody.text.format.schema.properties.contextRelationCandidates.items;
   assert.equal(Object.hasOwn(providerRelationSchema.properties, "candidateRequestCycleRefs"), false, "OpenAI provider schema must not expose internal requestCycleId authority");
   assert.equal(Object.hasOwn(providerRelationSchema.properties, "candidateHistoryTurnRefs"), true, "OpenAI provider schema must expose only bounded history-turn relation references");
@@ -56,7 +55,6 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.equal(plannerInput.contextSnapshot.cycles.length, 1, "orphan cycles without bounded-turn lineage must not reach Planner candidates");
   assert.equal(Object.hasOwn(plannerInput.contextSnapshot.cycles[0], "requestCycleId"), false, "provider metadata must not expose internal requestCycleId authority");
   assert.deepEqual(plannerInput.contextSnapshot.cycles[0].historyTurns, [1, 2], "every exposed cycle must identify its bounded history turns");
-  assert.deepEqual(plannerInput.lodgingContextCandidates, [{ candidateId: "lodging_context_1", historyTurns: [1, 2], taskType: "pricing", status: "answered", stay: { checkIn: "2026-09-05", checkOut: "2026-09-06", guestCount: null, searchRange: null }, inventory: { mode: "bundle_only", entityId: "bundle-a", features: [] } }], "provider may see only opaque JunZan-issued candidate IDs and bounded canonical fields");
   assert.equal(JSON.stringify(plannerInput).includes("price-cycle"), false, "no internal requestCycleId may cross the OpenAI provider boundary");
   assert.deepEqual(plannerInput.sourceEvents, [{ eventId: "current-event", messageText: "費用多少" }]);
   assert.equal(plannerInput.propertyCatalog.propertyId, "p1");
@@ -91,7 +89,6 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   assert.match(plannerInstructions, /preceding user and assistant messages.*semantic understanding.*not.*fact.*not.*evidence/i, "native conversation history must be explicitly non-authoritative semantic context");
   assert.match(plannerInstructions, /sourceEvents.*only.*evidence/i, "current sourceEvents must remain the sole evidence authority");
   assert.match(plannerInstructions, /relation.*capability.*independent/i, "Planner must classify follow-up relation independently from capability");
-  assert.match(plannerInstructions, /selectedContextCandidateId.*opaque candidateId.*never invent/i, "Planner must be limited to selecting a JunZan-issued candidate ID");
   assert.match(plannerInstructions, /omits the subject.*conversationLineage.*historyTurn/i, "subject-omitting follow-ups must cite the intended bounded history turn");
   assert.doesNotMatch(plannerInstructions, /A supplement adds a missing value/i, "supplement_existing must not be restricted to missing-slot updates");
   assert.equal((plannerInstructions.match(/supplement_existing means/gi) || []).length, 1, "instructions must define supplement_existing exactly once");
