@@ -239,6 +239,8 @@ const planner = new TestOnlyOpenAiConversationPlanner({ apiKey: "test-key", mode
   const semanticCoverageStatusSchema = semanticCandidateSchema.properties.coverageStatus;
   assert.match(plannerInstructions, /monetary lodging (?:amount|charge|rate)/i, "planner grammar must define price semantically instead of relying on question wording");
   assert.match(plannerInstructions, /type price.*requestedOutputs price.*dependsOnStayContext true/i, "generic and scoped monetary lodging requests must retain the inventory price contract");
+  assert.match(plannerInstructions, /subjective choice or recommendation of a lodging product.*type human_help.*human handoff/i, "lodging recommendation decisions must use the existing human-help path");
+  assert.match(plannerInstructions, /must not include.*fixed maximum occupancy.*available lodging products.*price or availability/i, "the recommendation grammar must preserve answerable lodging queries");
   assert.match(plannerInstructions, /policy.*rules or conditions.*not.*monetary/i, "planner grammar must keep property rules separate from price requests");
   assert.match(plannerInstructions, /access credentials.*authentication secrets.*type high_risk.*never.*policy/i, "sensitive access disclosure must remain a high-risk handoff capability");
   assert.match(plannerInstructions, /before returning.*verify.*substantive request.*matching task/i, "planner must self-check semantic task coverage before returning structured output");
