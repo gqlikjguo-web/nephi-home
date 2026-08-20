@@ -1015,6 +1015,125 @@ function main() {
   assert.notEqual(sourceBoundAmenityFee.tasks[0].type, "price", "a stateless amenity fee must never be promoted into lodging price");
   assert.notEqual(sourceBoundAmenityFee.tasks[0].entity.category, "bundle");
 
+  const usageAndFeeMessage = "Can guests use the pool, and what is its fee?";
+  const usageTask = task({
+    taskId: "catalog-usage",
+    type: "amenity",
+    category: "amenity",
+    rawText: "pool",
+    sourceText: usageAndFeeMessage,
+    canonicalCandidate: "pool",
+    detailIntent: "general"
+  });
+  const catalogFeeTask = task({
+    taskId: "catalog-fee",
+    type: "price",
+    category: "amenity",
+    rawText: "pool",
+    sourceText: usageAndFeeMessage,
+    canonicalCandidate: "pool",
+    detailIntent: "fee",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  });
+  catalogFeeTask.candidateIndex = 1;
+  const usageAndFeePlan = plan([usageTask, catalogFeeTask]);
+  usageAndFeePlan.contextRelationCandidates.forEach((relation) => {
+    relation.evidenceRefs = [{
+      eventId: "usage-and-fee",
+      messageRef: "",
+      startOffset: 0,
+      endOffset: usageAndFeeMessage.length,
+      quote: usageAndFeeMessage
+    }];
+  });
+  const usageAndFeeSemantic = applyPlannerSemanticContract(usageAndFeePlan, {
+    catalog: sourceBoundInventoryCatalog,
+    sourceEvents: [{ eventId: "usage-and-fee", messageRef: "", messageText: usageAndFeeMessage }]
+  });
+  const retainedUsage = usageAndFeeSemantic.tasks.find((item) => item.taskId === "catalog-usage");
+  const groundedFee = usageAndFeeSemantic.tasks.find((item) => item.taskId === "catalog-fee");
+  assert.equal(retainedUsage.type, "amenity", "catalog fee grounding must retain the usage sibling");
+  assert.equal(retainedUsage.entity.canonicalCandidate, "pool");
+  assert.equal(groundedFee.type, "amenity", "a source-bound catalog fee must use the formal stateless capability");
+  assert.equal(groundedFee.detailIntent, "fee");
+  assert.deepEqual(groundedFee.requestedOutputs, ["fee"]);
+  assert.equal(groundedFee.dependsOnStayContext, false);
+  assert.equal(groundedFee.stayCandidate, null);
+  assert.equal(groundedFee.entity.canonicalCandidate, "pool");
+  const canonicalFee = canonicalizeExecutionItem({
+    item: {
+      candidateIndex: groundedFee.candidateIndex,
+      requestCycleId: groundedFee.taskId,
+      task: groundedFee,
+      transition: { approvedProduct: { productType: "any", productId: null, roomTypeId: null, bundleId: null } }
+    },
+    relation: null,
+    contextSnapshot: { cycles: [] },
+    catalog: sourceBoundInventoryCatalog,
+    guestMessage: usageAndFeeMessage,
+    eventTimestamp
+  }).canonicalRequest;
+  assert.equal(canonicalFee.capability, "pool");
+  assert.equal(canonicalFee.resolverId, "property_catalog");
+
+  const activityFeeCatalog = {
+    ...sourceBoundInventoryCatalog,
+    amenities: sourceBoundInventoryCatalog.amenities.map((item) => item.canonicalId === "pool"
+      ? { ...item, category: "activity" }
+      : item)
+  };
+  const activityFee = sourceBoundSemantic(task({
+    taskId: "activity-fee",
+    type: "total_price",
+    category: "activity",
+    rawText: "pool",
+    sourceText: "What is the activity fee for the pool?",
+    canonicalCandidate: "pool",
+    detailIntent: "fee",
+    requestedOutputs: ["total_price"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  }), { message: "What is the activity fee for the pool?", catalogOverride: activityFeeCatalog });
+  assert.equal(activityFee.tasks[0].type, "amenity");
+  assert.equal(activityFee.tasks[0].entity.category, "activity");
+  assert.deepEqual(activityFee.tasks[0].requestedOutputs, ["fee"]);
+
+  const policyFee = sourceBoundSemantic(task({
+    taskId: "policy-fee",
+    type: "price",
+    category: "policy",
+    rawText: "bbq",
+    sourceText: "What fee applies to bbq?",
+    canonicalCandidate: "bbq",
+    detailIntent: "fee",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  }), { message: "What fee applies to bbq?" });
+  assert.equal(policyFee.tasks[0].type, "policy");
+  assert.equal(policyFee.tasks[0].entity.category, "policy");
+  assert.deepEqual(policyFee.tasks[0].requestedOutputs, ["fee"]);
+
   const poolFeeMessage = "What is the fee for the pool?";
   const malformedPoolFee = sourceBoundSemantic(task({
     taskId: "malformed-pool-fee",

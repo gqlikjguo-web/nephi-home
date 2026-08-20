@@ -334,6 +334,46 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
     && sourceBaseGrounded.status === "resolved"
     && sourceBaseGrounded.entity;
   const capabilityDefinition = getCapabilityDefinition(task.type);
+  const sourceBoundCatalogFeeDefinition = sourceBoundRaw
+    && verifiedSource.includes(sourceBoundRaw)
+    && ["price", "total_price"].includes(task.type)
+    && task.detailIntent === "fee"
+    && entity.canonicalCandidate
+    && canonicalGrounded && canonicalGrounded.status === "resolved"
+    && authoritativeSourceIdentityIds.size === 1
+    && authoritativeSourceIdentityIds.has(canonicalGrounded.entity.canonicalId)
+    && !["room", "bundle", "other"].includes(canonicalGrounded.entity.category)
+    ? getCapabilityDefinition(canonicalGrounded.entity.canonicalId)
+      || getCapabilityDefinition(["amenity", "activity", "room_feature"].includes(canonicalGrounded.entity.category)
+        ? "amenity"
+        : "policy")
+    : null;
+  const sourceBoundCatalogFee = sourceBoundCatalogFeeDefinition
+    && sourceBoundCatalogFeeDefinition.resolverId === "property_catalog"
+    && sourceBoundCatalogFeeDefinition.stayDependency === false
+    && sourceBoundCatalogFeeDefinition.riskLevel === "low"
+    && sourceBoundCatalogFeeDefinition.responseMode === "answer"
+    && sourceBoundCatalogFeeDefinition.acceptedEntityCategories.includes(canonicalGrounded.entity.category);
+  if (sourceBoundCatalogFee) {
+    const preferredType = ["amenity", "activity", "room_feature"].includes(canonicalGrounded.entity.category)
+      ? "amenity"
+      : "policy";
+    const type = sourceBoundCatalogFeeDefinition.acceptedCandidateTypes.includes(preferredType)
+      ? preferredType
+      : sourceBoundCatalogFeeDefinition.acceptedCandidateTypes[0];
+    return {
+      ...task,
+      type,
+      requestedOutputs: ["fee"],
+      dependsOnStayContext: false,
+      stayCandidate: null,
+      entity: {
+        ...entity,
+        category: canonicalGrounded.entity.category,
+        canonicalCandidate: canonicalGrounded.entity.canonicalId
+      }
+    };
+  }
   const sourceBoundFormalDetail = sourceBoundRaw
     && verifiedSource.includes(sourceBoundRaw)
     && task.type === "policy"
