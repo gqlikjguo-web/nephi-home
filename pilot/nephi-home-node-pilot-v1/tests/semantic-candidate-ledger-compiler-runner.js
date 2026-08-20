@@ -39,6 +39,32 @@ function main() {
   assert.equal(missingSemanticCandidates(compiled, input, compiled.semanticCandidates).length, 0);
   assert.equal(validatePlannerOutput(compiled).ok, true);
 
+  const mixedScopedFacets = baseOutput();
+  mixedScopedFacets.semanticCandidates.unshift({
+    semanticKind: "capability",
+    capability: "availability",
+    canonicalIdentityCandidate: "availability",
+    provenanceRelationCandidateIndexes: [0],
+    evidenceRefs: evidenceRefs.map((ref) => ({ ...ref })),
+    lodgingScopeCandidate: null,
+    temporalSemanticCandidate: null,
+    propertyCatalogIdentity: null
+  }, {
+    semanticKind: "temporal_pattern",
+    capability: "availability",
+    canonicalIdentityCandidate: "temporal_pattern",
+    provenanceRelationCandidateIndexes: [0],
+    evidenceRefs: evidenceRefs.map((ref) => ({ ...ref })),
+    lodgingScopeCandidate: null,
+    temporalSemanticCandidate: { rawText: "2026-08-20", kind: "absolute", anchor: "message_time" },
+    propertyCatalogIdentity: null
+  });
+  const mixedScopedCompiled = compileSemanticCandidates(mixedScopedFacets, input);
+  assert.equal(mixedScopedCompiled.tasks[0].semanticCandidateIds.length, 3, "one task must retain its valid unscoped capability/temporal facets beside one uniquely scoped lodging facet");
+  assert.equal(mixedScopedCompiled.tasks[0].lodgingScopeId, mixedScopedCompiled.semanticCandidates[2].lodgingScopeCandidate.scopeId, "the sole non-empty lodging scope must remain the task scope");
+  assert.equal(missingSemanticCandidates(mixedScopedCompiled, input, mixedScopedCompiled.semanticCandidates).length, 0, "mixed facets owned by one task must not trigger semantic coverage repair");
+  assert.equal(validatePlannerOutput(mixedScopedCompiled).ok, true, "valid mixed semantic facets must satisfy the strict Planner contract");
+
   const invalidIdentity = baseOutput();
   invalidIdentity.semanticCandidates[0].propertyCatalogIdentity = "invented-room";
   assert.equal(validateSemanticCandidates(compileSemanticCandidates(invalidIdentity, input), input).invalidCandidateIds.length, 1, "compiler must leave an ungrounded catalog identity for validator fail-closed handling");

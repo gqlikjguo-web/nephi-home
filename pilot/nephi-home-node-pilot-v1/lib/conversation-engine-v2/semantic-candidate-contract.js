@@ -254,9 +254,11 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
         || pendingTaskMatches.get(candidate.candidateId).length === 1 && pendingTaskMatches.get(candidate.candidateId)[0] === task)
       && relation && validEvidenceRefs(relation.evidenceRefs, input)
       && candidate.evidenceRefs.every((candidateRef) => relation.evidenceRefs.some((taskRef) => compilerEvidenceOverlaps(candidateRef, taskRef, sourceMaps))));
-    const scopes = [...new Set(matching.map((candidate) => String(candidate.lodgingScopeCandidate && candidate.lodgingScopeCandidate.scopeId || "")))];
+    const scopes = [...new Set(matching
+      .map((candidate) => String(candidate.lodgingScopeCandidate && candidate.lodgingScopeCandidate.scopeId || ""))
+      .filter(Boolean))];
     const scopeId = scopes.length === 1 ? scopes[0] : "";
-    const owned = scopes.length === 1 ? matching : [];
+    const owned = scopes.length <= 1 ? matching : [];
     return { ...task, semanticCandidateIds: owned.map((candidate) => candidate.candidateId), lodgingScopeId: scopeId || null };
   });
   return { ...output, tasks, semanticCandidates: candidates };
@@ -498,7 +500,7 @@ function taskOwnsCandidate(output, input, task, candidate) {
   if (candidate.propertyCatalogIdentity
     && String(task.entity && task.entity.canonicalCandidate || "") !== candidate.propertyCatalogIdentity) return false;
   const scopeId = String(candidate.lodgingScopeCandidate && candidate.lodgingScopeCandidate.scopeId || "");
-  if (String(task.lodgingScopeId || "") !== scopeId) return false;
+  if (scopeId && String(task.lodgingScopeId || "") !== scopeId) return false;
   const relations = (output.contextRelationCandidates || []).filter((relation) => relation && relation.candidateIndex === task.candidateIndex);
   if (relations.length !== 1 || !validEvidenceRefs(relations[0].evidenceRefs, input)) return false;
   const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
