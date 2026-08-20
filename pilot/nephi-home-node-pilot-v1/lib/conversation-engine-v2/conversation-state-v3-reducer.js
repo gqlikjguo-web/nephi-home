@@ -464,7 +464,17 @@ function decideContextExecutionV3({
             ? { productType: "room_type", productId: target.productId, roomTypeId: target.roomTypeId, bundleId: null }
             : { productType: "any", productId: null, roomTypeId: null, bundleId: null };
         resumedPending = resumedPending || PENDING_STATUSES.has(target.status);
-        const contextTask = plannerTaskFromState(target, task);
+        const preserveCurrentSemantic = contractTaskType(task.type) !== target.taskType
+          && suppliedSlotFields(task).size === 0;
+        const contextTask = preserveCurrentSemantic
+          ? {
+            ...plannerTaskFromState(target, task),
+            type: task.type,
+            requestedOutputs: clone(task.requestedOutputs),
+            dependsOnStayContext: task.dependsOnStayContext,
+            detailIntent: task.detailIntent || target.detailIntent || "general"
+          }
+          : plannerTaskFromState(target, task);
         return [{
           candidateIndex: task.candidateIndex,
           requestCycleId: target.taskId,
