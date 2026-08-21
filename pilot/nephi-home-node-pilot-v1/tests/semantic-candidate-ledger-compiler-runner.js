@@ -103,6 +103,77 @@ function main() {
   assert.equal(uniquelyOwnedStructuralCompiled.tasks[0].semanticCandidateIds.length, 3, "all uniquely owned structural facets must remain attached to the existing task");
   assert.equal(missingSemanticCandidates(uniquelyOwnedStructuralCompiled, input, uniquelyOwnedStructuralCompiled.semanticCandidates).length, 0, "structural capability drift must not trigger semantic coverage repair");
 
+  const sharedSubjectMessage = "可以烤肉嗎？費用多少？";
+  const sharedSubjectInput = {
+    catalog: {
+      propertyId: "shared-subject-property",
+      rooms: [],
+      amenities: [{ canonicalId: "bbq", category: "amenity", publicName: "烤肉", aliases: [], answer: "烤肉限登記住宿客人使用。" }],
+      policies: [],
+      faqs: []
+    },
+    sourceEvents: [{ eventId: "shared-subject-event", messageRef: "shared-subject-message", messageText: sharedSubjectMessage }]
+  };
+  const usageQuote = "可以烤肉嗎？";
+  const feeQuote = "費用多少？";
+  const sharedSubjectRelations = [usageQuote, feeQuote].map((quote, candidateIndex) => {
+    const startOffset = candidateIndex === 0 ? 0 : usageQuote.length;
+    return {
+      candidateIndex,
+      kind: "new_request",
+      candidateRequestCycleRefs: [],
+      evidenceRefs: [{
+        eventId: "shared-subject-event",
+        messageRef: "shared-subject-message",
+        startOffset,
+        endOffset: startOffset + quote.length,
+        quote
+      }]
+    };
+  });
+  const sharedSubjectOutput = {
+    ...baseOutput(),
+    stay: { dateExpression: { rawText: "", kind: "none", anchor: "none" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null },
+    tasks: [
+      { ...baseOutput().tasks[0], candidateIndex: 0, taskId: "bbq-usage", type: "amenity", sourceText: usageQuote, detailIntent: "general", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "BBQ", canonicalCandidate: "bbq", confidence: 1 }, stayCandidate: null },
+      { ...baseOutput().tasks[0], candidateIndex: 1, taskId: "bbq-fee", type: "amenity", sourceText: feeQuote.trim(), detailIntent: "fee", requestedOutputs: ["fee"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "BBQ", canonicalCandidate: "bbq", confidence: 1 }, stayCandidate: null }
+    ],
+    contextRelationCandidates: sharedSubjectRelations,
+    semanticCandidates: [{
+      semanticKind: "capability",
+      capability: "amenity",
+      canonicalIdentityCandidate: "bbq",
+      coverageStatus: "bound",
+      provenanceRelationCandidateIndexes: [0, 1],
+      evidenceRefs: [],
+      lodgingScopeCandidate: null,
+      temporalSemanticCandidate: null,
+      propertyCatalogIdentity: "bbq"
+    }]
+  };
+  const sharedSubjectCompiled = compileSemanticCandidates(sharedSubjectOutput, sharedSubjectInput);
+  assert.equal(sharedSubjectCompiled.semanticCandidates.length, 2, "one source-isolated compiled candidate must represent each uniquely compatible task relation");
+  assert.deepEqual(sharedSubjectCompiled.semanticCandidates.map((candidate) => candidate.propertyCatalogIdentity), ["bbq", "bbq"], "equivalent ownership candidates must preserve the one formal catalog subject");
+  assert.equal(new Set(sharedSubjectCompiled.semanticCandidates.map((candidate) => candidate.candidateId)).size, 2, "source-isolated provenance must produce deterministic distinct candidate IDs");
+  assert.equal(sharedSubjectCompiled.tasks.every((task) => task.semanticCandidateIds.length === 1), true, "each source-isolated task must own exactly its compiled candidate");
+  assert.equal(missingSemanticCandidates(sharedSubjectCompiled, sharedSubjectInput, sharedSubjectCompiled.semanticCandidates).length, 0, "equivalent source-isolated ownership must not trigger semantic coverage repair");
+
+  const overlappingSharedSubject = structuredClone(sharedSubjectOutput);
+  overlappingSharedSubject.contextRelationCandidates[1].evidenceRefs = overlappingSharedSubject.contextRelationCandidates[0].evidenceRefs.map((ref) => ({ ...ref }));
+  const overlappingSharedCompiled = compileSemanticCandidates(overlappingSharedSubject, sharedSubjectInput);
+  assert.equal(overlappingSharedCompiled.semanticCandidates.length, 1, "overlapping relation evidence must not split bound ownership");
+  assert.equal(missingSemanticCandidates(overlappingSharedCompiled, sharedSubjectInput, overlappingSharedCompiled.semanticCandidates).length, 1, "overlapping ownership must remain fail-closed");
+
+  const conflictingSharedSubject = structuredClone(sharedSubjectOutput);
+  conflictingSharedSubject.tasks.forEach((task) => { task.entity.canonicalCandidate = "pool"; });
+  conflictingSharedSubject.semanticCandidates[0].canonicalIdentityCandidate = "pool";
+  conflictingSharedSubject.semanticCandidates[0].propertyCatalogIdentity = "pool";
+  const conflictingSharedInput = structuredClone(sharedSubjectInput);
+  conflictingSharedInput.catalog.amenities.push({ canonicalId: "pool", category: "policy", publicName: "Pool policy", aliases: [], answer: "Pool policy answer." });
+  const conflictingSharedCompiled = compileSemanticCandidates(conflictingSharedSubject, conflictingSharedInput);
+  assert.equal(conflictingSharedCompiled.semanticCandidates.length, 1, "a Planner identity that conflicts with the uniquely mentioned formal subject must not split");
+  assert.equal(missingSemanticCandidates(conflictingSharedCompiled, conflictingSharedInput, conflictingSharedCompiled.semanticCandidates).length, 1, "formal subject identity conflict must remain fail-closed");
+
   const crossRelationCatalogSubject = baseOutput();
   const crossRelationInput = structuredClone(input);
   crossRelationInput.catalog.amenities = [{ canonicalId: "bbq" }];
@@ -337,7 +408,7 @@ function main() {
   const authoritativeCapabilityRepair = applyPlannerSemanticContract(inventedCapabilityRepair, { catalog: input.catalog, sourceEvents: input.sourceEvents });
   assert.equal(verifiedRepairTask(authoritativeCapabilityRepair, input, inventedCapabilityPending.semanticCandidates[0]), null, "canonicalization authority must reject a Planner-invented capability identity");
 
-  console.log(JSON.stringify({ suite: "semantic-candidate-ledger-compiler", caseCount: 22, passCount: 22, failCount: 0 }));
+  console.log(JSON.stringify({ suite: "semantic-candidate-ledger-compiler", caseCount: 25, passCount: 25, failCount: 0 }));
 }
 
 main();

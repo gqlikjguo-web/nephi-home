@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const { validateUnderstandingContext, evidenceMatchesSource, sourceEventMaps, evidenceRefsFailureCodes } = require("./understanding-validator");
+const { mentionedPropertyFacts } = require("./entity-resolver");
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SEMANTIC_CANDIDATE_COMPILED = Symbol("junzan.semanticCandidateCompiled");
@@ -108,6 +109,49 @@ function compilerEvidenceOverlaps(left, right, sourceMaps) {
     && left.startOffset < right.endOffset && right.startOffset < left.endOffset;
 }
 
+function splitSourceIsolatedBoundCandidates(candidates, tasks, verifiedRelations, catalog, sourceMaps) {
+  const identities = catalogIdentities(catalog);
+  const inventoryIdentities = new Set((Array.isArray(catalog && catalog.rooms) ? catalog.rooms : [])
+    .map((entity) => String(entity && entity.canonicalId || "").trim())
+    .filter(Boolean));
+  const expanded = candidates.flatMap((candidate) => {
+    const provenance = candidate && candidate.provenanceRelationCandidateIndexes;
+    const catalogIdentity = String(candidate && candidate.propertyCatalogIdentity || "");
+    if (!candidate || candidate[SEMANTIC_CANDIDATE_COMPILED] === true
+      || candidate.coverageStatus !== "bound"
+      || !["capability", "catalog_subject"].includes(candidate.semanticKind)
+      || !catalogIdentity || !identities.has(catalogIdentity) || inventoryIdentities.has(catalogIdentity)
+      || candidate.canonicalIdentityCandidate !== catalogIdentity
+      || candidate.lodgingScopeCandidate !== null
+      || !Array.isArray(provenance) || provenance.length < 2) return [candidate];
+    const ownership = provenance.map((candidateIndex) => {
+      const relationEvidence = verifiedRelations.get(candidateIndex);
+      const matchingTasks = tasks.filter((task) => task && task.candidateIndex === candidateIndex
+        && compilerCompatibleCapability(task.type, candidate.capability)
+        && String(task.entity && task.entity.canonicalCandidate || "") === catalogIdentity
+        && !["room", "bundle"].includes(String(task.entity && task.entity.category || "")));
+      return Array.isArray(relationEvidence) && relationEvidence.length && matchingTasks.length === 1
+        ? { candidateIndex, evidenceRefs: relationEvidence }
+        : null;
+    });
+    if (ownership.some((item) => item === null)) return [candidate];
+    const mentionedSubjects = mentionedPropertyFacts(catalog, ownership
+      .flatMap(({ evidenceRefs }) => evidenceRefs.map((ref) => ref.quote))
+      .join(" "));
+    if (mentionedSubjects.length !== 1 || mentionedSubjects[0].entity.canonicalId !== catalogIdentity) return [candidate];
+    const evidenceIsolated = ownership.every((left, leftIndex) => ownership.every((right, rightIndex) =>
+      leftIndex === rightIndex || !left.evidenceRefs.some((leftRef) => right.evidenceRefs.some((rightRef) =>
+        compilerEvidenceOverlaps(leftRef, rightRef, sourceMaps)))));
+    if (!evidenceIsolated) return [candidate];
+    return ownership.map(({ candidateIndex, evidenceRefs }) => ({
+      ...candidate,
+      provenanceRelationCandidateIndexes: [candidateIndex],
+      evidenceRefs: evidenceRefs.map((ref) => ({ ...ref }))
+    }));
+  });
+  return expanded.length <= MAX_CANDIDATES ? expanded : candidates;
+}
+
 function lodgingScopeMatchesCatalog(value, catalog) {
   if (value === null || !value || value.bundleCanonicalCandidate === null) return true;
   const rooms = Array.isArray(catalog && catalog.rooms) ? catalog.rooms : [];
@@ -164,7 +208,7 @@ function normalizedRelatedLodgingScopes(rawCandidates, catalog, verifiedRelation
 
 function compileSemanticCandidates(output, input, { synthesizeMissingCandidates = false } = {}) {
   if (!output || !Array.isArray(output.tasks)) return output;
-  const rawCandidates = Array.isArray(output.semanticCandidates)
+  let rawCandidates = Array.isArray(output.semanticCandidates)
     ? output.semanticCandidates
     : synthesizeMissingCandidates
       ? output.tasks.map((task) => {
@@ -197,6 +241,13 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
     : new Map();
   const identities = catalogIdentities(input && input.catalog);
   const sourceMaps = sourceEventMaps(input && input.sourceEvents || []);
+  rawCandidates = splitSourceIsolatedBoundCandidates(
+    rawCandidates,
+    output.tasks,
+    verifiedRelations,
+    input && input.catalog,
+    sourceMaps
+  );
   const normalizedScopes = normalizedRelatedLodgingScopes(rawCandidates, input && input.catalog, verifiedRelations, sourceMaps);
   const scopeIds = new Map();
   const candidateProvenanceIndexes = new Map();
@@ -267,7 +318,8 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
     const relation = relations.find((item) => item && item.candidateIndex === task.candidateIndex);
     const matching = validCandidates.filter((candidate) => compilerCompatibleCapability(task && task.type, candidate.capability)
       && (!candidate.propertyCatalogIdentity || String(task && task.entity && task.entity.canonicalCandidate || "") === candidate.propertyCatalogIdentity)
-      && (candidateProvenanceIndexes.get(candidate.candidateId).includes(task && task.candidateIndex)
+      && (candidateProvenanceIndexes.get(candidate.candidateId).length === 1
+        && candidateProvenanceIndexes.get(candidate.candidateId).includes(task && task.candidateIndex)
         || pendingTaskMatches.get(candidate.candidateId).length === 1 && pendingTaskMatches.get(candidate.candidateId)[0] === task)
       && relation && validEvidenceRefs(relation.evidenceRefs, input)
       && candidate.evidenceRefs.every((candidateRef) => relation.evidenceRefs.some((taskRef) => compilerEvidenceOverlaps(candidateRef, taskRef, sourceMaps))));
