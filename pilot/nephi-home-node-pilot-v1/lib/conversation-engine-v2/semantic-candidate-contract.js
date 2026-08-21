@@ -63,6 +63,22 @@ function compilerCompatibleCapability(taskType, capability) {
     && [taskType, capability].every((value) => ["availability", "bundle_availability"].includes(value));
 }
 
+function uniquelyOwnedStructuralCapability(candidate, tasks, verifiedRelations, sourceMaps) {
+  if (!candidate || candidate.capability !== "unknown"
+    || !["temporal_pattern", "lodging_scope"].includes(candidate.semanticKind)) return "";
+  const provenance = candidate.provenanceRelationCandidateIndexes;
+  if (!Array.isArray(provenance) || provenance.length !== 1) return "";
+  const candidateIndex = provenance[0];
+  const owners = tasks.filter((task) => task && task.candidateIndex === candidateIndex);
+  if (owners.length !== 1 || !CAPABILITIES.has(owners[0].type) || owners[0].type === "unknown") return "";
+  const relationEvidence = verifiedRelations.get(candidateIndex);
+  if (!Array.isArray(relationEvidence) || !relationEvidence.length) return "";
+  const candidateEvidence = Array.isArray(candidate.evidenceRefs) ? candidate.evidenceRefs : [];
+  if (!candidateEvidence.every((candidateRef) => relationEvidence.some((relationRef) =>
+    compilerEvidenceOverlaps(candidateRef, relationRef, sourceMaps)))) return "";
+  return owners[0].type;
+}
+
 function controlledPendingTask(candidate, tasks, verifiedRelations, identities) {
   if (!candidate || !CAPABILITIES.has(candidate.capability)) return null;
   const catalogIdentity = candidate.propertyCatalogIdentity;
@@ -217,9 +233,10 @@ function compileSemanticCandidates(output, input, { synthesizeMissingCandidates 
         : provenanceIndexes.length && provenanceIndexes.every((candidateIndex) => verifiedRelations.has(candidateIndex))
           ? provenanceIndexes.flatMap((candidateIndex) => verifiedRelations.get(candidateIndex).map((ref) => ({ ...ref })))
           : [];
+    const structuralCapability = uniquelyOwnedStructuralCapability(rawCandidate, output.tasks, verifiedRelations, sourceMaps);
     const payload = {
       semanticKind: rawCandidate && rawCandidate.semanticKind,
-      capability: rawCandidate && rawCandidate.capability,
+      capability: structuralCapability || rawCandidate && rawCandidate.capability,
       canonicalIdentityCandidate: rawCandidate && rawCandidate.canonicalIdentityCandidate,
       evidenceRefs,
       lodgingScopeCandidate: scope,

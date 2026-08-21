@@ -65,6 +65,75 @@ function main() {
   assert.equal(missingSemanticCandidates(mixedScopedCompiled, input, mixedScopedCompiled.semanticCandidates).length, 0, "mixed facets owned by one task must not trigger semantic coverage repair");
   assert.equal(validatePlannerOutput(mixedScopedCompiled).ok, true, "valid mixed semantic facets must satisfy the strict Planner contract");
 
+  const uniquelyOwnedStructuralFacets = baseOutput();
+  uniquelyOwnedStructuralFacets.semanticCandidates = [{
+    semanticKind: "capability",
+    capability: "availability",
+    canonicalIdentityCandidate: "availability",
+    provenanceRelationCandidateIndexes: [0],
+    evidenceRefs: [],
+    lodgingScopeCandidate: null,
+    temporalSemanticCandidate: null,
+    propertyCatalogIdentity: null
+  }, {
+    semanticKind: "temporal_pattern",
+    capability: "unknown",
+    canonicalIdentityCandidate: "temporal_pattern",
+    provenanceRelationCandidateIndexes: [0],
+    evidenceRefs: [],
+    lodgingScopeCandidate: null,
+    temporalSemanticCandidate: { rawText: "2026-08-20", kind: "absolute", anchor: "message_time" },
+    propertyCatalogIdentity: null
+  }, {
+    semanticKind: "lodging_scope",
+    capability: "unknown",
+    canonicalIdentityCandidate: "lodging_scope",
+    provenanceRelationCandidateIndexes: [0],
+    evidenceRefs: [],
+    lodgingScopeCandidate: { bundleCanonicalCandidate: null, roomCanonicalCandidates: [], guestCountCandidate: null },
+    temporalSemanticCandidate: null,
+    propertyCatalogIdentity: null
+  }];
+  const uniquelyOwnedStructuralCompiled = compileSemanticCandidates(uniquelyOwnedStructuralFacets, input);
+  assert.deepEqual(
+    uniquelyOwnedStructuralCompiled.semanticCandidates.map((candidate) => candidate.capability),
+    ["availability", "availability", "availability"],
+    "uniquely owned structural candidates must inherit only their verified task capability"
+  );
+  assert.equal(uniquelyOwnedStructuralCompiled.tasks[0].semanticCandidateIds.length, 3, "all uniquely owned structural facets must remain attached to the existing task");
+  assert.equal(missingSemanticCandidates(uniquelyOwnedStructuralCompiled, input, uniquelyOwnedStructuralCompiled.semanticCandidates).length, 0, "structural capability drift must not trigger semantic coverage repair");
+
+  const crossRelationCatalogSubject = baseOutput();
+  const crossRelationInput = structuredClone(input);
+  crossRelationInput.catalog.amenities = [{ canonicalId: "bbq" }];
+  crossRelationCatalogSubject.tasks.push({
+    ...crossRelationCatalogSubject.tasks[0],
+    candidateIndex: 1,
+    taskId: "fee",
+    type: "price",
+    sourceText: message,
+    entity: { category: "amenity", rawText: "bbq", canonicalCandidate: "bbq", confidence: 1 }
+  });
+  crossRelationCatalogSubject.contextRelationCandidates.push({
+    candidateIndex: 1,
+    kind: "new_request",
+    candidateRequestCycleRefs: [],
+    evidenceRefs: evidenceRefs.map((ref) => ({ ...ref }))
+  });
+  crossRelationCatalogSubject.semanticCandidates = [{
+    semanticKind: "catalog_subject",
+    capability: "unknown",
+    canonicalIdentityCandidate: "bbq",
+    provenanceRelationCandidateIndexes: [0, 1],
+    evidenceRefs: [],
+    lodgingScopeCandidate: null,
+    temporalSemanticCandidate: null,
+    propertyCatalogIdentity: "bbq"
+  }];
+  const crossRelationCatalogCompiled = compileSemanticCandidates(crossRelationCatalogSubject, crossRelationInput);
+  assert.equal(crossRelationCatalogCompiled.semanticCandidates[0].capability, "unknown", "cross-relation substantive candidates must never inherit a task capability");
+  assert.equal(missingSemanticCandidates(crossRelationCatalogCompiled, crossRelationInput, crossRelationCatalogCompiled.semanticCandidates).length, 1, "cross-relation catalog ownership must remain fail-closed");
+
   const invalidIdentity = baseOutput();
   invalidIdentity.semanticCandidates[0].propertyCatalogIdentity = "invented-room";
   assert.equal(validateSemanticCandidates(compileSemanticCandidates(invalidIdentity, input), input).invalidCandidateIds.length, 1, "compiler must leave an ungrounded catalog identity for validator fail-closed handling");
