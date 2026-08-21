@@ -1153,9 +1153,104 @@ function main() {
       guestCountCandidate: null
     }
   }), { message: poolFeeMessage, catalogOverride: sourceBoundInventoryCatalog });
-  assert.equal(malformedPoolFee.tasks[0].type, "price", "core must not replace the Planner capability from source aliases");
+  assert.equal(malformedPoolFee.tasks[0].type, "price", "a task-local general price must not be reclassified without a separate verified formal subject");
   assert.equal(malformedPoolFee.tasks[0].entity.canonicalCandidate, "pool", "the exact formal pool subject must survive semantic normalization");
   assert.equal(malformedPoolFee.tasks[0].dependsOnStayContext, true);
+
+  const sourceBoundGeneralFeePlan = plan([
+    task({
+      taskId: "general-fee-usage",
+      type: "amenity",
+      category: "amenity",
+      rawText: "pool",
+      sourceText: "Can guests use the pool?",
+      canonicalCandidate: "pool"
+    }),
+    {
+      ...task({
+        taskId: "general-fee-price",
+        type: "price",
+        category: "amenity",
+        rawText: "pool",
+        sourceText: "What is its fee?",
+        canonicalCandidate: "pool",
+        detailIntent: "general",
+        requestedOutputs: ["price"],
+        dependsOnStayContext: true,
+        stayCandidate: {
+          dateExpression: { rawText: "", kind: "none", anchor: "none" },
+          checkInCandidate: null,
+          checkOutCandidate: null,
+          nightsCandidate: null,
+          guestCountCandidate: null
+        }
+      }),
+      candidateIndex: 1
+    }
+  ]);
+  const sourceBoundGeneralFeeMessage = "Can guests use the pool? What is its fee?";
+  sourceBoundGeneralFeePlan.contextRelationCandidates[0].evidenceRefs = [{
+    eventId: "general-fee-event", messageRef: "", startOffset: 0, endOffset: 24, quote: "Can guests use the pool?"
+  }];
+  sourceBoundGeneralFeePlan.contextRelationCandidates[1].evidenceRefs = [{
+    eventId: "general-fee-event", messageRef: "", startOffset: 25, endOffset: sourceBoundGeneralFeeMessage.length, quote: "What is its fee?"
+  }];
+  const sourceBoundGeneralFee = applyPlannerSemanticContract(sourceBoundGeneralFeePlan, {
+    catalog: sourceBoundInventoryCatalog,
+    sourceEvents: [{ eventId: "general-fee-event", messageRef: "", messageText: sourceBoundGeneralFeeMessage }]
+  });
+  const retainedGeneralUsage = sourceBoundGeneralFee.tasks.find((item) => item.taskId === "general-fee-usage");
+  const reconciledGeneralFee = sourceBoundGeneralFee.tasks.find((item) => item.taskId === "general-fee-price");
+  assert.equal(retainedGeneralUsage.type, "amenity", "general fee reconciliation must retain the verified usage sibling");
+  assert.equal(reconciledGeneralFee.type, "amenity", "a fee-only relation may use the unique verified current-request catalog subject");
+  assert.equal(reconciledGeneralFee.detailIntent, "fee");
+  assert.deepEqual(reconciledGeneralFee.requestedOutputs, ["fee"]);
+  assert.equal(reconciledGeneralFee.dependsOnStayContext, false);
+  assert.equal(reconciledGeneralFee.stayCandidate, null);
+  assert.equal(reconciledGeneralFee.entity.canonicalCandidate, "pool");
+
+  const lodgingScopedGeneralFee = sourceBoundSemantic(task({
+    taskId: "lodging-scoped-general-fee",
+    type: "price",
+    category: "amenity",
+    rawText: "pool",
+    sourceText: "What is the lodging price when using the pool?",
+    canonicalCandidate: "pool",
+    detailIntent: "general",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "8/20", kind: "absolute", anchor: "message_time" },
+      checkInCandidate: "2026-08-20",
+      checkOutCandidate: "2026-08-21",
+      nightsCandidate: 1,
+      guestCountCandidate: null
+    }
+  }), { message: "What is the lodging price when using the pool?", catalogOverride: sourceBoundInventoryCatalog });
+  assert.equal(lodgingScopedGeneralFee.tasks[0].type, "price", "a lodging-scoped price must retain lodging price authority");
+  assert.equal(lodgingScopedGeneralFee.tasks[0].detailIntent, "general");
+
+  const ambiguousGeneralFeeMessage = "What fee applies to pool and shared kitchen?";
+  const ambiguousGeneralFee = sourceBoundSemantic(task({
+    taskId: "ambiguous-general-fee",
+    type: "price",
+    category: "amenity",
+    rawText: "pool and shared kitchen",
+    sourceText: ambiguousGeneralFeeMessage,
+    canonicalCandidate: "pool",
+    detailIntent: "general",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    stayCandidate: {
+      dateExpression: { rawText: "", kind: "none", anchor: "none" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  }), { message: ambiguousGeneralFeeMessage, catalogOverride: sourceBoundInventoryCatalog });
+  assert.notEqual(ambiguousGeneralFee.tasks[0].type, "amenity", "multiple formal subjects must remain fail-closed");
+  assert.notEqual(ambiguousGeneralFee.tasks[0].detailIntent, "fee", "ambiguous subject evidence must not manufacture fee intent");
 
   const blankRawPoolFee = sourceBoundSemantic(task({
     taskId: "blank-raw-pool-fee",

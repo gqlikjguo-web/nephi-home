@@ -249,7 +249,7 @@ function registeredFaqCapabilityTask(task, catalog, verifiedSourceText = "", sib
     }
   };
 }
-function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, verifiedSourceText = "") {
+function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, verifiedSourceText = "", currentRequestFormalSubject = null) {
   const entity = task && task.entity;
   if (!catalog || !entity || ["booking_request", "human_help", "high_risk"].includes(task.type)) return null;
   const rawGrounded = entity.rawText
@@ -334,7 +334,7 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
     && sourceBaseGrounded.status === "resolved"
     && sourceBaseGrounded.entity;
   const capabilityDefinition = getCapabilityDefinition(task.type);
-  const sourceBoundCatalogFeeDefinition = sourceBoundRaw
+  const sourceBoundCatalogFeeEntity = sourceBoundRaw
     && verifiedSource.includes(sourceBoundRaw)
     && ["price", "total_price"].includes(task.type)
     && task.detailIntent === "fee"
@@ -343,8 +343,19 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
     && authoritativeSourceIdentityIds.size === 1
     && authoritativeSourceIdentityIds.has(canonicalGrounded.entity.canonicalId)
     && !["room", "bundle", "other"].includes(canonicalGrounded.entity.category)
-    ? getCapabilityDefinition(canonicalGrounded.entity.canonicalId)
-      || getCapabilityDefinition(["amenity", "activity", "room_feature"].includes(canonicalGrounded.entity.category)
+    ? canonicalGrounded.entity
+    : verifiedSource
+      && ["price", "total_price"].includes(task.type)
+      && task.detailIntent === "general"
+      && currentRequestFormalSubject
+      && (!sourceBoundRaw || !verifiedSource.includes(sourceBoundRaw))
+      && !stayCandidateHasInventoryScope(task.stayCandidate)
+      && !stayCandidateHasInventoryScope(fallbackStayCandidate)
+      ? currentRequestFormalSubject
+      : null;
+  const sourceBoundCatalogFeeDefinition = sourceBoundCatalogFeeEntity
+    ? getCapabilityDefinition(sourceBoundCatalogFeeEntity.canonicalId)
+      || getCapabilityDefinition(["amenity", "activity", "room_feature"].includes(sourceBoundCatalogFeeEntity.category)
         ? "amenity"
         : "policy")
     : null;
@@ -353,9 +364,9 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
     && sourceBoundCatalogFeeDefinition.stayDependency === false
     && sourceBoundCatalogFeeDefinition.riskLevel === "low"
     && sourceBoundCatalogFeeDefinition.responseMode === "answer"
-    && sourceBoundCatalogFeeDefinition.acceptedEntityCategories.includes(canonicalGrounded.entity.category);
+    && sourceBoundCatalogFeeDefinition.acceptedEntityCategories.includes(sourceBoundCatalogFeeEntity.category);
   if (sourceBoundCatalogFee) {
-    const preferredType = ["amenity", "activity", "room_feature"].includes(canonicalGrounded.entity.category)
+    const preferredType = ["amenity", "activity", "room_feature"].includes(sourceBoundCatalogFeeEntity.category)
       ? "amenity"
       : "policy";
     const type = sourceBoundCatalogFeeDefinition.acceptedCandidateTypes.includes(preferredType)
@@ -364,13 +375,14 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
     return {
       ...task,
       type,
+      detailIntent: "fee",
       requestedOutputs: ["fee"],
       dependsOnStayContext: false,
       stayCandidate: null,
       entity: {
         ...entity,
-        category: canonicalGrounded.entity.category,
-        canonicalCandidate: canonicalGrounded.entity.canonicalId
+        category: sourceBoundCatalogFeeEntity.category,
+        canonicalCandidate: sourceBoundCatalogFeeEntity.canonicalId
       }
     };
   }
@@ -953,6 +965,28 @@ function verifiedNewRequestEvidence(task, contextRelationCandidates, sourceEvent
   return taskSourceText;
 }
 
+function uniqueCurrentRequestFormalSubject(value, catalog, sourceEvents) {
+  if (!catalog || !value || !Array.isArray(value.tasks)) return null;
+  const subjects = new Map();
+  for (const task of value.tasks) {
+    if (!task || !task.entity) continue;
+    const verifiedSourceText = verifiedNewRequestEvidence(task, value.contextRelationCandidates, sourceEvents);
+    if (!verifiedSourceText) continue;
+    const resolved = resolveEntity(catalog, task.entity);
+    if (resolved && resolved.status === "resolved" && resolved.entity
+      && ["room", "bundle"].includes(resolved.entity.category)) return null;
+    const definition = getCapabilityDefinition(task.type);
+    if (!definition || definition.resolverId !== "property_catalog" || definition.stayDependency !== false
+      || definition.riskLevel !== "low" || definition.responseMode !== "answer") continue;
+    const mentions = mentionedPropertyFacts(catalog, verifiedSourceText);
+    if (mentions.length !== 1 || !resolved || resolved.status !== "resolved" || !resolved.entity
+      || resolved.entity.canonicalId !== mentions[0].entity.canonicalId
+      || !definition.acceptedEntityCategories.includes(resolved.entity.category)) continue;
+    subjects.set(resolved.entity.canonicalId, resolved.entity);
+  }
+  return subjects.size === 1 ? [...subjects.values()][0] : null;
+}
+
 function sourceBoundFormalPropertyId(task, contextRelationCandidates, sourceEvents, catalog) {
   const verifiedSourceText = verifiedNewRequestEvidence(task, contextRelationCandidates, sourceEvents);
   if (!verifiedSourceText || !task || !task.entity) return null;
@@ -1083,6 +1117,7 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     ...taskIdRepairs,
   ], rejectedTasks = [], repairedRelations = [...relationNormalization.repairs];
   let contextRelationCandidates = value.contextRelationCandidates;
+  const currentRequestFormalSubject = uniqueCurrentRequestFormalSubject(value, catalog, sourceEvents);
   let tasks = value.tasks.map((original, index) => {
     let task = { ...original, eligibilityEvidence: normalizeEligibilityEvidence(original && original.eligibilityEvidence), entity: original && original.entity ? { ...original.entity } : original && original.entity };
     if (task.dependsOnStayContext === true) task.stayCandidate = authoritativeStayCandidate(task.stayCandidate, value.stay);
@@ -1090,7 +1125,7 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     if (!entity) return task;
 
     const verifiedSourceText = verifiedNewRequestEvidence(task, value.contextRelationCandidates, sourceEvents);
-    const groundedTask = groundedPropertyFactTask(task, catalog, value.stay, verifiedSourceText);
+    const groundedTask = groundedPropertyFactTask(task, catalog, value.stay, verifiedSourceText, currentRequestFormalSubject);
     if (groundedTask
       && (task.type !== groundedTask.type
         || task.entity.category !== groundedTask.entity.category
