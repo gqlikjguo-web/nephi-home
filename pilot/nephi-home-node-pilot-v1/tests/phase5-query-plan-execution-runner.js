@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { executeQueryPlan, executeQueryPlans } = require("../lib/conversation-engine-v2/capability-executor");
+const { composeSection } = require("../lib/conversation-engine-v2/controlled-composer");
 
 const property = { propertyId: "property-a", rooms: [{ id: "room-a", capacity: 2, enabled: true }] };
 const catalog = { amenities: [], policies: [], faqs: [] };
@@ -17,6 +18,7 @@ const answered = executeQueryPlan({ property, catalog, queryPlan: plan, availabi
 assert.equal(calls, 1);
 assert.equal(answered.outcome, "answered");
 assert.equal(answered.formalRequestId, plan.formalRequestId);
+assert.equal(Object.hasOwn(answered.facts, "prices"), false);
 
 const mismatch = executeQueryPlan({ property, catalog, queryPlan: { ...plan, propertyId: "property-b" }, availabilityResolver: () => { throw new Error("must_not_call"); } });
 assert.equal(mismatch.outcome, "invalid_query_plan");
@@ -82,6 +84,69 @@ assert.deepEqual(totalPriceAvailable.facts.prices[0].daily, [
   { date: "2026-08-07", price: 1200, source: "room_pricing" }
 ]);
 assert.equal(totalPriceAvailable.facts.prices[0].total, 2200);
+
+const roomAvailabilityPlan = {
+  ...pricingPlan,
+  formalRequestId: "cycle-price:room-availability",
+  taskId: "room-availability",
+  capability: "availability",
+  operation: "availability",
+  resolverTask: { ...pricingPlan.resolverTask, taskType: "availability" }
+};
+const roomAvailability = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: roomAvailabilityPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
+assert.equal(roomAvailability.outcome, "answered");
+assert.equal(roomAvailability.facts.availableInventory[0].canonicalId, "room-price");
+assert.equal(Array.isArray(roomAvailability.facts.prices), true);
+assert.equal(roomAvailability.facts.prices[0].total, 2200);
+assert.match(composeSection({ status: "answered", facts: roomAvailability.facts }), /可預訂.*2,200 TWD/u);
+
+const bundlePricingProperty = { propertyId: "bundle-pricing-property", currency: "TWD", rooms: [{ id: "bundle-price", publicDisplayName: "Whole property", inventoryType: "bundle", capacity: 8, enabled: true, mondayThursdayPrice: 8000, fridayPrice: 9000, saturdayHolidayPrice: 10000, sundayPrice: 8500 }] };
+const bundleAvailabilityPlan = {
+  ...roomAvailabilityPlan,
+  formalRequestId: "cycle-price:bundle-availability",
+  taskId: "bundle-availability",
+  requestCycleId: "cycle-bundle",
+  propertyId: "bundle-pricing-property",
+  capability: "bundle_availability",
+  operation: "bundle_availability",
+  resolverTask: { propertyId: "bundle-pricing-property", taskType: "bundle_availability", productType: "bundle", productId: "bundle-price", checkIn: "2026-08-06", checkOut: "2026-08-07", guestCount: 2 },
+  entity: { status: "resolved", category: "bundle", canonicalId: "bundle-price", canonicalSet: [] },
+  conditions: { ...roomAvailabilityPlan.conditions, stay: { ...roomAvailabilityPlan.conditions.stay, checkOut: "2026-08-07", nights: 1 }, inventory: { mode: "bundle_only", entityId: "bundle-price", entityIds: [], features: [] } }
+};
+const bundleAvailability = executeQueryPlan({ property: bundlePricingProperty, catalog, queryPlan: bundleAvailabilityPlan, availabilityResolver: () => ({ customerId: "bundle-pricing-property", availabilityReliable: true, rooms: bundlePricingProperty.rooms }) });
+assert.equal(bundleAvailability.outcome, "answered");
+assert.equal(bundleAvailability.facts.availableInventory[0].canonicalId, "bundle-price");
+assert.equal(bundleAvailability.facts.prices[0].inventory.category, "bundle");
+assert.equal(bundleAvailability.facts.prices[0].total, 8000);
+
+const bundleWithoutPrice = executeQueryPlan({ property: { ...bundlePricingProperty, rooms: [{ ...bundlePricingProperty.rooms[0], mondayThursdayPrice: 0 }] }, catalog, queryPlan: bundleAvailabilityPlan, availabilityResolver: () => ({ customerId: "bundle-pricing-property", availabilityReliable: true, rooms: bundlePricingProperty.rooms }) });
+assert.equal(bundleWithoutPrice.outcome, "answered");
+assert.equal(bundleWithoutPrice.facts.availableInventory[0].canonicalId, "bundle-price");
+assert.equal(Object.hasOwn(bundleWithoutPrice.facts, "prices"), false);
+
+for (const [queryPlan, scopedProperty] of [[roomAvailabilityPlan, pricingProperty], [bundleAvailabilityPlan, bundlePricingProperty]]) {
+  const unavailable = executeQueryPlan({ property: scopedProperty, catalog, queryPlan, availabilityResolver: () => ({ customerId: scopedProperty.propertyId, availabilityReliable: true, rooms: [] }) });
+  assert.equal(unavailable.outcome, "no_availability");
+  assert.equal(Object.hasOwn(unavailable.facts, "prices"), false);
+}
+
+const genericAvailabilityPlan = {
+  ...roomAvailabilityPlan,
+  formalRequestId: "cycle-price:generic-availability",
+  taskId: "generic-availability",
+  resolverTask: { ...roomAvailabilityPlan.resolverTask, productType: "any", productId: null },
+  entity: { status: "not_found", category: "other", canonicalId: null, canonicalSet: [] },
+  conditions: { ...roomAvailabilityPlan.conditions, inventory: { mode: "any", entityId: null, entityIds: [], features: [] } }
+};
+const genericAvailability = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: genericAvailabilityPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
+assert.equal(genericAvailability.outcome, "answered");
+assert.equal(Object.hasOwn(genericAvailability.facts, "prices"), false);
+
+for (const capability of ["room_options", "capacity"]) {
+  const nonEnriched = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...roomAvailabilityPlan, formalRequestId: `cycle-price:${capability}`, taskId: capability, capability, operation: capability }, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
+  assert.equal(nonEnriched.outcome, "answered");
+  assert.equal(Object.hasOwn(nonEnriched.facts, "prices"), false);
+}
 
 const amenityList = executeQueryPlan({ property, catalog: { amenities: [{ publicName: "BBQ", status: "confirmed_yes" }, { publicName: "Pool", status: "unknown" }], policies: [], faqs: [] }, queryPlan: { ...plan, formalRequestId: "cycle:amenities", taskId: "amenities", capability: "amenity_list", operation: "amenity_list" }, availabilityResolver: () => { throw new Error("must_not_call"); } });
 assert.equal(amenityList.outcome, "answered");

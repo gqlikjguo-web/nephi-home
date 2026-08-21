@@ -19,9 +19,6 @@ function composeSection(section) {
   }
   if (section.status === "needs_clarification") return section.question || "可以再補充一下嗎？";
   if (["needs_human", "property_data_missing", "failed"].includes(section.status)) return facts.subject ? `${facts.subject}這部分需要請業者確認。` : "這部分需要請業者確認。";
-  if (facts.availableInventory) return facts.availableInventory.length ? `${facts.checkIn} 入住可選：${facts.availableInventory.map((item) => item.publicName).join("、")}。` : `${facts.checkIn} 入住目前沒有符合條件的空房。`;
-  if (facts.availableDates) return facts.availableDates.length ? `這段期間可查詢的日期有：${facts.availableDates.join("、")}。` : "這段期間目前沒有可售日期。";
-  if (Number.isInteger(facts.maxGuests) && facts.maxGuests > 0 && facts.subject) return `${facts.subject} 最多可住 ${facts.maxGuests} 人。`;
   if (facts.prices) {
     if (facts.availability === "full") return `${facts.checkIn} 入住目前已滿房。`;
     const prices = facts.prices.map((item) => item.total === null ? `${item.inventory.publicName}價格需要請業者確認。` : `${item.inventory.publicName}共 ${money(item.total)} ${item.currency}。`).join(" ");
@@ -29,6 +26,9 @@ function composeSection(section) {
       ? `${facts.checkIn} 入住目前可預訂。${prices}`
       : prices;
   }
+  if (facts.availableInventory) return facts.availableInventory.length ? `${facts.checkIn} 入住可選：${facts.availableInventory.map((item) => item.publicName).join("、")}。` : `${facts.checkIn} 入住目前沒有符合條件的空房。`;
+  if (facts.availableDates) return facts.availableDates.length ? `這段期間可查詢的日期有：${facts.availableDates.join("、")}。` : "這段期間目前沒有可售日期。";
+  if (Number.isInteger(facts.maxGuests) && facts.maxGuests > 0 && facts.subject) return `${facts.subject} 最多可住 ${facts.maxGuests} 人。`;
   if (facts.amenities) return facts.amenities.length ? `目前確認的主要設備有：${facts.amenities.join("、")}。` : "設備資料需要請業者確認。";
   if (facts.locationAddress) return [`\u5730\u5740\uff1a${facts.locationAddress}`, facts.locationMapUrl ? `Google \u5730\u5716\uff1a${facts.locationMapUrl}` : ""].filter(Boolean).join("\n");
   if (facts.locationMapUrl) return `Google 地圖：${facts.locationMapUrl}\n請直接開啟地圖查看路線與周邊位置。`;
