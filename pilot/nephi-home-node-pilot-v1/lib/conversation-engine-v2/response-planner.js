@@ -26,11 +26,12 @@ function collectAllowedFacts(value, key = "") {
 
 function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalRequests = [], reviewActions = [] }) {
   const canonicalByTaskId = new Map((canonicalRequests || []).map((request) => [request.taskId, request]));
-  const sections = (taskResults || []).map((result, inputOrder) => {
+  const rawSections = (taskResults || []).map((result, inputOrder) => {
     const canonicalRequest = canonicalByTaskId.get(result.taskId) || null;
     const type = canonicalRequest ? canonicalRequest.capability : result.type;
     return {
       taskId: result.taskId,
+      coveredTaskIds: [result.taskId],
       type,
       status: result.status,
       responseMode: responseMode(result.status),
@@ -45,7 +46,33 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
       needsReview: Boolean(result.review)
     };
   });
-  const expected = inputTaskIds || sections.map((section) => section.taskId);
+  const sections = [];
+  for (const section of rawSections) {
+    const canonicalRequest = canonicalByTaskId.get(section.taskId);
+    const existing = canonicalRequest
+      && canonicalRequest.resolverId === "property_catalog"
+      && canonicalRequest.riskLevel === "low"
+      && canonicalRequest.responseMode === "answer"
+      && canonicalRequest.canonicalEntity.status === "resolved"
+      && canonicalRequest.canonicalEntity.canonicalId
+      && !["room", "bundle"].includes(canonicalRequest.canonicalEntity.category)
+      && section.status === "answered"
+      ? sections.find((candidate) => {
+        const request = canonicalByTaskId.get(candidate.taskId);
+        return request
+          && request.resolverId === "property_catalog"
+          && request.riskLevel === "low"
+          && request.responseMode === "answer"
+          && request.canonicalEntity.status === "resolved"
+          && request.canonicalEntity.canonicalId === canonicalRequest.canonicalEntity.canonicalId
+          && candidate.status === "answered"
+          && candidate.facts === section.facts;
+      })
+      : null;
+    if (existing) existing.coveredTaskIds.push(section.taskId);
+    else sections.push(section);
+  }
+  const expected = inputTaskIds || sections.flatMap((section) => section.coveredTaskIds);
   const coverage = coverageByStatus(sections);
   const coverageValidation = assertTaskCoverage(expected, coverage);
   for (const taskId of coverageValidation.missingTaskIds) sections.push({ taskId, type: "unknown", status: "failed", facts: { subject: "這個問題" }, question: "", needsReview: true });

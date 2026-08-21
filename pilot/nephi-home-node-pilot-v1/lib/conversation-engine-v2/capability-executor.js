@@ -223,7 +223,36 @@ function executeCanonicalQueryPlans(input) {
       return [queryOutcome(queryPlan, "invalid_query_plan", { reason: "resolver_authority_mismatch" })];
     }
   }
-  return executeQueryPlans(input);
+  const groups = new Map();
+  for (const queryPlan of input.queryPlans || []) {
+    const entity = queryPlan && queryPlan.entity || {};
+    const groupable = queryPlan
+      && queryPlan.resolverId === "property_catalog"
+      && queryPlan.riskLevel === "low"
+      && queryPlan.responseMode === "answer"
+      && entity.status === "resolved"
+      && entity.canonicalId
+      && !["room", "bundle"].includes(entity.category)
+      && !["price", "total_price", "availability", "bundle_availability"].includes(queryPlan.capability);
+    const key = groupable ? `${queryPlan.propertyId}:${entity.canonicalId}` : `task:${queryPlan.taskId}`;
+    const group = groups.get(key) || [];
+    group.push(queryPlan);
+    groups.set(key, group);
+  }
+  const outcomeByTaskId = new Map();
+  for (const group of groups.values()) {
+    const representative = group.find((plan) => plan.detailIntent === "general") || group[0];
+    const result = executeQueryPlan({ ...input, queryPlan: representative });
+    for (const queryPlan of group) outcomeByTaskId.set(queryPlan.taskId, {
+      ...result,
+      taskId: queryPlan.taskId,
+      type: queryPlan.capability,
+      formalRequestId: queryPlan.formalRequestId,
+      requestCycleId: queryPlan.requestCycleId,
+      facts: result.facts
+    });
+  }
+  return (input.queryPlans || []).map((queryPlan) => outcomeByTaskId.get(queryPlan.taskId));
 }
 
 module.exports = {

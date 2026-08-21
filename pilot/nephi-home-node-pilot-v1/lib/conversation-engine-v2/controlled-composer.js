@@ -79,7 +79,13 @@ function mergeComposedSections(plan, composed) {
     errors.push(...validateComposedSection(section, text).errors);
     ordered.push({ taskId: section.taskId, responseMode: item.responseMode, text });
   }
-  return { ok: errors.length === 0, errors: [...new Set(errors)], replyText: ordered.map((item) => item.text).join("\n").slice(0, plan.maxLength || 1200), factTaskIds: ordered.map((item) => item.taskId), sections: ordered, missingTaskIds };
+  const factTaskIds = ordered.flatMap((item) => {
+    const section = (plan.sections || []).find((candidate) => candidate.taskId === item.taskId);
+    return Array.isArray(section && section.coveredTaskIds) && section.coveredTaskIds.length
+      ? section.coveredTaskIds
+      : [item.taskId];
+  });
+  return { ok: errors.length === 0, errors: [...new Set(errors)], replyText: ordered.map((item) => item.text).join("\n").slice(0, plan.maxLength || 1200), factTaskIds, sections: ordered, missingTaskIds };
 }
 
 module.exports = { composeSection, composeControlledReply, meaningfulCharacterCount, validateComposedSection, mergeComposedSections };

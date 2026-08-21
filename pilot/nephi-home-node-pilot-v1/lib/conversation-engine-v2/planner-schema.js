@@ -1010,9 +1010,11 @@ function uniqueCurrentRequestFormalSubject(value, catalog, sourceEvents) {
       : null;
     if (!definition || definition.resolverId !== "property_catalog" || definition.stayDependency !== false
       || definition.riskLevel !== "low" || definition.responseMode !== "answer") continue;
-    const mentions = mentionedPropertyFacts(catalog, verifiedSourceText);
-    if (mentions.length !== 1 || !resolved || resolved.status !== "resolved" || !resolved.entity
-      || resolved.entity.canonicalId !== mentions[0].entity.canonicalId
+    const mentionIds = new Set(mentionedPropertyFacts(catalog, verifiedSourceText)
+      .map(({ entity: fact }) => fact && fact.canonicalId)
+      .filter(Boolean));
+    if (mentionIds.size !== 1 || !resolved || resolved.status !== "resolved" || !resolved.entity
+      || !mentionIds.has(resolved.entity.canonicalId)
       || !definition.acceptedEntityCategories.includes(resolved.entity.category)) continue;
     const relation = verifiedNewRequestRelation(task, value.contextRelationCandidates, sourceEvents);
     if (!relation) continue;

@@ -12,7 +12,10 @@ function coverageByStatus(items = []) {
   const result = { answeredTaskIds: [], clarificationTaskIds: [], humanTaskIds: [], failedTaskIds: [] };
   for (const item of items) {
     const group = STATUS_GROUPS[item && item.status] || "failedTaskIds";
-    if (item && item.taskId && !result[group].includes(item.taskId)) result[group].push(item.taskId);
+    const taskIds = Array.isArray(item && item.coveredTaskIds) && item.coveredTaskIds.length
+      ? item.coveredTaskIds
+      : [item && item.taskId];
+    for (const taskId of taskIds) if (taskId && !result[group].includes(taskId)) result[group].push(taskId);
   }
   return result;
 }

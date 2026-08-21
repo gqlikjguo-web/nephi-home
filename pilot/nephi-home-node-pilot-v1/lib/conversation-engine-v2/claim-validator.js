@@ -14,7 +14,9 @@ function validateClaims(reply, plan, claimedTaskIds, composedSections = null) {
   if (INTERNAL.test(text)) errors.push("internal_content");
   if (UNAUTHORIZED_PROMISE.test(text)) errors.push("forbidden_claim");
   for (const claim of plan.forbiddenClaims || []) if (text.includes(claim)) errors.push("forbidden_claim");
-  const expected = (plan.sections || []).map((section) => section.taskId);
+  const expected = (plan.sections || []).flatMap((section) => Array.isArray(section.coveredTaskIds) && section.coveredTaskIds.length
+    ? section.coveredTaskIds
+    : [section.taskId]);
   const claimed = claimedTaskIds === null || claimedTaskIds === undefined ? expected : claimedTaskIds;
   const claimCoverage = assertTaskCoverage(expected, { answeredTaskIds: Array.isArray(claimed) ? claimed : [], clarificationTaskIds: [], humanTaskIds: [], failedTaskIds: [] });
   if (!Array.isArray(claimed) || claimCoverage.unexpectedTaskIds.length) errors.push("unknown_fact_reference");
@@ -25,7 +27,11 @@ function validateClaims(reply, plan, claimedTaskIds, composedSections = null) {
   ));
   if (missingFactSource) errors.push("missing_fact_source");
   if (Array.isArray(composedSections)) {
-    const sectionsByTaskId = new Map((plan.sections || []).map((section) => [section.taskId, section]));
+    const sectionsByTaskId = new Map((plan.sections || []).flatMap((section) => (
+      Array.isArray(section.coveredTaskIds) && section.coveredTaskIds.length
+        ? section.coveredTaskIds.map((taskId) => [taskId, section])
+        : [[section.taskId, section]]
+    )));
     for (const item of composedSections) {
       const section = sectionsByTaskId.get(item && item.taskId);
       if (!section) { errors.push("unknown_fact_reference"); continue; }
