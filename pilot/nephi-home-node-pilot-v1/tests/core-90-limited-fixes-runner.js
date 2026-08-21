@@ -212,8 +212,8 @@ async function deterministicFallbackClearsRejectedComposerState() {
     }),
     rejectComposer: true
   });
-  assert.equal(trace.stage("composer").validationResult, "rejected");
-  assert.equal(trace.stage("composer").fallbackOccurred, true);
+  assert.equal(trace.stage("composer").validationResult, "accepted");
+  assert.equal(trace.stage("composer").fallbackOccurred, false);
   assert.equal(trace.result.claimValidation.ok, true);
   assert.equal(trace.result.replyText, "Fallback Lodge pool fact.");
   assert.equal(
@@ -710,8 +710,8 @@ async function locationFailureStageIsComposerFallbackState() {
   assert.equal(trace.stage("canonical_request").items[0].capability, "location");
   assert.equal(trace.stage("formal_request").items[0].readiness, "ready");
   assert.equal(trace.stage("executor").results[0].status, "answered");
-  assert.equal(trace.stage("composer").validationResult, "rejected");
-  assert.equal(trace.stage("composer").fallbackOccurred, true);
+  assert.equal(trace.stage("composer").validationResult, "accepted");
+  assert.equal(trace.stage("composer").fallbackOccurred, false);
   assert.equal(trace.result.claimValidation.ok, true);
   assert.equal(
     trace.result.finalDecision.action,

@@ -75,10 +75,10 @@ assert.match(server, /const emitTransportDiagnostic = \(entry\) => \{[\s\S]*logS
 assert.equal((runtime.match(/const \{ replyText: _replyText, \.\.\.diagnostic \} = details; emitTransportDiagnostic\(diagnostic\);/g) || []).length, 1, "the sole shared transport must exclude reply text from the existing safe diagnostic callback");
 assert.equal((runtime.match(/testOnlyLineMessageTrace\.transport\(\{ traceId: result\.traceId, eventId: input\.eventId, propertyId: id, \.\.\.details \}\)/g) || []).length, 1, "the sole shared transport must persist the bounded test-only transport trace through its dedicated service");
 assert.equal((root.match(/createTestOnlyOpenAiConversationPlannerFromEnv/g) || []).length, 2, "only the composition root wires the planner");
-assert.equal((root.match(/createTestOnlyOpenAiControlledComposerFromEnv/g) || []).length, 2, "only the composition root wires the controlled composer");
+assert.equal((root.match(/createTestOnlyOpenAiControlledComposerFromEnv/g) || []).length, 0, "the active root must not wire an OpenAI answer rewriter");
 assert.match(engine, /planner\.classify\(\{[^}]*lineUserId: input\.lineUserId/, "the active Engine must pass its existing guest identity to the sole Planner path");
-assert.match(engine, /composer\.compose\(responsePlan, \{ lineUserId: input\.lineUserId \}\)/, "the active Engine must pass the same guest identity outside customer-visible responsePlan data");
-assert.equal([openAiPlanner, coverageCritic, openAiComposer].filter((source) => source.includes('require("../test-only-line-message-trace")')).length, 3, "all three OpenAI providers must reuse one existing hash utility");
+assert.doesNotMatch(engine, /composer\.compose\(/, "customer-visible replies must use only the deterministic composer");
+assert.equal([openAiPlanner, coverageCritic, openAiComposer].filter((source) => source.includes('require("../test-only-line-message-trace")')).length, 3, "inactive provider modules retain the shared diagnostic hash utility");
 assert.equal((lineTrace.match(/function sha256\(/g) || []).length, 1, "the safety identifier path must not introduce a second SHA-256 helper");
 assert.match(root, /availabilityResolver: overrides\.availabilityResolver \|\| \(\(query\) => service\.searchAvailability\(query\)\)/);
 assert.match(root, /availableDatesResolver: overrides\.availableDatesResolver \|\| \(\(query\) => service\.searchAvailableDates\(query\)\)/);

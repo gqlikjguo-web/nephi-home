@@ -418,7 +418,7 @@ function assertSafetyContracts() {
     assert.equal(trace.executor.results[0].facts.source, testCase.expectedSource);
     assert.equal(trace.responsePlan.sections.length, 1);
     assert.ok(trace.composerTrace.finalOutput, `${trace.id}: deterministic reply must exist`);
-    assert.equal(trace.providerRequest.input[1].content[0].text.includes("\"exactText\""), true);
+    assert.equal(trace.providerRequest, undefined, `${trace.id}: no OpenAI answer-rewrite request may be sent`);
     assert.equal(trace.composerTrace.validationResult, "accepted");
     assert.deepEqual(trace.composerTrace.rejectionReasonCodes, []);
     assert.equal(trace.result.claimValidation.ok, true);

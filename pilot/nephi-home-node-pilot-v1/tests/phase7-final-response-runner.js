@@ -73,7 +73,7 @@ const clarification = buildFinalResponse({
 });
 assert.deepEqual(clarification, {
   action: "clarification",
-  replyText: "請補充入住日期。",
+  replyText: "請提供入住日期。",
   shouldReply: true
 });
 assert.equal(clarification.replyText.includes("人數"), false);
@@ -88,7 +88,7 @@ const answeredAndClarification = buildFinalResponse({
 });
 assert.deepEqual(answeredAndClarification, {
   action: "clarification",
-  replyText: "民宿旁空地可停車。\n請補充入住日期。",
+  replyText: "民宿旁空地可停車。\n請提供入住日期。",
   shouldReply: true
 });
 cases.push(answeredAndClarification);

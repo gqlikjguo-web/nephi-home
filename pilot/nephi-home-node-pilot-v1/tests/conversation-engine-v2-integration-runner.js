@@ -259,7 +259,7 @@ function latestConditions(result) {
   assert.equal(rejectedPricing.finalDecision.reviewRequired, false);
   assert.equal(rejectedPricing.claimValidation.ok, true);
   assert.equal(rejectedPricing.replyText.includes("unverified"), false, "claim-validator-rejected text must not reach the reply");
-  assert.equal(rejectedPricingStateWrittenBeforeComposer, true, "V3 state must persist before the async Composer boundary");
+  assert.equal(rejectedPricingStateWrittenBeforeComposer, false, "the inactive OpenAI composer must not be invoked");
 
   const result = await engine.process({ customerId: "p1", channelId: "c1", lineUserId: "u1", eventId: "e1", eventTimestamp: Date.parse("2026-07-17T10:00:00+08:00"), messageText: "8/6雙人房有空嗎 有車位嗎 有麻將嗎" });
   assert.equal(result.shouldReply, true);
@@ -565,8 +565,8 @@ function latestConditions(result) {
     assert.equal(unsafe.replyText.includes(unsafeText), false);
     const composerTrace = unsafeDiagnostics.find((item) => item.stage === "composer");
     assert.equal(composerTrace.composerSource, "deterministic");
-    assert.equal(composerTrace.fallbackOccurred, true);
-    assert.ok(composerTrace.rejectionReasonCodes.includes("handoff_deterministic_boundary"));
+    assert.equal(composerTrace.fallbackOccurred, false);
+    assert.deepEqual(composerTrace.rejectionReasonCodes, []);
   }
   const groundedPlanner = { classify: async () => ({
     schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
@@ -587,7 +587,7 @@ function latestConditions(result) {
   assert.equal(Object.hasOwn(groundedSafeSemantic, "repairProvenance"), false, "semantic repair provenance must have exactly one authoritative safe stage");
   assert.equal(groundedSafeDiagnostics.filter((item) => Array.isArray(item.repairProvenance)).length, 0, "no semantic repair ledger is projected when no repair occurred");
   assert.equal(Object.hasOwn(groundedReply.taskResults[0], "repairCorrelationId"), false, "diagnostic provenance must not enter product task results");
-  assert.equal(groundedDiagnostics.find((item) => item.stage === "composer").composerSource, "openai");
+  assert.equal(groundedDiagnostics.find((item) => item.stage === "composer").composerSource, "deterministic");
   assert.equal(groundedDiagnostics.find((item) => item.stage === "composer").fallbackOccurred, false);
   for (const [index, question] of ["有車位嗎？", "停車方便嗎？", "需要預約車位嗎？"].entries()) {
     let parkingAvailabilityCalls = 0;
@@ -687,7 +687,7 @@ function latestConditions(result) {
   );
   assert.equal(mixedClarification.stateWrites, 1, "a clarification turn must persist V3 state exactly once");
   assert.ok(mixedClarification.result.replyText.includes("有一個停車位"));
-  assert.ok(mixedClarification.result.replyText.includes("請補充入住日期。"));
+  assert.ok(mixedClarification.result.replyText.includes("請提供入住日期。"));
 
   const mixedHighRisk = await runMixedResult({
     id: "mixed-high-risk", messageText: "有車位嗎？高風險問題",

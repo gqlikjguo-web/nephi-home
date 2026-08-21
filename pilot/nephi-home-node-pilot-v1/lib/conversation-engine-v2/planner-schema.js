@@ -1404,17 +1404,8 @@ function plannerProviderJsonSchema() {
   taskSchema.required = taskSchema.required.filter((field) => field !== "semanticCandidateIds" && field !== "lodgingScopeId");
   delete taskSchema.properties.semanticCandidateIds;
   delete taskSchema.properties.lodgingScopeId;
-  const candidateSchema = schema.properties.semanticCandidates.items;
-  schema.properties.semanticCandidates.description = "A lifecycle ledger. bound candidates cite verified context-relation indexes; pending_task coverage candidates retain strict raw source evidence until a repair creates the task and relation.";
-  candidateSchema.required = candidateSchema.required.filter((field) => field !== "candidateId");
-  delete candidateSchema.properties.candidateId;
-  candidateSchema.required.push("coverageStatus", "provenanceRelationCandidateIndexes");
-  candidateSchema.properties.coverageStatus = { type: "string", enum: ["bound", "pending_task"] };
-  candidateSchema.properties.evidenceRefs = { ...candidateSchema.properties.evidenceRefs, minItems: 0, description: "Required lifecycle field. Use [] for bound candidates; pending_task candidates must provide strict raw source evidence until repair creates the task and relation." };
-  candidateSchema.properties.provenanceRelationCandidateIndexes = { type: "array", minItems: 0, maxItems: 12, description: "Required lifecycle field. Bound candidates list each contextRelationCandidates candidateIndex whose verified evidence represents this candidate; pending_task candidates use [].", items: { type: "integer", minimum: 0 } };
-  const scopeSchema = candidateSchema.properties.lodgingScopeCandidate;
-  scopeSchema.required = scopeSchema.required.filter((field) => field !== "scopeId");
-  delete scopeSchema.properties.scopeId;
+  schema.required = schema.required.filter((field) => field !== "semanticCandidates");
+  delete schema.properties.semanticCandidates;
   return schema;
 }
 module.exports = { validatePlannerOutput, applyPlannerSemanticContract, plannerJsonSchema, plannerProviderJsonSchema, normalizeEligibilityEvidence, normalizeIgnoredAcknowledgementOutput, normalizeDuplicateTaskIds, discardLegacyPlannerStateControls, TASK_TYPES };

@@ -87,10 +87,12 @@ const semanticLedgerDiagnosticProvider = new TestOnlyOpenAiConversationPlanner({
         candidateIndex: 0,
         type: "policy",
         sourceText: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE,
+        detailIntent: "general",
         requestedOutputs: ["answer"],
         eligibilityEvidence: { kind: "none", sourceText: "" },
         dependsOnStayContext: false,
         entity: { category: "policy", rawText: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE, canonicalCandidate: null, confidence: 1 },
+        stayCandidate: null,
         confidence: 1,
         semanticCandidateIds: [SEMANTIC_LEDGER_DIAGNOSTIC_CANDIDATE_ID],
         lodgingScopeId: null
@@ -98,7 +100,7 @@ const semanticLedgerDiagnosticProvider = new TestOnlyOpenAiConversationPlanner({
       contextRelationCandidates: [{
         candidateIndex: 0,
         kind: "new_request",
-        candidateRequestCycleRefs: [],
+        candidateHistoryTurnRefs: [],
         evidenceRefs: [{ eventId: "semantic-ledger-event", messageRef: "semantic-ledger-message", startOffset: 0, endOffset: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE.length, quote: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE }]
       }],
       semanticCandidates: [{
@@ -271,31 +273,11 @@ async function integrityRequest(url, body, authorization = "") {
     assert.equal(semanticLedgerPlannerTrace.parserSucceeded, true);
     assert.equal(semanticLedgerPlannerTrace.providerAttemptCount, 1);
     assert.equal(semanticLedgerPlannerTrace.retryPerformed, false);
-    assert.deepEqual(semanticLedgerPlannerTrace.semanticLedgerBoundaries.map(({ candidates: _candidates, ...boundary }) => boundary), [
-      { stage: "raw_parsed_output", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 1, failureCodes: ["evidence_refs"], evidenceFailureCodes: ["missing_refs"] },
-      { stage: "compile_before", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 1, failureCodes: ["evidence_refs"], evidenceFailureCodes: ["missing_refs"] },
-      { stage: "compile_after", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs"], evidenceFailureCodes: ["missing_refs"] },
-      { stage: "validate", candidateCount: 1, validCandidateCount: 0, invalidCandidateCount: 1, ownershipCount: 0, failureCodes: ["evidence_refs"], evidenceFailureCodes: ["missing_refs"] }
-    ], "provider diagnostic must survive Engine, safe formatting, captureSafeTrace, and acceptance trace projection");
-    const compileAfterCandidateDiagnostic = semanticLedgerPlannerTrace.semanticLedgerBoundaries[2].candidates[0];
-    assert.deepEqual(compileAfterCandidateDiagnostic, {
-      candidateOrdinal: 0,
-      coverageStatus: "bound",
-      lifecycle: "bound",
-      provenancePresent: false,
-      provenanceCount: 0,
-      provenanceRelationCandidateIndexes: [],
-      verifiedRelationCount: 0,
-      evidenceRefCount: 0,
-      valid: false,
-      failureCodes: ["evidence_refs"],
-      missingRefsReason: "bound_missing_provenance",
-      provenanceRelations: []
-    }, "per-candidate lifecycle diagnostics must survive provider, Engine, safe formatter, captureSafeTrace, and acceptance projection");
+    assert.equal(Object.hasOwn(semanticLedgerPlannerTrace, "semanticLedgerBoundaries"), false, "provider diagnostics must not expose a model-authored semantic ledger boundary");
     const semanticRawSnapshot = semanticLedgerPlannerTrace.rawUnderstandingSnapshots[0];
-    assert.equal(semanticRawSnapshot.tasks[0].taskId, "policy", "raw-present tasks must remain visible even when downstream structural validation rejects them");
+    assert.equal(semanticRawSnapshot.tasks[0].taskId, "policy", "raw provider tasks remain visible at the protected diagnostic boundary");
     const semanticValidationTrace = semanticLedgerDiagnostic.body.trace.find((entry) => entry.stage === "validation");
-    assert.deepEqual(semanticValidationTrace.finalTasks, [], "the paired downstream boundary must make raw-present-but-rejected distinguishable from raw-missing");
+    assert.deepEqual(semanticValidationTrace.finalTasks.map((task) => task.taskId), ["policy"], "Engine deterministic compilation must retain the valid provider task");
     const { rawUnderstandingSnapshots: _privateSemanticRaw, ...semanticPlannerWithoutPrivateRaw } = semanticLedgerPlannerTrace;
     assert.equal(JSON.stringify(semanticPlannerWithoutPrivateRaw).includes(SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE), false, "ordinary Planner trace fields must not retain fixture message text outside the private raw snapshot");
 
@@ -336,8 +318,7 @@ async function integrityRequest(url, body, authorization = "") {
       lodgingScopeCandidate: { bundleCanonicalCandidate: null, roomCanonicalCandidates: ["room301"], guestCountCandidate: 2 }
     }], "snapshot must retain raw canonical identity, lodging scope, lifecycle, and relation ownership without inventing another semantic model");
     assert.deepEqual(rawSnapshot.semanticCandidates[0].evidenceRefs, [], "the raw snapshot must be captured before evidence normalization fills bound evidence from the verified relation");
-    const rawCompileAfterCandidate = rawUnderstandingPlannerTrace.semanticLedgerBoundaries.find((boundary) => boundary.stage === "compile_after").candidates[0];
-    assert.equal(rawCompileAfterCandidate.evidenceRefCount, 1, "the paired compile_after boundary must prove the raw snapshot predates downstream evidence normalization and compilation");
+    assert.equal(Object.hasOwn(rawUnderstandingPlannerTrace, "semanticLedgerBoundaries"), false, "semantic compilation is Engine-owned rather than a provider diagnostic contract");
     assert.deepEqual(rawSnapshot.contextRelationCandidates[0].evidenceRefs, [{ eventId: "raw-understanding-event", messageRef: "raw-understanding-message", startOffset: 0, endOffset: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE.length, quote: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE }], "snapshot must retain allowlisted evidence binding metadata at the raw boundary");
     assert.equal(rawSnapshot.tasks.some((task) => task.type === "policy"), false, "an absent raw task must remain distinguishable from a task lost downstream");
     assert.equal(rawUnderstandingPlannerTrace.tasks.some((task) => task.taskId === "raw-room-availability"), true, "the same trace must expose the downstream Planner task boundary for raw-vs-downstream comparison");

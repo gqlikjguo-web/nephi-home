@@ -151,15 +151,8 @@ async function main() {
   };
   const schemaA = await providerSchemaForCatalog(catalogA);
   const schemaB = await providerSchemaForCatalog(catalogB);
-  const candidateBranches = (schema) => schema.properties.semanticCandidates.items.anyOf
-    || [schema.properties.semanticCandidates.items];
-  const unionIdentitySchema = (schema, propertyName) => ({
-    enum: [...new Set(candidateBranches(schema).flatMap((branch) => branch.properties[propertyName].enum || []))]
-  });
   const identitySchemas = (schema) => ({
-    task: schema.properties.tasks.items.properties.entity.properties.canonicalCandidate,
-    semantic: unionIdentitySchema(schema, "canonicalIdentityCandidate"),
-    property: unionIdentitySchema(schema, "propertyCatalogIdentity")
+    task: schema.properties.tasks.items.properties.entity.properties.canonicalCandidate
   });
   const identitiesA = identitySchemas(schemaA);
   const identitiesB = identitySchemas(schemaB);
@@ -175,25 +168,7 @@ async function main() {
     assert.equal(identitySchema.enum.includes("room_catalog_a"), false);
   }
 
-  const branchesA = schemaA.properties.semanticCandidates.items.anyOf;
-  assert.ok(Array.isArray(branchesA), "semantic candidates must use provider-supported anyOf capability/identity branches");
-  const branchForIdentity = (identity) => branchesA.find((branch) =>
-    (branch.properties.propertyCatalogIdentity.enum || []).includes(identity));
-  const roomBranch = branchForIdentity("room_catalog_a");
-  const amenityBranch = branchForIdentity("amenity_catalog_a");
-  const parkingBranch = branchForIdentity("parking");
-  const bbqBranch = branchForIdentity("bbq");
-  assert.ok(roomBranch && amenityBranch && parkingBranch && bbqBranch, "every catalog identity must have an authoritative compatibility branch");
-  assert.ok(roomBranch.properties.capability.enum.includes("availability"));
-  assert.ok(roomBranch.properties.capability.enum.includes("price"));
-  assert.equal(roomBranch.properties.capability.enum.includes("amenity"), false, "room identity must reject an incompatible amenity capability");
-  assert.ok(amenityBranch.properties.capability.enum.includes("amenity"));
-  assert.equal(amenityBranch.properties.capability.enum.includes("price"), false, "amenity identity must reject an incompatible price capability");
-  assert.equal(parkingBranch.properties.capability.enum.includes("availability"), false, "parking identity must reject the room-inventory availability capability");
-  assert.ok(parkingBranch.properties.capability.enum.includes("amenity"), "parking identity must preserve the amenity candidate type");
-  assert.ok(parkingBranch.properties.capability.enum.includes("property_fact"), "parking identity must preserve the property-fact candidate type");
-  assert.equal(parkingBranch.properties.capability.enum.includes("price"), false);
-  assert.ok(bbqBranch.properties.capability.enum.includes("policy"), "an unrelated registry entry must remain authoritative");
+  assert.equal(Object.hasOwn(schemaA.properties, "semanticCandidates"), false, "provider schema must not request Engine-owned semantic ledger candidates");
 
   console.log("planner strict schema contract: PASS");
 }

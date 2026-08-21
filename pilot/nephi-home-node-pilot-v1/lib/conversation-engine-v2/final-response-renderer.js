@@ -6,7 +6,7 @@ const SAFE_HANDOFF_TEXT = "這次有部分內容無法安全確認，我會請�
 const SAFE_CLARIFICATION_TEXT = "目前提供的資訊無法安全確認。";
 const SAFE_PAST_DATE_TEXT = "您提供的住宿日期已過，請改提供今天之後的入住日期。";
 const MISSING_FIELD_QUESTIONS = Object.freeze({
-  checkIn: "請補充入住日期。",
+  checkIn: "請提供入住日期。",
   checkOut: "請補充退房日期。",
   guestCount: "請補充入住人數。",
   searchFrom: "請補充查詢起始日期。",
@@ -14,7 +14,7 @@ const MISSING_FIELD_QUESTIONS = Object.freeze({
   productId: "請補充想查詢的住宿商品。",
   roomTypeId: "請補充想查詢的房型。",
   bundleId: "請補充想查詢的包棟方案。",
-  "stay.checkIn": "請補充入住日期。",
+  "stay.checkIn": "請提供入住日期。",
   "stay.checkOut": "請補充退房日期。",
   "stay.nights": "請補充住宿晚數。",
   "stay.guests": "請補充入住人數。",
@@ -65,7 +65,8 @@ function buildFinalResponse({
   finalDecision,
   responsePlan,
   validatedReplyText,
-  claimValidation
+  claimValidation,
+  publicAvailabilityUrl = ""
 } = {}) {
   const action = finalDecision && finalDecision.action;
   if (!["reply", "clarification", "handoff", "no_reply"].includes(action)) {
@@ -95,11 +96,17 @@ function buildFinalResponse({
       };
     }
     const questions = clarificationQuestions(finalDecision.missingFields);
+    const missingFields = Array.isArray(finalDecision.missingFields) ? finalDecision.missingFields : [];
+    const needsCheckIn = missingFields.includes("checkIn") || missingFields.includes("stay.checkIn");
+    const availabilityLink = needsCheckIn && String(publicAvailabilityUrl || "").trim()
+      ? `查房連結：${String(publicAvailabilityUrl).trim()}`
+      : "";
     return {
       action,
       replyText: withinLimit([
         ...answered,
-        ...(questions.length ? questions : [SAFE_CLARIFICATION_TEXT])
+        ...(questions.length ? questions : [SAFE_CLARIFICATION_TEXT]),
+        availabilityLink
       ], responsePlan),
       shouldReply: true
     };

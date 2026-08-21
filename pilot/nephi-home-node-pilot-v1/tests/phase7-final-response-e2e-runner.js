@@ -273,7 +273,7 @@ async function run(kind) {
       assert.equal(calls[0].messages[0].text, result.finalResponse.replyText);
     }
     if (kind === "clarification") {
-      assert.equal(result.replyText, "請補充入住日期。");
+      assert.match(result.replyText, /^請提供入住日期。\n查房連結：https:\/\/app\.junzanai\.com\//);
     }
     if (kind === "handoff") {
       assert.ok(result.replyText.includes("需要請業者確認"));
@@ -286,7 +286,7 @@ async function run(kind) {
       assert.equal(result.finalDecision.reviewRequired, false);
     }
     if (kind === "composer_exception") {
-      assert.equal(composerCalls.length, 1);
+      assert.equal(composerCalls.length, 0);
       assert.equal(result.finalDecision.reasonCode, "execution_answered");
       assert.equal(result.replyText, "民宿旁空地可停車。");
       assert.equal(result.finalDecision.reviewRequired, false);

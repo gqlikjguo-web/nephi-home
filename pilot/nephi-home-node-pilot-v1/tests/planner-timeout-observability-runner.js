@@ -147,8 +147,8 @@ async function main() {
   assert.equal(envDefaultTimeoutSuccess[PROVIDER_DIAGNOSTIC].providerAttempts[0].timeoutMs, 30000,
     "the live Planner environment factory must retain the bounded 30-second default");
   assert.deepEqual(envDefaultTimeoutBodies.map((body) => body.text.format.name),
-    ["junzan_conversation_plan_v2", "junzan_coverage_critic_v1"],
-    "the environment factory must use one bounded Planner call and one bounded Critic call");
+    ["junzan_conversation_plan_v2"],
+    "the environment factory must use one bounded Planner call without a coverage-critic call");
 
   const sentHeaders = [];
   const sentBodies = [];

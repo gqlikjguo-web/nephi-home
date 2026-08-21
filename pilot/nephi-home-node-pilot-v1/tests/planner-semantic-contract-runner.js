@@ -1602,11 +1602,8 @@ function main() {
   assert.deepEqual(schema.properties.tasks.items.properties.eligibilityEvidence.properties.kind.enum, ["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
   const providerSchema = plannerProviderJsonSchema();
   assertOpenAiStructuredOutputObjectRequirements(providerSchema);
-  const providerCandidateSchema = providerSchema.properties.semanticCandidates.items;
-  assert.ok(providerCandidateSchema.required.includes("evidenceRefs"));
-  assert.ok(providerCandidateSchema.required.includes("provenanceRelationCandidateIndexes"));
-  assert.equal(providerCandidateSchema.properties.evidenceRefs.minItems, 0, "bound lifecycle can represent its required empty raw-evidence field");
-  assert.equal(providerCandidateSchema.properties.provenanceRelationCandidateIndexes.minItems, 0, "pending lifecycle can represent its required empty relation-provenance field");
+  assert.equal(Object.hasOwn(providerSchema.properties, "semanticCandidates"), false, "semantic candidates are compiled and validated inside Engine, not requested from OpenAI");
+  assert.equal(providerSchema.required.includes("semanticCandidates"), false);
   console.log(JSON.stringify({ suite: "planner-semantic-contract", caseCount: 50 + contradictoryFieldCaseCount, passCount: 50 + contradictoryFieldCaseCount, failCount: 0 }));
 }
 

@@ -35,12 +35,18 @@ const { buildFinalDecision } = require("./final-decision");
 const { SAFE_HANDOFF_TEXT, buildFinalResponse } = require("./final-response-renderer");
 const { applyControlledReplyRules } = require("../custom-reply-rules");
 const { recentConversationSafeSummary } = require("../recent-conversation-safe-diagnostic");
+const { publicSlugForProperty } = require("../public-property-routing");
 
 const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
 const TEMPORAL_FAILURE_STATUSES = new Set(["unresolved"]);
 const PENDING_STATUSES = new Set(["pending", "needs_clarification"]);
 function decideFinal(input) { return buildFinalDecision(input); }
 function renderFinal(input) { return buildFinalResponse(input); }
+function publicAvailabilityUrl(publicBaseUrl, property) {
+  const base = String(publicBaseUrl || "").replace(/\/+$/, "");
+  const slug = publicSlugForProperty(property);
+  return base && slug ? `${base}/${encodeURIComponent(slug)}` : "";
+}
 function sourceEventsForInput(input = {}) {
   const events = Array.isArray(input.sourceEvents) ? input.sourceEvents : [];
   const normalized = events.map((event) => ({
@@ -453,8 +459,8 @@ function safePlannerErrorDiagnostic(error, planner) {
 }
 
 class ConversationEngineV2 {
-  constructor({ planner, composer, persistence, getProperty, availabilityResolver, availableDatesResolver, listPriceOverrides, listDatePriceClassifications, listCustomReplies, recentMessageLimit = 10, now = () => new Date(), onDiagnostic, diagnosticDetail = false, diagnosticMetadata = {} }) {
-    this.planner = planner; this.composer = composer; this.persistence = persistence; this.getProperty = getProperty; this.availabilityResolver = availabilityResolver; this.availableDatesResolver = availableDatesResolver; this.listPriceOverrides = listPriceOverrides || (() => []); this.listDatePriceClassifications = listDatePriceClassifications || (() => []); this.listCustomReplies = listCustomReplies || (() => []); this.recentMessageLimit = Math.max(1, Math.min(50, Number(recentMessageLimit) || 10)); this.now = now; this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null; this.diagnosticDetail = Boolean(diagnosticDetail); this.diagnosticMetadata = diagnosticMetadata || {}; this.traceContexts = new Map();
+  constructor({ planner, composer, persistence, getProperty, availabilityResolver, availableDatesResolver, listPriceOverrides, listDatePriceClassifications, listCustomReplies, publicBaseUrl = "", recentMessageLimit = 10, now = () => new Date(), onDiagnostic, diagnosticDetail = false, diagnosticMetadata = {} }) {
+    this.planner = planner; this.composer = composer; this.persistence = persistence; this.getProperty = getProperty; this.availabilityResolver = availabilityResolver; this.availableDatesResolver = availableDatesResolver; this.listPriceOverrides = listPriceOverrides || (() => []); this.listDatePriceClassifications = listDatePriceClassifications || (() => []); this.listCustomReplies = listCustomReplies || (() => []); this.publicBaseUrl = String(publicBaseUrl || ""); this.recentMessageLimit = Math.max(1, Math.min(50, Number(recentMessageLimit) || 10)); this.now = now; this.onDiagnostic = typeof onDiagnostic === "function" ? onDiagnostic : null; this.diagnosticDetail = Boolean(diagnosticDetail); this.diagnosticMetadata = diagnosticMetadata || {}; this.traceContexts = new Map();
   }
 
   trace(traceId, stage, details) {
@@ -879,27 +885,15 @@ class ConversationEngineV2 {
         })
       )
     });
-    let replyText = deterministicReply, claimedTaskIds = null, composedSections = null;
-    let claimValidation = fallbackClaimValidation;
-    let composerSource = "deterministic", fallbackOccurred = false, rejectionReasonCodes = [];
-    const hasAnswerSection = responsePlan.sections.some((section) => section.responseMode === "answer");
-    const hasIncompleteSection = responsePlan.sections.some((section) => section.responseMode !== "answer");
-    const composerEligible = !(hasAnswerSection && hasIncompleteSection);
-    if (fallbackClaimValidation.ok && composerEligible && this.composer && typeof this.composer.compose === "function") {
-      try {
-        const composed = mergeComposedSections(responsePlan, await this.composer.compose(responsePlan, { lineUserId: input.lineUserId }));
-        if (composed.ok) {
-          const adoptionValidation = validateClaims(composed.replyText, responsePlan, composed.factTaskIds, composed.sections);
-          if (adoptionValidation.ok) {
-            replyText = composed.replyText; claimedTaskIds = composed.factTaskIds; composedSections = composed.sections; claimValidation = adoptionValidation; composerSource = "openai";
-          } else rejectionReasonCodes = adoptionValidation.errors;
-        } else rejectionReasonCodes = composed.errors;
-      } catch { rejectionReasonCodes = ["composer_exception"]; }
-      fallbackOccurred = composerSource !== "openai";
-    }
+    const replyText = deterministicReply;
+    const claimedTaskIds = null;
+    const claimValidation = fallbackClaimValidation;
+    const composerSource = "deterministic";
+    const fallbackOccurred = false;
+    const rejectionReasonCodes = [];
     this.trace(traceId, "composer", { outputLength: replyText.length, coveredTaskIds: claimedTaskIds || inputTaskIds, missingTaskIds: claimValidation.missingTaskIds, composerSource, validationResult: rejectionReasonCodes.length ? "rejected" : "accepted", rejectionReasonCodes, fallbackOccurred, ...(this.diagnosticDetail ? { composerInput: responsePlan, finalOutput: replyText } : {}), sections: responsePlan.sections.map((section) => ({ taskId: section.taskId, responseMode: section.responseMode, type: section.type })) });
     this.trace(traceId, "claim_validator", { errors: claimValidation.errors, coveredTaskIds: claimValidation.coveredTaskIds, missingTaskIds: claimValidation.missingTaskIds });
-    const finalResponse = renderFinal({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation });
+    const finalResponse = renderFinal({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation, publicAvailabilityUrl: publicAvailabilityUrl(this.publicBaseUrl, property) });
     const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "multi_task_v2", replyType: `${finalResponse.action}_v2`, replyText: finalResponse.replyText, route: `final_decision_${finalResponse.action}`, shouldReply: finalResponse.shouldReply, noReply: !finalResponse.shouldReply, needsReview: finalDecision.reviewRequired, humanHandoff: finalDecision.action === "handoff", status: finalDecision.reviewRequired ? "pending" : "resolved", processingStatus: "decided", decisionReason: finalDecision.reasonCode, requestCycleRefs: requestCycleRefs(canonicalItems.map((item) => item.requestCycleId)) };
     if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
     else this.persistence.appendMessageLog(input.customerId, messageRecord);

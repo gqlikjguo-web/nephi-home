@@ -343,9 +343,9 @@ async function plannerContractFailureDoesNotRetry() {
   });
   assert.equal(fetchCount, 1, "a local Planner output contract failure must not retry the provider request");
   assert.equal(result.finalDecision.action, "handoff");
-  assert.equal(result.finalDecision.reasonCode, "planner_output_unusable");
-  const validationDiagnostic = diagnostics.find((entry) => entry.stage === "validation");
-  assert.equal(validationDiagnostic.errorCategory, "local_contract_failure");
+  assert.equal(result.finalDecision.reasonCode, "planner_parse_failed");
+  const plannerDiagnostic = diagnostics.find((entry) => entry.stage === "planner_error");
+  assert.equal(plannerDiagnostic.errorCategory, "local_contract_failure");
 }
 
 async function main() {
