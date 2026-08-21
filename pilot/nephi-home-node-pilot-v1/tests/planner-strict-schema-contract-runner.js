@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 
 const { plannerJsonSchema } = require("../lib/conversation-engine-v2/planner-schema");
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
-const { TestOnlyOpenAiConversationPlanner } = require("../lib/providers/test-only-openai-conversation-planner");
+const { TestOnlyOpenAiConversationPlanner, instructions } = require("../lib/providers/test-only-openai-conversation-planner");
 
 function auditStrictObjects(node, path = "$") {
   if (!node || typeof node !== "object" || Array.isArray(node)) return;
@@ -73,6 +73,27 @@ async function providerSchemaForCatalog(catalog) {
 async function main() {
   const schema = plannerJsonSchema();
   auditStrictObjects(schema);
+
+  const plannerInstructions = instructions();
+  const taskProperties = schema.properties.tasks.items.properties;
+  assert.match(plannerInstructions, /A monetary lodging amount, charge, or rate request[\s\S]*must use type price, detailIntent general, requestedOutputs price, and dependsOnStayContext true\./);
+  assert.match(taskProperties.type.description, /Monetary lodging amount, charge, or rate requests use price or total_price;/);
+  assert.match(taskProperties.requestedOutputs.description, /A price task uses price, a total_price task uses total_price,/);
+  assert.match(
+    plannerInstructions,
+    /current-property formal catalog subject[\s\S]*type amenity, policy, or property_fact[\s\S]*detailIntent fee[\s\S]*requestedOutputs \[fee\][\s\S]*dependsOnStayContext false[\s\S]*stayCandidate null[\s\S]*must not use price or total_price/i,
+    "Planner instructions must append the property-subject fee grammar without replacing lodging price"
+  );
+  assert.match(
+    taskProperties.type.description,
+    /current-property formal catalog subject[\s\S]*fee[\s\S]*amenity, policy, or property_fact[\s\S]*not price or total_price/i,
+    "the strict task type description must append the property-subject fee boundary"
+  );
+  assert.match(
+    taskProperties.requestedOutputs.description,
+    /property-subject fee uses fee/i,
+    "the strict requested-output description must append the property-subject fee output"
+  );
 
   const evidenceSchema = schema.properties.contextRelationCandidates.items.properties.evidenceRefs.items;
   assert.deepEqual(
