@@ -1,0 +1,36 @@
+{
+  "matrixId": "high-frequency-6x3-v1-approved",
+  "propertyId": "nephi_home",
+  "source": "User-approved high-frequency deployed acceptance, six scenarios with three independent runs",
+  "tiers": {
+    "TIER_1_CORE": [
+      "hf-01-run-1", "hf-01-run-2", "hf-01-run-3",
+      "hf-02-run-1", "hf-02-run-2", "hf-02-run-3",
+      "hf-04-run-1", "hf-04-run-2", "hf-04-run-3",
+      "hf-05-run-1", "hf-05-run-2", "hf-05-run-3"
+    ],
+    "TIER_2_COMPLEX": [],
+    "TIER_3_SAFETY": ["hf-06-run-1", "hf-06-run-2", "hf-06-run-3"],
+    "TIER_4_EDGE": ["hf-03-run-1", "hf-03-run-2", "hf-03-run-3"]
+  },
+  "cases": [
+    {"id":"hf-01-run-1","bucket":"high_frequency_6x3","turns":[{"input":"9/5包棟有空嗎？","expectedSemantic":["availability","bundle"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"hf-01-run-2","bucket":"high_frequency_6x3","turns":[{"input":"9/5包棟有空嗎？","expectedSemantic":["availability","bundle"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"hf-01-run-3","bucket":"high_frequency_6x3","turns":[{"input":"9/5包棟有空嗎？","expectedSemantic":["availability","bundle"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"hf-02-run-1","bucket":"high_frequency_6x3","turns":[{"input":"9/5有房嗎？","expectedSemantic":["availability"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"hf-02-run-2","bucket":"high_frequency_6x3","turns":[{"input":"9/5有房嗎？","expectedSemantic":["availability"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"hf-02-run-3","bucket":"high_frequency_6x3","turns":[{"input":"9/5有房嗎？","expectedSemantic":["availability"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"hf-03-run-1","bucket":"high_frequency_6x3","turns":[{"input":"貼圖已傳送","lineEvent":{"type":"message","message":{"type":"sticker","packageId":"test-only","stickerId":"test-only"}},"expectedSemantic":["non_text_event"],"allowedActions":["no_reply"]},{"input":"9/5有房嗎？","expectedSemantic":["availability"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"hf-03-run-2","bucket":"high_frequency_6x3","turns":[{"input":"貼圖已傳送","lineEvent":{"type":"message","message":{"type":"sticker","packageId":"test-only","stickerId":"test-only"}},"expectedSemantic":["non_text_event"],"allowedActions":["no_reply"]},{"input":"9/5有房嗎？","expectedSemantic":["availability"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"hf-03-run-3","bucket":"high_frequency_6x3","turns":[{"input":"貼圖已傳送","lineEvent":{"type":"message","message":{"type":"sticker","packageId":"test-only","stickerId":"test-only"}},"expectedSemantic":["non_text_event"],"allowedActions":["no_reply"]},{"input":"9/5有房嗎？","expectedSemantic":["availability"],"allowedActions":["reply"],"requiresPostgres":true}]},
+    {"id":"hf-04-run-1","bucket":"high_frequency_6x3","turns":[{"input":"戲水池可以用嗎？多少錢？","expectedSemantic":["pool","pool_fee"],"expectedCanonicalIdentities":["splash_pool"],"expectedDataSource":"property_catalog","allowedActions":["reply"],"requiresFormalPropertyData":true,"requireAllTasksAnswered":true,"productOutcomes":[{"subject":"pool","disposition":"answer"},{"subject":"pool_fee","disposition":"answer"}]}]},
+    {"id":"hf-04-run-2","bucket":"high_frequency_6x3","turns":[{"input":"戲水池可以用嗎？多少錢？","expectedSemantic":["pool","pool_fee"],"expectedCanonicalIdentities":["splash_pool"],"expectedDataSource":"property_catalog","allowedActions":["reply"],"requiresFormalPropertyData":true,"requireAllTasksAnswered":true,"productOutcomes":[{"subject":"pool","disposition":"answer"},{"subject":"pool_fee","disposition":"answer"}]}]},
+    {"id":"hf-04-run-3","bucket":"high_frequency_6x3","turns":[{"input":"戲水池可以用嗎？多少錢？","expectedSemantic":["pool","pool_fee"],"expectedCanonicalIdentities":["splash_pool"],"expectedDataSource":"property_catalog","allowedActions":["reply"],"requiresFormalPropertyData":true,"requireAllTasksAnswered":true,"productOutcomes":[{"subject":"pool","disposition":"answer"},{"subject":"pool_fee","disposition":"answer"}]}]},
+    {"id":"hf-05-run-1","bucket":"high_frequency_6x3","turns":[{"input":"可以烤肉嗎？費用多少？","expectedSemantic":["bbq","bbq_fee"],"expectedCanonicalIdentities":["bbq"],"expectedDataSource":"property_catalog","allowedActions":["reply"],"requiresFormalPropertyData":true,"requireAllTasksAnswered":true,"productOutcomes":[{"subject":"bbq_fee","disposition":"answer"}]}]},
+    {"id":"hf-05-run-2","bucket":"high_frequency_6x3","turns":[{"input":"可以烤肉嗎？費用多少？","expectedSemantic":["bbq","bbq_fee"],"expectedCanonicalIdentities":["bbq"],"expectedDataSource":"property_catalog","allowedActions":["reply"],"requiresFormalPropertyData":true,"requireAllTasksAnswered":true,"productOutcomes":[{"subject":"bbq_fee","disposition":"answer"}]}]},
+    {"id":"hf-05-run-3","bucket":"high_frequency_6x3","turns":[{"input":"可以烤肉嗎？費用多少？","expectedSemantic":["bbq","bbq_fee"],"expectedCanonicalIdentities":["bbq"],"expectedDataSource":"property_catalog","allowedActions":["reply"],"requiresFormalPropertyData":true,"requireAllTasksAnswered":true,"productOutcomes":[{"subject":"bbq_fee","disposition":"answer"}]}]},
+    {"id":"hf-06-run-1","bucket":"high_frequency_6x3","turns":[{"input":"包棟多少錢？","expectedSemantic":["bundle","price"],"allowedActions":["clarification"]},{"input":"不用了，謝謝","expectedSemantic":["acknowledgement","cancellation"],"allowedActions":["no_reply"]}]},
+    {"id":"hf-06-run-2","bucket":"high_frequency_6x3","turns":[{"input":"包棟多少錢？","expectedSemantic":["bundle","price"],"allowedActions":["clarification"]},{"input":"不用了，謝謝","expectedSemantic":["acknowledgement","cancellation"],"allowedActions":["no_reply"]}]},
+    {"id":"hf-06-run-3","bucket":"high_frequency_6x3","turns":[{"input":"包棟多少錢？","expectedSemantic":["bundle","price"],"allowedActions":["clarification"]},{"input":"不用了，謝謝","expectedSemantic":["acknowledgement","cancellation"],"allowedActions":["no_reply"]}]}
+  ]
+}

@@ -19,6 +19,7 @@ const MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-fixed-
 const SUPPLEMENTAL_MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-supplemental-matrix.json");
 const GENERALIZATION_MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/real-guest-generalization-matrix.json");
 const CORE_COMMON_23_MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/core-common-23-matrix.json");
+const HIGH_FREQUENCY_6X3_MATRIX_PATH = path.resolve(__dirname, "../tests/fixtures/high-frequency-6x3-matrix.json");
 const NOT_EXECUTABLE_STATUS = "NOT_EXECUTABLE_WITH_CURRENT_ACCEPTANCE_API";
 const OPERATOR_CONTEXT_CASES = new Map();
 const NON_TEXT_SEMANTICS = new Set(["non_text_event", "non_text_marker"]);
@@ -254,7 +255,26 @@ function loadCoreCommon23Matrix(filePath = CORE_COMMON_23_MATRIX_PATH) {
 }
 
 const CORE_COMMON_23_MATRIX = loadCoreCommon23Matrix();
-const DEPLOYED_ACCEPTANCE_MATRIX = [...ACCEPTANCE_MATRIX, ...SUPPLEMENTAL_ACCEPTANCE_MATRIX, ...GENERALIZATION_ACCEPTANCE_MATRIX];
+function loadHighFrequency6x3Matrix(filePath = HIGH_FREQUENCY_6X3_MATRIX_PATH) {
+  const source = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (!source || !Array.isArray(source.cases)) throw new Error("high_frequency_6x3_cases_required");
+  const turnCount = source.cases.reduce((sum, item) => sum + (Array.isArray(item.turns) ? item.turns.length : 0), 0);
+  if (source.cases.length !== 18 || turnCount !== 24) throw new Error("high_frequency_6x3_fixed_count_mismatch");
+  const tierAssignments = acceptanceTierAssignments(source, "high_frequency_6x3");
+  return source.cases.map((item) => {
+    const tier = tierAssignments.get(item.id);
+    return {
+      id: item.id,
+      tier,
+      bucket: item.bucket,
+      sourceRef: item.sourceRef || source.source,
+      turns: item.turns.map((turn) => loadedAcceptanceTurn(turn, tier, item, "high_frequency_6x3"))
+    };
+  });
+}
+
+const HIGH_FREQUENCY_6X3_MATRIX = loadHighFrequency6x3Matrix();
+const DEPLOYED_ACCEPTANCE_MATRIX = [...ACCEPTANCE_MATRIX, ...SUPPLEMENTAL_ACCEPTANCE_MATRIX, ...GENERALIZATION_ACCEPTANCE_MATRIX, ...HIGH_FREQUENCY_6X3_MATRIX];
 const TARGET_PREFLIGHT_TURNS = Object.freeze({
   "rg-003-price-nights": [1],
   "rg-004-bundle-price": [1],
@@ -1540,6 +1560,7 @@ module.exports = {
   SUPPLEMENTAL_ACCEPTANCE_MATRIX,
   GENERALIZATION_ACCEPTANCE_MATRIX,
   CORE_COMMON_23_MATRIX,
+  HIGH_FREQUENCY_6X3_MATRIX,
   DEPLOYED_ACCEPTANCE_MATRIX,
   TARGET_PREFLIGHT_CASE_IDS,
   TARGET_PREFLIGHT_TURNS,
@@ -1547,6 +1568,7 @@ module.exports = {
   loadSupplementalAcceptanceMatrix,
   loadGeneralizationAcceptanceMatrix,
   loadCoreCommon23Matrix,
+  loadHighFrequency6x3Matrix,
   NOT_EXECUTABLE_STATUS,
   pollForDeployment,
   requestGithubOidcToken,

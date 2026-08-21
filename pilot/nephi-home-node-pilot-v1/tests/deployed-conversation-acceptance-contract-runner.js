@@ -8,6 +8,7 @@ const {
   ACCEPTANCE_MATRIX,
   GENERALIZATION_ACCEPTANCE_MATRIX,
   CORE_COMMON_23_MATRIX,
+  HIGH_FREQUENCY_6X3_MATRIX,
   DEPLOYED_ACCEPTANCE_MATRIX,
   pollForDeployment,
   requestGithubOidcToken,
@@ -42,8 +43,16 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.ok(ACCEPTANCE_MATRIX.every((item) => Array.isArray(item.turns) && item.turns.length > 0));
   assert.equal(GENERALIZATION_ACCEPTANCE_MATRIX.length, 36, "the approved generalization matrix must retain all 36 cases");
   assert.equal(GENERALIZATION_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 45, "the approved generalization matrix must retain all 45 turns");
-  assert.equal(DEPLOYED_ACCEPTANCE_MATRIX.length, 113, "full_matrix must execute all 113 approved cases");
-  assert.equal(DEPLOYED_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 135, "full_matrix must execute all 135 approved turns");
+  assert.equal(HIGH_FREQUENCY_6X3_MATRIX.length, 18, "the high-frequency matrix must contain six scenarios repeated three times");
+  assert.equal(HIGH_FREQUENCY_6X3_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 24, "the high-frequency matrix must contain exactly 24 turns");
+  assert.equal(new Set(HIGH_FREQUENCY_6X3_MATRIX.map((item) => item.id)).size, 18, "every high-frequency run must have a unique case ID");
+  for (let scenario = 1; scenario <= 6; scenario += 1) {
+    const prefix = `hf-${String(scenario).padStart(2, "0")}-`;
+    const cases = HIGH_FREQUENCY_6X3_MATRIX.filter((item) => item.id.startsWith(prefix));
+    assert.equal(cases.length, 3, `${prefix} must contain exactly three independent runs`);
+  }
+  assert.equal(DEPLOYED_ACCEPTANCE_MATRIX.length, 131, "full_matrix must execute all 131 approved cases");
+  assert.equal(DEPLOYED_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 159, "full_matrix must execute all 159 approved turns");
   const coreCommonQuestions = [
     "301可以住幾個人？", "8/29還有雙人房嗎？", "明天還有空房嗎？", "還有空房嗎？", "8/29四人房多少錢？", "301多少錢？", "9月哪些週六還能包棟？", "我們6個人適合住哪個房型？", "有停車位嗎？", "戲水池可以用嗎？多少錢？", "有早餐嗎？", "現在還有唱歌設備嗎？", "402可以帶小朋友住嗎？", "幾點可以入住？幾點退房？", "可以下午1點入住嗎？", "地址在哪？", "離羅東夜市遠嗎？", "8/29有雙人房嗎？另外可以烤肉嗎？", "包棟多少？", "星期六", "住一晚", "8/29住一晚，2個人", "改四個", "8/29有雙人房嗎？", "那四人房呢？", "8/29還有雙人ㄉㄇ", "謝謝"
   ];

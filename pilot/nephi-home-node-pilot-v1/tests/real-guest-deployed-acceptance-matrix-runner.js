@@ -8,6 +8,7 @@ const {
   ACCEPTANCE_MATRIX,
   SUPPLEMENTAL_ACCEPTANCE_MATRIX,
   GENERALIZATION_ACCEPTANCE_MATRIX,
+  HIGH_FREQUENCY_6X3_MATRIX,
   DEPLOYED_ACCEPTANCE_MATRIX,
   loadAcceptanceMatrix,
   runAcceptanceMatrix
@@ -72,10 +73,10 @@ function safeResult(eventId, traceId) {
     );
     assert.equal(SUPPLEMENTAL_ACCEPTANCE_MATRIX.find((item) => item.id === "rgs-016-past-or-future-date").turns[0].pastDatePolicy, "");
     const expectedTierTotals = {
-      TIER_1_CORE: { cases: 48, turns: 50 },
+      TIER_1_CORE: { cases: 60, turns: 62 },
       TIER_2_COMPLEX: { cases: 34, turns: 50 },
-      TIER_3_SAFETY: { cases: 17, turns: 18 },
-      TIER_4_EDGE: { cases: 14, turns: 17 }
+      TIER_3_SAFETY: { cases: 20, turns: 24 },
+      TIER_4_EDGE: { cases: 17, turns: 23 }
     };
     for (const [tier, expected] of Object.entries(expectedTierTotals)) {
       const cases = DEPLOYED_ACCEPTANCE_MATRIX.filter((item) => item.tier === tier);
@@ -85,8 +86,15 @@ function safeResult(eventId, traceId) {
         `${tier} must have the approved case/turn partition`
       );
     }
-    assert.equal(new Set(DEPLOYED_ACCEPTANCE_MATRIX.map((item) => item.id)).size, 113, "Tier metadata must retain exactly one assignment per case");
-    assert.equal(DEPLOYED_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 135);
+    assert.equal(HIGH_FREQUENCY_6X3_MATRIX.length, 18);
+    assert.equal(HIGH_FREQUENCY_6X3_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 24);
+    assert.deepEqual(
+      HIGH_FREQUENCY_6X3_MATRIX.map((item) => item.id),
+      Array.from({ length: 6 }, (_, scenario) => Array.from({ length: 3 }, (_, run) => `hf-${String(scenario + 1).padStart(2, "0")}-run-${run + 1}`)).flat(),
+      "the 6x3 matrix must preserve scenario ordering and unique independent run IDs"
+    );
+    assert.equal(new Set(DEPLOYED_ACCEPTANCE_MATRIX.map((item) => item.id)).size, 131, "Tier metadata must retain exactly one assignment per case");
+    assert.equal(DEPLOYED_ACCEPTANCE_MATRIX.reduce((sum, item) => sum + item.turns.length, 0), 159);
     for (const item of DEPLOYED_ACCEPTANCE_MATRIX.filter((entry) => ["TIER_1_CORE", "TIER_2_COMPLEX"].includes(entry.tier))) {
       for (const turn of item.turns) {
         assert.equal(
