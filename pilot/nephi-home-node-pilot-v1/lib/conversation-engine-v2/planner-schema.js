@@ -320,6 +320,9 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
   const authoritativeSourceIdentityIds = directlyResolvedSourceIdentityIds.size === 1
     ? directlyResolvedSourceIdentityIds
     : sourceIdentityIds;
+  const taskLocalAuthoritativeSourceIdentityIds = sourceBoundRaw && verifiedSource.includes(sourceBoundRaw)
+    ? authoritativeSourceIdentityIds
+    : new Set();
   const sourceBaseCanonicalId = authoritativeSourceIdentityIds.size === 1
     ? [...authoritativeSourceIdentityIds][0]
     : "";
@@ -348,7 +351,7 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
       && ["price", "total_price"].includes(task.type)
       && task.detailIntent === "general"
       && currentRequestFormalSubject
-      && (!sourceBoundRaw || !verifiedSource.includes(sourceBoundRaw))
+      && taskLocalAuthoritativeSourceIdentityIds.size === 0
       && !stayCandidateHasInventoryScope(task.stayCandidate)
       && !stayCandidateHasInventoryScope(fallbackStayCandidate)
       ? currentRequestFormalSubject
@@ -950,19 +953,40 @@ function normalizeIgnoredAcknowledgementOutput(value, { sourceEvents } = {}) {
 }
 
 function verifiedNewRequestEvidence(task, contextRelationCandidates, sourceEvents) {
-  const candidates = (Array.isArray(contextRelationCandidates) ? contextRelationCandidates : [])
-    .filter((candidate) => candidate && candidate.candidateIndex === task.candidateIndex);
-  if (candidates.length !== 1) return "";
-  const candidate = candidates[0];
-  if (candidate.kind !== "new_request"
-    || !Array.isArray(candidate.candidateRequestCycleRefs) || candidate.candidateRequestCycleRefs.length !== 0
-    || !Array.isArray(candidate.evidenceRefs) || candidate.evidenceRefs.length === 0) return "";
-  const sourceMaps = sourceEventMaps(sourceEvents);
-  if (!candidate.evidenceRefs.every((evidenceRef) => evidenceMatchesSource(evidenceRef, sourceMaps))) return "";
+  const candidate = verifiedNewRequestRelation(task, contextRelationCandidates, sourceEvents);
+  if (!candidate) return "";
   const evidenceText = candidate.evidenceRefs.map((evidenceRef) => evidenceRef.quote).join("\n");
   const taskSourceText = String(task && task.sourceText || "").trim();
   if (!taskSourceText || !normalizedText(evidenceText).includes(normalizedText(taskSourceText))) return "";
   return taskSourceText;
+}
+
+function verifiedNewRequestRelation(task, contextRelationCandidates, sourceEvents) {
+  const candidates = (Array.isArray(contextRelationCandidates) ? contextRelationCandidates : [])
+    .filter((candidate) => candidate && candidate.candidateIndex === task.candidateIndex);
+  if (candidates.length !== 1) return null;
+  const candidate = candidates[0];
+  if (candidate.kind !== "new_request"
+    || !Array.isArray(candidate.candidateRequestCycleRefs) || candidate.candidateRequestCycleRefs.length !== 0
+    || !Array.isArray(candidate.evidenceRefs) || candidate.evidenceRefs.length === 0) return null;
+  const sourceMaps = sourceEventMaps(sourceEvents);
+  if (!candidate.evidenceRefs.every((evidenceRef) => evidenceMatchesSource(evidenceRef, sourceMaps))) return null;
+  return candidate;
+}
+
+function resolvedEvidenceSource(ref, sourceMaps) {
+  const eventId = String(ref && ref.eventId || "").trim();
+  const messageRef = String(ref && ref.messageRef || "").trim();
+  const byEventId = eventId ? sourceMaps.byEventId.get(eventId) : null;
+  const byMessageRef = messageRef ? sourceMaps.byMessageRef.get(messageRef) : null;
+  return byEventId && byMessageRef && byEventId !== byMessageRef ? null : byEventId || byMessageRef || null;
+}
+
+function evidenceRefsOverlap(left, right, sourceMaps) {
+  const leftSource = resolvedEvidenceSource(left, sourceMaps);
+  const rightSource = resolvedEvidenceSource(right, sourceMaps);
+  return leftSource !== null && leftSource === rightSource
+    && left.startOffset < right.endOffset && right.startOffset < left.endOffset;
 }
 
 function uniqueCurrentRequestFormalSubject(value, catalog, sourceEvents) {
@@ -975,16 +999,46 @@ function uniqueCurrentRequestFormalSubject(value, catalog, sourceEvents) {
     const resolved = resolveEntity(catalog, task.entity);
     if (resolved && resolved.status === "resolved" && resolved.entity
       && ["room", "bundle"].includes(resolved.entity.category)) return null;
-    const definition = getCapabilityDefinition(task.type);
+    const resolvedDefinition = resolved && resolved.status === "resolved" && resolved.entity
+      ? getCapabilityDefinition(resolved.entity.canonicalId)
+        || getCapabilityDefinition(["amenity", "activity", "room_feature"].includes(resolved.entity.category)
+          ? "amenity"
+          : "policy")
+      : null;
+    const definition = resolvedDefinition && resolvedDefinition.acceptedCandidateTypes.includes(task.type)
+      ? resolvedDefinition
+      : null;
     if (!definition || definition.resolverId !== "property_catalog" || definition.stayDependency !== false
       || definition.riskLevel !== "low" || definition.responseMode !== "answer") continue;
     const mentions = mentionedPropertyFacts(catalog, verifiedSourceText);
     if (mentions.length !== 1 || !resolved || resolved.status !== "resolved" || !resolved.entity
       || resolved.entity.canonicalId !== mentions[0].entity.canonicalId
       || !definition.acceptedEntityCategories.includes(resolved.entity.category)) continue;
-    subjects.set(resolved.entity.canonicalId, resolved.entity);
+    const relation = verifiedNewRequestRelation(task, value.contextRelationCandidates, sourceEvents);
+    if (!relation) continue;
+    const subject = subjects.get(resolved.entity.canonicalId) || { entity: resolved.entity, owners: [] };
+    subject.owners.push({ task, relation });
+    subjects.set(resolved.entity.canonicalId, subject);
   }
   return subjects.size === 1 ? [...subjects.values()][0] : null;
+}
+
+function isolatedCurrentRequestFormalSubject(task, value, catalog, sourceEvents, subject) {
+  if (!subject || !subject.entity || subject.owners.length !== 1) return null;
+  const taskRelation = verifiedNewRequestRelation(task, value.contextRelationCandidates, sourceEvents);
+  if (!taskRelation) return null;
+  const sourceMaps = sourceEventMaps(sourceEvents);
+  const ownerRefs = subject.owners[0].relation.evidenceRefs;
+  const taskRefs = taskRelation.evidenceRefs;
+  if (!taskRefs.every((taskRef) => ownerRefs.every((ownerRef) => {
+    const taskSource = resolvedEvidenceSource(taskRef, sourceMaps);
+    const ownerSource = resolvedEvidenceSource(ownerRef, sourceMaps);
+    return taskSource !== null && taskSource === ownerSource && !evidenceRefsOverlap(taskRef, ownerRef, sourceMaps);
+  }))) return null;
+  const hasIndependentLodgingPrice = value.tasks.some((candidate) => candidate && candidate.candidateIndex !== task.candidateIndex
+    && ["price", "total_price"].includes(candidate.type)
+    && verifiedNewRequestRelation(candidate, value.contextRelationCandidates, sourceEvents));
+  return hasIndependentLodgingPrice ? null : subject.entity;
 }
 
 function sourceBoundFormalPropertyId(task, contextRelationCandidates, sourceEvents, catalog) {
@@ -1125,7 +1179,8 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     if (!entity) return task;
 
     const verifiedSourceText = verifiedNewRequestEvidence(task, value.contextRelationCandidates, sourceEvents);
-    const groundedTask = groundedPropertyFactTask(task, catalog, value.stay, verifiedSourceText, currentRequestFormalSubject);
+    const isolatedFormalSubject = isolatedCurrentRequestFormalSubject(task, value, catalog, sourceEvents, currentRequestFormalSubject);
+    const groundedTask = groundedPropertyFactTask(task, catalog, value.stay, verifiedSourceText, isolatedFormalSubject);
     if (groundedTask
       && (task.type !== groundedTask.type
         || task.entity.category !== groundedTask.entity.category

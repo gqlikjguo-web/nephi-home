@@ -1209,6 +1209,61 @@ function main() {
   assert.equal(reconciledGeneralFee.stayCandidate, null);
   assert.equal(reconciledGeneralFee.entity.canonicalCandidate, "pool");
 
+  for (const [usageType, usageCategory, feeCategory] of [
+    ["amenity", "amenity", "payment"],
+    ["policy", "amenity", "payment"],
+    ["policy", "policy", "other"]
+  ]) {
+    const productionFeeFollowupMessage = "Can guests use the barbecue? What does it cost?";
+    const productionFeeFollowupPlan = plan([
+      task({
+        taskId: `production-fee-usage-${usageType}-${usageCategory}-${feeCategory}`,
+        type: usageType,
+        category: usageCategory,
+        rawText: "barbecue",
+        sourceText: "Can guests use the barbecue?",
+        canonicalCandidate: "bbq"
+      }),
+      {
+        ...task({
+          taskId: `production-fee-price-${usageType}-${usageCategory}-${feeCategory}`,
+          type: "price",
+          category: feeCategory,
+          rawText: "cost",
+          sourceText: "What does it cost?",
+          canonicalCandidate: "price",
+          detailIntent: "general",
+          requestedOutputs: ["price"],
+          dependsOnStayContext: true,
+          stayCandidate: {
+            dateExpression: { rawText: "", kind: "none", anchor: "none" },
+            checkInCandidate: null,
+            checkOutCandidate: null,
+            nightsCandidate: null,
+            guestCountCandidate: null
+          }
+        }),
+        candidateIndex: 1
+      }
+    ]);
+    productionFeeFollowupPlan.contextRelationCandidates[0].evidenceRefs = [{
+      eventId: "production-fee-followup", messageRef: "", startOffset: 0, endOffset: 28, quote: "Can guests use the barbecue?"
+    }];
+    productionFeeFollowupPlan.contextRelationCandidates[1].evidenceRefs = [{
+      eventId: "production-fee-followup", messageRef: "", startOffset: 29, endOffset: productionFeeFollowupMessage.length, quote: "What does it cost?"
+    }];
+    const productionFeeFollowup = applyPlannerSemanticContract(productionFeeFollowupPlan, {
+      catalog: sourceBoundInventoryCatalog,
+      sourceEvents: [{ eventId: "production-fee-followup", messageRef: "", messageText: productionFeeFollowupMessage }]
+    });
+    const productionFeeTask = productionFeeFollowup.tasks.find((item) => item.candidateIndex === 1);
+    assert.equal(productionFeeTask.type, "policy", "an isolated identity-free fee relation must use its unique formal request subject capability");
+    assert.equal(productionFeeTask.detailIntent, "fee");
+    assert.deepEqual(productionFeeTask.requestedOutputs, ["fee"]);
+    assert.equal(productionFeeTask.dependsOnStayContext, false);
+    assert.equal(productionFeeTask.entity.canonicalCandidate, "bbq");
+  }
+
   const lodgingScopedGeneralFee = sourceBoundSemantic(task({
     taskId: "lodging-scoped-general-fee",
     type: "price",
