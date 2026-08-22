@@ -398,6 +398,7 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     const property = requireCustomerId(customerId);
     return {
       propertyName: property.name,
+      aiName: String(property.businessProfile && property.businessProfile.aiName || ""),
       address: String(property.businessProfile && property.businessProfile.address || ""),
       googleMapsUrl: normalizeGoogleMapsUrl(property.businessProfile && property.businessProfile.googleMapsUrl),
       lineUrl: property.lineUrl || "",
@@ -411,6 +412,7 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
   function updatePropertyProfile(input) {
     const property = requireCustomerId(input.customerId);
     const propertyName = cleanText(input.propertyName, 80);
+    const aiName = cleanText(input.aiName, 40);
     const address = cleanText(input.address, 300);
     const googleMapsUrl = normalizeGoogleMapsUrl(input.googleMapsUrl);
     const contactInfo = cleanText(input.contactInfo, 300);
@@ -430,12 +432,13 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     else delete commonAnswers.latestArrivalTime;
     const updated = repository.updatePropertyProfile(property.customerId, {
       displayName: propertyName,
-      businessProfile: { ...(property.businessProfile || {}), address, googleMapsUrl, contactInfo },
+      businessProfile: { ...(property.businessProfile || {}), aiName, address, googleMapsUrl, contactInfo },
       contactLink: lineUrl,
       commonAnswers
     });
     return {
       propertyName: updated.displayName,
+      aiName: String(updated.businessProfile && updated.businessProfile.aiName || ""),
       address: String(updated.businessProfile && updated.businessProfile.address || ""),
       googleMapsUrl: normalizeGoogleMapsUrl(updated.businessProfile && updated.businessProfile.googleMapsUrl),
       lineUrl: updated.contactLink || "",

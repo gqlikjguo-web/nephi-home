@@ -145,7 +145,7 @@ function assertRecordAlignment(result) {
   assert.equal(delivered.finalResponse.shouldReply, true);
   assert.notEqual(delivered.finalResponse.replyText.trim(), "");
   assert.equal(delivered.calls.length, 1);
-  assert.equal(delivered.calls[0].messages[0].text, delivered.finalResponse.replyText);
+  assert.equal(delivered.calls[0].messages[0].text, `【AI】${delivered.finalResponse.replyText}`);
   assert.equal(findExactRecord(delivered, (eventId) => eventId === delivered.eventId).processingStatus, "reply_succeeded");
   assert.equal(findExactRecord(delivered, (eventId) => eventId === delivered.eventId).replyDelivered, true);
   const blank = await run("reply", "success", { finalResponseOverride: { shouldReply: true, replyText: " \t " } });

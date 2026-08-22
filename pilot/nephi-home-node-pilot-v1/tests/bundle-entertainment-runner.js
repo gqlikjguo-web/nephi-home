@@ -103,6 +103,12 @@ const base = {
   assert.match(onboardingJs, /openOnboardingAmenityEditor/);
   assert.doesNotMatch(adminHtml, /<details class="card other-settings"/);
   assert.match(onboardingHtml, /<textarea name="latestArrivalTime"[^>]*maxlength="500"/, "onboarding must use the same free-text latest-arrival field");
+  assert.match(onboardingHtml, /AI 名稱（選填）/);
+  assert.match(onboardingHtml, /name="aiName"/);
+  assert.match(adminHtml, /AI 名稱（選填）/);
+  assert.match(adminHtml, /id="profileAiName"/);
+  assert.match(onboardingJs, /aiName:v\.aiName/);
+  assert.match(adminJs, /aiName:\s*\$\("profileAiName"\)\.value/);
   assert.match(adminJs, /profileAddress/);
   assert.match(guestJs, /amenity\.note/);
 

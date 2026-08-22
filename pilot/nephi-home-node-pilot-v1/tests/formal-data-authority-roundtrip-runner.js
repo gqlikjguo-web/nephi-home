@@ -46,6 +46,7 @@ function fact(canonicalId, status, publicText, appliesTo) {
 function onboardingInput() {
   return cleanInput({
     propertyName: "Formal Roundtrip Inn",
+    aiName: "小比",
     contactName: "Owner",
     phone: "0900000000",
     email: "owner@example.test",
@@ -160,6 +161,7 @@ function resolvedAmenity(property, canonicalId) {
 
     const approved = providers.customerSettings.getProperty(PROPERTY_ID);
     assert.equal(approved.businessProfile.address, "Original formal address");
+    assert.equal(approved.businessProfile.aiName, "小比");
     assert.equal(approved.businessProfile.googleMapsUrl, "https://maps.app.goo.gl/FormalRoundtrip");
     assert.equal(approved.commonAnswers.checkInTime, "15:00");
     assert.equal(approved.commonAnswers.latestArrivalTime, "晚上10點前");
@@ -183,6 +185,7 @@ function resolvedAmenity(property, canonicalId) {
     const profile = await request(running.url, `/api/property-profile?propertyId=${PROPERTY_ID}`);
     assert.equal(profile.response.status, 200);
     assert.equal(profile.body.data.address, "Original formal address");
+    assert.equal(profile.body.data.aiName, "小比");
     assert.equal(profile.body.data.latestArrivalTime, "晚上10點前");
 
     const savedProfile = await request(running.url, "/api/property-profile", {
@@ -190,6 +193,7 @@ function resolvedAmenity(property, canonicalId) {
       body: JSON.stringify({
         propertyId: PROPERTY_ID,
         propertyName: "Updated Formal Inn",
+        aiName: "新小比",
         address: "Newest formal address",
         googleMapsUrl: "https://maps.app.goo.gl/NewestFormal",
         lineUrl: "",
@@ -201,6 +205,8 @@ function resolvedAmenity(property, canonicalId) {
     });
     assert.equal(savedProfile.response.status, 200);
     assert.equal(savedProfile.body.data.address, "Newest formal address");
+    assert.equal(savedProfile.body.data.aiName, "新小比");
+    assert.equal(providers.customerSettings.getProperty(PROPERTY_ID).businessProfile.aiName, "新小比");
 
     const bundles = await request(running.url, `/api/bundles?customerId=${PROPERTY_ID}`);
     assert.equal(bundles.response.status, 200);

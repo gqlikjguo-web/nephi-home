@@ -1208,6 +1208,11 @@ function createRequestHandler(service, options = {}) {
   };
 }
 
+function aiIdentityPrefix(property) {
+  const aiName = String(property && property.businessProfile && property.businessProfile.aiName || "").trim();
+  return aiName ? `【AI${aiName}】` : "【AI】";
+}
+
 function createApp(options = {}) {
   const runtimeEnv = options.runtimeEnv && typeof options.runtimeEnv === "object" ? options.runtimeEnv : process.env;
   const config = runtimeConfig(runtimeEnv);
@@ -1463,14 +1468,15 @@ function createApp(options = {}) {
         if (persistedDecision) acceptanceTraces.delete(result.traceId);
         if (finalResponseShouldReply === false) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "final_response_should_reply_false", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
         if (!finalResponseReplyText.trim()) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_empty_reply", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); }
+        const lineReplyText = `${aiIdentityPrefix(providers.customerSettings.getProperty(id))}${finalResponseReplyText}`;
         try {
-          traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_attempt", attempted: true, delivered: false, replyText: finalResponseReplyText });
-          await (replyClient ? replyClient({ channelAccessToken: binding.channelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: binding.channelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: finalResponseReplyText }] });
-          traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_succeeded", attempted: true, delivered: true, replyText: finalResponseReplyText });
+          traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_attempt", attempted: true, delivered: false, replyText: lineReplyText });
+          await (replyClient ? replyClient({ channelAccessToken: binding.channelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: binding.channelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: lineReplyText }] });
+          traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_succeeded", attempted: true, delivered: true, replyText: lineReplyText });
           await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" });
         } catch (error) {
           const status = Number(error && (error.status || error.statusCode));
-          traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_failed", attempted: true, delivered: false, replyText: finalResponseReplyText, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
+          traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_failed", attempted: true, delivered: false, replyText: lineReplyText, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
           await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
         }
       }).catch(async () => updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
