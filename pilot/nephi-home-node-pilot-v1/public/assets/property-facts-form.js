@@ -11,12 +11,16 @@
   const equipment = registry && registry.HIGH_FREQUENCY_EQUIPMENT || [];
   const equipmentByCanonicalId = registry && registry.equipmentByCanonicalId || (() => null);
   const controlledPolicyFacts = Object.freeze([
-    Object.freeze({ canonicalId: "breakfast", publicName: "早餐" }),
-    Object.freeze({ canonicalId: "pets", publicName: "寵物規則" })
+    Object.freeze({ canonicalId: "breakfast", publicName: "早餐", displayName: "早餐說明" }),
+    Object.freeze({ canonicalId: "pets", publicName: "寵物規則", displayName: "寵物規則" })
   ]);
   const controlledPolicyByCanonicalId = new Map(controlledPolicyFacts.map((item) => [item.canonicalId, item]));
   const validStatuses = new Set(["allowed", "not_allowed", "unknown"]);
   const validScopes = new Set(["whole_property", "bundle_only"]);
+
+  function controlledPolicyDisplayName(canonicalId) {
+    return controlledPolicyByCanonicalId.get(String(canonicalId || "").trim())?.displayName || "";
+  }
 
   function equipmentFieldPolicy(status) {
     if (status === "allowed") return { showScope: true, showPublicText: true, showNotes: true, publicTextRequired: true };
@@ -127,5 +131,5 @@
     };
   }
 
-  return { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts, controlledPolicyFacts, equipmentByCanonicalId, equipmentFieldPolicy };
+  return { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts, controlledPolicyDisplayName, controlledPolicyFacts, equipmentByCanonicalId, equipmentFieldPolicy };
 });

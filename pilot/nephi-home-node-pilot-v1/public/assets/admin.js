@@ -39,7 +39,7 @@ function propertyFactInput(field, value = "", options = {}) { const input = docu
 function propertyFactSelect(field, value, options) { const select = document.createElement("select"); select.dataset.propertyFactField = field; for (const [key, label] of options) { const option = document.createElement("option"); option.value = key; option.textContent = label; select.append(option); } select.value = value; return select; }
 function propertyFactRow(fact = {}, { controlled = false } = {}) {
   const row = element("fieldset", "property-fact-row"), legend = document.createElement("legend"), grid = element("div", "property-fact-grid"), remove = element("button", "danger", "刪除此筆");
-  legend.textContent = fact.canonicalId || "新增正式資料"; remove.type = "button"; remove.onclick = () => row.remove();
+  legend.textContent = controlled ? PropertyFactsFormData.controlledPolicyDisplayName(fact.canonicalId) : fact.canonicalId || "新增正式資料"; remove.type = "button"; remove.onclick = () => row.remove();
   const canonicalId = propertyFactInput("canonicalId", fact.canonicalId || "", { placeholder: "例如 parking、bbq、pool" });
   canonicalId.required = true; canonicalId.pattern = "[a-z][a-z0-9_]{0,79}"; canonicalId.oninput = () => { legend.textContent = canonicalId.value || "新增正式資料"; };
   const category = propertyFactSelect("category", fact.category || "amenity", [["amenity", "設施"], ["policy", "規則"], ["property_fact", "旅宿資料"], ["location", "位置／導航"], ["room_fact", "房型資料"], ["room_amenity", "房內設備"], ["contact", "聯絡資料"]]);

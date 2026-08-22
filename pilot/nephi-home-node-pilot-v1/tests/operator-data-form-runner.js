@@ -50,7 +50,9 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
     assert.equal(assetResponse.status, 200);
     assert.match(assetResponse.headers.get("content-type") || "", /javascript/);
 
-    const { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts } = require("../public/assets/property-facts-form");
+    const { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts, controlledPolicyDisplayName } = require("../public/assets/property-facts-form");
+    assert.equal(controlledPolicyDisplayName("breakfast"), "早餐說明");
+    assert.equal(controlledPolicyDisplayName("pets"), "寵物規則");
     const controlledDrafts = buildControlledPolicyFactDrafts([{
       canonicalId: "breakfast",
       publicName: "早餐",
