@@ -14,6 +14,27 @@ const PRICE_KEYS = Object.freeze({
   [PRICE_TYPES.SUNDAY]: "sundayPrice"
 });
 
+const OFFICIAL_CONTINUOUS_HOLIDAY_RANGES = Object.freeze([
+  ["2026-02-14", "2026-02-22"],
+  ["2026-02-27", "2026-03-01"],
+  ["2026-04-03", "2026-04-06"],
+  ["2026-05-01", "2026-05-03"],
+  ["2026-06-19", "2026-06-21"],
+  ["2026-09-25", "2026-09-28"],
+  ["2026-10-09", "2026-10-11"],
+  ["2026-10-24", "2026-10-26"],
+  ["2026-12-25", "2026-12-27"],
+  ["2027-01-01", "2027-01-03"],
+  ["2027-02-04", "2027-02-10"],
+  ["2027-02-27", "2027-03-01"],
+  ["2027-04-03", "2027-04-06"],
+  ["2027-04-30", "2027-05-02"],
+  ["2027-10-09", "2027-10-11"],
+  ["2027-10-23", "2027-10-25"],
+  ["2027-12-24", "2027-12-26"],
+  ["2027-12-31", "2028-01-02"]
+]);
+
 function isDateKey(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return false;
   const parsed = new Date(`${value}T00:00:00.000Z`);
@@ -31,6 +52,10 @@ function weekdayPriceType(date) {
   if (weekday === 5) return PRICE_TYPES.FRIDAY;
   if (weekday === 6) return PRICE_TYPES.SATURDAY_HOLIDAY;
   return PRICE_TYPES.MONDAY_THURSDAY;
+}
+
+function isOfficialContinuousHoliday(date) {
+  return isDateKey(date) && OFFICIAL_CONTINUOUS_HOLIDAY_RANGES.some(([start, end]) => date >= start && date <= end);
 }
 
 function inventoryType(inventory) {
@@ -74,6 +99,11 @@ function resolveDatePrice({ inventory, date, priceOverrides = [], datePriceClass
   if (classification) {
     const priceType = isPriceType(classification.priceType) ? classification.priceType : null;
     return { price: priceForType(inventory, priceType), source: "property_date_classification", priceType };
+  }
+
+  if (isOfficialContinuousHoliday(date)) {
+    const priceType = PRICE_TYPES.SATURDAY_HOLIDAY;
+    return { price: priceForType(inventory, priceType), source: "official_continuous_holiday", priceType };
   }
 
   const priceType = weekdayPriceType(date);

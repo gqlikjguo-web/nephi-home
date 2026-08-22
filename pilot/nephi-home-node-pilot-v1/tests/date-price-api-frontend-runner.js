@@ -16,8 +16,8 @@ async function write(base, pathname, method, body) {
   return request(`${base}${pathname}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 }
 
-async function publicAvailability(base) {
-  return (await request(`${base}/api/public/availability?slug=propertya&checkIn=2026-09-21&checkOut=2026-09-22&guests=2&queryMode=any&roomType=all`)).body.data;
+async function publicAvailability(base, checkIn = "2026-09-21", checkOut = "2026-09-22") {
+  return (await request(`${base}/api/public/availability?slug=propertya&checkIn=${checkIn}&checkOut=${checkOut}&guests=2&queryMode=any&roomType=all`)).body.data;
 }
 
 async function run() {
@@ -55,6 +55,14 @@ async function run() {
   const app = createApp({ providers: createJsonProviders({ dataFile, seedFile }), adminAuthRequired: false });
   const running = await app.start(0, "127.0.0.1");
   try {
+    const officialHolidayData = await publicAvailability(running.url, "2026-09-28", "2026-09-29");
+    assert.equal(officialHolidayData.rooms.find((item) => item.id === "room-a").price, 1600, "public room pricing must use the official continuous-holiday authority");
+    assert.equal(officialHolidayData.bundles.find((item) => item.id === "bundle-a").price, 8000, "public bundle pricing must use the same official continuous-holiday authority");
+    const officialHolidayAdminPrices = await request(`${running.url}/api/room-pricing?customerId=property_a&date=2026-09-28`);
+    assert.deepEqual(officialHolidayAdminPrices.body.data.dailyPrices.map((item) => [item.inventoryType, item.inventoryId, item.price, item.source]), [
+      ["room", "room-a", 1600, "official_continuous_holiday"],
+      ["bundle", "bundle-a", 8000, "official_continuous_holiday"]
+    ], "admin daily pricing must consume the same official holiday result");
     const classification = await write(running.url, "/api/date-price-classifications", "POST", { propertyId: "property_a", date: "2026-09-21", priceType: "saturday_holiday" });
     assert.equal(classification.response.status, 200);
     let publicData = await publicAvailability(running.url);
