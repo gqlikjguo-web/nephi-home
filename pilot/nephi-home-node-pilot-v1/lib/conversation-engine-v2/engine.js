@@ -595,7 +595,7 @@ class ConversationEngineV2 {
     const requiresSemanticLedgerSynthesis = !Array.isArray(plannerOutput.semanticCandidates);
     if (requiresSemanticLedgerSynthesis) {
       plannerOutput = applyPlannerSemanticContract(plannerOutput, { catalog, sourceEvents });
-      plannerOutput = compileSemanticCandidates(plannerOutput, { catalog, sourceEvents }, { synthesizeMissingCandidates: true });
+      plannerOutput = compileSemanticCandidates(plannerOutput, { catalog, sourceEvents, contextSnapshot }, { synthesizeMissingCandidates: true });
     }
     const structuralValidation = validatePlannerOutput(plannerOutput);
     if (!structuralValidation.ok) {
