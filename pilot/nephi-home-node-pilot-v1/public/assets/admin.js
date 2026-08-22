@@ -37,12 +37,15 @@ function element(tag, className = "", text = "") { const node = document.createE
 function propertyFactField(labelText, control) { const label = document.createElement("label"); label.append(document.createTextNode(labelText), control); return label; }
 function propertyFactInput(field, value = "", options = {}) { const input = document.createElement(options.multiline ? "textarea" : "input"); input.dataset.propertyFactField = field; input.value = value; if (options.multiline) input.rows = options.rows || 2; else input.type = options.type || "text"; if (options.placeholder) input.placeholder = options.placeholder; return input; }
 function propertyFactSelect(field, value, options) { const select = document.createElement("select"); select.dataset.propertyFactField = field; for (const [key, label] of options) { const option = document.createElement("option"); option.value = key; option.textContent = label; select.append(option); } select.value = value; return select; }
-function propertyFactRow(fact = {}) {
+function propertyFactRow(fact = {}, { controlled = false } = {}) {
   const row = element("fieldset", "property-fact-row"), legend = document.createElement("legend"), grid = element("div", "property-fact-grid"), remove = element("button", "danger", "刪除此筆");
   legend.textContent = fact.canonicalId || "新增正式資料"; remove.type = "button"; remove.onclick = () => row.remove();
   const canonicalId = propertyFactInput("canonicalId", fact.canonicalId || "", { placeholder: "例如 parking、bbq、pool" });
   canonicalId.required = true; canonicalId.pattern = "[a-z][a-z0-9_]{0,79}"; canonicalId.oninput = () => { legend.textContent = canonicalId.value || "新增正式資料"; };
   const category = propertyFactSelect("category", fact.category || "amenity", [["amenity", "設施"], ["policy", "規則"], ["property_fact", "旅宿資料"], ["location", "位置／導航"], ["room_fact", "房型資料"], ["room_amenity", "房內設備"], ["contact", "聯絡資料"]]);
+  canonicalId.readOnly = controlled;
+  category.disabled = controlled;
+  remove.hidden = controlled;
   const status = propertyFactSelect("status", fact.status || "unknown", [["allowed", "提供／允許"], ["conditional", "有條件提供"], ["not_allowed", "不提供／不允許"], ["unknown", "尚未確認"]]);
   const appliesTo = propertyFactSelect("appliesTo", fact.appliesTo || "whole_property", [["whole_property", "整間旅宿"], ["room_only", "僅房間"], ["both", "整間與房間"]]);
   const advance = propertyFactSelect("advanceNoticeRequired", fact.advanceNoticeRequired === true ? "true" : fact.advanceNoticeRequired === false ? "false" : "", [["", "尚未確認"], ["true", "需要"], ["false", "不需要"]]);
@@ -104,7 +107,17 @@ function renderEquipmentFacts(facts) {
   });
   $("equipmentFactsList").replaceChildren(...groups);
 }
-function renderPropertyFacts(facts = []) { propertyFacts = facts; renderEquipmentFacts(facts); $("propertyFactsList").replaceChildren(...facts.filter(fact => !PropertyFactsFormData.equipmentByCanonicalId(fact.canonicalId)).map(propertyFactRow)); }
+function renderPropertyFacts(facts = []) {
+  propertyFacts = facts;
+  renderEquipmentFacts(facts);
+  if (!$("controlledPolicyFactsList")) {
+    const section = $("controlledPolicyFactsTemplate").content.cloneNode(true);
+    $("propertyFactsList").closest("section").before(section);
+  }
+  const controlledIds = new Set(PropertyFactsFormData.controlledPolicyFacts.map((item) => item.canonicalId));
+  $("controlledPolicyFactsList").replaceChildren(...PropertyFactsFormData.buildControlledPolicyFactDrafts(facts).map((fact) => propertyFactRow(fact, { controlled: true })));
+  $("propertyFactsList").replaceChildren(...facts.filter((fact) => !PropertyFactsFormData.equipmentByCanonicalId(fact.canonicalId) && !controlledIds.has(fact.canonicalId)).map(propertyFactRow));
+}
 function collectPropertyFactDrafts() { return [...$("propertyFactsForm").querySelectorAll(".property-fact-row")].map(row => Object.fromEntries([...row.querySelectorAll("[data-property-fact-field]")].map(control => [control.dataset.propertyFactField, control.value]))); }
 async function loadPropertyFacts() { const data = await api(`/api/property-facts?propertyId=${encodeURIComponent(session.propertyId)}`); renderPropertyFacts(data.facts || []); }
 function customReplyStateLabel(state){return({active:"啟用中",pending:"尚未生效",expired:"已失效",disabled:"已停用"}[state]||"已停用")}

@@ -10,6 +10,11 @@
 })(typeof globalThis === "object" ? globalThis : this, function createApi(registry) {
   const equipment = registry && registry.HIGH_FREQUENCY_EQUIPMENT || [];
   const equipmentByCanonicalId = registry && registry.equipmentByCanonicalId || (() => null);
+  const controlledPolicyFacts = Object.freeze([
+    Object.freeze({ canonicalId: "breakfast", publicName: "早餐" }),
+    Object.freeze({ canonicalId: "pets", publicName: "寵物規則" })
+  ]);
+  const controlledPolicyByCanonicalId = new Map(controlledPolicyFacts.map((item) => [item.canonicalId, item]));
   const validStatuses = new Set(["allowed", "not_allowed", "unknown"]);
   const validScopes = new Set(["whole_property", "bundle_only"]);
 
@@ -73,12 +78,37 @@
     });
   }
 
+  function buildControlledPolicyFactDrafts(facts, source = "operator_form") {
+    const byId = new Map((facts || []).map((fact) => [String(fact && fact.canonicalId || ""), fact || {}]));
+    return controlledPolicyFacts.map((definition) => {
+      const fact = byId.get(definition.canonicalId) || {};
+      return {
+        canonicalId: definition.canonicalId,
+        publicName: definition.publicName,
+        category: "policy",
+        status: String(fact.status || "unknown"),
+        appliesTo: String(fact.appliesTo || "whole_property"),
+        publicText: String(fact.publicText || ""),
+        fees: arrayField(fact.fees),
+        advanceNoticeRequired: fact.advanceNoticeRequired === true ? "true" : fact.advanceNoticeRequired === false ? "false" : "",
+        reservationRequired: fact.reservationRequired === true ? "true" : fact.reservationRequired === false ? "false" : "",
+        conditions: listField(fact.conditions),
+        restrictions: listField(fact.restrictions),
+        operatingHours: arrayField(fact.operatingHours),
+        availablePeriods: arrayField(fact.availablePeriods),
+        notes: String(fact.notes || ""),
+        source: String(fact.source || source),
+        updatedAt: String(fact.updatedAt || "")
+      };
+    });
+  }
+
   function buildPropertyFactsPayload(propertyId, drafts, now = () => new Date()) {
     return {
       propertyId: String(propertyId || "").trim(),
       facts: (drafts || []).map((draft) => ({
         canonicalId: String(draft.canonicalId || "").trim(),
-        publicName: equipmentByCanonicalId(draft.canonicalId)?.publicName || "",
+        publicName: equipmentByCanonicalId(draft.canonicalId)?.publicName || controlledPolicyByCanonicalId.get(String(draft.canonicalId || "").trim())?.publicName || "",
         category: String(draft.category || "").trim(),
         status: String(draft.status || "").trim(),
         appliesTo: String(draft.appliesTo || "").trim(),
@@ -97,5 +127,5 @@
     };
   }
 
-  return { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, equipmentByCanonicalId, equipmentFieldPolicy };
+  return { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts, controlledPolicyFacts, equipmentByCanonicalId, equipmentFieldPolicy };
 });

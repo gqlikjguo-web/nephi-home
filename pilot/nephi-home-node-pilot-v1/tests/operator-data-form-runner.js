@@ -37,6 +37,7 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
       assert.equal(html.includes(`id="${id}"`), true, `admin form must expose ${id}`);
     }
     assert.equal(html.includes('id="equipmentFactsList"'), true, "admin form must expose controlled high-frequency equipment");
+    assert.equal(html.includes('id="controlledPolicyFactsList"'), true, "admin form must expose controlled breakfast and pet policy facts");
     assert.ok(html.indexOf("/assets/high-frequency-equipment.js") < html.indexOf("/assets/property-facts-form.js"));
     assert.equal(html.includes("/assets/property-facts-form.js"), true);
     const onboardingResponse = await fetch(`${running.url}/onboarding`);
@@ -49,7 +50,61 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
     assert.equal(assetResponse.status, 200);
     assert.match(assetResponse.headers.get("content-type") || "", /javascript/);
 
-    const { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts } = require("../public/assets/property-facts-form");
+    const { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts } = require("../public/assets/property-facts-form");
+    const controlledDrafts = buildControlledPolicyFactDrafts([{
+      canonicalId: "breakfast",
+      publicName: "早餐",
+      category: "policy",
+      status: "conditional",
+      appliesTo: "whole_property",
+      publicText: "早餐需於入住三日前預約。",
+      fees: [{ label: "早餐費", amount: 200, currency: "TWD", unit: "person" }],
+      advanceNoticeRequired: true,
+      reservationRequired: true,
+      conditions: ["入住三日前預約"],
+      restrictions: [],
+      operatingHours: [{ label: "每日", start: "07:00", end: "09:00" }],
+      availablePeriods: [],
+      notes: "",
+      source: "operator_form",
+      updatedAt: "2026-08-13T00:00:00.000Z"
+    }]);
+    assert.deepEqual(controlledDrafts.map((item) => [item.canonicalId, item.publicName, item.category]), [
+      ["breakfast", "早餐", "policy"],
+      ["pets", "寵物規則", "policy"]
+    ]);
+    assert.equal(controlledDrafts[0].publicText, "早餐需於入住三日前預約。", "existing breakfast data must be read into the controlled entry");
+    assert.equal(controlledDrafts[0].fees, '[{"label":"早餐費","amount":200,"currency":"TWD","unit":"person"}]');
+    assert.equal(controlledDrafts[1].status, "unknown", "a missing pet fact must produce exactly one empty controlled draft");
+    const controlledPayload = buildPropertyFactsPayload("property_alpha", controlledDrafts, () => new Date("2026-08-13T01:00:00.000Z"));
+    assert.deepEqual(controlledPayload.facts.map((item) => [item.canonicalId, item.publicName, item.category]), [
+      ["breakfast", "早餐", "policy"],
+      ["pets", "寵物規則", "policy"]
+    ]);
+    const controlledSave = await fetch(`${running.url}/api/property-facts`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(controlledPayload)
+    });
+    assert.equal(controlledSave.status, 200);
+    const controlledRead = await fetch(`${running.url}/api/property-facts?propertyId=property_alpha`);
+    assert.equal(controlledRead.status, 200);
+    const controlledFacts = (await controlledRead.json()).data.facts;
+    assert.equal(controlledFacts.filter((item) => item.canonicalId === "breakfast").length, 1, "breakfast must round-trip as one formal row");
+    assert.equal(controlledFacts.filter((item) => item.canonicalId === "pets").length, 1, "pets must round-trip as one formal row");
+    const editedDrafts = buildControlledPolicyFactDrafts(controlledFacts);
+    editedDrafts.find((item) => item.canonicalId === "pets").status = "allowed";
+    editedDrafts.find((item) => item.canonicalId === "pets").publicText = "可攜帶寵物，入住前需告知。";
+    const editedPayload = buildPropertyFactsPayload("property_alpha", editedDrafts, () => new Date("2026-08-13T02:00:00.000Z"));
+    const editedSave = await fetch(`${running.url}/api/property-facts`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(editedPayload)
+    });
+    assert.equal(editedSave.status, 200);
+    const editedFacts = (await editedSave.json()).data.facts;
+    assert.equal(editedFacts.find((item) => item.canonicalId === "pets").publicText, "可攜帶寵物，入住前需告知。");
+    assert.equal(editedFacts.filter((item) => item.canonicalId === "pets").length, 1, "editing pets must not create a duplicate row");
     const payload = buildPropertyFactsPayload("property_alpha", [{
       canonicalId: "parking",
       category: "amenity",
