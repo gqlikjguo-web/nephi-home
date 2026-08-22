@@ -120,10 +120,6 @@ function renderEquipmentFacts(facts) {
 function renderPropertyFacts(facts = []) {
   propertyFacts = facts;
   renderEquipmentFacts(facts);
-  if (!$("controlledPolicyFactsList")) {
-    const section = $("controlledPolicyFactsTemplate").content.cloneNode(true);
-    $("propertyFactsList").closest("section").before(section);
-  }
   const controlledIds = new Set(PropertyFactsFormData.controlledPolicyFacts.map((item) => item.canonicalId));
   $("controlledPolicyFactsList").replaceChildren(...PropertyFactsFormData.buildControlledPolicyFactDrafts(facts).map(controlledPolicyFactRow));
   $("propertyFactsList").replaceChildren(...facts.filter((fact) => !PropertyFactsFormData.equipmentByCanonicalId(fact.canonicalId) && !controlledIds.has(fact.canonicalId)).map(propertyFactRow));

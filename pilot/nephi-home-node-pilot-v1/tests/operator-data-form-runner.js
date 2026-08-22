@@ -37,7 +37,9 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
       assert.equal(html.includes(`id="${id}"`), true, `admin form must expose ${id}`);
     }
     assert.equal(html.includes('id="equipmentFactsList"'), true, "admin form must expose controlled high-frequency equipment");
-    assert.equal(html.includes('id="controlledPolicyFactsList"'), true, "admin form must expose controlled breakfast and pet policy facts");
+    assert.equal(html.includes('<div id="controlledPolicyFactsList" class="equipment-grid"></div>'), true, "breakfast and pet cards must use the existing equipment grid");
+    assert.equal(html.includes('id="controlledPolicyFactsTemplate"'), false, "breakfast and pet cards must not use a separate full-width template");
+    assert.equal(html.includes('class="controlled-policy-facts-section"'), false, "breakfast and pet cards must not use a separate full-width section");
     assert.ok(html.indexOf("/assets/high-frequency-equipment.js") < html.indexOf("/assets/property-facts-form.js"));
     assert.equal(html.includes("/assets/property-facts-form.js"), true);
     const onboardingResponse = await fetch(`${running.url}/onboarding`);
