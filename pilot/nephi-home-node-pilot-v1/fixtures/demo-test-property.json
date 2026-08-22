@@ -1,0 +1,130 @@
+{
+  "propertyId": "demo_fixture_property",
+  "propertyName": "中性示範旅宿",
+  "checkInTime": "15:00",
+  "checkOutTime": "11:00",
+  "rooms": [
+    {
+      "id": "demo_room_a",
+      "name": "庭園雙人房",
+      "capacity": 2
+    },
+    {
+      "id": "demo_room_b",
+      "name": "家庭四人房",
+      "capacity": 4
+    },
+    {
+      "id": "demo_room_c",
+      "name": "景觀雙人房",
+      "capacity": 2
+    },
+    {
+      "id": "demo_room_d",
+      "name": "景觀四人房",
+      "capacity": 4
+    }
+  ],
+  "pricing": {
+    "weekday": "示範平日價格依正式房型與日期資料計算。",
+    "holiday": "示範假日價格依正式房型與日期資料計算。"
+  },
+  "parking": "示範旅宿提供預約制停車，實際位置以業者正式通知為準。",
+  "bbq": "示範烤肉區僅供全館方案使用，須事先預約。",
+  "selfCheckIn": true,
+  "paymentMethod": "付款、訂金、匯款、轉帳、刷卡、發票、收據或帳號相關問題，一律由真人客服確認。",
+  "cancellationPolicy": "退款、退費、退訂、取消、改期、延期、天災或臨時狀況相關問題，一律由真人客服確認。",
+  "humanHandoffSituations": [
+    "付款、訂金或匯款確認",
+    "退款、取消、改期或延期",
+    "平台訂單或訂單狀態",
+    "大門、房門或密碼等入住私密資訊",
+    "提早入住或延後退房的實際請求",
+    "寵物特殊狀況",
+    "客訴、爭議或設備異常",
+    "特殊需求或無法可靠判斷的問題"
+  ],
+  "faqs": [
+    {
+      "question": "幾點可以入住與退房？",
+      "answer": "示範入住時間為 15:00 後，退房時間為 11:00 前。",
+      "knowledgeKey": "self_checkin"
+    },
+    {
+      "question": "有停車位嗎？",
+      "answer": "示範旅宿提供預約制停車，實際位置以業者正式通知為準。"
+    },
+    {
+      "question": "可以烤肉嗎？",
+      "answer": "示範烤肉區僅供全館方案使用，須事先預約。"
+    },
+    {
+      "question": "可以帶寵物嗎？",
+      "answer": "示範旅宿的寵物規則須由業者依正式資料確認。",
+      "knowledgeKey": "pet_rule"
+    },
+    {
+      "question": "有提供早餐嗎？",
+      "answer": "示範旅宿不提供早餐。",
+      "knowledgeKey": "breakfast"
+    },
+    {
+      "question": "有飲水機嗎？",
+      "answer": "公共休息區設有示範飲水設備。",
+      "knowledgeKey": "drinking_water"
+    },
+    {
+      "question": "可以使用洗衣機與烘衣機嗎？",
+      "answer": "示範洗衣設備開放所有住客使用。",
+      "knowledgeKey": "laundry"
+    },
+    {
+      "question": "有電梯嗎？",
+      "answer": "示範旅宿設有電梯。",
+      "knowledgeKey": "elevator"
+    },
+    {
+      "question": "有嬰兒用品嗎？",
+      "answer": "示範旅宿提供嬰兒澡盆，須事先預約。",
+      "knowledgeKey": "baby_supplies"
+    },
+    {
+      "question": "哪些房間有浴缸？",
+      "answer": "景觀雙人房與景觀四人房有浴缸；庭園雙人房與家庭四人房附衛浴但沒有浴缸。"
+    },
+    {
+      "question": "有戲水池嗎？",
+      "answer": "示範戲水區僅供全館方案使用，開放狀態以正式資料為準。"
+    },
+    {
+      "knowledgeKey": "singing",
+      "question": "可以唱歌嗎？",
+      "answer": "示範歡唱設備僅供包棟使用，使用時間為 09:00-21:00。"
+    },
+    {
+      "question": "可以使用廚房嗎？",
+      "answer": "示範簡易廚房僅供全館方案使用。"
+    },
+    {
+      "question": "包棟有哪些設備？",
+      "answer": "示範全館方案提供歡唱設備與桌遊。",
+      "knowledgeKey": "equipment"
+    },
+    {
+      "question": "總共有幾間房？",
+      "answer": "中性示範旅宿共有四間示範房型。"
+    },
+    {
+      "question": "附近有便利商店嗎？",
+      "answer": "周邊資訊請以示範旅宿正式地圖資料為準。"
+    },
+    {
+      "question": "可以寄放行李嗎？",
+      "answer": "示範行李寄放服務須事先與業者確認。"
+    },
+    {
+      "question": "可以帶訪客進來嗎？",
+      "answer": "民宿不開放訪客來訪，入住人數請依訂房確認為準。"
+    }
+  ]
+}

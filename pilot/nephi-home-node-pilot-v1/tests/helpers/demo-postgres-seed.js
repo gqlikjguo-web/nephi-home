@@ -5,8 +5,8 @@ const { seedPostgres, loadSeedManifest } = require("../../lib/providers/postgres
 
 const seedInput = loadSeedManifest(path.resolve(__dirname, "../../fixtures/postgres-seed.json"));
 
-function seedNephiPostgres(connection) {
+function seedDemoPostgres(connection) {
   return seedPostgres(connection, seedInput);
 }
 
-module.exports = { seedNephiPostgres };
+module.exports = { seedDemoPostgres };

@@ -9,7 +9,7 @@ const { resolveEntity } = require("../lib/conversation-engine-v2/entity-resolver
 const { ConversationEngineV2 } = require("../lib/conversation-engine-v2/engine");
 const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
-const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, "../fixtures/nephi-home-property.json"), "utf8"));
+const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, "../fixtures/demo-test-property.json"), "utf8"));
 const property = validateFriendlyProperty(fixture);
 const roomsWithStructuredSinging = [...property.rooms, { id: "bundle_all", name: "包棟", inventoryType: "bundle", enabled: true, entertainmentAmenities: [{ key: "singing", provided: true, statusSource: "operator", source: "preset", note: "" }] }];
 const catalog = buildPropertyCatalog({
@@ -28,7 +28,7 @@ assert.equal(catalog.faqs.some((fact) => fact.canonicalId === "singing"), false)
 for (const utterance of ["有唱歌嗎？", "可以唱歌嗎？", "有卡拉 OK 嗎？", "有 KTV 嗎？", "可以唱到幾點？", "單訂房間可以唱歌嗎？", "包棟可以唱歌嗎？"]) {
   const resolved = resolveEntity(catalog, { category: "amenity", rawText: utterance, canonicalCandidate: "singing" });
   assert.equal(resolved.status, "resolved", `singing canonical fact must resolve: ${utterance}`);
-  assert.match(resolved.entity.answer, /08:00-22:00/);
+  assert.match(resolved.entity.answer, /09:00-21:00/);
 }
 
 // New imports expose the V2 canonical cancellation fact, while the catalog must

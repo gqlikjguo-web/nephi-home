@@ -21,36 +21,36 @@
       },
       "rooms": [
         {
-          "id": "room301",
-          "name": "301 雙人房",
+          "id": "demo_a_room_1",
+          "name": "山景雙人房",
           "capacity": 2,
           "type": "double",
           "description": "附獨立衛浴的雙人房。"
         },
         {
-          "id": "room302",
-          "name": "302 四人房",
+          "id": "demo_a_room_2",
+          "name": "山景家庭房",
           "capacity": 4,
           "type": "quad",
           "description": "適合家庭入住的四人房。"
         },
         {
-          "id": "room401",
-          "name": "401 景觀雙人房",
+          "id": "demo_a_room_3",
+          "name": "林間雙人房",
           "capacity": 2,
           "type": "double",
           "description": "附浴缸的景觀雙人房。"
         },
         {
-          "id": "room402",
-          "name": "402 景觀四人房",
+          "id": "demo_a_room_4",
+          "name": "林間家庭房",
           "capacity": 4,
           "type": "quad",
           "description": "附浴缸的景觀四人房。"
         },
         {
-          "id": "wholeHouse",
-          "name": "整棟包棟",
+          "id": "demo_a_bundle",
+          "name": "山嵐全館方案",
           "capacity": 12,
           "type": "wholeHouse",
           "description": "適合團體入住的整棟方案。"
@@ -73,35 +73,35 @@
       },
       "rooms": [
         {
-          "id": "room301",
+          "id": "demo_b_room_1",
           "name": "庭園雙人房",
           "capacity": 2,
           "type": "double",
           "description": "面向庭園的雙人房。"
         },
         {
-          "id": "room302",
+          "id": "demo_b_room_2",
           "name": "家庭四人房",
           "capacity": 4,
           "type": "quad",
           "description": "適合親子入住的四人房。"
         },
         {
-          "id": "room401",
+          "id": "demo_b_room_3",
           "name": "海景雙人房",
           "capacity": 2,
           "type": "double",
           "description": "高樓層海景雙人房。"
         },
         {
-          "id": "room402",
+          "id": "demo_b_room_4",
           "name": "海景四人房",
           "capacity": 4,
           "type": "quad",
           "description": "高樓層海景四人房。"
         },
         {
-          "id": "wholeHouse",
+          "id": "demo_b_bundle",
           "name": "全館包棟",
           "capacity": 14,
           "type": "wholeHouse",

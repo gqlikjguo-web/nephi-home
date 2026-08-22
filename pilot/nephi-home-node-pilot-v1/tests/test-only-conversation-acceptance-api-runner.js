@@ -28,7 +28,7 @@ function plannerOutputUnchecked({ sourceEvents, currentMessage }) {
   const base = { schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [], stay: stay(), ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "test_only_acceptance_fixture" };
   if (currentMessage === "planner timeout") { const error = new Error("test planner timeout"); Object.assign(error, { name: "AbortError", timeout: true, retryPerformed: true, retrySucceeded: false, retryable: true, providerAttemptCount: 2, firstAttemptErrorCategory: "timeout", finalErrorCategory: "timeout", providerAttempts: [{ attempt: 1, timeout: true, timeoutMs: 10, errorCategory: "timeout" }, { attempt: 2, timeout: true, timeoutMs: 10, errorCategory: "timeout" }] }); throw error; }
   if (currentMessage === "need dates") {
-    const task = planTask({ taskId: "availability", type: "availability", sourceText: currentMessage, dependsOnStayContext: true, canonicalCandidate: "room301", category: "room", stayCandidate: stay() });
+    const task = planTask({ taskId: "availability", type: "availability", sourceText: currentMessage, dependsOnStayContext: true, canonicalCandidate: "demo_a_room_1", category: "room", stayCandidate: stay() });
     return { ...base, tasks: [task], missingInformation: ["stay.checkIn"], contextRelationCandidates: [relation(source)] };
   }
   if (currentMessage === "2026-08-06") {
@@ -142,7 +142,7 @@ const rawUnderstandingDiagnosticProvider = new TestOnlyOpenAiConversationPlanner
         requestedOutputs: ["availability"],
         eligibilityEvidence: { kind: "none", sourceText: "" },
         dependsOnStayContext: true,
-        entity: { category: "room", rawText: "301", canonicalCandidate: "room301", confidence: 1 },
+        entity: { category: "room", rawText: "山景雙人房", canonicalCandidate: "demo_a_room_1", confidence: 1 },
         stayCandidate: stay(),
         confidence: 1,
         ...RAW_UNDERSTANDING_SECRETS
@@ -157,13 +157,13 @@ const rawUnderstandingDiagnosticProvider = new TestOnlyOpenAiConversationPlanner
       semanticCandidates: [{
         semanticKind: "catalog_subject",
         capability: "availability",
-        canonicalIdentityCandidate: "room301",
+        canonicalIdentityCandidate: "demo_a_room_1",
         coverageStatus: "bound",
         provenanceRelationCandidateIndexes: [0],
         evidenceRefs: [],
-        lodgingScopeCandidate: { bundleCanonicalCandidate: null, roomCanonicalCandidates: ["room301"], guestCountCandidate: 2 },
+        lodgingScopeCandidate: { bundleCanonicalCandidate: null, roomCanonicalCandidates: ["demo_a_room_1"], guestCountCandidate: 2 },
         temporalSemanticCandidate: null,
-        propertyCatalogIdentity: "room301",
+        propertyCatalogIdentity: "demo_a_room_1",
         ...RAW_UNDERSTANDING_SECRETS
       }],
       ambiguities: [],
@@ -305,17 +305,17 @@ async function integrityRequest(url, body, authorization = "") {
       type: "availability",
       sourceText: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE,
       requestedOutputs: ["availability"],
-      entity: { category: "room", rawText: "301", canonicalCandidate: "room301", confidence: 1 }
+      entity: { category: "room", rawText: "山景雙人房", canonicalCandidate: "demo_a_room_1", confidence: 1 }
     }], "snapshot must retain the model's actual raw task subject, capability, source binding, and entity identity before downstream transformation");
     assert.deepEqual(rawSnapshot.semanticCandidates.map((candidate) => ({ candidateOrdinal: candidate.candidateOrdinal, semanticKind: candidate.semanticKind, capability: candidate.capability, canonicalIdentityCandidate: candidate.canonicalIdentityCandidate, propertyCatalogIdentity: candidate.propertyCatalogIdentity, coverageStatus: candidate.coverageStatus, provenanceRelationCandidateIndexes: candidate.provenanceRelationCandidateIndexes, lodgingScopeCandidate: candidate.lodgingScopeCandidate })), [{
       candidateOrdinal: 0,
       semanticKind: "catalog_subject",
       capability: "availability",
-      canonicalIdentityCandidate: "room301",
-      propertyCatalogIdentity: "room301",
+      canonicalIdentityCandidate: "demo_a_room_1",
+      propertyCatalogIdentity: "demo_a_room_1",
       coverageStatus: "bound",
       provenanceRelationCandidateIndexes: [0],
-      lodgingScopeCandidate: { bundleCanonicalCandidate: null, roomCanonicalCandidates: ["room301"], guestCountCandidate: 2 }
+      lodgingScopeCandidate: { bundleCanonicalCandidate: null, roomCanonicalCandidates: ["demo_a_room_1"], guestCountCandidate: 2 }
     }], "snapshot must retain raw canonical identity, lodging scope, lifecycle, and relation ownership without inventing another semantic model");
     assert.deepEqual(rawSnapshot.semanticCandidates[0].evidenceRefs, [], "the raw snapshot must be captured before evidence normalization fills bound evidence from the verified relation");
     assert.equal(Object.hasOwn(rawUnderstandingPlannerTrace, "semanticLedgerBoundaries"), false, "semantic compilation is Engine-owned rather than a provider diagnostic contract");

@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { migratePostgres } = require("../lib/providers/postgres-migrate");
-const { seedNephiPostgres } = require("./helpers/nephi-postgres-seed");
+const { seedDemoPostgres } = require("./helpers/demo-postgres-seed");
 const { createProviders } = require("../lib/providers/provider-factory");
 const { cleanInput } = require("../lib/onboarding-service");
 const { normalizePropertyFacts } = require("../lib/property-facts");
@@ -88,7 +88,7 @@ async function api(url, route, options = {}) {
   const connection = { kind: "pglite", dataDir: path.join(temp, "database") };
   try {
     await migratePostgres(connection);
-    await seedNephiPostgres(connection);
+    await seedDemoPostgres(connection);
     const providers = createProviders({ databaseUrl: "pglite:test", postgresConnection: connection });
     let app = null;
     try {
@@ -131,13 +131,13 @@ async function api(url, route, options = {}) {
 
       const preserved = normalizePropertyFacts([fact("parking", "allowed", "保留既有停車事實。")])[0];
       const oldWifi = normalizePropertyFacts([fact("wifi", "allowed", "舊 Wi-Fi 事實。")])[0];
-      providers.customerSettings.updatePropertyFacts("nephi_home", [preserved, oldWifi]);
-      const existingApplication = application("nephi_home_updated", [fact("wifi", "not_allowed", "")]);
+      providers.customerSettings.updatePropertyFacts("demo_fixture_property", [preserved, oldWifi]);
+      const existingApplication = application("demo_fixture_property_updated", [fact("wifi", "not_allowed", "")]);
       providers.onboarding.createOnboarding("equipment-existing-application", "draft-hash-existing");
       providers.onboarding.saveOnboarding("equipment-existing-application", existingApplication);
       providers.onboarding.submitOnboarding("equipment-existing-application");
-      providers.onboarding.approveOnboardingExisting("equipment-existing-application", "nephi_home", [], [], "platform", "reviewer");
-      const updated = providers.customerSettings.getProperty("nephi_home");
+      providers.onboarding.approveOnboardingExisting("equipment-existing-application", "demo_fixture_property", [], [], "platform", "reviewer");
+      const updated = providers.customerSettings.getProperty("demo_fixture_property");
       assert.equal(updated.propertyFacts.find((item) => item.canonicalId === "wifi").status, "not_allowed");
       assert.equal(updated.propertyFacts.find((item) => item.canonicalId === "parking").publicText, "保留既有停車事實。");
 

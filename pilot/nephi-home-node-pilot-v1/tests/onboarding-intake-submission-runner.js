@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { migratePostgres } = require("../lib/providers/postgres-migrate");
-const { seedNephiPostgres } = require("./helpers/nephi-postgres-seed");
+const { seedDemoPostgres } = require("./helpers/demo-postgres-seed");
 const { openPostgres } = require("../lib/providers/postgres-client");
 const { createPostgresProviders } = require("../lib/providers/postgres-providers");
 const { upsertAdminUser, sessionTokenHash } = require("../lib/admin-auth");
@@ -63,16 +63,16 @@ function intakePayload(name, suffix) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "onboarding-intake-"));
   const connection = { kind: "pglite", dataDir: path.join(temp, "database") };
   await migratePostgres(connection);
-  await seedNephiPostgres(connection);
+  await seedDemoPostgres(connection);
   await upsertAdminUser(connection, {
-    propertyId: "nephi_home",
+    propertyId: "demo_fixture_property",
     username: "platform",
     password: "platform-password-123"
   });
   let db = await openPostgres(connection);
   await db.query(
     "INSERT INTO platform_admin_grants(property_id,username) VALUES($1,$2)",
-    ["nephi_home", "platform"]
+    ["demo_fixture_property", "platform"]
   );
   await db.query(
     "ALTER TABLE onboarding_room_types ADD CONSTRAINT onboarding_intake_rollback_test CHECK (room_key <> 'rollback_room')"
@@ -80,7 +80,7 @@ function intakePayload(name, suffix) {
   await db.close();
 
   const providers = createPostgresProviders(connection);
-  const nephiBefore = JSON.stringify(providers.customerSettings.getProperty("nephi_home"));
+  const demoBefore = JSON.stringify(providers.customerSettings.getProperty("demo_fixture_property"));
   const app = createApp({
     providers,
     structuredClassifier: null,
@@ -128,7 +128,7 @@ function intakePayload(name, suffix) {
       method: "POST",
       headers: jsonHeaders,
       body: JSON.stringify({
-        propertyId: "nephi_home",
+        propertyId: "demo_fixture_property",
         username: "platform",
         password: "platform-password-123"
       })
@@ -190,7 +190,7 @@ function intakePayload(name, suffix) {
       "expired-onboarding-intake",
       sessionTokenHash(expiredToken),
       new Date(Date.now() - 60000).toISOString(),
-      "nephi_home",
+      "demo_fixture_property",
       "platform"
     );
     result = await resolveInvite(expiredToken);
@@ -239,7 +239,7 @@ function intakePayload(name, suffix) {
 
     const formalProperties = providers.customerSettings.listProperties().map((property) => property.propertyId);
     check("未核准 submission 不進正式 property facts", !formalProperties.includes("friendly_property_alpha") && !formalProperties.includes("friendly_property_beta"));
-    check("尼腓既有資料完全未改變", JSON.stringify(providers.customerSettings.getProperty("nephi_home")) === nephiBefore);
+    check("示範既有資料完全未改變", JSON.stringify(providers.customerSettings.getProperty("demo_fixture_property")) === demoBefore);
 
     result = await request(`${running.url}/api/public/onboarding/invite?token=invalid-test-token`);
     check("無效 token 被拒絕", result.response.status === 401 && result.body.error.code === "INVALID_ONBOARDING_INVITE");

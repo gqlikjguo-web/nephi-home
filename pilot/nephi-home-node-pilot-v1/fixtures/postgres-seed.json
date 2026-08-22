@@ -1,51 +1,41 @@
 {
-  "propertyFile": "nephi-home-property.json",
-  "availabilityFile": "nephi-home-availability-2026-07-14-to-2026-08-31.json",
-  "availabilityStorage": "legacy",
-  "legacyColumns": {
-    "inventory": {
-      "room301": "room301",
-      "room302": "room302",
-      "room401": "room401",
-      "room402": "room402"
-    },
-    "aggregateColumn": "whole_house",
-    "aggregateInventoryId": "bundle_four_room_whole_house"
-  },
+  "propertyFile": "demo-test-property.json",
+  "availabilityFile": "demo-test-availability-2026-07-14-to-2026-08-31.json",
+  "availabilityStorage": "normalized",
   "roomMappings": [
     {
       "sourceIndex": 0,
-      "sourceAvailabilityKey": "301",
-      "roomId": "room301"
+      "sourceAvailabilityKey": "demo_room_a",
+      "roomId": "demo_room_a"
     },
     {
       "sourceIndex": 1,
-      "sourceAvailabilityKey": "302",
-      "roomId": "room302"
+      "sourceAvailabilityKey": "demo_room_b",
+      "roomId": "demo_room_b"
     },
     {
       "sourceIndex": 2,
-      "sourceAvailabilityKey": "401",
-      "roomId": "room401"
+      "sourceAvailabilityKey": "demo_room_c",
+      "roomId": "demo_room_c"
     },
     {
       "sourceIndex": 3,
-      "sourceAvailabilityKey": "402",
-      "roomId": "room402"
+      "sourceAvailabilityKey": "demo_room_d",
+      "roomId": "demo_room_d"
     }
   ],
   "bundles": [
     {
-      "id": "bundle_four_room_whole_house",
-      "name": "四房包棟",
+      "id": "demo_bundle_all_rooms",
+      "name": "示範全館方案",
       "capacity": 10,
       "basePrice": 0,
       "enabled": true,
       "memberRoomIds": [
-        "room301",
-        "room302",
-        "room401",
-        "room402"
+        "demo_room_a",
+        "demo_room_b",
+        "demo_room_c",
+        "demo_room_d"
       ]
     }
   ]

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://nephi-home.local/schemas/availability-days.schema.json",
+  "$id": "urn:junzan:schemas:availability-days",
   "title": "Pilot availability days import",
   "type": "object",
   "additionalProperties": false,

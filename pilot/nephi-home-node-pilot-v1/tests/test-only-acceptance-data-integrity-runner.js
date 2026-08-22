@@ -10,7 +10,7 @@ const { loadSeedManifest, seedPostgres } = require("../lib/providers/postgres-se
 
 const ROOT = path.resolve(__dirname, "..");
 const MANIFEST_PATH = path.join(ROOT, "fixtures", "postgres-seed.json");
-const PROPERTY_ID = "nephi_home";
+const PROPERTY_ID = "demo_fixture_property";
 
 function assertPermanentAcceptanceIntegrityGate() {
   const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
@@ -56,7 +56,7 @@ async function installStaleAcceptanceData(connection) {
       [PROPERTY_ID, JSON.stringify({ currency: "TWD", commonAnswers: { paymentRule: "先匯款一半當訂金" } })]
     );
     await client.query(
-      "UPDATE room_types SET name='Stale 301',display_name='Stale 301',room_code='OLD',capacity=9,highlights='[\"stale\"]'::jsonb,monday_thursday_price=9999,friday_price=9999,saturday_holiday_price=9999,sunday_price=9999 WHERE property_id=$1 AND room_id='room301'",
+      "UPDATE room_types SET name='Stale demo room',display_name='Stale demo room',room_code='OLD',capacity=9,highlights='[\"stale\"]'::jsonb,monday_thursday_price=9999,friday_price=9999,saturday_holiday_price=9999,sunday_price=9999 WHERE property_id=$1 AND room_id='demo_room_a'",
       [PROPERTY_ID]
     );
     await client.query(
@@ -68,11 +68,11 @@ async function installStaleAcceptanceData(connection) {
       [PROPERTY_ID]
     );
     await client.query(
-      "UPDATE bundle_offers SET name='12人包棟',capacity=12,base_price=13000,monday_thursday_price=13000,friday_price=13000,saturday_holiday_price=18000,sunday_price=13000,entertainment_amenities='[{\"key\":\"stale\",\"provided\":true}]'::jsonb WHERE property_id=$1 AND bundle_id='bundle_four_room_whole_house'",
+      "UPDATE bundle_offers SET name='Stale bundle',capacity=12,base_price=7777,monday_thursday_price=7777,friday_price=7777,saturday_holiday_price=8888,sunday_price=7777,entertainment_amenities='[{\"key\":\"stale\",\"provided\":true}]'::jsonb WHERE property_id=$1 AND bundle_id='demo_bundle_all_rooms'",
       [PROPERTY_ID]
     );
     await client.query(
-      "UPDATE bundle_offer_members SET position=99 WHERE property_id=$1 AND bundle_id='bundle_four_room_whole_house' AND room_id='room402'",
+      "UPDATE bundle_offer_members SET position=99 WHERE property_id=$1 AND bundle_id='demo_bundle_all_rooms' AND room_id='demo_room_d'",
       [PROPERTY_ID]
     );
     await client.query(
@@ -80,11 +80,11 @@ async function installStaleAcceptanceData(connection) {
       [PROPERTY_ID]
     );
     await client.query(
-      "INSERT INTO bundle_offer_members(property_id,bundle_id,room_id,position) VALUES($1,'stale_partial_bundle','room301',0)",
+      "INSERT INTO bundle_offer_members(property_id,bundle_id,room_id,position) VALUES($1,'stale_partial_bundle','demo_room_a',0)",
       [PROPERTY_ID]
     );
     await client.query(
-      "INSERT INTO room_price_overrides(property_id,room_id,stay_date,price,currency) VALUES($1,'room301','2026-08-27',8888,'TWD')",
+      "INSERT INTO room_price_overrides(property_id,room_id,stay_date,price,currency) VALUES($1,'demo_room_a','2026-08-27',8888,'TWD')",
       [PROPERTY_ID]
     );
     await client.query(
@@ -92,19 +92,23 @@ async function installStaleAcceptanceData(connection) {
       [PROPERTY_ID]
     );
     await client.query(
-      "INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES($1,'room301','2026-08-27','closed',0),($1,'room301','2026-09-01','available',1)",
+      "UPDATE inventory_availability_days SET status='closed',remaining=0 WHERE property_id=$1 AND inventory_id='demo_room_a' AND stay_date='2026-08-27'",
       [PROPERTY_ID]
     );
     await client.query(
-      "INSERT INTO bundle_availability_days(property_id,bundle_id,stay_date,status) VALUES($1,'bundle_four_room_whole_house','2026-08-27','closed')",
+      "INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) VALUES($1,'demo_room_a','2026-09-01','available',1)",
       [PROPERTY_ID]
     );
     await client.query(
-      "INSERT INTO conversation_states(property_id,channel_id,line_user_id,state) VALUES($1,'test-acceptance:nephi_home','preserved-user','{\"revision\":7}'::jsonb)",
+      "INSERT INTO bundle_availability_days(property_id,bundle_id,stay_date,status) VALUES($1,'demo_bundle_all_rooms','2026-08-27','closed')",
       [PROPERTY_ID]
     );
     await client.query(
-      "INSERT INTO message_logs(property_id,channel_id,event_id,review_id,line_user_id,processing_status,status,needs_review,payload) VALUES($1,'test-acceptance:nephi_home','preserved-event','preserved-review','preserved-user','complete','complete',false,'{\"preserve\":true}'::jsonb)",
+      "INSERT INTO conversation_states(property_id,channel_id,line_user_id,state) VALUES($1,'test-acceptance:demo_fixture_property','preserved-user','{\"revision\":7}'::jsonb)",
+      [PROPERTY_ID]
+    );
+    await client.query(
+      "INSERT INTO message_logs(property_id,channel_id,event_id,review_id,line_user_id,processing_status,status,needs_review,payload) VALUES($1,'test-acceptance:demo_fixture_property','preserved-event','preserved-review','preserved-user','complete','complete',false,'{\"preserve\":true}'::jsonb)",
       [PROPERTY_ID]
     );
   });
@@ -116,23 +120,23 @@ async function assertLegacySeedLeavesStaleData(connection, seedInput) {
   await withClient(connection, async (client) => {
     const settings = await client.query("SELECT settings FROM property_settings WHERE property_id=$1", [PROPERTY_ID]);
     assert.equal(settings.rows[0].settings.commonAnswers.paymentRule, "先匯款一半當訂金");
-    const room = await client.query("SELECT name,capacity,monday_thursday_price FROM room_types WHERE property_id=$1 AND room_id='room301'", [PROPERTY_ID]);
-    assert.equal(room.rows[0].name, "Stale 301");
+    const room = await client.query("SELECT name,capacity,monday_thursday_price FROM room_types WHERE property_id=$1 AND room_id='demo_room_a'", [PROPERTY_ID]);
+    assert.equal(room.rows[0].name, "Stale demo room");
     assert.equal(Number(room.rows[0].capacity), 9);
     assert.equal(Number(room.rows[0].monday_thursday_price), 9999);
-    const bundle = await client.query("SELECT name,capacity,base_price FROM bundle_offers WHERE property_id=$1 AND bundle_id='bundle_four_room_whole_house'", [PROPERTY_ID]);
-    assert.equal(bundle.rows[0].name, "12人包棟");
+    const bundle = await client.query("SELECT name,capacity,base_price FROM bundle_offers WHERE property_id=$1 AND bundle_id='demo_bundle_all_rooms'", [PROPERTY_ID]);
+    assert.equal(bundle.rows[0].name, "Stale bundle");
     assert.equal(Number(bundle.rows[0].capacity), 12);
-    assert.equal(Number(bundle.rows[0].base_price), 13000);
-    const availability = await client.query("SELECT status FROM inventory_availability_days WHERE property_id=$1 AND inventory_id='room301' AND stay_date='2026-08-27'", [PROPERTY_ID]);
+    assert.equal(Number(bundle.rows[0].base_price), 7777);
+    const availability = await client.query("SELECT status FROM inventory_availability_days WHERE property_id=$1 AND inventory_id='demo_room_a' AND stay_date='2026-08-27'", [PROPERTY_ID]);
     assert.equal(availability.rows[0].status, "closed");
   });
   console.log("existing-property legacy seed stale reproduction: PASS");
 }
 
 function writeConflictingManifest(tempDirectory) {
-  const property = JSON.parse(fs.readFileSync(path.join(ROOT, "fixtures", "nephi-home-property.json"), "utf8"));
-  const availability = JSON.parse(fs.readFileSync(path.join(ROOT, "fixtures", "nephi-home-availability-2026-07-14-to-2026-08-31.json"), "utf8"));
+  const property = JSON.parse(fs.readFileSync(path.join(ROOT, "fixtures", "demo-test-property.json"), "utf8"));
+  const availability = JSON.parse(fs.readFileSync(path.join(ROOT, "fixtures", "demo-test-availability-2026-07-14-to-2026-08-31.json"), "utf8"));
   const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"));
   manifest.propertyFile = "property.json";
   manifest.availabilityFile = "availability.json";
@@ -147,27 +151,27 @@ function writeConflictingManifest(tempDirectory) {
 async function assertSynchronizedData(connection, snapshotHash) {
   await withClient(connection, async (client) => {
     const property = await client.query("SELECT display_name FROM properties WHERE property_id=$1", [PROPERTY_ID]);
-    assert.equal(property.rows[0].display_name, "尼腓的家");
-    const room = await client.query("SELECT name,display_name,room_code,capacity,highlights,monday_thursday_price,friday_price,saturday_holiday_price,sunday_price FROM room_types WHERE property_id=$1 AND room_id='room301'", [PROPERTY_ID]);
+    assert.equal(property.rows[0].display_name, "中性示範旅宿");
+    const room = await client.query("SELECT name,display_name,room_code,capacity,highlights,monday_thursday_price,friday_price,saturday_holiday_price,sunday_price FROM room_types WHERE property_id=$1 AND room_id='demo_room_a'", [PROPERTY_ID]);
     assert.deepEqual(
       { ...room.rows[0], capacity: Number(room.rows[0].capacity), monday_thursday_price: Number(room.rows[0].monday_thursday_price), friday_price: Number(room.rows[0].friday_price), saturday_holiday_price: Number(room.rows[0].saturday_holiday_price), sunday_price: Number(room.rows[0].sunday_price) },
-      { name: "301 雙人房", display_name: "301 雙人房", room_code: "", capacity: 2, highlights: [], monday_thursday_price: 0, friday_price: 0, saturday_holiday_price: 0, sunday_price: 0 }
+      { name: "庭園雙人房", display_name: "庭園雙人房", room_code: "", capacity: 2, highlights: [], monday_thursday_price: 0, friday_price: 0, saturday_holiday_price: 0, sunday_price: 0 }
     );
     const bundle = await client.query("SELECT bundle_id,name,capacity,base_price,monday_thursday_price,friday_price,saturday_holiday_price,sunday_price,entertainment_amenities FROM bundle_offers WHERE property_id=$1 ORDER BY bundle_id", [PROPERTY_ID]);
-    assert.deepEqual(bundle.rows.map((row) => ({ ...row, capacity: Number(row.capacity), base_price: Number(row.base_price), monday_thursday_price: Number(row.monday_thursday_price), friday_price: Number(row.friday_price), saturday_holiday_price: Number(row.saturday_holiday_price), sunday_price: Number(row.sunday_price) })), [{ bundle_id: "bundle_four_room_whole_house", name: "四房包棟", capacity: 10, base_price: 0, monday_thursday_price: 0, friday_price: 0, saturday_holiday_price: 0, sunday_price: 0, entertainment_amenities: [] }]);
-    const members = await client.query("SELECT room_id,position FROM bundle_offer_members WHERE property_id=$1 AND bundle_id='bundle_four_room_whole_house' ORDER BY position", [PROPERTY_ID]);
+    assert.deepEqual(bundle.rows.map((row) => ({ ...row, capacity: Number(row.capacity), base_price: Number(row.base_price), monday_thursday_price: Number(row.monday_thursday_price), friday_price: Number(row.friday_price), saturday_holiday_price: Number(row.saturday_holiday_price), sunday_price: Number(row.sunday_price) })), [{ bundle_id: "demo_bundle_all_rooms", name: "示範全館方案", capacity: 10, base_price: 0, monday_thursday_price: 0, friday_price: 0, saturday_holiday_price: 0, sunday_price: 0, entertainment_amenities: [] }]);
+    const members = await client.query("SELECT room_id,position FROM bundle_offer_members WHERE property_id=$1 AND bundle_id='demo_bundle_all_rooms' ORDER BY position", [PROPERTY_ID]);
     assert.deepEqual(members.rows.map((row) => ({ roomId: row.room_id, position: Number(row.position) })), [
-      { roomId: "room301", position: 0 },
-      { roomId: "room302", position: 1 },
-      { roomId: "room401", position: 2 },
-      { roomId: "room402", position: 3 }
+      { roomId: "demo_room_a", position: 0 },
+      { roomId: "demo_room_b", position: 1 },
+      { roomId: "demo_room_c", position: 2 },
+      { roomId: "demo_room_d", position: 3 }
     ]);
     assert.equal(Number((await client.query("SELECT count(*) count FROM knowledge_items WHERE property_id=$1", [PROPERTY_ID])).rows[0].count), 18);
     assert.equal(Number((await client.query("SELECT count(*) count FROM room_price_overrides WHERE property_id=$1", [PROPERTY_ID])).rows[0].count), 0);
     assert.equal(Number((await client.query("SELECT count(*) count FROM inventory_availability_days WHERE property_id=$1", [PROPERTY_ID])).rows[0].count), 245);
-    assert.equal(Number((await client.query("SELECT count(*) count FROM availability_days WHERE property_id=$1", [PROPERTY_ID])).rows[0].count), 49);
+    assert.equal(Number((await client.query("SELECT count(*) count FROM availability_days WHERE property_id=$1", [PROPERTY_ID])).rows[0].count), 0);
     assert.equal(Number((await client.query("SELECT count(*) count FROM bundle_availability_days WHERE property_id=$1", [PROPERTY_ID])).rows[0].count), 0);
-    const active = await client.query("SELECT status FROM inventory_availability_days WHERE property_id=$1 AND inventory_id='room301' AND stay_date='2026-08-27'", [PROPERTY_ID]);
+    const active = await client.query("SELECT status FROM inventory_availability_days WHERE property_id=$1 AND inventory_id='demo_room_a' AND stay_date='2026-08-27'", [PROPERTY_ID]);
     assert.equal(active.rows[0].status, "available");
     assert.equal(Number((await client.query("SELECT count(*) count FROM conversation_states WHERE property_id=$1 AND line_user_id='preserved-user'", [PROPERTY_ID])).rows[0].count), 1);
     assert.equal(Number((await client.query("SELECT count(*) count FROM message_logs WHERE property_id=$1 AND event_id='preserved-event'", [PROPERTY_ID])).rows[0].count), 1);
@@ -198,6 +202,12 @@ async function run() {
     assert.match(acceptanceDataSource, /transaction\.query\("SET TRANSACTION READ ONLY"\)/, "operational snapshot collection must explicitly mark its PostgreSQL transaction read-only");
 
     const snapshot = loadAcceptanceDataSnapshot(MANIFEST_PATH);
+    assert.equal(snapshot.data.property.propertyId, PROPERTY_ID, "the repository snapshot must remain scoped to the neutral fixture property");
+    await assert.rejects(
+      syncTestOnlyAcceptanceData({ connection, manifestPath: MANIFEST_PATH, acceptancePropertyId: "nephi_home", testOnly: true }),
+      (error) => error && error.code === "TEST_ONLY_ACCEPTANCE_PROPERTY_MISMATCH",
+      "fixture synchronization must never target the operational nephi_home property"
+    );
     const operationalBefore = await readOperationalAcceptanceDataIntegrity({ connection, acceptancePropertyId: PROPERTY_ID, testOnly: true });
     assert.equal(operationalBefore.mode, "operational_read_only");
     assert.match(operationalBefore.businessHash, /^[0-9a-f]{64}$/);
@@ -205,16 +215,16 @@ async function run() {
     const operationalSnapshot = await readOperationalAcceptanceDataIntegrity({ connection, acceptancePropertyId: PROPERTY_ID, testOnly: true, includeSnapshot: true });
     assert.deepEqual(Object.keys(operationalSnapshot.snapshot).sort(), ["availability", "bundles", "bundleMembers", "knowledgeItems", "priceOverrides", "rooms"].sort());
     assert.equal(operationalSnapshot.businessHash, hashAcceptanceDataSnapshot(operationalSnapshot.snapshot), "the business hash must cover exactly the emitted redacted snapshot");
-    assert.equal(operationalSnapshot.snapshot.rooms.some((room) => room.id === "room301"), true);
-    assert.equal(operationalSnapshot.snapshot.bundles.some((bundle) => bundle.id === "bundle_four_room_whole_house"), true);
+    assert.equal(operationalSnapshot.snapshot.rooms.some((room) => room.id === "demo_room_a"), true);
+    assert.equal(operationalSnapshot.snapshot.bundles.some((bundle) => bundle.id === "demo_bundle_all_rooms"), true);
     assert.equal(operationalSnapshot.snapshot.knowledgeItems.some((item) => item.knowledgeId === "faq_1"), true);
     const serializedOperationalSnapshot = JSON.stringify(operationalSnapshot);
     for (const forbidden of ["settings", "lineBinding", "channel_secret", "channel_access_token", "admin", "session", "conversation"]) {
       assert.equal(serializedOperationalSnapshot.includes(forbidden), false, `snapshot must exclude sensitive domain: ${forbidden}`);
     }
     assert.equal(
-      (await withClient(connection, (client) => client.query("SELECT name FROM room_types WHERE property_id=$1 AND room_id='room301'", [PROPERTY_ID]))).rows[0].name,
-      "Stale 301",
+      (await withClient(connection, (client) => client.query("SELECT name FROM room_types WHERE property_id=$1 AND room_id='demo_room_a'", [PROPERTY_ID]))).rows[0].name,
+      "Stale demo room",
       "operational read-only integrity must never repair or replace operational facts"
     );
     await withClient(connection, async (client) => {
@@ -223,10 +233,10 @@ async function run() {
     });
     const operationalAfterRuntime = await readOperationalAcceptanceDataIntegrity({ connection, acceptancePropertyId: PROPERTY_ID, testOnly: true });
     assert.equal(operationalAfterRuntime.businessHash, operationalBefore.businessHash, "runtime logs and conversation state must be excluded from the business hash");
-    await withClient(connection, (client) => client.query("UPDATE room_types SET display_name='Business mutation sentinel' WHERE property_id=$1 AND room_id='room301'", [PROPERTY_ID]));
+    await withClient(connection, (client) => client.query("UPDATE room_types SET display_name='Business mutation sentinel' WHERE property_id=$1 AND room_id='demo_room_a'", [PROPERTY_ID]));
     const operationalAfterBusiness = await readOperationalAcceptanceDataIntegrity({ connection, acceptancePropertyId: PROPERTY_ID, testOnly: true });
     assert.notEqual(operationalAfterBusiness.businessHash, operationalBefore.businessHash, "a business authority mutation must change the business hash");
-    await withClient(connection, (client) => client.query("UPDATE room_types SET display_name='Stale 301' WHERE property_id=$1 AND room_id='room301'", [PROPERTY_ID]));
+    await withClient(connection, (client) => client.query("UPDATE room_types SET display_name='Stale demo room' WHERE property_id=$1 AND room_id='demo_room_a'", [PROPERTY_ID]));
     await withClient(connection, (client) => client.query(
       "INSERT INTO property_line_bindings(property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled) VALUES($1,$2,$3::jsonb,$4::jsonb,true)",
       [PROPERTY_ID, "private-webhook-key", JSON.stringify({ ciphertext: "private-secret-ciphertext" }), JSON.stringify({ ciphertext: "private-token-ciphertext" })]
@@ -247,8 +257,8 @@ async function run() {
       (error) => error && error.code === "ACCEPTANCE_DATA_SNAPSHOT_MISMATCH"
     );
     assert.equal(
-      (await withClient(connection, (client) => client.query("SELECT name FROM room_types WHERE property_id=$1 AND room_id='room301'", [PROPERTY_ID]))).rows[0].name,
-      "Stale 301",
+      (await withClient(connection, (client) => client.query("SELECT name FROM room_types WHERE property_id=$1 AND room_id='demo_room_a'", [PROPERTY_ID]))).rows[0].name,
+      "Stale demo room",
       "a caller/repository hash mismatch must not write any acceptance data"
     );
     await assert.rejects(
@@ -275,8 +285,8 @@ async function run() {
 
     await withClient(connection, async (client) => {
       await client.query("UPDATE properties SET display_name='Rollback sentinel' WHERE property_id=$1", [PROPERTY_ID]);
-      await client.query("UPDATE room_types SET name='Rollback stale room' WHERE property_id=$1 AND room_id='room301'", [PROPERTY_ID]);
-      await client.query("ALTER TABLE room_types ADD CONSTRAINT acceptance_sync_forced_failure CHECK(name <> '301 雙人房')");
+      await client.query("UPDATE room_types SET name='Rollback stale room' WHERE property_id=$1 AND room_id='demo_room_a'", [PROPERTY_ID]);
+      await client.query("ALTER TABLE room_types ADD CONSTRAINT acceptance_sync_forced_failure CHECK(name <> '庭園雙人房')");
     });
     await assert.rejects(
       syncTestOnlyAcceptanceData({ connection, manifestPath: MANIFEST_PATH, acceptancePropertyId: PROPERTY_ID, testOnly: true }),

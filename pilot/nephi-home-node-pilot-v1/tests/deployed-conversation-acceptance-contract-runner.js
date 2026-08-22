@@ -186,13 +186,13 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
 
   const fixtureInitialized = await initializeDeployedAcceptanceData({
     baseUrl: "https://test-only.example",
-    propertyId: "nephi_home",
+    propertyId: "demo_fixture_property",
     oidcToken: "short-lived-oidc-secret",
     mode: "fixture_snapshot",
     expectedSnapshotHash: "b".repeat(64),
     fetchImpl: async (_url, options) => {
-      assert.deepEqual(JSON.parse(options.body), { mode: "fixture_snapshot", propertyId: "nephi_home", expectedSnapshotHash: "b".repeat(64) });
-      return { ok: true, status: 200, json: async () => ({ ok: true, data: { status: "verified", mode: "fixture_snapshot", propertyId: "nephi_home", snapshotHash: "b".repeat(64) } }) };
+      assert.deepEqual(JSON.parse(options.body), { mode: "fixture_snapshot", propertyId: "demo_fixture_property", expectedSnapshotHash: "b".repeat(64) });
+      return { ok: true, status: 200, json: async () => ({ ok: true, data: { status: "verified", mode: "fixture_snapshot", propertyId: "demo_fixture_property", snapshotHash: "b".repeat(64) } }) };
     }
   });
   assert.equal(fixtureInitialized.snapshotHash, "b".repeat(64), "the explicit isolated fixture mode must remain available");
@@ -208,11 +208,11 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   await assert.rejects(
     initializeDeployedAcceptanceData({
       baseUrl: "https://test-only.example",
-      propertyId: "nephi_home",
+      propertyId: "demo_fixture_property",
       oidcToken: "short-lived-oidc-secret",
       mode: "fixture_snapshot",
       expectedSnapshotHash: "b".repeat(64),
-      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, data: { status: "verified", mode: "fixture_snapshot", propertyId: "nephi_home", snapshotHash: "c".repeat(64) } }) })
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, data: { status: "verified", mode: "fixture_snapshot", propertyId: "demo_fixture_property", snapshotHash: "c".repeat(64) } }) })
     }),
     (error) => error && error.code === "INTEGRITY_FAILURE_ACCEPTANCE_DATA_MISMATCH",
     "a deployed snapshot hash mismatch must block before any OpenAI case"

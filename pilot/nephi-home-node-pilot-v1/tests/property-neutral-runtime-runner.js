@@ -179,6 +179,14 @@ function assertPropertyNeutralRuntimeSource() {
     const source = fs.readFileSync(path.join(ROOT, relativePath), "utf8");
     assert.doesNotMatch(source, forbidden, `${relativePath} must not contain a property-specific runtime identifier`);
   }
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "fixtures", "postgres-seed.json"), "utf8"));
+  assert.doesNotMatch(manifest.propertyFile, /nephi/i, "the active seed manifest must use a neutral property fixture");
+  assert.doesNotMatch(manifest.availabilityFile, /nephi/i, "the active seed manifest must use neutral availability data");
+  const manifestProperty = JSON.parse(fs.readFileSync(path.join(ROOT, "fixtures", manifest.propertyFile), "utf8"));
+  assert.notEqual(manifestProperty.propertyId, "nephi_home", "fixture synchronization must not target the operational property");
+  const activeSeed = fs.readFileSync(path.join(ROOT, "fixtures", "seed.json"), "utf8");
+  assert.doesNotMatch(activeSeed, /\broom(?:301|302|401|402)\b|(?:301|302|401|402)\s*(?:雙人房|四人房)/, "the JSON fallback seed must not retain legacy room identities");
 }
 
 async function run() {
@@ -339,7 +347,7 @@ async function run() {
     });
     assert.equal(initialized.initialized, true);
     const state = JSON.parse(fs.readFileSync(dataFile, "utf8"));
-    const importedPropertyId = JSON.parse(fs.readFileSync(path.join(ROOT, "fixtures", "nephi-home-property.json"), "utf8")).propertyId;
+    const importedPropertyId = JSON.parse(fs.readFileSync(path.join(ROOT, "fixtures", "demo-test-property.json"), "utf8")).propertyId;
     assert.ok(state.homestays.some((property) => property.customerId === importedPropertyId));
     assert.ok(Object.keys(state.availability[importedPropertyId] || {}).length > 0);
     assert.equal(initialize({ dataFile, manifestFile: "postgres-seed.json", env: { NEPHI_PILOT_DATA_FILE: dataFile } }).initialized, false, "initialization must remain idempotent");
