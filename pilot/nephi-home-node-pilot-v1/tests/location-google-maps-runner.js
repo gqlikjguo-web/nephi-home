@@ -56,16 +56,17 @@ async function runEngine(property, messages, diagnostics = []) {
   assert.match(instructions(), /canonicalCandidate location/, "planner must use the shared location canonical fact rather than question-specific routing");
   const alphaUrl = "https://maps.app.goo.gl/AlphaLocation";
   const betaUrl = "https://maps.app.goo.gl/BetaLocation";
-  const alpha = { propertyId: "location_alpha", displayName: "Alpha", businessProfile: { googleMapsUrl: alphaUrl }, rooms: [], commonAnswers: { parkingRule: "Alpha parking fact." } };
+  const alpha = { propertyId: "location_alpha", displayName: "Alpha", businessProfile: { googleMapsUrl: alphaUrl }, rooms: [], commonAnswers: { parkingRule: "LEGACY PARKING MUST NOT ANSWER" }, propertyFacts: [{ canonicalId: "parking", category: "amenity", publicName: "停車", status: "available", appliesTo: "whole_property", publicText: "Alpha parking fact." }] };
   const beta = { propertyId: "location_beta", displayName: "Beta", businessProfile: { googleMapsUrl: betaUrl }, rooms: [], commonAnswers: {} };
   const legacy = { propertyId: "location_legacy", displayName: "Legacy", businessProfile: {}, rooms: [], commonAnswers: { transport: `交通與導航請參考 Google 地圖：\n${alphaUrl}` } };
   const legacyDiagnostics = [];
   const [legacyResult] = await runEngine(legacy, new Map([["我要導航", plan()]]), legacyDiagnostics);
-  assert.ok(legacyResult.replyText.includes(alphaUrl), "a legacy property-scoped transport answer containing a Google Maps URL must materialize as the location fact");
+  assert.equal(legacyResult.taskResults[0].status, "needs_human", "legacy commonAnswers.transport must not have production location authority");
+  assert.equal(legacyResult.replyText.includes(alphaUrl), false);
   const catalogTrace = legacyDiagnostics.find((item) => item.stage === "property_catalog");
   const executorTrace = legacyDiagnostics.find((item) => item.stage === "executor");
-  assert.deepEqual(catalogTrace.location, { source: "commonAnswers.transport", profileValuePresent: false, transportValuePresent: true, urlValidation: "pass" });
-  assert.equal(executorTrace.results[0].locationFactProvided, true, "trace must confirm that the executor received the location fact without logging its raw value");
+  assert.deepEqual(catalogTrace.location, { source: "none", profileValuePresent: false, transportValuePresent: false, urlValidation: "fail" });
+  assert.equal(executorTrace.results[0].locationFactProvided, false, "legacy transport must not reach the executor as a location fact");
   const [transportProse] = await runEngine({ propertyId: "location_transport_prose", displayName: "Transport prose", businessProfile: {}, rooms: [], commonAnswers: { transport: "可詢問業者交通方式" } }, new Map([["我要導航", plan()]]));
   assert.equal(transportProse.taskResults[0].status, "needs_human", "ordinary transport prose must not become a location URL");
   for (const message of [

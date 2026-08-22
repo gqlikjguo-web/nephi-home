@@ -43,7 +43,12 @@ const property = {
   ],
   commonAnswers: { equipment: ["投影機"], parkingRule: "有兩個停車位", bbqRule: "可在指定區域烤肉", elevatorRule: "館內有電梯", cancellationRule: "取消依確認條款", quietHoursRule: "晚上十點後請降低音量" },
   faqs: [{ knowledgeKey: "equipment", question: "有投影機嗎", answer: "有投影機" }],
-  semanticCatalog: { aliases: { r1: ["兩人房"], parking: ["車位", "亭車"] }, amenities: [{ id: "projector", name: "投影機", aliases: ["projector"], status: "confirmed_yes" }, { id: "ktv", name: "唱歌設備", aliases: ["KTV", "卡拉OK", "歡唱"], status: "confirmed_no" }] }
+  semanticCatalog: { aliases: { r1: ["兩人房"], parking: ["車位", "亭車"] }, amenities: [{ id: "projector", name: "投影機", aliases: ["projector"], status: "confirmed_yes" }, { id: "ktv", name: "唱歌設備", aliases: ["KTV", "卡拉OK", "歡唱"], status: "confirmed_no" }] },
+  propertyFacts: [
+    { canonicalId: "elevator", category: "amenity", publicName: "電梯", status: "available", publicText: "館內有電梯" },
+    { canonicalId: "quietHoursRule", category: "policy", publicName: "安靜時段", status: "available", publicText: "晚上十點後請降低音量" },
+    { canonicalId: "ktv", category: "amenity", publicName: "唱歌設備", aliases: ["KTV", "卡拉OK", "歡唱"], status: "not_allowed", publicText: "館內未提供唱歌設備" }
+  ]
 };
 
 assert.equal(validatePlannerOutput(plan()).ok, true);

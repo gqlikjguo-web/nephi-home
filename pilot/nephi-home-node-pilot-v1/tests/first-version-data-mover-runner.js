@@ -20,7 +20,8 @@ const property = {
     priceRule: "住宿價格依入住日期與住宿產品計算。"
   },
   propertyFacts: [
-    { canonicalId: "splash_pool", category: "amenity", publicName: "戲水池", status: "available", publicText: "戲水池開放時間與使用限制依後台公告。", appliesTo: "whole_property" }
+    { canonicalId: "splash_pool", category: "amenity", publicName: "戲水池", status: "available", publicText: "戲水池開放時間與使用限制依後台公告。", appliesTo: "whole_property" },
+    { canonicalId: "bbq", category: "policy", publicName: "烤肉設備", status: "available", publicText: "可於指定區域使用烤肉設備，使用後請清潔復原。", appliesTo: "whole_property" }
   ],
   semanticCatalog: {
     aliases: {
@@ -224,7 +225,7 @@ async function main() {
     type: "amenity",
     sourceText: poolUseMessage,
     category: "amenity",
-    canonicalCandidate: "pool"
+    canonicalCandidate: "splash_pool"
   })]), poolUseMessage, "pool-use");
   if (poolUse.finalDecision.action !== "reply" || !poolUse.replyText.includes("戲水池開放時間")) {
     currentPropertyPoolFailures.push(`pool-use:action=${poolUse.finalDecision.action}:reply=${poolUse.replyText}`);
@@ -235,7 +236,7 @@ async function main() {
   const monthBundlePool = await process(rawPlan(monthBundlePoolMessage, [
     task({ candidateIndex: 0, taskId: "month-bundle-price", type: "price", sourceText: "九月包棟多少？", category: "bundle", canonicalCandidate: "bundle_all", requestedOutputs: ["price"], stayCandidate: monthStay }),
     {
-      ...task({ candidateIndex: 1, taskId: "month-pool", type: "amenity", sourceText: "泳池會開嗎？", category: "amenity", canonicalCandidate: "pool" }),
+      ...task({ candidateIndex: 1, taskId: "month-pool", type: "amenity", sourceText: "泳池會開嗎？", category: "amenity", canonicalCandidate: "splash_pool" }),
       dependsOnStayContext: true,
       stayCandidate: monthStay
     }

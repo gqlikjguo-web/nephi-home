@@ -25,7 +25,11 @@ const property = {
     { id: "room_401", name: "401", type: "雙人房", capacity: 2, enabled: true },
     { id: "room_402", name: "402", type: "四人房", capacity: 4, enabled: true }
   ],
-  commonAnswers: { parkingRule: "Parking is available.", bbqRule: "Barbecue is available." }
+  commonAnswers: { parkingRule: "LEGACY PARKING MUST NOT ANSWER", bbqRule: "LEGACY BBQ MUST NOT ANSWER" },
+  propertyFacts: [
+    { canonicalId: "parking", category: "amenity", publicName: "parking", status: "available", publicText: "Parking is available." },
+    { canonicalId: "bbq", category: "policy", publicName: "bbq", status: "available", publicText: "Barbecue is available." }
+  ]
 };
 const rows = {
   "2026-07-18": { date: "2026-07-18", room_301: "available", room_302: "available", room_401: "available", room_402: "closed" },

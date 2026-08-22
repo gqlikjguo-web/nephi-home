@@ -49,13 +49,14 @@ function plannerTask({ taskId, sourceText, type = "amenity", category = "other",
 }
 
 function plannerPlan(task) {
+  const evidenceRef = { eventId: "event", messageRef: "message", startOffset: 0, endOffset: task.sourceText.length, quote: task.sourceText };
   return {
     schemaVersion: 2,
     discourse: { relation: "new_request", confidence: 0.99 },
     stateOperations: [],
     stay: stay(),
     tasks: [task],
-    contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [] }],
+    contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateRequestCycleRefs: [], evidenceRefs: [evidenceRef] }],
     ambiguities: [],
     missingInformation: [],
     needsHuman: false,
@@ -128,7 +129,11 @@ function assertCatalogGroundingContracts() {
     timezone: "Asia/Taipei",
     rooms: [],
     commonAnswers: { breakfastRule: "Breakfast fact", petRule: "Pet fact", priceRule: "Pricing depends on stay dates." },
-    semanticCatalog: { aliases: { breakfast: ["breakfast"], pets: ["pets"], price: ["price", "fee"] } }
+    semanticCatalog: { aliases: { breakfast: ["breakfast"], pets: ["pets"], price: ["price", "fee"] } },
+    propertyFacts: [
+      { canonicalId: "breakfast", category: "policy", publicName: "Breakfast", status: "available", publicText: "Breakfast fact" },
+      { canonicalId: "pets", category: "policy", publicName: "Pets", status: "available", publicText: "Pet fact" }
+    ]
   };
   const catalog = buildPropertyCatalog(property);
 
@@ -136,9 +141,10 @@ function assertCatalogGroundingContracts() {
     taskId: "breakfast",
     sourceText: "Do you provide breakfast?",
     type: "amenity",
-    category: "other",
+    category: "amenity",
+    rawText: "breakfast",
     canonicalCandidate: "breakfast"
-  })), { catalog });
+  })), { catalog, sourceEvents: [{ eventId: "event", messageRef: "message", messageText: "Do you provide breakfast?" }] });
   assert.equal(candidateGrounded.tasks[0].type, "policy");
   assert.equal(candidateGrounded.tasks[0].entity.category, "policy");
   assert.equal(candidateGrounded.tasks[0].entity.canonicalCandidate, "breakfast");
@@ -147,20 +153,21 @@ function assertCatalogGroundingContracts() {
     taskId: "pets",
     sourceText: "Is this property friendly to pets?",
     type: "amenity",
-    category: "other",
+    category: "amenity",
+    rawText: "pets",
     canonicalCandidate: "pets"
-  })), { catalog });
+  })), { catalog, sourceEvents: [{ eventId: "event", messageRef: "message", messageText: "Is this property friendly to pets?" }] });
   assert.equal(sourceGrounded.tasks[0].type, "policy");
   assert.equal(sourceGrounded.tasks[0].entity.category, "policy");
   assert.equal(sourceGrounded.tasks[0].entity.canonicalCandidate, "pets");
 
-  const priceGrounded = applyPlannerSemanticContract(plannerPlan(plannerTask({
+  const priceGrounded = applyPlannerSemanticContract(plannerPlan({ ...plannerTask({
     taskId: "price",
     sourceText: "What is the price?",
-    type: "policy",
-    category: "policy",
+    type: "price",
+    category: "other",
     canonicalCandidate: "price"
-  })), { catalog });
+  }), dependsOnStayContext: true, requestedOutputs: ["price"], stayCandidate: stay() }), { catalog, sourceEvents: [{ eventId: "event", messageRef: "message", messageText: "What is the price?" }] });
   assert.equal(priceGrounded.tasks[0].type, "price");
   assert.equal(priceGrounded.tasks[0].dependsOnStayContext, true);
   assert.equal(priceGrounded.tasks[0].entity.category, "other");

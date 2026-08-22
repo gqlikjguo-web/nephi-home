@@ -27,6 +27,10 @@ const property = {
     parkingRule: "Parking is available.",
     bbqRule: "Barbecue is available."
   },
+  propertyFacts: [
+    { canonicalId: "parking", category: "amenity", publicName: "Parking", status: "available", publicText: "Parking is available." },
+    { canonicalId: "bbq", category: "policy", publicName: "Barbecue", status: "available", publicText: "Barbecue is available." }
+  ],
   semanticCatalog: {
     aliases: {
       room_double: ["double room"],

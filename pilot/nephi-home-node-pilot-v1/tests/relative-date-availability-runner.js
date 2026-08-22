@@ -152,6 +152,11 @@ function seed() {
         parkingRule: "民宿旁空地可停車。",
         bbqRule: "可依正式規則使用烤肉區。"
       },
+      propertyFacts: [
+        { canonicalId: "parking", category: "amenity", publicName: "停車", status: "available", publicText: "民宿旁空地可停車。" },
+        { canonicalId: "bbq", category: "policy", publicName: "烤肉", status: "available", publicText: "可依正式規則使用烤肉區。" },
+        { canonicalId: "pool", category: "amenity", publicName: "戲水池", status: "available", publicText: "設有戲水池，請依現場安全規範使用。" }
+      ],
       faqs: [{
         knowledgeKey: "pool",
         question: "戲水池",

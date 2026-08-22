@@ -50,6 +50,15 @@ const property = {
   propertyId: "property_alpha", displayName: "Alpha", timezone: "Asia/Taipei", rooms: [],
   businessProfile: { googleMapsUrl: "https://maps.app.goo.gl/AlphaLocation" },
   commonAnswers: { parkingRule: "Alpha parking policy", bbqRule: "Alpha barbecue policy", cancellationRule: "Alpha cancellation policy", priceRule: "Prices depend on the requested stay." },
+  propertyFacts: [
+    { canonicalId: "parking", category: "amenity", publicName: "parking", status: "available", publicText: "Alpha parking policy" },
+    { canonicalId: "bbq", category: "policy", publicName: "barbecue", status: "available", publicText: "Alpha barbecue policy" },
+    { canonicalId: "cancellation", category: "policy", publicName: "cancel", status: "available", publicText: "Alpha cancellation policy" },
+    { canonicalId: "pool", category: "amenity", publicName: "pool", status: "available", publicText: "Alpha pool hours" },
+    { canonicalId: "shared_cooking", category: "amenity", publicName: "shared kitchen", status: "available", publicText: "Alpha kitchen policy." },
+    { canonicalId: "prepayment_help", category: "policy", publicName: "prepayment deposit", status: "available", publicText: "Alpha prepayment FAQ." },
+    { canonicalId: "transport", category: "policy", publicName: "address transport", status: "available", publicText: "Alpha transport FAQ." }
+  ],
   faqs: [
     { knowledgeKey: "shared_cooking", question: "Can registered guests use the shared kitchen?", answer: "Alpha kitchen policy." },
     { knowledgeKey: "prepayment_help", question: "How is a prepayment deposit arranged?", answer: "Alpha prepayment FAQ." },
@@ -355,10 +364,10 @@ function main() {
 
   const earlyArrivalCatalog = buildPropertyCatalog({
     ...property,
+    propertyFacts: [...property.propertyFacts, { canonicalId: "early_checkin", category: "policy", publicName: "提早入住", status: "available", publicText: "Early arrival requires confirmation." }],
     commonAnswers: {
       ...property.commonAnswers,
-      checkInTime: "15:00",
-      early_checkin: "Early arrival requires confirmation."
+      checkInTime: "15:00"
     }
   });
   const earlyArrivalDetailIdentity = sourceBoundSemantic(task({
@@ -376,10 +385,10 @@ function main() {
 
   const lateDepartureCatalog = buildPropertyCatalog({
     ...property,
+    propertyFacts: [...property.propertyFacts, { canonicalId: "late_checkout", category: "policy", publicName: "延後退房", status: "available", publicText: "Late departure requires confirmation." }],
     commonAnswers: {
       ...property.commonAnswers,
-      checkOutTime: "11:00",
-      late_checkout: "Late departure requires confirmation."
+      checkOutTime: "11:00"
     }
   });
   const lateDepartureDetailIdentity = sourceBoundSemantic(task({
@@ -484,7 +493,7 @@ function main() {
   for (const [id, category, rawText, expectedCapability] of [
     ["parking", "amenity", "parking", "parking"],
     ["pool", "amenity", "pool", "pool"],
-    ["bbq", "policy", "bbq", "bbq"]
+    ["bbq", "policy", "barbecue", "bbq"]
   ]) {
     const result = canonical(task({ taskId: id, type: "property_fact", category, rawText }));
     assert.equal(result.semantic.tasks[0].entity.canonicalCandidate, null, `${id} raw aliases must not be promoted into Planner-omitted canonical identities`);
@@ -573,8 +582,7 @@ function main() {
     timezone: "Asia/Taipei",
     rooms: [],
     commonAnswers: {},
-    faqs: [{ knowledgeKey: "pool", question: "What is the pool fee?", answer: "Confirmed pool policy." }],
-    semanticCatalog: { aliases: { pool: ["pool"] } }
+    propertyFacts: [{ canonicalId: "pool", category: "amenity", publicName: "pool", status: "available", publicText: "Confirmed pool policy." }]
   });
   const registeredFaqSource = "What is the pool fee";
   const registeredFaqSemantic = sourceBoundSemantic(task({
@@ -614,11 +622,10 @@ function main() {
 
   const multiRegisteredCatalog = buildPropertyCatalog({
     propertyId: "multi-registered-faq-property", timezone: "Asia/Taipei", rooms: [], commonAnswers: {},
-    faqs: [
-      { knowledgeKey: "pool", question: "Pool fee information", answer: "Pool policy." },
-      { knowledgeKey: "bbq", question: "Barbecue fee information", answer: "BBQ policy." }
-    ],
-    semanticCatalog: { aliases: { pool: ["pool"], bbq: ["barbecue"] } }
+    propertyFacts: [
+      { canonicalId: "pool", category: "amenity", publicName: "pool", status: "available", publicText: "Pool policy." },
+      { canonicalId: "bbq", category: "policy", publicName: "barbecue", status: "available", publicText: "BBQ policy." }
+    ]
   });
   const multiRegisteredSource = "pool fee and barbecue fee";
   const multiRegisteredSemantic = sourceBoundSemantic(task({
@@ -754,8 +761,7 @@ function main() {
     }
   }), { message: genericTypeMessage, catalogOverride: genericTypeCatalog });
   assert.equal(genericTypePrice.tasks[0].type, "price", "a lodging amount task must retain its stateful capability");
-  assert.equal(genericTypePrice.tasks[0].entity.category, "other", "a colliding catalog policy must not become the lodging price subject");
-  assert.equal(genericTypePrice.tasks[0].entity.canonicalCandidate, null);
+  assert.equal(genericTypePrice.tasks[0].entity.canonicalCandidate, "price", "the lodging price identity must remain stateful after legacy policy authority is removed");
   const sourceBoundFaqCatalog = buildPropertyCatalog({
     ...property,
     rooms: [{ id: "faq-room-a", name: "Garden Family Room", type: "family", capacity: 4, enabled: true }],
@@ -1385,8 +1391,8 @@ function main() {
     sourceEvents: [{ eventId: "multi-task-event", messageRef: "", messageText: multiTaskMessage }]
   });
   assert.equal(isolatedMultiTask.tasks[0].type, "price", "one lodging amount task must preserve its capability rather than borrow another clause's room scope");
-  assert.equal(isolatedMultiTask.tasks[0].entity.category, "other");
-  assert.equal(isolatedMultiTask.tasks[0].entity.canonicalCandidate, null);
+  assert.equal(isolatedMultiTask.tasks[0].entity.category, "policy");
+  assert.equal(isolatedMultiTask.tasks[0].entity.canonicalCandidate, "price");
 
   const amenityFeePolicy = canonical(task({
     taskId: "pool-fee-policy",

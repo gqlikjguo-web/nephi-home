@@ -27,7 +27,7 @@ function property(propertyId, label) {
       capacity: 2,
       enabled: true,
       memberRoomIds: [`${propertyId}_room`],
-      entertainmentAmenities: [{ key: "singing", provided: true, statusSource: "operator", source: "preset" }]
+      entertainmentAmenities: [{ key: "singing", provided: true, statusSource: "operator", source: "preset", note: `${label} singing hours are 08:00-22:00.` }]
     }],
     propertyFacts: [
       {
@@ -84,7 +84,7 @@ function property(propertyId, label) {
       amenities: []
     },
     commonAnswers: { bbqRule: `${label} barbecue fee is 1,000 TWD.` },
-    faqs: [{ knowledgeKey: "singing", question: "When can guests sing?", answer: `${label} singing hours are 08:00-22:00.` }]
+    faqs: []
   };
 }
 
@@ -342,11 +342,11 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
 
   const singingHours = await execute({
     currentProperty: alpha,
-    message: "singing hours",
+    message: "singing",
     tasks: [task({
       taskId: "singing-hours",
       type: "property_fact",
-      sourceText: "singing hours",
+      sourceText: "singing",
       category: "amenity",
       canonicalCandidate: "singing",
       detailIntent: "time"
@@ -389,7 +389,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
 
   const noDetailProperty = property("property_no_detail", "NoDetail");
   noDetailProperty.propertyFacts.find((item) => item.canonicalId === "bbq").publicText = "A separate fee may apply.";
-  noDetailProperty.faqs.find((item) => item.knowledgeKey === "singing").answer = "Singing equipment is available.";
+  noDetailProperty.rooms.find((item) => item.inventoryType === "bundle").entertainmentAmenities[0].note = "";
   const unstructuredFee = await execute({
     currentProperty: noDetailProperty,
     message: "barbecue fee",
