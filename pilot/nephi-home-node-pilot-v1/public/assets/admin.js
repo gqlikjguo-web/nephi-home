@@ -109,10 +109,10 @@ function controlledPolicyFactRow(fact) {
   });
 }
 function renderEquipmentFacts(facts) {
-  const drafts = PropertyFactsFormData.buildHighFrequencyEquipmentDrafts(facts, "operator_form");
-  const groups = HighFrequencyEquipment.HIGH_FREQUENCY_EQUIPMENT_GROUPS.map(group => {
+  const controlledIds = new Set(PropertyFactsFormData.controlledPolicyFacts.map(item => item.canonicalId));
+  const groups = PropertyFactsFormData.buildAdminPropertyFactCardGroups(facts, "operator_form").map(group => {
     const section = element("section", "equipment-group"), heading = element("h4", "", group.publicName), grid = element("div", "equipment-grid");
-    grid.append(...group.items.map(item => equipmentFactRow(drafts.find(fact => fact.canonicalId === item.canonicalId))));
+    grid.append(...group.cards.map(fact => controlledIds.has(fact.canonicalId) ? controlledPolicyFactRow(fact) : equipmentFactRow(fact)));
     section.append(heading, grid); return section;
   });
   $("equipmentFactsList").replaceChildren(...groups);
@@ -121,7 +121,6 @@ function renderPropertyFacts(facts = []) {
   propertyFacts = facts;
   renderEquipmentFacts(facts);
   const controlledIds = new Set(PropertyFactsFormData.controlledPolicyFacts.map((item) => item.canonicalId));
-  $("controlledPolicyFactsList").replaceChildren(...PropertyFactsFormData.buildControlledPolicyFactDrafts(facts).map(controlledPolicyFactRow));
   $("propertyFactsList").replaceChildren(...facts.filter((fact) => !PropertyFactsFormData.equipmentByCanonicalId(fact.canonicalId) && !controlledIds.has(fact.canonicalId)).map(propertyFactRow));
 }
 function collectPropertyFactDrafts() { return [...$("propertyFactsForm").querySelectorAll(".property-fact-row")].map(row => Object.fromEntries([...row.querySelectorAll("[data-property-fact-field]")].map(control => [control.dataset.propertyFactField, control.value]))); }

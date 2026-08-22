@@ -23,6 +23,7 @@ const EXPECTED = [
   ["stove", "爐具"],
   ["cookware", "鍋具"],
   ["tableware", "餐具"],
+  ["toiletries", "盥洗用品"],
   ["baby_crib", "嬰兒床"],
   ["baby_bathtub", "嬰兒澡盆"],
   ["baby_bottle_sterilizer", "消毒鍋"],

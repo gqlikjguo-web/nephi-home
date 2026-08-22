@@ -118,6 +118,21 @@
     });
   }
 
+  function buildAdminPropertyFactCardGroups(facts, source = "operator_form") {
+    const equipmentDrafts = buildHighFrequencyEquipmentDrafts(facts, source);
+    const policyDrafts = buildControlledPolicyFactDrafts(facts, source);
+    const equipmentById = new Map(equipmentDrafts.map((fact) => [fact.canonicalId, fact]));
+    const policyById = new Map(policyDrafts.map((fact) => [fact.canonicalId, fact]));
+    const equipmentGroup = (key) => equipment.filter((item) => item.group === key).map((item) => equipmentById.get(item.canonicalId));
+    return [
+      { key: "basic", publicName: "住宿基本設備", cards: equipmentGroup("basic") },
+      { key: "cooking", publicName: "廚房／餐飲", cards: [...equipmentGroup("cooking"), policyById.get("breakfast")] },
+      { key: "hygiene", publicName: "衛浴／盥洗", cards: equipmentGroup("hygiene") },
+      { key: "infant", publicName: "嬰幼兒設備", cards: equipmentGroup("infant") },
+      { key: "special_policy", publicName: "政策／特殊服務", cards: [policyById.get("pets"), policyById.get("travel_subsidy")] }
+    ];
+  }
+
   function buildPropertyFactsPayload(propertyId, drafts, now = () => new Date()) {
     return {
       propertyId: String(propertyId || "").trim(),
@@ -142,5 +157,5 @@
     };
   }
 
-  return { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts, controlledPolicyCardContract, controlledPolicyDisplayName, controlledPolicyFacts, equipmentByCanonicalId, equipmentFieldPolicy };
+  return { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts, buildAdminPropertyFactCardGroups, controlledPolicyCardContract, controlledPolicyDisplayName, controlledPolicyFacts, equipmentByCanonicalId, equipmentFieldPolicy };
 });

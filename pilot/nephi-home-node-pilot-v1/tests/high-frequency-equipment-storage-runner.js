@@ -95,11 +95,12 @@ async function api(url, route, options = {}) {
       const newFacts = [
         fact("wifi", "allowed", "全館提供免費 Wi-Fi。", "both"),
         fact("clothes_dryer", "not_allowed", ""),
-        fact("baby_crib", "unknown", "不得成為答案")
+        fact("baby_crib", "unknown", "不得成為答案"),
+        fact("toiletries", "allowed", "提供毛巾、浴巾、洗髮乳與沐浴乳；牙刷請自備。")
       ];
       const onboardingDrafts = buildHighFrequencyEquipmentDrafts(newFacts, "operator_onboarding");
       const onboardingFacts = buildPropertyFactsPayload("", onboardingDrafts).facts;
-      assert.equal(onboardingFacts.length, 15, "onboarding must submit every system-controlled equipment preset");
+      assert.equal(onboardingFacts.length, 16, "onboarding must submit every system-controlled equipment preset");
       const newApplication = application("equipment_new", onboardingFacts, [{
         key: "main",
         roomCode: "",
@@ -114,6 +115,7 @@ async function api(url, route, options = {}) {
         enabled: true
       }]);
       assert.equal(newApplication.propertyFacts.find((item) => item.canonicalId === "wifi").publicName, "Wi-Fi");
+      assert.equal(newApplication.propertyFacts.find((item) => item.canonicalId === "toiletries").publicName, "盥洗用品");
       assert.equal(newApplication.propertyFacts.find((item) => item.canonicalId === "baby_crib").publicText, "");
       providers.onboarding.createOnboarding("equipment-new-application", "draft-hash");
       providers.onboarding.saveOnboarding("equipment-new-application", newApplication);
@@ -147,12 +149,14 @@ async function api(url, route, options = {}) {
 
       const adminInitial = await api(running.url, "/api/property-facts?propertyId=equipment_new");
       assert.equal(adminInitial.response.status, 200);
-      assert.equal(adminInitial.body.data.facts.length, 15);
+      assert.equal(adminInitial.body.data.facts.length, 16);
       assert.equal(adminInitial.body.data.facts.find((item) => item.canonicalId === "wifi").publicText, "\u5168\u9928\u63d0\u4f9b\u514d\u8cbb Wi-Fi\u3002");
+      assert.equal(adminInitial.body.data.facts.find((item) => item.canonicalId === "toiletries").publicText, "提供毛巾、浴巾、洗髮乳與沐浴乳；牙刷請自備。");
 
       const adminFacts = adminInitial.body.data.facts.map((item) => {
         if (item.canonicalId === "wifi") return { ...item, appliesTo: "both", publicText: "Admin \u66f4\u65b0\uff1a\u5168\u9928\u8207\u623f\u5167\u63d0\u4f9b\u514d\u8cbb Wi-Fi\u3002", notes: "\u8def\u7531\u5668\u91cd\u555f\u65b9\u5f0f\u50c5\u4f9b\u696d\u8005\u5167\u90e8\u4f7f\u7528\u3002" };
         if (item.canonicalId === "clothes_dryer") return { ...item, status: "not_allowed", publicText: "", notes: "\u53ef\u5354\u52a9\u4ecb\u7d39\u9644\u8fd1\u81ea\u52a9\u6d17\u8863\u5e97\u3002" };
+        if (item.canonicalId === "toiletries") return { ...item, publicText: "更新後提供浴巾、洗髮乳及沐浴乳。", notes: "依入住人數備品" };
         return item;
       });
       adminFacts.push({
@@ -182,6 +186,8 @@ async function api(url, route, options = {}) {
       assert.equal(adminReadBack.response.status, 200);
       assert.deepEqual(adminReadBack.body.data.facts, adminSaved.body.data.facts);
       assert.equal(adminReadBack.body.data.facts.find((item) => item.canonicalId === "wifi").notes, "\u8def\u7531\u5668\u91cd\u555f\u65b9\u5f0f\u50c5\u4f9b\u696d\u8005\u5167\u90e8\u4f7f\u7528\u3002");
+      assert.equal(adminReadBack.body.data.facts.find((item) => item.canonicalId === "toiletries").publicText, "更新後提供浴巾、洗髮乳及沐浴乳。");
+      assert.equal(adminReadBack.body.data.facts.filter((item) => item.canonicalId === "toiletries").length, 1, "editing toiletries must not create a duplicate row");
       assert.equal(adminReadBack.body.data.facts.find((item) => item.canonicalId === "travel_subsidy").publicText, NORMALIZED_MULTILINE_PUBLIC_TEXT);
       assert.equal(adminReadBack.body.data.facts.find((item) => item.canonicalId === "travel_subsidy").notes, NORMALIZED_MULTILINE_NOTES);
 

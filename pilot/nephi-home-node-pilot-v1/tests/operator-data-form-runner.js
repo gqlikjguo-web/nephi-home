@@ -37,7 +37,7 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
       assert.equal(html.includes(`id="${id}"`), true, `admin form must expose ${id}`);
     }
     assert.equal(html.includes('id="equipmentFactsList"'), true, "admin form must expose controlled high-frequency equipment");
-    assert.equal(html.includes('<div id="controlledPolicyFactsList" class="equipment-grid"></div>'), true, "breakfast and pet cards must use the existing equipment grid");
+    assert.equal(html.includes('id="controlledPolicyFactsList"'), false, "controlled policy cards must be grouped in the shared equipment card layout");
     assert.equal(html.includes('id="controlledPolicyFactsTemplate"'), false, "breakfast and pet cards must not use a separate full-width template");
     assert.equal(html.includes('class="controlled-policy-facts-section"'), false, "breakfast and pet cards must not use a separate full-width section");
     assert.ok(html.indexOf("/assets/high-frequency-equipment.js") < html.indexOf("/assets/property-facts-form.js"));
@@ -190,7 +190,8 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
       source: "operator_form",
       updatedAt: "2026-08-13T00:00:00.000Z"
     }]);
-    assert.equal(equipmentDrafts.length, 15);
+    assert.equal(equipmentDrafts.length, 16);
+    assert.equal(equipmentDrafts.find((item) => item.canonicalId === "toiletries").publicName, "盥洗用品");
     const wifi = equipmentDrafts.find((item) => item.canonicalId === "wifi");
     assert.equal(wifi.publicName, "Wi-Fi");
     assert.equal(wifi.status, "allowed");
