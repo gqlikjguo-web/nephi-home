@@ -1655,15 +1655,6 @@ function fullyValidatedSemanticRepair(output, input) {
     && validMergedOutput(output, input);
 }
 
-function validNonSemanticPlannerContract(output, input) {
-  const structural = validatePlannerOutput(output);
-  return structural.errors.every((error) => String(error).includes("semanticCandidate")
-      || (output && output.shouldIgnore === true && error === "tasks"))
-    && validateUnderstandingContext(output, input.contextSnapshot || { scope: {}, cycles: [] }, {
-      sourceEvents: input.sourceEvents || []
-    }).ok;
-}
-
 function hasDeterministicSemanticTaskNormalization(output, input) {
   const normalized = applyPlannerSemanticContract(output, {
     catalog: input && input.catalog,
@@ -2124,15 +2115,6 @@ class TestOnlyOpenAiConversationPlanner {
           ? providerUnderstanding.tasks.map(({ semanticCandidateIds: _semanticCandidateIds, lodgingScopeId: _lodgingScopeId, ...task }) => task)
           : providerUnderstanding.tasks;
         const output = normalizePlannerEvidenceCoordinates(providerUnderstanding, input.sourceEvents || []);
-        if (!validNonSemanticPlannerContract(output, input)) {
-          throw plannerFailure({
-            code: "planner_local_contract_failure",
-            category: "local_contract_failure",
-            model: this.model,
-            responseBodyPresent: true,
-            parsedOutputPresent: true
-          });
-        }
         return annotateProviderSuccess(output, firstAttemptErrorCategory, providerAttempts);
       } catch (error) {
         providerAttempts.push(...(Array.isArray(error && error.providerAttempts) ? error.providerAttempts : []));

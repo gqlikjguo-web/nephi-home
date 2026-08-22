@@ -151,8 +151,67 @@ async function providerSchemaContract() {
   assert.equal(result[Symbol.for("junzan.plannerProviderDiagnostic")].providerAttemptCount, 1);
 }
 
+async function providerDefersNormalizableEngineContracts() {
+  const cases = [
+    { name: "rg-044-short-meaningful-nights", messageText: "兩晚", type: "unknown", detailIntent: "missing_information", requestedOutputs: ["answer"], nightsCandidate: 2 },
+    { name: "rg-046-no-reply-thanks", messageText: "謝謝", shouldIgnore: true, discourse: "acknowledgement", requestedOutputs: [] },
+    { name: "rg-047-no-reply-good", messageText: "好", shouldIgnore: true, discourse: "acknowledgement", requestedOutputs: [] },
+    { name: "rg-048-no-reply-emoji", messageText: "👌", shouldIgnore: true, discourse: "acknowledgement", requestedOutputs: [] },
+    { name: "rg-049-punctuation", messageText: "？", shouldIgnore: true, requestedOutputs: ["answer"] },
+    { name: "rgs-017-two-days-arrangement", messageText: "我們想住兩天怎麼安排", type: "booking_request", detailIntent: "missing_information", requestedOutputs: ["answer"], nightsCandidate: 2 },
+    { name: "new-019", messageText: "8/20住一晚，2個人", type: "booking_request", requestedOutputs: ["answer"], nightsCandidate: 1, guestCountCandidate: 2 },
+    { name: "new-034", messageText: "哈哈哈好喔謝啦", shouldIgnore: true, discourse: "acknowledgement", requestedOutputs: ["answer"] },
+    { name: "new-035", messageText: "？？？", shouldIgnore: true, requestedOutputs: [] },
+    { name: "hf-06-run-1", messageText: "不用了，謝謝", shouldIgnore: true, discourse: "acknowledgement", relationKind: "end_existing", requestedOutputs: [] },
+    { name: "hf-06-run-2", messageText: "不用了，謝謝", shouldIgnore: true, discourse: "acknowledgement", relationKind: "end_existing", requestedOutputs: [] },
+    { name: "hf-06-run-3", messageText: "不用了，謝謝", shouldIgnore: true, discourse: "acknowledgement", relationKind: "end_existing", requestedOutputs: [] }
+  ];
+  const results = await Promise.allSettled(cases.map(async (fixture) => {
+    const stay = {
+      ...emptyStay(),
+      nightsCandidate: fixture.nightsCandidate || null,
+      guestCountCandidate: fixture.guestCountCandidate || null
+    };
+    const output = rawPlan(fixture.messageText, [task({
+      candidateIndex: 0,
+      taskId: fixture.name,
+      type: fixture.type || "unknown",
+      sourceText: fixture.messageText,
+      detailIntent: fixture.detailIntent || "general",
+      requestedOutputs: fixture.requestedOutputs,
+      stayCandidate: fixture.nightsCandidate || fixture.guestCountCandidate ? stay : null
+    })], stay, { shouldIgnore: fixture.shouldIgnore, discourse: fixture.discourse });
+    output.contextRelationCandidates[0].kind = fixture.relationKind || "new_request";
+    const planner = new TestOnlyOpenAiConversationPlanner({
+      apiKey: "test-key",
+      model: "test-model",
+      retryDelayMs: 0,
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        text: async () => JSON.stringify({ output_text: JSON.stringify(output) })
+      })
+    });
+    const result = await planner.classify({
+      currentMessage: fixture.messageText,
+      currentMessages: [fixture.messageText],
+      sourceEvents: [{ eventId: "event", messageRef: "message", messageText: fixture.messageText }],
+      eventTimestamp: Date.parse("2026-08-22T10:00:00+08:00"),
+      catalog: { propertyId: property.propertyId, rooms: [], amenities: [], policies: [], faqs: [], propertyFacts: [], transportFacts: [] },
+      contextSnapshot: { scope: {}, cycles: [] }
+    });
+    assert.equal(Array.isArray(result.tasks), true, `${fixture.name}: provider must return parsed tasks for Engine normalization`);
+  }));
+  const rejected = results.flatMap((result, index) => result.status === "rejected"
+    ? [`${cases[index].name}:${result.reason && result.reason.code || result.reason}`]
+    : []);
+  assert.deepEqual(rejected, [], `provider must defer all 12 normalizable Engine contracts: ${rejected.join(", ")}`);
+}
+
 async function main() {
   await providerSchemaContract();
+  await providerDefersNormalizableEngineContracts();
 
   const multiMessage = "8/29可包棟嗎？有烤肉嗎？有泳池嗎？";
   const datedStay = { dateExpression: { rawText: "8/29", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2026-08-29", checkOutCandidate: null, nightsCandidate: 1, guestCountCandidate: null };

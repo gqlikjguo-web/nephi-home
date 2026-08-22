@@ -39,7 +39,8 @@ function input() {
     localCalls += 1;
     return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ output_text: JSON.stringify({ ...output(), tasks: [] }) }) };
   } });
-  await assert.rejects(() => invalid.classify(input()), (error) => error && error.errorCategory === "local_contract_failure");
-  assert.equal(localCalls, 1, "local contract failures do not trigger semantic or coverage repair calls");
+  const invalidResult = await invalid.classify(input());
+  assert.deepEqual(invalidResult.tasks, [], "parsed provider tasks are deferred unchanged to the Engine contract boundary");
+  assert.equal(localCalls, 1, "parsed output does not trigger semantic or coverage repair calls in the provider");
   console.log("conversation planner v2 adapter: PASS");
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });

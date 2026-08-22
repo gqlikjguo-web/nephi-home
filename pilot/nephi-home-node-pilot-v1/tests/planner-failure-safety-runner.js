@@ -341,11 +341,12 @@ async function plannerContractFailureDoesNotRetry() {
     messageText: "test",
     sourceEvents: [{ eventId: "planner-local-contract-failure", messageText: "test" }]
   });
-  assert.equal(fetchCount, 1, "a local Planner output contract failure must not retry the provider request");
+  assert.equal(fetchCount, 1, "an unusable parsed Planner output must not retry the provider request");
   assert.equal(result.finalDecision.action, "handoff");
-  assert.equal(result.finalDecision.reasonCode, "planner_parse_failed");
-  const plannerDiagnostic = diagnostics.find((entry) => entry.stage === "planner_error");
-  assert.equal(plannerDiagnostic.errorCategory, "local_contract_failure");
+  assert.equal(result.finalDecision.reasonCode, "planner_output_unusable");
+  const plannerDiagnostic = diagnostics.find((entry) => entry.stage === "planner");
+  assert.equal(plannerDiagnostic.parserSucceeded, true, "provider transport/parser success remains distinct from Engine contract rejection");
+  assert.equal(diagnostics.some((entry) => entry.stage === "planner_error"), false, "Engine final-schema rejection is not a provider error");
 }
 
 async function main() {
