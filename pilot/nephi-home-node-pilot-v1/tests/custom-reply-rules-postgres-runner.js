@@ -9,6 +9,8 @@ const { migratePostgres } = require("../lib/providers/postgres-migrate");
 const { createPostgresProviders } = require("../lib/providers/postgres-providers");
 const { openPostgres } = require("../lib/providers/postgres-client");
 const { createCustomReplyService } = require("../lib/custom-reply-rules");
+const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
+const { buildPricingFacts } = require("../lib/conversation-engine-v2/capability-executor");
 
 let completed = false;
 process.once("beforeExit", () => {
@@ -34,8 +36,8 @@ process.once("beforeExit", () => {
       ["property_alpha", "Alpha", "property_beta", "Beta"]
     );
     await client.query(
-      "INSERT INTO room_types(property_id,room_id,name,capacity,position) VALUES($1,$2,$3,$4,$5),($6,$7,$8,$9,$10)",
-      ["property_alpha", "alpha_room", "Alpha Room", 2, 0, "property_beta", "beta_room", "Beta Room", 4, 0]
+      "INSERT INTO room_types(property_id,room_id,name,capacity,position) VALUES($1,$2,$3,$4,$5),($6,$7,$8,$9,$10),($11,$12,$13,$14,$15)",
+      ["property_alpha", "alpha_room", "Alpha Room", 2, 0, "property_alpha", "alpha_room_2", "Alpha Room 2", 3, 1, "property_beta", "beta_room", "Beta Room", 4, 0]
     );
     await client.close();
 
@@ -55,17 +57,51 @@ process.once("beforeExit", () => {
     await bundleAvailability.close();
     providers = createPostgresProviders(connection);
     const updatedBundle = providers.customerSettings.updateBundle("property_alpha", bundle.id, {
-      ...bundle, name: "Alpha bundle updated", capacity: 3, mondayThursdayPrice: 1300, fridayPrice: 1400,
+      ...bundle, name: "Alpha bundle updated", capacity: 3, memberRoomIds: ["alpha_room_2"], mondayThursdayPrice: 1300, fridayPrice: 1400,
       saturdayHolidayPrice: 1500, sundayPrice: 1350, enabled: false,
       entertainmentAmenities: [{ key: "singing", displayName: "KTV", provided: true, source: "preset", position: 0 }]
     });
-    assert.equal(updatedBundle.name, "Alpha bundle", "price-only worker updates must preserve bundle identity");
+    assert.equal(updatedBundle.id, bundle.id, "bundle updates must preserve the server-generated identity");
+    assert.equal(updatedBundle.name, "Alpha bundle updated");
+    assert.equal(updatedBundle.capacity, 3);
     assert.equal(updatedBundle.mondayThursdayPrice, 1300);
-    assert.equal(updatedBundle.memberRoomIds[0], "alpha_room");
-    const preservedIdentity = providers.customerSettings.updateBundle("property_alpha", bundle.id, { ...updatedBundle, memberRoomIds: ["beta_room"] });
-    assert.deepEqual(preservedIdentity.memberRoomIds, ["alpha_room"], "price-only worker updates must ignore attempted member replacement");
-    assert.equal(preservedIdentity.enabled, true, "price-only worker updates must preserve enabled state");
-    assert.deepEqual(preservedIdentity.entertainmentAmenities, bundle.entertainmentAmenities, "price-only worker updates must preserve amenities");
+    assert.deepEqual(updatedBundle.memberRoomIds, ["alpha_room_2"]);
+    assert.equal(updatedBundle.enabled, false);
+    assert.equal(updatedBundle.entertainmentAmenities.find((item) => item.key === "singing").provided, true);
+    assert.throws(
+      () => providers.customerSettings.updateBundle("property_alpha", bundle.id, { ...updatedBundle, memberRoomIds: ["beta_room"] }),
+      /invalid bundle member/,
+      "bundle members must resolve inside the same property"
+    );
+    assert.equal(providers.customerSettings.listBundles("property_beta").length, 0, "bundle updates must not leak into another property");
+    providers.customerSettings.updateBundle("property_alpha", bundle.id, { ...updatedBundle, enabled: true });
+    const betaBundle = providers.customerSettings.createBundle("property_beta", {
+      name: "Beta bundle", capacity: 4, memberRoomIds: ["beta_room"],
+      mondayThursdayPrice: 2300, fridayPrice: 2400, saturdayHolidayPrice: 2500, sundayPrice: 2350,
+      enabled: true, entertainmentAmenities: []
+    });
+    const disposable = providers.customerSettings.createBundle("property_alpha", {
+      name: "Disposable", capacity: 2, memberRoomIds: ["alpha_room"],
+      mondayThursdayPrice: 900, fridayPrice: 1000, saturdayHolidayPrice: 1100, sundayPrice: 950,
+      enabled: true, entertainmentAmenities: []
+    });
+    assert.equal(providers.customerSettings.deleteBundle("property_alpha", disposable.id), true);
+    assert.equal(providers.customerSettings.listBundles("property_alpha").some((item) => item.id === disposable.id), false);
+    const freshAlpha = providers.customerSettings.getProperty("property_alpha");
+    const freshBeta = providers.customerSettings.getProperty("property_beta");
+    const alphaInventory = freshAlpha.rooms.find((item) => item.id === bundle.id);
+    const betaInventory = freshBeta.rooms.find((item) => item.id === betaBundle.id);
+    assert.equal(buildPricingFacts({ property: freshAlpha, availableInventory: [{ canonicalId: bundle.id }], checkIn: "2026-09-07", checkOut: "2026-09-08" }).prices[0].total, 1300, "the next formal pricing read must use the updated bundle price without restart");
+    assert.equal(buildPricingFacts({ property: freshBeta, availableInventory: [{ canonicalId: betaBundle.id }], checkIn: "2026-09-07", checkOut: "2026-09-08" }).prices[0].total, 2300, "another property must keep its own price");
+    assert.equal(buildPropertyCatalog(freshAlpha).rooms.find((item) => item.canonicalId === bundle.id).capacity, 3);
+    assert.equal(alphaInventory.entertainmentAmenities.find((item) => item.key === "singing").provided, true);
+    assert.equal(freshAlpha.rooms.some((item) => item.id === betaBundle.id), false);
+    assert.equal(freshBeta.rooms.some((item) => item.id === bundle.id), false);
+    assert.throws(
+      () => providers.customerSettings.deleteBundle("property_alpha", bundle.id),
+      /bundle already used/,
+      "an existing bundle with formal availability history must retain the delete safety guard"
+    );
     await providers.close();
     providers = null;
     const bundleInspection = await openPostgres(connection);

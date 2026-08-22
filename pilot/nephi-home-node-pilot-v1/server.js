@@ -1140,10 +1140,10 @@ function createRequestHandler(service, options = {}) {
         return sendData(response,{classification:customerSettings.setDatePriceClassification(propertyId,date,priceType)});
       }
       if (request.method === "GET" && pathname === "/api/bundles") return sendData(response, { bundles: customerSettings.listBundles(url.searchParams.get("customerId")) });
-      if (request.method === "POST" && pathname === "/api/bundles") throw new AppError(403, "BUNDLE_IDENTITY_LOCKED", "包棟方案只能在首次 onboarding 建立");
+      if (request.method === "POST" && pathname === "/api/bundles") { const body=request.adminBody||await readJsonBody(request),propertyId=adminSession&&adminSession.propertyId||body.customerId;return sendData(response,{bundle:customerSettings.createBundle(propertyId,body)},201); }
       const bundleMatch=/^\/api\/bundles\/([^/]+)$/.exec(pathname);
-      if(bundleMatch&&request.method==="PUT"){const body=request.adminBody||await readJsonBody(request),prices=Object.fromEntries(["mondayThursdayPrice","fridayPrice","saturdayHolidayPrice","sundayPrice"].map(key=>[key,body[key]]));return sendData(response,{bundle:customerSettings.updateBundle(body.customerId,bundleMatch[1],prices)});}
-      if(bundleMatch&&request.method==="DELETE")throw new AppError(403,"BUNDLE_IDENTITY_LOCKED","包棟方案建立後不得刪除");
+      if(bundleMatch&&request.method==="PUT"){const body=request.adminBody||await readJsonBody(request),propertyId=adminSession&&adminSession.propertyId||body.customerId;return sendData(response,{bundle:customerSettings.updateBundle(propertyId,bundleMatch[1],body)});}
+      if(bundleMatch&&request.method==="DELETE"){const body=request.adminBody||await readJsonBody(request),propertyId=adminSession&&adminSession.propertyId||body.customerId;return sendData(response,{deleted:customerSettings.deleteBundle(propertyId,bundleMatch[1])});}
 
       if (request.method === "GET" && pathname === "/api/guests") {
         return sendData(response, { guests: service.listGuests(url.searchParams.get("customerId"), url.searchParams.get("q")) });
