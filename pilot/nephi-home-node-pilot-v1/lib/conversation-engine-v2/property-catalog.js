@@ -3,6 +3,7 @@
 const { normalizeGoogleMapsUrl, extractGoogleMapsUrl } = require("../google-maps-url");
 const { PRESET_AMENITIES, normalizeEntertainmentAmenities } = require("../bundle-entertainment");
 const { equipmentByCanonicalId } = require("../../public/assets/high-frequency-equipment");
+const { normalizeMultilineText } = require("../multiline-text");
 
 function clean(value, limit = 120) { return String(value || "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, limit); }
 function aliasesFor(property, id) { const map = property.semanticCatalog && property.semanticCatalog.aliases || {}; return Array.isArray(map[id]) ? map[id].map((x) => clean(x, 80)).filter(Boolean) : []; }
@@ -72,7 +73,7 @@ function structuredPropertyFacts(property) {
         : "confirmed_yes";
     let answer = fact.canonicalId === "location"
       ? normalizeGoogleMapsUrl(fact.publicText)
-      : clean(fact.publicText, 1000);
+      : normalizeMultilineText(String(fact.publicText || ""), 1000);
     const equipment = equipmentByCanonicalId(fact.canonicalId);
     let appliesTo = fact.appliesTo || "whole_property";
     if (equipment && appliesTo === "both") appliesTo = "whole_property";

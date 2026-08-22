@@ -13,9 +13,17 @@ const { sessionTokenHash } = require("../lib/admin-auth");
 const { createApp } = require("../server");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { executeTasks } = require("../lib/conversation-engine-v2/capability-executor");
+const { buildResponsePlan } = require("../lib/conversation-engine-v2/response-planner");
+const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
+const { validateClaims } = require("../lib/conversation-engine-v2/claim-validator");
+const { buildFinalResponse } = require("../lib/conversation-engine-v2/final-response-renderer");
 const { buildHighFrequencyEquipmentDrafts, buildPropertyFactsPayload, equipmentFieldPolicy } = require("../public/assets/property-facts-form");
 
 const SESSION_TOKEN = "equipment-new-session";
+const MULTILINE_PUBLIC_TEXT = "國旅補助注意事項：\r\n\r\n• 限本國國民個別旅客，每房每晚限用一次\r\n• 適用時間：週日～週四（不含國定假日與連續假期）\r\n• 國際平台訂房不適用\r\n• 如補助經費提前用罄，依觀光署公告為準。\r\n\r\n詳情請參考：\r\nhttps://taiwantravel.tad.gov.tw/web_page/index.jsp";
+const NORMALIZED_MULTILINE_PUBLIC_TEXT = MULTILINE_PUBLIC_TEXT.replace(/\r\n/g, "\n");
+const MULTILINE_NOTES = "第一段內部備註\r\n\r\n第二段  保留兩個空格";
+const NORMALIZED_MULTILINE_NOTES = MULTILINE_NOTES.replace(/\r\n/g, "\n");
 
 
 function fact(canonicalId, status, publicText, appliesTo = "whole_property") {
@@ -147,6 +155,24 @@ async function api(url, route, options = {}) {
         if (item.canonicalId === "clothes_dryer") return { ...item, status: "not_allowed", publicText: "", notes: "\u53ef\u5354\u52a9\u4ecb\u7d39\u9644\u8fd1\u81ea\u52a9\u6d17\u8863\u5e97\u3002" };
         return item;
       });
+      adminFacts.push({
+        canonicalId: "travel_subsidy",
+        publicName: "國旅補助",
+        category: "policy",
+        status: "allowed",
+        appliesTo: "whole_property",
+        publicText: MULTILINE_PUBLIC_TEXT,
+        fees: [],
+        advanceNoticeRequired: null,
+        reservationRequired: null,
+        conditions: [],
+        restrictions: [],
+        operatingHours: [],
+        availablePeriods: [],
+        notes: MULTILINE_NOTES,
+        source: "operator_form",
+        updatedAt: "2026-08-22T00:00:00.000Z"
+      });
       const adminSaved = await api(running.url, "/api/property-facts", {
         method: "PUT",
         body: JSON.stringify({ propertyId: "equipment_new", facts: adminFacts })
@@ -156,6 +182,8 @@ async function api(url, route, options = {}) {
       assert.equal(adminReadBack.response.status, 200);
       assert.deepEqual(adminReadBack.body.data.facts, adminSaved.body.data.facts);
       assert.equal(adminReadBack.body.data.facts.find((item) => item.canonicalId === "wifi").notes, "\u8def\u7531\u5668\u91cd\u555f\u65b9\u5f0f\u50c5\u4f9b\u696d\u8005\u5167\u90e8\u4f7f\u7528\u3002");
+      assert.equal(adminReadBack.body.data.facts.find((item) => item.canonicalId === "travel_subsidy").publicText, NORMALIZED_MULTILINE_PUBLIC_TEXT);
+      assert.equal(adminReadBack.body.data.facts.find((item) => item.canonicalId === "travel_subsidy").notes, NORMALIZED_MULTILINE_NOTES);
 
       const formalProperty = providers.customerSettings.getProperty("equipment_new");
       assert.deepEqual(formalProperty.propertyFacts, adminReadBack.body.data.facts);
@@ -183,6 +211,25 @@ async function api(url, route, options = {}) {
         ]
       );
       assert.equal(outcomes[0].facts.answer.includes("\u8def\u7531\u5668\u91cd\u555f"), false, "internal notes must not become a guest answer");
+      const travelSubject = catalog.policies.find((item) => item.canonicalId === "travel_subsidy");
+      assert.equal(travelSubject.answer, NORMALIZED_MULTILINE_PUBLIC_TEXT);
+      const travelOutcome = executeTasks({
+        property: formalProperty,
+        catalog,
+        tasks: [{ taskId: "travel-subsidy", type: "policy", detailIntent: "general", entity: { rawText: "國旅補助" }, _resolvedEntity: { status: "resolved", entity: travelSubject } }],
+        request: { stay: {}, inventory: {} }
+      })[0];
+      const responsePlan = buildResponsePlan({
+        propertyId: formalProperty.propertyId,
+        taskResults: [travelOutcome],
+        inputTaskIds: ["travel-subsidy"],
+        canonicalRequests: [{ taskId: "travel-subsidy", capability: "policy", resolverId: "property_catalog", riskLevel: "low", responseMode: "answer", canonicalEntity: { status: "resolved", canonicalId: "travel_subsidy", category: "policy" } }]
+      });
+      const composed = composeControlledReply(responsePlan);
+      const claimValidation = validateClaims(composed, responsePlan, ["travel-subsidy"]);
+      const finalResponse = buildFinalResponse({ finalDecision: { action: "reply" }, responsePlan, validatedReplyText: composed, claimValidation });
+      assert.equal(composed, NORMALIZED_MULTILINE_PUBLIC_TEXT);
+      assert.equal(finalResponse.replyText, NORMALIZED_MULTILINE_PUBLIC_TEXT);
     } finally {
       if (app) await app.stop(); else await providers.close();
     }

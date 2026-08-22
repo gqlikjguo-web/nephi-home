@@ -1,6 +1,7 @@
 "use strict";
 
 const { equipmentByCanonicalId } = require("../public/assets/high-frequency-equipment");
+const { normalizeMultilineText } = require("./multiline-text");
 
 const FACT_CATEGORIES = new Set([
   "amenity",
@@ -47,6 +48,11 @@ function invalid(path) {
 function clean(value, limit) {
   if (typeof value !== "string") throw invalid("string");
   return value.normalize("NFC").replace(/\s+/g, " ").trim().slice(0, limit);
+}
+
+function cleanMultiline(value, limit) {
+  if (typeof value !== "string") throw invalid("string");
+  return normalizeMultilineText(value, limit);
 }
 
 function booleanOrNull(value, path) {
@@ -115,7 +121,7 @@ function normalizePropertyFact(value, index) {
   const category = clean(value.category, 40).toLowerCase();
   let status = clean(value.status, 40).toLowerCase();
   let appliesTo = clean(value.appliesTo, 40).toLowerCase();
-  const submittedPublicText = clean(value.publicText, 1000);
+  const submittedPublicText = cleanMultiline(value.publicText, 1000);
   const source = clean(value.source, 80).toLowerCase();
   const updatedAt = clean(value.updatedAt, 40);
   if (!CANONICAL_ID_PATTERN.test(canonicalId)) throw invalid(`${path}.canonicalId`);
@@ -148,7 +154,7 @@ function normalizePropertyFact(value, index) {
     restrictions: stringList(value.restrictions, `${path}.restrictions`),
     operatingHours: normalizeOperatingHours(value.operatingHours, `${path}.operatingHours`),
     availablePeriods: normalizeAvailablePeriods(value.availablePeriods, `${path}.availablePeriods`),
-    notes: clean(value.notes, 1000),
+    notes: cleanMultiline(value.notes, 1000),
     source,
     updatedAt: new Date(updatedAt).toISOString()
   };
