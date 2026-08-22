@@ -17,9 +17,19 @@
   const controlledPolicyByCanonicalId = new Map(controlledPolicyFacts.map((item) => [item.canonicalId, item]));
   const validStatuses = new Set(["allowed", "not_allowed", "unknown"]);
   const validScopes = new Set(["whole_property", "bundle_only"]);
+  const controlledPolicyVisibleFields = Object.freeze(["status", "appliesTo", "publicText", "notes"]);
+  const controlledPolicyHiddenFields = Object.freeze(["canonicalId", "publicName", "category", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]);
 
   function controlledPolicyDisplayName(canonicalId) {
     return controlledPolicyByCanonicalId.get(String(canonicalId || "").trim())?.displayName || "";
+  }
+
+  function controlledPolicyCardContract(canonicalId) {
+    return {
+      displayName: controlledPolicyDisplayName(canonicalId),
+      visibleFields: [...controlledPolicyVisibleFields],
+      hiddenFields: [...controlledPolicyHiddenFields]
+    };
   }
 
   function equipmentFieldPolicy(status) {
@@ -131,5 +141,5 @@
     };
   }
 
-  return { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts, controlledPolicyDisplayName, controlledPolicyFacts, equipmentByCanonicalId, equipmentFieldPolicy };
+  return { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts, controlledPolicyCardContract, controlledPolicyDisplayName, controlledPolicyFacts, equipmentByCanonicalId, equipmentFieldPolicy };
 });

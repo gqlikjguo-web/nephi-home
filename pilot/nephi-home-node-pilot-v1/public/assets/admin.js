@@ -71,13 +71,14 @@ function propertyFactRow(fact = {}, { controlled = false } = {}) {
   row.append(legend, grid, remove); return row;
 }
 function hiddenPropertyFactField(field, value) { const input = propertyFactInput(field, value); input.type = "hidden"; return input; }
-function equipmentFactRow(fact) {
-  const row = element("article", "equipment-fact-row property-fact-row"), title = element("h4", "", fact.publicName), grid = element("div", "property-fact-grid");
-  const status = propertyFactSelect("status", fact.status, [["unknown", "未知"], ["allowed", "有"], ["not_allowed", "沒有"]]);
-  const appliesTo = propertyFactSelect("appliesTo", fact.appliesTo, [["whole_property", "整間旅宿"], ["bundle_only", "僅包棟客適用"]]);
+function propertyFactCardRow(fact, options = {}) {
+  const row = element("article", "equipment-fact-row property-fact-row"), title = element("h4", "", options.title || fact.publicName), grid = element("div", "property-fact-grid");
+  const status = propertyFactSelect("status", fact.status, options.statusOptions || [["unknown", "未知"], ["allowed", "有"], ["not_allowed", "沒有"]]);
+  const appliesTo = propertyFactSelect("appliesTo", fact.appliesTo, options.appliesToOptions || [["whole_property", "整間旅宿"], ["bundle_only", "僅包棟客適用"]]);
   const publicText = propertyFactInput("publicText", fact.publicText, { multiline: true, rows: 3, placeholder: "可直接回覆旅客的正式說明" });
   const notes = propertyFactInput("notes", fact.notes, { multiline: true, rows: 2, placeholder: "業者內部備註（選填）" });
   const syncStatus = () => {
+    if (!options.dynamicEquipmentPolicy) return;
     const policy = PropertyFactsFormData.equipmentFieldPolicy(status.value);
     appliesTo.closest("label").hidden = !policy.showScope;
     publicText.closest("label").hidden = !policy.showPublicText;
@@ -93,10 +94,19 @@ function equipmentFactRow(fact) {
   notes.placeholder = "\u50c5\u696d\u8005\u5167\u90e8\uff0c\u4e0d\u76f4\u63a5\u56de\u8986\u65c5\u5ba2";
   notesLabel.insertBefore(noteHint, notes);
   syncStatus();
-  row.append(title, grid,
-    hiddenPropertyFactField("canonicalId", fact.canonicalId), hiddenPropertyFactField("publicName", fact.publicName),
-    hiddenPropertyFactField("category", "amenity"), hiddenPropertyFactField("source", fact.source), hiddenPropertyFactField("updatedAt", fact.updatedAt));
+  row.append(title, grid, ...(options.hiddenFields || ["canonicalId", "publicName", "category", "source", "updatedAt"]).map((field) => hiddenPropertyFactField(field, field === "category" && options.category ? options.category : fact[field])));
   return row;
+}
+function equipmentFactRow(fact) { return propertyFactCardRow(fact, { category: "amenity", dynamicEquipmentPolicy: true }); }
+function controlledPolicyFactRow(fact) {
+  const contract = PropertyFactsFormData.controlledPolicyCardContract(fact.canonicalId);
+  return propertyFactCardRow(fact, {
+    title: contract.displayName,
+    category: "policy",
+    statusOptions: [["unknown", "尚未確認"], ["allowed", "提供／允許"], ["conditional", "有條件提供"], ["not_allowed", "不提供／不允許"]],
+    appliesToOptions: [["whole_property", "整間旅宿"], ["room_only", "僅房間"], ["both", "整間與房間"]],
+    hiddenFields: contract.hiddenFields
+  });
 }
 function renderEquipmentFacts(facts) {
   const drafts = PropertyFactsFormData.buildHighFrequencyEquipmentDrafts(facts, "operator_form");
@@ -115,7 +125,7 @@ function renderPropertyFacts(facts = []) {
     $("propertyFactsList").closest("section").before(section);
   }
   const controlledIds = new Set(PropertyFactsFormData.controlledPolicyFacts.map((item) => item.canonicalId));
-  $("controlledPolicyFactsList").replaceChildren(...PropertyFactsFormData.buildControlledPolicyFactDrafts(facts).map((fact) => propertyFactRow(fact, { controlled: true })));
+  $("controlledPolicyFactsList").replaceChildren(...PropertyFactsFormData.buildControlledPolicyFactDrafts(facts).map(controlledPolicyFactRow));
   $("propertyFactsList").replaceChildren(...facts.filter((fact) => !PropertyFactsFormData.equipmentByCanonicalId(fact.canonicalId) && !controlledIds.has(fact.canonicalId)).map(propertyFactRow));
 }
 function collectPropertyFactDrafts() { return [...$("propertyFactsForm").querySelectorAll(".property-fact-row")].map(row => Object.fromEntries([...row.querySelectorAll("[data-property-fact-field]")].map(control => [control.dataset.propertyFactField, control.value]))); }

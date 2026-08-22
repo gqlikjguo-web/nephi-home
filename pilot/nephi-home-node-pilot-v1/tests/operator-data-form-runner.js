@@ -50,9 +50,19 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
     assert.equal(assetResponse.status, 200);
     assert.match(assetResponse.headers.get("content-type") || "", /javascript/);
 
-    const { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts, controlledPolicyDisplayName } = require("../public/assets/property-facts-form");
+    const { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts, controlledPolicyCardContract, controlledPolicyDisplayName } = require("../public/assets/property-facts-form");
     assert.equal(controlledPolicyDisplayName("breakfast"), "早餐說明");
     assert.equal(controlledPolicyDisplayName("pets"), "寵物規則");
+    assert.deepEqual(controlledPolicyCardContract("breakfast"), {
+      displayName: "早餐說明",
+      visibleFields: ["status", "appliesTo", "publicText", "notes"],
+      hiddenFields: ["canonicalId", "publicName", "category", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]
+    });
+    assert.deepEqual(controlledPolicyCardContract("pets"), {
+      displayName: "寵物規則",
+      visibleFields: ["status", "appliesTo", "publicText", "notes"],
+      hiddenFields: ["canonicalId", "publicName", "category", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]
+    });
     const controlledDrafts = buildControlledPolicyFactDrafts([{
       canonicalId: "breakfast",
       publicName: "早餐",
