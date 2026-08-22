@@ -76,6 +76,16 @@ async function main() {
 
   const plannerInstructions = instructions();
   const taskProperties = schema.properties.tasks.items.properties;
+  assert.match(
+    plannerInstructions,
+    /shared modifier, condition, fee, timing, or payment-method question[\s\S]*separate task[\s\S]*independently answered, clarified, or handed off/i,
+    "Planner instructions must preserve an independently actionable request even when its wording is shared by coordinated subjects"
+  );
+  assert.match(
+    schema.properties.tasks.description,
+    /shared descriptor[\s\S]*independently answerable, clarifiable, or handoff-required request[\s\S]*own task/i,
+    "the strict task collection contract must require coverage for an independently actionable shared descriptor"
+  );
   assert.match(plannerInstructions, /A monetary lodging amount, charge, or rate request[\s\S]*must use type price, detailIntent general, requestedOutputs price, and dependsOnStayContext true\./);
   assert.match(taskProperties.type.description, /Monetary lodging amount, charge, or rate requests use price or total_price;/);
   assert.match(taskProperties.requestedOutputs.description, /A price task uses price, a total_price task uses total_price,/);
