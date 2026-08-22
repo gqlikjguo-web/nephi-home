@@ -753,8 +753,9 @@ function main() {
       guestCountCandidate: null
     }
   }), { message: genericTypeMessage, catalogOverride: genericTypeCatalog });
-  assert.equal(genericTypePrice.tasks[0].entity.category, "policy", "core must preserve the Planner category without fuzzy source recovery");
-  assert.equal(genericTypePrice.tasks[0].entity.canonicalCandidate, "price");
+  assert.equal(genericTypePrice.tasks[0].type, "price", "a lodging amount task must retain its stateful capability");
+  assert.equal(genericTypePrice.tasks[0].entity.category, "other", "a colliding catalog policy must not become the lodging price subject");
+  assert.equal(genericTypePrice.tasks[0].entity.canonicalCandidate, null);
   const sourceBoundFaqCatalog = buildPropertyCatalog({
     ...property,
     rooms: [{ id: "faq-room-a", name: "Garden Family Room", type: "family", capacity: 4, enabled: true }],
@@ -1383,8 +1384,9 @@ function main() {
     catalog: genericTypeCatalog,
     sourceEvents: [{ eventId: "multi-task-event", messageRef: "", messageText: multiTaskMessage }]
   });
-  assert.equal(isolatedMultiTask.tasks[0].entity.category, "policy", "one task must preserve its Planner structure rather than borrow another clause's room scope");
-  assert.equal(isolatedMultiTask.tasks[0].entity.canonicalCandidate, "price");
+  assert.equal(isolatedMultiTask.tasks[0].type, "price", "one lodging amount task must preserve its capability rather than borrow another clause's room scope");
+  assert.equal(isolatedMultiTask.tasks[0].entity.category, "other");
+  assert.equal(isolatedMultiTask.tasks[0].entity.canonicalCandidate, null);
 
   const amenityFeePolicy = canonical(task({
     taskId: "pool-fee-policy",

@@ -389,6 +389,37 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
       }
     };
   }
+  const collidingCanonicalId = canonicalGrounded && canonicalGrounded.status === "resolved"
+    && canonicalGrounded.entity && canonicalGrounded.entity.canonicalId || "";
+  const collidingCanonicalDefinition = collidingCanonicalId
+    ? getCapabilityDefinition(collidingCanonicalId)
+    : null;
+  const sourceIdentityAgreesWithCollision = authoritativeSourceIdentityIds.size === 0
+    || authoritativeSourceIdentityIds.size === 1
+      && authoritativeSourceIdentityIds.has(collidingCanonicalId);
+  const statefulLodgingAmountIdentityCollision = ["price", "total_price"].includes(task.type)
+    && task.detailIntent === "general"
+    && Array.isArray(task.requestedOutputs)
+    && task.requestedOutputs.length === 1
+    && task.requestedOutputs[0] === task.type
+    && task.dependsOnStayContext === true
+    && task.stayCandidate
+    && !["room", "bundle"].includes(entity.category)
+    && capabilityDefinition
+    && capabilityDefinition.resolverId === "availability_resolver"
+    && capabilityDefinition.stayDependency === "required"
+    && capabilityDefinition.riskLevel === "low"
+    && capabilityDefinition.responseMode === "answer"
+    && collidingCanonicalId
+    && !["room", "bundle"].includes(canonicalGrounded.entity.category)
+    && collidingCanonicalDefinition
+    && collidingCanonicalDefinition.resolverId === "availability_resolver"
+    && collidingCanonicalDefinition.stayDependency === "required"
+    && sourceIdentityAgreesWithCollision;
+  if (statefulLodgingAmountIdentityCollision) return {
+    ...task,
+    entity: { ...entity, category: "other", rawText: "", canonicalCandidate: null }
+  };
   const sourceBoundFormalDetail = sourceBoundRaw
     && verifiedSource.includes(sourceBoundRaw)
     && task.type === "policy"

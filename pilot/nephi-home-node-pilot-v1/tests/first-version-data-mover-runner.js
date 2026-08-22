@@ -15,7 +15,10 @@ const property = {
     { id: "room_double", name: "標準雙人房", type: "雙人房", capacity: 2, enabled: true, mondayThursdayPrice: 2200, fridayPrice: 2400, saturdayHolidayPrice: 2800, sundayPrice: 2300 },
     { id: "bundle_all", name: "全館包棟", inventoryType: "bundle", capacity: 8, enabled: true, memberRoomIds: ["room_double"], mondayThursdayPrice: 8800, fridayPrice: 9600, saturdayHolidayPrice: 10800, sundayPrice: 9200 }
   ],
-  commonAnswers: { bbqRule: "可於指定區域使用烤肉設備，使用後請清潔復原。" },
+  commonAnswers: {
+    bbqRule: "可於指定區域使用烤肉設備，使用後請清潔復原。",
+    priceRule: "住宿價格依入住日期與住宿產品計算。"
+  },
   propertyFacts: [
     { canonicalId: "splash_pool", category: "amenity", publicName: "戲水池", status: "available", publicText: "戲水池開放時間與使用限制依後台公告。", appliesTo: "whole_property" }
   ],
@@ -250,6 +253,56 @@ async function main() {
   assert.equal(price.finalDecision.action, "reply");
   assert.match(price.replyText, /標準雙人房/);
   assert.match(price.replyText, /全館包棟/);
+
+  const lodgingPriceCollisionFailures = [];
+  for (const [caseId, messageText] of [
+    ["rgs-007-fee", "請問費用"],
+    ["rgs-008-price-polite", "請問價錢"],
+    ["rgs-009-price-how-much", "價格多少"],
+    ["rgs-012-price-punctuation", "價格？"],
+    ["new-024-turn-1", "價格？"]
+  ]) {
+    const result = await process(rawPlan(messageText, [task({
+      candidateIndex: 0,
+      taskId: caseId,
+      type: "price",
+      sourceText: messageText,
+      category: "other",
+      canonicalCandidate: "price",
+      requestedOutputs: ["price"],
+      stayCandidate: emptyStay()
+    })]), messageText, caseId);
+    if (result.finalDecision.action !== "clarification"
+      || result.replyText !== "請提供入住日期。\n查房連結：https://guest.example/genericlodge") {
+      lodgingPriceCollisionFailures.push(`${caseId}:action=${result.finalDecision.action}:reply=${result.replyText}`);
+    }
+  }
+
+  const pastPriceMessage = "請問5月1-3\n兩個人住兩晚的價格大概多少呢";
+  const pastPriceStay = {
+    dateExpression: { rawText: "5月1-3", kind: "range", anchor: "message_time" },
+    checkInCandidate: "5月1日",
+    checkOutCandidate: "5月3日",
+    nightsCandidate: 2,
+    guestCountCandidate: 2
+  };
+  const pastCounters = {};
+  const pastPrice = await process(rawPlan(pastPriceMessage, [task({
+    candidateIndex: 0,
+    taskId: "rg-003-price-nights",
+    type: "price",
+    sourceText: pastPriceMessage,
+    category: "other",
+    canonicalCandidate: "price",
+    requestedOutputs: ["price"],
+    stayCandidate: pastPriceStay
+  })], pastPriceStay), pastPriceMessage, "rg-003-price-nights", pastCounters);
+  if (pastPrice.finalDecision.action !== "clarification"
+    || pastPrice.finalDecision.reasonCode !== "past_date"
+    || (pastCounters.availability || 0) !== 0) {
+    lodgingPriceCollisionFailures.push(`rg-003-price-nights:action=${pastPrice.finalDecision.action}:reason=${pastPrice.finalDecision.reasonCode}:resolverCalls=${pastCounters.availability || 0}`);
+  }
+  assert.deepEqual(lodgingPriceCollisionFailures, [], `lodging price identity collision targets must retain their existing lodging path:\n${lodgingPriceCollisionFailures.join("\n")}`);
 
   for (const [eventId, rawText, kind] of [["today", "今天", "relative"], ["tomorrow", "明天", "relative"], ["weekday", "下週三", "weekday"]]) {
     const messageText = `${rawText}有房嗎？`;
