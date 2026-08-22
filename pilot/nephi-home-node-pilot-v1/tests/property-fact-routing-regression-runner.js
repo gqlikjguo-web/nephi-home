@@ -59,6 +59,14 @@ function property(propertyId, label) {
         aliases: ["cancellation"]
       },
       {
+        canonicalId: "travel_subsidy",
+        publicName: "國旅補助",
+        category: "policy",
+        status: "provided",
+        publicText: `${label} travel subsidy policy.`,
+        aliases: []
+      },
+      {
         canonicalId: "location",
         category: "location",
         status: "provided",
@@ -216,6 +224,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
 (async () => {
   const alpha = property("property_alpha", "Alpha");
   const beta = property("property_beta", "Beta");
+  beta.propertyFacts = beta.propertyFacts.filter((item) => item.canonicalId !== "travel_subsidy");
   alpha.commonAnswers = { ...alpha.commonAnswers, checkInTime: "15:00", latestArrivalTime: "22:00", checkOutTime: "11:00" };
   beta.commonAnswers = { ...beta.commonAnswers, checkInTime: "14:00", latestArrivalTime: "20:00", checkOutTime: "10:00" };
 
@@ -310,6 +319,25 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   );
   assert.equal(pool.result.taskResults[0].facts.source, "property_catalog");
   assert.equal(pool.result.finalDecision.action, "reply");
+
+  const travelSubsidy = await execute({
+    currentProperty: alpha,
+    message: "國旅補助",
+    tasks: [propertyFactTask("travel-subsidy", "policy", "國旅補助", "policy", "travel_subsidy")]
+  });
+  assert.deepEqual(canonicalCapabilities(travelSubsidy.diagnostics), ["policy"]);
+  assert.equal(travelSubsidy.result.taskResults[0].facts.source, "property_catalog");
+  assert.equal(travelSubsidy.result.taskResults[0].facts.propertyId, "property_alpha");
+  assert.match(travelSubsidy.result.replyText, /Alpha travel subsidy policy\./);
+  assert.equal(travelSubsidy.result.finalDecision.action, "reply");
+
+  const missingTravelSubsidy = await execute({
+    currentProperty: beta,
+    message: "國旅補助",
+    tasks: [propertyFactTask("travel-subsidy-missing", "policy", "國旅補助", "policy", "travel_subsidy")]
+  });
+  assert.equal(missingTravelSubsidy.result.finalDecision.action, "handoff");
+  assert.doesNotMatch(missingTravelSubsidy.result.replyText, /Alpha travel subsidy policy\./);
 
   const singingHours = await execute({
     currentProperty: alpha,
@@ -501,7 +529,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.equal(unknown.result.replyText.includes("Alpha barbecue fact."), false);
   assert.equal(unknown.result.replyText.includes("Alpha pool fact."), false);
 
-  console.log(JSON.stringify({ caseCount: 16, passCount: 16, failCount: 0 }));
+  console.log(JSON.stringify({ caseCount: 18, passCount: 18, failCount: 0 }));
   console.log("property fact routing regression: PASS");
 })().catch((error) => {
   console.error(error.stack || error);

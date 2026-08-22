@@ -12,7 +12,8 @@
   const equipmentByCanonicalId = registry && registry.equipmentByCanonicalId || (() => null);
   const controlledPolicyFacts = Object.freeze([
     Object.freeze({ canonicalId: "breakfast", publicName: "早餐", displayName: "早餐說明" }),
-    Object.freeze({ canonicalId: "pets", publicName: "寵物規則", displayName: "寵物規則" })
+    Object.freeze({ canonicalId: "pets", publicName: "寵物規則", displayName: "寵物規則" }),
+    Object.freeze({ canonicalId: "travel_subsidy", publicName: "國旅補助", displayName: "國旅補助說明" })
   ]);
   const controlledPolicyByCanonicalId = new Map(controlledPolicyFacts.map((item) => [item.canonicalId, item]));
   const validStatuses = new Set(["allowed", "not_allowed", "unknown"]);

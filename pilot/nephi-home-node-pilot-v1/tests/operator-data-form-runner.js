@@ -55,6 +55,7 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
     const { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts, controlledPolicyCardContract, controlledPolicyDisplayName } = require("../public/assets/property-facts-form");
     assert.equal(controlledPolicyDisplayName("breakfast"), "早餐說明");
     assert.equal(controlledPolicyDisplayName("pets"), "寵物規則");
+    assert.equal(controlledPolicyDisplayName("travel_subsidy"), "國旅補助說明");
     assert.deepEqual(controlledPolicyCardContract("breakfast"), {
       displayName: "早餐說明",
       visibleFields: ["status", "appliesTo", "publicText", "notes"],
@@ -62,6 +63,11 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
     });
     assert.deepEqual(controlledPolicyCardContract("pets"), {
       displayName: "寵物規則",
+      visibleFields: ["status", "appliesTo", "publicText", "notes"],
+      hiddenFields: ["canonicalId", "publicName", "category", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]
+    });
+    assert.deepEqual(controlledPolicyCardContract("travel_subsidy"), {
+      displayName: "國旅補助說明",
       visibleFields: ["status", "appliesTo", "publicText", "notes"],
       hiddenFields: ["canonicalId", "publicName", "category", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]
     });
@@ -85,15 +91,18 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
     }]);
     assert.deepEqual(controlledDrafts.map((item) => [item.canonicalId, item.publicName, item.category]), [
       ["breakfast", "早餐", "policy"],
-      ["pets", "寵物規則", "policy"]
+      ["pets", "寵物規則", "policy"],
+      ["travel_subsidy", "國旅補助", "policy"]
     ]);
     assert.equal(controlledDrafts[0].publicText, "早餐需於入住三日前預約。", "existing breakfast data must be read into the controlled entry");
     assert.equal(controlledDrafts[0].fees, '[{"label":"早餐費","amount":200,"currency":"TWD","unit":"person"}]');
     assert.equal(controlledDrafts[1].status, "unknown", "a missing pet fact must produce exactly one empty controlled draft");
+    assert.equal(controlledDrafts[2].status, "unknown", "a missing travel-subsidy fact must produce exactly one empty controlled draft");
     const controlledPayload = buildPropertyFactsPayload("property_alpha", controlledDrafts, () => new Date("2026-08-13T01:00:00.000Z"));
     assert.deepEqual(controlledPayload.facts.map((item) => [item.canonicalId, item.publicName, item.category]), [
       ["breakfast", "早餐", "policy"],
-      ["pets", "寵物規則", "policy"]
+      ["pets", "寵物規則", "policy"],
+      ["travel_subsidy", "國旅補助", "policy"]
     ]);
     const controlledSave = await fetch(`${running.url}/api/property-facts`, {
       method: "PUT",
@@ -106,9 +115,12 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
     const controlledFacts = (await controlledRead.json()).data.facts;
     assert.equal(controlledFacts.filter((item) => item.canonicalId === "breakfast").length, 1, "breakfast must round-trip as one formal row");
     assert.equal(controlledFacts.filter((item) => item.canonicalId === "pets").length, 1, "pets must round-trip as one formal row");
+    assert.equal(controlledFacts.filter((item) => item.canonicalId === "travel_subsidy").length, 1, "travel subsidy must round-trip as one formal row");
     const editedDrafts = buildControlledPolicyFactDrafts(controlledFacts);
     editedDrafts.find((item) => item.canonicalId === "pets").status = "allowed";
     editedDrafts.find((item) => item.canonicalId === "pets").publicText = "可攜帶寵物，入住前需告知。";
+    editedDrafts.find((item) => item.canonicalId === "travel_subsidy").status = "conditional";
+    editedDrafts.find((item) => item.canonicalId === "travel_subsidy").publicText = "本館配合國旅補助，申請方式請依正式公告辦理。";
     const editedPayload = buildPropertyFactsPayload("property_alpha", editedDrafts, () => new Date("2026-08-13T02:00:00.000Z"));
     const editedSave = await fetch(`${running.url}/api/property-facts`, {
       method: "PUT",
@@ -119,6 +131,8 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
     const editedFacts = (await editedSave.json()).data.facts;
     assert.equal(editedFacts.find((item) => item.canonicalId === "pets").publicText, "可攜帶寵物，入住前需告知。");
     assert.equal(editedFacts.filter((item) => item.canonicalId === "pets").length, 1, "editing pets must not create a duplicate row");
+    assert.equal(editedFacts.find((item) => item.canonicalId === "travel_subsidy").publicText, "本館配合國旅補助，申請方式請依正式公告辦理。");
+    assert.equal(editedFacts.filter((item) => item.canonicalId === "travel_subsidy").length, 1, "editing travel subsidy must not create a duplicate row");
     const payload = buildPropertyFactsPayload("property_alpha", [{
       canonicalId: "parking",
       category: "amenity",
