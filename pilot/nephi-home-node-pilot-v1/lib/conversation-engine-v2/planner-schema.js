@@ -475,6 +475,49 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
       canonicalCandidate: canonicalGrounded.entity.canonicalId
     }
   };
+  const formalCategoryTaskType = canonicalGrounded && canonicalGrounded.status === "resolved"
+    ? ["amenity", "activity", "room_feature"].includes(canonicalGrounded.entity.category)
+      ? "amenity"
+      : ["policy", "payment", "cancellation", "check_in", "check_out"].includes(canonicalGrounded.entity.category)
+        ? "policy"
+        : canonicalGrounded.entity.category === "transport"
+          ? "property_fact"
+          : null
+    : null;
+  const formalCategoryDefinition = formalCategoryTaskType
+    ? getCapabilityDefinition(formalCategoryTaskType)
+    : null;
+  const safeStatelessPropertyDefinition = (definition) => definition
+    && definition.resolverId === "property_catalog"
+    && definition.stayDependency === false
+    && definition.riskLevel === "low"
+    && definition.responseMode === "answer";
+  const sourceBoundStatelessCategoryDrift = catalog.propertyId
+    && task.detailIntent === "general"
+    && sourceBoundRaw
+    && verifiedSource.includes(sourceBoundRaw)
+    && entity.canonicalCandidate
+    && canonicalGrounded && canonicalGrounded.status === "resolved"
+    && authoritativeSourceIdentityIds.size === 1
+    && authoritativeSourceIdentityIds.has(canonicalGrounded.entity.canonicalId)
+    && !["room", "bundle"].includes(canonicalGrounded.entity.category)
+    && safeStatelessPropertyDefinition(capabilityDefinition)
+    && capabilityDefinition.acceptedCandidateTypes.includes(task.type)
+    && safeStatelessPropertyDefinition(formalCategoryDefinition)
+    && formalCategoryDefinition.acceptedCandidateTypes.includes(formalCategoryTaskType)
+    && formalCategoryDefinition.acceptedEntityCategories.includes(canonicalGrounded.entity.category);
+  if (sourceBoundStatelessCategoryDrift) return {
+    ...task,
+    type: formalCategoryTaskType,
+    requestedOutputs: canonicalGrounded.entity.category === "transport" ? ["map_url"] : ["answer"],
+    dependsOnStayContext: false,
+    stayCandidate: null,
+    entity: {
+      ...entity,
+      category: canonicalGrounded.entity.category,
+      canonicalCandidate: canonicalGrounded.entity.canonicalId
+    }
+  };
   const sourceBoundCurrentPropertyGeneralSubject = catalog.propertyId
     && task.detailIntent === "general"
     && sourceBoundRaw
