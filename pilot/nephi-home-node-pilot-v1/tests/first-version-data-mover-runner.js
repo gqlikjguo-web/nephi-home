@@ -216,6 +216,38 @@ async function main() {
   await providerSchemaContract();
   await providerDefersNormalizableEngineContracts();
 
+  const currentPropertyPoolFailures = [];
+  const poolUseMessage = "泳池可以用嗎";
+  const poolUse = await process(rawPlan(poolUseMessage, [task({
+    candidateIndex: 0,
+    taskId: "pool-use",
+    type: "amenity",
+    sourceText: poolUseMessage,
+    category: "amenity",
+    canonicalCandidate: "pool"
+  })]), poolUseMessage, "pool-use");
+  if (poolUse.finalDecision.action !== "reply" || !poolUse.replyText.includes("戲水池開放時間")) {
+    currentPropertyPoolFailures.push(`pool-use:action=${poolUse.finalDecision.action}:reply=${poolUse.replyText}`);
+  }
+
+  const monthBundlePoolMessage = "九月包棟多少？泳池會開嗎？";
+  const monthStay = { dateExpression: { rawText: "九月", kind: "absolute", anchor: "message_time" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null, guestCountCandidate: null };
+  const monthBundlePool = await process(rawPlan(monthBundlePoolMessage, [
+    task({ candidateIndex: 0, taskId: "month-bundle-price", type: "price", sourceText: "九月包棟多少？", category: "bundle", canonicalCandidate: "bundle_all", requestedOutputs: ["price"], stayCandidate: monthStay }),
+    {
+      ...task({ candidateIndex: 1, taskId: "month-pool", type: "amenity", sourceText: "泳池會開嗎？", category: "amenity", canonicalCandidate: "pool" }),
+      dependsOnStayContext: true,
+      stayCandidate: monthStay
+    }
+  ], monthStay), monthBundlePoolMessage, "month-bundle-pool");
+  if (monthBundlePool.finalDecision.action !== "clarification"
+    || !monthBundlePool.replyText.includes("請提供入住日期")
+    || !monthBundlePool.replyText.includes("https://guest.example/genericlodge")
+    || !monthBundlePool.replyText.includes("戲水池開放時間")) {
+    currentPropertyPoolFailures.push(`month-bundle-pool:action=${monthBundlePool.finalDecision.action}:reply=${monthBundlePool.replyText}`);
+  }
+  assert.deepEqual(currentPropertyPoolFailures, [], `current-property pool subject drift must preserve formal answers:\n${currentPropertyPoolFailures.join("\n")}`);
+
   const multiMessage = "8/29可包棟嗎？有烤肉嗎？有泳池嗎？";
   const datedStay = { dateExpression: { rawText: "8/29", kind: "absolute", anchor: "message_time" }, checkInCandidate: "2026-08-29", checkOutCandidate: null, nightsCandidate: 1, guestCountCandidate: null };
   const multiTasks = [

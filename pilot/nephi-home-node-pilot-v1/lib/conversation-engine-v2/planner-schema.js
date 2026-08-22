@@ -475,6 +475,33 @@ function groundedPropertyFactTask(task, catalog, fallbackStayCandidate = null, v
       canonicalCandidate: canonicalGrounded.entity.canonicalId
     }
   };
+  const sourceBoundCurrentPropertyGeneralSubject = catalog.propertyId
+    && task.detailIntent === "general"
+    && sourceBoundRaw
+    && verifiedSource.includes(sourceBoundRaw)
+    && entity.canonicalCandidate
+    && (!canonicalGrounded || canonicalGrounded.status === "not_found")
+    && authoritativeSourceIdentityIds.size === 1
+    && sourceBaseEntity
+    && !["room", "bundle"].includes(sourceBaseEntity.category)
+    && capabilityDefinition
+    && capabilityDefinition.resolverId === "property_catalog"
+    && capabilityDefinition.stayDependency === false
+    && capabilityDefinition.riskLevel === "low"
+    && capabilityDefinition.responseMode === "answer"
+    && capabilityDefinition.acceptedCandidateTypes.includes(task.type)
+    && capabilityDefinition.acceptedEntityCategories.includes(sourceBaseEntity.category);
+  if (sourceBoundCurrentPropertyGeneralSubject) return {
+    ...task,
+    requestedOutputs: sourceBaseEntity.category === "transport" ? ["map_url"] : ["answer"],
+    dependsOnStayContext: false,
+    stayCandidate: null,
+    entity: {
+      ...entity,
+      category: sourceBaseEntity.category,
+      canonicalCandidate: sourceBaseEntity.canonicalId
+    }
+  };
   const sourceBoundCanonicalConflict = sourceBoundRaw
     && verifiedSource.includes(sourceBoundRaw)
     && entity.canonicalCandidate
