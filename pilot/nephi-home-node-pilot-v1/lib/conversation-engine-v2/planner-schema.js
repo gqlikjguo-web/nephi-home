@@ -996,7 +996,12 @@ function normalizeIgnoredAcknowledgementOutput(value, { sourceEvents } = {}) {
   const messageText = String(sourceEvent.messageText || "");
   const ignoredIndexes = new Set();
   const ignoredCandidateIndexes = new Set();
+  const substantiveIndexes = new Set();
   const tasks = value.tasks.map((task, index) => {
+    if (task && verifiedNewRequestRelation(task, value.contextRelationCandidates, sourceEvents)) {
+      substantiveIndexes.add(index);
+      return task;
+    }
     if (!task || !["human_help", "unknown"].includes(task.type)
       || ![undefined, "", "general"].includes(task.detailIntent)) return task;
     ignoredIndexes.add(index);
@@ -1030,7 +1035,9 @@ function normalizeIgnoredAcknowledgementOutput(value, { sourceEvents } = {}) {
       confidence: taskConfidence
     };
   });
-  if (!ignoredIndexes.size) return value;
+  if (!ignoredIndexes.size) return substantiveIndexes.size
+    ? { ...value, shouldIgnore: false }
+    : value;
   const retainedCandidates = (Array.isArray(value.contextRelationCandidates) ? value.contextRelationCandidates : [])
     .filter((candidate) => candidate && !ignoredCandidateIndexes.has(candidate.candidateIndex) && !ignoredIndexes.has(candidate.candidateIndex));
   const normalizedCandidates = [...ignoredIndexes].map((candidateIndex) => ({
@@ -1048,6 +1055,7 @@ function normalizeIgnoredAcknowledgementOutput(value, { sourceEvents } = {}) {
   return {
     ...value,
     tasks,
+    shouldIgnore: substantiveIndexes.size ? false : value.shouldIgnore,
     contextRelationCandidates: [...retainedCandidates, ...normalizedCandidates]
       .sort((left, right) => left.candidateIndex - right.candidateIndex)
   };

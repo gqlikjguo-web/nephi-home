@@ -121,7 +121,7 @@ function task({
   };
 }
 
-function plan(tasks, sourceEvent, { discourseRelation = "new_request", shouldIgnore = false } = {}) {
+function plan(tasks, sourceEvent, { discourseRelation = "new_request", relationKind = "new_request", shouldIgnore = false } = {}) {
   return migrateFakePlannerOutput({
     schemaVersion: 2,
     discourse: { relation: discourseRelation, confidence: 0.99 },
@@ -138,7 +138,7 @@ function plan(tasks, sourceEvent, { discourseRelation = "new_request", shouldIgn
       const startOffset = sourceEvent.messageText.indexOf(item.sourceText);
       return {
         candidateIndex: item.candidateIndex,
-        kind: "new_request",
+        kind: relationKind,
         candidateRequestCycleRefs: [],
         evidenceRefs: [{
           eventId: sourceEvent.eventId,
@@ -442,6 +442,45 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.equal(substantiveAcknowledgement.result.finalDecision.action, "handoff", "a substantive acknowledgement-labeled task must reach a controlled handoff instead of no_reply");
   assert.notEqual(substantiveAcknowledgement.result.finalDecision.reasonCode, "no_reply_gate_hit");
 
+  const substantiveNotifications = [
+    { id: "payment-notification", message: "已匯款", category: "payment", canonicalCandidate: "payment" },
+    { id: "booking-notification", message: "訂房資料已送出", category: "other", canonicalCandidate: null },
+    { id: "refund-notification", message: "退款資料已送出", category: "payment", canonicalCandidate: "payment" },
+    { id: "cancellation-notification", message: "取消申請已送出", category: "cancellation", canonicalCandidate: "cancellation" }
+  ];
+  for (const fixture of substantiveNotifications) {
+    const result = await execute({
+      currentProperty: alpha,
+      message: fixture.message,
+      tasks: [task({
+        taskId: fixture.id,
+        type: "unknown",
+        sourceText: fixture.message,
+        category: fixture.category,
+        canonicalCandidate: fixture.canonicalCandidate
+      })],
+      planOptions: { discourseRelation: "acknowledgement", relationKind: "new_request", shouldIgnore: true }
+    });
+    assert.equal(result.result.finalDecision.action, "handoff", `${fixture.id} must not be silenced by contradictory acknowledgement metadata`);
+    assert.notEqual(result.result.replyText, "", `${fixture.id} must produce a controlled reply`);
+    assert.doesNotMatch(result.result.replyText, /已收到款項|已完成訂房|已保留房間|已完成退款|已完成取消/);
+  }
+
+  const pureAcknowledgement = await execute({
+    currentProperty: alpha,
+    message: "OK",
+    tasks: [task({
+      taskId: "pure-acknowledgement",
+      type: "unknown",
+      sourceText: "OK",
+      category: "other",
+      canonicalCandidate: null
+    })],
+    planOptions: { discourseRelation: "acknowledgement", relationKind: "relation_uncertain", shouldIgnore: true }
+  });
+  assert.equal(pureAcknowledgement.result.finalDecision.action, "no_reply");
+  assert.equal(pureAcknowledgement.result.replyText, "");
+
   const policyCandidateWithAmenityShape = await execute({
     currentProperty: alpha,
     message: "cancellation conditions",
@@ -530,7 +569,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.equal(unknown.result.replyText.includes("Alpha barbecue fact."), false);
   assert.equal(unknown.result.replyText.includes("Alpha pool fact."), false);
 
-  console.log(JSON.stringify({ caseCount: 18, passCount: 18, failCount: 0 }));
+  console.log(JSON.stringify({ caseCount: 23, passCount: 23, failCount: 0 }));
   console.log("property fact routing regression: PASS");
 })().catch((error) => {
   console.error(error.stack || error);
