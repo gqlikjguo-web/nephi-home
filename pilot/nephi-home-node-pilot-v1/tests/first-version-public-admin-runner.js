@@ -92,7 +92,7 @@ function seedDate(offsetDays) {
   const latestArrivalIndex = adminHtml.indexOf('id="profileLatestArrivalTime"');
   const checkOutIndex = adminHtml.indexOf('id="profileCheckOutTime"');
   assert.equal(checkInIndex >= 0 && latestArrivalIndex > checkInIndex && checkOutIndex > latestArrivalIndex, true, "the optional latest-arrival time input must appear between check-in and check-out");
-  assert.match(adminHtml, /id="profileLatestArrivalTime" type="time"/, "latest arrival must use the browser time input contract");
+  assert.match(adminHtml, /<textarea id="profileLatestArrivalTime"[^>]*maxlength="500"/, "latest arrival must use a free-text operator input");
   assert.match(adminScript, /profileLatestArrivalTime/, "the admin profile client must load and save latestArrivalTime");
   assert.match(guestCss, /max-width: 390px/, "guest mobile layout must include a narrow-screen rule");
   assert.match(adminCss, /status-toggle/, "the admin toggle must have an explicit mobile-safe presentation");
@@ -191,21 +191,19 @@ function seedDate(offsetDays) {
 
     const initialProfile = await json(`${running.url}/api/property-profile?propertyId=nephi_home`);
     assert.equal(initialProfile.body.data.latestArrivalTime, "21:30", "the profile API must load the property's existing optional latest-arrival time");
-    const profileResponse = await fetch(`${running.url}/api/property-profile`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", propertyName: "更新後旅宿", googleMapsUrl: "https://maps.app.goo.gl/nephi", lineUrl: "https://lin.ee/nephiOfficial", contactInfo: "0900-000-000", checkInTime: "15:00", latestArrivalTime: "22:00", checkOutTime: "11:00" }) });
+    const latestArrivalText = "最晚22:00，超過請提前聯絡";
+    const profileResponse = await fetch(`${running.url}/api/property-profile`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", propertyName: "更新後旅宿", googleMapsUrl: "https://maps.app.goo.gl/nephi", lineUrl: "https://lin.ee/nephiOfficial", contactInfo: "0900-000-000", checkInTime: "15:00", latestArrivalTime: latestArrivalText, checkOutTime: "11:00" }) });
     const profile = await profileResponse.json();
     assert.equal(profileResponse.status, 200, "the minimal profile must update property-scoped data");
     assert.equal(profile.data.propertyName, "更新後旅宿");
     assert.equal(profile.data.checkInTime, "15:00");
-    assert.equal(profile.data.latestArrivalTime, "22:00");
+    assert.equal(profile.data.latestArrivalTime, latestArrivalText);
     assert.equal(profile.data.checkOutTime, "11:00");
-    assert.equal(app.providers.customerSettings.getProperty("nephi_home").commonAnswers.latestArrivalTime, "22:00", "the JSON provider must round-trip the operator value");
+    assert.equal(app.providers.customerSettings.getProperty("nephi_home").commonAnswers.latestArrivalTime, latestArrivalText, "the JSON provider must round-trip the complete operator text");
     assert.equal(app.providers.customerSettings.getProperty("other_home").commonAnswers.latestArrivalTime, "20:00", "updating one property must not change another property");
     assert.equal((await json(`${running.url}/api/public/property?slug=nephihome`)).body.data.propertyName, "更新後旅宿", "public metadata must read the same property data");
     const invalidLine = await fetch(`${running.url}/api/property-profile`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", propertyName: "更新後旅宿", googleMapsUrl: "https://maps.app.goo.gl/nephi", lineUrl: "https://example.com/not-line", contactInfo: "", checkInTime: "15:00", checkOutTime: "11:00" }) });
     assert.equal(invalidLine.status, 400, "the profile must reject a non-LINE contact URL");
-    const invalidLatestArrival = await fetch(`${running.url}/api/property-profile`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", propertyName: "更新後旅宿", googleMapsUrl: "https://maps.app.goo.gl/nephi", lineUrl: "https://lin.ee/nephiOfficial", contactInfo: "", checkInTime: "15:00", latestArrivalTime: "24:00", checkOutTime: "11:00" }) });
-    assert.equal(invalidLatestArrival.status, 400, "the optional latest-arrival time must reject values outside HH:MM");
-    assert.equal(app.providers.customerSettings.getProperty("nephi_home").commonAnswers.latestArrivalTime, "22:00", "an invalid update must not mutate the stored value");
     const clearLatestArrival = await fetch(`${running.url}/api/property-profile`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", propertyName: "更新後旅宿", googleMapsUrl: "https://maps.app.goo.gl/nephi", lineUrl: "https://lin.ee/nephiOfficial", contactInfo: "", checkInTime: "15:00", latestArrivalTime: "", checkOutTime: "11:00" }) });
     const clearedProfile = await clearLatestArrival.json();
     assert.equal(clearLatestArrival.status, 200);

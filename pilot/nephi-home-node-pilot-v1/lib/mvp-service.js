@@ -415,11 +415,10 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     const googleMapsUrl = normalizeGoogleMapsUrl(input.googleMapsUrl);
     const contactInfo = cleanText(input.contactInfo, 300);
     const checkInTime = cleanText(input.checkInTime, 5);
-    const latestArrivalTime = cleanText(input.latestArrivalTime, 5);
+    const latestArrivalTime = cleanText(input.latestArrivalTime, 500);
     const checkOutTime = cleanText(input.checkOutTime, 5);
     const lineUrl = cleanText(input.lineUrl, 500);
     if (!propertyName || !TIME_PATTERN.test(checkInTime) || !TIME_PATTERN.test(checkOutTime)) throw new AppError(400, "INVALID_PROFILE", "請填寫民宿名稱與有效的入住、退房時間");
-    if (latestArrivalTime && !TIME_PATTERN.test(latestArrivalTime)) throw new AppError(400, "INVALID_PROFILE", "最晚入住時間必須使用 HH:MM");
     if (input.googleMapsUrl && !googleMapsUrl) throw new AppError(400, "INVALID_GOOGLE_MAPS_URL", "Google Maps 網址格式不正確");
     if (lineUrl) {
       let parsed;

@@ -102,7 +102,7 @@ const base = {
   assert.match(adminJs, /openBundleAmenityEditor/);
   assert.match(onboardingJs, /openOnboardingAmenityEditor/);
   assert.doesNotMatch(adminHtml, /<details class="card other-settings"/);
-  assert.match(onboardingHtml, /name="latestArrivalTime"/);
+  assert.match(onboardingHtml, /<textarea name="latestArrivalTime"[^>]*maxlength="500"/, "onboarding must use the same free-text latest-arrival field");
   assert.match(adminJs, /profileAddress/);
   assert.match(guestJs, /amenity\.note/);
 

@@ -225,7 +225,8 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   const alpha = property("property_alpha", "Alpha");
   const beta = property("property_beta", "Beta");
   beta.propertyFacts = beta.propertyFacts.filter((item) => item.canonicalId !== "travel_subsidy");
-  alpha.commonAnswers = { ...alpha.commonAnswers, checkInTime: "15:00", latestArrivalTime: "22:00", checkOutTime: "11:00" };
+  const alphaLatestArrivalText = "最晚22:00，超過請提前聯絡";
+  alpha.commonAnswers = { ...alpha.commonAnswers, checkInTime: "15:00", latestArrivalTime: alphaLatestArrivalText, checkOutTime: "11:00" };
   beta.commonAnswers = { ...beta.commonAnswers, checkInTime: "14:00", latestArrivalTime: "20:00", checkOutTime: "10:00" };
 
   const alphaCatalog = buildPropertyCatalog(alpha);
@@ -237,7 +238,7 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.ok(betaLatestArrival, "each property must create its own latest-arrival detail identity");
   assert.deepEqual(
     { category: alphaLatestArrival.category, status: alphaLatestArrival.status, answer: alphaLatestArrival.answer },
-    { category: "policy", status: "confirmed_yes", answer: "22:00" },
+    { category: "policy", status: "confirmed_yes", answer: alphaLatestArrivalText },
     "latestArrivalTime must create the exact formal detail identity"
   );
   assert.equal(betaLatestArrival.answer, "20:00", "each property must retain its own latest-arrival detail");
@@ -257,12 +258,12 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   assert.deepEqual(canonicalCapabilities(latestArrival.diagnostics), ["policy"]);
   assert.equal(latestArrival.result.taskResults[0].status, "answered");
   assert.equal(latestArrival.result.taskResults[0].facts.source, "property_catalog");
-  assert.equal(latestArrival.result.taskResults[0].facts.answer, "22:00");
+  assert.equal(latestArrival.result.taskResults[0].facts.answer, alphaLatestArrivalText);
   assert.equal(latestArrival.result.taskResults[0].facts.detailProvided, true);
   assert.equal(latestArrival.result.taskResults[0].facts.detailNeedsConfirmation, false);
   assert.equal(latestArrival.result.finalDecision.action, "reply");
   assert.equal(latestArrival.result.finalDecision.reviewRequired, false);
-  assert.match(latestArrival.result.replyText, /22:00/);
+  assert.match(latestArrival.result.replyText, /最晚22:00，超過請提前聯絡/);
 
   const missingLatestProperty = property("property_missing_latest", "MissingLatest");
   missingLatestProperty.commonAnswers = { ...missingLatestProperty.commonAnswers, checkInTime: "15:00", checkOutTime: "11:00" };

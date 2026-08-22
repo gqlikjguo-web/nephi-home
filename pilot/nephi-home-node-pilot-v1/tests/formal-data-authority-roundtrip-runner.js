@@ -52,7 +52,7 @@ function onboardingInput() {
     address: "Original formal address",
     googleMapsUrl: "https://maps.app.goo.gl/FormalRoundtrip",
     checkInTime: "15:00",
-    latestArrivalTime: "21:30",
+    latestArrivalTime: "晚上10點前",
     checkOutTime: "11:00",
     line: { hasOfficialAccount: false, contactLink: "" },
     rooms: [{
@@ -144,7 +144,7 @@ function resolvedAmenity(property, canonicalId) {
     await migratePostgres(connection);
     providers = createProviders({ databaseUrl: "pglite:test", postgresConnection: connection });
     const submitted = onboardingInput();
-    assert.equal(submitted.latestArrivalTime, "21:30");
+    assert.equal(submitted.latestArrivalTime, "晚上10點前");
     providers.onboarding.createOnboarding("formal-roundtrip-application", "draft-hash");
     providers.onboarding.saveOnboarding("formal-roundtrip-application", submitted);
     providers.onboarding.submitOnboarding("formal-roundtrip-application");
@@ -162,7 +162,7 @@ function resolvedAmenity(property, canonicalId) {
     assert.equal(approved.businessProfile.address, "Original formal address");
     assert.equal(approved.businessProfile.googleMapsUrl, "https://maps.app.goo.gl/FormalRoundtrip");
     assert.equal(approved.commonAnswers.checkInTime, "15:00");
-    assert.equal(approved.commonAnswers.latestArrivalTime, "21:30");
+    assert.equal(approved.commonAnswers.latestArrivalTime, "晚上10點前");
     assert.equal(approved.commonAnswers.checkOutTime, "11:00");
     const onboardingBundle = approved.rooms.find((item) => item.inventoryType === "bundle");
     assert.equal(onboardingBundle.entertainmentAmenities.find((item) => item.key === "singing").note, "Onboarding guest detail.");
@@ -183,7 +183,7 @@ function resolvedAmenity(property, canonicalId) {
     const profile = await request(running.url, `/api/property-profile?propertyId=${PROPERTY_ID}`);
     assert.equal(profile.response.status, 200);
     assert.equal(profile.body.data.address, "Original formal address");
-    assert.equal(profile.body.data.latestArrivalTime, "21:30");
+    assert.equal(profile.body.data.latestArrivalTime, "晚上10點前");
 
     const savedProfile = await request(running.url, "/api/property-profile", {
       method: "PUT",
@@ -195,7 +195,7 @@ function resolvedAmenity(property, canonicalId) {
         lineUrl: "",
         contactInfo: "Newest contact",
         checkInTime: "16:00",
-        latestArrivalTime: "22:00",
+        latestArrivalTime: "無固定時間，請入住前與我們確認",
         checkOutTime: "10:00"
       })
     });
@@ -279,7 +279,7 @@ function resolvedAmenity(property, canonicalId) {
     assert.equal(location.address, "Newest formal address");
     assert.equal(location.mapUrl, "https://maps.app.goo.gl/NewestFormal");
     assert.equal(singing.catalog.policies.find((item) => item.canonicalId === "check_in").answer, "16:00");
-    assert.equal(singing.catalog.policies.find((item) => item.canonicalId === "check_in__latest_arrival_policy").answer, "22:00");
+    assert.equal(singing.catalog.policies.find((item) => item.canonicalId === "check_in__latest_arrival_policy").answer, "無固定時間，請入住前與我們確認");
     assert.equal(singing.catalog.policies.find((item) => item.canonicalId === "check_out").answer, "10:00");
 
     const publicProperty = await request(running.url, "/api/public/property?slug=formal-roundtrip", {}, false);
