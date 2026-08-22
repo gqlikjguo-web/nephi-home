@@ -194,15 +194,11 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
       if (!queryPlan.resolverTask) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "resolver_task_required" });
       const adapted = resolveAvailability({ availabilityResolver, resolverTask: queryPlan.resolverTask });
       if (!adapted.result.availabilityReliable) return queryOutcome(queryPlan, "technical_error", { reason: "availability_unreliable", resolverAttempted: true });
-      const explicitAvailableProduct = ["availability", "bundle_availability"].includes(queryPlan.capability)
-        && queryPlan.entity && queryPlan.entity.status === "resolved"
-        && ["room", "bundle"].includes(queryPlan.entity.category)
-        && queryPlan.entity.canonicalId
-        && adapted.facts.availableInventory.length === 1
-        && adapted.facts.availableInventory[0].canonicalId === queryPlan.entity.canonicalId;
-      if (explicitAvailableProduct) {
+      const availabilityWithInventory = ["availability", "bundle_availability"].includes(queryPlan.capability)
+        && adapted.facts.availableInventory.length > 0;
+      if (availabilityWithInventory) {
         const pricing = buildPricingFacts({ property, availableInventory: adapted.facts.availableInventory, checkIn: stay.checkIn, checkOut: stay.checkOut, priceOverrides, datePriceClassifications });
-        if (!pricing.missing && pricing.prices.length === 1) adapted.facts = { ...adapted.facts, prices: pricing.prices };
+        if (!pricing.missing && pricing.prices.length === adapted.facts.availableInventory.length) adapted.facts = { ...adapted.facts, prices: pricing.prices };
       }
       if (["availability", "bundle_availability", "room_options", "capacity"].includes(queryPlan.capability)) return queryOutcome(queryPlan, adapted.facts.availableInventory.length ? "answered" : "no_availability", { facts: adapted.facts, resolverAttempted: true });
       if (!adapted.facts.availableInventory.length) return queryOutcome(queryPlan, "no_availability", { facts: { availability: "full", checkIn: stay.checkIn, checkOut: stay.checkOut, prices: [], source: "availability_provider", propertyId: property.propertyId }, resolverAttempted: true });

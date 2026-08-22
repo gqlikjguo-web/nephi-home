@@ -140,7 +140,28 @@ const genericAvailabilityPlan = {
 };
 const genericAvailability = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: genericAvailabilityPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
 assert.equal(genericAvailability.outcome, "answered");
-assert.equal(Object.hasOwn(genericAvailability.facts, "prices"), false);
+assert.deepEqual(genericAvailability.facts.prices.map((item) => [item.inventory.canonicalId, item.total]), [["room-price", 2200]]);
+assert.match(composeSection({ status: "answered", facts: genericAvailability.facts }), /Price room.*2,200 TWD/u);
+
+const allInventoryProperty = {
+  ...pricingProperty,
+  rooms: [
+    pricingProperty.rooms[0],
+    { id: "bundle-all", publicDisplayName: "Whole property", inventoryType: "bundle", capacity: 8, enabled: true, mondayThursdayPrice: 8000, fridayPrice: 9000, saturdayHolidayPrice: 10000, sundayPrice: 8500 }
+  ]
+};
+const allInventoryAvailability = executeQueryPlan({ property: allInventoryProperty, catalog, queryPlan: genericAvailabilityPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: allInventoryProperty.rooms }) });
+assert.deepEqual(allInventoryAvailability.facts.prices.map((item) => [item.inventory.canonicalId, item.total]), [["room-price", 2200], ["bundle-all", 17000]]);
+assert.match(composeSection({ status: "answered", facts: allInventoryAvailability.facts }), /Price room.*2,200 TWD.*Whole property.*17,000 TWD/u);
+
+const genericWithoutPrice = executeQueryPlan({
+  property: { ...pricingProperty, rooms: [{ ...pricingProperty.rooms[0], fridayPrice: 0 }] },
+  catalog,
+  queryPlan: genericAvailabilityPlan,
+  availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms })
+});
+assert.equal(genericWithoutPrice.outcome, "answered");
+assert.equal(Object.hasOwn(genericWithoutPrice.facts, "prices"), false);
 
 for (const capability of ["room_options", "capacity"]) {
   const nonEnriched = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...roomAvailabilityPlan, formalRequestId: `cycle-price:${capability}`, taskId: capability, capability, operation: capability }, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });

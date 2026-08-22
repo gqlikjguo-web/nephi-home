@@ -79,7 +79,14 @@ function buildFinalResponse({
     const replyText = claimValidation && claimValidation.ok === true
       ? String(validatedReplyText || "").trim().slice(0, responsePlan && responsePlan.maxLength || 1200)
       : "";
-    return { action, replyText, shouldReply: true };
+    const hasAvailabilityAnswer = Boolean(responsePlan && Array.isArray(responsePlan.sections)
+      && responsePlan.sections.some((section) => section
+        && section.responseMode === "answer"
+        && ["availability", "bundle_availability"].includes(section.type)));
+    const availabilityLink = hasAvailabilityAnswer && replyText && String(publicAvailabilityUrl || "").trim()
+      ? `查房連結：${String(publicAvailabilityUrl).trim()}`
+      : "";
+    return { action, replyText: withinLimit([replyText, availabilityLink], responsePlan), shouldReply: true };
   }
   const answered = verifiedSectionsFor(
     responsePlan,

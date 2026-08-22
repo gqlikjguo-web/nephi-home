@@ -65,6 +65,42 @@ assert.deepEqual(reply, {
 });
 cases.push(reply);
 
+const availabilityReply = buildFinalResponse({
+  finalDecision: decision("reply"),
+  responsePlan: plan([{
+    ...answeredSection,
+    taskId: "dated-availability",
+    type: "availability",
+    facts: { availability: "available", checkIn: "2026-09-05", availableInventory: [{ publicName: "雙人房" }] }
+  }]),
+  validatedReplyText: "2026-09-05 入住可選：雙人房。",
+  claimValidation: { ok: true, errors: [] },
+  publicAvailabilityUrl: "https://example.test/demo/availability"
+});
+assert.deepEqual(availabilityReply, {
+  action: "reply",
+  replyText: "2026-09-05 入住可選：雙人房。\n查房連結：https://example.test/demo/availability",
+  shouldReply: true
+});
+
+const noAvailabilityReply = buildFinalResponse({
+  finalDecision: decision("reply"),
+  responsePlan: plan([{
+    ...answeredSection,
+    taskId: "no-availability",
+    type: "availability",
+    facts: { availability: "full", checkIn: "2026-09-05", availableInventory: [] }
+  }]),
+  validatedReplyText: "2026-09-05 入住目前沒有符合條件的空房。",
+  claimValidation: { ok: true, errors: [] },
+  publicAvailabilityUrl: "https://example.test/demo/availability"
+});
+assert.deepEqual(noAvailabilityReply, {
+  action: "reply",
+  replyText: "2026-09-05 入住目前沒有符合條件的空房。\n查房連結：https://example.test/demo/availability",
+  shouldReply: true
+});
+
 const clarification = buildFinalResponse({
   finalDecision: decision("clarification", { missingFields: ["stay.checkIn"] }),
   responsePlan: plan([clarificationSection]),
