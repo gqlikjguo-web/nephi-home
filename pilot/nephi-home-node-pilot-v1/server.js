@@ -40,6 +40,13 @@ const SAFE_PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network",
 const SAFE_COVERAGE_CRITIC_RESULT_STATUSES = new Set(["budget_exhausted", "provider_failure", "invalid_output", "missing_detected", "complete"]);
 const SAFE_COVERAGE_CRITIC_FAILURE_CODES = new Set(["", "invalid_missing_requests_shape", "invalid_source_identity", "invalid_evidence", "invalid_source_overlap", "duplicate_or_overlap_conflict", "invalid_subject_identity", "other"]);
 const SAFE_CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
+const SAFE_CLAIM_VALIDATOR_ERROR_CODES = new Set([
+  "empty_reply", "meaningless_reply", "length", "internal_content", "forbidden_claim",
+  "unknown_fact_reference", "incomplete_task_coverage", "missing_fact_source",
+  "empty_task_reply", "meaningless_section_text", "handoff_deterministic_boundary",
+  "allowed_fact_missing", "response_mode_semantic_mismatch", "ungrounded_section_text",
+  "incomplete_task_execution"
+]);
 const SAFE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_REPAIR_KINDS = new Set(["coverage_repair", "task_collection_repair", "semantic_repair"]);
 const TEST_ONLY_NATIVE_LINE_MESSAGE_TYPES = new Set(["sticker", "image", "video", "file"]);
@@ -488,7 +495,19 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
   if (details.stage === "pending_request") return { ...base, action: String(details.action || ""), reasonCode: String(details.reasonCode || ""), capability: String(details.capability || ""), missingFields: (details.missingFields || []).map(String) };
   if (details.stage === "fallback") return { ...base, reasonCode: String(details.reasonCode || ""), branch: String(details.branch || "") };
   if (details.stage === "final_decision" || details.stage === "line_transport") return { ...base, decision: String(details.decision || ""), reasonCode: String(details.reasonCode || ""), attempted: Boolean(details.attempted), delivered: Boolean(details.delivered) };
-  if (["response_plan", "composer", "claim_validator", "line_ready"].includes(details.stage)) return { ...base, sectionCount: details.sectionCount, coveredTaskIds: details.coveredTaskIds || [], missingTaskIds: details.missingTaskIds || [], replyLength: details.replyLength, composerSource: details.composerSource || "", validationResult: details.validationResult || "" };
+  if (["response_plan", "composer", "claim_validator", "line_ready"].includes(details.stage)) return {
+    ...base,
+    sectionCount: details.sectionCount,
+    coveredTaskIds: details.coveredTaskIds || [],
+    missingTaskIds: details.missingTaskIds || [],
+    replyLength: details.replyLength,
+    composerSource: details.composerSource || "",
+    validationResult: details.validationResult || "",
+    ...(details.stage === "claim_validator" ? {
+      errors: [...new Set((Array.isArray(details.errors) ? details.errors : [])
+        .filter((error) => typeof error === "string" && SAFE_CLAIM_VALIDATOR_ERROR_CODES.has(error)))]
+    } : {})
+  };
   return null;
 }
 

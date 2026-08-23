@@ -66,6 +66,27 @@ async function main() {
        WHERE property_id=$1 AND review_id='review-1500'`,
       ["nephi_home"]
     );
+    await client.query(
+      `UPDATE message_logs
+       SET payload=jsonb_set(payload,'{safeTrace,44}',jsonb_build_object(
+         'scope','conversation-engine-v2',
+         'traceId','11111111-1111-4111-8111-111111111111',
+         'propertyId',$1,
+         'stage','claim_validator',
+         'errors',jsonb_build_array('forbidden_claim','ungrounded_section_text','unknown-private-value',42,jsonb_build_object('token','must-not-be-returned')),
+         'coveredTaskIds',jsonb_build_array('task-a'),
+         'missingTaskIds',jsonb_build_array('task-b'),
+         'unexpectedTaskIds',jsonb_build_array('task-c'),
+         'guestMessage','must-not-be-returned',
+         'replyText','must-not-be-returned',
+         'answer','must-not-be-returned',
+         'sourceText','must-not-be-returned',
+         'evidence','must-not-be-returned',
+         'credential','must-not-be-returned'
+       ))
+       WHERE property_id=$1 AND review_id='review-1500'`,
+      ["nephi_home"]
+    );
     await client.close();
 
     providers = createPostgresProviders(connection);
@@ -93,7 +114,19 @@ async function main() {
     );
     assert.equal(defaults[0].safeTrace.length, 40, "reviews must cap persisted safe traces at the newest 40 stages");
     assert.equal(defaults[0].safeTrace[0].taskCount, 6, "reviews must retain the newest bounded stages");
-    assert.equal(defaults[0].safeTrace.at(-1).taskCount, 45);
+    assert.deepEqual(defaults[0].safeTrace.at(-1), {
+      scope: "conversation-engine-v2",
+      traceId: "11111111-1111-4111-8111-111111111111",
+      propertyId: "nephi_home",
+      stage: "claim_validator",
+      sectionCount: undefined,
+      coveredTaskIds: ["task-a"],
+      missingTaskIds: ["task-b"],
+      replyLength: undefined,
+      composerSource: "",
+      validationResult: "",
+      errors: ["forbidden_claim", "ungrounded_section_text"]
+    }, "reviews must retain only allowlisted claim-validator errors and existing safe coverage fields");
     const serialized = JSON.stringify(defaults);
     for (const forbidden of ["must-not-be-returned", "rawOpenAiPrompt", "rawOpenAiResponse", "credential", "padding"]) {
       assert.equal(serialized.includes(forbidden), false, `reviews leaked ${forbidden}`);
