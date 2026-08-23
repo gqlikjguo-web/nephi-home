@@ -23,7 +23,7 @@ assert.deepEqual(groups.map((group) => [group.key, group.publicName, group.cards
   ["cooking", "廚房／餐飲", ["stove", "cookware", "tableware", "breakfast"]],
   ["hygiene", "衛浴／盥洗", ["toiletries"]],
   ["infant", "嬰幼兒設備", ["baby_crib", "baby_bathtub", "baby_bottle_sterilizer", "baby_bottle_cleaning_equipment"]],
-  ["special_policy", "政策／特殊服務", ["pets", "travel_subsidy"]]
+  ["special_policy", "政策／特殊服務", ["pets", "travel_subsidy", "add_person_bed"]]
 ]);
 
 const drafts = formData.buildHighFrequencyEquipmentDrafts([{
@@ -58,6 +58,24 @@ const resolved = resolveEntity(catalog, { category: "amenity", rawText: "盥洗�
 assert.equal(resolved.status, "resolved");
 assert.equal(resolved.entity.answer, "提供毛巾、浴巾、洗髮乳與沐浴乳；牙刷請自備。");
 assert.equal(resolved.entity.propertyFact.canonicalId, "toiletries");
+
+const policyDrafts = formData.buildControlledPolicyFactDrafts([{
+  canonicalId: "add_person_bed",
+  publicName: "不可覆寫名稱",
+  category: "policy",
+  status: "conditional",
+  appliesTo: "whole_property",
+  publicText: "加人或加床須事先聯絡業者確認。",
+  notes: "內部備註不得成為正式回答"
+}]);
+const policyPayload = formData.buildPropertyFactsPayload("property_alpha", policyDrafts, () => new Date("2026-08-23T00:00:00.000Z"));
+const storedPolicies = normalizePropertyFacts(policyPayload.facts);
+assert.equal(storedPolicies.filter((item) => item.canonicalId === "add_person_bed").length, 1, "the controlled policy payload must preserve one add-person/bed identity");
+const policyCatalog = buildPropertyCatalog({ propertyId: "property_alpha", rooms: [], propertyFacts: storedPolicies });
+const resolvedPolicy = resolveEntity(policyCatalog, { category: "policy", rawText: "加人／加床", canonicalCandidate: "add_person_bed" });
+assert.equal(resolvedPolicy.status, "resolved");
+assert.equal(resolvedPolicy.entity.answer, "加人或加床須事先聯絡業者確認。");
+assert.equal(resolvedPolicy.entity.propertyFact.canonicalId, "add_person_bed");
 
 const css = fs.readFileSync(path.join(__dirname, "../public/assets/equipment-facts.css"), "utf8");
 assert.match(css, /\.equipment-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);

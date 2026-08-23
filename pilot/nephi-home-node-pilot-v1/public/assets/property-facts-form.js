@@ -13,7 +13,8 @@
   const controlledPolicyFacts = Object.freeze([
     Object.freeze({ canonicalId: "breakfast", publicName: "早餐", displayName: "早餐說明" }),
     Object.freeze({ canonicalId: "pets", publicName: "寵物規則", displayName: "寵物規則" }),
-    Object.freeze({ canonicalId: "travel_subsidy", publicName: "國旅補助", displayName: "國旅補助說明" })
+    Object.freeze({ canonicalId: "travel_subsidy", publicName: "國旅補助", displayName: "國旅補助說明" }),
+    Object.freeze({ canonicalId: "add_person_bed", publicName: "加人／加床", displayName: "加人／加床規則" })
   ]);
   const controlledPolicyByCanonicalId = new Map(controlledPolicyFacts.map((item) => [item.canonicalId, item]));
   const validStatuses = new Set(["allowed", "not_allowed", "unknown"]);
@@ -129,7 +130,7 @@
       { key: "cooking", publicName: "廚房／餐飲", cards: [...equipmentGroup("cooking"), policyById.get("breakfast")] },
       { key: "hygiene", publicName: "衛浴／盥洗", cards: equipmentGroup("hygiene") },
       { key: "infant", publicName: "嬰幼兒設備", cards: equipmentGroup("infant") },
-      { key: "special_policy", publicName: "政策／特殊服務", cards: [policyById.get("pets"), policyById.get("travel_subsidy")] }
+      { key: "special_policy", publicName: "政策／特殊服務", cards: [policyById.get("pets"), policyById.get("travel_subsidy"), policyById.get("add_person_bed")] }
     ];
   }
 
