@@ -47,18 +47,19 @@ function summaryCounts(properties, applications, connections) {
   };
 }
 
-function summaryCard(label, value, tone) {
-  const card = element("article", undefined, `card summary-card ${tone}`);
+function summaryCard(label, value, tone, href) {
+  const card = element("a", undefined, `card summary-card ${tone}`);
+  card.href = href;
   card.append(element("p", label, "summary-label"), element("strong", String(value), "summary-value"));
   return card;
 }
 
 function renderSummary(counts) {
   summaryBox.replaceChildren(
-    summaryCard("正式業者數", counts.propertyCount, "summary-properties"),
-    summaryCard("待審核申請數", counts.pendingApplicationCount, "summary-review"),
-    summaryCard("LINE 已啟用數", counts.lineEnabledCount, "summary-enabled"),
-    summaryCard("LINE 尚未啟用數", counts.lineDisabledCount, "summary-disabled")
+    summaryCard("正式業者數", counts.propertyCount, "summary-properties", "#properties"),
+    summaryCard("待審核申請數", counts.pendingApplicationCount, "summary-review", "/admin/onboarding?filter=pending"),
+    summaryCard("LINE 已啟用數", counts.lineEnabledCount, "summary-enabled", "/admin/line-connections?filter=enabled"),
+    summaryCard("LINE 尚未啟用數", counts.lineDisabledCount, "summary-disabled", "/admin/line-connections?filter=disabled")
   );
 }
 

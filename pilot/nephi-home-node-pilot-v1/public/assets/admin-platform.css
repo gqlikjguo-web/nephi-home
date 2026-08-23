@@ -1,3 +1,4 @@
+html{scroll-behavior:smooth}
 .platform-admin{min-width:0}
 .platform-admin .shell{display:grid;gap:18px}
 .platform-navigation{position:sticky;top:0;z-index:10;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:10px;border:1px solid #dce6df;border-radius:16px;background:#f8fbf9;box-shadow:0 8px 24px #18382312}
@@ -7,7 +8,9 @@
 .platform-heading h1{margin-bottom:6px}
 .platform-heading button{flex:0 0 auto;width:auto}
 .platform-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;min-width:0}
-.summary-card{min-width:0;padding:18px}
+.summary-card{display:block;min-width:0;padding:18px;color:inherit;text-decoration:none;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+.summary-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px #18382320}
+.summary-card:focus-visible{outline:3px solid #22633e;outline-offset:3px}
 .summary-label{margin:0;color:#607268;font-weight:700}
 .summary-value{display:block;margin-top:8px;color:#204b33;font-size:clamp(1.8rem,4vw,2.5rem);line-height:1}
 .summary-review{border-color:#d8c78e}
