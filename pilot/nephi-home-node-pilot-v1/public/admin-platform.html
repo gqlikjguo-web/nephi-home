@@ -4,26 +4,33 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{PUBLIC_BRAND_NAME}}｜平台總後台</title>
-  <link rel="stylesheet" href="/assets/onboarding.css">
-  <link rel="stylesheet" href="/assets/admin-onboarding.css">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/admin-platform.css">
 </head>
-<body class="admin-review">
-  <main>
-    <header>
-      <p>{{PUBLIC_BRAND_NAME}}</p>
-      <h1>平台總後台</h1>
-      <p>檢視所有正式業者及其住宿商品。</p>
-      <nav aria-label="平台管理功能">
-        <a href="/admin/onboarding">業者導入審核</a>
-        <a href="/admin/line-connections">LINE 串接</a>
-      </nav>
-    </header>
-    <section>
-      <div class="two">
-        <h2>正式業者</h2>
-        <button id="refresh" type="button">重新整理</button>
+<body class="platform-admin">
+  <main class="shell">
+    <nav class="platform-navigation" aria-label="平台管理功能">
+      <a class="active" href="/admin/platform" aria-current="page">平台總覽</a>
+      <a href="/admin/onboarding">業者導入</a>
+      <a href="/admin/line-connections">LINE 串接</a>
+    </nav>
+    <header class="platform-heading">
+      <div>
+        <p class="eyebrow">{{PUBLIC_BRAND_NAME}}</p>
+        <h1>平台總後台</h1>
+        <p class="hint">掌握正式業者、待審案件與 LINE 串接狀態。</p>
       </div>
-      <div id="properties"></div>
+      <button id="refresh" type="button" class="secondary">重新整理</button>
+    </header>
+    <section id="platformSummary" class="platform-summary" aria-label="平台狀態摘要" aria-live="polite"></section>
+    <section class="card property-directory">
+      <div class="property-directory-heading">
+        <div>
+          <p class="eyebrow">正式資料</p>
+          <h2>業者清單</h2>
+        </div>
+      </div>
+      <div id="properties" class="property-list"></div>
       <p id="message" tabindex="-1" aria-live="polite"></p>
     </section>
     <footer><small>© {{PUBLIC_BRAND_NAME}}</small></footer>
