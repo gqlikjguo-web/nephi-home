@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{PUBLIC_BRAND_NAME}}｜平台總後台</title>
+  <link rel="stylesheet" href="/assets/onboarding.css">
+  <link rel="stylesheet" href="/assets/admin-onboarding.css">
+</head>
+<body class="admin-review">
+  <main>
+    <header>
+      <p>{{PUBLIC_BRAND_NAME}}</p>
+      <h1>平台總後台</h1>
+      <p>檢視所有正式業者及其住宿商品。</p>
+      <nav aria-label="平台管理功能">
+        <a href="/admin/onboarding">業者導入審核</a>
+        <a href="/admin/line-connections">LINE 串接</a>
+      </nav>
+    </header>
+    <section>
+      <div class="two">
+        <h2>正式業者</h2>
+        <button id="refresh" type="button">重新整理</button>
+      </div>
+      <div id="properties"></div>
+      <p id="message" tabindex="-1" aria-live="polite"></p>
+    </section>
+    <footer><small>© {{PUBLIC_BRAND_NAME}}</small></footer>
+  </main>
+  <script src="/assets/admin-platform.js" defer></script>
+</body>
+</html>
