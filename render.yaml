@@ -35,7 +35,7 @@ services:
       - key: NEPHI_PILOT_CLASSIFIER_TIMEOUT_MS
         value: "15000"
       - key: PUBLIC_BASE_URL
-        value: https://nephi-home-node-pilot-test-only-btye.onrender.com
+        value: https://test.junzanai.com
       - key: ONBOARDING_EMAIL_FROM
         value: JunZan AI <noreply@junzanai.com>
       - key: RESEND_API_KEY
