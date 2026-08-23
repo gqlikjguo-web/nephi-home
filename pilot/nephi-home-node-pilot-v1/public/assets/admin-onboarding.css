@@ -1,6 +1,9 @@
 .admin-review main{width:min(100% - 24px,64rem)}
 .admin-review #message{position:sticky;bottom:0;z-index:5;padding:12px;background:#fff;border:1px solid #d9dfdb;border-radius:9px;overflow-wrap:anywhere}
 .admin-review .item{border:1px solid #d9dfdb;border-radius:14px;padding:18px;margin:16px 0;background:#f9faf9;overflow-wrap:anywhere}
+.admin-review .filter-status{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;padding:12px 14px;border-radius:10px;background:#eaf5ed;color:#284f32}
+.admin-review .filter-status[hidden]{display:none}
+.admin-review .filter-status a{font-weight:750;color:#315d3b}
 .admin-review .review-section .review-section{margin:10px 0;background:#f8faf8}
 .admin-review .decision-panel{border-width:2px}
 .admin-review .return-panel{border-color:#b47227}
@@ -41,5 +44,6 @@
   .admin-review dd{margin-bottom:8px}
   .admin-review #message{bottom:6px}
   .admin-review .decision-panel{padding:14px}
+  .admin-review .filter-status{align-items:flex-start;flex-direction:column}
   .admin-review input,.admin-review select,.admin-review textarea,.admin-review button{min-height:48px}
 }

@@ -7,6 +7,12 @@ async function api(path, options = {}) {
   return body.data;
 }
 function text(tag, value) { const node = document.createElement(tag); node.textContent = value; return node; }
+const connectionFilter = typeof URLSearchParams === "function" ? new URLSearchParams(location.search).get("filter") || "" : "";
+function connectionView(items, filter) {
+  if (filter === "enabled") return { items: items.filter((item) => item.enabled === true), label: "目前查看：LINE 已啟用", emptyText: "目前沒有已啟用的 LINE 串接。" };
+  if (filter === "disabled") return { items: items.filter((item) => item.enabled !== true), label: "目前查看：LINE 尚未啟用", emptyText: "目前沒有尚未啟用的 LINE 串接。" };
+  return { items, label: "", emptyText: "目前沒有 LINE 串接資料。" };
+}
 async function load() {
   const [connections, links] = await Promise.all([
     api("/api/admin/line-connections"),
@@ -15,7 +21,12 @@ async function load() {
   $("propertyId").replaceChildren(...connections.items.map((item) => {
     const option = document.createElement("option"); option.value = item.propertyId; option.textContent = `${item.propertyName}（${item.propertyId}）`; return option;
   }));
-  $("connections").replaceChildren(...connections.items.map((item) => {
+  const view = connectionView(connections.items || [], connectionFilter);
+  $("filterStatus").hidden = !view.label;
+  $("filterLabel").textContent = view.label;
+  $("connectionEmpty").hidden = view.items.length > 0;
+  $("connectionEmpty").textContent = view.items.length ? "" : view.emptyText;
+  $("connections").replaceChildren(...view.items.map((item) => {
     const card = document.createElement("article"); card.className = "connection";
     const credential = item.hasChannelSecret && item.hasChannelAccessToken ? "憑證已設定" : "憑證未設定";
     const observed = item.webhookObserved ? "Webhook 已接收" : "Webhook 尚未接收";
