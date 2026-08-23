@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const { promisify } = require("node:util");
 const { openPostgres } = require("./providers/postgres-client");
 const scrypt = promisify(crypto.scrypt);
+let platformAdminBootstrapQueue = Promise.resolve();
 
 async function hashPassword(password) {
   if (String(password).length < 12) throw new Error("password must contain at least 12 characters");
@@ -73,4 +74,86 @@ async function bindAdminEmail(connection, { propertyId, username, email }) {
     } catch (error) { await client.query("ROLLBACK"); throw error; }
   } finally { await client.close(); }
 }
-module.exports = { hashPassword, verifyPassword, sessionTokenHash, normalizeAdminEmail, upsertAdminUser, bindAdminEmail };
+async function bootstrapPlatformAdmin(connection, { propertyId, username, email, password }) {
+  const normalizedPropertyId = String(propertyId || "").trim();
+  const normalizedUsername = String(username || "").trim();
+  const normalized = normalizeAdminEmail(email);
+  if (!normalizedPropertyId || !normalizedUsername) throw new Error("propertyId and username are required");
+  if (String(password || "").length < 12) throw new Error("password must contain at least 12 characters");
+  let releaseBootstrap;
+  const previousBootstrap = platformAdminBootstrapQueue;
+  platformAdminBootstrapQueue = new Promise((resolve) => { releaseBootstrap = resolve; });
+  await previousBootstrap;
+  let client;
+  try {
+    client = await openPostgres(connection);
+    return await client.transaction(async (transaction) => {
+      await transaction.query("SELECT pg_advisory_xact_lock($1)", [1246906958]);
+      const grantCount = await transaction.query("SELECT count(*)::int count FROM platform_admin_grants");
+      if (Number(grantCount.rows[0].count) !== 0) throw new Error("platform admin already exists");
+      const property = await transaction.query("SELECT 1 FROM properties WHERE property_id=$1", [normalizedPropertyId]);
+      if (!property.rows.length) throw new Error("property does not exist");
+
+      const identityResult = await transaction.query(
+        "SELECT user_id,email,password_hash FROM admin_identities WHERE normalized_email=$1",
+        [normalized.normalizedEmail]
+      );
+      const membershipResult = await transaction.query(
+        "SELECT user_id FROM admin_user_properties WHERE property_id=$1 AND username=$2",
+        [normalizedPropertyId, normalizedUsername]
+      );
+      const adminUserResult = await transaction.query(
+        "SELECT password_hash FROM admin_users WHERE property_id=$1 AND username=$2",
+        [normalizedPropertyId, normalizedUsername]
+      );
+
+      let userId;
+      let emailSnapshot;
+      if (identityResult.rows.length) {
+        const identity = identityResult.rows[0];
+        if (!await verifyPassword(password, identity.password_hash)) throw new Error("invalid existing identity password");
+        userId = identity.user_id;
+        emailSnapshot = identity.email;
+        if (membershipResult.rows.length && membershipResult.rows[0].user_id !== userId) throw new Error("membership identity conflict");
+        if (!membershipResult.rows.length && adminUserResult.rows.length) throw new Error("membership identity conflict");
+        if (!membershipResult.rows.length) {
+          await transaction.query(
+            "INSERT INTO admin_users(property_id,username,password_hash) VALUES($1,$2,'disabled$identity-only')",
+            [normalizedPropertyId, normalizedUsername]
+          );
+          await transaction.query(
+            "INSERT INTO admin_user_properties(user_id,property_id,username) VALUES($1,$2,$3)",
+            [userId, normalizedPropertyId, normalizedUsername]
+          );
+        }
+      } else {
+        if (membershipResult.rows.length || adminUserResult.rows.length) throw new Error("membership identity conflict");
+        userId = crypto.randomUUID();
+        emailSnapshot = normalized.email;
+        const passwordHash = await hashPassword(password);
+        await transaction.query(
+          "INSERT INTO admin_identities(user_id,email,normalized_email,password_hash) VALUES($1,$2,$3,$4)",
+          [userId, normalized.email, normalized.normalizedEmail, passwordHash]
+        );
+        await transaction.query(
+          "INSERT INTO admin_users(property_id,username,password_hash) VALUES($1,$2,'disabled$identity-only')",
+          [normalizedPropertyId, normalizedUsername]
+        );
+        await transaction.query(
+          "INSERT INTO admin_user_properties(user_id,property_id,username) VALUES($1,$2,$3)",
+          [userId, normalizedPropertyId, normalizedUsername]
+        );
+      }
+
+      await transaction.query(
+        "INSERT INTO platform_admin_grants(property_id,username,granted_user_id,granted_email_snapshot) VALUES($1,$2,$3,$4)",
+        [normalizedPropertyId, normalizedUsername, userId, emailSnapshot]
+      );
+      return { propertyId: normalizedPropertyId, username: normalizedUsername, userId };
+    });
+  } finally {
+    if (client) await client.close();
+    releaseBootstrap();
+  }
+}
+module.exports = { hashPassword, verifyPassword, sessionTokenHash, normalizeAdminEmail, upsertAdminUser, bindAdminEmail, bootstrapPlatformAdmin };

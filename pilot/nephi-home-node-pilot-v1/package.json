@@ -9,6 +9,7 @@
     "seed:postgres": "node scripts/seed-postgres.js",
     "admin:user": "node scripts/admin-user.js",
     "admin:bind-email": "node scripts/bind-admin-email.js",
+    "admin:bootstrap-platform": "node scripts/bootstrap-platform-admin.js",
     "test:postgres": "node ../../tests/pilot-nephi-home-node-pilot-v1-postgres-provider-runner.js",
     "initialize:render": "node scripts/initialize-render-data.js",
     "test:line-message-trace": "node tests/test-only-line-message-trace-runner.js && node tests/test-only-line-message-trace-postgres-runner.js && node tests/test-only-line-message-trace-http-runner.js",
