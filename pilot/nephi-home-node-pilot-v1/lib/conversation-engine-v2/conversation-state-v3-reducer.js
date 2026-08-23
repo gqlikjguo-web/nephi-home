@@ -281,7 +281,7 @@ function isSlotOnlyLodgingTurn(task) {
   };
 }
 
-function automaticPendingRelation(state, plannerTasks, relations, now) {
+function automaticPendingRelation(state, plannerTasks, relations, now, catalog) {
   const plannerTaskCount = Array.isArray(plannerTasks) ? plannerTasks.length : 0;
   const result = (reasonCode, relation = null, details = {}) => ({
     relation,
@@ -350,6 +350,17 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
   let candidates = clarificationCandidates.length === 1
     ? clarificationCandidates
     : compatibleCandidates;
+  const currentProduct = supplied.has("productId")
+    ? approvedProductForTask(task, catalog)
+    : null;
+  if (currentProduct && currentProduct.productType === "any") {
+    return result("no_unique_compatible_candidate", null, {
+      slotOnlyLodgingTurn: true,
+      clarificationCandidateCount: clarificationCandidates.length,
+      compatibleCandidateCount: candidates.length,
+      slotPredicateDiagnostic: slotPredicate.diagnostic
+    });
+  }
   if (
     clarificationCandidates.length === 0
     && candidates.length > 1
@@ -367,12 +378,18 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
       : candidate.productType === "room_type"
         ? `room_type:${candidate.roomTypeId || candidate.productId || ""}`
         : null;
+    const productOnlyAnsweredContinuation = slotPredicate.diagnostic.hasProduct
+      && slotPredicate.diagnostic.suppliedSlotKindCount === 1
+      && currentProduct
+      && currentProduct.productType !== "any"
+      && candidates.every((candidate) => candidate.taskType === taskType);
     if (
-      productScope
-      && candidates.every((candidate) => (
-        candidate.taskType === taskType
-        && candidateScope(candidate) === productScope
-      ))
+      productOnlyAnsweredContinuation
+      || productScope
+        && candidates.every((candidate) => (
+          candidate.taskType === taskType
+          && candidateScope(candidate) === productScope
+        ))
     ) {
       const latestTimestamp = Math.max(...candidates.map(
         (candidate) => Date.parse(candidate.updatedAt)
@@ -424,7 +441,8 @@ function decideContextExecutionV3({
     state,
     plannerTasks,
     effectiveRelations,
-    now
+    now,
+    catalog
   );
   const automaticRelation = automaticPending.relation;
   if (automaticRelation) {
