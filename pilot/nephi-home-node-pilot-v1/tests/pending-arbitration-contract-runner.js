@@ -32,6 +32,7 @@ const property = {
   businessProfile: { googleMapsUrl: "https://maps.google.com/?q=23.5,121.0" },
   rooms: [
     { id: "room_double", name: "Double Room", type: "double", capacity: 2, enabled: true },
+    { id: "room_302", name: "Room 302", type: "double", capacity: 2, enabled: true },
     { id: "room_401", name: "Room 401", type: "double", capacity: 2, enabled: true },
     { id: "room_402", name: "Room 402", type: "double", capacity: 2, enabled: true }
   ],
@@ -311,6 +312,69 @@ async function testLatestAnsweredProductOnlyContinuation() {
     );
     assert.equal(negative.executionItems[0].requestCycleId, "current-room-availability");
   }
+}
+
+async function testStaleOrdinaryPendingDoesNotPoisonLatestAnsweredProductSwitch() {
+  const catalog = buildPropertyCatalog(property);
+  const stalePending = createConversationTaskV3({
+    taskId: "stale-pending-availability",
+    taskType: "availability",
+    productType: "room_type",
+    productId: "room_double",
+    roomTypeId: "room_double",
+    bundleId: null,
+    checkIn: null,
+    checkOut: null,
+    guestCount: null,
+    searchFrom: null,
+    searchTo: null,
+    entityId: null,
+    entityCategory: null,
+    detailIntent: "general",
+    knownFields: ["productType", "productId", "roomTypeId"],
+    missingFields: ["checkIn", "checkOut"],
+    status: "pending",
+    createdAt: "2026-08-24T09:00:00.000Z",
+    updatedAt: "2026-08-24T09:00:00.000Z",
+    expiresAt: "2026-08-25T11:00:00.000Z"
+  });
+  const latestAnswered = answeredAvailabilityTask(0, {
+    taskId: "latest-room-302-availability",
+    roomId: "room_302",
+    checkIn: "2026-09-07",
+    checkOut: "2026-09-08",
+    updatedAt: "2026-08-24T10:53:00.000Z"
+  });
+  const state = createConversationStateV3({
+    propertyId: property.propertyId,
+    channel: "line-binding:test",
+    userId: "same-user",
+    revision: 2,
+    tasks: [stalePending, latestAnswered],
+    createdAt: "2026-08-24T09:00:00.000Z",
+    updatedAt: "2026-08-24T10:53:00.000Z",
+    expiresAt: "2026-08-25T11:00:00.000Z"
+  });
+  const current = productOnlyAvailabilityTask("room_401");
+  const decision = decideContextExecutionV3({
+    state,
+    plannerTasks: [current],
+    relations: [{
+      candidateIndex: current.candidateIndex,
+      relationKind: "new_request",
+      stateAction: "start",
+      requestCycleId: null,
+      evidenceRefs: []
+    }],
+    catalog,
+    now: "2026-08-24T10:54:00.000Z"
+  });
+
+  assert.equal(decision.automaticPendingDiagnostic.reasonCode, "continuation_selected");
+  assert.equal(decision.executionItems[0].requestCycleId, "latest-room-302-availability");
+  assert.equal(decision.executionItems[0].transition.contextTask.checkIn, "2026-09-07");
+  assert.equal(decision.executionItems[0].transition.contextTask.checkOut, "2026-09-08");
+  assert.equal(decision.executionItems[0].transition.approvedProduct.roomTypeId, "room_401");
 }
 
 async function testProductionFailureShape() {
@@ -661,6 +725,7 @@ async function testProductionRoute() {
 
 (async () => {
   await testLatestAnsweredProductOnlyContinuation();
+  await testStaleOrdinaryPendingDoesNotPoisonLatestAnsweredProductSwitch();
   await testProductionFailureShape();
   await testRemainingFieldsAndCompletion();
   await testSharedSlotContract();

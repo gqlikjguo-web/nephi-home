@@ -330,8 +330,12 @@ function automaticPendingRelation(state, plannerTasks, relations, now, catalog) 
       return false;
     }
     if (PENDING_STATUSES.has(candidate.status)) {
-      return candidate.missingFields.some((field) => supplied.has(field))
-        || supplied.has("productId");
+      const suppliesMissingField = candidate.missingFields.some(
+        (field) => supplied.has(field)
+      );
+      return candidate.status === "needs_clarification"
+        ? suppliesMissingField || supplied.has("productId")
+        : suppliesMissingField;
     }
     return candidate.status === "answered";
   };
