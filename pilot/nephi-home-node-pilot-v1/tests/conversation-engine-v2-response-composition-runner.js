@@ -64,15 +64,19 @@ const availableDatedPrice = composeSection({
   status: "answered",
   facts: {
     availability: "available",
-    checkIn: "2026-10-12",
+    checkIn: "2026-09-29",
     prices: [{
-      inventory: { publicName: "海景套房" },
-      total: 4800,
+      inventory: { publicName: "302四人房" },
+      total: 2200,
+      currency: "TWD"
+    }, {
+      inventory: { publicName: "401雙人房" },
+      total: 1700,
       currency: "TWD"
     }]
   }
 });
-assert.equal(availableDatedPrice, "2026-10-12 入住目前可預訂。海景套房共 4,800 TWD。");
+assert.equal(availableDatedPrice, "2026-09-29 入住\n目前可預訂。\n302四人房共 2,200 TWD。\n401雙人房共 1,700 TWD。");
 
 const unavailableDatedPrice = composeSection({
   status: "answered",
