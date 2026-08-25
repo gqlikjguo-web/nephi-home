@@ -21,9 +21,9 @@ function composeSection(section) {
   if (["needs_human", "property_data_missing", "failed"].includes(section.status)) return facts.subject ? `${facts.subject}這部分需要請業者確認。` : "這部分需要請業者確認。";
   if (facts.prices) {
     if (facts.availability === "full") return `${facts.checkIn} 入住目前已滿房。`;
-    const prices = facts.prices.map((item) => item.total === null ? `${item.inventory.publicName}價格需要請業者確認。` : `${item.inventory.publicName}共 ${money(item.total)} ${item.currency}。`).join(" ");
+    const prices = facts.prices.map((item) => item.total === null ? `${item.inventory.publicName}價格需要請業者確認。` : `${item.inventory.publicName}共 ${money(item.total)} ${item.currency}。`).join("\n");
     return facts.availability === "available"
-      ? `${facts.checkIn} 入住目前可預訂。${prices}`
+      ? `${facts.checkIn} 入住\n目前可預訂。\n${prices}`
       : prices;
   }
   if (facts.availableInventory) return facts.availableInventory.length ? `${facts.checkIn} 入住可選：${facts.availableInventory.map((item) => item.publicName).join("、")}。` : `${facts.checkIn} 入住目前沒有符合條件的空房。`;
