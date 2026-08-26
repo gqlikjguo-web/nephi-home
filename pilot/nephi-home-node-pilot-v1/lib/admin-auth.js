@@ -6,7 +6,7 @@ const scrypt = promisify(crypto.scrypt);
 let platformAdminBootstrapQueue = Promise.resolve();
 
 async function hashPassword(password) {
-  if (String(password).length < 12) throw new Error("password must contain at least 12 characters");
+  if (String(password).length < 8) throw new Error("password must contain at least 8 characters");
   const salt = crypto.randomBytes(16);
   const hash = await scrypt(String(password), salt, 64);
   return `scrypt$${salt.toString("hex")}$${hash.toString("hex")}`;

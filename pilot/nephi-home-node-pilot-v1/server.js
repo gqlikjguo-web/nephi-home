@@ -9,7 +9,7 @@ const { createProviders } = require("./lib/providers/provider-factory");
 const { createV2CompositionRoot } = require("./lib/v2-composition-root");
 const { createMvpService, AppError } = require("./lib/mvp-service");
 const { runtimeConfig } = require("./config/runtime");
-const { verifyPassword, sessionTokenHash } = require("./lib/admin-auth");
+const { hashPassword, verifyPassword, sessionTokenHash } = require("./lib/admin-auth");
 const { createOnboardingService } = require("./lib/onboarding-service");
 const { resolvePublicProperty, normalizePublicSlug } = require("./lib/public-property-routing");
 const { createOnboardingEmailNotifier } = require("./lib/onboarding-email");
@@ -885,7 +885,7 @@ function createRequestHandler(service, options = {}) {
 
       if(pathname==="/api/admin/setup-invitation"&&request.method==="GET")return sendData(response,onboarding.getInvitation(url.searchParams.get("token")));
       if(pathname==="/api/admin/setup-link"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.requestAdminSetupLink(body.email));}
-      if(pathname==="/api/admin/setup"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.redeemInvitation(body.token,body.password));}
+      if(pathname==="/api/admin/setup"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.redeemInvitation(body.token,body.password,Object.hasOwn(body,"confirmPassword")?body.confirmPassword:body.password));}
 
       if(pathname.startsWith("/api/admin/onboarding/")){
         const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");
@@ -984,6 +984,19 @@ function createRequestHandler(service, options = {}) {
         if (!user || String(user.passwordHash).startsWith("disabled$") || !await verifyPassword(body.password, user.passwordHash)) throw new AppError(401, "INVALID_LOGIN", "帳號或密碼錯誤");
         await persistence.createAdminSession(sessionTokenHash(token), propertyId, username, expiresAt);
         return sendJson(response, 200, { ok: true, data: { propertyId, username, requiresPropertySelection: false } }, cookie);
+      }
+      if(request.method==="POST"&&pathname==="/api/admin/password"){
+        const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;
+        if(!session)throw new AppError(401,"LOGIN_REQUIRED","請先登入");
+        if(!session.userId||!session.email)throw new AppError(403,"EMAIL_IDENTITY_REQUIRED","只有 Email 登入帳號可以更改密碼");
+        const body=await readJsonBody(request),identity=await persistence.getAdminIdentityByEmail(session.email);
+        if(!identity||identity.userId!==session.userId)throw new AppError(403,"EMAIL_IDENTITY_REQUIRED","Email 登入身份無效");
+        if(!await verifyPassword(body.currentPassword,identity.passwordHash))throw new AppError(400,"INVALID_CURRENT_PASSWORD","目前密碼錯誤");
+        const newPassword=String(body.newPassword||"");
+        if(newPassword!==String(body.confirmPassword||""))throw new AppError(400,"PASSWORD_CONFIRMATION_MISMATCH","兩次輸入的新密碼不一致");
+        if(newPassword.length<8||newPassword.length>12)throw new AppError(400,"INVALID_ADMIN_PASSWORD","新密碼必須為 8–12 字元");
+        if(!await persistence.updateAdminIdentityPassword(session.userId,await hashPassword(newPassword)))throw new AppError(409,"ADMIN_IDENTITY_NOT_FOUND","Email 登入身份不存在");
+        return sendData(response,{updated:true});
       }
       if (request.method === "POST" && pathname === "/api/admin/select-property") {
         const token = cookieValue(request, "nephi_admin_session"), body = await readJsonBody(request);

@@ -443,6 +443,7 @@ async function operation(name, args) {
     return r.rows[0]?{propertyId:r.rows[0].property_id,username:r.rows[0].username,passwordHash:r.rows[0].password_hash}:null;
   }
   if (name === "getAdminIdentityByEmail") return loadAdminIdentity(args[0]);
+  if(name==="updateAdminIdentityPassword"){await client.query("UPDATE admin_identities SET password_hash=$2 WHERE user_id=$1",args);return true;}
   if (name === "createAdminSession") {
     await client.query("DELETE FROM admin_sessions WHERE expires_at <= now()");
     if(args.length===5)await client.query("INSERT INTO admin_sessions(token_hash,user_id,property_id,username,expires_at) VALUES($1,$2,$3,$4,$5)",args);
