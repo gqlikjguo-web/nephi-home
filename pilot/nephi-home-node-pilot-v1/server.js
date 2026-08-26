@@ -884,6 +884,7 @@ function createRequestHandler(service, options = {}) {
       }
 
       if(pathname==="/api/admin/setup-invitation"&&request.method==="GET")return sendData(response,onboarding.getInvitation(url.searchParams.get("token")));
+      if(pathname==="/api/admin/setup-link"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.requestAdminSetupLink(body.email));}
       if(pathname==="/api/admin/setup"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.redeemInvitation(body.token,body.password));}
 
       if(pathname.startsWith("/api/admin/onboarding/")){

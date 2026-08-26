@@ -411,6 +411,16 @@ async function operation(name, args) {
     const r=await client.query(`SELECT i.property_id,${ADMIN_INVITATION_EMAIL_SQL} email,p.display_name,EXISTS(SELECT 1 FROM admin_identities a WHERE a.normalized_email=lower(${ADMIN_INVITATION_EMAIL_SQL})) existing_identity FROM property_admin_invitations i JOIN properties p ON p.property_id=i.property_id LEFT JOIN property_settings s ON s.property_id=i.property_id WHERE i.token_hash=$1 AND i.used_at IS NULL AND i.expires_at>now()`,args),row=r.rows[0];
     return row?{propertyId:row.property_id,propertyName:row.display_name,email:row.email,existingIdentity:Boolean(row.existing_identity)}:null;
   }
+  if(name==="issueAdminSetupInvitationsByEmail"){
+    const [normalizedEmail,expiresAt]=args;
+    await client.query("BEGIN");
+    try{
+      const pending=await client.query(`SELECT i.token_hash,i.property_id,i.username,${ADMIN_INVITATION_EMAIL_SQL} email,p.display_name FROM property_admin_invitations i JOIN properties p ON p.property_id=i.property_id LEFT JOIN property_settings s ON s.property_id=i.property_id WHERE lower(${ADMIN_INVITATION_EMAIL_SQL})=$1 AND i.used_at IS NULL AND i.expires_at>now() ORDER BY i.property_id FOR UPDATE OF i`,[normalizedEmail]);
+      const issued=[];
+      for(const row of pending.rows){const setupToken=crypto.randomBytes(32).toString("base64url"),tokenHash=crypto.createHash("sha256").update(setupToken).digest("hex");await client.query("UPDATE property_admin_invitations SET token_hash=$2,expires_at=$3,created_at=now() WHERE token_hash=$1",[row.token_hash,tokenHash,expiresAt]);issued.push({propertyId:row.property_id,propertyName:row.display_name,email:row.email,setupToken});}
+      await client.query("COMMIT");return issued;
+    }catch(error){await client.query("ROLLBACK");throw error;}
+  }
   if(name==="redeemAdminInvitation"){
     const [tokenHash,passwordHash]=args;
     await client.query("BEGIN");
