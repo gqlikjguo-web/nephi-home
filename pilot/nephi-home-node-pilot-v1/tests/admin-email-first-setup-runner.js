@@ -70,8 +70,8 @@ function setupTokensFromEmail(message) {
   const running = await app.start(0, "127.0.0.1");
   try {
     const adminHtml = await (await fetch(`${running.url}/admin`)).text();
-    assert.match(adminHtml, /id="firstSetupForm"/);
-    assert.match(adminHtml, /第一次登入／設定密碼/);
+    assert.doesNotMatch(adminHtml, /id="firstSetupForm"/);
+    assert.doesNotMatch(adminHtml, /第一次登入／設定密碼/);
 
     const send = (email) => request(running.url, "/api/admin/setup-link", {
       method: "POST",
