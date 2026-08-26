@@ -133,7 +133,10 @@ function find(root, tagName) {
   assert.match(client, /\/api\/admin\/onboarding\/properties/);
   assert.match(client, /\/api\/admin\/onboarding\/applications/);
   assert.match(client, /\/api\/admin\/line-connections/);
+  assert.match(client, /\/api\/admin\/select-property/);
+  assert.match(client, /進入業者後台/);
   assert.match(client, /textContent/);
+  assert.doesNotMatch(client, /JSON\.stringify\(value, null, 2\)|dataGroup\(/);
   assert.doesNotMatch(client, /password|credential|channel[_ -]?(?:secret|token)|access[_ -]?token/i);
   const elements = new Map([["#properties", new FakeElement("div")], ["#message", new FakeElement("p")], ["#platformSummary", new FakeElement("div")], ["#refresh", new FakeElement("button")]]);
   const context = vm.createContext({
@@ -159,10 +162,10 @@ function find(root, tagName) {
     new Map([["property_alpha", { enabled: true }]])
   );
   assert.match(card.textContent, /Alpha Stay[\s\S]*房型 1[\s\S]*包棟 1[\s\S]*LINE 已啟用/);
-  const details = find(card, "details");
-  assert.ok(details, "property details must use a collapsed details control");
-  assert.equal(details.open, false);
-  assert.match(details.textContent, /展開詳細[\s\S]*Alpha Room[\s\S]*Alpha Bundle/);
+  const enterButton = find(card, "button");
+  assert.ok(enterButton, "each property opens the shared operator admin UI");
+  assert.equal(enterButton.textContent, "進入業者後台");
+  assert.equal(find(card, "details"), null, "engineering detail controls are not shown");
   const onboardingPage = fs.readFileSync(path.join(__dirname, "../public/admin-onboarding.html"), "utf8");
   assert.match(onboardingPage, /href="\/admin\/platform"/);
 
