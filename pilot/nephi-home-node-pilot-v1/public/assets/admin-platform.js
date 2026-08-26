@@ -37,6 +37,12 @@ function namedItems(title, items) {
   return section;
 }
 
+function dataGroup(title, value) {
+  const section = element("section", undefined, "property-detail-group"), pre = element("pre", JSON.stringify(value, null, 2));
+  section.append(element("h3", title), pre);
+  return section;
+}
+
 function summaryCounts(properties, applications, connections) {
   const pendingStatuses = new Set(["submitted", "resubmitted"]);
   return {
@@ -77,9 +83,27 @@ function propertyCard(property, lineByProperty) {
   metrics.append(
     element("span", `房型 ${rooms.length}`),
     element("span", `包棟 ${bundles.length}`),
+    element("span", `登入 ${property.emails?.join("、") || "尚未設定"}`),
+    element("span", `帳號 ${property.accountStatus || "未知"}`),
+    element("span", `導入 ${property.onboardingStatus || "未知"}`),
     element("span", lineEnabled ? "LINE 已啟用" : "LINE 尚未啟用", lineEnabled ? "line-enabled" : "line-disabled")
   );
   detailGrid.append(namedItems("房型", rooms), namedItems("包棟方案", bundles));
+  details.addEventListener("toggle", async () => {
+    if (!details.open || details.dataset.loaded) return;
+    details.dataset.loaded = "true";
+    summary.textContent = "載入正式資料中…";
+    try {
+      const detail = await api(`/api/admin/platform/properties/${encodeURIComponent(property.propertyId)}`);
+      detailGrid.replaceChildren(
+        dataGroup("基本資料", detail.property), dataGroup("房型", detail.rooms), dataGroup("房價", detail.pricing),
+        dataGroup("房況", detail.availability), dataGroup("包棟方案", detail.bundles), dataGroup("設施與規則", detail.propertyFacts),
+        dataGroup("自訂回覆", detail.customReplies), dataGroup("LINE 狀態", detail.line), dataGroup("業者登入", detail.account),
+        dataGroup("其他正式設定", detail.otherSettings)
+      );
+      summary.textContent = "收合完整資料";
+    } catch (error) { details.dataset.loaded = ""; summary.textContent = error.message; }
+  });
   details.append(summary, detailGrid);
   article.append(
     heading,
@@ -92,18 +116,20 @@ function propertyCard(property, lineByProperty) {
 async function load() {
   message.textContent = "載入中…";
   try {
-    const [propertiesResult, applicationsResult, connectionsResult] = await Promise.all([
+    const [propertiesResult, applicationsResult, connectionsResult, directoryResult] = await Promise.all([
       api("/api/admin/onboarding/properties"),
       api("/api/admin/onboarding/applications"),
-      api("/api/admin/line-connections")
+      api("/api/admin/line-connections"),
+      api("/api/admin/platform/properties")
     ]);
     const properties = Array.isArray(propertiesResult.items) ? propertiesResult.items : [];
     const applications = Array.isArray(applicationsResult.items) ? applicationsResult.items : [];
     const connections = Array.isArray(connectionsResult.items) ? connectionsResult.items : [];
-    const lineByProperty = new Map(connections.map((item) => [item.propertyId, item]));
+    const lineByProperty = new Map(connections.map((item) => [item.propertyId, item])), formalById = new Map(properties.map(item => [item.propertyId, item]));
+    const directory = (directoryResult.items || []).map(item => ({ ...formalById.get(item.propertyId), ...item }));
     renderSummary(summaryCounts(properties, applications, connections));
-    propertiesBox.replaceChildren(...properties.map((property) => propertyCard(property, lineByProperty)));
-    message.textContent = properties.length ? `共 ${properties.length} 個正式業者。` : "目前沒有正式業者。";
+    propertiesBox.replaceChildren(...directory.map((property) => propertyCard(property, lineByProperty)));
+    message.textContent = directory.length ? `共 ${directory.length} 個正式業者。` : "目前沒有正式業者。";
   } catch (error) {
     summaryBox.replaceChildren();
     propertiesBox.replaceChildren();

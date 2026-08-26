@@ -443,6 +443,7 @@ async function operation(name, args) {
     return r.rows[0]?{propertyId:r.rows[0].property_id,username:r.rows[0].username,passwordHash:r.rows[0].password_hash}:null;
   }
   if (name === "getAdminIdentityByEmail") return loadAdminIdentity(args[0]);
+  if(name==="listAdminPropertyAccounts"){const r=await client.query("SELECT p.property_id,COALESCE(json_agg(DISTINCT i.email) FILTER(WHERE i.email IS NOT NULL),'[]') emails,CASE WHEN count(DISTINCT i.user_id)>0 THEN 'active' WHEN EXISTS(SELECT 1 FROM property_admin_invitations x WHERE x.property_id=p.property_id AND x.used_at IS NULL AND x.expires_at>now()) THEN 'pending_setup' WHEN EXISTS(SELECT 1 FROM admin_users u WHERE u.property_id=p.property_id AND u.password_hash NOT LIKE 'disabled$%') THEN 'legacy' ELSE 'not_configured' END account_status FROM properties p LEFT JOIN admin_user_properties m ON m.property_id=p.property_id LEFT JOIN admin_identities i ON i.user_id=m.user_id GROUP BY p.property_id ORDER BY p.property_id");return r.rows.map(x=>({propertyId:x.property_id,emails:x.emails||[],accountStatus:x.account_status}));}
   if(name==="updateAdminIdentityPassword"){await client.query("UPDATE admin_identities SET password_hash=$2 WHERE user_id=$1",args);return true;}
   if (name === "createAdminSession") {
     await client.query("DELETE FROM admin_sessions WHERE expires_at <= now()");

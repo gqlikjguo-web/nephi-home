@@ -767,6 +767,8 @@ function createRequestHandler(service, options = {}) {
   const lineSetupService = options.lineSetupService;
   const persistence = options.persistence;
   const customerSettings = options.customerSettings;
+  const availability = options.availability;
+  const lineBindingProvider = options.lineBindingProvider;
   const onboarding = options.onboarding;
   const customReplyService = options.customReplyService;
   const customReplyTestHandler = options.customReplyTestHandler;
@@ -886,6 +888,19 @@ function createRequestHandler(service, options = {}) {
       if(pathname==="/api/admin/setup-invitation"&&request.method==="GET")return sendData(response,onboarding.getInvitation(url.searchParams.get("token")));
       if(pathname==="/api/admin/setup-link"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.requestAdminSetupLink(body.email));}
       if(pathname==="/api/admin/setup"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.redeemInvitation(body.token,body.password,Object.hasOwn(body,"confirmPassword")?body.confirmPassword:body.password));}
+
+      const platformPropertyMatch=/^\/api\/admin\/platform\/properties(?:\/([^/]+))?$/.exec(pathname);
+      if(platformPropertyMatch&&request.method==="GET"){
+        const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;
+        if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");
+        const properties=customerSettings.listProperties(),accounts=typeof persistence.listAdminPropertyAccounts==="function"?persistence.listAdminPropertyAccounts():[],applications=onboarding.list(),lineStatuses=lineSetupService?lineSetupService.propertyStatuses():properties.map(item=>({propertyId:item.propertyId,enabled:Boolean(lineBindingProvider&&lineBindingProvider.getLineBindingByPropertyId(item.propertyId)?.enabled)})),accountById=new Map(accounts.map(item=>[item.propertyId,item])),applicationById=new Map(applications.filter(item=>item.approvedPropertyId).map(item=>[item.approvedPropertyId,item])),lineById=new Map(lineStatuses.map(item=>[item.propertyId,item]));
+        const items=properties.map(item=>{const account=accountById.get(item.propertyId)||{emails:[],accountStatus:"not_configured"},application=applicationById.get(item.propertyId),line=lineById.get(item.propertyId),rooms=(item.rooms||[]).filter(room=>room.inventoryType!=="bundle"),bundles=(item.rooms||[]).filter(room=>room.inventoryType==="bundle");return{propertyId:item.propertyId,propertyName:item.displayName||item.propertyId,emails:account.emails||[],accountStatus:account.accountStatus,onboardingStatus:application?.status||(item.onboarding?.isReady===false?"not_ready":"approved"),enabled:item.onboarding?.isReady!==false,lineEnabled:Boolean(line?.enabled),roomCount:rooms.length,bundleCount:bundles.length};});
+        if(!platformPropertyMatch[1])return sendData(response,{items});
+        const propertyId=decodeURIComponent(platformPropertyMatch[1]),property=customerSettings.getProperty(propertyId),summary=items.find(item=>item.propertyId===propertyId);
+        if(!property||!summary)throw new AppError(404,"PROPERTY_NOT_FOUND","找不到旅宿");
+        const rooms=typeof customerSettings.listRoomRecords==="function"?customerSettings.listRoomRecords(propertyId):(property.rooms||[]).filter(room=>room.inventoryType!=="bundle"),bundles=typeof customerSettings.listBundles==="function"?customerSettings.listBundles(propertyId):(property.rooms||[]).filter(room=>room.inventoryType==="bundle"),priceOverrides=typeof customerSettings.listInventoryPriceOverrides==="function"?customerSettings.listInventoryPriceOverrides(propertyId):[],datePriceClassifications=typeof customerSettings.listDatePriceClassifications==="function"?customerSettings.listDatePriceClassifications(propertyId):[],availabilityRows=availability&&typeof availability.getRows==="function"?availability.getRows(propertyId,null,null):[],customReplies=customReplyService?customReplyService.list(propertyId):[],line=lineById.get(propertyId)||{enabled:false};
+        return sendData(response,{property:{propertyId,propertyName:summary.propertyName,enabled:summary.enabled},rooms,pricing:{currency:property.currency||"TWD",rooms:rooms.map(({id,displayName,name,mondayThursdayPrice,fridayPrice,saturdayHolidayPrice,sundayPrice})=>({id,displayName:displayName||name,mondayThursdayPrice,fridayPrice,saturdayHolidayPrice,sundayPrice})),priceOverrides,datePriceClassifications},availability:availabilityRows,bundles,propertyFacts:property.propertyFacts||[],customReplies,line:{enabled:Boolean(line.enabled),webhookObserved:Boolean(line.webhookObserved),lastWebhookObservedAt:line.lastWebhookObservedAt||""},account:{emails:summary.emails,accountStatus:summary.accountStatus},otherSettings:{businessProfile:property.businessProfile||{},commonAnswers:property.commonAnswers||{},humanHandoffSituations:property.humanHandoffSituations||[],faqs:property.faqs||[],contactLink:property.contactLink||"",onboarding:property.onboarding||{},currency:property.currency||"TWD"}});
+      }
 
       if(pathname.startsWith("/api/admin/onboarding/")){
         const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");
@@ -1498,7 +1513,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
+  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
 }
 
