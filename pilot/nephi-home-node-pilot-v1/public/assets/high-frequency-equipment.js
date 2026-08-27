@@ -9,7 +9,7 @@
     { key: "basic", publicName: "住宿基本設備", items: [["parking", "停車"], ["wifi", "Wi-Fi"], ["tv", "電視"], ["refrigerator", "冰箱"], ["water_dispenser", "飲水機"], ["elevator", "電梯"], ["washing_machine", "洗衣機"], ["clothes_dryer", "烘衣機"]] },
     { key: "cooking", publicName: "廚房／餐飲", items: [["stove", "爐具"], ["cookware", "鍋具"], ["tableware", "餐具"]] },
     { key: "hygiene", publicName: "衛浴／盥洗", items: [["toiletries", "盥洗用品"]] },
-    { key: "infant", publicName: "嬰幼兒設備", items: [["baby_crib", "嬰兒床"], ["baby_bathtub", "嬰兒澡盆"], ["baby_bottle_sterilizer", "消毒鍋"], ["baby_bottle_cleaning_equipment", "奶瓶清潔設備"]] }
+    { key: "infant", publicName: "嬰幼兒設備", items: [["baby_crib", "嬰兒床"], ["baby_bathtub", "嬰兒澡盆"], ["baby_bottle_sterilizer", "消毒鍋"]] }
   ].map((group) => Object.freeze({
     key: group.key,
     publicName: group.publicName,

@@ -7,7 +7,7 @@
     .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 
-  function drafts(facts) { return formData.buildHighFrequencyEquipmentDrafts(facts, "operator_onboarding"); }
+  function drafts(facts) { return formData.buildHighFrequencyEquipmentDrafts(facts, "operator_onboarding").concat(formData.operatorHiddenFacts(facts)); }
 
   function render(container, facts) {
     const current = drafts(facts), byId = new Map(current.map((fact) => [fact.canonicalId, fact]));
@@ -23,10 +23,6 @@
               <option value="allowed" ${fact.status === "allowed" ? "selected" : ""}>有</option>
               <option value="not_allowed" ${fact.status === "not_allowed" ? "selected" : ""}>沒有</option>
             </select></label>
-            <label>適用範圍<select data-equipment-scope>
-              <option value="whole_property" ${fact.appliesTo === "whole_property" ? "selected" : ""}>整間旅宿</option>
-              <option value="bundle_only" ${fact.appliesTo === "bundle_only" ? "selected" : ""}>僅包棟客適用</option>
-            </select></label>
             <label>正式對客說明<textarea data-equipment-public-text rows="3" placeholder="可直接回覆旅客的正式說明">${escapeHtml(fact.publicText)}</textarea></label>
             <label>備註<textarea data-equipment-notes rows="2" placeholder="業者內部備註（選填）">${escapeHtml(fact.notes)}</textarea></label>
           </article>`;
@@ -34,7 +30,6 @@
       </section>`).join("");
     for (const row of container.querySelectorAll("[data-equipment-fact]")) {
       const status = row.querySelector("[data-equipment-status]");
-      const scope = row.querySelector("[data-equipment-scope]");
       const publicText = row.querySelector("[data-equipment-public-text]");
       const notes = row.querySelector("[data-equipment-notes]");
       const notesLabel = notes.closest("label");
@@ -45,7 +40,6 @@
       notesLabel.insertBefore(noteHint, notes);
       const sync = () => {
         const policy = formData.equipmentFieldPolicy(status.value);
-        scope.closest("label").hidden = !policy.showScope;
         publicText.closest("label").hidden = !policy.showPublicText;
         notesLabel.hidden = !policy.showNotes;
         publicText.disabled = !policy.showPublicText;
@@ -62,11 +56,11 @@
     for (const row of container.querySelectorAll("[data-equipment-fact]")) {
       const fact = current.find((item) => item.canonicalId === row.dataset.equipmentFact);
       fact.status = row.querySelector("[data-equipment-status]").value;
-      fact.appliesTo = row.querySelector("[data-equipment-scope]").value;
       fact.publicText = fact.status === "unknown" ? "" : row.querySelector("[data-equipment-public-text]").value;
       fact.notes = row.querySelector("[data-equipment-notes]").value;
     }
-    return formData.buildPropertyFactsPayload("", current).facts;
+    const hidden = new Set(formData.operatorHiddenFacts(current));
+    return formData.buildPropertyFactsPayload("", current.filter((fact) => !hidden.has(fact))).facts.concat([...hidden]);
   }
 
   function missingFields(container) {
@@ -91,8 +85,7 @@
       const item = document.createElement("article"), title = document.createElement("strong"), status = document.createElement("p");
       item.className = "item";
       title.textContent = definition.publicName;
-      status.textContent = `${({ allowed: "有", not_allowed: "沒有", unknown: "未知" })[fact.status] || "未知"}｜${({ whole_property: "整間旅宿", bundle_only: "僅包棟客適用" })[fact.appliesTo] || "整間旅宿"}`;
-      if (!formData.equipmentFieldPolicy(fact.status).showScope) status.textContent = status.textContent.split("\uff5c")[0];
+      status.textContent = ({ allowed: "有", not_allowed: "沒有", unknown: "未知" })[fact.status] || "未知";
       item.append(title, status);
       if (fact.publicText) { const text = document.createElement("p"); text.textContent = fact.publicText; item.append(text); }
       container.append(item);
