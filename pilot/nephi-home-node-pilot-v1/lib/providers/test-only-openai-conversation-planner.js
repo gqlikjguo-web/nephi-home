@@ -1,7 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
-const { plannerProviderJsonSchema, validatePlannerOutput, applyPlannerSemanticContract } = require("../conversation-engine-v2/planner-schema");
+const { plannerProviderJsonSchema, validatePlannerOutput, validatePlannerSemanticGroundingContract, applyPlannerSemanticContract } = require("../conversation-engine-v2/planner-schema");
 const { compileSemanticCandidates, validateSemanticCandidates, semanticCandidateDiagnosticSummary, missingSemanticCandidates, verifiedRepairTask } = require("../conversation-engine-v2/semantic-candidate-contract");
 const { normalizePlannerEvidenceCoordinates } = require("../conversation-engine-v2/evidence-normalizer");
 const { mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures, mentionedFaqSubjects, resolveEntity } = require("../conversation-engine-v2/entity-resolver");
@@ -79,7 +79,9 @@ function plannerProviderSchemaForCatalog(catalog, model = "") {
   };
   const catalogIdentities = propertyCatalogIdentityValues(catalog);
   const taskIdentity = schema.properties.tasks.items.properties.entity.properties.canonicalCandidate;
+  const groundingIdentity = schema.properties.semanticGroundings.items.properties.subject.properties.catalogIdentity;
   Object.assign(taskIdentity, nullableIdentityEnum(catalogIdentities));
+  Object.assign(groundingIdentity, nullableIdentityEnum(catalogIdentities));
   return schema;
 }
 
@@ -1770,6 +1772,7 @@ function instructions() {
     "You are JunZan AI Conversation Understanding and Planning Engine v2 for Taiwan lodging.",
     "Return only the strict schema. Split every independent clause that asks a substantive guest question into its own task and preserve each sourceText. Retain every coordinated subject or requested fact as a separate task even when subjects share one question word, date, or sentence. A shared modifier, condition, fee, timing, or payment-method question is also a separate task whenever it can be independently answered, clarified, or handed off; do not let the tasks for its coordinated subjects consume that request.",
     "A broad request for the collection or list of a property facility or amenity category must emit exactly one amenity_list task. Explicit requests about distinct named subjects, statuses, fees, or conditions must remain separate individual tasks.",
+    "Emit exactly one semanticGroundings item for every task and bind it with the same groundingId. Grounding is independent of the task classification: property-owned collections use subject scope property_owned, null catalogIdentity, relation collection_membership, and requestedOutput answer; one property-owned catalog fact uses scope property_owned, its supplied catalogIdentity, relation property_fact, and requestedOutput answer; every relationship between the property and an external place uses scope external_place, null catalogIdentity, relation property_to_external_place, and requestedOutput map_url. For task families outside those three subject relationships, use the neutral grounding tuple property_owned, null catalogIdentity, property_fact, answer; the task keeps its existing capability. Each grounding must cite exactly the same verified relation candidate index and evidenceRefs as its task. Never use an external place as a property catalog identity.",
     "Understand typos, colloquial Traditional Chinese, missing punctuation, mixed Chinese/English, and context semantically; do not use a literal keyword strategy.",
     "Distinguish a request for price or total price from availability, policy, or permission. Preserve every explicit date, date range, nights, guest count, room, bundle, facility, fee, time, and reservation condition on the task that asks about it.",
     "A monetary lodging amount, charge, or rate request, whether generic or scoped to a room, bundle, or date, must use type price, detailIntent general, requestedOutputs price, and dependsOnStayContext true. Always provide its structured task stayCandidate: use empty candidate fields when no stay input was stated, and include only explicitly stated stay inputs otherwise. Missing dates require downstream clarification and must never change the task into policy.",
@@ -2122,6 +2125,9 @@ class TestOnlyOpenAiConversationPlanner {
           ? providerUnderstanding.tasks.map(({ semanticCandidateIds: _semanticCandidateIds, lodgingScopeId: _lodgingScopeId, ...task }) => task)
           : providerUnderstanding.tasks;
         const output = normalizePlannerEvidenceCoordinates(providerUnderstanding, input.sourceEvents || []);
+        if (!validatePlannerSemanticGroundingContract(output, { catalog: input.catalog, sourceEvents: input.sourceEvents || [] })) {
+          throw plannerFailure({ code: "planner_local_contract_failure", category: "local_contract_failure", model: this.model, responseBodyPresent: true, parsedOutputPresent: true });
+        }
         return annotateProviderSuccess(output, firstAttemptErrorCategory, providerAttempts);
       } catch (error) {
         providerAttempts.push(...(Array.isArray(error && error.providerAttempts) ? error.providerAttempts : []));

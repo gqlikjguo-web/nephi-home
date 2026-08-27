@@ -69,12 +69,21 @@ function relationFor(messageText, item) {
 }
 
 function rawPlan(messageText, tasks, stay = emptyStay(), { shouldIgnore = false, discourse = "new_request" } = {}) {
+  const groundedTasks = tasks.map((item) => ({ ...item, groundingId: `${item.taskId}-grounding` }));
   return {
     schemaVersion: 2,
     discourse: { relation: discourse, confidence: 1 },
     stateOperations: [],
     stay,
-    tasks,
+    tasks: groundedTasks,
+    semanticGroundings: groundedTasks.map((item) => ({
+      groundingId: item.groundingId,
+      provenanceRelationCandidateIndexes: [item.candidateIndex],
+      evidenceRefs: relationFor(messageText, item).evidenceRefs,
+      subject: { scope: "property_owned", catalogIdentity: null },
+      relation: "property_fact",
+      requestedOutput: "answer"
+    })),
     contextRelationCandidates: tasks.map((item) => relationFor(messageText, item)),
     ambiguities: [],
     missingInformation: [],
