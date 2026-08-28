@@ -11,6 +11,7 @@ const {
   getCapabilityDefinition
 } = require("./capability-registry");
 const { resolveEntity } = require("./entity-resolver");
+const { isStateV3LifecycleOperations } = require("../new-core/state-v3-lifecycle-adapter");
 
 const PENDING_STATUSES = new Set(["pending", "needs_clarification"]);
 const CONTEXT_EXCLUDED_STATUSES = new Set(["expired", "cancelled"]);
@@ -642,6 +643,48 @@ function statusForOutcome(outcome, readiness, clarificationSelected = false) {
   return "needs_human";
 }
 
+function statusAfterLifecycleOperation(prior, readiness) {
+  if (readiness.status === "invalid" || readiness.status === "unsupported") {
+    return "needs_human";
+  }
+  if (readiness.status === "missing") {
+    return prior.status === "needs_clarification" ? "needs_clarification" : "pending";
+  }
+  if (["pending", "needs_clarification"].includes(prior.status)) return "ready";
+  return prior.status;
+}
+
+function applyLifecycleOperations(byTaskId, lifecycleOperations, now) {
+  for (const lifecycleOperation of lifecycleOperations) {
+    const prior = byTaskId.get(lifecycleOperation.targetTaskId);
+    if (!currentTask(prior, now)) {
+      throw new TypeError("state_v3_lifecycle_target_unavailable");
+    }
+    if (lifecycleOperation.action === "END") {
+      byTaskId.set(prior.taskId, createConversationTaskV3({
+        ...prior,
+        status: "cancelled",
+        updatedAt: now
+      }));
+      continue;
+    }
+    const patch = lifecycleOperation.field === "guestCount"
+      ? { guestCount: lifecycleOperation.operation === "CLEAR" ? null : lifecycleOperation.value }
+      : lifecycleOperation.field === "lodgingProduct"
+        ? lifecycleOperation.value
+        : null;
+    if (!patch) throw new TypeError("state_v3_lifecycle_operation_invalid");
+    const candidate = { ...prior, ...patch, updatedAt: now };
+    const readiness = evaluateTaskReadiness(candidate);
+    byTaskId.set(prior.taskId, createConversationTaskV3({
+      ...candidate,
+      knownFields: readiness.knownFields,
+      missingFields: readiness.missingFields,
+      status: statusAfterLifecycleOperation(prior, readiness)
+    }));
+  }
+}
+
 function reduceConversationStateV3({
   previous,
   canonicalItems = [],
@@ -649,9 +692,13 @@ function reduceConversationStateV3({
   executionOutcomes = [],
   endedTaskIds = [],
   clarificationTaskIds = [],
+  lifecycleOperations = [],
   scope = {}
 }) {
   const now = String(scope.now || new Date().toISOString());
+  if (!isStateV3LifecycleOperations(lifecycleOperations)) {
+    throw new TypeError("state_v3_lifecycle_operations_invalid");
+  }
   const byTaskId = new Map(
     (previous && previous.tasks || []).map((task) => [
       task.taskId,
@@ -660,6 +707,7 @@ function reduceConversationStateV3({
         : task
     ])
   );
+  applyLifecycleOperations(byTaskId, lifecycleOperations, now);
   const clarificationIds = new Set(clarificationTaskIds.map(String));
   for (const taskId of new Set(endedTaskIds)) {
     const prior = byTaskId.get(taskId);

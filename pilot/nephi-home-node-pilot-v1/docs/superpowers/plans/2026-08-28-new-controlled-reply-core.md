@@ -125,6 +125,7 @@
 - [ ] Write RED AC-CTX-001..018, AC-LIF-001..018, AC-PND-001..008, including lifecycle-only end and protected pending.
 - [ ] Run targeted RED.
 - [ ] Implement exact START/CONTINUE/MODIFY/END/NONE invariants and slot provenance; do not call `automaticPendingRelation()`.
+- [ ] Apply the approved Task 6 clarification: C06 status is the closed `VALIDATED` decision status; the adapter emits a branded closed `lifecycleOperations[]` input to the sole existing reducer; only existing V3 `guestCount`, lodging-product, and cancellation concepts persist, while transport/unmapped `other_supported` remain turn context and context-only updates may own zero C08.
 - [ ] Run targeted plus multi-cycle, dialogue-temporal-state, pending-arbitration, and state-v3 regressions.
 - [ ] Prove persisted state schema and DB migrations are byte-identical.
 - [ ] Commit Context/lifecycle boundary.

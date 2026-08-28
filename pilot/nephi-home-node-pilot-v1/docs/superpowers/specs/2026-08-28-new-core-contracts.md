@@ -82,13 +82,15 @@ type ReplyDisposition = "ANSWER" | "CLARIFY" | "HANDOFF" | "NO_REPLY";
 - **Writer:** OpenAI Understanding.
 - **Validator:** Context Link Validator against C01 referenceable snapshot and C04 evidence.
 - **Consumer:** Lifecycle Manager.
-- **Failure:** `CONTEXT_LINK_DUPLICATE`, `CONTEXT_TARGET_UNKNOWN`, `CONTEXT_TARGET_ENDED`, `CONTEXT_TARGET_EXPIRED`, `CONTEXT_TARGET_SCOPE_CONFLICT`, `CONTEXT_TARGET_AMBIGUOUS`, `CONTEXT_LINK_EVIDENCE_INVALID`.
+- **Failure:** `CONTEXT_LINK_DUPLICATE`, `CONTEXT_TARGET_UNAVAILABLE` (the bounded C01 snapshot cannot prove whether an absent target is unknown, ended, or otherwise no longer referenceable), `CONTEXT_TARGET_SCOPE_CONFLICT`, `CONTEXT_TARGET_AMBIGUOUS`, `CONTEXT_LINK_EVIDENCE_INVALID`.
 - **Coverage:** AC-CTX-001..018, AC-PND-001..008.
 
 ## C06 LifecycleDecision
 
 - **Responsibility:** validated state transition independent of reply and executability.
 - **Required fields:** `lifecycleDecisionId`, `unitId`, `action`, `targetRequestCycleId|null`, `verifiedSlotOperations[]`, `status`.
+- **Status enum:** `VALIDATED` only. It means the Lifecycle Manager validated the decision and its slot provenance; it does not claim persistence, execution, reply, or Resolver success.
+- **Verified slot operation shape:** exactly `{slotCandidateId,slot,operation,value,evidenceRefs,persistedField,persistedProductType}`. `persistedField` is `guestCount`, `lodgingProduct`, or `null`; `persistedProductType` is `room_type`, `bundle`, or `null`. Validated `transport` and currently unmapped `other_supported` operations use both persistence fields as `null` and remain turn context only. Product SET persists only after the C03 catalog-identity validator proved a current-property room or bundle; CLEAR maps to the existing V3 `any` lodging product. No raw text is a state value.
 - **Forbidden:** guest-intent inference, capability/reply rewrite, Resolver query, final action.
 - **Writer:** Lifecycle Manager (sole lifecycle authority).
 - **Validator:** lifecycle invariant validator plus existing state-v3 adapter preconditions.
@@ -161,6 +163,7 @@ type ReplyDisposition = "ANSWER" | "CLARIFY" | "HANDOFF" | "NO_REPLY";
 6. Capability, subject, stay dependency, reply disposition, and lifecycle action are never inferred from one another.
 7. Candidate index is generated and destroyed inside C08 compatibility code.
 8. The existing canonicalizer may reject C08 but may not feed a new semantic value back into C03/C07.
+9. The state-v3 compatibility adapter returns exactly `{lifecycleOperations,turnContextOperations}`. Each persisted reducer operation is exactly `{lifecycleDecisionId,unitId,action,targetTaskId,field,operation,value}` and is admitted only as an adapter-owned immutable array. END uses `action=END`, `field=null`, `operation=CANCEL`, and `value=null`; supported CONTINUE/MODIFY slots use `field=guestCount|lodgingProduct` and `operation=SET|CLEAR`. `turnContextOperations` retains verified C06 operations that this decision does not emit as V3 persistence work. Only END and existing `guestCount`/lodging-product fields become reducer operations. START/NONE and turn-context-only slots emit no persisted operation. The reducer behaves unchanged when this optional input is omitted.
 
 ## Route truth table
 

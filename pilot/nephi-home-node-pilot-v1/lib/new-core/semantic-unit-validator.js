@@ -7,6 +7,8 @@ const {
   isPublicCatalogIdentityProjectionFor
 } = require("./turn-input-adapter");
 
+const INPUT_BY_VALIDATED_SEMANTIC_UNIT = new WeakMap();
+
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
   Object.values(value).forEach(deepFreeze);
@@ -98,11 +100,19 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnIn
     || !unit.slotCandidates.every((slot) => otherSupportedSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput, policy))) {
     return failure("UNIT_MEANING_UNSUPPORTED");
   }
-  return { ok: true, code: null, errors: [], value: deepFreeze(detach(unit)) };
+  const value = deepFreeze(detach(unit));
+  INPUT_BY_VALIDATED_SEMANTIC_UNIT.set(value, understandingTurnInput);
+  return { ok: true, code: null, errors: [], value };
+}
+
+function isValidatedSemanticUnitFor(understandingTurnInput, unit) {
+  return Boolean(unit) && typeof unit === "object"
+    && INPUT_BY_VALIDATED_SEMANTIC_UNIT.get(unit) === understandingTurnInput;
 }
 
 module.exports = {
   buildPublicCatalogIdentitySet,
   projectCapabilityRegistry,
+  isValidatedSemanticUnitFor,
   validateSemanticUnit
 };

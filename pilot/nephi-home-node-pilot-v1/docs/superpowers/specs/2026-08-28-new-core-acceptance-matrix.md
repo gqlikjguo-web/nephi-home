@@ -102,21 +102,21 @@ Additional semantic ownership cases `AC-SEM-011..015` cover inventory-vs-propert
 |---|---|---|
 | AC-NRP-001..008 | “好”; “了解，謝謝您”; “好的”; “可以”; “了解”; “哈哈哈好喔謝啦”; “？”; “？？？” | NO_REPLY, no canonical/Resolver/FinalResponse/LINE |
 | AC-NRP-009..012 | native sticker/image/video/file | input-level NO_REPLY; no OpenAI where existing native contract says ignore |
-| AC-CTX-001..004 | continue with slot; supplement; modify guest count; modify product | OpenAI link candidate validated; lifecycle applies exact slots |
-| AC-CTX-005..008 | end active; end ended; target expired; cross-property target | valid END applies; invalid targets fail at C05/C06, never guessed |
+| AC-CTX-001..004 | continue with slot; supplement; “我們4位”/“改成4位”; “改成包棟” | OpenAI link candidate validated; guest count maps only to V3 `guestCount`; product is current-property catalog validated and maps only to existing lodging-product fields; no raw-text state write |
+| AC-CTX-005..008 | explicit “不用了” END active; end ended; target expired/unknown; cross-property target | unique valid END applies with zero executable item; unavailable targets share the honest unavailable result when C01 cannot distinguish their history; scope conflicts reject; never guessed |
 | AC-CTX-009 | capability switch | new unit START; old capability cannot overwrite it |
 | AC-CTX-010 | “想了解包棟的” after active relevant cycle | unique link or CLARIFY; no generic handoff from parser failure |
 | AC-CTX-011 | same capability/same product continuation | CONTINUE |
 | AC-CTX-012 | same product/new capability | new capability retained |
 | AC-CTX-013 | latest answered continuation within TTL | reference allowed |
 | AC-CTX-014 | answered continuation outside TTL | target rejected |
-| AC-CTX-015 | driving + guestCount=4 + thanks | context-only MODIFY + NO_REPLY |
+| AC-CTX-015 | “有開車”; “我們4位、有開車，謝謝” | context-only MODIFY; guest count may persist through the sole V3 reducer, transport remains validated turn context with no fake field; NO_REPLY is Task 7 authority; zero C08/Resolver |
 | AC-CTX-016 | “不是這個” | correction NO_REPLY with validated MODIFY/NONE; no fake task |
 | AC-CTX-017 | “不是這個，我要問停車” | correction NO_REPLY plus parking ANSWER |
 | AC-CTX-018 | “謝謝，取消剛才那個” | acknowledgement NO_REPLY plus lifecycle-only END; booking cancellation remains distinct |
 | AC-LIF-001..005 | START/CONTINUE/MODIFY/END/NONE valid shapes | exact target cardinality and ownership |
 | AC-LIF-006..010 | duplicate lifecycle ID; unknown unit; start target; missing continue target; scope conflict | fail closed at lifecycle owner |
-| AC-LIF-011..014 | lifecycle-only END/MODIFY/NONE; no-reply update | zero executable items, state transition preserved |
+| AC-LIF-011..014 | lifecycle-only END/MODIFY/NONE; no-reply update | zero executable items; END and allowlisted existing V3 slots persist through the sole reducer, turn-context-only slots do not mutate V3 |
 | AC-LIF-015..018 | task-owned continue; active pending; ended pending; ambiguous targets | actionable valid continuation preserved; invalid not silently downgraded |
 | AC-PND-001..004 | active lodging continuation with verified slot; no useful slot; new independent request; dormant pending | exact validated behavior; no automaticPendingRelation |
 | AC-PND-005..008 | pending availability date, product, guests, and capability switch | canonical slots and explicit links only |
