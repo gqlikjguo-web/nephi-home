@@ -6,6 +6,17 @@ function deepFreeze(value) {
   return Object.freeze(value);
 }
 
+function detach(value, seen = new Map()) {
+  if (!value || typeof value !== "object") return value;
+  if (seen.has(value)) return seen.get(value);
+  const copy = Array.isArray(value) ? [] : {};
+  seen.set(value, copy);
+  Object.keys(value).forEach((key) => {
+    copy[key] = detach(value[key], seen);
+  });
+  return copy;
+}
+
 function failure(code) {
   return { ok: false, code, errors: [] };
 }
@@ -86,7 +97,7 @@ function validateAndNormalizeSourceEvidence(refs, sourceEvents) {
     ok: true,
     code: null,
     errors: [],
-    value: deepFreeze(validatedRefs)
+    value: deepFreeze(detach(validatedRefs))
   };
 }
 
