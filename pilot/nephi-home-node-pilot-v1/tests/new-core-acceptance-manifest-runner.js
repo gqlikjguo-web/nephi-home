@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const MANIFEST_PATH = path.resolve(__dirname, "fixtures/new-core-acceptance-manifest.json");
+const REAL_PLANNER_RUNNER_PATH = "scripts/run-new-core-openai-shadow-acceptance.js";
 const EVIDENCE_LEVELS = new Set([
   "UNIT_TEST",
   "STRUCTURED_CONTRACT_TEST",
@@ -66,7 +67,7 @@ function expandRange(value) {
 function expectedTestGroups() {
   return EXPECTED_TEST_GROUPS.map(([prefix, first, last, evidenceLevel, ruleIds, contractIds]) => ({
     idRange: `${prefix}-${String(first).padStart(3, "0")}..${String(last).padStart(3, "0")}`,
-    evidenceLevel,
+    requiredEvidenceLevel: evidenceLevel,
     ruleIds,
     contractIds
   }));
@@ -76,24 +77,66 @@ function loadNewCoreAcceptanceManifest(manifestPath = MANIFEST_PATH) {
   return JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 }
 
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function validateClosedObject(value, allowedKeys, label, errors) {
+  if (!isPlainObject(value)) {
+    errors.push(`${label} must be an object`);
+    return false;
+  }
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.has(key)) errors.push(`${label} contains forbidden metadata field ${key}`);
+  }
+  return true;
+}
+
+function validateNonemptyReferenceList(value, label, errors) {
+  if (!Array.isArray(value) || !value.length || value.some((item) => typeof item !== "string" || !item.trim())) {
+    errors.push(`${label} must be a nonempty array of IDs`);
+    return [];
+  }
+  return value;
+}
+
+function isRealEvidenceLevel(value) {
+  return typeof value === "string" && value.startsWith("REAL_");
+}
+
+function validateRealPlannerExecution(execution, label, errors) {
+  if (!isPlainObject(execution)) {
+    errors.push(`${label} REAL_OPENAI_PLANNER evidence requires executable real-planner evidence reference`);
+    return;
+  }
+  if (!validateClosedObject(execution, new Set(["runnerPath"]), `${label} execution`, errors)) return;
+  if (execution.runnerPath !== REAL_PLANNER_RUNNER_PATH) {
+    errors.push(`${label} REAL_OPENAI_PLANNER evidence requires executable real-planner evidence reference`);
+    return;
+  }
+  const runnerPath = path.resolve(__dirname, "..", execution.runnerPath);
+  if (!fs.existsSync(runnerPath)) {
+    errors.push(`${label} REAL_OPENAI_PLANNER evidence requires executable real-planner evidence reference`);
+  }
+}
+
 function validateNewCoreAcceptanceManifest(manifest) {
   const errors = [];
-  if (!manifest || manifest.schemaVersion !== 1) errors.push("manifest schemaVersion must equal 1");
-  if (!Array.isArray(manifest.designRuleIds)) errors.push("manifest designRuleIds must be an array");
-  if (!Array.isArray(manifest.contractIds)) errors.push("manifest contractIds must be an array");
-  if (!Array.isArray(manifest.testGroups)) errors.push("manifest testGroups must be an array");
-  if (errors.length) return errors;
+  if (!validateClosedObject(manifest, new Set(["schemaVersion", "designRuleIds", "contractIds", "testGroups"]), "manifest", errors)) return errors;
+  if (manifest.schemaVersion !== 1) errors.push("manifest schemaVersion must equal 1");
+  const declaredRuleIds = validateNonemptyReferenceList(manifest.designRuleIds, "manifest designRuleIds", errors);
+  const declaredContractIds = validateNonemptyReferenceList(manifest.contractIds, "manifest contractIds", errors);
+  if (!Array.isArray(manifest.testGroups) || !manifest.testGroups.length) errors.push("manifest testGroups must be a nonempty array");
+  if (!Array.isArray(manifest.designRuleIds) || !Array.isArray(manifest.contractIds) || !Array.isArray(manifest.testGroups)) return errors;
 
-  const ruleIds = new Set(manifest.designRuleIds);
-  const contractIds = new Set(manifest.contractIds);
+  const ruleIds = new Set(declaredRuleIds);
+  const contractIds = new Set(declaredContractIds);
   const testIds = new Set();
   const duplicateIds = new Set();
+  const pendingEvidence = [];
   for (const testGroup of manifest.testGroups) {
-    const allowedKeys = new Set(["idRange", "evidenceLevel", "evidence"]);
-    for (const key of Object.keys(testGroup || {})) {
-      if (!allowedKeys.has(key)) errors.push(`test group ${testGroup?.idRange || "<unknown>"} contains forbidden metadata field ${key}`);
-    }
-    if (!testGroup || typeof testGroup.idRange !== "string") {
+    if (!validateClosedObject(testGroup, new Set(["idRange", "requiredEvidenceLevel", "evidenceLevel", "evidence"]), `test group ${testGroup?.idRange || "<unknown>"}`, errors)) continue;
+    if (typeof testGroup.idRange !== "string") {
       errors.push("test group idRange is required");
       continue;
     }
@@ -103,24 +146,27 @@ function validateNewCoreAcceptanceManifest(manifest) {
       if (testIds.has(id)) duplicateIds.add(id);
       testIds.add(id);
     }
+    if (!EVIDENCE_LEVELS.has(testGroup.requiredEvidenceLevel)) errors.push(`test group ${testGroup.idRange} has invalid required evidence level`);
     if (!EVIDENCE_LEVELS.has(testGroup.evidenceLevel)) errors.push(`test group ${testGroup.idRange} has invalid evidence level`);
     if (!Array.isArray(testGroup.evidence) || !testGroup.evidence.length) {
       errors.push(`test group ${testGroup.idRange} is missing evidence links`);
       continue;
     }
     for (const evidence of testGroup.evidence) {
-      if (!evidence || !EVIDENCE_LEVELS.has(evidence.evidenceLevel)) {
+      if (!validateClosedObject(evidence, new Set(["evidenceLevel", "ruleIds", "contractIds", "caseIds", "execution"]), `test group ${testGroup.idRange} evidence`, errors)) continue;
+      if (!EVIDENCE_LEVELS.has(evidence.evidenceLevel)) {
         errors.push(`test group ${testGroup.idRange} has evidence with an invalid evidence level`);
         continue;
       }
       if (evidence.evidenceLevel !== testGroup.evidenceLevel) {
         errors.push(`test group ${testGroup.idRange} claims ${testGroup.evidenceLevel} from ${evidence.evidenceLevel} evidence`);
       }
-      for (const ruleId of evidence.ruleIds || []) if (!ruleIds.has(ruleId)) errors.push(`evidence references missing design rule ${ruleId}`);
-      for (const contractId of evidence.contractIds || []) if (!contractIds.has(contractId)) errors.push(`evidence references missing contract ${contractId}`);
-      const evidenceCaseIds = (evidence.caseIds || []).flatMap(expandRange);
-      if (!evidenceCaseIds.length) errors.push(`test group ${testGroup.idRange} evidence is missing case IDs`);
-      for (const caseId of evidenceCaseIds) if (!testIds.has(caseId)) errors.push(`evidence references missing acceptance case ${caseId}`);
+      const evidenceRuleIds = validateNonemptyReferenceList(evidence.ruleIds, `test group ${testGroup.idRange} evidence ruleIds`, errors);
+      const evidenceContractIds = validateNonemptyReferenceList(evidence.contractIds, `test group ${testGroup.idRange} evidence contractIds`, errors);
+      const evidenceCaseRanges = validateNonemptyReferenceList(evidence.caseIds, `test group ${testGroup.idRange} evidence caseIds`, errors);
+      if (isRealEvidenceLevel(evidence.evidenceLevel)) validateRealPlannerExecution(evidence.execution, `test group ${testGroup.idRange}`, errors);
+      else if (Object.hasOwn(evidence, "execution")) errors.push(`test group ${testGroup.idRange} non-real evidence must not declare execution metadata`);
+      pendingEvidence.push({ testGroup, evidenceRuleIds, evidenceContractIds, evidenceCaseRanges });
     }
   }
   if (duplicateIds.size) errors.push(`duplicate acceptance IDs: ${[...duplicateIds].sort().join(", ")}`);
@@ -129,21 +175,65 @@ function validateNewCoreAcceptanceManifest(manifest) {
   const expectedGroupByRange = new Map(expectedGroups.map((group) => [group.idRange, group]));
   for (const testGroup of manifest.testGroups) {
     const expectedGroup = expectedGroupByRange.get(testGroup?.idRange);
-    if (expectedGroup && testGroup.evidenceLevel !== expectedGroup.evidenceLevel) {
-      errors.push(`test group ${testGroup.idRange} must declare ${expectedGroup.evidenceLevel}`);
+    if (expectedGroup && testGroup.requiredEvidenceLevel !== expectedGroup.requiredEvidenceLevel) {
+      errors.push(`test group ${testGroup.idRange} must declare required evidence level ${expectedGroup.requiredEvidenceLevel}`);
     }
   }
   const expectedIds = expectedGroups.flatMap((group) => expandRange(group.idRange));
   for (const expectedId of expectedIds) if (!testIds.has(expectedId)) errors.push(`missing acceptance ID ${expectedId}`);
   for (const actualId of testIds) if (!expectedIds.includes(actualId)) errors.push(`unexpected acceptance ID ${actualId}`);
   if (testIds.size !== 306) errors.push(`expanded acceptance ID count must equal 306, received ${testIds.size}`);
+  for (const evidence of pendingEvidence) {
+    for (const ruleId of evidence.evidenceRuleIds) if (!ruleIds.has(ruleId)) errors.push(`evidence references missing design rule ${ruleId}`);
+    for (const contractId of evidence.evidenceContractIds) if (!contractIds.has(contractId)) errors.push(`evidence references missing contract ${contractId}`);
+    for (const caseId of evidence.evidenceCaseRanges.flatMap(expandRange)) {
+      if (!testIds.has(caseId)) errors.push(`evidence references missing acceptance case ${caseId}`);
+    }
+  }
   return errors;
+}
+
+function assertGateRegressionCoverage(manifest) {
+  const fakeAsReal = structuredClone(manifest);
+  fakeAsReal.testGroups[0].evidenceLevel = "REAL_OPENAI_PLANNER";
+  fakeAsReal.testGroups[0].evidence[0].evidenceLevel = "REAL_OPENAI_PLANNER";
+  assert.ok(
+    validateNewCoreAcceptanceManifest(fakeAsReal).some((error) => error.includes("REAL_OPENAI_PLANNER evidence requires executable real-planner evidence reference")),
+    "fake-as-real evidence must require an executable real-planner evidence reference"
+  );
+
+  const nonPlannerExecution = structuredClone(manifest);
+  nonPlannerExecution.testGroups[0].evidenceLevel = "REAL_OPENAI_PLANNER";
+  nonPlannerExecution.testGroups[0].evidence[0].evidenceLevel = "REAL_OPENAI_PLANNER";
+  nonPlannerExecution.testGroups[0].evidence[0].execution = { runnerPath: "scripts/verify-codex-integrity.js", runtimeField: "forbidden" };
+  const nonPlannerExecutionErrors = validateNewCoreAcceptanceManifest(nonPlannerExecution);
+  assert.ok(nonPlannerExecutionErrors.some((error) => error.includes("REAL_OPENAI_PLANNER evidence requires executable real-planner evidence reference")));
+  assert.ok(nonPlannerExecutionErrors.some((error) => error.includes("execution contains forbidden metadata field runtimeField")));
+
+  const emptyReferenceLists = structuredClone(manifest);
+  emptyReferenceLists.testGroups[0].evidence[0].ruleIds = [];
+  emptyReferenceLists.testGroups[0].evidence[0].contractIds = [];
+  const emptyReferenceErrors = validateNewCoreAcceptanceManifest(emptyReferenceLists);
+  assert.ok(emptyReferenceErrors.some((error) => error.includes("ruleIds must be a nonempty array")));
+  assert.ok(emptyReferenceErrors.some((error) => error.includes("contractIds must be a nonempty array")));
+
+  const forwardReference = structuredClone(manifest);
+  forwardReference.testGroups[0].evidence[0].caseIds = ["AC-PRD-001"];
+  assert.deepEqual(validateNewCoreAcceptanceManifest(forwardReference), [], "valid forward acceptance-case references must be accepted");
+
+  const arbitraryMetadata = structuredClone(manifest);
+  arbitraryMetadata.runtime = { finalResponse: "forbidden" };
+  arbitraryMetadata.testGroups[0].evidence[0].nestedRuntimeField = "forbidden";
+  const arbitraryMetadataErrors = validateNewCoreAcceptanceManifest(arbitraryMetadata);
+  assert.ok(arbitraryMetadataErrors.some((error) => error.includes("manifest contains forbidden metadata field runtime")));
+  assert.ok(arbitraryMetadataErrors.some((error) => error.includes("contains forbidden metadata field nestedRuntimeField")));
 }
 
 function run() {
   const manifest = loadNewCoreAcceptanceManifest();
   const errors = validateNewCoreAcceptanceManifest(manifest);
   assert.deepEqual(errors, [], errors.join("\n"));
+  assertGateRegressionCoverage(manifest);
   console.log(JSON.stringify({
     suite: "new-core-acceptance-manifest",
     classification: "STRUCTURED_CONTRACT_TEST",
