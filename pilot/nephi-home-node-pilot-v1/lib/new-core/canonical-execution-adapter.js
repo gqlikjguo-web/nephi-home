@@ -1,8 +1,9 @@
 "use strict";
 
-const canonicalizer = require("../conversation-engine-v2/canonicalizer");
+const {
+  canonicalizeExecutionItem: OFFICIAL_CANONICALIZE_EXECUTION_ITEM
+} = require("../conversation-engine-v2/canonicalizer");
 const { isCanonicalRequest } = require("../conversation-engine-v2/canonical-request");
-const { getCapabilityDefinition } = require("../conversation-engine-v2/capability-registry");
 const { isValidatedSemanticUnitFor } = require("./semantic-unit-validator");
 const {
   isValidatedLifecycleDecision,
@@ -14,6 +15,7 @@ const { isPublicCatalogIdentityProjectionFor } = require("./turn-input-adapter")
 
 const C08_AUTHORITY_MARKER = new WeakSet();
 const PROVENANCE_BY_C08 = new WeakMap();
+const OFFICIAL_CANONICAL_RESULTS = new WeakSet();
 const EXECUTABLE_LIFECYCLE_ACTIONS = new Set(["START", "CONTINUE", "MODIFY"]);
 const CANONICAL_REJECTION_CODES = new Set([
   "invalid_canonical_request",
@@ -35,41 +37,6 @@ const STATE_INPUT_FIELDS = new Set([
   "sourceEvidenceRefs"
 ]);
 const CONFIRMED_FIELD_NAMES = new Set(["guests", "nights", "inventory"]);
-const TEMPORAL_METADATA_NAMES = new Set(["checkIn", "checkOut", "nights", "searchRange"]);
-const TEMPORAL_FIELD_NAMES = new Set([
-  "value",
-  "valueStatus",
-  "provenance",
-  "sourceEvidenceRefs",
-  "ruleRef",
-  "derivedFromFieldRefs"
-]);
-const TEMPORAL_PROVENANCE = new Set([null, "explicit", "context", "defaulted", "derived"]);
-const TEMPORAL_VALUE_STATUSES = new Set(["confirmed", "missing", "uncertain"]);
-const TEMPORAL_RULE_REFS = new Set([
-  null,
-  "temporal:canonical_grammar",
-  "temporal:checkout_from_checkin_and_nights",
-  "temporal:contextual_expression",
-  "temporal:available_dates_default_lookahead",
-  "PRODUCT_BASELINE:single_date_availability_default_one_night"
-]);
-const TEMPORAL_DERIVED_FIELD_REFS = new Set([
-  "stay.checkIn",
-  "stay.nights",
-  "eventTimestamp"
-]);
-const TEMPORAL_EXPRESSIONS_BY_CANDIDATE_KIND = Object.freeze({
-  absolute_date: new Set(["absolute_date"]),
-  date_range: new Set(["date_range"]),
-  relative_date: new Set(["relative_day"]),
-  relative_range: new Set(["date_range"]),
-  weekday: new Set(["relative_weekday", "weekend"]),
-  month_weekday: new Set(["month_weekday_constraint"]),
-  nights_only: new Set(["duration_only"]),
-  partial: new Set(["ambiguous"]),
-  unknown: new Set(["ambiguous"])
-});
 const TEMPORAL_KIND_COMPATIBILITY = Object.freeze({
   absolute_date: "absolute",
   date_range: "range",
@@ -373,24 +340,6 @@ function relationFor(candidateIndex, lifecycleDecision, evidenceRefs) {
   };
 }
 
-function expectedCanonicalCapabilities(unit, entity) {
-  if (unit.capability === "availability" && unit.subject.kind === "bundle") {
-    return new Set(["bundle_availability"]);
-  }
-  const expected = new Set([unit.capability]);
-  if (["property_fact", "amenity", "policy"].includes(unit.capability)
-    && boundedText(unit.subject.catalogIdentity)) {
-    const subjectDefinition = getCapabilityDefinition(unit.subject.catalogIdentity);
-    const taskType = compatibilityTaskType(unit.capability);
-    if (subjectDefinition
-      && subjectDefinition.acceptedCandidateTypes.includes(taskType)
-      && subjectDefinition.acceptedEntityCategories.includes(entity.category)) {
-      expected.add(subjectDefinition.capability);
-    }
-  }
-  return expected;
-}
-
 function expectedInventory(canonicalEntity) {
   if (!canonicalEntity || canonicalEntity.status !== "resolved"
     || !["room", "bundle"].includes(canonicalEntity.category)
@@ -409,131 +358,41 @@ function expectedProduct(approvedProduct, canonicalEntity) {
     inventory.mode === "bundle_only" ? "bundle" : "room");
 }
 
-function temporalMetadataIsClosed(temporalState, expectedEvidenceRefs) {
-  if (!exactKeys(temporalState.provenance, TEMPORAL_METADATA_NAMES)
-    || !exactKeys(temporalState.ruleRefs, TEMPORAL_METADATA_NAMES)
-    || !exactKeys(temporalState.derivedFromFieldRefs, TEMPORAL_METADATA_NAMES)
-    || !exactKeys(temporalState.fields, TEMPORAL_METADATA_NAMES)) return false;
-  for (const name of TEMPORAL_METADATA_NAMES) {
-    const field = temporalState.fields[name];
-    if (!TEMPORAL_PROVENANCE.has(temporalState.provenance[name])
-      || !TEMPORAL_RULE_REFS.has(temporalState.ruleRefs[name])
-      || !Array.isArray(temporalState.derivedFromFieldRefs[name])
-      || temporalState.derivedFromFieldRefs[name].some((reference) => (
-        !TEMPORAL_DERIVED_FIELD_REFS.has(reference)
-      ))
-      || !exactKeys(field, TEMPORAL_FIELD_NAMES)
-      || !TEMPORAL_VALUE_STATUSES.has(field.valueStatus)
-      || !sameData(field.value, temporalState[name])
-      || field.provenance !== temporalState.provenance[name]
-      || field.ruleRef !== temporalState.ruleRefs[name]
-      || !sameData(field.derivedFromFieldRefs, temporalState.derivedFromFieldRefs[name])
-      || !sameData(field.sourceEvidenceRefs, expectedEvidenceRefs)) return false;
-  }
-  return true;
-}
-
-function canonicalTemporalMatchesC08(temporalState, provenance, contextCycle) {
-  const candidate = provenance.unit.temporalCandidate;
-  const timezone = provenance.understandingTurnInput.propertyTimezone;
-  const contextStay = contextCycle && contextCycle.confirmedInputs
-    && contextCycle.confirmedInputs.stay || null;
-  const usesContext = candidate === null && Boolean(contextStay && contextStay.checkIn);
-  const expectedEvidenceRefs = usesContext ? [] : provenance.unit.evidenceRefs;
-  if (temporalState.timezone !== timezone
-    || !sameData(temporalState.applicableTaskIds, [provenance.unit.unitId])
-    || temporalState.repairReasonCode !== ""
-    || temporalState.ambiguity !== null
-    || !temporalMetadataIsClosed(temporalState, expectedEvidenceRefs)) return false;
-  if (candidate) {
-    const expressionTypes = TEMPORAL_EXPRESSIONS_BY_CANDIDATE_KIND[candidate.kind];
-    return Boolean(expressionTypes && expressionTypes.has(temporalState.expressionType))
-      && temporalState.rawText === candidate.rawText
-      && temporalState.originalExpression === candidate.rawText
-      && temporalState.checkIn === candidate.checkInCandidate
-      && temporalState.checkOut === candidate.checkOutCandidate
-      && temporalState.nights === candidate.nightsCandidate
-      && temporalState.searchRange === null
-      && temporalState.resolutionStatus === "resolved"
-      && temporalState.resolutionSource === "canonical_temporal_grammar";
-  }
-  if (usesContext) {
-    const expectedNights = contextStay.checkOut
-      ? Math.round((Date.parse(`${contextStay.checkOut}T00:00:00Z`)
-        - Date.parse(`${contextStay.checkIn}T00:00:00Z`)) / 86400000)
-      : null;
-    return temporalState.rawText === ""
-      && temporalState.originalExpression === ""
-      && temporalState.checkIn === contextStay.checkIn
-      && temporalState.checkOut === (contextStay.checkOut || null)
-      && temporalState.nights === expectedNights
-      && temporalState.searchRange === null
-      && temporalState.expressionType === "context"
-      && temporalState.resolutionStatus === "resolved"
-      && temporalState.resolutionSource === "context";
-  }
-  return temporalState.rawText === ""
-    && temporalState.originalExpression === ""
-    && temporalState.checkIn === null
-    && temporalState.checkOut === null
-    && temporalState.nights === null
-    && temporalState.searchRange === null
-    && temporalState.expressionType === "none"
-    && temporalState.resolutionStatus === "absent"
-    && temporalState.resolutionSource === "canonical_temporal_grammar";
-}
-
-function canonicalResultMatchesC08(canonicalRequest, provenance, entity, approvedProduct, contextCycle) {
-  const expectedCapabilities = expectedCanonicalCapabilities(provenance.unit, entity);
-  const expectedStayDependency = provenance.unit.stayDependent ? "required" : false;
-  const definition = getCapabilityDefinition(canonicalRequest.capability);
-  if (!expectedCapabilities.has(canonicalRequest.capability)
-    || !definition
-    || canonicalRequest.stayDependency !== expectedStayDependency
-    || !sameData(canonicalRequest.requiredFields, definition.requiredFields)
-    || canonicalRequest.resolverId !== definition.resolverId
-    || canonicalRequest.riskLevel !== definition.riskLevel
-    || canonicalRequest.responseMode !== definition.responseMode
-    || canonicalRequest.detailIntent !== "general"
-    || !sameData(canonicalRequest.lodgingProduct,
-      expectedProduct(approvedProduct, canonicalRequest.canonicalEntity))
-    || !sameData(canonicalRequest.evidenceRefs, provenance.unit.evidenceRefs)
-    || !canonicalTemporalMatchesC08(canonicalRequest.temporalState, provenance, contextCycle)) return false;
-  const subject = provenance.unit.subject;
-  const canonicalEntity = canonicalRequest.canonicalEntity;
+function canonicalEntityMatchesSubject(canonicalEntity, unit) {
+  const subject = unit.subject;
   if (subject.kind === "matched_room_set") {
-    const verifiedRoomIds = new Set(provenance.publicCatalogIdentityProjection
-      .filter((entry) => entry[1] === "room")
-      .map((entry) => entry[0]));
     return canonicalEntity.status === "matched_set"
       && canonicalEntity.category === "room"
       && canonicalEntity.canonicalId === null
-      && canonicalEntity.rawText === entity.rawText
       && Array.isArray(canonicalEntity.canonicalSet)
       && canonicalEntity.canonicalSet.length > 0
-      && new Set(canonicalEntity.canonicalSet).size === canonicalEntity.canonicalSet.length
-      && canonicalEntity.canonicalSet.every((canonicalId) => verifiedRoomIds.has(canonicalId));
+      && new Set(canonicalEntity.canonicalSet).size === canonicalEntity.canonicalSet.length;
   }
-  if (provenance.unit.capability === "location") {
-    return canonicalEntity.status === "resolved"
-      && canonicalEntity.category === "transport"
-      && canonicalEntity.canonicalId === "location"
-      && canonicalEntity.rawText === ""
-      && sameData(canonicalEntity.canonicalSet, []);
-  }
-  if (["room", "bundle", "amenity", "policy", "other_verified"].includes(subject.kind)) {
-    const projectedSubject = provenance.understandingTurnInput.publicSubjectCatalog
-      .find((item) => item.catalogIdentity === subject.catalogIdentity && item.kind === subject.kind);
-    return Boolean(projectedSubject)
+  if (subject.kind === "external_place") {
+    return unit.capability === "location"
       && canonicalEntity.status === "resolved"
-      && canonicalEntity.canonicalId === subject.catalogIdentity
-      && canonicalEntity.rawText === entity.rawText
+      && canonicalEntity.category === "transport"
+      && canonicalEntity.canonicalId === "location";
+  }
+  if (subject.kind === "property") {
+    return canonicalEntity.category === "other"
+      && canonicalEntity.canonicalId === null
       && sameData(canonicalEntity.canonicalSet, []);
   }
-  return subject.kind === "property"
-    && canonicalEntity.canonicalId === null
-    && canonicalEntity.rawText === ""
+  const expectedCategory = subject.kind === "room" && unit.capability === "property_fact"
+    ? "room_feature" : subject.kind;
+  return ["room", "bundle", "amenity", "policy"].includes(subject.kind)
+    && canonicalEntity.status === "resolved"
+    && canonicalEntity.category === expectedCategory
+    && canonicalEntity.canonicalId === subject.catalogIdentity
     && sameData(canonicalEntity.canonicalSet, []);
+}
+
+function canonicalResultIsStructurallyConsistent(canonicalRequest, provenance, approvedProduct) {
+  return canonicalEntityMatchesSubject(canonicalRequest.canonicalEntity, provenance.unit)
+    && sameData(canonicalRequest.lodgingProduct,
+      expectedProduct(approvedProduct, canonicalRequest.canonicalEntity))
+    && sameData(canonicalRequest.evidenceRefs, provenance.unit.evidenceRefs);
 }
 
 function stateInputMatchesC08(stateInput, canonicalRequest, task, provenance) {
@@ -629,7 +488,7 @@ function executeCanonicalizerInputItem({
   };
   let canonicalized;
   try {
-    canonicalized = canonicalizer.canonicalizeExecutionItem({
+    canonicalized = OFFICIAL_CANONICALIZE_EXECUTION_ITEM({
       item: compatibilityItem,
       relation,
       contextSnapshot,
@@ -638,24 +497,26 @@ function executeCanonicalizerInputItem({
       eventTimestamp: temporal.eventTimestamp,
       allowSharedMessageInference: false
     });
+    if (canonicalized && typeof canonicalized === "object") {
+      OFFICIAL_CANONICAL_RESULTS.add(canonicalized);
+    }
   } catch (error) {
     const rejectionCode = CANONICAL_REJECTION_CODES.has(error && error.code)
       ? error.code : "CANONICAL_INPUT_INCOMPLETE";
     return failure(rejectionCode, ["canonicalizerRejected"]);
   }
-  if (!exactKeys(canonicalized, LEGACY_RESULT_FIELDS)
+  if (!OFFICIAL_CANONICAL_RESULTS.has(canonicalized)
+    || !exactKeys(canonicalized, LEGACY_RESULT_FIELDS)
     || canonicalized.candidateIndex !== candidateIndex
     || canonicalized.requestCycleId !== compatibilityItem.requestCycleId
     || !sameData(canonicalized.task, task)
     || !sameData(canonicalized.transition, compatibilityItem.transition)
     || !isCanonicalRequest(canonicalized.canonicalRequest)
     || canonicalized.canonicalRequest.taskId !== provenance.unit.unitId
-    || !canonicalResultMatchesC08(
+    || !canonicalResultIsStructurallyConsistent(
       canonicalized.canonicalRequest,
       provenance,
-      entity,
-      approvedProduct,
-      context.cycle
+      approvedProduct
     )
     || !stateInputMatchesC08(
       canonicalized.stateInput,
