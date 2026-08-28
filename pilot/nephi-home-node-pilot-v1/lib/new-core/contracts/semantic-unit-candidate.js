@@ -207,12 +207,6 @@ function validateSemanticUnitCandidate(value) {
     value.slotCandidates.forEach((candidate, index) => {
       unknownWireField ||= validateSlotCandidate(candidate, errors, index);
     });
-    if (value && value.temporalCandidate && value.slotCandidates.some((candidate) => (
-      Array.isArray(candidate && candidate.evidenceRefs)
-      && candidate.evidenceRefs.some((reference) => reference && reference.quote === value.temporalCandidate.rawText)
-    ))) {
-      errors.push("temporalSlotSourceOverlap");
-    }
   }
   if (!CONFIDENCE_BANDS.has(value && value.confidenceBand)) errors.push("confidenceBand");
   const uniqueErrors = [...new Set(errors)];

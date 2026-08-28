@@ -20,7 +20,7 @@
 | AC-CON-001..004 | valid bounded input; duplicate source ID; unverified property; unbounded/invalid history | only valid C01 reaches OpenAI |
 | AC-WIR-001..008 | valid 0/1/N units; duplicate unit/turn-wide slot ID; unknown field; invalid enum; cardinality overflow; facts/canonical field injection | invalid C02 fails at Wire Schema Validator with owned code |
 | AC-EVD-001..010 | exact span; unique relocated exact span; ambiguous quote; unknown event; message/event conflict; range errors; quote mismatch; cross-source; Unicode offsets; evidence mutation attempt | one evidence authority; no semantic changes |
-| AC-SEM-001..010 | valid capability/subject/stay tuples; closed temporal and slot candidates; invalid catalog ID; cross-property ID; capability-subject conflict; stay conflict; missing evidence; unsupported purpose; duplicate ownership; semantic field mutation | valid unit preserved byte-for-byte; conflict rejects unit |
+| AC-SEM-001..010 | valid capability/subject/stay tuples; closed temporal and slot candidates (including non-canonical partial dates); invalid catalog ID; cross-property ID; capability-subject conflict; stay conflict; missing evidence; unsupported purpose; duplicate ownership; semantic field mutation | valid unit preserved byte-for-byte; conflict rejects unit |
 
 Additional semantic ownership cases `AC-SEM-011..015` cover inventory-vs-property family separation, structural-vs-semantic validity, orphan unit ownership, duplicate unit ownership, and an unsupported tuple that must be rejected without a replacement capability.
 

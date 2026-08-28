@@ -32,9 +32,9 @@ function evidence(overrides = {}) {
 function temporal(overrides = {}) {
   return {
     rawText: "10/9住一晚",
-    kind: "nights_only",
-    checkInCandidate: "2026-10-09",
-    checkOutCandidate: "2026-10-10",
+    kind: "partial",
+    checkInCandidate: "10/9",
+    checkOutCandidate: null,
     nightsCandidate: 1,
     ...overrides
   };
@@ -127,10 +127,15 @@ assert.equal(validateUnderstandingOutputV1(unchangedOutput).ok, true);
 assert.deepEqual(unchangedOutput, outputBefore);
 
 // AC-SEM-001..003 / addendum A-D,J: the closed temporal candidate preserves
-// raw meaning only. Canonical Temporal remains responsible for executable dates.
+// raw meaning only. A partial source date never receives an implicit year or
+// becomes executable before Canonical Temporal.
+const caseATemporal = temporal();
+assert.equal(caseATemporal.checkInCandidate, "10/9");
+assert.equal(caseATemporal.checkOutCandidate, null);
+assert.doesNotMatch(JSON.stringify(caseATemporal), /2026/);
 for (const candidate of [
-  unit({ temporalCandidate: temporal() }),
-  unit({ temporalCandidate: temporal({ rawText: "10/9到10/10", kind: "date_range", checkInCandidate: "2026-10-09", checkOutCandidate: "2026-10-10", nightsCandidate: null }) }),
+  unit({ temporalCandidate: caseATemporal }),
+  unit({ temporalCandidate: temporal({ rawText: "10/9到10/10", kind: "date_range", checkInCandidate: "10/9", checkOutCandidate: "10/10", nightsCandidate: null }) }),
   unit({ temporalCandidate: temporal({ rawText: "明年2/4到2/7", kind: "relative_range", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null }) }),
   unit({ temporalCandidate: temporal({ rawText: "下週六", kind: "weekday", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null }) }),
   unit({ temporalCandidate: null })
@@ -149,7 +154,7 @@ for (const invalidCandidate of [
   unit({ replyCandidate: { disposition: "ROUTE_NOW", reasonClass: "x" } }),
   unit({ temporalCandidate: temporal({ kind: "executed_date" }) }),
   unit({ temporalCandidate: temporal({ resolverResult: "forbidden" }) }),
-  unit({ temporalCandidate: temporal({ checkOutCandidate: "2026-10-10", nightsCandidate: 2 }) }),
+  unit({ temporalCandidate: temporal({ checkInCandidate: "2026-10-09", checkOutCandidate: "2026-10-10", nightsCandidate: 2 }) }),
   unit({ lifecycleAction: "END" })
 ]) {
   assertFailure(validateSemanticUnitCandidate(invalidCandidate), "SEMANTIC_UNIT_INVALID");
@@ -179,14 +184,17 @@ for (const invalidSlot of [
   slot({ value: { forged: true } }),
   slot({ value: 0 }),
   slot({ operation: "CLEAR", value: 4 }),
-  slot({ evidenceRefs: [evidence({ quote: "10/9住一晚" })] }),
   slot({ extra: "stateMutation" })
 ]) {
-  const candidate = invalidSlot.evidenceRefs && invalidSlot.evidenceRefs[0].quote === "10/9住一晚"
-    ? unit({ temporalCandidate: temporal(), slotCandidates: [invalidSlot] })
-    : unit({ slotCandidates: [invalidSlot] });
-  assertFailure(validateSemanticUnitCandidate(candidate), "SEMANTIC_UNIT_INVALID");
+  assertFailure(validateSemanticUnitCandidate(unit({ slotCandidates: [invalidSlot] })), "SEMANTIC_UNIT_INVALID");
 }
+
+// Wire validation may not infer that equal raw temporal and evidence strings
+// represent the same meaning. Evidence ownership is deferred to Tasks 4/5.
+assert.equal(validateSemanticUnitCandidate(unit({
+  temporalCandidate: temporal(),
+  slotCandidates: [slot({ evidenceRefs: [evidence({ quote: "10/9住一晚" })] })]
+})).ok, true);
 
 // The output validator owns turn-wide stable ID uniqueness; it never repairs
 // duplicate slot IDs or silently changes a candidate identity.
