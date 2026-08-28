@@ -19,6 +19,7 @@ const ROUTING_REGISTRIES = new WeakSet();
 const READINESS_BY_UNIT = new WeakMap();
 const TRUSTED_OPERATOR_SAFETY_POLICIES = new WeakMap();
 const C07_AUTHORITY_MARKER = new WeakSet();
+const PROVENANCE_BY_C07_DECISION = new WeakMap();
 
 const ROUTING_BLUEPRINT = Object.freeze({
   availability: { kind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"] },
@@ -241,6 +242,11 @@ function createUnitRoutingDecision({ unit, lifecycleDecision, routingRegistry, r
   if (!validation.ok) return validation;
   const value = deepFreeze(detach(decision));
   C07_AUTHORITY_MARKER.add(value);
+  PROVENANCE_BY_C07_DECISION.set(value, {
+    unit,
+    lifecycleDecision,
+    understandingTurnInput: understandingInputForValidatedLifecycleDecision(lifecycleDecision)
+  });
   return { ok: true, code: null, errors: [], value };
 }
 
@@ -250,10 +256,25 @@ function isTrustedUnitRoutingDecision(value) {
     && validateUnitRoutingDecision(value).ok;
 }
 
+function isTrustedUnitRoutingDecisionFor(value, {
+  unit,
+  lifecycleDecision,
+  understandingTurnInput
+} = {}) {
+  const provenance = PROVENANCE_BY_C07_DECISION.get(value);
+  return isTrustedUnitRoutingDecision(value)
+    && provenance && provenance.unit === unit
+    && provenance.lifecycleDecision === lifecycleDecision
+    && provenance.understandingTurnInput === understandingTurnInput
+    && understandingInputForValidatedLifecycleDecision(lifecycleDecision) === understandingTurnInput
+    && isValidatedSemanticUnitFor(understandingTurnInput, unit);
+}
+
 module.exports = {
   createUnitReplyRoutingRegistry,
   createUnitReadiness,
   createTrustedOperatorSafetyPolicy,
   createUnitRoutingDecision,
-  isTrustedUnitRoutingDecision
+  isTrustedUnitRoutingDecision,
+  isTrustedUnitRoutingDecisionFor
 };

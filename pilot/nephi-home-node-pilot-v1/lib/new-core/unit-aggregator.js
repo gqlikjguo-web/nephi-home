@@ -5,7 +5,10 @@ const {
   isValidatedLifecycleDecision,
   understandingInputForValidatedLifecycleDecision
 } = require("./lifecycle-manager");
-const { isTrustedUnitRoutingDecision } = require("./unit-reply-router");
+const {
+  isTrustedUnitRoutingDecision,
+  isTrustedUnitRoutingDecisionFor
+} = require("./unit-reply-router");
 const {
   FAILURE_REF_FIELDS,
   DOWNSTREAM_OUTCOME_REF_FIELDS,
@@ -132,6 +135,11 @@ function aggregateUnitOutcomes({
       || !isValidatedSemanticUnitFor(input, unit)) {
       return failure("UNIT_OUTCOME_ORPHAN", [unitId]);
     }
+    if (!isTrustedUnitRoutingDecisionFor(route, {
+      unit,
+      lifecycleDecision: lifecycle,
+      understandingTurnInput: input
+    })) return failure("AGGREGATION_ROUTE_CONFLICT", [unitId]);
   }
   for (const unitId of lifecycles.value.keys()) {
     if (!units.value.has(unitId)) return failure("UNIT_OUTCOME_ORPHAN", [unitId]);

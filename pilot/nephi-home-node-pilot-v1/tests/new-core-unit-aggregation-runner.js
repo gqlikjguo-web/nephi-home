@@ -157,6 +157,89 @@ function pipeline({ unit, action = "START", target = null }) {
   return { unit: semantic.value, lifecycle: lifecycle.value, route: route.value };
 }
 
+function foreignAnswerFor(unitId) {
+  const foreignInput = buildUnderstandingTurnInput({
+    coreVersion: "new-core-v1",
+    traceId: `trace-foreign-${unitId}`,
+    turnId: `turn-foreign-${unitId}`,
+    verifiedPropertyBinding: { propertyId: scope.propertyId, channel: scope.channel },
+    verifiedConversationScope: { channel: scope.channel, userId: scope.userId },
+    sourceEvents: [{
+      eventId: "event-aggregation",
+      messageRef: "message-aggregation",
+      role: "guest",
+      timestamp: NOW,
+      messageKind: "text",
+      messageText: MESSAGE
+    }],
+    recentConversation: [],
+    stateV3Snapshot: {
+      scope,
+      referenceableCycles: [{
+        requestCycleId: "cycle-aggregation",
+        status: "pending",
+        expiresAt: "2026-08-29T08:00:00.000Z",
+        slotRefs: []
+      }]
+    },
+    publicCatalog: {
+      propertyId: scope.propertyId,
+      timezone: "Asia/Taipei",
+      capabilityCatalog: ["availability", "price", "property_fact", "booking_request", "high_risk"],
+      publicSubjectCatalog: [
+        { catalogIdentity: "room-aggregation", kind: "room", propertyId: scope.propertyId, publicName: "Room aggregation" },
+        { catalogIdentity: "policy-aggregation", kind: "policy", propertyId: scope.propertyId, publicName: "Policy aggregation" },
+        { catalogIdentity: "other-aggregation", kind: "other_verified", propertyId: scope.propertyId, publicName: "Other aggregation" }
+      ]
+    }
+  });
+  const foreignEvidence = validateAndNormalizeSourceEvidence([evidence()], foreignInput.sourceEvents);
+  assert.equal(foreignEvidence.ok, true);
+  const rawUnit = candidate({ unitId });
+  const semantic = validateSemanticUnit({
+    unit: rawUnit,
+    validatedEvidenceRefs: foreignEvidence.value,
+    understandingTurnInput: foreignInput,
+    publicCatalogIdentitySet: buildPublicCatalogIdentitySet(foreignInput),
+    capabilityRegistryProjection: projectCapabilityRegistry(CAPABILITY_REGISTRY)
+  });
+  assert.equal(semantic.ok, true, semantic.code);
+  const context = validateContextLink({
+    unit: semantic.value,
+    linkCandidate: {
+      contextLinkCandidateId: rawUnit.contextLinkCandidateId,
+      unitId,
+      actionCandidate: "START",
+      targetRequestCycleId: null,
+      evidenceRefs: [evidence()]
+    },
+    understandingTurnInput: foreignInput,
+    validatedEvidenceRefs: foreignEvidence.value,
+    now: NOW
+  });
+  assert.equal(context.ok, true, context.code);
+  const lifecycle = createLifecycleDecision({
+    lifecycleDecisionId: `lifecycle-foreign-${unitId}`,
+    unit: semantic.value,
+    validatedContextLink: context.value
+  });
+  assert.equal(lifecycle.ok, true, lifecycle.code);
+  const readiness = createUnitReadiness({
+    unit: semantic.value,
+    lifecycleDecision: lifecycle.value,
+    routingRegistry
+  });
+  assert.equal(readiness.ok, true, readiness.code);
+  const route = createUnitRoutingDecision({
+    unit: semantic.value,
+    lifecycleDecision: lifecycle.value,
+    routingRegistry,
+    readiness: readiness.value
+  });
+  assert.equal(route.ok, true, route.code);
+  return { unit: semantic.value, lifecycle: lifecycle.value, route: route.value };
+}
+
 const answer = pipeline({ unit: candidate({ unitId: "unit-answer" }) });
 const handoff = pipeline({
   unit: candidate({
@@ -192,6 +275,7 @@ const noReply = pipeline({
   action: "NONE"
 });
 const failed = pipeline({ unit: candidate({ unitId: "unit-failed" }) });
+const duplicateSemantic = pipeline({ unit: candidate({ unitId: "unit-duplicate-semantic" }) });
 
 const canonicalAnswer = Object.freeze({ unitId: "unit-answer", canonicalInputId: "canonical-answer" });
 const canonicalFailed = Object.freeze({ unitId: "unit-failed", canonicalInputId: "canonical-failed" });
@@ -250,6 +334,130 @@ assert.equal(onlyNoReply.ok, true, onlyNoReply.code);
 assert.equal(onlyNoReply.value.allNoReply, true);
 assert.equal(onlyNoReply.value.hasReplyWork, false);
 assert.deepEqual(onlyNoReply.value.canonicalItems, []);
+
+// C07 may be structurally identical across turns, but its private authority
+// must remain bound to the exact C01/C03/C06 tuple that produced it. Without
+// that provenance C09 can replace an acknowledgement/NONE route with a
+// foreign ANSWER and canonical item under the same unitId.
+const foreignAnswer = foreignAnswerFor("unit-answer");
+assert.equal(aggregateUnitOutcomes({
+  turnId: turnInput.turnId,
+  validatedUnits: [answer.unit],
+  lifecycleDecisions: [answer.lifecycle],
+  routingDecisions: [foreignAnswer.route],
+  canonicalItems: [canonicalAnswer]
+}).code, "AGGREGATION_ROUTE_CONFLICT");
+const sameTurnDifferentUnit = pipeline({ unit: candidate({ unitId: "unit-answer" }) });
+assert.equal(aggregateUnitOutcomes({
+  turnId: turnInput.turnId,
+  validatedUnits: [answer.unit],
+  lifecycleDecisions: [answer.lifecycle],
+  routingDecisions: [sameTurnDifferentUnit.route],
+  canonicalItems: [canonicalAnswer]
+}).code, "AGGREGATION_ROUTE_CONFLICT");
+const foreignAcknowledgementAnswer = foreignAnswerFor("unit-no-reply");
+assert.equal(aggregateUnitOutcomes({
+  turnId: turnInput.turnId,
+  validatedUnits: [noReply.unit],
+  lifecycleDecisions: [noReply.lifecycle],
+  routingDecisions: [foreignAcknowledgementAnswer.route],
+  canonicalItems: [Object.freeze({ unitId: "unit-no-reply", canonicalInputId: "forged-acknowledgement-answer" })]
+}).code, "AGGREGATION_ROUTE_CONFLICT");
+
+function scenarioCanonicalItem(item) {
+  return Object.freeze({ unitId: item.unit.unitId, canonicalInputId: `scenario-${item.unit.unitId}` });
+}
+
+function aggregateScenario(items, { downstreamOutcomes = [], failedUnits = [] } = {}) {
+  return aggregateUnitOutcomes({
+    turnId: turnInput.turnId,
+    validatedUnits: items.map((item) => item.unit),
+    lifecycleDecisions: items.map((item) => item.lifecycle),
+    routingDecisions: items.map((item) => item.route),
+    canonicalItems: items.filter((item) => item.route.disposition === "ANSWER").map(scenarioCanonicalItem),
+    downstreamOutcomes,
+    failedUnits
+  });
+}
+
+function assertScenario(id, items, expected) {
+  const result = aggregateScenario(items, expected.options);
+  assert.equal(result.ok, true, `${id}: ${result.code}`);
+  assert.deepEqual(result.value.unitOutcomes.map((outcome) => outcome.unitId), items.map((item) => item.unit.unitId), `${id}: stable unit coverage/order`);
+  assert.equal(result.value.hasReplyWork, expected.hasReplyWork, `${id}: reply-work attribution`);
+  assert.equal(result.value.hasClarification, expected.hasClarification, `${id}: clarification attribution`);
+  assert.equal(result.value.hasHandoff, expected.hasHandoff, `${id}: handoff attribution`);
+  assert.equal(result.value.allNoReply, expected.allNoReply, `${id}: no-reply attribution`);
+  return result.value;
+}
+
+// Explicit C09 replacement/attribution coverage. These cases deliberately
+// assert unit ownership and downstream references rather than changing the
+// protected product/fact/FinalDecision oracle.
+const multiAttributionCases = [
+  { id: "AC-MUL-001", items: [noReply, answer], hasReplyWork: true, hasClarification: false, hasHandoff: false, allNoReply: false },
+  { id: "AC-MUL-002", items: [noReply, answer], hasReplyWork: true, hasClarification: false, hasHandoff: false, allNoReply: false },
+  { id: "AC-MUL-003", items: [noReply], hasReplyWork: false, hasClarification: false, hasHandoff: false, allNoReply: true },
+  { id: "AC-MUL-004", items: [answer, clarify, handoff], hasReplyWork: true, hasClarification: true, hasHandoff: true, allNoReply: false },
+  { id: "AC-MUL-005", items: [answer, duplicateSemantic], hasReplyWork: true, hasClarification: false, hasHandoff: false, allNoReply: false },
+  { id: "AC-MUL-006", items: [answer], hasReplyWork: true, hasClarification: false, hasHandoff: false, allNoReply: false,
+    options: { failedUnits: [Object.freeze({ unitId: "unit-unknown-fragment", failureCode: "SEMANTIC_UNIT_INVALID" })] } },
+  { id: "AC-MUL-007", items: [answer, handoff], hasReplyWork: true, hasClarification: false, hasHandoff: true, allNoReply: false },
+  { id: "AC-MUL-008", items: [answer, duplicateSemantic], hasReplyWork: true, hasClarification: false, hasHandoff: false, allNoReply: false },
+  { id: "AC-MUL-009", items: [answer], hasReplyWork: true, hasClarification: false, hasHandoff: false, allNoReply: false,
+    options: { failedUnits: [Object.freeze({ unitId: "unit-invalid-sibling", failureCode: "SEMANTIC_UNIT_INVALID" })] } },
+  { id: "AC-MUL-010", items: [answer, duplicateSemantic], hasReplyWork: true, hasClarification: false, hasHandoff: false, allNoReply: false }
+];
+for (const expectation of multiAttributionCases) {
+  const value = assertScenario(expectation.id, expectation.items, expectation);
+  if (expectation.id === "AC-MUL-006" || expectation.id === "AC-MUL-009") {
+    assert.equal(value.failedUnits.length, 1, `${expectation.id}: invalid sibling stays explicit`);
+  }
+  if (expectation.id === "AC-MUL-010") {
+    assert.deepEqual(value.canonicalItems.map((item) => item.unitId), ["unit-answer", "unit-duplicate-semantic"], "AC-MUL-010: C09 never raw-text-deduplicates distinct units");
+  }
+}
+
+const partialUnknown = Object.freeze({ unitId: "unit-answer", outcomeRef: Object.freeze({ status: "unknown" }) });
+const partialClaimRejection = Object.freeze({ unitId: "unit-answer", outcomeRef: Object.freeze({ status: "claim_rejected" }) });
+const partialComposerFailure = Object.freeze({ unitId: "unit-answer", outcomeRef: Object.freeze({ status: "composer_failed" }) });
+const partialAttributionCases = [
+  { id: "AC-PAR-001", items: [answer, handoff], expected: { hasReplyWork: true, hasClarification: false, hasHandoff: true, allNoReply: false } },
+  { id: "AC-PAR-002", items: [answer, clarify], expected: { hasReplyWork: true, hasClarification: true, hasHandoff: false, allNoReply: false } },
+  { id: "AC-PAR-003", items: [answer, duplicateSemantic, handoff], expected: { hasReplyWork: true, hasClarification: false, hasHandoff: true, allNoReply: false } },
+  { id: "AC-PAR-004", items: [answer, failed], expected: { hasReplyWork: true, hasClarification: false, hasHandoff: false, allNoReply: false,
+    options: { failedUnits: [Object.freeze({ unitId: "unit-failed", failureCode: "CANONICAL_REJECTED" })] } } },
+  { id: "AC-PAR-005", items: [answer, handoff], expected: { hasReplyWork: true, hasClarification: false, hasHandoff: true, allNoReply: false } },
+  { id: "AC-PAR-006", items: [answer, duplicateSemantic], expected: { hasReplyWork: true, hasClarification: false, hasHandoff: false, allNoReply: false,
+    options: { downstreamOutcomes: [partialUnknown] } } },
+  { id: "AC-PAR-007", items: [answer, duplicateSemantic], expected: { hasReplyWork: true, hasClarification: false, hasHandoff: false, allNoReply: false,
+    options: { downstreamOutcomes: [partialClaimRejection] } } },
+  { id: "AC-PAR-008", items: [answer, duplicateSemantic], expected: { hasReplyWork: true, hasClarification: false, hasHandoff: false, allNoReply: false,
+    options: { downstreamOutcomes: [partialComposerFailure] } } },
+  { id: "AC-PAR-009", items: [noReply, answer], expected: { hasReplyWork: true, hasClarification: false, hasHandoff: false, allNoReply: false } },
+  { id: "AC-PAR-010", items: [handoff, answer, noReply], expected: { hasReplyWork: true, hasClarification: false, hasHandoff: true, allNoReply: false } }
+];
+for (const expectation of partialAttributionCases) {
+  const value = assertScenario(expectation.id, expectation.items, expectation.expected);
+  if (["AC-PAR-006", "AC-PAR-007", "AC-PAR-008"].includes(expectation.id)) {
+    assert.equal(value.unitOutcomes[0].downstreamOutcomeRef.status, expectation.expected.options.downstreamOutcomes[0].outcomeRef.status, `${expectation.id}: scoped downstream failure/Unknown is retained`);
+  }
+  if (expectation.id === "AC-PAR-010") {
+    assert.deepEqual(value.unitOutcomes.map((outcome) => outcome.unitId), ["unit-handoff", "unit-answer", "unit-no-reply"], "AC-PAR-010: no-reply/failure siblings cannot reorder a turn");
+  }
+}
+
+// AC-MUL-011..014 retain individual, owned failure attribution rather than
+// collapsing malformed collections into a turn-level response.
+const ownershipAttributionCases = [
+  { id: "AC-MUL-011", result: () => aggregateUnitOutcomes({ turnId: turnInput.turnId, validatedUnits: [answer.unit, answer.unit], lifecycleDecisions: [answer.lifecycle], routingDecisions: [answer.route], canonicalItems: [canonicalAnswer] }), code: "UNIT_OUTCOME_DUPLICATE" },
+  { id: "AC-MUL-012", result: () => aggregateUnitOutcomes({ turnId: turnInput.turnId, validatedUnits: [answer.unit, handoff.unit], lifecycleDecisions: [answer.lifecycle], routingDecisions: [answer.route, handoff.route], canonicalItems: [canonicalAnswer] }), code: "UNIT_COVERAGE_INCOMPLETE" },
+  { id: "AC-MUL-013", result: () => aggregateUnitOutcomes({ turnId: turnInput.turnId, validatedUnits: [answer.unit], lifecycleDecisions: [answer.lifecycle, handoff.lifecycle], routingDecisions: [answer.route], canonicalItems: [canonicalAnswer] }), code: "UNIT_OUTCOME_ORPHAN" },
+  { id: "AC-MUL-014", result: () => aggregateUnitOutcomes({ turnId: turnInput.turnId, validatedUnits: [handoff.unit], lifecycleDecisions: [handoff.lifecycle], routingDecisions: [handoff.route], canonicalItems: [canonicalAnswer] }), code: "CANONICAL_ITEM_ORPHAN" }
+];
+for (const expectation of ownershipAttributionCases) {
+  assert.equal(expectation.result().code, expectation.code, `${expectation.id}: exact C09 ownership gate`);
+}
 
 // C09 must not smuggle a mutable later-stage reference through an otherwise
 // frozen result; a shallow freeze would let downstream code change canonical
@@ -344,7 +552,7 @@ assert.equal(aggregateUnitOutcomes({
 console.log(JSON.stringify({
   suite: "new-core-unit-aggregation",
   level: "STRUCTURED_CONTRACT_TEST",
-  caseCount: 19,
-  passCount: 19,
+  caseCount: 46,
+  passCount: 46,
   failCount: 0
 }));
