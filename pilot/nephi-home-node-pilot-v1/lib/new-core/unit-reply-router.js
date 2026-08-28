@@ -197,7 +197,8 @@ function routeFromValidatedInputs({ unit, lifecycleDecision, routingRegistry, re
   const validReadiness = readinessFor(readiness, unit);
   if (!policy || !validReadiness) return failure("ROUTING_READINESS_INVALID", ["readiness"]);
   if (unit.purpose === "cancellation") {
-    if (lifecycleDecision.action !== "END" || unit.replyCandidate.disposition !== "NO_REPLY") {
+    if (lifecycleDecision.action !== "END" || unit.replyCandidate.disposition !== "NO_REPLY"
+      || unit.capability !== null || unit.subject.kind !== null || unit.subject.catalogIdentity !== null) {
       return failure("ROUTE_PURPOSE_CONFLICT", ["cancellation.lifecycleOrDisposition"]);
     }
     return { disposition: "NO_REPLY", reasonClass: "no_executable_need", requiresCanonicalExecution: false, missingGuestFields: [], operatorActionClass: null, riskClass: null };
