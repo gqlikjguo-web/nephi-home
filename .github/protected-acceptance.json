@@ -44,7 +44,7 @@
     },
     {
       "path": "pilot/nephi-home-node-pilot-v1/tests/v2-runtime-uniqueness-runner.js",
-      "sha256": "76e1395f5b16d31828f0bf5f695ea031cceea263b427260f40ace3400b155e9d",
+      "sha256": "ae39f5587c90b6557f46310317f32c126b3e06520ebc00885c86f1f87a4f9658",
       "baseline": "accepted-current"
     },
     {
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/codex-integrity.yml",
-      "sha256": "7f6e057fde11f17e333899c2e11f530c414f380827ca607231bf4ca64d240c54",
+      "sha256": "c568d9f55f19e1be50b9724542423e8ae3159fae8b2834539b4175428e05db2d",
       "baseline": "accepted-current"
     },
     {
