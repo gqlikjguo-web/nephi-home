@@ -557,6 +557,32 @@ const summarizeShadowCollectionRoot = isolatedSource(({ sourceRoot }) => {
   `);
 });
 assert.equal(gate(summarizeShadowCollectionRoot).ok, true, JSON.stringify(gate(summarizeShadowCollectionRoot)));
+const deepShadowInsertAliasRoot = isolatedSource(({ sourceRoot }) => {
+  const aliases = Array.from({ length: 30 }, (_, index) => (
+    index === 0 ? "const x0 = x;" : `const x${index} = x${index - 1};`
+  )).join("\n");
+  fs.writeFileSync(path.join(sourceRoot, "shadow-deep-insert-alias.js"), `
+    function runShadow(x, event) {
+      ${aliases}
+      return x29.insert(event);
+    }
+    module.exports = { runShadow };
+  `);
+});
+assertGateFailure(gate(deepShadowInsertAliasRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+const deepShadowMapAliasRoot = isolatedSource(({ sourceRoot }) => {
+  const aliases = Array.from({ length: 30 }, (_, index) => (
+    index === 0 ? "const map0 = items.map;" : `const map${index} = map${index - 1};`
+  )).join("\n");
+  fs.writeFileSync(path.join(sourceRoot, "shadow-deep-map-alias.js"), `
+    function summarizeShadow(items) {
+      ${aliases}
+      return map29((item) => ({ unitId: item.unitId }));
+    }
+    module.exports = { summarizeShadow };
+  `);
+});
+assertGateFailure(gate(deepShadowMapAliasRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
 
 // AC-MNT-009: the scanner is token-aware: comments, string literals, and
 // innocent consumer names do not create false writer/authority findings.

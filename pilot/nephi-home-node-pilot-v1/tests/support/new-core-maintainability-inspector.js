@@ -730,6 +730,7 @@ function verifyAst(file, item, root) {
     if (node.type === "AssignmentExpression" && node.left.type === "Identifier" && node.left.name === "candidateIndex") candidate = true;
     if (node.type === "CallExpression") {
       const callable = resolveCallable(node.callee, item.bindings);
+      if (shadowSource && callable.exhausted) sideEffect = true;
       const hasMember = node.callee.type === "MemberExpression" || callable.nodes.some((item) => item.type === "MemberExpression");
       const reflectiveAccess = ["get", "set", "defineProperty"].some((name) => callable.names.has(name));
       const field = resolveValueNames(node.arguments[1], item.bindings);
