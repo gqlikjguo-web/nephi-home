@@ -280,17 +280,12 @@ function providerRequestBody(understandingTurnInput, model) {
 
 function structuredOutputText(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-  if (["incomplete", "failed"].includes(payload.status)) return null;
-  const outputPresent = Object.hasOwn(payload, "output");
-  if (outputPresent && !Array.isArray(payload.output)) return null;
-  const output = outputPresent ? payload.output : [];
+  if (payload.status !== "completed" || Object.hasOwn(payload, "output_text")
+    || !Array.isArray(payload.output)) return null;
+  const output = payload.output;
   const parts = output
     .flatMap((item) => Array.isArray(item && item.content) ? item.content : []);
   if (parts.some((part) => part && part.type === "refusal")) return null;
-  if (Object.hasOwn(payload, "output_text")) {
-    return typeof payload.output_text === "string" && payload.output_text.length > 0 && output.length === 0
-      ? payload.output_text : null;
-  }
   if (output.length !== 1 || !output[0] || output[0].type !== "message"
     || !Array.isArray(output[0].content) || output[0].content.length !== 1) return null;
   const part = output[0].content[0];

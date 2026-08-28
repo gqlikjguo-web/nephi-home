@@ -115,18 +115,18 @@ function response(status, body, requestId = "") {
   };
 }
 
-function successfulResponse(value = providerOutput(), requestId = "req-understanding-a") {
-  return response(200, JSON.stringify({ output_text: JSON.stringify(value) }), requestId);
-}
-
-function successfulPartResponse(value = providerOutput(), requestId = "req-understanding-part-a") {
+function structuredResponse(value = providerOutput(), status = "completed", requestId = "req-understanding-a") {
   return response(200, JSON.stringify({
-    status: "completed",
+    status,
     output: [{
       type: "message",
       content: [{ type: "output_text", text: JSON.stringify(value) }]
     }]
   }), requestId);
+}
+
+function successfulResponse(value = providerOutput(), requestId = "req-understanding-a") {
+  return structuredResponse(value, "completed", requestId);
 }
 
 function siblingInput() {
@@ -280,9 +280,6 @@ async function main() {
     "C05_CONTEXT_LINK_VALIDATED"
   ]);
   assert.equal(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].providerAttemptCount, 1);
-
-  const nestedPartResult = await callOpenAIUnderstandingV1(input, options(async () => successfulPartResponse()));
-  assert.equal(nestedPartResult.validatedUnits.length, 1, "one raw Responses API output_text part is accepted");
 
   // After the response passes the global C02 wire contract, C04/C03/C05
   // failures are unit-scoped. A failing availability sibling cannot erase or
@@ -522,9 +519,20 @@ async function main() {
   // Refusal, outer response parse failure, provider schema failure, and local
   // contract failure are non-transport failures. Each stops after one call.
   const nonRetryableCases = [
-    ["refusal", async () => response(200, JSON.stringify({ output: [{ type: "message", content: [{ type: "refusal", refusal: "no" }] }] })), "UNDERSTANDING_SCHEMA_INVALID"],
-    ["failed-with-output", async () => response(200, JSON.stringify({ status: "failed", output_text: JSON.stringify(providerOutput()) })), "UNDERSTANDING_SCHEMA_INVALID"],
-    ["incomplete-with-output", async () => response(200, JSON.stringify({ status: "incomplete", output_text: JSON.stringify(providerOutput()) })), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["refusal", async () => response(200, JSON.stringify({ status: "completed", output: [{ type: "message", content: [{ type: "refusal", refusal: "no" }] }] })), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["failed-with-output", async () => structuredResponse(providerOutput(), "failed"), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["incomplete-with-output", async () => structuredResponse(providerOutput(), "incomplete"), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["in-progress-with-output", async () => structuredResponse(providerOutput(), "in_progress"), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["queued-with-output", async () => structuredResponse(providerOutput(), "queued"), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["cancelled-with-output", async () => structuredResponse(providerOutput(), "cancelled"), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["unknown-status-with-output", async () => structuredResponse(providerOutput(), "unexpected"), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["missing-status-with-output", async () => response(200, JSON.stringify({
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(providerOutput()) }] }]
+    })), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["top-level-output-text-shortcut", async () => response(200, JSON.stringify({
+      status: "completed",
+      output_text: JSON.stringify(providerOutput())
+    })), "UNDERSTANDING_SCHEMA_INVALID"],
     ["refusal-with-output", async () => response(200, JSON.stringify({
       status: "completed",
       output_text: JSON.stringify(providerOutput()),
@@ -655,7 +663,7 @@ async function main() {
     suite: "new-core-openai-adapter-contract",
     classification: "FAKE_INTEGRATION",
     provider: "STRUCTURED/FAKE",
-    caseCount: 35,
+    caseCount: 40,
     status: "PASS"
   }));
 }
