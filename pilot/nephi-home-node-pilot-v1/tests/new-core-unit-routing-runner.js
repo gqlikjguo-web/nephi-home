@@ -426,10 +426,25 @@ assert.equal(route(correction).value.disposition, "NO_REPLY");
 const officialAnswer = route(newQuestion).value;
 assert.equal(officialAnswer.disposition, "ANSWER");
 assert.equal(Object.isFrozen(officialAnswer), true, "official C07 decisions are immutable");
+assert.equal(Object.isFrozen(officialAnswer.missingGuestFields), true, "official C07 nested values are immutable");
 assert.equal(isTrustedUnitRoutingDecision(officialAnswer), true, "only the official C07 factory brands its output");
-assert.equal(isTrustedUnitRoutingDecision({ ...officialAnswer }), false, "a spread-equivalent C07 object is untrusted");
+const structuralDecision = {
+  unitId: officialAnswer.unitId,
+  disposition: officialAnswer.disposition,
+  reasonClass: officialAnswer.reasonClass,
+  requiresCanonicalExecution: officialAnswer.requiresCanonicalExecution,
+  missingGuestFields: [],
+  operatorActionClass: officialAnswer.operatorActionClass,
+  riskClass: officialAnswer.riskClass
+};
+assert.equal(validateUnitRoutingDecision(structuralDecision).ok, true, "the structural adversary must satisfy the public C07 shape");
+assert.equal(isTrustedUnitRoutingDecision(structuralDecision), false, "a structurally valid C07 literal is untrusted");
+const spreadDecision = { ...officialAnswer };
+assert.equal(validateUnitRoutingDecision(spreadDecision).ok, true, "the spread adversary must satisfy the public C07 shape");
+assert.equal(isTrustedUnitRoutingDecision(spreadDecision), false, "a spread-equivalent C07 object is untrusted");
 const bracketBuiltDecision = {};
 for (const [key, value] of Object.entries(officialAnswer)) bracketBuiltDecision[key] = value;
+assert.equal(validateUnitRoutingDecision(bracketBuiltDecision).ok, true, "the bracket adversary must satisfy the public C07 shape");
 assert.equal(isTrustedUnitRoutingDecision(bracketBuiltDecision), false, "a bracket-built C07 lookalike is untrusted");
 
 // AC-HOF-007: an active pending continuation is not silenced; the unchanged
@@ -537,21 +552,571 @@ const productionSources = newCoreSourceFiles(newCoreDirectory).map((filePath) =>
   filePath: path.relative(newCoreDirectory, filePath),
   source: fs.readFileSync(filePath, "utf8")
 }));
-function c07AuthorityModules(files) {
-  return files.filter(({ source }) => (
-    source.includes("C07_AUTHORITY_MARKER")
-    || source.includes("createUnitRoutingDecision")
-    || source.includes("isTrustedUnitRoutingDecision")
-  ));
+function loadEmbeddedAcorn() {
+  const source = process.binding("natives")["internal/deps/acorn/acorn/dist/acorn"];
+  assert.equal(typeof source, "string", "the configured Node runtime must expose its embedded JavaScript parser");
+  const embeddedModule = { exports: {} };
+  Function("exports", "require", "module", "__filename", "__dirname", source)(
+    embeddedModule.exports,
+    require,
+    embeddedModule,
+    "embedded-acorn.js",
+    ""
+  );
+  return embeddedModule.exports;
 }
-assert.deepEqual(
-  c07AuthorityModules(productionSources).map((item) => item.filePath),
-  ["unit-reply-router.js"],
-  "C07 brand, factory, and verifier must have one new-core authority"
-);
+
+const EMBEDDED_ACORN = loadEmbeddedAcorn();
+const C07_AUTHORITY_NAMES = new Set([
+  "C07_AUTHORITY_MARKER",
+  "createUnitRoutingDecision",
+  "isTrustedUnitRoutingDecision"
+]);
+
+function walkAuthorityAst(value, visitor) {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    value.forEach((item) => walkAuthorityAst(item, visitor));
+    return;
+  }
+  if (typeof value.type === "string") visitor(value);
+  for (const [key, item] of Object.entries(value)) {
+    if (["start", "end", "loc", "range"].includes(key)) continue;
+    walkAuthorityAst(item, visitor);
+  }
+}
+
+function staticPropertyName(node) {
+  if (!node) return null;
+  if (node.type === "Identifier") return node.name;
+  if (node.type === "Literal" && typeof node.value === "string") return node.value;
+  if (node.type === "TemplateLiteral" && node.expressions.length === 0) return node.quasis[0].value.cooked;
+  return null;
+}
+
+function isNamedMember(node, owner, property) {
+  return Boolean(node) && node.type === "MemberExpression"
+    && node.object && node.object.type === "Identifier" && node.object.name === owner
+    && staticPropertyName(node.property) === property;
+}
+
+function isModuleExports(node) {
+  return isNamedMember(node, "module", "exports");
+}
+
+function isExportsObject(node) {
+  return Boolean(node) && ((node.type === "Identifier" && node.name === "exports") || isModuleExports(node));
+}
+
+function exportedSlotName(node) {
+  return Boolean(node) && node.type === "MemberExpression" && isExportsObject(node.object)
+    ? staticPropertyName(node.property)
+    : null;
+}
+
+function isFunctionValue(node) {
+  return Boolean(node) && ["FunctionExpression", "ArrowFunctionExpression"].includes(node.type);
+}
+
+function isWeakSetConstruction(node) {
+  return Boolean(node) && node.type === "NewExpression"
+    && node.callee.type === "Identifier" && node.callee.name === "WeakSet";
+}
+
+function isObjectMethod(node, owner, method) {
+  return Boolean(node) && node.type === "MemberExpression"
+    && node.object && node.object.type === "Identifier" && node.object.name === owner
+    && staticPropertyName(node.property) === method;
+}
+
+function isOfficialRouterRequire(node, filePath) {
+  if (!node || node.type !== "CallExpression" || node.callee.type !== "Identifier" || node.callee.name !== "require"
+    || node.arguments.length !== 1) return false;
+  const request = staticPropertyName(node.arguments[0]);
+  if (!request || !request.startsWith(".")) return false;
+  const normalizedFilePath = filePath.split(path.sep).join("/");
+  const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(normalizedFilePath), request));
+  return resolved === "unit-reply-router" || resolved === "unit-reply-router.js";
+}
+
+function topLevelBindings(ast, filePath) {
+  const bindings = new Map();
+  for (const statement of ast.body) {
+    if (statement.type === "FunctionDeclaration" && statement.id) bindings.set(statement.id.name, statement);
+    if (statement.type === "VariableDeclaration") {
+      for (const declaration of statement.declarations) {
+        if (declaration.id.type === "Identifier") bindings.set(declaration.id.name, declaration.init);
+        if (declaration.id.type === "ObjectPattern" && isOfficialRouterRequire(declaration.init, filePath)) {
+          for (const property of declaration.id.properties) {
+            if (property.type !== "Property" || property.value.type !== "Identifier") continue;
+            const authorityName = staticPropertyName(property.key);
+            if (C07_AUTHORITY_NAMES.has(authorityName)) {
+              bindings.set(property.value.name, { type: "KnownC07Authority", authorityName });
+            }
+          }
+        }
+      }
+    }
+    if (statement.type === "ExpressionStatement" && statement.expression.type === "AssignmentExpression"
+      && statement.expression.operator === "=" && statement.expression.left.type === "Identifier") {
+      bindings.set(statement.expression.left.name, statement.expression.right);
+    }
+  }
+  return bindings;
+}
+
+function objectPropertyValue(node, propertyName) {
+  if (!node || node.type !== "ObjectExpression") return null;
+  const property = node.properties.find((item) => item.type === "Property" && staticPropertyName(item.key) === propertyName);
+  return property ? property.value : null;
+}
+
+function collectExportedAuthorityNames(node, names, options) {
+  const {
+    bindings,
+    filePath,
+    includePropertyKeys = true,
+    roleHint = null,
+    seenBindings = new Set()
+  } = options;
+  if (!node) return;
+  if (node.type === "KnownC07Authority") {
+    names.add(node.authorityName);
+    return;
+  }
+  if (node.type === "Identifier") {
+    if (bindings.has(node.name) && !seenBindings.has(node.name)) {
+      const nextSeen = new Set(seenBindings);
+      nextSeen.add(node.name);
+      const binding = bindings.get(node.name);
+      if (isWeakSetConstruction(binding)) {
+        if (roleHint === "C07_AUTHORITY_MARKER" || node.name === "C07_AUTHORITY_MARKER") {
+          names.add("C07_AUTHORITY_MARKER");
+        }
+        return;
+      }
+      if (isFunctionValue(binding) || (binding && binding.type === "FunctionDeclaration")) {
+        if (C07_AUTHORITY_NAMES.has(roleHint)) names.add(roleHint);
+        else if (C07_AUTHORITY_NAMES.has(node.name)) names.add(node.name);
+        return;
+      }
+      collectExportedAuthorityNames(binding, names, { ...options, seenBindings: nextSeen });
+      return;
+    }
+    if (C07_AUTHORITY_NAMES.has(node.name)) names.add(node.name);
+    return;
+  }
+  if (node.type === "MemberExpression") {
+    const propertyName = staticPropertyName(node.property);
+    let object = node.object;
+    if (object.type === "Identifier" && bindings.has(object.name)) object = bindings.get(object.name);
+    if (isOfficialRouterRequire(object, filePath) && C07_AUTHORITY_NAMES.has(propertyName)) {
+      names.add(propertyName);
+      return;
+    }
+    const knownValue = objectPropertyValue(object, propertyName);
+    if (knownValue) collectExportedAuthorityNames(knownValue, names, { ...options, includePropertyKeys: false });
+    return;
+  }
+  if (isOfficialRouterRequire(node, filePath)) {
+    names.add("createUnitRoutingDecision");
+    names.add("isTrustedUnitRoutingDecision");
+    return;
+  }
+  if (isWeakSetConstruction(node)) {
+    if (roleHint === "C07_AUTHORITY_MARKER") names.add("C07_AUTHORITY_MARKER");
+    return;
+  }
+  if (node.type === "ObjectExpression") {
+    for (const property of node.properties) {
+      if (property.type === "SpreadElement") {
+        collectExportedAuthorityNames(property.argument, names, { ...options, includePropertyKeys });
+      }
+      if (property.type !== "Property") continue;
+      const keyName = staticPropertyName(property.key);
+      const propertyRole = includePropertyKeys && C07_AUTHORITY_NAMES.has(keyName) ? keyName : null;
+      collectExportedAuthorityNames(property.value, names, {
+        ...options,
+        includePropertyKeys: false,
+        roleHint: propertyRole
+      });
+    }
+    return;
+  }
+  if (node.type === "CallExpression" && isObjectMethod(node.callee, "Object", "freeze")) {
+    collectExportedAuthorityNames(node.arguments[0], names, { ...options, includePropertyKeys });
+    return;
+  }
+  if (node.type === "CallExpression" && isObjectMethod(node.callee, "Object", "assign")) {
+    node.arguments.forEach((argument) => collectExportedAuthorityNames(argument, names, { ...options, includePropertyKeys }));
+    return;
+  }
+  if (isFunctionValue(node) || node.type === "FunctionDeclaration") {
+    if (C07_AUTHORITY_NAMES.has(roleHint)) names.add(roleHint);
+    else if (node.id && C07_AUTHORITY_NAMES.has(node.id.name)) names.add(node.id.name);
+  }
+}
+
+function c07AuthoritySignals(source, filePath) {
+  const ast = EMBEDDED_ACORN.parse(source, { ecmaVersion: "latest", sourceType: "script", allowHashBang: true });
+  const bindings = topLevelBindings(ast, filePath);
+  const signals = {
+    markerDefinitions: 0,
+    factoryDefinitions: 0,
+    verifierDefinitions: 0,
+    markerExports: 0,
+    factoryExports: 0,
+    verifierExports: 0
+  };
+  const incrementExport = (name) => {
+    if (name === "C07_AUTHORITY_MARKER") signals.markerExports += 1;
+    if (name === "createUnitRoutingDecision") signals.factoryExports += 1;
+    if (name === "isTrustedUnitRoutingDecision") signals.verifierExports += 1;
+  };
+  const recordExports = (names) => names.forEach(incrementExport);
+  const collectExports = (node, names, overrides = {}) => collectExportedAuthorityNames(node, names, {
+    bindings,
+    filePath,
+    includePropertyKeys: true,
+    roleHint: null,
+    ...overrides
+  });
+  walkAuthorityAst(ast, (node) => {
+    if (node.type === "VariableDeclarator" && node.id.type === "Identifier") {
+      if (node.id.name === "C07_AUTHORITY_MARKER" && isWeakSetConstruction(node.init)) signals.markerDefinitions += 1;
+      if (node.id.name === "createUnitRoutingDecision" && isFunctionValue(node.init)) signals.factoryDefinitions += 1;
+      if (node.id.name === "isTrustedUnitRoutingDecision" && isFunctionValue(node.init)) signals.verifierDefinitions += 1;
+    }
+    if (node.type === "FunctionDeclaration" && node.id) {
+      if (node.id.name === "createUnitRoutingDecision") signals.factoryDefinitions += 1;
+      if (node.id.name === "isTrustedUnitRoutingDecision") signals.verifierDefinitions += 1;
+    }
+    if (node.type === "AssignmentExpression" && node.operator === "=") {
+      if (node.left.type === "Identifier" && isFunctionValue(node.right)) {
+        if (node.left.name === "createUnitRoutingDecision") signals.factoryDefinitions += 1;
+        if (node.left.name === "isTrustedUnitRoutingDecision") signals.verifierDefinitions += 1;
+      }
+      const names = new Set();
+      if (isModuleExports(node.left)) collectExports(node.right, names);
+      const slotName = exportedSlotName(node.left);
+      if (slotName) {
+        collectExports(node.right, names, {
+          includePropertyKeys: false,
+          roleHint: C07_AUTHORITY_NAMES.has(slotName) ? slotName : null
+        });
+      }
+      recordExports(names);
+    }
+    if (node.type === "CallExpression" && isObjectMethod(node.callee, "Object", "assign")
+      && isExportsObject(node.arguments[0])) {
+      const names = new Set();
+      node.arguments.slice(1).forEach((argument) => collectExports(argument, names));
+      recordExports(names);
+    }
+    if (node.type === "CallExpression"
+      && (isObjectMethod(node.callee, "Object", "defineProperty") || isObjectMethod(node.callee, "Reflect", "defineProperty"))
+      && isExportsObject(node.arguments[0])) {
+      const names = new Set();
+      const slotName = staticPropertyName(node.arguments[1]);
+      const descriptorValue = objectPropertyValue(node.arguments[2], "value");
+      collectExports(descriptorValue, names, {
+        includePropertyKeys: false,
+        roleHint: C07_AUTHORITY_NAMES.has(slotName) ? slotName : null
+      });
+      recordExports(names);
+    }
+  });
+  return signals;
+}
+
+function c07AuthorityModules(files) {
+  return files.map((item) => ({ ...item, signals: c07AuthoritySignals(item.source, item.filePath) }))
+    .filter(({ signals }) => Object.values(signals).some((count) => count > 0));
+}
+const c07Authorities = c07AuthorityModules(productionSources);
+assert.deepEqual(c07Authorities.map((item) => item.filePath), ["unit-reply-router.js"], "C07 brand, factory, and verifier must have one new-core authority");
+assert.deepEqual(c07Authorities[0].signals, {
+  markerDefinitions: 1,
+  factoryDefinitions: 1,
+  verifierDefinitions: 1,
+  markerExports: 0,
+  factoryExports: 1,
+  verifierExports: 1
+}, "the private C07 marker stays private while its sole factory and boundary verifier are exported exactly once");
 assert.deepEqual(
   c07AuthorityModules([{ filePath: "contracts/unit-routing-decision.js", source: "const schemaMetadata = { disposition: 'ANSWER', requiresCanonicalExecution: true, missingGuestFields: [] };" }]).map((item) => item.filePath),
   [], "harmless C07 schema metadata is not a writer or authority marker"
+);
+assert.deepEqual(
+  c07AuthorityModules([{
+    filePath: "unit-aggregator.js",
+    source: `
+      // C07_AUTHORITY_MARKER, createUnitRoutingDecision, and
+      // isTrustedUnitRoutingDecision are owned by the router.
+      const {
+        createUnitRoutingDecision,
+        isTrustedUnitRoutingDecision
+      } = require("./unit-reply-router");
+      const metadata = {
+        createUnitRoutingDecision: "unit-reply-router.js",
+        isTrustedUnitRoutingDecision: "unit-reply-router.js",
+        C07_AUTHORITY_MARKER: "private"
+      };
+      function consume(value) {
+        return isTrustedUnitRoutingDecision(value);
+      }
+    `
+  }]).map((item) => item.filePath),
+  [], "imports, calls, comments, and metadata must not become C07 authorities"
+);
+assert.deepEqual(
+  c07AuthorityModules([{
+    filePath: "bypass.js",
+    source: `
+      const C07_AUTHORITY_MARKER = new WeakSet();
+      function createUnitRoutingDecision() {}
+      function isTrustedUnitRoutingDecision() {}
+      module.exports = { createUnitRoutingDecision, isTrustedUnitRoutingDecision };
+    `
+  }]).map((item) => ({ filePath: item.filePath, signals: item.signals })),
+  [{
+    filePath: "bypass.js",
+    signals: {
+      markerDefinitions: 1,
+      factoryDefinitions: 1,
+      verifierDefinitions: 1,
+      markerExports: 0,
+      factoryExports: 1,
+      verifierExports: 1
+    }
+  }],
+  "a second private marker, factory, verifier, or export must be visible to the ownership gate"
+);
+assert.deepEqual(
+  c07AuthorityModules([{
+    filePath: "reexport.js",
+    source: `
+      const { createUnitRoutingDecision, isTrustedUnitRoutingDecision } = require("./unit-reply-router");
+      module.exports = {
+        alternateFactory: createUnitRoutingDecision,
+        alternateVerifier: isTrustedUnitRoutingDecision
+      };
+    `
+  }]).map((item) => ({ filePath: item.filePath, signals: item.signals })),
+  [{
+    filePath: "reexport.js",
+    signals: {
+      markerDefinitions: 0,
+      factoryDefinitions: 0,
+      verifierDefinitions: 0,
+      markerExports: 0,
+      factoryExports: 1,
+      verifierExports: 1
+    }
+  }],
+  "aliased exports of the authoritative factory or verifier remain visible ownership boundaries"
+);
+assert.deepEqual(
+  c07AuthorityModules([{
+    filePath: "alternate-definitions.js",
+    source: `
+      let C07_AUTHORITY_MARKER = new WeakSet();
+      const createUnitRoutingDecision = () => {};
+      let isTrustedUnitRoutingDecision = function (value) { return Boolean(value); };
+      module.exports = Object.freeze({
+        alternateFactory: createUnitRoutingDecision,
+        alternateVerifier: isTrustedUnitRoutingDecision
+      });
+    `
+  }]).map((item) => ({ filePath: item.filePath, signals: item.signals })),
+  [{
+    filePath: "alternate-definitions.js",
+    signals: {
+      markerDefinitions: 1,
+      factoryDefinitions: 1,
+      verifierDefinitions: 1,
+      markerExports: 0,
+      factoryExports: 1,
+      verifierExports: 1
+    }
+  }],
+  "alternate declaration forms and a frozen export object remain visible ownership boundaries"
+);
+assert.deepEqual(
+  c07AuthorityModules([{
+    filePath: "computed-reexport.js",
+    source: `
+      const router = require("./unit-reply-router");
+      exports["createUnitRoutingDecision"] = router.createUnitRoutingDecision;
+      module.exports["isTrustedUnitRoutingDecision"] = router.isTrustedUnitRoutingDecision;
+    `
+  }]).map((item) => ({ filePath: item.filePath, signals: item.signals })),
+  [{
+    filePath: "computed-reexport.js",
+    signals: {
+      markerDefinitions: 0,
+      factoryDefinitions: 0,
+      verifierDefinitions: 0,
+      markerExports: 0,
+      factoryExports: 1,
+      verifierExports: 1
+    }
+  }],
+  "computed CommonJS exports remain visible ownership boundaries"
+);
+assert.deepEqual(
+  c07AuthorityModules([{
+    filePath: "regex-metadata.js",
+    source: `
+      const factoryPattern = /function createUnitRoutingDecision\\(\\)/;
+      const verifierPattern = /function isTrustedUnitRoutingDecision\\(value\\)/;
+      const markerPattern = /const C07_AUTHORITY_MARKER = new WeakSet/;
+    `
+  }]).map((item) => item.filePath),
+  [],
+  "regex metadata containing authority syntax must not become a definition"
+);
+assert.deepEqual(
+  c07AuthorityModules([{
+    filePath: "split-object-assign.js",
+    source: `
+      let createUnitRoutingDecision;
+      let isTrustedUnitRoutingDecision;
+      createUnitRoutingDecision = () => ({});
+      isTrustedUnitRoutingDecision = (value) => Boolean(value);
+      Object.assign(module.exports, {
+        alternateFactory: createUnitRoutingDecision,
+        alternateVerifier: isTrustedUnitRoutingDecision
+      });
+    `
+  }]).map((item) => ({ filePath: item.filePath, signals: item.signals })),
+  [{
+    filePath: "split-object-assign.js",
+    signals: {
+      markerDefinitions: 0,
+      factoryDefinitions: 1,
+      verifierDefinitions: 1,
+      markerExports: 0,
+      factoryExports: 1,
+      verifierExports: 1
+    }
+  }],
+  "split function assignments and Object.assign re-exports remain visible ownership boundaries"
+);
+assert.deepEqual(
+  c07AuthorityModules([{
+    filePath: "void-regex-metadata.js",
+    source: `
+      const docs = void /function createUnitRoutingDecision\\(\\)/;
+      const verifierDocs = void /function isTrustedUnitRoutingDecision\\(value\\)/;
+    `
+  }]).map((item) => item.filePath),
+  [],
+  "regex metadata after unary operators must not become a definition"
+);
+assert.deepEqual(
+  c07AuthorityModules([{
+    filePath: "nested-export-metadata.js",
+    source: `
+      module.exports = {
+        docs: {
+          createUnitRoutingDecision: "owned by unit-reply-router",
+          isTrustedUnitRoutingDecision: "consumer boundary"
+        }
+      };
+    `
+  }]).map((item) => item.filePath),
+  [],
+  "nested exported documentation metadata must not become a factory or verifier export"
+);
+assert.deepEqual(
+  c07AuthorityModules([{
+    filePath: "whole-module-reexport.js",
+    source: `module.exports = require("./unit-reply-router");`
+  }, {
+    filePath: "spread-module-reexport.js",
+    source: `module.exports = { ...require("./unit-reply-router") };`
+  }]).map((item) => ({ filePath: item.filePath, signals: item.signals })),
+  ["whole-module-reexport.js", "spread-module-reexport.js"].map((filePath) => ({
+    filePath,
+    signals: {
+      markerDefinitions: 0,
+      factoryDefinitions: 0,
+      verifierDefinitions: 0,
+      markerExports: 0,
+      factoryExports: 1,
+      verifierExports: 1
+    }
+  })),
+  "whole-module and spread re-exports of the official C07 boundary remain visible"
+);
+assert.deepEqual(
+  c07AuthorityModules([{
+    filePath: "binding-module-reexport.js",
+    source: `
+      const router = require("./unit-reply-router");
+      module.exports = router;
+    `
+  }, {
+    filePath: "binding-spread-reexport.js",
+    source: `
+      const router = require("./unit-reply-router");
+      module.exports = { ...router };
+    `
+  }, {
+    filePath: "adapters/nested-reexport.js",
+    source: `module.exports = require("../unit-reply-router");`
+  }]).map((item) => ({ filePath: item.filePath, signals: item.signals })),
+  ["binding-module-reexport.js", "binding-spread-reexport.js", "adapters/nested-reexport.js"].map((filePath) => ({
+    filePath,
+    signals: {
+      markerDefinitions: 0,
+      factoryDefinitions: 0,
+      verifierDefinitions: 0,
+      markerExports: 0,
+      factoryExports: 1,
+      verifierExports: 1
+    }
+  })),
+  "bound and nested-path re-exports of the official C07 module remain visible"
+);
+assert.deepEqual(
+  c07AuthorityModules([{
+    filePath: "member-metadata.js",
+    source: `
+      const metadata = {
+        createUnitRoutingDecision: "owned by router",
+        isTrustedUnitRoutingDecision: "consumer boundary"
+      };
+      module.exports = {
+        factoryDocs: metadata.createUnitRoutingDecision,
+        verifierDocs: metadata.isTrustedUnitRoutingDecision
+      };
+    `
+  }]).map((item) => item.filePath),
+  [],
+  "statically known member metadata values must not become authority exports"
+);
+assert.deepEqual(
+  c07AuthorityModules([{
+    filePath: "marker-export.js",
+    source: `
+      const C07_AUTHORITY_MARKER = new WeakSet();
+      module.exports = { C07_AUTHORITY_MARKER };
+    `
+  }]).map((item) => ({ filePath: item.filePath, signals: item.signals })),
+  [{
+    filePath: "marker-export.js",
+    signals: {
+      markerDefinitions: 1,
+      factoryDefinitions: 0,
+      verifierDefinitions: 0,
+      markerExports: 1,
+      factoryExports: 0,
+      verifierExports: 0
+    }
+  }],
+  "exporting the private C07 brand must be visible to the ownership gate"
 );
 
 console.log(JSON.stringify({ suite: "new-core-unit-routing", level: "STRUCTURED_CONTRACT_TEST", caseCount: 20, passCount: 20, failCount: 0 }));
