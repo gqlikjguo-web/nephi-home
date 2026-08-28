@@ -1,0 +1,225 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const {
+  verifyNewCoreMaintainability
+} = require("../lib/new-core/diagnostic-boundary");
+
+const projectRoot = path.resolve(__dirname, "..");
+const ownershipPath = path.join(projectRoot, "docs", "new-core-contract-ownership.json");
+
+function copyDirectory(source, destination) {
+  fs.mkdirSync(destination, { recursive: true });
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    const from = path.join(source, entry.name);
+    const to = path.join(destination, entry.name);
+    if (entry.isDirectory()) copyDirectory(from, to);
+    else fs.copyFileSync(from, to);
+  }
+}
+
+function isolatedSource(mutator) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-task10-maintainability-"));
+  const sourceRoot = path.join(root, "lib", "new-core");
+  copyDirectory(path.join(projectRoot, "lib", "new-core"), sourceRoot);
+  mutator({ root, sourceRoot });
+  return root;
+}
+
+function gate(root = projectRoot, manifestPath = ownershipPath) {
+  return verifyNewCoreMaintainability({ projectRoot: root, manifestPath });
+}
+
+function assertGateFailure(result, code) {
+  assert.equal(result.ok, false);
+  assert.equal(result.code, code);
+  assert.equal(typeof result.file, "string");
+  assert.equal(result.file.startsWith("/"), false, "gate findings must use bounded relative paths");
+  assert.equal(Object.hasOwn(result, "source"), false, "gate must not reflect source text");
+}
+
+// AC-MNT-001: every C01-C11 contract has exactly one declared writer,
+// validator, named consumer list, boundary marker, and failure-code owner.
+const clean = gate();
+assert.equal(clean.ok, true, JSON.stringify(clean));
+assert.deepEqual(clean.contractIds, ["C01", "C02", "C03", "C04", "C05", "C06", "C07", "C08", "C09", "C10", "C11"]);
+assert.equal(clean.validatorCoverage.implemented, 10, "C01-C09 and C11 validators must exist at Task 10");
+assert.deepEqual(clean.validatorCoverage.planned, [{ contractId: "C10", task: 12 }]);
+const sealedConsumers = {
+  C01: ["OpenAI Understanding V1"],
+  C02: ["Source Evidence Validator"],
+  C03: ["Context Link Validator", "Per-unit Reply Router"],
+  C04: ["Semantic Unit Validator", "Context Link Validator", "Diagnostic Boundary Emitter"],
+  C05: ["Lifecycle Manager"],
+  C06: ["State V3 Lifecycle Adapter", "Unit Aggregator"],
+  C07: ["Unit Aggregator", "Canonical Execution Adapter"],
+  C08: ["Official canonicalizer"],
+  C09: ["Existing execution orchestration", "FinalDecision input adapter"],
+  C10: ["Offline acceptance and reporting"],
+  C11: ["Existing safe diagnostic persistence", "Acceptance attribution"]
+};
+const ownershipManifest = JSON.parse(fs.readFileSync(ownershipPath, "utf8"));
+for (const contract of ownershipManifest.contracts) {
+  assert.deepEqual(contract.consumers.map((consumer) => consumer.name), sealedConsumers[contract.contractId]);
+}
+
+// AC-MNT-002: recursive inspection sees duplicate writers hidden in nested files
+// and computed CommonJS exports, while ignoring strings/comments.
+const duplicateWriterRoot = isolatedSource(({ sourceRoot }) => {
+  const nested = path.join(sourceRoot, "nested", "duplicate-writer.js");
+  fs.mkdirSync(path.dirname(nested), { recursive: true });
+  fs.writeFileSync(nested, `
+    // buildUnderstandingTurnInput in a comment is not a writer.
+    const harmless = "buildUnderstandingTurnInput";
+    function duplicateTurnWriter() { return {}; }
+    module["exports"]["build" + "UnderstandingTurnInput"] = duplicateTurnWriter;
+  `);
+});
+assertGateFailure(gate(duplicateWriterRoot), "DUPLICATE_CONTRACT_WRITER");
+const assignedWriterRoot = isolatedSource(({ sourceRoot }) => {
+  const nested = path.join(sourceRoot, "nested", "assigned-writer.js");
+  fs.mkdirSync(path.dirname(nested), { recursive: true });
+  fs.writeFileSync(nested, `
+    function alternateTurnWriter() { return {}; }
+    Object.assign(module.exports, { buildUnderstandingTurnInput: alternateTurnWriter });
+  `);
+});
+assertGateFailure(gate(assignedWriterRoot), "DUPLICATE_CONTRACT_WRITER");
+const alternateExtensionRoot = isolatedSource(({ sourceRoot }) => {
+  const nested = path.join(sourceRoot, "nested", "alternate-writer.cjs");
+  fs.mkdirSync(path.dirname(nested), { recursive: true });
+  fs.writeFileSync(nested, `
+    function alternateTurnWriter() { return {}; }
+    module.exports.buildUnderstandingTurnInput = alternateTurnWriter;
+  `);
+});
+assertGateFailure(gate(alternateExtensionRoot), "DUPLICATE_CONTRACT_WRITER");
+
+// AC-MNT-003: duplicate failure-code ownership fails even when the JSON remains valid.
+const duplicateFailureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-task10-failure-owner-"));
+copyDirectory(path.join(projectRoot, "lib"), path.join(duplicateFailureRoot, "lib"));
+fs.mkdirSync(path.join(duplicateFailureRoot, "docs"), { recursive: true });
+const duplicateFailureManifest = JSON.parse(fs.readFileSync(ownershipPath, "utf8"));
+duplicateFailureManifest.contracts.find((entry) => entry.contractId === "C03").failureCodes.push("EVIDENCE_QUOTE_MISMATCH");
+const duplicateFailurePath = path.join(duplicateFailureRoot, "docs", "ownership.json");
+fs.writeFileSync(duplicateFailurePath, JSON.stringify(duplicateFailureManifest));
+assertGateFailure(gate(duplicateFailureRoot, duplicateFailurePath), "DUPLICATE_FAILURE_CODE_OWNER");
+
+// AC-MNT-004: one function cannot combine raw-language interpretation with
+// routing/state/canonical authority (a god function), regardless of nesting.
+const godFunctionRoot = isolatedSource(({ sourceRoot }) => {
+  const nested = path.join(sourceRoot, "deep", "deeper", "god-function.js");
+  fs.mkdirSync(path.dirname(nested), { recursive: true });
+  fs.writeFileSync(nested, `
+    function decideEverything(messageText) {
+      if (messageText.includes("parking")) {
+        return createUnitRoutingDecision({ capability: "property_fact" });
+      }
+      return executeCanonicalizerInputItem({});
+    }
+    module.exports = { decideEverything };
+  `);
+});
+assertGateFailure(gate(godFunctionRoot), "GOD_FUNCTION_FORBIDDEN");
+
+// AC-MNT-005: existing validators stay independently callable and no contract
+// can silently drop its validator or consumer accounting.
+const missingValidatorRoot = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-task10-validator-"));
+copyDirectory(path.join(projectRoot, "lib"), path.join(missingValidatorRoot, "lib"));
+fs.mkdirSync(path.join(missingValidatorRoot, "docs"), { recursive: true });
+const missingValidatorManifest = JSON.parse(fs.readFileSync(ownershipPath, "utf8"));
+const missingValidatorPath = path.join(missingValidatorRoot, "docs", "ownership.json");
+fs.writeFileSync(missingValidatorPath, JSON.stringify(missingValidatorManifest));
+const routeContractPath = path.join(missingValidatorRoot, "lib", "new-core", "contracts", "unit-routing-decision.js");
+fs.writeFileSync(routeContractPath, fs.readFileSync(routeContractPath, "utf8").replace(
+  "function validateUnitRoutingDecision(value)",
+  "function removedRouteValidator(value)"
+));
+assertGateFailure(gate(missingValidatorRoot, missingValidatorPath), "CONTRACT_VALIDATOR_MISSING");
+const wrongGraphManifest = JSON.parse(fs.readFileSync(ownershipPath, "utf8"));
+wrongGraphManifest.contracts.find((entry) => entry.contractId === "C01").consumers[0].name = "Semantic Unit Validator";
+const wrongGraphPath = path.join(missingValidatorRoot, "docs", "wrong-graph-ownership.json");
+fs.writeFileSync(wrongGraphPath, JSON.stringify(wrongGraphManifest));
+assertGateFailure(gate(missingValidatorRoot, wrongGraphPath), "CONTRACT_GRAPH_MISMATCH");
+const traversalManifest = JSON.parse(fs.readFileSync(ownershipPath, "utf8"));
+traversalManifest.contracts[0].writer.source = "../outside-writer.js";
+const traversalPath = path.join(missingValidatorRoot, "docs", "traversal-ownership.json");
+fs.writeFileSync(traversalPath, JSON.stringify(traversalManifest));
+assertGateFailure(gate(missingValidatorRoot, traversalPath), "OWNERSHIP_MANIFEST_INVALID");
+
+// AC-MNT-006: semantic, evidence, capability, reply, Context, facts, and memory
+// authority shapes cannot be introduced by an unowned new-core source file.
+const duplicateAuthorityCases = [
+  ["semantic", "function shadowSemanticWriter(){ return { purpose: 'unknown', capability: null, subject: null, stayDependent: false }; }"],
+  ["evidence", "function shadowEvidenceWriter(){ return { startOffset: 0, endOffset: 1, quote: 'x' }; }"],
+  ["capability", "function shadowCapabilityWriter(){ return { requestKind: 'x', exactRequiredFields: [] }; }"],
+  ["reply", "function shadowReplyWriter(){ return { disposition: 'NO_REPLY', requiresCanonicalExecution: false }; }"],
+  ["context", "function shadowContextWriter(){ return { actionCandidate: 'NONE', targetRequestCycleId: null }; }"],
+  ["facts", "function shadowFactsWriter(){ return { facts: [] }; }"],
+  ["memory", "function shadowMemoryWriter(){ return { confirmedFields: {}, lifecycleOperations: [] }; }"],
+];
+for (const [name, source] of duplicateAuthorityCases) {
+  const root = isolatedSource(({ sourceRoot }) => {
+    fs.writeFileSync(path.join(sourceRoot, `shadow-${name}.js`), `${source}\nmodule.exports = {};\n`);
+  });
+  assertGateFailure(gate(root), "DUPLICATE_DOMAIN_AUTHORITY");
+}
+const computedFactsRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-computed-facts.js"), `
+    function shadowFactsWriter() {
+      const result = {};
+      result["fa" + "cts"] = [];
+      return result;
+    }
+    module.exports = { shadowFactsWriter };
+  `);
+});
+assertGateFailure(gate(computedFactsRoot), "DUPLICATE_DOMAIN_AUTHORITY");
+
+// AC-MNT-007: candidateIndex is adapter-local C08 compatibility data only;
+// constant-folded computed names are still visible to the gate.
+const escapedIndexRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "escaped-index.js"), `
+    const compatibility = {};
+    compatibility["candidate" + "Index"] = 0;
+    module.exports = compatibility;
+  `);
+});
+assertGateFailure(gate(escapedIndexRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+
+// AC-MNT-008: diagnostics have one writer and are not a second persistence,
+// Resolver, state, reply, or facts boundary.
+const shadowSideEffectRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "diagnostic-side-effect.js"), `
+    function persistDiagnostic(event) { database.insert(event); resolver(event); sendLine(event); }
+    module.exports = { persistDiagnostic };
+  `);
+});
+assertGateFailure(gate(shadowSideEffectRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+
+// AC-MNT-009: the scanner is token-aware: comments, string literals, and
+// innocent consumer names do not create false writer/authority findings.
+const falsePositiveRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "nested-safe-consumer.js"), `
+    // candidateIndex buildUnderstandingTurnInput facts lifecycleOperations
+    const documentation = "candidateIndex facts createUnitRoutingDecision";
+    function observeValidatedRoute(value) { return Boolean(value && value.ok); }
+    module.exports = { observeValidatedRoute, documentation };
+  `);
+});
+assert.equal(gate(falsePositiveRoot).ok, true, JSON.stringify(gate(falsePositiveRoot)));
+
+// AC-MNT-010: arbitrary files outside lib/new-core are not scanned and cannot
+// make fixtures or old runtime into new-core authority.
+const scopedRoot = isolatedSource(({ root }) => {
+  const fixtures = path.join(root, "tests", "fixtures");
+  fs.mkdirSync(fixtures, { recursive: true });
+  fs.writeFileSync(path.join(fixtures, "fake-authority.js"), "module.exports = { candidateIndex: 0, facts: [] };\n");
+});
+assert.equal(gate(scopedRoot).ok, true, JSON.stringify(gate(scopedRoot)));
+
+console.log("new core maintainability gates runner: PASS (10 STRUCTURED_CONTRACT_TEST cases)");
