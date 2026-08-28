@@ -18,7 +18,7 @@ const {
 const ROUTING_REGISTRIES = new WeakSet();
 const READINESS_BY_UNIT = new WeakMap();
 const TRUSTED_OPERATOR_SAFETY_POLICIES = new WeakMap();
-const ROUTING_DECISIONS = new WeakSet();
+const C07_AUTHORITY_MARKER = new WeakSet();
 
 const ROUTING_BLUEPRINT = Object.freeze({
   availability: { kind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"] },
@@ -240,12 +240,14 @@ function createUnitRoutingDecision({ unit, lifecycleDecision, routingRegistry, r
   const validation = validateUnitRoutingDecision(decision);
   if (!validation.ok) return validation;
   const value = deepFreeze(detach(decision));
-  ROUTING_DECISIONS.add(value);
+  C07_AUTHORITY_MARKER.add(value);
   return { ok: true, code: null, errors: [], value };
 }
 
-function isUnitRoutingDecision(value) {
-  return Boolean(value) && typeof value === "object" && ROUTING_DECISIONS.has(value);
+function isTrustedUnitRoutingDecision(value) {
+  return Boolean(value) && typeof value === "object"
+    && C07_AUTHORITY_MARKER.has(value)
+    && validateUnitRoutingDecision(value).ok;
 }
 
 module.exports = {
@@ -253,5 +255,5 @@ module.exports = {
   createUnitReadiness,
   createTrustedOperatorSafetyPolicy,
   createUnitRoutingDecision,
-  isUnitRoutingDecision
+  isTrustedUnitRoutingDecision
 };
