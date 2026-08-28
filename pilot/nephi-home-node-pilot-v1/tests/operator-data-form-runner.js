@@ -59,18 +59,23 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
     assert.equal(controlledPolicyDisplayName("add_person_bed"), "加人／加床規則");
     assert.deepEqual(controlledPolicyCardContract("breakfast"), {
       displayName: "早餐說明",
-      visibleFields: ["status", "appliesTo", "publicText", "notes"],
-      hiddenFields: ["canonicalId", "publicName", "category", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]
+      visibleFields: ["status", "publicText", "notes"],
+      hiddenFields: ["canonicalId", "publicName", "category", "appliesTo", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]
     });
     assert.deepEqual(controlledPolicyCardContract("pets"), {
       displayName: "寵物規則",
-      visibleFields: ["status", "appliesTo", "publicText", "notes"],
-      hiddenFields: ["canonicalId", "publicName", "category", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]
+      visibleFields: ["status", "publicText", "notes"],
+      hiddenFields: ["canonicalId", "publicName", "category", "appliesTo", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]
     });
     assert.deepEqual(controlledPolicyCardContract("travel_subsidy"), {
       displayName: "國旅補助說明",
-      visibleFields: ["status", "appliesTo", "publicText", "notes"],
-      hiddenFields: ["canonicalId", "publicName", "category", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]
+      visibleFields: ["status", "publicText", "notes"],
+      hiddenFields: ["canonicalId", "publicName", "category", "appliesTo", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]
+    });
+    assert.deepEqual(controlledPolicyCardContract("add_person_bed"), {
+      displayName: "加人／加床規則",
+      visibleFields: ["status", "publicText", "notes"],
+      hiddenFields: ["canonicalId", "publicName", "category", "appliesTo", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]
     });
     assert.deepEqual(controlledPolicyCardContract("add_person_bed"), {
       displayName: "加人／加床規則",
@@ -204,7 +209,7 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
       source: "operator_form",
       updatedAt: "2026-08-13T00:00:00.000Z"
     }]);
-    assert.equal(equipmentDrafts.length, 16);
+    assert.equal(equipmentDrafts.length, 15);
     assert.equal(equipmentDrafts.find((item) => item.canonicalId === "toiletries").publicName, "盥洗用品");
     const wifi = equipmentDrafts.find((item) => item.canonicalId === "wifi");
     assert.equal(wifi.publicName, "Wi-Fi");

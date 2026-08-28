@@ -18,6 +18,7 @@
     "verify:core-change": "node scripts/verify-core-change-preflight.js",
     "verify:test-only-acceptance-data": "node tests/test-only-acceptance-data-integrity-runner.js",
     "test:canonical-golden": "node tests/canonical-request-golden-gate-runner.js",
+    "test:semantic-grounding": "node tests/planner-semantic-grounding-contract-runner.js",
     "test:runtime-uniqueness": "node tests/v2-runtime-uniqueness-runner.js",
     "test:inventory-toggle-linkage": "node tests/inventory-toggle-linkage-runner.js",
     "test:provider-fail-closed": "node tests/provider-authority-fail-closed-runner.js",

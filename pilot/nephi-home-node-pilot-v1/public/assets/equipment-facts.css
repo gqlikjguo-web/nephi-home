@@ -1,9 +1,3 @@
-.scope-warning {
-  padding: 10px 12px;
-  border-left: 4px solid #a16a16;
-  background: #fff7df;
-  color: #60430e;
-}
 .equipment-group { margin: 16px 0; }
 .equipment-grid {
   display: grid;

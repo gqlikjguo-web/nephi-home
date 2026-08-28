@@ -26,8 +26,7 @@ const EXPECTED = [
   ["toiletries", "盥洗用品"],
   ["baby_crib", "嬰兒床"],
   ["baby_bathtub", "嬰兒澡盆"],
-  ["baby_bottle_sterilizer", "消毒鍋"],
-  ["baby_bottle_cleaning_equipment", "奶瓶清潔設備"]
+  ["baby_bottle_sterilizer", "消毒鍋"]
 ];
 
 function draft(canonicalId, status, publicText, publicName = "偽造名稱") {
@@ -58,19 +57,16 @@ assert.deepEqual(HIGH_FREQUENCY_EQUIPMENT.filter((item) => bundleIds.has(item.ca
 assert.equal(equipmentByCanonicalId("wifi").publicName, "Wi-Fi");
 
 assert.deepEqual(equipmentFieldPolicy("unknown"), {
-  showScope: false,
   showPublicText: false,
   showNotes: false,
   publicTextRequired: false
 });
 assert.deepEqual(equipmentFieldPolicy("allowed"), {
-  showScope: true,
   showPublicText: true,
   showNotes: true,
   publicTextRequired: true
 });
 assert.deepEqual(equipmentFieldPolicy("not_allowed"), {
-  showScope: false,
   showPublicText: true,
   showNotes: true,
   publicTextRequired: false

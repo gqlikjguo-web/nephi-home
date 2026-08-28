@@ -76,7 +76,21 @@ const availableDatedPrice = composeSection({
     }]
   }
 });
-assert.equal(availableDatedPrice, "2026-09-29 入住\n目前可預訂。\n302四人房共 2,200 TWD。\n401雙人房共 1,700 TWD。");
+assert.equal(availableDatedPrice, "2026-09-29 入住\n目前可預訂。\n302四人房共 2,200 元。\n401雙人房共 1,700 元。");
+
+const availableUsdPrice = composeSection({
+  status: "answered",
+  facts: {
+    availability: "available",
+    checkIn: "2026-09-29",
+    prices: [{
+      inventory: { publicName: "海外房型" },
+      total: 1500,
+      currency: "USD"
+    }]
+  }
+});
+assert.equal(availableUsdPrice, "2026-09-29 入住\n目前可預訂。\n海外房型共 1,500 USD。");
 
 const unavailableDatedPrice = composeSection({
   status: "answered",

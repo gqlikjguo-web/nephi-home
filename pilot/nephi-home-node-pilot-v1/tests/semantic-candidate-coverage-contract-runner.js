@@ -21,6 +21,7 @@ const providerOutput = {
   tasks: [{
     candidateIndex: 0,
     taskId: "parking",
+    groundingId: "parking-grounding",
     type: "amenity",
     sourceText: message,
     detailIntent: "general",
@@ -30,6 +31,14 @@ const providerOutput = {
     entity: { category: "amenity", rawText: "parking", canonicalCandidate: "parking", confidence: 1 },
     stayCandidate: null,
     confidence: 1
+  }],
+  semanticGroundings: [{
+    groundingId: "parking-grounding",
+    provenanceRelationCandidateIndexes: [0],
+    evidenceRefs: [{ eventId, messageRef: "", startOffset: 0, endOffset: message.length, quote: message }],
+    subject: { scope: "property_owned", catalogIdentity: "parking" },
+    relation: "property_fact",
+    requestedOutput: "answer"
   }],
   contextRelationCandidates: [{
     candidateIndex: 0,

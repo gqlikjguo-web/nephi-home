@@ -132,6 +132,60 @@ function normalizePlannerEvidenceCoordinates(plannerOutput, sourceEvents) {
     changed = true;
     return { ...candidate, evidenceRefs: canonicalEvidence };
   });
+  const relationsByCandidateIndex = new Map();
+  for (const candidate of contextRelationCandidates) {
+    if (!candidate || !Number.isInteger(candidate.candidateIndex)) continue;
+    relationsByCandidateIndex.set(candidate.candidateIndex,
+      relationsByCandidateIndex.has(candidate.candidateIndex) ? null : candidate);
+  }
+  const taskCandidateIndexCounts = new Map();
+  for (const task of plannerOutput.tasks) {
+    const candidateIndex = task && task.candidateIndex;
+    taskCandidateIndexCounts.set(candidateIndex, (taskCandidateIndexCounts.get(candidateIndex) || 0) + 1);
+  }
+  const groundingIdCounts = new Map();
+  const groundingCandidateIndexCounts = new Map();
+  for (const grounding of Array.isArray(plannerOutput.semanticGroundings) ? plannerOutput.semanticGroundings : []) {
+    const groundingId = String(grounding && grounding.groundingId || "");
+    groundingIdCounts.set(groundingId, (groundingIdCounts.get(groundingId) || 0) + 1);
+    const candidateIndex = grounding && grounding.provenanceRelationCandidateIndexes
+      && grounding.provenanceRelationCandidateIndexes[0];
+    groundingCandidateIndexCounts.set(candidateIndex, (groundingCandidateIndexCounts.get(candidateIndex) || 0) + 1);
+  }
+  let semanticGroundingsChanged = false;
+  const semanticGroundings = Array.isArray(plannerOutput.semanticGroundings)
+    ? plannerOutput.semanticGroundings.map((grounding) => {
+      if (!grounding || typeof grounding !== "object" || Array.isArray(grounding)) return grounding;
+      const groundingId = String(grounding.groundingId || "");
+      const owningTasks = plannerOutput.tasks.filter((task) => String(task && task.groundingId || "") === groundingId);
+      const provenanceIndexes = Array.isArray(grounding.provenanceRelationCandidateIndexes)
+        ? grounding.provenanceRelationCandidateIndexes
+        : [];
+      if (!groundingId || owningTasks.length !== 1 || provenanceIndexes.length !== 1
+        || owningTasks[0].candidateIndex !== provenanceIndexes[0]
+        || groundingIdCounts.get(groundingId) !== 1
+        || taskCandidateIndexCounts.get(provenanceIndexes[0]) !== 1
+        || groundingCandidateIndexCounts.get(provenanceIndexes[0]) !== 1) return grounding;
+      const relationCandidate = relationsByCandidateIndex.get(provenanceIndexes[0]);
+      if (!relationCandidate) return grounding;
+      const normalizedEvidence = normalizePendingEvidenceRefs(grounding.evidenceRefs, sourceEvents, identifierCounts, sourceMaps);
+      const relationEvidence = Array.isArray(relationCandidate.evidenceRefs) ? relationCandidate.evidenceRefs : [];
+      const sameEvidence = normalizedEvidence && normalizedEvidence.length === relationEvidence.length
+        && normalizedEvidence.every((evidenceRef, index) => {
+          const relationRef = relationEvidence[index];
+          return String(evidenceRef && evidenceRef.eventId || "") === String(relationRef && relationRef.eventId || "")
+            && String(evidenceRef && evidenceRef.messageRef || "") === String(relationRef && relationRef.messageRef || "")
+            && evidenceRef && evidenceRef.startOffset === relationRef.startOffset
+            && evidenceRef.endOffset === relationRef.endOffset
+            && evidenceRef.quote === relationRef.quote;
+        });
+      if (!sameEvidence
+        || normalizedEvidence === grounding.evidenceRefs) return grounding;
+      changed = true;
+      semanticGroundingsChanged = true;
+      return { ...grounding, evidenceRefs: relationCandidate.evidenceRefs };
+    })
+    : plannerOutput.semanticGroundings;
   let semanticCandidatesChanged = false;
   const semanticCandidates = Array.isArray(plannerOutput.semanticCandidates)
     ? plannerOutput.semanticCandidates.map((candidate) => {
@@ -150,6 +204,7 @@ function normalizePlannerEvidenceCoordinates(plannerOutput, sourceEvents) {
   return {
     ...plannerOutput,
     contextRelationCandidates,
+    ...(semanticGroundingsChanged ? { semanticGroundings } : {}),
     ...(semanticCandidatesChanged ? { semanticCandidates } : {})
   };
 }

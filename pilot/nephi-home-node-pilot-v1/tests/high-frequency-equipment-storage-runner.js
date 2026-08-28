@@ -79,7 +79,6 @@ async function api(url, route, options = {}) {
 
 (async () => {
   assert.deepEqual(equipmentFieldPolicy("unknown"), {
-    showScope: false,
     showPublicText: false,
     showNotes: false,
     publicTextRequired: false
@@ -100,7 +99,7 @@ async function api(url, route, options = {}) {
       ];
       const onboardingDrafts = buildHighFrequencyEquipmentDrafts(newFacts, "operator_onboarding");
       const onboardingFacts = buildPropertyFactsPayload("", onboardingDrafts).facts;
-      assert.equal(onboardingFacts.length, 16, "onboarding must submit every system-controlled equipment preset");
+      assert.equal(onboardingFacts.length, 15, "onboarding must submit every active system-controlled equipment preset");
       const newApplication = application("equipment_new", onboardingFacts, [{
         key: "main",
         roomCode: "",
@@ -149,7 +148,7 @@ async function api(url, route, options = {}) {
 
       const adminInitial = await api(running.url, "/api/property-facts?propertyId=equipment_new");
       assert.equal(adminInitial.response.status, 200);
-      assert.equal(adminInitial.body.data.facts.length, 16);
+      assert.equal(adminInitial.body.data.facts.length, 15);
       assert.equal(adminInitial.body.data.facts.find((item) => item.canonicalId === "wifi").publicText, "\u5168\u9928\u63d0\u4f9b\u514d\u8cbb Wi-Fi\u3002");
       assert.equal(adminInitial.body.data.facts.find((item) => item.canonicalId === "toiletries").publicText, "提供毛巾、浴巾、洗髮乳與沐浴乳；牙刷請自備。");
 

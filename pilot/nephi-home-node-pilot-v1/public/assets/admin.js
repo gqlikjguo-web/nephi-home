@@ -34,6 +34,8 @@ async function api(path, options = {}) {
 }
 function cell(tag, text) { const node = document.createElement(tag); node.textContent = text; return node; }
 function element(tag, className = "", text = "") { const node = document.createElement(tag); if (className) node.className = className; if (text) node.textContent = text; return node; }
+function initializePasswordToggles(){document.querySelectorAll("#login input[type=password],#workspace input[type=password]").forEach((input,index)=>{if(input.nextElementSibling?.dataset.passwordToggle)return;if(!input.id)input.id=`adminPassword${index}`;const button=element("button","secondary","顯示");button.type="button";button.dataset.passwordToggle=input.id;button.setAttribute("aria-label","顯示或隱藏密碼");button.onclick=()=>{input.type=input.type==="password"?"text":"password";button.textContent=input.type==="password"?"顯示":"隱藏";};input.insertAdjacentElement("afterend",button);});}
+function initializePasswordChangeForm(){const host=document.querySelector(".other-settings");if(!host||$("passwordChangeForm"))return;const section=element("section","password-change-card"),title=element("h2","","更改密碼"),form=document.createElement("form"),status=element("p","message");form.id="passwordChangeForm";status.id="passwordChangeStatus";status.setAttribute("role","status");status.setAttribute("aria-live","polite");for(const field of [{id:"currentPassword",name:"currentPassword",label:"目前密碼",autocomplete:"current-password"},{id:"newPassword",name:"newPassword",label:"新密碼（8–12 字元）",autocomplete:"new-password",bounded:true},{id:"confirmPassword",name:"confirmPassword",label:"再次輸入新密碼",autocomplete:"new-password",bounded:true}]){const input=document.createElement("input"),label=element("label","",field.label);input.id=field.id;input.name=field.name;input.type="password";input.required=true;input.autocomplete=field.autocomplete;if(field.bounded){input.minLength=8;input.maxLength=12;}label.append(input);form.append(label);}const submit=element("button","","更新密碼");submit.type="submit";form.append(submit,status);section.append(title,form);host.prepend(section);form.onsubmit=async event=>{event.preventDefault();submit.disabled=true;status.textContent="更新中…";try{await api("/api/admin/password",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(form)))});form.reset();status.textContent="密碼已更新。下次請使用新密碼登入。";}catch(error){status.textContent=error.message;}finally{submit.disabled=false;}};}
 function propertyFactField(labelText, control) { const label = document.createElement("label"); label.append(document.createTextNode(labelText), control); return label; }
 function propertyFactInput(field, value = "", options = {}) { const input = document.createElement(options.multiline ? "textarea" : "input"); input.dataset.propertyFactField = field; input.value = value; if (options.multiline) input.rows = options.rows || 2; else input.type = options.type || "text"; if (options.placeholder) input.placeholder = options.placeholder; return input; }
 function propertyFactSelect(field, value, options) { const select = document.createElement("select"); select.dataset.propertyFactField = field; for (const [key, label] of options) { const option = document.createElement("option"); option.value = key; option.textContent = label; select.append(option); } select.value = value; return select; }
@@ -47,7 +49,7 @@ function propertyFactRow(fact = {}, { controlled = false } = {}) {
   category.disabled = controlled;
   remove.hidden = controlled;
   const status = propertyFactSelect("status", fact.status || "unknown", [["allowed", "提供／允許"], ["conditional", "有條件提供"], ["not_allowed", "不提供／不允許"], ["unknown", "尚未確認"]]);
-  const appliesTo = propertyFactSelect("appliesTo", fact.appliesTo || "whole_property", [["whole_property", "整間旅宿"], ["room_only", "僅房間"], ["both", "整間與房間"]]);
+  const appliesTo = hiddenPropertyFactField("appliesTo", fact.appliesTo || "whole_property");
   const advance = propertyFactSelect("advanceNoticeRequired", fact.advanceNoticeRequired === true ? "true" : fact.advanceNoticeRequired === false ? "false" : "", [["", "尚未確認"], ["true", "需要"], ["false", "不需要"]]);
   const reservation = propertyFactSelect("reservationRequired", fact.reservationRequired === true ? "true" : fact.reservationRequired === false ? "false" : "", [["", "尚未確認"], ["true", "需要"], ["false", "不需要"]]);
   const publicText = propertyFactInput("publicText", fact.publicText || "", { multiline: true, rows: 3, placeholder: "業者核准、可直接提供給客人的正式內容" });
@@ -61,7 +63,7 @@ function propertyFactRow(fact = {}, { controlled = false } = {}) {
   const updatedAt = propertyFactInput("updatedAt", fact.updatedAt || ""); updatedAt.type = "hidden";
   grid.append(
     propertyFactField("Canonical ID", canonicalId), propertyFactField("資料類型", category),
-    propertyFactField("正式狀態", status), propertyFactField("適用範圍", appliesTo),
+    propertyFactField("正式狀態", status), appliesTo,
     propertyFactField("正式公開內容", publicText), propertyFactField("費用（JSON 陣列）", fees),
     propertyFactField("需提前告知", advance), propertyFactField("需事先預約", reservation),
     propertyFactField("條件（每行一項）", conditions), propertyFactField("限制（每行一項）", restrictions),
@@ -74,13 +76,12 @@ function hiddenPropertyFactField(field, value) { const input = propertyFactInput
 function propertyFactCardRow(fact, options = {}) {
   const row = element("article", "equipment-fact-row property-fact-row"), title = element("h4", "", options.title || fact.publicName), grid = element("div", "property-fact-grid");
   const status = propertyFactSelect("status", fact.status, options.statusOptions || [["unknown", "未知"], ["allowed", "有"], ["not_allowed", "沒有"]]);
-  const appliesTo = propertyFactSelect("appliesTo", fact.appliesTo, options.appliesToOptions || [["whole_property", "整間旅宿"], ["bundle_only", "僅包棟客適用"]]);
+  const appliesTo = hiddenPropertyFactField("appliesTo", fact.appliesTo || "whole_property");
   const publicText = propertyFactInput("publicText", fact.publicText, { multiline: true, rows: 3, placeholder: "可直接回覆旅客的正式說明" });
   const notes = propertyFactInput("notes", fact.notes, { multiline: true, rows: 2, placeholder: "業者內部備註（選填）" });
   const syncStatus = () => {
     if (!options.dynamicEquipmentPolicy) return;
     const policy = PropertyFactsFormData.equipmentFieldPolicy(status.value);
-    appliesTo.closest("label").hidden = !policy.showScope;
     publicText.closest("label").hidden = !policy.showPublicText;
     notes.closest("label").hidden = !policy.showNotes;
     publicText.disabled = !policy.showPublicText;
@@ -88,7 +89,7 @@ function propertyFactCardRow(fact, options = {}) {
     if (status.value === "unknown") publicText.value = "";
   };
   status.onchange = syncStatus;
-  grid.append(propertyFactField("狀態", status), propertyFactField("適用範圍", appliesTo), propertyFactField("正式對客說明", publicText), propertyFactField("備註", notes));
+  grid.append(propertyFactField("狀態", status), appliesTo, propertyFactField("正式對客說明", publicText), propertyFactField("備註", notes));
   const notesLabel = notes.closest("label");
   const noteHint = element("small", "equipment-internal-note", "\u50c5\u696d\u8005\u5167\u90e8\uff0c\u4e0d\u76f4\u63a5\u56de\u8986\u65c5\u5ba2");
   notes.placeholder = "\u50c5\u696d\u8005\u5167\u90e8\uff0c\u4e0d\u76f4\u63a5\u56de\u8986\u65c5\u5ba2";
@@ -104,7 +105,6 @@ function controlledPolicyFactRow(fact) {
     title: contract.displayName,
     category: "policy",
     statusOptions: [["unknown", "尚未確認"], ["allowed", "提供／允許"], ["conditional", "有條件提供"], ["not_allowed", "不提供／不允許"]],
-    appliesToOptions: [["whole_property", "整間旅宿"], ["room_only", "僅房間"], ["both", "整間與房間"]],
     hiddenFields: contract.hiddenFields
   });
 }
@@ -121,7 +121,8 @@ function renderPropertyFacts(facts = []) {
   propertyFacts = facts;
   renderEquipmentFacts(facts);
   const controlledIds = new Set(PropertyFactsFormData.controlledPolicyFacts.map((item) => item.canonicalId));
-  $("propertyFactsList").replaceChildren(...facts.filter((fact) => !PropertyFactsFormData.equipmentByCanonicalId(fact.canonicalId) && !controlledIds.has(fact.canonicalId)).map(propertyFactRow));
+  const hiddenFacts = new Set(PropertyFactsFormData.operatorHiddenFacts(facts));
+  $("propertyFactsList").replaceChildren(...facts.filter((fact) => !hiddenFacts.has(fact) && !PropertyFactsFormData.equipmentByCanonicalId(fact.canonicalId) && !controlledIds.has(fact.canonicalId)).map(propertyFactRow));
 }
 function collectPropertyFactDrafts() { return [...$("propertyFactsForm").querySelectorAll(".property-fact-row")].map(row => Object.fromEntries([...row.querySelectorAll("[data-property-fact-field]")].map(control => [control.dataset.propertyFactField, control.value]))); }
 async function loadPropertyFacts() { const data = await api(`/api/property-facts?propertyId=${encodeURIComponent(session.propertyId)}`); renderPropertyFacts(data.facts || []); }
@@ -138,9 +139,12 @@ async function setCustomReplyEnabled(rule,enabled){try{await api(`/api/custom-re
 async function removeCustomReply(rule){if(!confirm(`確定刪除「${rule.name}」嗎？`))return;try{await api(`/api/custom-replies/${encodeURIComponent(rule.ruleId)}`,{method:"DELETE",body:JSON.stringify({propertyId:session.propertyId})});await loadCustomReplies()}catch(error){$("customReplyStatus").textContent=error.message}}
 function renderCustomReplies(data){customReplies=data.items||[];$("customReplyUsage").textContent=`已使用 ${data.used||0}／${data.limit||5}`;fillCustomReplyOptions();$("customReplyList").replaceChildren(...customReplies.map(rule=>{const row=element("article","custom-reply-row"),details=element("div","custom-reply-details"),title=element("strong","",rule.name),topic=element("span","",customReplyTopics.find(item=>item[0]===rule.topic)?.[1]||rule.topic),state=element("span",`custom-reply-state ${rule.state}`,customReplyStateLabel(rule.state)),scope=element("span","",customReplyScopes.find(item=>item[0]===rule.scope)?.[1]||rule.scope),dates=element("span","",`${rule.effectiveStartDate}～${rule.effectiveEndDate}`),edit=element("button","secondary","編輯"),toggle=element("button","secondary",rule.enabled?"停用":"啟用"),del=element("button","danger","刪除");edit.type=toggle.type=del.type="button";edit.onclick=()=>editCustomReply(rule);toggle.onclick=()=>setCustomReplyEnabled(rule,!rule.enabled);del.onclick=()=>removeCustomReply(rule);details.append(title,topic,scope,state,dates);row.append(details,edit,toggle,del);return row}))}
 async function loadCustomReplies(){renderCustomReplies(await api(`/api/custom-replies?propertyId=${encodeURIComponent(session.propertyId)}`))}
-function showLogin(message = "") { session = null; noteEditorState = null; $("noteEditor").hidden = true; $("login").hidden = false; $("propertyChooser").hidden = true; $("workspace").hidden = true; $("logout").hidden = true; $("loginMessage").textContent = message; }
+function guestFrontendUrl(propertyId) { return new URL(`/${encodeURIComponent(propertyId)}`, location.origin).href; }
+function configureGuestFrontendLinks(propertyId) { const link = $("guestFrontendLink"), copy = $("copyGuestFrontendLink"), available = Boolean(propertyId); link.hidden = copy.hidden = !available; if (available) link.href = guestFrontendUrl(propertyId); }
+function configurePlatformViewing(value) { const bar = $("platformViewingBar"); bar.hidden = !value?.platformAdmin; if (value?.platformAdmin) $("platformViewingLabel").textContent = `平台管理員檢視：${value.propertyId}`; }
+function showLogin(message = "") { session = null; noteEditorState = null; $("noteEditor").hidden = true; $("login").hidden = false; $("propertyChooser").hidden = true; $("workspace").hidden = true; $("logout").hidden = true; configureGuestFrontendLinks(""); configurePlatformViewing(null); $("loginMessage").textContent = message; }
 function showPropertyChooser(value) {
-  session = value; $("login").hidden = true; $("workspace").hidden = true; $("logout").hidden = false; $("propertyChooser").hidden = false; $("propertyChoiceMessage").textContent = "";
+  session = value; $("login").hidden = true; $("workspace").hidden = true; $("logout").hidden = false; configureGuestFrontendLinks(""); configurePlatformViewing(null); $("propertyChooser").hidden = false; $("propertyChoiceMessage").textContent = "";
   $("propertyChoices").replaceChildren(...value.properties.map(property => { const button = document.createElement("button"); button.type = "button"; button.textContent = property.propertyName || property.propertyId; button.onclick = async () => { button.disabled = true; try { await enter(await api("/api/admin/select-property", { method: "POST", body: JSON.stringify({ propertyId: property.propertyId }) })); } catch (error) { $("propertyChoiceMessage").textContent = error.message; button.disabled = false; } }; return button; }));
 }
 function currentMonth() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
@@ -334,15 +338,16 @@ $("bundleForm").onsubmit = async event => { event.preventDefault(); const form=e
 $("pricingMatrixForm").onsubmit = event => { event.preventDefault(); savePricingMatrix(); };
 $("profileForm").onsubmit = async event => { event.preventDefault(); const form = event.currentTarget; if (!form.reportValidity()) return; const status = $("profileStatus"), payload = { propertyId: session.propertyId, propertyName: $("profileName").value, aiName: $("profileAiName").value, address: $("profileAddress").value, googleMapsUrl: $("profileGoogleMapsUrl").value, lineUrl: $("profileLineUrl").value, contactInfo: $("profileContactInfo").value, checkInTime: $("profileCheckInTime").value, latestArrivalTime: $("profileLatestArrivalTime").value, checkOutTime: $("profileCheckOutTime").value }; status.textContent = "儲存中…"; try { const profile = await api("/api/property-profile", { method: "PUT", body: JSON.stringify(payload) }); $("profileName").value = profile.propertyName; $("profileAiName").value = profile.aiName || ""; $("profileAddress").value = profile.address || ""; $("profileLatestArrivalTime").value = profile.latestArrivalTime || ""; status.textContent = "已儲存"; } catch (error) { status.textContent = `儲存失敗：${error.message}。輸入內容仍保留，請重試。`; } };
 $("propertyFactAdd").onclick = () => $("propertyFactsList").append(propertyFactRow());
-$("propertyFactsForm").onsubmit = async event => { event.preventDefault(); const form = event.currentTarget; if (!form.reportValidity()) return; const status = $("propertyFactsStatus"); status.textContent = "儲存中…"; try { const payload = PropertyFactsFormData.buildPropertyFactsPayload(session.propertyId, collectPropertyFactDrafts()); const saved = await api("/api/property-facts", { method: "PUT", body: JSON.stringify(payload) }); renderPropertyFacts(saved.facts || []); status.textContent = "已儲存"; } catch (error) { status.textContent = `儲存失敗：${error.message}。輸入內容仍保留，請修正後重試。`; } };
+$("propertyFactsForm").onsubmit = async event => { event.preventDefault(); const form = event.currentTarget; if (!form.reportValidity()) return; const status = $("propertyFactsStatus"); status.textContent = "儲存中…"; try { const payload = PropertyFactsFormData.buildPropertyFactsPayload(session.propertyId, collectPropertyFactDrafts()); payload.facts.push(...PropertyFactsFormData.operatorHiddenFacts(propertyFacts)); const saved = await api("/api/property-facts", { method: "PUT", body: JSON.stringify(payload) }); renderPropertyFacts(saved.facts || []); status.textContent = "已儲存"; } catch (error) { status.textContent = `儲存失敗：${error.message}。輸入內容仍保留，請修正後重試。`; } };
 $("customReplyScope").onchange=toggleCustomReplyRoomField;
 $("customReplyCancel").onclick=clearCustomReplyForm;
 $("customReplyForm").onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;if(!form.reportValidity())return;const id=$("customReplyId").value,payload={propertyId:session.propertyId,name:$("customReplyName").value,topic:$("customReplyTopic").value,scope:$("customReplyScope").value,roomTypeId:$("customReplyRoomType").value,stayStartDate:$("customReplyStayStart").value,stayEndDate:$("customReplyStayEnd").value,effectiveStartDate:$("customReplyEffectiveStart").value,effectiveEndDate:$("customReplyEffectiveEnd").value,approvedReply:$("customReplyText").value,enabled:$("customReplyEnabled").checked};$("customReplyStatus").textContent="儲存中…";try{await api(id?`/api/custom-replies/${encodeURIComponent(id)}`:"/api/custom-replies",{method:id?"PUT":"POST",body:JSON.stringify(payload)});await loadCustomReplies();clearCustomReplyForm();$("customReplyStatus").textContent="已儲存"}catch(error){$("customReplyStatus").textContent=`儲存失敗：${error.message}`}};
 $("priceEditorForm").onsubmit = event => { event.preventDefault(); savePriceEditor(false); };
 $("priceEditorClear").onclick = () => savePriceEditor(true);
 $("priceEditorCancel").onclick = closePriceEditor;
-async function enter(value) { if (value.requiresPropertySelection || !value.propertyId) return showPropertyChooser(value); if (expectedSlug) value = await api(`/api/admin/session?slug=${encodeURIComponent(expectedSlug)}`); session = value; $("login").hidden = true; $("propertyChooser").hidden = true; $("workspace").hidden = false; $("logout").hidden = false; $("propertyLabel").textContent = `業者：${value.propertyId}`; $("month").value = $("month").value || currentMonth(); let savedView = "recent"; try { savedView = localStorage.getItem("junzanAvailabilityView") || "recent"; } catch {} availabilityState.view = matchMedia("(max-width: 640px)").matches ? "recent" : ["recent", "calendar"].includes(savedView) ? savedView : "recent"; await loadMonth(); await Promise.all([loadBundles(), loadPricing(), loadProfile(), loadPropertyFacts()]); fillCustomReplyOptions();clearCustomReplyForm();await loadCustomReplies(); }
+async function enter(value) { if (value.requiresPropertySelection || !value.propertyId) return showPropertyChooser(value); if (expectedSlug) value = await api(`/api/admin/session?slug=${encodeURIComponent(expectedSlug)}`); session = value; $("login").hidden = true; $("propertyChooser").hidden = true; $("workspace").hidden = false; $("logout").hidden = false; configureGuestFrontendLinks(value.propertyId); configurePlatformViewing(value); $("propertyLabel").textContent = `業者：${value.propertyId}`; $("month").value = $("month").value || currentMonth(); let savedView = "recent"; try { savedView = localStorage.getItem("junzanAvailabilityView") || "recent"; } catch {} availabilityState.view = matchMedia("(max-width: 640px)").matches ? "recent" : ["recent", "calendar"].includes(savedView) ? savedView : "recent"; await loadMonth(); await Promise.all([loadBundles(), loadPricing(), loadProfile(), loadPropertyFacts()]); fillCustomReplyOptions();clearCustomReplyForm();await loadCustomReplies(); }
 $("loginForm").onsubmit = async event => { event.preventDefault(); try { await enter(await api("/api/admin/login", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) })); } catch (error) { showLogin(error.message); } };
+$("copyGuestFrontendLink").onclick = async () => { const button = $("copyGuestFrontendLink"); try { await navigator.clipboard.writeText(guestFrontendUrl(session.propertyId)); button.textContent = "已複製前台連結"; } catch { button.textContent = "複製失敗，請重試"; } setTimeout(() => { button.textContent = "複製前台連結"; }, 2000); };
 document.querySelectorAll("[data-view]").forEach(button => { button.onclick = () => switchView(button.dataset.view); });
 $("noteText").oninput = updateNoteCount; $("noteSave").onclick = () => saveNote(); $("noteClear").onclick = () => saveNote(""); $("noteClose").onclick = closeNoteEditor;
 $("month").onchange = async () => { if (hasUnsavedNote() && !confirm("備註尚未儲存，確定切換月份嗎？")) { $("month").value = availabilityState.loadedMonth; return; } noteEditorState = null; $("noteEditor").hidden = true; closePriceEditor(); await loadMonth(); await loadPricing(); };
@@ -361,6 +366,8 @@ function populateAvailabilityRanges() {
   select.value = availabilityState.selection;
 }
 initializeAdminNavigation();
+initializePasswordChangeForm();
+initializePasswordToggles();
 initializeAvailabilityBulkControls();
 populateAvailabilityRanges();
 $("availabilityRange").onchange = async () => { availabilityState.selection = $("availabilityRange").value; noteEditorState = null; $("noteEditor").hidden = true; closePriceEditor(); await loadMonth(); await loadPricing(); };

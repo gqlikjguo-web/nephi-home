@@ -1,7 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
-const { plannerProviderJsonSchema, validatePlannerOutput, applyPlannerSemanticContract } = require("../conversation-engine-v2/planner-schema");
+const { plannerProviderJsonSchema, validatePlannerOutput, validatePlannerSemanticGroundingContract, applyPlannerSemanticContract } = require("../conversation-engine-v2/planner-schema");
 const { compileSemanticCandidates, validateSemanticCandidates, semanticCandidateDiagnosticSummary, missingSemanticCandidates, verifiedRepairTask } = require("../conversation-engine-v2/semantic-candidate-contract");
 const { normalizePlannerEvidenceCoordinates } = require("../conversation-engine-v2/evidence-normalizer");
 const { mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures, mentionedFaqSubjects, resolveEntity } = require("../conversation-engine-v2/entity-resolver");
@@ -79,7 +79,9 @@ function plannerProviderSchemaForCatalog(catalog, model = "") {
   };
   const catalogIdentities = propertyCatalogIdentityValues(catalog);
   const taskIdentity = schema.properties.tasks.items.properties.entity.properties.canonicalCandidate;
+  const groundingIdentity = schema.properties.semanticGroundings.items.properties.subject.properties.catalogIdentity;
   Object.assign(taskIdentity, nullableIdentityEnum(catalogIdentities));
+  Object.assign(groundingIdentity, nullableIdentityEnum(catalogIdentities));
   return schema;
 }
 
@@ -1769,6 +1771,8 @@ function instructions() {
   return [
     "You are JunZan AI Conversation Understanding and Planning Engine v2 for Taiwan lodging.",
     "Return only the strict schema. Split every independent clause that asks a substantive guest question into its own task and preserve each sourceText. Retain every coordinated subject or requested fact as a separate task even when subjects share one question word, date, or sentence. A shared modifier, condition, fee, timing, or payment-method question is also a separate task whenever it can be independently answered, clarified, or handed off; do not let the tasks for its coordinated subjects consume that request.",
+    "A broad request for the collection or list of a property facility or amenity category must emit exactly one amenity_list task. Explicit requests about distinct named subjects, statuses, fees, or conditions must remain separate individual tasks.",
+    "Emit exactly one semanticGroundings item for every task and bind it with the same groundingId. Grounding is independent of the task classification: property-owned collections use subject scope property_owned, null catalogIdentity, relation collection_membership, and requestedOutput answer; one property-owned catalog fact uses scope property_owned, its supplied catalogIdentity, relation property_fact, and requestedOutput answer; stay-dependent inventory availability for one supplied formal room or bundle uses scope property_owned, its catalogIdentity, relation inventory_availability, and requestedOutput answer; every relationship between the property and an external place uses scope external_place, null catalogIdentity, relation property_to_external_place, and requestedOutput map_url. For task families outside those four subject relationships, use the neutral grounding tuple property_owned, null catalogIdentity, property_fact, answer; the task keeps its existing capability. Each grounding must cite exactly the same verified relation candidate index and evidenceRefs as its task. Never use an external place as a property catalog identity.",
     "Understand typos, colloquial Traditional Chinese, missing punctuation, mixed Chinese/English, and context semantically; do not use a literal keyword strategy.",
     "Distinguish a request for price or total price from availability, policy, or permission. Preserve every explicit date, date range, nights, guest count, room, bundle, facility, fee, time, and reservation condition on the task that asks about it.",
     "A monetary lodging amount, charge, or rate request, whether generic or scoped to a room, bundle, or date, must use type price, detailIntent general, requestedOutputs price, and dependsOnStayContext true. Always provide its structured task stayCandidate: use empty candidate fields when no stay input was stated, and include only explicitly stated stay inputs otherwise. Missing dates require downstream clarification and must never change the task into policy.",
@@ -1778,6 +1782,12 @@ function instructions() {
     "Use policy only for property rules or conditions, permissions, restrictions, processes, or exceptions; policy is not a monetary lodging amount classification.",
     "Requests to disclose access credentials, authentication secrets, entry codes, private keys, or other sensitive access information must use type high_risk, detailIntent general, requestedOutputs answer, dependsOnStayContext false, and entity category other. They must never be policy or property_fact and must remain human handoff.",
     "A pure social acknowledgement with no substantive request is discourse acknowledgement and shouldIgnore true. A message containing only punctuation or emoji with no contextual semantic request is also non-actionable; do not invent a property task. If punctuation is a genuine clarification signal in active context, use the explicit context relation rather than guessing a new fact.",
+    "Only create an actionable task when the guest genuinely asks the system to answer a question or take an action. A status statement, completion notice, or confirmation that keeps the current arrangement unchanged is non-actionable when no safe antecedent is available; do not invent a new request from it.",
+    "A business notification that reports an operational event or change remains substantive even when it is not phrased as a question; preserve it as a controlled task. A genuine new question remains actionable.",
+    "For a non-actionable turn, set discourse to acknowledgement and shouldIgnore to true, emit only a generic unknown task required by the schema, and use relation_uncertain rather than new_request for that task.",
+    "For a substantive business notification, set shouldIgnore to false and preserve an actionable controlled task with a new_request relation, even when the message is a statement rather than a question.",
+    "A statement that reports or requests a change in a transaction or reservation lifecycle and therefore requires operator verification or processing is a substantive notification: emit a human_help task with requestedOutputs handoff, shouldIgnore false, and a new_request relation, regardless of whether it contains a question.",
+    "Treat a completion notice as non-actionable only when it does not report a transaction or reservation lifecycle event requiring operator verification; a lifecycle submission or completion remains substantive even when the guest states that it is already done.",
     "stateOperations is a legacy compatibility field and must always be an empty array. Never emit a state action. Every task is a request candidate and must have a unique candidateIndex. Emit exactly one contextRelationCandidate for every task: new_request, supplement_existing, modify_existing, end_existing, or relation_uncertain. Every relation must cite the matching candidateIndex and at least one exact evidenceRef. An evidenceRef must cite one supplied source eventId or messageRef and copy the exact source message substring using its startOffset/endOffset and quote. A contextual relation may cite only one supplied conversationLineage historyTurn through candidateHistoryTurnRefs. Never emit or invent an internal requestCycleId. A relation_uncertain candidate must not choose a history turn.",
     "EvidenceRefs are a source-coordinate contract for contextRelationCandidates. Every evidenceRef must include at least one non-empty eventId or messageRef copied only from one supplied sourceEvents item; if both are non-empty, they must identify that same item. startOffset is 0-based UTF-16 JavaScript string index inclusive and endOffset is exclusive: require 0 <= startOffset < endOffset <= that source messageText length. Set quote exactly to sourceEvents[].messageText.slice(startOffset, endOffset), with no paraphrase, normalization, translation, or guessed span.",
     "Relation kinds are mutually exclusive. new_request means the current request is semantically independent and does not need prior-turn context; it must have zero history-turn references. supplement_existing means any follow-up that uses prior-turn context without modifying or removing a confirmed slot or product, including supplying a missing slot, repeating the same capability, or asking another capability within the same lodging context. modify_existing means the guest explicitly modifies or removes a confirmed slot or product from the referenced turn. end_existing means the guest ends the request from the referenced turn. If the intended relation or referenced turn is ambiguous, emit relation_uncertain and choose no history turn.",
@@ -2115,6 +2125,9 @@ class TestOnlyOpenAiConversationPlanner {
           ? providerUnderstanding.tasks.map(({ semanticCandidateIds: _semanticCandidateIds, lodgingScopeId: _lodgingScopeId, ...task }) => task)
           : providerUnderstanding.tasks;
         const output = normalizePlannerEvidenceCoordinates(providerUnderstanding, input.sourceEvents || []);
+        if (!validatePlannerSemanticGroundingContract(output, { catalog: input.catalog, sourceEvents: input.sourceEvents || [] })) {
+          throw plannerFailure({ code: "planner_local_contract_failure", category: "local_contract_failure", model: this.model, responseBodyPresent: true, parsedOutputPresent: true });
+        }
         return annotateProviderSuccess(output, firstAttemptErrorCategory, providerAttempts);
       } catch (error) {
         providerAttempts.push(...(Array.isArray(error && error.providerAttempts) ? error.providerAttempts : []));

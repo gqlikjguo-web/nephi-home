@@ -411,6 +411,16 @@ async function operation(name, args) {
     const r=await client.query(`SELECT i.property_id,${ADMIN_INVITATION_EMAIL_SQL} email,p.display_name,EXISTS(SELECT 1 FROM admin_identities a WHERE a.normalized_email=lower(${ADMIN_INVITATION_EMAIL_SQL})) existing_identity FROM property_admin_invitations i JOIN properties p ON p.property_id=i.property_id LEFT JOIN property_settings s ON s.property_id=i.property_id WHERE i.token_hash=$1 AND i.used_at IS NULL AND i.expires_at>now()`,args),row=r.rows[0];
     return row?{propertyId:row.property_id,propertyName:row.display_name,email:row.email,existingIdentity:Boolean(row.existing_identity)}:null;
   }
+  if(name==="issueAdminSetupInvitationsByEmail"){
+    const [normalizedEmail,expiresAt]=args;
+    await client.query("BEGIN");
+    try{
+      const pending=await client.query(`SELECT i.token_hash,i.property_id,i.username,${ADMIN_INVITATION_EMAIL_SQL} email,p.display_name FROM property_admin_invitations i JOIN properties p ON p.property_id=i.property_id LEFT JOIN property_settings s ON s.property_id=i.property_id WHERE lower(${ADMIN_INVITATION_EMAIL_SQL})=$1 AND i.used_at IS NULL AND i.expires_at>now() ORDER BY i.property_id FOR UPDATE OF i`,[normalizedEmail]);
+      const issued=[];
+      for(const row of pending.rows){const setupToken=crypto.randomBytes(32).toString("base64url"),tokenHash=crypto.createHash("sha256").update(setupToken).digest("hex");await client.query("UPDATE property_admin_invitations SET token_hash=$2,expires_at=$3,created_at=now() WHERE token_hash=$1",[row.token_hash,tokenHash,expiresAt]);issued.push({propertyId:row.property_id,propertyName:row.display_name,email:row.email,setupToken});}
+      await client.query("COMMIT");return issued;
+    }catch(error){await client.query("ROLLBACK");throw error;}
+  }
   if(name==="redeemAdminInvitation"){
     const [tokenHash,passwordHash]=args;
     await client.query("BEGIN");
@@ -433,6 +443,8 @@ async function operation(name, args) {
     return r.rows[0]?{propertyId:r.rows[0].property_id,username:r.rows[0].username,passwordHash:r.rows[0].password_hash}:null;
   }
   if (name === "getAdminIdentityByEmail") return loadAdminIdentity(args[0]);
+  if(name==="listAdminPropertyAccounts"){const r=await client.query("SELECT p.property_id,COALESCE(json_agg(DISTINCT i.email) FILTER(WHERE i.email IS NOT NULL),'[]') emails,CASE WHEN count(DISTINCT i.user_id)>0 THEN 'active' WHEN EXISTS(SELECT 1 FROM property_admin_invitations x WHERE x.property_id=p.property_id AND x.used_at IS NULL AND x.expires_at>now()) THEN 'pending_setup' WHEN EXISTS(SELECT 1 FROM admin_users u WHERE u.property_id=p.property_id AND u.password_hash NOT LIKE 'disabled$%') THEN 'legacy' ELSE 'not_configured' END account_status FROM properties p LEFT JOIN admin_user_properties m ON m.property_id=p.property_id LEFT JOIN admin_identities i ON i.user_id=m.user_id GROUP BY p.property_id ORDER BY p.property_id");return r.rows.map(x=>({propertyId:x.property_id,emails:x.emails||[],accountStatus:x.account_status}));}
+  if(name==="updateAdminIdentityPassword"){await client.query("UPDATE admin_identities SET password_hash=$2 WHERE user_id=$1",args);return true;}
   if (name === "createAdminSession") {
     await client.query("DELETE FROM admin_sessions WHERE expires_at <= now()");
     if(args.length===5)await client.query("INSERT INTO admin_sessions(token_hash,user_id,property_id,username,expires_at) VALUES($1,$2,$3,$4,$5)",args);
@@ -440,7 +452,7 @@ async function operation(name, args) {
     return true;
   }
   if (name === "getAdminSession") return loadAdminSession(args[0]);
-  if (name === "selectAdminProperty") {const [tokenHash,propertyId]=args,r=await client.query("SELECT user_id FROM admin_sessions WHERE token_hash=$1 AND expires_at>now()",[tokenHash]);if(!r.rows[0]||!r.rows[0].user_id)return null;const membership=await client.query("SELECT username FROM admin_user_properties WHERE user_id=$1 AND property_id=$2",[r.rows[0].user_id,propertyId]);if(!membership.rows[0])return null;await client.query("UPDATE admin_sessions SET property_id=$2,username=$3 WHERE token_hash=$1",[tokenHash,propertyId,membership.rows[0].username]);return loadAdminSession(tokenHash);}
+  if (name === "selectAdminProperty") {const [tokenHash,propertyId]=args,r=await client.query("SELECT user_id FROM admin_sessions WHERE token_hash=$1 AND expires_at>now()",[tokenHash]);if(!r.rows[0]||!r.rows[0].user_id)return null;const userId=r.rows[0].user_id,membership=await client.query("SELECT username FROM admin_user_properties WHERE user_id=$1 AND property_id=$2",[userId,propertyId]);if(membership.rows[0])await client.query("UPDATE admin_sessions SET property_id=$2,username=$3 WHERE token_hash=$1",[tokenHash,propertyId,membership.rows[0].username]);else{const authorized=await client.query("SELECT 1 FROM properties p WHERE p.property_id=$2 AND EXISTS(SELECT 1 FROM platform_admin_grants g JOIN admin_user_properties m ON m.property_id=g.property_id AND m.username=g.username WHERE m.user_id=$1)",[userId,propertyId]);if(!authorized.rows[0])return null;await client.query("UPDATE admin_sessions SET property_id=$2,username=NULL WHERE token_hash=$1",[tokenHash,propertyId]);}return loadAdminSession(tokenHash);}
   if (name === "deleteAdminSession") { await client.query("DELETE FROM admin_sessions WHERE token_hash=$1",args); return true; }
   if(name==="getLineBindingByPropertyId"||name==="getLineBindingByWebhookKey"){
     const column=name==="getLineBindingByPropertyId"?"property_id":"webhook_key";

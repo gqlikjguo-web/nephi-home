@@ -107,7 +107,7 @@ function buildPropertyCatalog(property) {
     const explicitNo = states.length > 0 && states.every((state) => state === false);
     if (!bundleFacts.has(preset.key) && !explicitNo) continue;
     const fact = bundleFacts.get(preset.key) || { canonicalId: preset.key, category: "amenity", publicName: preset.displayName, aliases: [...preset.aliases], status: "confirmed_no", answer: "", appliesTo: "bundle_only", applicableBundles: [] };
-    const bundleAnswer = fact.applicableBundles.map((bundle) => `${bundle.name}${bundle.note ? `：${bundle.note}` : ""}`).join("；");
+    const bundleAnswer = fact.applicableBundles.map((bundle) => bundle.note).filter(Boolean).join("；");
     fact.answer = bundleAnswer;
     bundleFacts.set(preset.key, fact);
   }

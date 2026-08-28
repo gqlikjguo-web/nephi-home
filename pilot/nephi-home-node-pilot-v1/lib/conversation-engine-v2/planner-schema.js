@@ -9,6 +9,9 @@ const ANCHORS = new Set(["message_time", "previous_check_in", "previous_check_ou
 const ELIGIBILITY_EVIDENCE_KINDS = new Set(["none", "person", "room", "plan", "booking_mode", "identity", "stated_condition"]);
 const CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
 const SEMANTIC_KINDS = new Set(["capability", "catalog_subject", "temporal_pattern", "lodging_scope"]);
+const SEMANTIC_SUBJECT_SCOPES = new Set(["property_owned", "external_place"]);
+const SEMANTIC_RELATIONS = new Set(["collection_membership", "property_fact", "property_to_external_place", "inventory_availability"]);
+const SEMANTIC_REQUESTED_OUTPUTS = new Set(["answer", "map_url"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const { DETAIL_INTENTS, detailFactCandidates } = require("./detail-intent");
 const { resolveEntity, mentionedPropertyFacts, mentionedInventoryEntities, mentionedInventoryFeatures } = require("./entity-resolver");
@@ -92,6 +95,21 @@ function validSemanticCandidateShape(candidate) {
       && (scope.guestCountCandidate === null || Number.isInteger(scope.guestCountCandidate) && scope.guestCountCandidate >= 1 && scope.guestCountCandidate <= 100))
     && (temporal === null || temporal && typeof temporal === "object" && !Array.isArray(temporal)
       && text(temporal.rawText || "", 200) && DATE_KINDS.has(temporal.kind) && ANCHORS.has(temporal.anchor)));
+}
+function validSemanticGroundingShape(grounding) {
+  const subject = grounding && grounding.subject;
+  return Boolean(grounding && typeof grounding === "object" && !Array.isArray(grounding)
+    && text(grounding.groundingId, 80) && grounding.groundingId.trim()
+    && Array.isArray(grounding.provenanceRelationCandidateIndexes)
+    && grounding.provenanceRelationCandidateIndexes.length === 1
+    && grounding.provenanceRelationCandidateIndexes.every((value) => Number.isInteger(value) && value >= 0)
+    && Array.isArray(grounding.evidenceRefs) && grounding.evidenceRefs.length >= 1 && grounding.evidenceRefs.length <= 12
+    && grounding.evidenceRefs.every(validEvidenceRefShape)
+    && subject && typeof subject === "object" && !Array.isArray(subject)
+    && SEMANTIC_SUBJECT_SCOPES.has(subject.scope)
+    && (subject.catalogIdentity === null || text(subject.catalogIdentity, 120) && subject.catalogIdentity.trim())
+    && SEMANTIC_RELATIONS.has(grounding.relation)
+    && SEMANTIC_REQUESTED_OUTPUTS.has(grounding.requestedOutput));
 }
 function controlledRequestedOutputs(task) {
   if (task.entity && task.entity.category === "transport") return ["map_url"];
@@ -809,6 +827,16 @@ function validatePlannerOutput(value) {
     });
   }
   if (!Array.isArray(value.ambiguities)) errors.push("ambiguities");
+  if (Array.isArray(value.semanticGroundings)) {
+    if (value.semanticGroundings.length < 1 || value.semanticGroundings.length > 24
+      || !value.semanticGroundings.every(validSemanticGroundingShape)) errors.push("semanticGroundings");
+    const groundingIds = value.semanticGroundings.map((grounding) => String(grounding && grounding.groundingId || ""));
+    if (new Set(groundingIds).size !== groundingIds.length) errors.push("semanticGroundings.groundingId.duplicate");
+    const taskGroundingIds = (value.tasks || []).map((task) => String(task && task.groundingId || ""));
+    if (taskGroundingIds.some((id) => !id || !groundingIds.includes(id))
+      || new Set(taskGroundingIds).size !== taskGroundingIds.length
+      || taskGroundingIds.length !== groundingIds.length) errors.push("tasks.groundingId.ownership");
+  }
   const semanticCandidatesValid = Array.isArray(value.semanticCandidates) && value.semanticCandidates.length >= 1 && value.semanticCandidates.length <= 24
     && value.semanticCandidates.every(validSemanticCandidateShape);
   if (!semanticCandidatesValid) errors.push("semanticCandidates");
@@ -1206,6 +1234,189 @@ function isolatedCatalogTaskId(taskId, ordinal, usedTaskIds) {
   return null;
 }
 
+function semanticGroundingEvidenceSignature(evidenceRefs) {
+  return JSON.stringify((evidenceRefs || []).map((ref) => ({
+    eventId: String(ref && ref.eventId || ""),
+    messageRef: String(ref && ref.messageRef || ""),
+    startOffset: ref && ref.startOffset,
+    endOffset: ref && ref.endOffset,
+    quote: String(ref && ref.quote || "")
+  })));
+}
+
+function formalCatalogEntity(catalog, canonicalId) {
+  const matches = ["rooms", "amenities", "policies", "faqs", "propertyFacts", "transportFacts"]
+    .flatMap((key) => Array.isArray(catalog && catalog[key]) ? catalog[key] : [])
+    .filter((entity) => entity && String(entity.canonicalId || "") === canonicalId);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function failClosedSemanticGroundingTask(task) {
+  const rawText = String(task && task.entity && task.entity.rawText || task && task.sourceText || "").slice(0, 200);
+  return {
+    ...task,
+    type: "unknown",
+    detailIntent: "general",
+    requestedOutputs: ["answer"],
+    dependsOnStayContext: false,
+    stayCandidate: null,
+    entity: { ...task.entity, category: "other", rawText, canonicalCandidate: null }
+  };
+}
+
+function semanticGroundingDecisions(value, catalog, sourceEvents) {
+  if (!Array.isArray(value && value.semanticGroundings)) return null;
+  const decisions = new Map();
+  const groundings = value.semanticGroundings;
+  const groundingCounts = new Map();
+  const taskOwnershipCounts = new Map();
+  const taskCandidateIndexCounts = new Map();
+  const groundingCandidateIndexCounts = new Map();
+  for (const grounding of groundings) {
+    const id = String(grounding && grounding.groundingId || "");
+    groundingCounts.set(id, (groundingCounts.get(id) || 0) + 1);
+    const candidateIndex = grounding && grounding.provenanceRelationCandidateIndexes && grounding.provenanceRelationCandidateIndexes[0];
+    groundingCandidateIndexCounts.set(candidateIndex, (groundingCandidateIndexCounts.get(candidateIndex) || 0) + 1);
+  }
+  for (const task of value.tasks || []) {
+    const id = String(task && task.groundingId || "");
+    taskOwnershipCounts.set(id, (taskOwnershipCounts.get(id) || 0) + 1);
+    taskCandidateIndexCounts.set(task && task.candidateIndex, (taskCandidateIndexCounts.get(task && task.candidateIndex) || 0) + 1);
+  }
+  (value.tasks || []).forEach((task, taskIndex) => {
+    const groundingId = String(task && task.groundingId || "");
+    const grounding = groundings.find((item) => String(item && item.groundingId || "") === groundingId);
+    const relationCandidates = (value.contextRelationCandidates || []).filter((item) => item && item.candidateIndex === task.candidateIndex);
+    const structurallyOwned = groundingId
+      && groundingCounts.get(groundingId) === 1
+      && taskOwnershipCounts.get(groundingId) === 1
+      && taskCandidateIndexCounts.get(task.candidateIndex) === 1
+      && groundingCandidateIndexCounts.get(task.candidateIndex) === 1
+      && validSemanticGroundingShape(grounding)
+      && grounding.provenanceRelationCandidateIndexes[0] === task.candidateIndex
+      && relationCandidates.length === 1
+      && grounding.evidenceRefs.every((ref) => evidenceMatchesSource(ref, sourceEventMaps(sourceEvents || [])))
+      && semanticGroundingEvidenceSignature(grounding.evidenceRefs) === semanticGroundingEvidenceSignature(relationCandidates[0].evidenceRefs);
+    if (!structurallyOwned) {
+      decisions.set(taskIndex, { ok: false, reason: "semantic_grounding_invalid" });
+      return;
+    }
+    const subject = grounding.subject;
+    if (subject.scope === "external_place") {
+      decisions.set(taskIndex, subject.catalogIdentity === null
+        && grounding.relation === "property_to_external_place"
+        && grounding.requestedOutput === "map_url"
+        ? { ok: true, kind: "location" }
+        : { ok: false, reason: "semantic_grounding_tuple_conflict" });
+      return;
+    }
+    if (grounding.relation === "collection_membership") {
+      decisions.set(taskIndex, subject.catalogIdentity === null && grounding.requestedOutput === "answer"
+        ? { ok: true, kind: "amenity_list" }
+        : { ok: false, reason: "semantic_grounding_tuple_conflict" });
+      return;
+    }
+    const formalEntity = subject.catalogIdentity ? formalCatalogEntity(catalog, subject.catalogIdentity) : null;
+    if (grounding.relation === "inventory_availability") {
+      const requestedOutputs = Array.isArray(task.requestedOutputs) ? task.requestedOutputs : [];
+      const taskCapabilityMatchesSubject = task.type === "availability"
+        && formalEntity && ["room", "bundle"].includes(formalEntity.category)
+        || task.type === "bundle_availability"
+          && formalEntity && formalEntity.category === "bundle";
+      decisions.set(taskIndex, grounding.requestedOutput === "answer"
+        && subject.scope === "property_owned"
+        && Boolean(formalEntity)
+        && taskCapabilityMatchesSubject
+        && requestedOutputs.length === 1
+        && ["answer", "availability"].includes(requestedOutputs[0])
+        && task.entity && task.entity.category === formalEntity.category
+        && task.entity.canonicalCandidate === formalEntity.canonicalId
+        && task.dependsOnStayContext === true
+        && validStayCandidate(task.stayCandidate)
+        ? { ok: true, kind: "preserve" }
+        : { ok: false, reason: "semantic_grounding_inventory_conflict" });
+      return;
+    }
+    if (grounding.relation === "property_fact"
+      && grounding.requestedOutput === "answer"
+      && ["price", "total_price"].includes(task.type)
+      && formalEntity && ["room", "bundle"].includes(formalEntity.category)) {
+      decisions.set(taskIndex, Array.isArray(task.requestedOutputs)
+        && task.requestedOutputs.length === 1
+        && task.requestedOutputs[0] === task.type
+        && task.entity && task.entity.category === formalEntity.category
+        && task.entity.canonicalCandidate === formalEntity.canonicalId
+        && task.dependsOnStayContext === true
+        && validStayCandidate(task.stayCandidate)
+        ? { ok: true, kind: "preserve" }
+        : { ok: false, reason: "semantic_grounding_inventory_amount_conflict" });
+      return;
+    }
+    if (["availability", "bundle_availability"].includes(task.type)
+      && task.dependsOnStayContext === true
+      && formalEntity && ["room", "bundle"].includes(formalEntity.category)) {
+      decisions.set(taskIndex, { ok: false, reason: "semantic_grounding_inventory_conflict" });
+      return;
+    }
+    if (grounding.relation === "property_fact" && grounding.requestedOutput === "answer"
+      && subject.catalogIdentity === null && task.type !== "amenity_list") {
+      decisions.set(taskIndex, { ok: true, kind: "preserve" });
+      return;
+    }
+    decisions.set(taskIndex, grounding.relation === "property_fact"
+      && grounding.requestedOutput === "answer"
+      && Boolean(formalEntity)
+      ? { ok: true, kind: "property_fact", formalEntity }
+      : { ok: false, reason: "semantic_grounding_catalog_conflict" });
+  });
+  return decisions;
+}
+
+function validatePlannerSemanticGroundingContract(value, { catalog, sourceEvents } = {}) {
+  if (!value || !Array.isArray(value.tasks) || !Array.isArray(value.semanticGroundings)) return false;
+  if (value.tasks.length !== value.semanticGroundings.length) return false;
+  const decisions = semanticGroundingDecisions(value, catalog, sourceEvents);
+  return decisions instanceof Map
+    && decisions.size === value.tasks.length
+    && [...decisions.values()].every((decision) => decision && decision.ok === true);
+}
+
+function applySemanticGroundingDecision(task, decision) {
+  if (!decision || decision.ok !== true) return failClosedSemanticGroundingTask(task);
+  if (decision.kind === "preserve") return task;
+  if (decision.kind === "location") return {
+    ...task,
+    type: "property_fact",
+    detailIntent: "general",
+    requestedOutputs: ["map_url"],
+    dependsOnStayContext: false,
+    stayCandidate: null,
+    entity: { ...task.entity, category: "transport", canonicalCandidate: "location" }
+  };
+  if (decision.kind === "amenity_list") return {
+    ...task,
+    type: "amenity_list",
+    detailIntent: "general",
+    requestedOutputs: ["answer"],
+    dependsOnStayContext: false,
+    stayCandidate: null,
+    entity: { ...task.entity, category: "other", canonicalCandidate: null }
+  };
+  const category = String(decision.formalEntity.category || "other");
+  const type = ["amenity", "activity", "room_feature"].includes(category)
+    ? "amenity"
+    : ["policy", "payment", "cancellation", "check_in", "check_out"].includes(category)
+      ? "policy"
+      : "property_fact";
+  return {
+    ...task,
+    type,
+    dependsOnStayContext: false,
+    stayCandidate: null,
+    entity: { ...task.entity, category, canonicalCandidate: decision.formalEntity.canonicalId }
+  };
+}
+
 function isolateMergedUnknownCatalogTasks(value, catalog, sourceEvents) {
   if (!catalog || !value || value.shouldIgnore === true
     || value.discourse && value.discourse.relation === "acknowledgement"
@@ -1283,6 +1494,7 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
   ], rejectedTasks = [], repairedRelations = [...relationNormalization.repairs];
   let contextRelationCandidates = value.contextRelationCandidates;
   const currentRequestFormalSubject = uniqueCurrentRequestFormalSubject(value, catalog, sourceEvents);
+  const groundingDecisions = semanticGroundingDecisions(value, catalog, sourceEvents);
   let tasks = value.tasks.map((original, index) => {
     let task = { ...original, eligibilityEvidence: normalizeEligibilityEvidence(original && original.eligibilityEvidence), entity: original && original.entity ? { ...original.entity } : original && original.entity };
     if (task.dependsOnStayContext === true) task.stayCandidate = authoritativeStayCandidate(task.stayCandidate, value.stay);
@@ -1332,6 +1544,23 @@ function applyPlannerSemanticContract(value, { catalog, sourceEvents } = {}) {
     if (task.detailIntent === "eligibility" && !hasExplicitEligibilityEvidence(task)) {
       task = { ...task, detailIntent: "general", eligibilityEvidence: { kind: "none", sourceText: "" } };
       repairedTasks.push({ taskId: task.taskId, index, reason: "eligibility_evidence_missing" });
+    }
+    if (groundingDecisions) {
+      const decision = groundingDecisions.get(index);
+      const grounded = applySemanticGroundingDecision(task, decision);
+      const changed = task.type !== grounded.type
+        || task.detailIntent !== grounded.detailIntent
+        || task.dependsOnStayContext !== grounded.dependsOnStayContext
+        || task.entity.category !== grounded.entity.category
+        || task.entity.canonicalCandidate !== grounded.entity.canonicalCandidate
+        || JSON.stringify(task.requestedOutputs) !== JSON.stringify(grounded.requestedOutputs);
+      task = grounded;
+      entity = task.entity;
+      if (!decision || decision.ok !== true) {
+        rejectedTasks.push({ taskId: task.taskId, index, reason: decision && decision.reason || "semantic_grounding_missing" });
+      } else if (changed) {
+        repairedTasks.push({ taskId: task.taskId, index, reason: "semantic_grounding_alignment" });
+      }
     }
     task = { ...task, requestedOutputs: controlledRequestedOutputs(task) };
     if (!repairedTasks.some((item) => item.index === index) && !rejectedTasks.some((item) => item.index === index)) acceptedTasks.push({ taskId: task.taskId, index });
@@ -1484,13 +1713,14 @@ function plannerJsonSchema() {
   const stringEnum = (values) => ({ type: "string", enum: [...values] });
   const schema = {
     type: "object", additionalProperties: false,
-    required: ["schemaVersion", "discourse", "stateOperations", "stay", "tasks", "contextRelationCandidates", "ambiguities", "missingInformation", "needsHuman", "shouldIgnore", "reason"],
+    required: ["schemaVersion", "discourse", "stateOperations", "stay", "tasks", "semanticGroundings", "contextRelationCandidates", "ambiguities", "missingInformation", "needsHuman", "shouldIgnore", "reason"],
     properties: {
       schemaVersion: { type: "integer", const: 2 },
       discourse: { type: "object", additionalProperties: false, required: ["relation", "confidence"], properties: { relation: stringEnum(RELATIONS), confidence: { type: "number", minimum: 0, maximum: 1 } } },
       stateOperations: { type: "array", maxItems: 20, items: { type: "object", additionalProperties: false, required: ["field", "operation", "value", "sourceText"], properties: { field: stringEnum(PLANNER_OPERATION_PATHS), operation: stringEnum(OPERATIONS), value: { type: ["string", "integer", "boolean", "array", "null"], items: { type: "string" } }, sourceText: { type: "string", maxLength: 500 } } } },
       stay: { type: "object", additionalProperties: false, required: ["dateExpression", "checkInCandidate", "checkOutCandidate", "nightsCandidate", "guestCountCandidate"], properties: { dateExpression: { type: "object", additionalProperties: false, required: ["rawText", "kind", "anchor"], properties: { rawText: { type: "string", maxLength: 200 }, kind: stringEnum(DATE_KINDS), anchor: stringEnum(ANCHORS) } }, checkInCandidate: { type: ["string", "null"] }, checkOutCandidate: { type: ["string", "null"] }, nightsCandidate: { type: ["integer", "null"], minimum: 1, maximum: 60 }, guestCountCandidate: { type: ["integer", "null"], minimum: 1, maximum: 100 } } },
-      tasks: { type: "array", minItems: 1, maxItems: 12, description: "One task per independently actionable guest need. Coordinated subjects remain separate, and a shared descriptor that asks an independently answerable, clarifiable, or handoff-required request must have its own task rather than being absorbed by the subject tasks.", items: { type: "object", additionalProperties: false, required: ["candidateIndex", "taskId", "type", "sourceText", "detailIntent", "requestedOutputs", "eligibilityEvidence", "dependsOnStayContext", "entity", "stayCandidate", "confidence"], properties: { candidateIndex: { type: "integer", minimum: 0 }, taskId: { type: "string", maxLength: 80 }, type: { ...stringEnum(TASK_TYPES), description: "Semantic capability. Monetary lodging amount, charge, or rate requests use price or total_price; the fixed maximum occupancy of one explicitly identified room or bundle uses lodging_product_capacity; lodging recommendation or date-and-guest-dependent selection does not. Property rules and conditions use policy. Missing stay dates do not turn price into policy. Requests to disclose access credentials or authentication secrets use high_risk and never policy. An identified current-property formal catalog subject fee uses a subject-compatible amenity, policy, or property_fact task, not price or total_price." }, sourceText: { type: "string", minLength: 1, maxLength: 500 }, detailIntent: stringEnum(DETAIL_INTENTS), requestedOutputs: { type: "array", description: "Requested fact for this capability. A price task uses price, a total_price task uses total_price, lodging_product_capacity uses capacity, and a general property fact uses answer. A property-subject fee uses fee.", items: { type: "string", maxLength: 80 } }, eligibilityEvidence: { type: "object", additionalProperties: false, description: "Explicit guest qualification evidence. Use none for a base availability or permission question. Use a non-none kind only when sourceText quotes the person, room, plan, booking mode, identity, or stated condition that makes this an eligibility question.", required: ["kind", "sourceText"], properties: { kind: stringEnum(ELIGIBILITY_EVIDENCE_KINDS), sourceText: { type: "string", maxLength: 200, description: "Exact excerpt from the task sourceText containing the qualification; empty when kind is none." } } }, dependsOnStayContext: { type: "boolean" }, entity: { type: "object", additionalProperties: false, required: ["category", "rawText", "canonicalCandidate", "confidence"], properties: { category: stringEnum(ENTITY_CATEGORIES), rawText: { type: "string", maxLength: 200 }, canonicalCandidate: { type: ["string", "null"], maxLength: 120 }, confidence: { type: "number", minimum: 0, maximum: 1 } } }, stayCandidate: { type: ["object", "null"], description: "When dependsOnStayContext is true, use a structured object even if all stay inputs are missing; use empty candidate fields rather than null. Use null when dependsOnStayContext is false.", additionalProperties: false, required: ["dateExpression", "checkInCandidate", "checkOutCandidate", "nightsCandidate", "guestCountCandidate"], properties: { dateExpression: { type: "object", additionalProperties: false, required: ["rawText", "kind", "anchor"], properties: { rawText: { type: "string", maxLength: 200 }, kind: stringEnum(DATE_KINDS), anchor: stringEnum(ANCHORS) } }, checkInCandidate: { type: ["string", "null"], maxLength: 40 }, checkOutCandidate: { type: ["string", "null"], maxLength: 40 }, nightsCandidate: { type: ["integer", "null"], minimum: 1, maximum: 60 }, guestCountCandidate: { type: ["integer", "null"], minimum: 1, maximum: 100 } } }, confidence: { type: "number", minimum: 0, maximum: 1 } } } },
+      tasks: { type: "array", minItems: 1, maxItems: 12, description: "One task per independently actionable guest need. Coordinated subjects remain separate, and a shared descriptor that asks an independently answerable, clarifiable, or handoff-required request must have its own task rather than being absorbed by the subject tasks.", items: { type: "object", additionalProperties: false, required: ["candidateIndex", "taskId", "groundingId", "type", "sourceText", "detailIntent", "requestedOutputs", "eligibilityEvidence", "dependsOnStayContext", "entity", "stayCandidate", "confidence"], properties: { candidateIndex: { type: "integer", minimum: 0 }, taskId: { type: "string", maxLength: 80 }, groundingId: { type: "string", minLength: 1, maxLength: 80 }, type: { ...stringEnum(TASK_TYPES), description: "Semantic capability. Monetary lodging amount, charge, or rate requests use price or total_price; the fixed maximum occupancy of one explicitly identified room or bundle uses lodging_product_capacity; lodging recommendation or date-and-guest-dependent selection does not. Property rules and conditions use policy. Missing stay dates do not turn price into policy. Requests to disclose access credentials or authentication secrets use high_risk and never policy. An identified current-property formal catalog subject fee uses a subject-compatible amenity, policy, or property_fact task, not price or total_price." }, sourceText: { type: "string", minLength: 1, maxLength: 500 }, detailIntent: stringEnum(DETAIL_INTENTS), requestedOutputs: { type: "array", description: "Requested fact for this capability. A price task uses price, a total_price task uses total_price, lodging_product_capacity uses capacity, and a general property fact uses answer. A property-subject fee uses fee.", items: { type: "string", maxLength: 80 } }, eligibilityEvidence: { type: "object", additionalProperties: false, description: "Explicit guest qualification evidence. Use none for a base availability or permission question. Use a non-none kind only when sourceText quotes the person, room, plan, booking mode, identity, or stated condition that makes this an eligibility question.", required: ["kind", "sourceText"], properties: { kind: stringEnum(ELIGIBILITY_EVIDENCE_KINDS), sourceText: { type: "string", maxLength: 200, description: "Exact excerpt from the task sourceText containing the qualification; empty when kind is none." } } }, dependsOnStayContext: { type: "boolean" }, entity: { type: "object", additionalProperties: false, required: ["category", "rawText", "canonicalCandidate", "confidence"], properties: { category: stringEnum(ENTITY_CATEGORIES), rawText: { type: "string", maxLength: 200 }, canonicalCandidate: { type: ["string", "null"], maxLength: 120 }, confidence: { type: "number", minimum: 0, maximum: 1 } } }, stayCandidate: { type: ["object", "null"], description: "When dependsOnStayContext is true, use a structured object even if all stay inputs are missing; use empty candidate fields rather than null. Use null when dependsOnStayContext is false.", additionalProperties: false, required: ["dateExpression", "checkInCandidate", "checkOutCandidate", "nightsCandidate", "guestCountCandidate"], properties: { dateExpression: { type: "object", additionalProperties: false, required: ["rawText", "kind", "anchor"], properties: { rawText: { type: "string", maxLength: 200 }, kind: stringEnum(DATE_KINDS), anchor: stringEnum(ANCHORS) } }, checkInCandidate: { type: ["string", "null"], maxLength: 40 }, checkOutCandidate: { type: ["string", "null"], maxLength: 40 }, nightsCandidate: { type: ["integer", "null"], minimum: 1, maximum: 60 }, guestCountCandidate: { type: ["integer", "null"], minimum: 1, maximum: 100 } } }, confidence: { type: "number", minimum: 0, maximum: 1 } } } },
+      semanticGroundings: { type: "array", minItems: 1, maxItems: 24, description: "Independent source-bound semantic grounding for each task. It distinguishes property-owned subjects from external places without keyword matching.", items: { type: "object", additionalProperties: false, required: ["groundingId", "provenanceRelationCandidateIndexes", "evidenceRefs", "subject", "relation", "requestedOutput"], properties: { groundingId: { type: "string", minLength: 1, maxLength: 80 }, provenanceRelationCandidateIndexes: { type: "array", minItems: 1, maxItems: 1, items: { type: "integer", minimum: 0 } }, evidenceRefs: { type: "array", minItems: 1, maxItems: 12, items: { type: "object", additionalProperties: false, required: ["eventId", "messageRef", "startOffset", "endOffset", "quote"], properties: { eventId: { type: "string", maxLength: 120 }, messageRef: { type: "string", maxLength: 120 }, startOffset: { type: "integer", minimum: 0 }, endOffset: { type: "integer", minimum: 0 }, quote: { type: "string", minLength: 1, maxLength: 500 } } } }, subject: { type: "object", additionalProperties: false, required: ["scope", "catalogIdentity"], properties: { scope: stringEnum(SEMANTIC_SUBJECT_SCOPES), catalogIdentity: { type: ["string", "null"], maxLength: 120 } } }, relation: { ...stringEnum(SEMANTIC_RELATIONS), description: "Use inventory_availability only for a stay-dependent availability task whose property-owned subject is one formal room or bundle catalog identity." }, requestedOutput: stringEnum(SEMANTIC_REQUESTED_OUTPUTS) } } },
       contextRelationCandidates: { type: "array", maxItems: 12, items: { type: "object", additionalProperties: false, required: ["candidateIndex", "kind", "candidateRequestCycleRefs", "evidenceRefs"], properties: { candidateIndex: { type: "integer", minimum: 0 }, kind: stringEnum(CONTEXT_RELATION_KINDS), candidateRequestCycleRefs: { type: "array", items: { type: "string", maxLength: 120 } }, evidenceRefs: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, required: ["eventId", "messageRef", "startOffset", "endOffset", "quote"], properties: { eventId: { type: "string", maxLength: 120 }, messageRef: { type: "string", maxLength: 120 }, startOffset: { type: "integer", minimum: 0 }, endOffset: { type: "integer", minimum: 0 }, quote: { type: "string", minLength: 1, maxLength: 500 } } } } } } },
       ambiguities: { type: "array", items: { type: "string", maxLength: 300 } }, missingInformation: { type: "array", items: { type: "string", maxLength: 120 } }, needsHuman: { type: "boolean" }, shouldIgnore: { type: "boolean" }, reason: { type: "string", maxLength: 120 }
     }
@@ -1517,4 +1747,4 @@ function plannerProviderJsonSchema() {
   delete schema.properties.semanticCandidates;
   return schema;
 }
-module.exports = { validatePlannerOutput, applyPlannerSemanticContract, plannerJsonSchema, plannerProviderJsonSchema, normalizeEligibilityEvidence, normalizeIgnoredAcknowledgementOutput, normalizeDuplicateTaskIds, discardLegacyPlannerStateControls, TASK_TYPES };
+module.exports = { validatePlannerOutput, validatePlannerSemanticGroundingContract, applyPlannerSemanticContract, plannerJsonSchema, plannerProviderJsonSchema, normalizeEligibilityEvidence, normalizeIgnoredAcknowledgementOutput, normalizeDuplicateTaskIds, discardLegacyPlannerStateControls, TASK_TYPES };

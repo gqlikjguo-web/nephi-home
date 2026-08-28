@@ -19,11 +19,16 @@
   const controlledPolicyByCanonicalId = new Map(controlledPolicyFacts.map((item) => [item.canonicalId, item]));
   const validStatuses = new Set(["allowed", "not_allowed", "unknown"]);
   const validScopes = new Set(["whole_property", "bundle_only"]);
-  const controlledPolicyVisibleFields = Object.freeze(["status", "appliesTo", "publicText", "notes"]);
-  const controlledPolicyHiddenFields = Object.freeze(["canonicalId", "publicName", "category", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]);
+  const operatorHiddenCanonicalIds = new Set(["baby_bottle_cleaning_equipment"]);
+  const controlledPolicyVisibleFields = Object.freeze(["status", "publicText", "notes"]);
+  const controlledPolicyHiddenFields = Object.freeze(["canonicalId", "publicName", "category", "appliesTo", "fees", "advanceNoticeRequired", "reservationRequired", "conditions", "restrictions", "operatingHours", "availablePeriods", "source", "updatedAt"]);
 
   function controlledPolicyDisplayName(canonicalId) {
     return controlledPolicyByCanonicalId.get(String(canonicalId || "").trim())?.displayName || "";
+  }
+
+  function operatorHiddenFacts(facts) {
+    return (facts || []).filter((fact) => operatorHiddenCanonicalIds.has(String(fact && fact.canonicalId || "").trim()));
   }
 
   function controlledPolicyCardContract(canonicalId) {
@@ -35,9 +40,9 @@
   }
 
   function equipmentFieldPolicy(status) {
-    if (status === "allowed") return { showScope: true, showPublicText: true, showNotes: true, publicTextRequired: true };
-    if (status === "not_allowed") return { showScope: false, showPublicText: true, showNotes: true, publicTextRequired: false };
-    return { showScope: false, showPublicText: false, showNotes: false, publicTextRequired: false };
+    if (status === "allowed") return { showPublicText: true, showNotes: true, publicTextRequired: true };
+    if (status === "not_allowed") return { showPublicText: true, showNotes: true, publicTextRequired: false };
+    return { showPublicText: false, showNotes: false, publicTextRequired: false };
   }
 
   function lines(value) {
@@ -158,5 +163,5 @@
     };
   }
 
-  return { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts, buildAdminPropertyFactCardGroups, controlledPolicyCardContract, controlledPolicyDisplayName, controlledPolicyFacts, equipmentByCanonicalId, equipmentFieldPolicy };
+  return { buildPropertyFactsPayload, buildHighFrequencyEquipmentDrafts, buildControlledPolicyFactDrafts, buildAdminPropertyFactCardGroups, controlledPolicyCardContract, controlledPolicyDisplayName, controlledPolicyFacts, equipmentByCanonicalId, equipmentFieldPolicy, operatorHiddenFacts };
 });

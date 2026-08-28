@@ -162,7 +162,8 @@ async function main() {
   const schemaA = await providerSchemaForCatalog(catalogA);
   const schemaB = await providerSchemaForCatalog(catalogB);
   const identitySchemas = (schema) => ({
-    task: schema.properties.tasks.items.properties.entity.properties.canonicalCandidate
+    task: schema.properties.tasks.items.properties.entity.properties.canonicalCandidate,
+    grounding: schema.properties.semanticGroundings.items.properties.subject.properties.catalogIdentity
   });
   const identitiesA = identitySchemas(schemaA);
   const identitiesB = identitySchemas(schemaB);
@@ -179,6 +180,11 @@ async function main() {
   }
 
   assert.equal(Object.hasOwn(schemaA.properties, "semanticCandidates"), false, "provider schema must not request Engine-owned semantic ledger candidates");
+  assert.equal(Object.hasOwn(schemaA.properties, "semanticGroundings"), true, "provider schema must require the independent source-bound grounding ledger");
+  assert.ok(schemaA.properties.tasks.items.required.includes("groundingId"), "every provider task must bind exactly one grounding");
+  assert.deepEqual(schemaA.properties.semanticGroundings.items.properties.subject.properties.scope.enum, ["property_owned", "external_place"]);
+  assert.deepEqual(schemaA.properties.semanticGroundings.items.properties.relation.enum, ["collection_membership", "property_fact", "property_to_external_place", "inventory_availability"]);
+  assert.deepEqual(schemaA.properties.semanticGroundings.items.properties.requestedOutput.enum, ["answer", "map_url"]);
 
   console.log("planner strict schema contract: PASS");
 }

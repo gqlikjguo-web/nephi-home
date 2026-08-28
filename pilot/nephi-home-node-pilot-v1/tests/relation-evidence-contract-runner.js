@@ -7,6 +7,7 @@ const { ConversationEngineV2Coordinator } = require("../lib/conversation-engine-
 const { emptyStateV2 } = require("../lib/conversation-engine-v2/state-reducer");
 const { validateUnderstandingContext } = require("../lib/conversation-engine-v2/understanding-validator");
 const { normalizePlannerEvidenceCoordinates } = require("../lib/conversation-engine-v2/evidence-normalizer");
+const { validatePlannerSemanticGroundingContract } = require("../lib/conversation-engine-v2/planner-schema");
 const { compileSemanticCandidates, validateSemanticCandidates } = require("../lib/conversation-engine-v2/semantic-candidate-contract");
 const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-ledger");
 
@@ -182,6 +183,42 @@ async function main() {
     quote: "availability"
   }], "a unique verbatim Planner evidence quote must complete its identified source reference and repair offset drift even when task sourceText is a paraphrase");
   assert.equal(validateUnderstandingContext(quoteCanonicalized, snapshot(), { sourceEvents }).ok, true);
+
+  const nearbyMessage = "請問附近有早餐店嗎";
+  const nearbyEvents = [{ eventId: "nearby-event", messageRef: "", messageText: nearbyMessage }];
+  const nearbyPlan = plannerOutput({
+    tasks: [{ ...task(), taskId: "nearby-breakfast", groundingId: "nearby-grounding", sourceText: nearbyMessage }],
+    contextRelationCandidates: [relation({ evidenceRefs: [{ eventId: "nearby-event", messageRef: "", startOffset: 0, endOffset: 11, quote: nearbyMessage }] })]
+  });
+  nearbyPlan.semanticGroundings = [{
+    groundingId: "nearby-grounding",
+    provenanceRelationCandidateIndexes: [0],
+    evidenceRefs: [{ eventId: "nearby-event", messageRef: "", startOffset: 0, endOffset: 11, quote: nearbyMessage }],
+    subject: { scope: "external_place", catalogIdentity: null },
+    relation: "property_to_external_place",
+    requestedOutput: "map_url"
+  }];
+  const normalizedNearby = normalizePlannerEvidenceCoordinates(nearbyPlan, nearbyEvents);
+  const canonicalNearbyEvidence = [{ eventId: "nearby-event", messageRef: "", startOffset: 0, endOffset: 9, quote: nearbyMessage }];
+  assert.deepEqual(normalizedNearby.contextRelationCandidates[0].evidenceRefs, canonicalNearbyEvidence, "relation evidence must repair the production endOffset mismatch");
+  assert.deepEqual(normalizedNearby.semanticGroundings[0].evidenceRefs, canonicalNearbyEvidence, "the owned semantic grounding must use the same normalized relation evidence");
+  assert.equal(validatePlannerSemanticGroundingContract(normalizedNearby, { sourceEvents: nearbyEvents, catalog: {} }), true, "synchronized source-bound grounding evidence must pass the existing contract");
+
+  const invalidNearby = clone(nearbyPlan);
+  invalidNearby.contextRelationCandidates[0].evidenceRefs[0] = { eventId: "nearby-event", messageRef: "", startOffset: 99, endOffset: 104, quote: "not present" };
+  invalidNearby.semanticGroundings[0].evidenceRefs[0] = clone(invalidNearby.contextRelationCandidates[0].evidenceRefs[0]);
+  const normalizedInvalidNearby = normalizePlannerEvidenceCoordinates(invalidNearby, nearbyEvents);
+  assert.equal(validatePlannerSemanticGroundingContract(normalizedInvalidNearby, { sourceEvents: nearbyEvents, catalog: {} }), false, "evidence without a unique exact source match must remain fail closed");
+
+  const duplicateGroundingId = clone(nearbyPlan);
+  duplicateGroundingId.semanticGroundings.push(clone(duplicateGroundingId.semanticGroundings[0]));
+  const normalizedDuplicateGroundingId = normalizePlannerEvidenceCoordinates(duplicateGroundingId, nearbyEvents);
+  assert.equal(normalizedDuplicateGroundingId.semanticGroundings[0].evidenceRefs[0].endOffset, 11, "duplicate groundingId ownership must not be normalized into validity");
+
+  const duplicateProvenance = clone(nearbyPlan);
+  duplicateProvenance.semanticGroundings.push({ ...clone(duplicateProvenance.semanticGroundings[0]), groundingId: "unowned-grounding" });
+  const normalizedDuplicateProvenance = normalizePlannerEvidenceCoordinates(duplicateProvenance, nearbyEvents);
+  assert.equal(normalizedDuplicateProvenance.semanticGroundings[0].evidenceRefs[0].endOffset, 11, "duplicate grounding provenance ownership must not be normalized into validity");
 
   const eventIdOnlyEvents = [{ eventId: "event-only", messageRef: "", messageText: "availability" }];
   const eventIdOnly = normalizePlannerEvidenceCoordinates(exactSourcePlan, eventIdOnlyEvents);

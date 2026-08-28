@@ -22,7 +22,7 @@ assert.deepEqual(groups.map((group) => [group.key, group.publicName, group.cards
   ["basic", "住宿基本設備", ["parking", "wifi", "tv", "refrigerator", "water_dispenser", "elevator", "washing_machine", "clothes_dryer"]],
   ["cooking", "廚房／餐飲", ["stove", "cookware", "tableware", "breakfast"]],
   ["hygiene", "衛浴／盥洗", ["toiletries"]],
-  ["infant", "嬰幼兒設備", ["baby_crib", "baby_bathtub", "baby_bottle_sterilizer", "baby_bottle_cleaning_equipment"]],
+  ["infant", "嬰幼兒設備", ["baby_crib", "baby_bathtub", "baby_bottle_sterilizer"]],
   ["special_policy", "政策／特殊服務", ["pets", "travel_subsidy", "add_person_bed"]]
 ]);
 

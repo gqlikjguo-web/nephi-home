@@ -4,11 +4,11 @@ const propertiesBox = document.querySelector("#properties");
 const message = document.querySelector("#message");
 const summaryBox = document.querySelector("#platformSummary");
 
-async function api(path) {
+async function api(path, options = {}) {
   let response;
   let payload;
   try {
-    response = await fetch(path, { headers: { "content-type": "application/json" } });
+    response = await fetch(path, { ...options, headers: { "content-type": "application/json", ...(options.headers || {}) } });
     payload = await response.json();
   } catch {
     throw new Error("連線失敗，請確認網路後再試。");
@@ -22,19 +22,6 @@ function element(tag, content, className = "") {
   if (content !== undefined) node.textContent = content;
   if (className) node.className = className;
   return node;
-}
-
-function namedItems(title, items) {
-  const section = element("section", undefined, "property-detail-group");
-  const list = element("ul");
-  section.append(element("h3", title));
-  if (!items.length) {
-    section.append(element("p", "目前沒有資料"));
-    return section;
-  }
-  for (const item of items) list.append(element("li", `${item.name || "未命名"}（${item.id}）`));
-  section.append(list);
-  return section;
 }
 
 function summaryCounts(properties, applications, connections) {
@@ -70,21 +57,22 @@ function propertyCard(property, lineByProperty) {
   const article = element("article", undefined, "property-row");
   const heading = element("div", undefined, "property-identity");
   const metrics = element("div", undefined, "property-metrics");
-  const details = element("details", undefined, "property-details");
-  const summary = element("summary", "展開詳細");
-  const detailGrid = element("div", undefined, "property-detail-grid");
+  const enter = element("button", "進入業者後台", "property-enter");
+  enter.type = "button";
   heading.append(element("h3", property.propertyName || "未命名業者"), element("p", property.propertyId, "property-id"));
   metrics.append(
     element("span", `房型 ${rooms.length}`),
     element("span", `包棟 ${bundles.length}`),
+    element("span", `登入 ${property.emails?.join("、") || "尚未設定"}`),
+    element("span", `帳號 ${property.accountStatus || "未知"}`),
+    element("span", `導入 ${property.onboardingStatus || "未知"}`),
     element("span", lineEnabled ? "LINE 已啟用" : "LINE 尚未啟用", lineEnabled ? "line-enabled" : "line-disabled")
   );
-  detailGrid.append(namedItems("房型", rooms), namedItems("包棟方案", bundles));
-  details.append(summary, detailGrid);
+  enter.addEventListener("click", async () => { enter.disabled = true; enter.textContent = "正在進入…"; try { await api("/api/admin/select-property", { method: "POST", body: JSON.stringify({ propertyId: property.propertyId }) }); location.assign("/admin?platform=1"); } catch (error) { enter.disabled = false; enter.textContent = error.message; } });
   article.append(
     heading,
     metrics,
-    details
+    enter
   );
   return article;
 }
@@ -92,18 +80,20 @@ function propertyCard(property, lineByProperty) {
 async function load() {
   message.textContent = "載入中…";
   try {
-    const [propertiesResult, applicationsResult, connectionsResult] = await Promise.all([
+    const [propertiesResult, applicationsResult, connectionsResult, directoryResult] = await Promise.all([
       api("/api/admin/onboarding/properties"),
       api("/api/admin/onboarding/applications"),
-      api("/api/admin/line-connections")
+      api("/api/admin/line-connections"),
+      api("/api/admin/platform/properties")
     ]);
     const properties = Array.isArray(propertiesResult.items) ? propertiesResult.items : [];
     const applications = Array.isArray(applicationsResult.items) ? applicationsResult.items : [];
     const connections = Array.isArray(connectionsResult.items) ? connectionsResult.items : [];
-    const lineByProperty = new Map(connections.map((item) => [item.propertyId, item]));
+    const lineByProperty = new Map(connections.map((item) => [item.propertyId, item])), formalById = new Map(properties.map(item => [item.propertyId, item]));
+    const directory = (directoryResult.items || []).map(item => ({ ...formalById.get(item.propertyId), ...item }));
     renderSummary(summaryCounts(properties, applications, connections));
-    propertiesBox.replaceChildren(...properties.map((property) => propertyCard(property, lineByProperty)));
-    message.textContent = properties.length ? `共 ${properties.length} 個正式業者。` : "目前沒有正式業者。";
+    propertiesBox.replaceChildren(...directory.map((property) => propertyCard(property, lineByProperty)));
+    message.textContent = directory.length ? `共 ${directory.length} 個正式業者。` : "目前沒有正式業者。";
   } catch (error) {
     summaryBox.replaceChildren();
     propertiesBox.replaceChildren();

@@ -9,7 +9,7 @@ const { createProviders } = require("./lib/providers/provider-factory");
 const { createV2CompositionRoot } = require("./lib/v2-composition-root");
 const { createMvpService, AppError } = require("./lib/mvp-service");
 const { runtimeConfig } = require("./config/runtime");
-const { verifyPassword, sessionTokenHash } = require("./lib/admin-auth");
+const { hashPassword, verifyPassword, sessionTokenHash } = require("./lib/admin-auth");
 const { createOnboardingService } = require("./lib/onboarding-service");
 const { resolvePublicProperty, normalizePublicSlug } = require("./lib/public-property-routing");
 const { createOnboardingEmailNotifier } = require("./lib/onboarding-email");
@@ -786,6 +786,8 @@ function createRequestHandler(service, options = {}) {
   const lineSetupService = options.lineSetupService;
   const persistence = options.persistence;
   const customerSettings = options.customerSettings;
+  const availability = options.availability;
+  const lineBindingProvider = options.lineBindingProvider;
   const onboarding = options.onboarding;
   const customReplyService = options.customReplyService;
   const customReplyTestHandler = options.customReplyTestHandler;
@@ -903,7 +905,21 @@ function createRequestHandler(service, options = {}) {
       }
 
       if(pathname==="/api/admin/setup-invitation"&&request.method==="GET")return sendData(response,onboarding.getInvitation(url.searchParams.get("token")));
-      if(pathname==="/api/admin/setup"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.redeemInvitation(body.token,body.password));}
+      if(pathname==="/api/admin/setup-link"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.requestAdminSetupLink(body.email));}
+      if(pathname==="/api/admin/setup"&&request.method==="POST"){const body=await readJsonBody(request);return sendData(response,await onboarding.redeemInvitation(body.token,body.password,Object.hasOwn(body,"confirmPassword")?body.confirmPassword:body.password));}
+
+      const platformPropertyMatch=/^\/api\/admin\/platform\/properties(?:\/([^/]+))?$/.exec(pathname);
+      if(platformPropertyMatch&&request.method==="GET"){
+        const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;
+        if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");
+        const properties=customerSettings.listProperties(),accounts=typeof persistence.listAdminPropertyAccounts==="function"?persistence.listAdminPropertyAccounts():[],applications=onboarding.list(),lineStatuses=lineSetupService?lineSetupService.propertyStatuses():properties.map(item=>({propertyId:item.propertyId,enabled:Boolean(lineBindingProvider&&lineBindingProvider.getLineBindingByPropertyId(item.propertyId)?.enabled)})),accountById=new Map(accounts.map(item=>[item.propertyId,item])),applicationById=new Map(applications.filter(item=>item.approvedPropertyId).map(item=>[item.approvedPropertyId,item])),lineById=new Map(lineStatuses.map(item=>[item.propertyId,item]));
+        const items=properties.map(item=>{const account=accountById.get(item.propertyId)||{emails:[],accountStatus:"not_configured"},application=applicationById.get(item.propertyId),line=lineById.get(item.propertyId),rooms=(item.rooms||[]).filter(room=>room.inventoryType!=="bundle"),bundles=(item.rooms||[]).filter(room=>room.inventoryType==="bundle");return{propertyId:item.propertyId,propertyName:item.displayName||item.propertyId,emails:account.emails||[],accountStatus:account.accountStatus,onboardingStatus:application?.status||(item.onboarding?.isReady===false?"not_ready":"approved"),enabled:item.onboarding?.isReady!==false,lineEnabled:Boolean(line?.enabled),roomCount:rooms.length,bundleCount:bundles.length};});
+        if(!platformPropertyMatch[1])return sendData(response,{items});
+        const propertyId=decodeURIComponent(platformPropertyMatch[1]),property=customerSettings.getProperty(propertyId),summary=items.find(item=>item.propertyId===propertyId);
+        if(!property||!summary)throw new AppError(404,"PROPERTY_NOT_FOUND","找不到旅宿");
+        const rooms=typeof customerSettings.listRoomRecords==="function"?customerSettings.listRoomRecords(propertyId):(property.rooms||[]).filter(room=>room.inventoryType!=="bundle"),bundles=typeof customerSettings.listBundles==="function"?customerSettings.listBundles(propertyId):(property.rooms||[]).filter(room=>room.inventoryType==="bundle"),priceOverrides=typeof customerSettings.listInventoryPriceOverrides==="function"?customerSettings.listInventoryPriceOverrides(propertyId):[],datePriceClassifications=typeof customerSettings.listDatePriceClassifications==="function"?customerSettings.listDatePriceClassifications(propertyId):[],availabilityRows=availability&&typeof availability.getRows==="function"?availability.getRows(propertyId,null,null):[],customReplies=customReplyService?customReplyService.list(propertyId):[],line=lineById.get(propertyId)||{enabled:false};
+        return sendData(response,{property:{propertyId,propertyName:summary.propertyName,enabled:summary.enabled},rooms,pricing:{currency:property.currency||"TWD",rooms:rooms.map(({id,displayName,name,mondayThursdayPrice,fridayPrice,saturdayHolidayPrice,sundayPrice})=>({id,displayName:displayName||name,mondayThursdayPrice,fridayPrice,saturdayHolidayPrice,sundayPrice})),priceOverrides,datePriceClassifications},availability:availabilityRows,bundles,propertyFacts:property.propertyFacts||[],customReplies,line:{enabled:Boolean(line.enabled),webhookObserved:Boolean(line.webhookObserved),lastWebhookObservedAt:line.lastWebhookObservedAt||""},account:{emails:summary.emails,accountStatus:summary.accountStatus},otherSettings:{businessProfile:property.businessProfile||{},commonAnswers:property.commonAnswers||{},humanHandoffSituations:property.humanHandoffSituations||[],faqs:property.faqs||[],contactLink:property.contactLink||"",onboarding:property.onboarding||{},currency:property.currency||"TWD"}});
+      }
 
       if(pathname.startsWith("/api/admin/onboarding/")){
         const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;if(!session||!onboarding||!onboarding.isPlatformAdmin(session))throw new AppError(401,"PLATFORM_ADMIN_REQUIRED","需要平台管理者權限");
@@ -1002,6 +1018,19 @@ function createRequestHandler(service, options = {}) {
         if (!user || String(user.passwordHash).startsWith("disabled$") || !await verifyPassword(body.password, user.passwordHash)) throw new AppError(401, "INVALID_LOGIN", "帳號或密碼錯誤");
         await persistence.createAdminSession(sessionTokenHash(token), propertyId, username, expiresAt);
         return sendJson(response, 200, { ok: true, data: { propertyId, username, requiresPropertySelection: false } }, cookie);
+      }
+      if(request.method==="POST"&&pathname==="/api/admin/password"){
+        const token=cookieValue(request,"nephi_admin_session"),session=token&&adminAuthRequired?await persistence.getAdminSession(sessionTokenHash(token)):null;
+        if(!session)throw new AppError(401,"LOGIN_REQUIRED","請先登入");
+        if(!session.userId||!session.email)throw new AppError(403,"EMAIL_IDENTITY_REQUIRED","只有 Email 登入帳號可以更改密碼");
+        const body=await readJsonBody(request),identity=await persistence.getAdminIdentityByEmail(session.email);
+        if(!identity||identity.userId!==session.userId)throw new AppError(403,"EMAIL_IDENTITY_REQUIRED","Email 登入身份無效");
+        if(!await verifyPassword(body.currentPassword,identity.passwordHash))throw new AppError(400,"INVALID_CURRENT_PASSWORD","目前密碼錯誤");
+        const newPassword=String(body.newPassword||"");
+        if(newPassword!==String(body.confirmPassword||""))throw new AppError(400,"PASSWORD_CONFIRMATION_MISMATCH","兩次輸入的新密碼不一致");
+        if(newPassword.length<8||newPassword.length>12)throw new AppError(400,"INVALID_ADMIN_PASSWORD","新密碼必須為 8–12 字元");
+        if(!await persistence.updateAdminIdentityPassword(session.userId,await hashPassword(newPassword)))throw new AppError(409,"ADMIN_IDENTITY_NOT_FOUND","Email 登入身份不存在");
+        return sendData(response,{updated:true});
       }
       if (request.method === "POST" && pathname === "/api/admin/select-property") {
         const token = cookieValue(request, "nephi_admin_session"), body = await readJsonBody(request);
@@ -1503,7 +1532,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
+  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
 }
 
