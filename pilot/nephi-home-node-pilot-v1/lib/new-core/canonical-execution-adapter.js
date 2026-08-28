@@ -126,10 +126,18 @@ function createCanonicalizerInputItem({
     return failure("CANONICAL_ADAPTER_OWNERSHIP_CONFLICT", ["provenance"]);
   }
   if (!canonicalizerCatalog || typeof canonicalizerCatalog !== "object"
-    || canonicalizerCatalog.propertyId !== understandingTurnInput.propertyScope.propertyId
-    || canonicalizerCatalog.timezone !== understandingTurnInput.propertyTimezone
     || !isPublicCatalogIdentityProjectionFor(understandingTurnInput, publicCatalogIdentityProjection)
-    || !canonicalizerCatalogMatchesC01(canonicalizerCatalog, publicCatalogIdentityProjection)) {
+  ) {
+    return failure("CANONICAL_ADAPTER_OWNERSHIP_CONFLICT", ["catalogProvenance"]);
+  }
+  const canonicalizerCatalogSnapshot = deepFreeze(detach(canonicalizerCatalog));
+  const publicCatalogIdentitySnapshot = deepFreeze(detach(publicCatalogIdentityProjection));
+  if (canonicalizerCatalogSnapshot.propertyId !== understandingTurnInput.propertyScope.propertyId
+    || canonicalizerCatalogSnapshot.timezone !== understandingTurnInput.propertyTimezone
+    || !canonicalizerCatalogMatchesC01(
+      canonicalizerCatalogSnapshot,
+      publicCatalogIdentitySnapshot
+    )) {
     return failure("CANONICAL_ADAPTER_OWNERSHIP_CONFLICT", ["catalogProvenance"]);
   }
   if (routingDecision.disposition !== "ANSWER"
@@ -156,7 +164,9 @@ function createCanonicalizerInputItem({
     routingDecision,
     understandingTurnInput,
     canonicalizerCatalog,
-    publicCatalogIdentityProjection
+    publicCatalogIdentityProjection,
+    canonicalizerCatalogSnapshot,
+    publicCatalogIdentitySnapshot
   });
   return { ok: true, code: null, errors: [], value };
 }
@@ -358,15 +368,19 @@ function expectedProduct(approvedProduct, canonicalEntity) {
     inventory.mode === "bundle_only" ? "bundle" : "room");
 }
 
-function canonicalEntityMatchesSubject(canonicalEntity, unit) {
+function canonicalEntityMatchesSubject(canonicalEntity, unit, publicCatalogIdentitySnapshot) {
   const subject = unit.subject;
   if (subject.kind === "matched_room_set") {
+    const verifiedRoomIds = new Set(publicCatalogIdentitySnapshot
+      .filter((entry) => entry[1] === "room")
+      .map((entry) => entry[0]));
     return canonicalEntity.status === "matched_set"
       && canonicalEntity.category === "room"
       && canonicalEntity.canonicalId === null
       && Array.isArray(canonicalEntity.canonicalSet)
       && canonicalEntity.canonicalSet.length > 0
-      && new Set(canonicalEntity.canonicalSet).size === canonicalEntity.canonicalSet.length;
+      && new Set(canonicalEntity.canonicalSet).size === canonicalEntity.canonicalSet.length
+      && canonicalEntity.canonicalSet.every((canonicalId) => verifiedRoomIds.has(canonicalId));
   }
   if (subject.kind === "external_place") {
     return unit.capability === "location"
@@ -389,7 +403,11 @@ function canonicalEntityMatchesSubject(canonicalEntity, unit) {
 }
 
 function canonicalResultIsStructurallyConsistent(canonicalRequest, provenance, approvedProduct) {
-  return canonicalEntityMatchesSubject(canonicalRequest.canonicalEntity, provenance.unit)
+  return canonicalEntityMatchesSubject(
+    canonicalRequest.canonicalEntity,
+    provenance.unit,
+    provenance.publicCatalogIdentitySnapshot
+  )
     && sameData(canonicalRequest.lodgingProduct,
       expectedProduct(approvedProduct, canonicalRequest.canonicalEntity))
     && sameData(canonicalRequest.evidenceRefs, provenance.unit.evidenceRefs);
@@ -492,7 +510,7 @@ function executeCanonicalizerInputItem({
       item: compatibilityItem,
       relation,
       contextSnapshot,
-      catalog,
+      catalog: provenance.canonicalizerCatalogSnapshot,
       guestMessage: sourceText,
       eventTimestamp: temporal.eventTimestamp,
       allowSharedMessageInference: false

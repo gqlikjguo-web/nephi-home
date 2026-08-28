@@ -223,3 +223,9 @@ module.exports = {
   SINGLE_DATE_DEFAULT_NIGHT_RULE_REF,
   AVAILABLE_DATES_LOOKAHEAD_RULE_REF
 };
+Object.defineProperty(module.exports, "canonicalizeExecutionItem", {
+  value: canonicalizeExecutionItem,
+  enumerable: true,
+  writable: false,
+  configurable: false
+});

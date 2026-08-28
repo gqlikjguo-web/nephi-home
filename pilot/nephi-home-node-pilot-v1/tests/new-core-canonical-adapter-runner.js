@@ -3,6 +3,28 @@
 const assert = require("node:assert/strict");
 const { CAPABILITY_REGISTRY } = require("../lib/conversation-engine-v2/capability-registry");
 const canonicalizer = require("../lib/conversation-engine-v2/canonicalizer");
+
+// Module-boundary authority must already be immutable before the C08 adapter
+// loads and captures it. Each attack must fail without changing the function.
+const OFFICIAL_CANONICALIZER = canonicalizer.canonicalizeExecutionItem;
+assert.throws(() => {
+  canonicalizer.canonicalizeExecutionItem = () => ({
+    canonicalRequest: { canonicalEntity: { status: "matched_set", canonicalSet: ["room-a"] } }
+  });
+}, TypeError);
+assert.equal(canonicalizer.canonicalizeExecutionItem, OFFICIAL_CANONICALIZER);
+assert.throws(() => {
+  delete canonicalizer.canonicalizeExecutionItem;
+}, TypeError);
+assert.equal(canonicalizer.canonicalizeExecutionItem, OFFICIAL_CANONICALIZER);
+assert.throws(() => {
+  Object.defineProperty(canonicalizer, "canonicalizeExecutionItem", {
+    value: () => ({
+      canonicalRequest: { canonicalEntity: { status: "resolved", category: "amenity" } }
+    })
+  });
+}, TypeError);
+assert.equal(canonicalizer.canonicalizeExecutionItem, OFFICIAL_CANONICALIZER);
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const {
   buildUnderstandingTurnInput,
@@ -215,13 +237,14 @@ function pipeline({
   return { input, evidence: normalizedEvidence.value, unit: semantic.value, lifecycle: lifecycle.value, route: route.value };
 }
 
-function createC08(values) {
+function createC08(values, overrides = {}) {
+  const canonicalizerCatalog = overrides.canonicalizerCatalog || catalog;
   const result = createCanonicalizerInputItem({
     unit: values.unit,
     lifecycleDecision: values.lifecycle,
     routingDecision: values.route,
     understandingTurnInput: values.input,
-    canonicalizerCatalog: catalog,
+    canonicalizerCatalog,
     publicCatalogIdentityProjection: buildPublicCatalogIdentityProjection(values.input)
   });
   if (result.ok) PROVENANCE_INPUT_BY_C08.set(result.value, values.input);
@@ -585,6 +608,42 @@ assertFailure(execute(continuedC08.value, {
   contextSnapshot: contextSnapshot({ scope: { propertyId: scope.propertyId, channelId: "line-foreign", userId: scope.userId } })
 }), "CANONICAL_ADAPTER_OWNERSHIP_CONFLICT");
 
+// Catalog/C01 authority is snapshotted at C08 issuance. Mutating the exact
+// caller-owned catalog object afterward cannot replace the room the official
+// canonicalizer sees.
+const mutableRoomCatalog = clone(catalog);
+const immutableRoomC08 = createC08(roomAvailability, {
+  canonicalizerCatalog: mutableRoomCatalog
+});
+assert.equal(immutableRoomC08.ok, true, immutableRoomC08.code);
+assert.equal(Object.isFrozen(mutableRoomCatalog), false, "issuance must detach instead of freezing caller data");
+mutableRoomCatalog.rooms.find((room) => room.canonicalId === "room-a").canonicalId = "foreign-room";
+const immutableRoomResult = execute(immutableRoomC08.value, { catalog: mutableRoomCatalog });
+assert.equal(immutableRoomResult.ok, true, immutableRoomResult.code);
+assert.equal(immutableRoomResult.value.canonicalRequest.canonicalEntity.canonicalId, "room-a");
+
+// Adding a matching foreign room after issuance cannot expand the complete
+// official matched set beyond exact trusted C01 room identities.
+const mutableMatchedCatalog = clone(catalog);
+const immutableMatchedC08 = createC08(matchedRooms, {
+  canonicalizerCatalog: mutableMatchedCatalog
+});
+assert.equal(immutableMatchedC08.ok, true, immutableMatchedC08.code);
+const roomTemplate = mutableMatchedCatalog.rooms.find((room) => room.canonicalId === "room-a");
+mutableMatchedCatalog.rooms.push({
+  ...clone(roomTemplate),
+  canonicalId: "foreign-room",
+  publicName: "Foreign Room"
+});
+const immutableMatchedResult = execute(immutableMatchedC08.value, {
+  catalog: mutableMatchedCatalog
+});
+assert.equal(immutableMatchedResult.ok, true, immutableMatchedResult.code);
+assert.deepEqual(
+  [...immutableMatchedResult.value.canonicalRequest.canonicalEntity.canonicalSet].sort(),
+  ["room-a", "room-b"]
+);
+
 // AC-CAN-012 / AC-MNT-009: candidateIndex is created and destroyed inside
 // the captured official compatibility call. It is never present in C08 or in
 // the closed new-core result at any recursive depth.
@@ -600,67 +659,23 @@ assert.deepEqual(officialRoomResult.value.stateInput.confirmedFields.inventory, 
   entityId: "room-a"
 });
 
-// The adapter captured the official canonicalizer function when its module was
-// initialized. Replacing the public export cannot inject a same-property subset
-// or mint a result: the replacement is never invoked and the official complete
-// matched set remains authoritative.
-const officialCanonicalizerExport = canonicalizer.canonicalizeExecutionItem;
-let subsetReplacementCalls = 0;
-canonicalizer.canonicalizeExecutionItem = () => {
-  subsetReplacementCalls += 1;
-  return {
-    canonicalRequest: {
-      canonicalEntity: {
-        status: "matched_set",
-        category: "room",
-        canonicalId: null,
-        canonicalSet: ["room-a"]
-      }
-    }
-  };
-};
-try {
-  const subsetAttempt = execute(matchedC08.value);
-  assert.equal(subsetAttempt.ok, true, subsetAttempt.code);
-  assert.equal(subsetReplacementCalls, 0);
-  assert.deepEqual(
-    [...subsetAttempt.value.canonicalRequest.canonicalEntity.canonicalSet].sort(),
-    ["room-a", "room-b"]
-  );
-} finally {
-  canonicalizer.canonicalizeExecutionItem = officialCanonicalizerExport;
-}
+// Assignment/delete/redefine attacks above occurred before the adapter load.
+// The exact official function still supplies the complete set and the exact
+// room category/product/inventory mapping after that preload boundary.
+const subsetAttempt = execute(matchedC08.value);
+assert.equal(subsetAttempt.ok, true, subsetAttempt.code);
+assert.deepEqual(
+  [...subsetAttempt.value.canonicalRequest.canonicalEntity.canonicalSet].sort(),
+  ["room-a", "room-b"]
+);
+const categoryAttempt = execute(roomC08.value);
+assert.equal(categoryAttempt.ok, true, categoryAttempt.code);
+assert.equal(categoryAttempt.value.canonicalRequest.canonicalEntity.category, "room");
+assert.equal(categoryAttempt.value.canonicalRequest.canonicalEntity.canonicalId, "room-a");
+assert.equal(categoryAttempt.value.canonicalRequest.lodgingProduct.productType, "room_type");
+assert.deepEqual(categoryAttempt.value.stateInput.confirmedFields.inventory, {
+  mode: "room_only",
+  entityId: "room-a"
+});
 
-// A category/product/inventory substitution through that same public export is
-// likewise rejected as authority. The exact official function preserves the
-// structured room mapping and the adapter validates their mutual consistency.
-let categoryReplacementCalls = 0;
-canonicalizer.canonicalizeExecutionItem = () => {
-  categoryReplacementCalls += 1;
-  return {
-    canonicalRequest: {
-      canonicalEntity: {
-        status: "resolved",
-        category: "amenity",
-        canonicalId: "parking",
-        canonicalSet: []
-      }
-    }
-  };
-};
-try {
-  const categoryAttempt = execute(roomC08.value);
-  assert.equal(categoryAttempt.ok, true, categoryAttempt.code);
-  assert.equal(categoryReplacementCalls, 0);
-  assert.equal(categoryAttempt.value.canonicalRequest.canonicalEntity.category, "room");
-  assert.equal(categoryAttempt.value.canonicalRequest.canonicalEntity.canonicalId, "room-a");
-  assert.equal(categoryAttempt.value.canonicalRequest.lodgingProduct.productType, "room_type");
-  assert.deepEqual(categoryAttempt.value.stateInput.confirmedFields.inventory, {
-    mode: "room_only",
-    entityId: "room-a"
-  });
-} finally {
-  canonicalizer.canonicalizeExecutionItem = officialCanonicalizerExport;
-}
-
-console.log(JSON.stringify({ suite: "new-core-canonical-adapter", caseCount: 22, passCount: 22, failCount: 0, evidenceLevel: "STRUCTURED_CONTRACT_TEST" }));
+console.log(JSON.stringify({ suite: "new-core-canonical-adapter", caseCount: 24, passCount: 24, failCount: 0, evidenceLevel: "STRUCTURED_CONTRACT_TEST" }));
