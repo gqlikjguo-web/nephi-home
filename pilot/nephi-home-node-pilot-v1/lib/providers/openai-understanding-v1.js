@@ -26,7 +26,7 @@ const {
 const {
   MAX_CONTEXT_LINKS,
   ACTION_CANDIDATES,
-  validateContextLinkCandidates
+  validateContextLinkCandidate
 } = require("../new-core/contracts/context-link-candidate");
 const {
   buildPublicCatalogIdentityProjection
@@ -278,21 +278,24 @@ function providerRequestBody(understandingTurnInput, model) {
   };
 }
 
-function outputText(payload) {
-  if (payload && typeof payload.output_text === "string") return payload.output_text;
-  for (const item of payload && Array.isArray(payload.output) ? payload.output : []) {
-    for (const part of Array.isArray(item && item.content) ? item.content : []) {
-      if (part && part.type === "output_text" && typeof part.text === "string") return part.text;
-    }
+function structuredOutputText(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  if (["incomplete", "failed"].includes(payload.status)) return null;
+  const outputPresent = Object.hasOwn(payload, "output");
+  if (outputPresent && !Array.isArray(payload.output)) return null;
+  const output = outputPresent ? payload.output : [];
+  const parts = output
+    .flatMap((item) => Array.isArray(item && item.content) ? item.content : []);
+  if (parts.some((part) => part && part.type === "refusal")) return null;
+  if (Object.hasOwn(payload, "output_text")) {
+    return typeof payload.output_text === "string" && payload.output_text.length > 0 && output.length === 0
+      ? payload.output_text : null;
   }
-  return "";
-}
-
-function structuredOutputFailed(payload) {
-  if (!payload || typeof payload !== "object") return false;
-  if (["incomplete", "failed"].includes(payload.status)) return true;
-  return (Array.isArray(payload.output) ? payload.output : []).some((item) =>
-    (Array.isArray(item && item.content) ? item.content : []).some((part) => part && part.type === "refusal"));
+  if (output.length !== 1 || !output[0] || output[0].type !== "message"
+    || !Array.isArray(output[0].content) || output[0].content.length !== 1) return null;
+  const part = output[0].content[0];
+  return part && part.type === "output_text" && typeof part.text === "string" && part.text.length > 0
+    ? part.text : null;
 }
 
 async function readProviderPayload(response) {
@@ -402,11 +405,10 @@ async function requestOnce({ apiKey, model, fetchImpl, timeoutMs, requestIdFacto
     if (read.parseFailed || !read.bodyPresent) {
       throw providerFailure("UNDERSTANDING_SCHEMA_INVALID", "parse_failure", { status: httpStatus });
     }
-    const text = outputText(read.payload);
-    if (!text && structuredOutputFailed(read.payload)) {
+    const text = structuredOutputText(read.payload);
+    if (!text) {
       throw providerFailure("UNDERSTANDING_SCHEMA_INVALID", "structured_output_failure", { status: httpStatus });
     }
-    if (!text) throw providerFailure("UNDERSTANDING_SCHEMA_INVALID", "empty_response", { status: httpStatus });
     try {
       const value = JSON.parse(text);
       parsedOutputPresent = true;
@@ -495,22 +497,28 @@ function envelopeWireFailure(value, understandingTurnInput) {
   const outputValidation = validateUnderstandingOutputV1(value.understandingOutput);
   if (!outputValidation.ok) return outputValidation.code;
   if (value.understandingOutput.turnId !== understandingTurnInput.turnId) return "UNDERSTANDING_SCHEMA_INVALID";
-  const linksValidation = validateContextLinkCandidates(value.contextLinkCandidates);
-  if (!linksValidation.ok) {
-    if (linksValidation.code === "CONTEXT_LINK_DUPLICATE") return linksValidation.code;
-    if (["UNKNOWN_WIRE_FIELD", "UNDERSTANDING_CARDINALITY_INVALID"].includes(linksValidation.code)) {
-      return linksValidation.code;
-    }
-    return "UNDERSTANDING_SCHEMA_INVALID";
+  const links = value.contextLinkCandidates;
+  if (!Array.isArray(links) || links.length > MAX_CONTEXT_LINKS) {
+    return "UNDERSTANDING_CARDINALITY_INVALID";
   }
   const units = value.understandingOutput.units;
-  const links = value.contextLinkCandidates;
-  if (units.length !== links.length) return "UNDERSTANDING_SCHEMA_INVALID";
-  const linkById = new Map(links.map((link) => [link.contextLinkCandidateId, link]));
-  if (linkById.size !== links.length || units.some((unit) => {
-    const link = linkById.get(unit.contextLinkCandidateId);
-    return !link || link.unitId !== unit.unitId;
-  })) return "UNDERSTANDING_SCHEMA_INVALID";
+  for (const candidate of links) {
+    const validation = validateContextLinkCandidate(candidate);
+    if (!validation.ok) return validation.unknownWireField ? "UNKNOWN_WIRE_FIELD" : "UNDERSTANDING_SCHEMA_INVALID";
+  }
+  const unitKeys = new Set(units.map((unit) => JSON.stringify([unit.unitId, unit.contextLinkCandidateId])));
+  const linkIdCounts = new Map();
+  for (const candidate of links) {
+    linkIdCounts.set(candidate.contextLinkCandidateId, (linkIdCounts.get(candidate.contextLinkCandidateId) || 0) + 1);
+  }
+  if (units.some((unit) => !links.some((candidate) =>
+    candidate.contextLinkCandidateId === unit.contextLinkCandidateId && candidate.unitId === unit.unitId))) {
+    return "UNDERSTANDING_SCHEMA_INVALID";
+  }
+  if (links.some((candidate) => !unitKeys.has(JSON.stringify([candidate.unitId, candidate.contextLinkCandidateId]))
+    && linkIdCounts.get(candidate.contextLinkCandidateId) === 1)) {
+    return "UNDERSTANDING_SCHEMA_INVALID";
+  }
   return null;
 }
 
@@ -616,74 +624,6 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
 
   const wireCode = envelopeWireFailure(providerValue, understandingTurnInput);
   if (wireCode) {
-    if (wireCode === "CONTEXT_LINK_DUPLICATE") {
-      const rawDuplicateUnits = providerValue.understandingOutput.units;
-      const rawDuplicateLinks = providerValue.contextLinkCandidates;
-      const duplicateUnitIds = [...new Set(rawDuplicateLinks.map((candidate) => candidate.unitId))];
-      emit(traceEmitter, understandingTurnInput, {
-        boundary: "C02", unitIds: rawDuplicateUnits.map((unit) => unit.unitId),
-        marker: "C02_UNDERSTANDING_RECEIVED", nowMs
-      });
-      const duplicatePreparedUnits = [];
-      const duplicateLinkSet = new Set();
-      for (const rawUnit of rawDuplicateUnits) {
-        const matchingLinks = rawDuplicateLinks.filter((candidate) =>
-          candidate.contextLinkCandidateId === rawUnit.contextLinkCandidateId
-          && candidate.unitId === rawUnit.unitId);
-        matchingLinks.forEach((candidate) => duplicateLinkSet.add(candidate));
-        const normalized = normalizeUnitEvidence(rawUnit, matchingLinks, understandingTurnInput.sourceEvents);
-        if (!normalized.ok) {
-          emit(traceEmitter, understandingTurnInput, {
-            boundary: "C04", unitIds: [rawUnit.unitId], outputUnitIds: [], status: "FAILURE",
-            code: normalized.code, marker: "C04_SOURCE_EVIDENCE_REJECTED", nowMs
-          });
-          throw understandingError(normalized.code, attempts);
-        }
-        duplicatePreparedUnits.push(normalized.value);
-        emit(traceEmitter, understandingTurnInput, {
-          boundary: "C04", unitIds: [rawUnit.unitId], marker: "C04_SOURCE_EVIDENCE_VALIDATED", nowMs
-        });
-      }
-      for (const orphanLink of rawDuplicateLinks.filter((candidate) => !duplicateLinkSet.has(candidate))) {
-        const linkEvidence = validateAndNormalizeSourceEvidence(orphanLink.evidenceRefs, understandingTurnInput.sourceEvents);
-        if (!linkEvidence.ok) {
-          emit(traceEmitter, understandingTurnInput, {
-            boundary: "C04", unitIds: [orphanLink.unitId], outputUnitIds: [], status: "FAILURE",
-            code: linkEvidence.code, marker: "C04_SOURCE_EVIDENCE_REJECTED", nowMs
-          });
-          throw understandingError(linkEvidence.code, attempts);
-        }
-        emit(traceEmitter, understandingTurnInput, {
-          boundary: "C04", unitIds: [orphanLink.unitId], marker: "C04_SOURCE_EVIDENCE_VALIDATED", nowMs
-        });
-      }
-      const duplicateCatalog = buildPublicCatalogIdentitySet(understandingTurnInput);
-      const duplicateRegistry = projectCapabilityRegistry(CAPABILITY_REGISTRY);
-      for (const prepared of duplicatePreparedUnits) {
-        const semantic = validateSemanticUnit({
-          unit: prepared.unit,
-          validatedEvidenceRefs: prepared.validatedEvidenceRefs,
-          understandingTurnInput,
-          publicCatalogIdentitySet: duplicateCatalog,
-          capabilityRegistryProjection: duplicateRegistry
-        });
-        if (!semantic.ok) {
-          emit(traceEmitter, understandingTurnInput, {
-            boundary: "C03", unitIds: [prepared.unit.unitId], outputUnitIds: [], status: "FAILURE",
-            code: semantic.code, marker: "C03_SEMANTIC_UNIT_REJECTED", nowMs
-          });
-          throw understandingError(semantic.code, attempts);
-        }
-        emit(traceEmitter, understandingTurnInput, {
-          boundary: "C03", unitIds: [prepared.unit.unitId], marker: "C03_SEMANTIC_UNIT_VALIDATED", nowMs
-        });
-      }
-      emit(traceEmitter, understandingTurnInput, {
-        boundary: "C05", unitIds: duplicateUnitIds, outputUnitIds: [], status: "FAILURE",
-        code: wireCode, marker: "C05_CONTEXT_LINK_REJECTED", contextResult: "REJECTED", nowMs
-      });
-      throw understandingError(wireCode, attempts);
-    }
     emit(traceEmitter, understandingTurnInput, {
       boundary: "C02", unitIds: [], outputUnitIds: [], status: "FAILURE",
       code: wireCode, marker: "C02_WIRE_SCHEMA_REJECTED", nowMs
@@ -698,70 +638,155 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     boundary: "C02", unitIds, marker: "C02_UNDERSTANDING_RECEIVED", nowMs
   });
 
-  const linkById = new Map(rawLinks.map((linkCandidate) => [linkCandidate.contextLinkCandidateId, linkCandidate]));
-  const validatedUnits = [];
-  const validatedContextLinks = [];
-  const publicCatalogIdentitySet = buildPublicCatalogIdentitySet(understandingTurnInput);
-  const capabilityRegistryProjection = projectCapabilityRegistry(CAPABILITY_REGISTRY);
+  const unitKey = (unitId, contextLinkCandidateId) => JSON.stringify([unitId, contextLinkCandidateId]);
+  const rawUnitKeys = new Set(rawOutput.units.map((unit) => unitKey(unit.unitId, unit.contextLinkCandidateId)));
+  const matchingLinksByUnitId = new Map(rawOutput.units.map((unit) => [
+    unit.unitId,
+    rawLinks.filter((candidate) => candidate.unitId === unit.unitId
+      && candidate.contextLinkCandidateId === unit.contextLinkCandidateId)
+  ]));
+  const orphanDuplicateLinks = rawLinks.filter((candidate) =>
+    !rawUnitKeys.has(unitKey(candidate.unitId, candidate.contextLinkCandidateId)));
+  const failuresByUnitId = new Map();
+  const recordFailure = (unitId, failureCode, boundary) => {
+    if (!failuresByUnitId.has(unitId)) {
+      failuresByUnitId.set(unitId, deepFreeze({ unitId, failureCode, boundary }));
+    }
+  };
+  const preparedByUnitId = new Map();
+  const orphanEvidenceValid = new Set();
+
+  // C04 is evaluated for every sibling before any C03/C05 work so a failed
+  // evidence span cannot short-circuit or reorder another unit's validation.
   for (const rawUnit of rawOutput.units) {
-    const rawLink = linkById.get(rawUnit.contextLinkCandidateId);
-    const normalized = normalizeUnitEvidence(rawUnit, [rawLink], understandingTurnInput.sourceEvents);
+    const normalized = normalizeUnitEvidence(
+      rawUnit,
+      matchingLinksByUnitId.get(rawUnit.unitId),
+      understandingTurnInput.sourceEvents
+    );
     if (!normalized.ok) {
+      recordFailure(rawUnit.unitId, normalized.code, "C04");
       emit(traceEmitter, understandingTurnInput, {
         boundary: "C04", unitIds: [rawUnit.unitId], outputUnitIds: [], status: "FAILURE",
         code: normalized.code, marker: "C04_SOURCE_EVIDENCE_REJECTED", nowMs
       });
-      throw understandingError(normalized.code, attempts);
+      continue;
     }
+    preparedByUnitId.set(rawUnit.unitId, normalized.value);
     emit(traceEmitter, understandingTurnInput, {
       boundary: "C04", unitIds: [rawUnit.unitId], marker: "C04_SOURCE_EVIDENCE_VALIDATED", nowMs
     });
+  }
+  for (const orphanLink of orphanDuplicateLinks) {
+    const linkEvidence = validateAndNormalizeSourceEvidence(orphanLink.evidenceRefs, understandingTurnInput.sourceEvents);
+    if (!linkEvidence.ok) {
+      recordFailure(orphanLink.unitId, linkEvidence.code, "C04");
+      emit(traceEmitter, understandingTurnInput, {
+        boundary: "C04", unitIds: [orphanLink.unitId], outputUnitIds: [], status: "FAILURE",
+        code: linkEvidence.code, marker: "C04_SOURCE_EVIDENCE_REJECTED", nowMs
+      });
+      continue;
+    }
+    orphanEvidenceValid.add(orphanLink);
+    emit(traceEmitter, understandingTurnInput, {
+      boundary: "C04", unitIds: [orphanLink.unitId], marker: "C04_SOURCE_EVIDENCE_VALIDATED", nowMs
+    });
+  }
 
+  const validatedUnits = [];
+  const validatedContextLinks = [];
+  const semanticByUnitId = new Map();
+  const publicCatalogIdentitySet = buildPublicCatalogIdentitySet(understandingTurnInput);
+  const capabilityRegistryProjection = projectCapabilityRegistry(CAPABILITY_REGISTRY);
+  const validOrphanUnitIds = new Set([...orphanEvidenceValid].map((candidate) => candidate.unitId));
+
+  // C03 independently validates every C04-admitted unit in original C02 order.
+  for (const rawUnit of rawOutput.units) {
+    const normalized = preparedByUnitId.get(rawUnit.unitId);
+    if (!normalized || failuresByUnitId.has(rawUnit.unitId)) continue;
     const semantic = validateSemanticUnit({
-      unit: normalized.value.unit,
-      validatedEvidenceRefs: normalized.value.validatedEvidenceRefs,
+      unit: normalized.unit,
+      validatedEvidenceRefs: normalized.validatedEvidenceRefs,
       understandingTurnInput,
       publicCatalogIdentitySet,
       capabilityRegistryProjection
     });
     if (!semantic.ok) {
+      recordFailure(rawUnit.unitId, semantic.code, "C03");
       emit(traceEmitter, understandingTurnInput, {
         boundary: "C03", unitIds: [rawUnit.unitId], outputUnitIds: [], status: "FAILURE",
         code: semantic.code, marker: "C03_SEMANTIC_UNIT_REJECTED", nowMs
       });
-      throw understandingError(semantic.code, attempts);
+      continue;
     }
-    validatedUnits.push(semantic.value);
+    semanticByUnitId.set(rawUnit.unitId, semantic.value);
     emit(traceEmitter, understandingTurnInput, {
       boundary: "C03", unitIds: [rawUnit.unitId], marker: "C03_SEMANTIC_UNIT_VALIDATED", nowMs
     });
+  }
 
+  // C05 admits a unit and its link as one usable pair. A rejected link keeps
+  // that unit explicit in failedUnits and cannot remove successful siblings.
+  for (const rawUnit of rawOutput.units) {
+    const semanticUnit = semanticByUnitId.get(rawUnit.unitId);
+    if (!semanticUnit) continue;
+    const normalized = preparedByUnitId.get(rawUnit.unitId);
+    const matchingLinks = normalized.linkCandidates;
+    if (matchingLinks.length !== 1 || validOrphanUnitIds.has(rawUnit.unitId)) {
+      recordFailure(rawUnit.unitId, "CONTEXT_LINK_DUPLICATE", "C05");
+      emit(traceEmitter, understandingTurnInput, {
+        boundary: "C05", unitIds: [rawUnit.unitId], outputUnitIds: [], status: "FAILURE",
+        code: "CONTEXT_LINK_DUPLICATE", marker: "C05_CONTEXT_LINK_REJECTED",
+        contextResult: "REJECTED", nowMs
+      });
+      continue;
+    }
     const contextLink = validateContextLink({
-      unit: semantic.value,
-      linkCandidate: normalized.value.linkCandidates[0],
+      unit: semanticUnit,
+      linkCandidate: matchingLinks[0],
       understandingTurnInput,
-      validatedEvidenceRefs: normalized.value.validatedEvidenceRefs,
+      validatedEvidenceRefs: normalized.validatedEvidenceRefs,
       now: timestamp(nowMs)
     });
     if (!contextLink.ok) {
+      recordFailure(rawUnit.unitId, contextLink.code, "C05");
       emit(traceEmitter, understandingTurnInput, {
         boundary: "C05", unitIds: [rawUnit.unitId], outputUnitIds: [], status: "FAILURE",
         code: contextLink.code, marker: "C05_CONTEXT_LINK_REJECTED", contextResult: "REJECTED", nowMs
       });
-      throw understandingError(contextLink.code, attempts);
+      continue;
     }
+    validatedUnits.push(semanticUnit);
     validatedContextLinks.push(contextLink.value);
     emit(traceEmitter, understandingTurnInput, {
       boundary: "C05", unitIds: [rawUnit.unitId], marker: "C05_CONTEXT_LINK_VALIDATED",
       contextResult: "VALIDATED", nowMs
     });
   }
+  for (const orphanLink of orphanDuplicateLinks) {
+    if (!orphanEvidenceValid.has(orphanLink) || failuresByUnitId.has(orphanLink.unitId)) continue;
+    recordFailure(orphanLink.unitId, "CONTEXT_LINK_DUPLICATE", "C05");
+    emit(traceEmitter, understandingTurnInput, {
+      boundary: "C05", unitIds: [orphanLink.unitId], outputUnitIds: [], status: "FAILURE",
+      code: "CONTEXT_LINK_DUPLICATE", marker: "C05_CONTEXT_LINK_REJECTED",
+      contextResult: "REJECTED", nowMs
+    });
+  }
+
+  const orderedFailureIds = [
+    ...rawOutput.units.map((unit) => unit.unitId),
+    ...orphanDuplicateLinks.map((candidate) => candidate.unitId)
+  ];
+  const failedUnits = [...new Set(orderedFailureIds)]
+    .filter((unitId) => failuresByUnitId.has(unitId))
+    .map((unitId) => failuresByUnitId.get(unitId));
 
   const result = {
     understandingOutput: deepFreeze(detach(rawOutput)),
     contextLinkCandidates: deepFreeze(detach(rawLinks)),
     validatedUnits: deepFreeze(validatedUnits),
-    validatedContextLinks: deepFreeze(validatedContextLinks)
+    validatedContextLinks: deepFreeze(validatedContextLinks),
+    failedUnits: deepFreeze(failedUnits)
   };
   Object.defineProperty(result, OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC, {
     enumerable: false,

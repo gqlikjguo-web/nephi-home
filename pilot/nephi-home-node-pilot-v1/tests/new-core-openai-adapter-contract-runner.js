@@ -119,6 +119,76 @@ function successfulResponse(value = providerOutput(), requestId = "req-understan
   return response(200, JSON.stringify({ output_text: JSON.stringify(value) }), requestId);
 }
 
+function successfulPartResponse(value = providerOutput(), requestId = "req-understanding-part-a") {
+  return response(200, JSON.stringify({
+    status: "completed",
+    output: [{
+      type: "message",
+      content: [{ type: "output_text", text: JSON.stringify(value) }]
+    }]
+  }), requestId);
+}
+
+function siblingInput() {
+  return c01({
+    sourceEvents: [{
+      eventId: "event-a",
+      messageRef: "message-a",
+      role: "guest",
+      timestamp: NOW,
+      messageKind: "text",
+      messageText: "謝謝，有房嗎"
+    }]
+  });
+}
+
+function availabilityUnit(overrides = {}) {
+  return unit({
+    unitId: "unit-availability",
+    evidenceRefs: [evidence({ startOffset: 3, endOffset: 6, quote: "有房嗎" })],
+    purpose: "lodging_question",
+    capability: "availability",
+    subject: { kind: "room", catalogIdentity: "room-a" },
+    stayDependent: true,
+    contextLinkCandidateId: "link-availability",
+    replyCandidate: { disposition: "ANSWER", reasonClass: "availability" },
+    ...overrides
+  });
+}
+
+function availabilityLink(overrides = {}) {
+  return link({
+    contextLinkCandidateId: "link-availability",
+    unitId: "unit-availability",
+    evidenceRefs: [evidence({ startOffset: 3, endOffset: 6, quote: "有房嗎" })],
+    ...overrides
+  });
+}
+
+function siblingOutput({ invalidBoundary, invalidFirst }) {
+  const availabilityOverrides = invalidBoundary === "C04"
+    ? { evidenceRefs: [evidence({ startOffset: 3, endOffset: 6, quote: "不存在" })] }
+    : invalidBoundary === "C03"
+      ? { subject: { kind: "property", catalogIdentity: "property-a" } }
+      : {};
+  const linkOverrides = invalidBoundary === "C05"
+    ? { actionCandidate: "CONTINUE", targetRequestCycleId: "cycle-missing" }
+    : {};
+  const acknowledgement = unit();
+  const availability = availabilityUnit(availabilityOverrides);
+  const acknowledgementLink = link();
+  const availabilityContextLink = availabilityLink(linkOverrides);
+  return providerOutput({
+    understandingOutput: {
+      ...providerOutput().understandingOutput,
+      units: invalidFirst ? [availability, acknowledgement] : [acknowledgement, availability]
+    },
+    contextLinkCandidates: invalidFirst
+      ? [availabilityContextLink, acknowledgementLink]
+      : [acknowledgementLink, availabilityContextLink]
+  });
+}
+
 function strictObjectAudit(schema, path = "root") {
   if (!schema || typeof schema !== "object") return;
   if (schema.type === "object") {
@@ -211,6 +281,66 @@ async function main() {
   ]);
   assert.equal(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].providerAttemptCount, 1);
 
+  const nestedPartResult = await callOpenAIUnderstandingV1(input, options(async () => successfulPartResponse()));
+  assert.equal(nestedPartResult.validatedUnits.length, 1, "one raw Responses API output_text part is accepted");
+
+  // After the response passes the global C02 wire contract, C04/C03/C05
+  // failures are unit-scoped. A failing availability sibling cannot erase or
+  // contaminate a valid acknowledgement, regardless of sibling order.
+  const siblingFailureCodes = {
+    C04: "EVIDENCE_QUOTE_MISMATCH",
+    C03: "CAPABILITY_SUBJECT_CONFLICT",
+    C05: "CONTEXT_TARGET_UNAVAILABLE"
+  };
+  const siblingFailureMarkers = {
+    C04: "C04_SOURCE_EVIDENCE_REJECTED",
+    C03: "C03_SEMANTIC_UNIT_REJECTED",
+    C05: "C05_CONTEXT_LINK_REJECTED"
+  };
+  for (const invalidBoundary of ["C04", "C03", "C05"]) {
+    for (const invalidFirst of [false, true]) {
+      let validationCalls = 0;
+      const siblingBoundaryDiagnostics = [];
+      const siblingResult = await callOpenAIUnderstandingV1(siblingInput(), options(async () => {
+        validationCalls += 1;
+        return successfulResponse(siblingOutput({ invalidBoundary, invalidFirst }));
+      }, { onDiagnostic: (event) => siblingBoundaryDiagnostics.push(event) }));
+      assert.equal(validationCalls, 1, `${invalidBoundary}/${invalidFirst}: local validation must not resample`);
+      assert.deepEqual(
+        siblingResult.validatedUnits.map((candidate) => candidate.unitId),
+        ["unit-a"],
+        `${invalidBoundary}/${invalidFirst}: valid acknowledgement must survive`
+      );
+      assert.deepEqual(
+        siblingResult.validatedContextLinks.map((candidate) => candidate.unitId),
+        ["unit-a"],
+        `${invalidBoundary}/${invalidFirst}: only the valid sibling link is admitted`
+      );
+      assert.deepEqual(siblingResult.failedUnits, [{
+        unitId: "unit-availability",
+        failureCode: siblingFailureCodes[invalidBoundary],
+        boundary: invalidBoundary
+      }]);
+      assert.equal(Object.isFrozen(siblingResult.failedUnits), true);
+      assert.equal(Object.isFrozen(siblingResult.failedUnits[0]), true);
+      assert.equal(
+        siblingBoundaryDiagnostics.some((event) => event.targetMarker === siblingFailureMarkers[invalidBoundary]),
+        true,
+        `${invalidBoundary}/${invalidFirst}: owned rejection marker must be emitted`
+      );
+      assert.deepEqual(
+        siblingBoundaryDiagnostics.filter((event) => event.status === "SUCCESS").map((event) => event.targetMarker),
+        [
+          "C02_UNDERSTANDING_RECEIVED",
+          ...Array(invalidBoundary === "C04" ? 1 : 2).fill("C04_SOURCE_EVIDENCE_VALIDATED"),
+          ...Array(invalidBoundary === "C05" ? 2 : 1).fill("C03_SEMANTIC_UNIT_VALIDATED"),
+          "C05_CONTEXT_LINK_VALIDATED"
+        ],
+        `${invalidBoundary}/${invalidFirst}: successful sibling markers remain boundary ordered`
+      );
+    }
+  }
+
   // A malformed sibling rejects the whole wire response before C04/C03/C05;
   // the adapter neither drops it nor asks for a replacement sample.
   let siblingCalls = 0;
@@ -234,7 +364,7 @@ async function main() {
   // classified again, or replaced with a deterministic raw-text decision.
   let semanticCalls = 0;
   const semanticDiagnostics = [];
-  const semanticError = await captureError(() => callOpenAIUnderstandingV1(input, options(async () => {
+  const semanticResult = await callOpenAIUnderstandingV1(input, options(async () => {
     semanticCalls += 1;
     return successfulResponse(providerOutput({
       understandingOutput: {
@@ -248,9 +378,14 @@ async function main() {
         })]
       }
     }));
-  }, { onDiagnostic: (event) => semanticDiagnostics.push(event) })));
+  }, { onDiagnostic: (event) => semanticDiagnostics.push(event) }));
   assert.equal(semanticCalls, 1);
-  assert.equal(semanticError.code, "CAPABILITY_SUBJECT_CONFLICT");
+  assert.deepEqual(semanticResult.validatedUnits, []);
+  assert.deepEqual(semanticResult.failedUnits, [{
+    unitId: "unit-a",
+    failureCode: "CAPABILITY_SUBJECT_CONFLICT",
+    boundary: "C03"
+  }]);
   assert.deepEqual(semanticDiagnostics.map((event) => event.targetMarker), [
     "C02_UNDERSTANDING_RECEIVED",
     "C04_SOURCE_EVIDENCE_VALIDATED",
@@ -262,42 +397,86 @@ async function main() {
   // arrived inside the same structured response.
   let duplicateLinkCalls = 0;
   const duplicateLinkDiagnostics = [];
-  const duplicateLinkError = await captureError(() => callOpenAIUnderstandingV1(input, options(async () => {
+  const duplicateLinkResult = await callOpenAIUnderstandingV1(input, options(async () => {
     duplicateLinkCalls += 1;
     return successfulResponse(providerOutput({
       contextLinkCandidates: [link(), link({ unitId: "unit-b" })]
     }));
-  }, { onDiagnostic: (event) => duplicateLinkDiagnostics.push(event) })));
+  }, { onDiagnostic: (event) => duplicateLinkDiagnostics.push(event) }));
   assert.equal(duplicateLinkCalls, 1);
-  assert.equal(duplicateLinkError.code, "CONTEXT_LINK_DUPLICATE");
+  assert.deepEqual(duplicateLinkResult.validatedUnits.map((candidate) => candidate.unitId), ["unit-a"]);
+  assert.deepEqual(duplicateLinkResult.failedUnits, [{
+    unitId: "unit-b",
+    failureCode: "CONTEXT_LINK_DUPLICATE",
+    boundary: "C05"
+  }]);
   assert.deepEqual(duplicateLinkDiagnostics.map((event) => event.targetMarker), [
     "C02_UNDERSTANDING_RECEIVED",
     "C04_SOURCE_EVIDENCE_VALIDATED",
     "C04_SOURCE_EVIDENCE_VALIDATED",
     "C03_SEMANTIC_UNIT_VALIDATED",
+    "C05_CONTEXT_LINK_VALIDATED",
     "C05_CONTEXT_LINK_REJECTED"
   ]);
-  assert.equal(duplicateLinkDiagnostics.at(-1).inputUnitIds.length, 2, "C05 diagnostics must retain unit IDs from both C02 and the duplicate C05 collection");
+  assert.equal(duplicateLinkDiagnostics.at(-1).inputUnitIds.length, 1);
+
+  // An orphan duplicate may claim an existing semantic unit under a different
+  // link ID. That owner cannot appear in both validated and failed outcomes.
+  const ownershipCollisionResult = await callOpenAIUnderstandingV1(siblingInput(), options(async () =>
+    successfulResponse(providerOutput({
+      understandingOutput: {
+        ...providerOutput().understandingOutput,
+        units: [unit(), availabilityUnit()]
+      },
+      contextLinkCandidates: [
+        link(),
+        availabilityLink(),
+        link({
+          unitId: "unit-availability",
+          evidenceRefs: [evidence({ startOffset: 3, endOffset: 6, quote: "有房嗎" })]
+        })
+      ]
+    }))));
+  assert.deepEqual(ownershipCollisionResult.validatedUnits.map((candidate) => candidate.unitId), ["unit-a"]);
+  assert.deepEqual(ownershipCollisionResult.validatedContextLinks.map((candidate) => candidate.unitId), ["unit-a"]);
+  assert.deepEqual(ownershipCollisionResult.failedUnits, [{
+    unitId: "unit-availability",
+    failureCode: "CONTEXT_LINK_DUPLICATE",
+    boundary: "C05"
+  }]);
+  assert.equal(
+    ownershipCollisionResult.validatedUnits.some((candidate) =>
+      ownershipCollisionResult.failedUnits.some((failure) => failure.unitId === candidate.unitId)),
+    false,
+    "validated and failed unit ownership must remain disjoint"
+  );
 
   // A duplicate link owned by another unit retains that unit's evidence and
   // diagnostic attribution; matching only the shared link ID would blame the
   // C02 unit for the foreign C05 evidence failure.
   const foreignLinkDiagnostics = [];
-  const foreignLinkError = await captureError(() => callOpenAIUnderstandingV1(input, options(async () =>
+  const foreignLinkResult = await callOpenAIUnderstandingV1(input, options(async () =>
     successfulResponse(providerOutput({
       contextLinkCandidates: [
         link(),
         link({ unitId: "unit-b", evidenceRefs: [evidence({ quote: "不存在" })] })
       ]
-    })), { onDiagnostic: (event) => foreignLinkDiagnostics.push(event) })));
-  assert.equal(foreignLinkError.code, "EVIDENCE_QUOTE_MISMATCH");
+    })), { onDiagnostic: (event) => foreignLinkDiagnostics.push(event) }));
+  assert.deepEqual(foreignLinkResult.validatedUnits.map((candidate) => candidate.unitId), ["unit-a"]);
+  assert.deepEqual(foreignLinkResult.failedUnits, [{
+    unitId: "unit-b",
+    failureCode: "EVIDENCE_QUOTE_MISMATCH",
+    boundary: "C04"
+  }]);
   assert.deepEqual(foreignLinkDiagnostics.map((event) => event.targetMarker), [
     "C02_UNDERSTANDING_RECEIVED",
     "C04_SOURCE_EVIDENCE_VALIDATED",
-    "C04_SOURCE_EVIDENCE_REJECTED"
+    "C04_SOURCE_EVIDENCE_REJECTED",
+    "C03_SEMANTIC_UNIT_VALIDATED",
+    "C05_CONTEXT_LINK_VALIDATED"
   ]);
   assert.notEqual(
-    foreignLinkDiagnostics.at(-1).inputUnitIds[0],
+    foreignLinkDiagnostics.find((event) => event.targetMarker === "C04_SOURCE_EVIDENCE_REJECTED").inputUnitIds[0],
     foreignLinkDiagnostics[0].inputUnitIds[0],
     "the C04 failure must identify foreign C05 unit-b rather than C02 unit-a"
   );
@@ -305,24 +484,34 @@ async function main() {
   // C04 and C05 own their own fail-closed boundary codes and markers, with no
   // provider resampling after a parseable response.
   const evidenceDiagnostics = [];
-  const evidenceError = await captureError(() => callOpenAIUnderstandingV1(input, options(async () =>
+  const evidenceResult = await callOpenAIUnderstandingV1(input, options(async () =>
     successfulResponse(providerOutput({
       understandingOutput: {
         ...providerOutput().understandingOutput,
         units: [unit({ evidenceRefs: [evidence({ quote: "不存在" })] })]
       }
-    })), { onDiagnostic: (event) => evidenceDiagnostics.push(event) })));
-  assert.equal(evidenceError.code, "EVIDENCE_QUOTE_MISMATCH");
+    })), { onDiagnostic: (event) => evidenceDiagnostics.push(event) }));
+  assert.deepEqual(evidenceResult.validatedUnits, []);
+  assert.deepEqual(evidenceResult.failedUnits, [{
+    unitId: "unit-a",
+    failureCode: "EVIDENCE_QUOTE_MISMATCH",
+    boundary: "C04"
+  }]);
   assert.deepEqual(evidenceDiagnostics.map((event) => event.targetMarker), [
     "C02_UNDERSTANDING_RECEIVED",
     "C04_SOURCE_EVIDENCE_REJECTED"
   ]);
   const contextDiagnostics = [];
-  const contextError = await captureError(() => callOpenAIUnderstandingV1(input, options(async () =>
+  const contextResult = await callOpenAIUnderstandingV1(input, options(async () =>
     successfulResponse(providerOutput({
       contextLinkCandidates: [link({ actionCandidate: "CONTINUE", targetRequestCycleId: "cycle-missing" })]
-    })), { onDiagnostic: (event) => contextDiagnostics.push(event) })));
-  assert.equal(contextError.code, "CONTEXT_TARGET_UNAVAILABLE");
+    })), { onDiagnostic: (event) => contextDiagnostics.push(event) }));
+  assert.deepEqual(contextResult.validatedUnits, []);
+  assert.deepEqual(contextResult.failedUnits, [{
+    unitId: "unit-a",
+    failureCode: "CONTEXT_TARGET_UNAVAILABLE",
+    boundary: "C05"
+  }]);
   assert.deepEqual(contextDiagnostics.map((event) => event.targetMarker), [
     "C02_UNDERSTANDING_RECEIVED",
     "C04_SOURCE_EVIDENCE_VALIDATED",
@@ -334,6 +523,46 @@ async function main() {
   // contract failure are non-transport failures. Each stops after one call.
   const nonRetryableCases = [
     ["refusal", async () => response(200, JSON.stringify({ output: [{ type: "message", content: [{ type: "refusal", refusal: "no" }] }] })), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["failed-with-output", async () => response(200, JSON.stringify({ status: "failed", output_text: JSON.stringify(providerOutput()) })), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["incomplete-with-output", async () => response(200, JSON.stringify({ status: "incomplete", output_text: JSON.stringify(providerOutput()) })), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["refusal-with-output", async () => response(200, JSON.stringify({
+      status: "completed",
+      output_text: JSON.stringify(providerOutput()),
+      output: [{ type: "message", content: [{ type: "refusal", refusal: "no" }] }]
+    })), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["malformed-output-container-with-refusal", async () => response(200, JSON.stringify({
+      status: "completed",
+      output_text: JSON.stringify(providerOutput()),
+      output: { type: "message", content: [{ type: "refusal", refusal: "no" }] }
+    })), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["multiple-output-parts", async () => response(200, JSON.stringify({
+      status: "completed",
+      output: [{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify(providerOutput()) },
+        { type: "output_text", text: JSON.stringify(providerOutput()) }
+      ] }]
+    })), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["multiple-output-objects", async () => response(200, JSON.stringify({
+      status: "completed",
+      output: [
+        { type: "message", content: [{ type: "output_text", text: JSON.stringify(providerOutput()) }] },
+        { type: "message", content: [{ type: "output_text", text: JSON.stringify(providerOutput()) }] }
+      ]
+    })), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["structured-plus-extra-output-object", async () => response(200, JSON.stringify({
+      status: "completed",
+      output: [
+        { type: "reasoning", summary: [] },
+        { type: "message", content: [{ type: "output_text", text: JSON.stringify(providerOutput()) }] }
+      ]
+    })), "UNDERSTANDING_SCHEMA_INVALID"],
+    ["structured-plus-extra-content-part", async () => response(200, JSON.stringify({
+      status: "completed",
+      output: [{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify(providerOutput()) },
+        { type: "annotation", value: "extra" }
+      ] }]
+    })), "UNDERSTANDING_SCHEMA_INVALID"],
     ["parse", async () => response(200, "not-json"), "UNDERSTANDING_SCHEMA_INVALID"],
     ["provider-schema", async () => response(400, JSON.stringify({ error: { type: "invalid_request_error", code: "invalid_json_schema", param: "text.format.schema" } })), "UNDERSTANDING_SCHEMA_INVALID"],
     ["turn-contract", async () => successfulResponse(providerOutput({ understandingOutput: { ...providerOutput().understandingOutput, turnId: "wrong-turn" } })), "UNDERSTANDING_SCHEMA_INVALID"],
@@ -426,7 +655,7 @@ async function main() {
     suite: "new-core-openai-adapter-contract",
     classification: "FAKE_INTEGRATION",
     provider: "STRUCTURED/FAKE",
-    caseCount: 19,
+    caseCount: 35,
     status: "PASS"
   }));
 }
