@@ -8,6 +8,9 @@ const {
   validateUnderstandingTurnInput
 } = require("./contracts/understanding-turn-input");
 
+const CATALOG_PROJECTION_BY_TURN_INPUT = new WeakMap();
+const TRUSTED_CATALOG_PROJECTIONS = new WeakSet();
+
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
   Object.values(value).forEach(deepFreeze);
@@ -123,6 +126,16 @@ function projectCatalog(catalog, propertyId) {
   };
 }
 
+function buildPublicCatalogIdentityProjection(understandingTurnInput) {
+  const cached = CATALOG_PROJECTION_BY_TURN_INPUT.get(understandingTurnInput);
+  if (cached) return cached;
+  return null;
+}
+
+function isPublicCatalogIdentityProjection(value) {
+  return Boolean(value) && typeof value === "object" && TRUSTED_CATALOG_PROJECTIONS.has(value);
+}
+
 function buildUnderstandingTurnInput(args) {
   if (!args || typeof args !== "object" || Array.isArray(args)) {
     failure("TURN_INPUT_INVALID", ["args"]);
@@ -151,7 +164,18 @@ function buildUnderstandingTurnInput(args) {
   };
   const validation = validateUnderstandingTurnInput(input);
   if (!validation.ok) failure(validation.code, validation.errors);
-  return deepFreeze(input);
+  const frozenInput = deepFreeze(input);
+  const catalogProjection = deepFreeze(frozenInput.publicSubjectCatalog.map((subject) => [
+    subject.catalogIdentity,
+    subject.kind
+  ]));
+  CATALOG_PROJECTION_BY_TURN_INPUT.set(frozenInput, catalogProjection);
+  TRUSTED_CATALOG_PROJECTIONS.add(catalogProjection);
+  return frozenInput;
 }
 
-module.exports = { buildUnderstandingTurnInput };
+module.exports = {
+  buildUnderstandingTurnInput,
+  buildPublicCatalogIdentityProjection,
+  isPublicCatalogIdentityProjection
+};

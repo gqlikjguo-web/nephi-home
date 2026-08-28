@@ -2,8 +2,10 @@
 
 const { validateSemanticUnitCandidate } = require("./contracts/semantic-unit-candidate");
 const { capabilityPolicyFor, projectCapabilityRegistry } = require("./capability-subject-policy");
-
-const CATALOG_ITEM_FIELDS = Object.freeze(["catalogIdentity", "kind", "publicName"]);
+const {
+  buildPublicCatalogIdentityProjection,
+  isPublicCatalogIdentityProjection
+} = require("./turn-input-adapter");
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -23,34 +25,16 @@ function detach(value, seen = new Map()) {
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, detach(item, seen)]));
 }
 
-function exactKeys(value, fields) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-    && Object.keys(value).length === fields.length
-    && Object.keys(value).every((key) => fields.includes(key));
-}
-
 function failure(code) {
   return { ok: false, code, errors: [] };
 }
 
-function buildPublicCatalogIdentitySet(publicSubjectCatalog) {
-  if (!Array.isArray(publicSubjectCatalog)) return null;
-  const identities = [];
-  for (const item of publicSubjectCatalog) {
-    if (!exactKeys(item, CATALOG_ITEM_FIELDS)
-      || typeof item.catalogIdentity !== "string" || item.catalogIdentity.length === 0
-      || typeof item.kind !== "string" || item.kind.length === 0
-      || typeof item.publicName !== "string" || item.publicName.length === 0
-      || identities.some(([catalogIdentity]) => catalogIdentity === item.catalogIdentity)) {
-      return null;
-    }
-    identities.push([item.catalogIdentity, item.kind]);
-  }
-  return deepFreeze(identities);
+function buildPublicCatalogIdentitySet(understandingTurnInput) {
+  return buildPublicCatalogIdentityProjection(understandingTurnInput);
 }
 
 function catalogKindFor(identitySet, catalogIdentity) {
-  if (!Array.isArray(identitySet) || typeof catalogIdentity !== "string") {
+  if (!isPublicCatalogIdentityProjection(identitySet) || typeof catalogIdentity !== "string") {
     return null;
   }
   const match = identitySet.find(([identity]) => identity === catalogIdentity);

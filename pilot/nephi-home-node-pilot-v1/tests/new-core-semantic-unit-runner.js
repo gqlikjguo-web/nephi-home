@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { CAPABILITY_REGISTRY } = require("../lib/conversation-engine-v2/capability-registry");
+const { buildUnderstandingTurnInput } = require("../lib/new-core/turn-input-adapter");
 const {
   buildPublicCatalogIdentitySet,
   projectCapabilityRegistry,
@@ -40,15 +41,36 @@ function unit(overrides = {}) {
   };
 }
 
-const publicCatalogIdentitySet = buildPublicCatalogIdentitySet([
-  { catalogIdentity: "property-a", kind: "property", publicName: "Property A" },
-  { catalogIdentity: "room-a", kind: "room", publicName: "Room A" },
-  { catalogIdentity: "bundle-a", kind: "bundle", publicName: "Bundle A" },
-  { catalogIdentity: "matched-a", kind: "matched_room_set", publicName: "Matched rooms" },
-  { catalogIdentity: "breakfast", kind: "amenity", publicName: "Breakfast" },
-  { catalogIdentity: "pet-policy", kind: "policy", publicName: "Pet policy" },
-  { catalogIdentity: "verified-service", kind: "other_verified", publicName: "Verified service" }
-]);
+function c01Args(overrides = {}) {
+  return {
+    coreVersion: "new-core-v1",
+    traceId: "trace-semantic",
+    turnId: "turn-semantic",
+    verifiedPropertyBinding: { propertyId: "property-a", channel: "line-a" },
+    verifiedConversationScope: { channel: "line-a", userId: "guest-a" },
+    sourceEvents: [{ eventId: "event-semantic", messageRef: "message-semantic", role: "guest", timestamp: "2026-08-28T08:00:00.000Z", messageKind: "text", messageText: "10/9住一晚" }],
+    recentConversation: [],
+    stateV3Snapshot: { scope: { propertyId: "property-a" }, referenceableCycles: [] },
+    publicCatalog: {
+      propertyId: "property-a",
+      timezone: "Asia/Taipei",
+      capabilityCatalog: ["availability", "property_fact"],
+      publicSubjectCatalog: [
+        { catalogIdentity: "property-a", kind: "property", publicName: "Property A", propertyId: "property-a" },
+        { catalogIdentity: "room-a", kind: "room", publicName: "Room A", propertyId: "property-a" },
+        { catalogIdentity: "bundle-a", kind: "bundle", publicName: "Bundle A", propertyId: "property-a" },
+        { catalogIdentity: "matched-a", kind: "matched_room_set", publicName: "Matched rooms", propertyId: "property-a" },
+        { catalogIdentity: "breakfast", kind: "amenity", publicName: "Breakfast", propertyId: "property-a" },
+        { catalogIdentity: "pet-policy", kind: "policy", publicName: "Pet policy", propertyId: "property-a" },
+        { catalogIdentity: "verified-service", kind: "other_verified", publicName: "Verified service", propertyId: "property-a" }
+      ]
+    },
+    ...overrides
+  };
+}
+
+const c01 = buildUnderstandingTurnInput(c01Args());
+const publicCatalogIdentitySet = buildPublicCatalogIdentitySet(c01);
 const capabilityRegistryProjection = projectCapabilityRegistry(CAPABILITY_REGISTRY);
 
 function validate(candidate, overrides = {}) {
@@ -65,6 +87,24 @@ function assertFailure(result, code) {
   assert.equal(result.ok, false);
   assert.equal(result.code, code);
 }
+
+// AC-ISO-004 / AC-SEM-004: only a module-branded projection derived from
+// immutable C01 public catalog data may admit catalog identities. Raw or
+// cloned arrays cannot forge a room/bundle, and C01 rejects cross-property
+// catalog entries before a projection exists.
+assert.equal(Array.isArray(publicCatalogIdentitySet), true);
+assert.equal(buildPublicCatalogIdentitySet(c01), publicCatalogIdentitySet);
+assert.equal(buildPublicCatalogIdentitySet(c01.publicSubjectCatalog), null);
+assert.equal(buildPublicCatalogIdentitySet(clone(c01)), null);
+assertFailure(validate(unit(), {
+  publicCatalogIdentitySet: Object.freeze([["bundle-a", "bundle"]])
+}), "CATALOG_IDENTITY_INVALID");
+assert.throws(() => buildUnderstandingTurnInput(c01Args({
+  publicCatalog: {
+    ...c01Args().publicCatalog,
+    publicSubjectCatalog: [{ catalogIdentity: "foreign-bundle", kind: "bundle", publicName: "Foreign bundle", propertyId: "property-b" }]
+  }
+})), (error) => error && error.code === "PROPERTY_SCOPE_INVALID");
 
 // AC-SEM-001..003 / AC-AVL-001..002: capability, subject, and stay remain
 // independent. In particular, a valid bundle availability question stays
