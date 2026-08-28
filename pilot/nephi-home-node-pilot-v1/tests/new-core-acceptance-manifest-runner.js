@@ -5,7 +5,6 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const MANIFEST_PATH = path.resolve(__dirname, "fixtures/new-core-acceptance-manifest.json");
-const REAL_PLANNER_RUNNER_PATH = "scripts/run-new-core-openai-shadow-acceptance.js";
 const EVIDENCE_LEVELS = new Set([
   "UNIT_TEST",
   "STRUCTURED_CONTRACT_TEST",
@@ -104,25 +103,16 @@ function isRealEvidenceLevel(value) {
   return typeof value === "string" && value.startsWith("REAL_");
 }
 
-function validateRealPlannerExecution(execution, label, errors) {
-  if (!isPlainObject(execution)) {
-    errors.push(`${label} REAL_OPENAI_PLANNER evidence requires executable real-planner evidence reference`);
-    return;
-  }
-  if (!validateClosedObject(execution, new Set(["runnerPath"]), `${label} execution`, errors)) return;
-  if (execution.runnerPath !== REAL_PLANNER_RUNNER_PATH) {
-    errors.push(`${label} REAL_OPENAI_PLANNER evidence requires executable real-planner evidence reference`);
-    return;
-  }
-  const runnerPath = path.resolve(__dirname, "..", execution.runnerPath);
-  if (!fs.existsSync(runnerPath)) {
-    errors.push(`${label} REAL_OPENAI_PLANNER evidence requires executable real-planner evidence reference`);
+function validatePendingRealPlannerAttestation(value, errors) {
+  if (!validateClosedObject(value, new Set(["gateId", "status"]), "manifest realPlannerAttestation", errors)) return;
+  if (value.gateId !== "new-core-real-openai-attestation" || value.status !== "PENDING_TASK_14") {
+    errors.push("manifest realPlannerAttestation must reserve the Task 14 real OpenAI attestation gate");
   }
 }
 
 function validateNewCoreAcceptanceManifest(manifest) {
   const errors = [];
-  if (!validateClosedObject(manifest, new Set(["schemaVersion", "designRuleIds", "contractIds", "testGroups"]), "manifest", errors)) return errors;
+  if (!validateClosedObject(manifest, new Set(["schemaVersion", "designRuleIds", "contractIds", "testGroups", "realPlannerAttestation"]), "manifest", errors)) return errors;
   if (manifest.schemaVersion !== 1) errors.push("manifest schemaVersion must equal 1");
   const declaredRuleIds = validateNonemptyReferenceList(manifest.designRuleIds, "manifest designRuleIds", errors);
   const declaredContractIds = validateNonemptyReferenceList(manifest.contractIds, "manifest contractIds", errors);
@@ -135,7 +125,7 @@ function validateNewCoreAcceptanceManifest(manifest) {
   const duplicateIds = new Set();
   const pendingEvidence = [];
   for (const testGroup of manifest.testGroups) {
-    if (!validateClosedObject(testGroup, new Set(["idRange", "requiredEvidenceLevel", "evidenceLevel", "evidence"]), `test group ${testGroup?.idRange || "<unknown>"}`, errors)) continue;
+    if (!validateClosedObject(testGroup, new Set(["idRange", "requiredEvidenceLevel", "evidenceLevel", "evidence", "evidenceStatus"]), `test group ${testGroup?.idRange || "<unknown>"}`, errors)) continue;
     if (typeof testGroup.idRange !== "string") {
       errors.push("test group idRange is required");
       continue;
@@ -153,7 +143,7 @@ function validateNewCoreAcceptanceManifest(manifest) {
       continue;
     }
     for (const evidence of testGroup.evidence) {
-      if (!validateClosedObject(evidence, new Set(["evidenceLevel", "ruleIds", "contractIds", "caseIds", "execution"]), `test group ${testGroup.idRange} evidence`, errors)) continue;
+      if (!validateClosedObject(evidence, new Set(["evidenceLevel", "ruleIds", "contractIds", "caseIds"]), `test group ${testGroup.idRange} evidence`, errors)) continue;
       if (!EVIDENCE_LEVELS.has(evidence.evidenceLevel)) {
         errors.push(`test group ${testGroup.idRange} has evidence with an invalid evidence level`);
         continue;
@@ -164,8 +154,7 @@ function validateNewCoreAcceptanceManifest(manifest) {
       const evidenceRuleIds = validateNonemptyReferenceList(evidence.ruleIds, `test group ${testGroup.idRange} evidence ruleIds`, errors);
       const evidenceContractIds = validateNonemptyReferenceList(evidence.contractIds, `test group ${testGroup.idRange} evidence contractIds`, errors);
       const evidenceCaseRanges = validateNonemptyReferenceList(evidence.caseIds, `test group ${testGroup.idRange} evidence caseIds`, errors);
-      if (isRealEvidenceLevel(evidence.evidenceLevel)) validateRealPlannerExecution(evidence.execution, `test group ${testGroup.idRange}`, errors);
-      else if (Object.hasOwn(evidence, "execution")) errors.push(`test group ${testGroup.idRange} non-real evidence must not declare execution metadata`);
+      if (isRealEvidenceLevel(evidence.evidenceLevel)) errors.push(`Task 1 must not accept achieved ${evidence.evidenceLevel} evidence; Task 14 attestation gate required`);
       pendingEvidence.push({ testGroup, evidenceRuleIds, evidenceContractIds, evidenceCaseRanges });
     }
   }
@@ -178,6 +167,21 @@ function validateNewCoreAcceptanceManifest(manifest) {
     if (expectedGroup && testGroup.requiredEvidenceLevel !== expectedGroup.requiredEvidenceLevel) {
       errors.push(`test group ${testGroup.idRange} must declare required evidence level ${expectedGroup.requiredEvidenceLevel}`);
     }
+    if (testGroup.requiredEvidenceLevel === "REAL_OPENAI_PLANNER") {
+      if (testGroup.evidenceStatus !== "PENDING_TASK_14_ATTESTATION") {
+        errors.push(`test group ${testGroup.idRange} must remain pending Task 14 real OpenAI attestation`);
+      }
+      if (testGroup.evidenceLevel !== "STRUCTURED_CONTRACT_TEST") {
+        errors.push(`test group ${testGroup.idRange} must not claim achieved REAL_OPENAI_PLANNER evidence in Task 1`);
+      }
+    } else if (Object.hasOwn(testGroup, "evidenceStatus") && testGroup.evidenceStatus !== "ACHIEVED") {
+      errors.push(`test group ${testGroup.idRange} has invalid evidence status`);
+    }
+  }
+  if (manifest.testGroups.some((testGroup) => testGroup?.requiredEvidenceLevel === "REAL_OPENAI_PLANNER")) {
+    validatePendingRealPlannerAttestation(manifest.realPlannerAttestation, errors);
+  } else if (Object.hasOwn(manifest, "realPlannerAttestation")) {
+    errors.push("manifest must not declare realPlannerAttestation without REAL_OPENAI_PLANNER requirements");
   }
   const expectedIds = expectedGroups.flatMap((group) => expandRange(group.idRange));
   for (const expectedId of expectedIds) if (!testIds.has(expectedId)) errors.push(`missing acceptance ID ${expectedId}`);
@@ -194,12 +198,22 @@ function validateNewCoreAcceptanceManifest(manifest) {
 }
 
 function assertGateRegressionCoverage(manifest) {
+  const pathOnlyRealClaim = structuredClone(manifest);
+  pathOnlyRealClaim.testGroups[0].evidenceLevel = "REAL_OPENAI_PLANNER";
+  pathOnlyRealClaim.testGroups[0].evidence[0].evidenceLevel = "REAL_OPENAI_PLANNER";
+  pathOnlyRealClaim.testGroups[0].evidence[0].execution = { runnerPath: "scripts/run-new-core-openai-shadow-acceptance.js" };
+  const pathOnlyRealErrors = validateNewCoreAcceptanceManifest(pathOnlyRealClaim);
+  assert.ok(
+    pathOnlyRealErrors.some((error) => error.includes("Task 1 must not accept achieved REAL_OPENAI_PLANNER evidence")),
+    "a real-planner runner path, even if it exists, must not satisfy Task 1 evidence"
+  );
+
   const fakeAsReal = structuredClone(manifest);
   fakeAsReal.testGroups[0].evidenceLevel = "REAL_OPENAI_PLANNER";
   fakeAsReal.testGroups[0].evidence[0].evidenceLevel = "REAL_OPENAI_PLANNER";
   assert.ok(
-    validateNewCoreAcceptanceManifest(fakeAsReal).some((error) => error.includes("REAL_OPENAI_PLANNER evidence requires executable real-planner evidence reference")),
-    "fake-as-real evidence must require an executable real-planner evidence reference"
+    validateNewCoreAcceptanceManifest(fakeAsReal).some((error) => error.includes("Task 1 must not accept achieved REAL_OPENAI_PLANNER evidence")),
+    "fake-as-real evidence must remain unclaimed until the Task 14 attestation gate"
   );
 
   const nonPlannerExecution = structuredClone(manifest);
@@ -207,8 +221,16 @@ function assertGateRegressionCoverage(manifest) {
   nonPlannerExecution.testGroups[0].evidence[0].evidenceLevel = "REAL_OPENAI_PLANNER";
   nonPlannerExecution.testGroups[0].evidence[0].execution = { runnerPath: "scripts/verify-codex-integrity.js", runtimeField: "forbidden" };
   const nonPlannerExecutionErrors = validateNewCoreAcceptanceManifest(nonPlannerExecution);
-  assert.ok(nonPlannerExecutionErrors.some((error) => error.includes("REAL_OPENAI_PLANNER evidence requires executable real-planner evidence reference")));
-  assert.ok(nonPlannerExecutionErrors.some((error) => error.includes("execution contains forbidden metadata field runtimeField")));
+  assert.equal(fs.existsSync(path.resolve(__dirname, "..", "scripts/verify-codex-integrity.js")), true, "adversarial path must name an existing unrelated file");
+  assert.ok(nonPlannerExecutionErrors.some((error) => error.includes("Task 1 must not accept achieved REAL_OPENAI_PLANNER evidence")));
+  assert.ok(nonPlannerExecutionErrors.some((error) => error.includes("evidence contains forbidden metadata field execution")));
+
+  const pendingRealGroup = manifest.testGroups.find((group) => group.idRange === "AC-OAI-001..003");
+  assert.equal(pendingRealGroup.evidenceStatus, "PENDING_TASK_14_ATTESTATION");
+  assert.deepEqual(manifest.realPlannerAttestation, {
+    gateId: "new-core-real-openai-attestation",
+    status: "PENDING_TASK_14"
+  });
 
   const emptyReferenceLists = structuredClone(manifest);
   emptyReferenceLists.testGroups[0].evidence[0].ruleIds = [];

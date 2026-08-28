@@ -1,5 +1,9 @@
 {
   "schemaVersion": 1,
+  "realPlannerAttestation": {
+    "gateId": "new-core-real-openai-attestation",
+    "status": "PENDING_TASK_14"
+  },
   "designRuleIds": [
     "DR-00", "DR-01", "DR-02", "DR-03", "DR-04", "DR-05", "DR-06",
     "DR-07", "DR-08", "DR-09", "DR-10", "DR-11", "DR-12", "DR-13",
@@ -35,10 +39,10 @@
     {"idRange":"AC-MNT-001..010","requiredEvidenceLevel":"STRUCTURED_CONTRACT_TEST","evidenceLevel":"STRUCTURED_CONTRACT_TEST","evidence":[{"evidenceLevel":"STRUCTURED_CONTRACT_TEST","ruleIds":["DR-01","DR-20"],"contractIds":["C02","C11"],"caseIds":["AC-MNT-001..010"]}]},
     {"idRange":"AC-ORC-001..006","requiredEvidenceLevel":"STRUCTURED_CONTRACT_TEST","evidenceLevel":"STRUCTURED_CONTRACT_TEST","evidence":[{"evidenceLevel":"STRUCTURED_CONTRACT_TEST","ruleIds":["DR-16","DR-17"],"contractIds":["C10","C11"],"caseIds":["AC-ORC-001..006"]}]},
     {"idRange":"AC-ATT-001..002","requiredEvidenceLevel":"STRUCTURED_CONTRACT_TEST","evidenceLevel":"STRUCTURED_CONTRACT_TEST","evidence":[{"evidenceLevel":"STRUCTURED_CONTRACT_TEST","ruleIds":["DR-13"],"contractIds":["C11"],"caseIds":["AC-ATT-001..002"]}]},
-    {"idRange":"AC-OAI-001..003","requiredEvidenceLevel":"REAL_OPENAI_PLANNER","evidenceLevel":"STRUCTURED_CONTRACT_TEST","evidence":[{"evidenceLevel":"STRUCTURED_CONTRACT_TEST","ruleIds":["DR-13"],"contractIds":["C02","C10","C11"],"caseIds":["AC-OAI-001..003"]}]},
+    {"idRange":"AC-OAI-001..003","requiredEvidenceLevel":"REAL_OPENAI_PLANNER","evidenceLevel":"STRUCTURED_CONTRACT_TEST","evidenceStatus":"PENDING_TASK_14_ATTESTATION","evidence":[{"evidenceLevel":"STRUCTURED_CONTRACT_TEST","ruleIds":["DR-13"],"contractIds":["C02","C10","C11"],"caseIds":["AC-OAI-001..003"]}]},
     {"idRange":"AC-RBK-001..012","requiredEvidenceLevel":"STRUCTURED_CONTRACT_TEST","evidenceLevel":"STRUCTURED_CONTRACT_TEST","evidence":[{"evidenceLevel":"STRUCTURED_CONTRACT_TEST","ruleIds":["DR-19"],"contractIds":["C04","C05","C06"],"caseIds":["AC-RBK-001..012"]}]},
     {"idRange":"AC-REG-001","requiredEvidenceLevel":"STRUCTURED_CONTRACT_TEST","evidenceLevel":"STRUCTURED_CONTRACT_TEST","evidence":[{"evidenceLevel":"STRUCTURED_CONTRACT_TEST","ruleIds":["DR-19"],"contractIds":["C11"],"caseIds":["AC-REG-001"]}]},
     {"idRange":"AC-113-001","requiredEvidenceLevel":"STRUCTURED_CONTRACT_TEST","evidenceLevel":"STRUCTURED_CONTRACT_TEST","evidence":[{"evidenceLevel":"STRUCTURED_CONTRACT_TEST","ruleIds":["DR-16","DR-17"],"contractIds":["C10","C11"],"caseIds":["AC-113-001"]}]},
-    {"idRange":"AC-PRD-001..005","requiredEvidenceLevel":"REAL_OPENAI_PLANNER","evidenceLevel":"STRUCTURED_CONTRACT_TEST","evidence":[{"evidenceLevel":"STRUCTURED_CONTRACT_TEST","ruleIds":["DR-13"],"contractIds":["C02","C11"],"caseIds":["AC-PRD-001..005"]}]}
+    {"idRange":"AC-PRD-001..005","requiredEvidenceLevel":"REAL_OPENAI_PLANNER","evidenceLevel":"STRUCTURED_CONTRACT_TEST","evidenceStatus":"PENDING_TASK_14_ATTESTATION","evidence":[{"evidenceLevel":"STRUCTURED_CONTRACT_TEST","ruleIds":["DR-13"],"contractIds":["C02","C11"],"caseIds":["AC-PRD-001..005"]}]}
   ]
 }
