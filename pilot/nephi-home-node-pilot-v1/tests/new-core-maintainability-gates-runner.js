@@ -351,6 +351,42 @@ const deepIndexAliasRoot = isolatedSource(({ sourceRoot }) => {
   fs.writeFileSync(path.join(sourceRoot, "deep-index-alias.js"), `${aliases}\nReflect.set({}, key29, 0);\n`);
 });
 assertGateFailure(gate(deepIndexAliasRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const reflectedStringReadRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "reflected-string-read.js"), `
+    const key = String("candidateIndex");
+    const alias = key;
+    Reflect.get({}, alias);
+  `);
+});
+assertGateFailure(gate(reflectedStringReadRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const reflectedStringWriteRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "reflected-string-write.js"), `
+    const key = String("candidateIndex");
+    Reflect.set({}, key, 0);
+  `);
+});
+assertGateFailure(gate(reflectedStringWriteRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const harmlessStringMetadataRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "string-index-metadata.js"), `
+    const fieldDocumentation = String("candidateIndex");
+    module.exports = { fieldDocumentation };
+  `);
+});
+assert.equal(gate(harmlessStringMetadataRoot).ok, true, JSON.stringify(gate(harmlessStringMetadataRoot)));
+const harmlessReflectedReadRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "reflected-other-read.js"), `
+    const key = String("other");
+    Reflect.get({}, key);
+  `);
+});
+assert.equal(gate(harmlessReflectedReadRoot).ok, true, JSON.stringify(gate(harmlessReflectedReadRoot)));
+const shadowedStringReadRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadowed-string-read.js"), `
+    function String() { return "other"; }
+    Reflect.get({}, String("candidateIndex"));
+  `);
+});
+assert.equal(gate(shadowedStringReadRoot).ok, true, JSON.stringify(gate(shadowedStringReadRoot)));
 
 // AC-MNT-008: diagnostics have one writer and are not a second persistence,
 // Resolver, state, reply, or facts boundary.
@@ -466,6 +502,52 @@ const declaredInjectedCapabilityRoot = isolatedSource(({ sourceRoot }) => {
   `);
 });
 assertGateFailure(gate(declaredInjectedCapabilityRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+const renamedInjectedInsertRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-renamed-insert.js"), `
+    function runShadow(x, event) {
+      return x.insert(event);
+    }
+    module.exports = { runShadow };
+  `);
+});
+assertGateFailure(gate(renamedInjectedInsertRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+const renamedInjectedReplyRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-renamed-reply.js"), `
+    function runShadow(adapter, event) {
+      return adapter.reply(event);
+    }
+    module.exports = { runShadow };
+  `);
+});
+assertGateFailure(gate(renamedInjectedReplyRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+const unknownInjectedMethodRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-unknown-method.js"), `
+    function runShadow(dependency, event) {
+      return dependency.observe(event);
+    }
+    module.exports = { runShadow };
+  `);
+});
+assertGateFailure(gate(unknownInjectedMethodRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+const renamedInjectedReadLikeRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-renamed-read-like-method.js"), `
+    function runShadow(dependency, event) {
+      const x = dependency;
+      return x.get(event);
+    }
+    module.exports = { runShadow };
+  `);
+});
+assertGateFailure(gate(renamedInjectedReadLikeRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+const allowlistedReadOnlyMetadataRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-read-only-metadata.js"), `
+    function readShadowMetadata(metadata) {
+      return metadata.format();
+    }
+    module.exports = { readShadowMetadata };
+  `);
+});
+assert.equal(gate(allowlistedReadOnlyMetadataRoot).ok, true, JSON.stringify(gate(allowlistedReadOnlyMetadataRoot)));
 
 // AC-MNT-009: the scanner is token-aware: comments, string literals, and
 // innocent consumer names do not create false writer/authority findings.
@@ -539,6 +621,98 @@ assert.equal(gate(harmlessSwitchScopeRoot).ok, true, JSON.stringify(gate(harmles
 
 // AC-MNT-004 supplemental: a raw-text branch cannot hide an imported
 // authority behind a namespace member, nested object property, or local alias.
+const destructuredRawTextRouteRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "destructured-raw-text-route.js"), `
+    const { createUnitRoutingDecision: route } = require("./unit-reply-router");
+    function decideFromGuestText({ ["raw" + "Text"]: text }, enabled) {
+      let guestAlias = null;
+      if (enabled) guestAlias = text;
+      if (guestAlias && guestAlias.includes("parking")) return route({});
+      return null;
+    }
+    module.exports = { decideFromGuestText };
+  `);
+});
+assertGateFailure(gate(destructuredRawTextRouteRoot), "GOD_FUNCTION_FORBIDDEN");
+const destructuredGuestTextCanonicalRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "destructured-guest-text-canonical.js"), `
+    const canonical = require("./canonical-execution-adapter");
+    const execute = canonical.executeCanonicalizerInputItem;
+    function decideFromGuestText({ ["guest" + "Text"]: value }) {
+      const alias = value;
+      return alias.startsWith("parking") ? execute({}) : null;
+    }
+    module.exports = { decideFromGuestText };
+  `);
+});
+assertGateFailure(gate(destructuredGuestTextCanonicalRoot), "GOD_FUNCTION_FORBIDDEN");
+const unrelatedMetadataBranchRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "unrelated-metadata-branch.js"), `
+    const { createUnitRoutingDecision: route } = require("./unit-reply-router");
+    function routeByMetadata(input, metadata) {
+      const { rawText } = input;
+      void rawText;
+      if (metadata.includes("enabled")) return route({});
+      return null;
+    }
+    module.exports = { routeByMetadata };
+  `);
+});
+assert.equal(gate(unrelatedMetadataBranchRoot).ok, true, JSON.stringify(gate(unrelatedMetadataBranchRoot)));
+const frozenObjectAuthorityRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "frozen-object-authority.js"), `
+    const routing = require("./unit-reply-router");
+    const frozen = Object.freeze({ route: routing.createUnitRoutingDecision });
+    const { route: extracted } = frozen;
+    const localRoute = extracted;
+    function decideFromGuestText(rawText) {
+      if (rawText.includes("parking")) return localRoute({});
+      return null;
+    }
+    module.exports = { decideFromGuestText };
+  `);
+});
+assertGateFailure(gate(frozenObjectAuthorityRoot), "GOD_FUNCTION_FORBIDDEN");
+const frozenArrayAuthorityRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "frozen-array-authority.js"), `
+    const canonical = require("./canonical-execution-adapter");
+    const frozen = Object.freeze([canonical.executeCanonicalizerInputItem]);
+    const extracted = frozen[0];
+    const localCanonical = extracted;
+    function decideFromGuestText(guestText) {
+      if (guestText.endsWith("parking")) return localCanonical({});
+      return null;
+    }
+    module.exports = { decideFromGuestText };
+  `);
+});
+assertGateFailure(gate(frozenArrayAuthorityRoot), "GOD_FUNCTION_FORBIDDEN");
+const harmlessFrozenCallableRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "harmless-frozen-callable.js"), `
+    const frozen = Object.freeze({ invoke: () => null });
+    const local = frozen.invoke;
+    function inspectGuestText(rawText) {
+      if (rawText.includes("parking")) return local({});
+      return null;
+    }
+    module.exports = { inspectGuestText };
+  `);
+});
+assert.equal(gate(harmlessFrozenCallableRoot).ok, true, JSON.stringify(gate(harmlessFrozenCallableRoot)));
+const shadowedObjectFreezeRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "locally-defined-object-freeze.js"), `
+    const routing = require("./unit-reply-router");
+    const Object = { freeze() { return { invoke: () => null }; } };
+    const frozen = Object.freeze({ invoke: routing.createUnitRoutingDecision });
+    const local = frozen.invoke;
+    function inspectGuestText(rawText) {
+      if (rawText.includes("parking")) return local({});
+      return null;
+    }
+    module.exports = { inspectGuestText };
+  `);
+});
+assert.equal(gate(shadowedObjectFreezeRoot).ok, true, JSON.stringify(gate(shadowedObjectFreezeRoot)));
 const importedAuthorityAliasRoot = isolatedSource(({ sourceRoot }) => {
   fs.writeFileSync(path.join(sourceRoot, "imported-authority-god-function.js"), `
     const routing = require("./unit-reply-router");

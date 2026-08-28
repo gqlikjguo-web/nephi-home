@@ -11,6 +11,13 @@ const MUTATION_CAPABILITIES = new Set(["db", "database", "postgres", "postgresql
 const MUTATION_ROLES = new Set(["client", "gateway", "mutator", "persistence", "provider", "repository", "repo", "service", "sink", "store", "writer"]);
 const MUTATING_METHODS = new Set(["delete", "execute", "insert", "persist", "remove", "reply", "resolve", "save", "send", "set", "update", "upsert", "write"]);
 const NON_MUTATION_QUALIFIERS = new Set(["descriptor", "documentation", "enum", "metadata", "projection", "record", "schema", "snapshot", "summary"]);
+const RAW_TEXT_ORIGINS = new Set(["messageText", "guestText", "rawText", "quote"]);
+const RAW_TEXT_INSPECTION_METHODS = new Set(["includes", "match", "test", "startsWith", "endsWith"]);
+const SEMANTIC_AUTHORITIES = new Set([
+  "validateSemanticUnit", "validateAndNormalizeSourceEvidence", "validateContextLink",
+  "createLifecycleDecision", "createUnitRoutingDecision", "createCanonicalizerInputItem",
+  "executeCanonicalizerInputItem", "canonicalizeExecutionItem", "resolveAvailability"
+]);
 const CONTRACT_GRAPH_DIGEST = "4f716c74c7fa0287fd2ecc0c947c56a87b6d96922e3a74ee9e7e696ddc298e20";
 const FAILURE_OWNER_DIGEST = "3d4127d7b27b8b418e7d6d45e52ac733fa82fabadbbcb81cd99b746289f60f1e";
 const DOMAIN_AUTHORITY_DIGEST = "009e1cfb3b9d0d2fc1d8da58f9cb7ba03d378a991e2c4f3e0640ec94a9600572";
@@ -40,7 +47,7 @@ function walk(value, visitor, parent = null) {
 function staticName(node) {
   if (!node) return null;
   if (node.type === "Identifier") return node.name;
-  if (node.type === "Literal" && typeof node.value === "string") return node.value;
+  if (node.type === "Literal" && (typeof node.value === "string" || typeof node.value === "number")) return String(node.value);
   if (node.type === "TemplateLiteral" && node.expressions.length === 0) return node.quasis[0].value.cooked;
   if (node.type === "BinaryExpression" && node.operator === "+") {
     const left = staticName(node.left); const right = staticName(node.right);
@@ -103,7 +110,15 @@ function propertyResolution(node, bindings, seen, depth) {
 
 function objectPropertyResolution(node, propertyName, bindings, seen, depth) {
   const result = emptyResolution();
-  if (!node || node.type !== "ObjectExpression") return result;
+  if (!node) return result;
+  if (node.type === "ArrayExpression") {
+    if (/^(?:0|[1-9][0-9]*)$/.test(propertyName)) {
+      const item = node.elements[Number(propertyName)];
+      if (item) mergeResolution(result, resolveExpression(item, bindings, seen, depth + 1));
+    }
+    return result;
+  }
+  if (node.type !== "ObjectExpression") return result;
   for (const property of node.properties) {
     if (!property || property.type !== "Property" || property.kind !== "init") continue;
     let names;
@@ -147,6 +162,17 @@ function resolveExpression(node, bindings, seen = new Set(), depth = 0) {
   }
   if (node.type === "SequenceExpression" && node.expressions.length) {
     return resolveExpression(node.expressions[node.expressions.length - 1], bindings, seen, depth + 1);
+  }
+  if (node.type === "CallExpression" && node.callee.type === "Identifier"
+    && node.callee.name === "String" && node.arguments.length === 1
+    && bindings.lookup("String", node.callee).length === 0) {
+    return resolveExpression(node.arguments[0], bindings, seen, depth + 1);
+  }
+  if (node.type === "CallExpression" && node.callee.type === "MemberExpression"
+    && node.callee.object.type === "Identifier" && node.callee.object.name === "Object"
+    && staticName(node.callee.property) === "freeze" && node.arguments.length === 1
+    && bindings.lookup("Object", node.callee.object).length === 0) {
+    return resolveExpression(node.arguments[0], bindings, seen, depth + 1);
   }
   if (node.type === "Identifier") {
     result.origins.add(node.name);
@@ -635,24 +661,38 @@ function injectedCapabilityBinding(pattern, source, bindings) {
   return [...patternNames(pattern, bindings), ...resolved.origins].some(mutationCapabilityName);
 }
 
+function resolutionHasRawTextOrigin(resolution) {
+  return [...resolution.origins, ...resolution.names].some((name) => RAW_TEXT_ORIGINS.has(name));
+}
+
+function callInspectsRawText(node, callable, bindings) {
+  if (![...callable.names].some((name) => RAW_TEXT_INSPECTION_METHODS.has(name))) return false;
+  const values = [...node.arguments];
+  if (node.callee.type === "MemberExpression") values.push(node.callee.object);
+  for (const resolved of callable.nodes) {
+    if (resolved.type === "MemberExpression") values.push(resolved.object);
+  }
+  return values.some((value) => resolutionHasRawTextOrigin(resolveExpression(value, bindings)));
+}
+
 function verifyAst(file, item, root) {
   const protectedSource = /(?:diagnostic|shadow)/i.test(file);
+  const shadowSource = /shadow/i.test(file);
   let sideEffect = false;
   for (const fn of item.functions) {
     if (fn.loc && fn.loc.end.line - fn.loc.start.line + 1 > MAX_FUNCTION_LINES) return failure("GOD_FUNCTION_FORBIDDEN", root, path.join(root, file));
     if (protectedSource && fn.params.some((parameter) => [...patternNames(parameter, item.bindings)].some(mutationCapabilityName))) sideEffect = true;
-    const identifiers = new Set(); let rawBranch = false; let authorityCall = false;
+    let rawBranch = false; let authorityCall = false;
     walk(fn.body, (node) => {
-      if (node.type === "Identifier") identifiers.add(node.name);
       if (node.type === "CallExpression") {
         const callable = resolveCallable(node.callee, item.bindings);
-        const isRawCall = ["includes", "match", "test", "startsWith", "endsWith"].some((name) => callable.names.has(name));
-        if (isRawCall) rawBranch = true;
-        if (["validateSemanticUnit", "validateAndNormalizeSourceEvidence", "validateContextLink", "createLifecycleDecision", "createUnitRoutingDecision", "createCanonicalizerInputItem", "executeCanonicalizerInputItem", "canonicalizeExecutionItem", "resolveAvailability"].some((name) => callable.names.has(name))
+        const isRawCall = callInspectsRawText(node, callable, item.bindings);
+        rawBranch ||= isRawCall;
+        if ([...callable.names].some((name) => SEMANTIC_AUTHORITIES.has(name))
           || callable.exhausted && !isRawCall) authorityCall = true;
       }
     });
-    if (rawBranch && ["messageText", "guestText", "rawText", "quote"].some((name) => identifiers.has(name)) && authorityCall) return failure("GOD_FUNCTION_FORBIDDEN", root, path.join(root, file));
+    if (rawBranch && authorityCall) return failure("GOD_FUNCTION_FORBIDDEN", root, path.join(root, file));
   }
   let candidate = false;
   walk(item.ast, (node) => {
@@ -673,20 +713,23 @@ function verifyAst(file, item, root) {
     if (node.type === "CallExpression") {
       const callable = resolveCallable(node.callee, item.bindings);
       const hasMember = node.callee.type === "MemberExpression" || callable.nodes.some((item) => item.type === "MemberExpression");
-      const setter = ["set", "defineProperty"].some((name) => callable.names.has(name));
+      const reflectiveAccess = ["get", "set", "defineProperty"].some((name) => callable.names.has(name));
       const field = resolveValueNames(node.arguments[1], item.bindings);
-      if (hasMember && (setter && (field.names.has("candidateIndex") || field.exhausted)
+      if (hasMember && (reflectiveAccess && (field.names.has("candidateIndex") || field.exhausted)
         || field.names.has("candidateIndex") && callable.exhausted)) candidate = true;
       const receiver = receiverResolution(node.callee, callable, item.bindings);
       const unresolvedSelection = resolutionHasUnresolvedSelection(receiver, item.bindings);
       const unresolvedMethod = callableHasUnresolvedMethod(node.callee, callable, item.bindings);
       const metadataQualified = [...receiver.origins].some(nonMutationQualifiedName);
+      const mutatingMethod = [...callable.names].some((name) => MUTATING_METHODS.has(name));
       const explicitQualifiedMutation = receiver.injected
         && [...receiver.origins].some(qualifiedMutationSurfaceName)
-        && [...callable.names].some((name) => MUTATING_METHODS.has(name));
+        && mutatingMethod;
       if ([...receiver.origins].some(mutationCapabilityName)
         || ["sendLine", "writeState", "createReview", "persist", "insertReview", "replyMessage", "resolveAvailability"].some((name) => callable.names.has(name))
         || protectedSource && explicitQualifiedMutation
+        || shadowSource && receiver.injected && hasMember
+          && (mutatingMethod || !metadataQualified)
         || protectedSource && receiver.injected
           && (receiver.exhausted || unresolvedSelection || unresolvedMethod && !metadataQualified)) sideEffect = true;
     }
