@@ -106,6 +106,7 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, publicCatalogIdenti
   }
   const policy = capabilityPolicyFor(capabilityRegistryProjection, unit.capability);
   if (!policy) return failure("UNIT_MEANING_UNSUPPORTED");
+  if (!policy.purposes.includes(unit.purpose)) return failure("UNIT_MEANING_UNSUPPORTED");
   if (!policy.subjectKinds.includes(unit.subject.kind)) return failure("CAPABILITY_SUBJECT_CONFLICT");
   if (unit.stayDependent !== policy.stayDependent) return failure("STAY_DEPENDENCY_CONFLICT");
   if (!unit.slotCandidates.every((slot) => productSlotAdmission(slot, publicCatalogIdentitySet))

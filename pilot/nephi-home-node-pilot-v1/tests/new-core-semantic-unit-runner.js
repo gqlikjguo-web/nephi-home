@@ -101,6 +101,17 @@ assert.equal(validate(unit({
   subject: { kind: "external_place", catalogIdentity: null },
   stayDependent: false
 })).ok, true);
+
+// AC-SEM-001 / AC-NRP-001 / AC-CTX-015: C03 permits a non-actionable unit
+// with no capability or subject. It must reach later C05/C07 as unchanged
+// NO_REPLY/NONE input rather than being invented into an executable request.
+assert.equal(validate(unit({
+  purpose: "acknowledgement",
+  capability: null,
+  subject: { kind: null, catalogIdentity: null },
+  stayDependent: false,
+  replyCandidate: { disposition: "NO_REPLY", reasonClass: "acknowledgement" }
+})).ok, true);
 assert.equal(validate(unit({
   capability: "location",
   subject: { kind: "property", catalogIdentity: "property-a" },
@@ -131,6 +142,23 @@ assertFailure(validate(unit({ capability: "property_fact", subject: { kind: "bun
 // capability. `other_supported` requires a registry-admitted verified subject.
 assertFailure(validate(unit({ capability: "unsupported", subject: { kind: "other_verified", catalogIdentity: "verified-service" }, stayDependent: false })), "UNIT_MEANING_UNSUPPORTED");
 assertFailure(validate(unit({
+  purpose: "social",
+  capability: "availability",
+  subject: { kind: "room", catalogIdentity: "room-a" },
+  stayDependent: true
+})), "UNIT_MEANING_UNSUPPORTED");
+const forgedRegistryProjection = clone(capabilityRegistryProjection);
+forgedRegistryProjection.availability = {
+  registryCapabilities: ["availability"],
+  subjectKinds: ["property"],
+  stayDependent: false,
+  allowsOtherSupported: false
+};
+assertFailure(validate(unit({
+  subject: { kind: "property", catalogIdentity: "property-a" },
+  stayDependent: false
+}), { capabilityRegistryProjection: forgedRegistryProjection }), "UNIT_MEANING_UNSUPPORTED");
+assertFailure(validate(unit({
   capability: "amenity",
   subject: { kind: "amenity", catalogIdentity: "breakfast" },
   stayDependent: false,
@@ -143,6 +171,7 @@ assertFailure(validate(unit({
   }]
 })), "UNIT_MEANING_UNSUPPORTED");
 assert.equal(validate(unit({
+  purpose: "operator_request",
   capability: "booking_operator_request",
   subject: { kind: "other_verified", catalogIdentity: "verified-service" },
   stayDependent: false,
@@ -184,6 +213,6 @@ assert.deepEqual(frozenEvidence, [evidence()]);
 console.log(JSON.stringify({
   suite: "new-core-semantic-unit",
   classification: "STRUCTURED_CONTRACT_TEST",
-  caseCount: 31,
+  caseCount: 34,
   status: "PASS"
 }));
