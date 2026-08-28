@@ -56,6 +56,20 @@ function failure(code, errors = []) {
   return { ok: false, code, errors };
 }
 
+function lifecycleFailureCode(errors) {
+  if (errors.some((error) => /verifiedSlotOperations\.\d+\.(?:keys|slotCandidateId|slot|operation|value|clearValue|evidence)/.test(error))
+    || errors.some((error) => /slots\.forbidden/.test(error))) {
+    return "LIFECYCLE_SLOT_UNVERIFIED";
+  }
+  if (errors.some((error) => /(?:persistedField|persistedProductType|Mapping|productIdentity|productValue|guestCount)/.test(error))) {
+    return "LIFECYCLE_PROPERTY_CONFLICT";
+  }
+  if (errors.some((error) => /verifiedSlotOperations/.test(error))) {
+    return "LIFECYCLE_SLOT_UNVERIFIED";
+  }
+  return "LIFECYCLE_TRANSITION_INVALID";
+}
+
 function productKind(input, catalogIdentity) {
   const subject = input && Array.isArray(input.publicSubjectCatalog)
     ? input.publicSubjectCatalog.find((item) => item.catalogIdentity === catalogIdentity)
@@ -172,25 +186,29 @@ function validateLifecycleDecision(value, { unitIds = null } = {}) {
   }
   if (Array.isArray(unitIds) && !unitIds.includes(value && value.unitId)) errors.push("unit.unknown");
   return errors.length
-    ? failure("LIFECYCLE_TRANSITION_INVALID", [...new Set(errors)])
+    ? failure(lifecycleFailureCode(errors), [...new Set(errors)])
     : { ok: true, code: null, errors: [], value };
 }
 
 function validateLifecycleDecisions(values, { unitIds = null } = {}) {
   if (!Array.isArray(values)) return failure("LIFECYCLE_TRANSITION_INVALID", ["lifecycleDecisions"]);
   const errors = [];
+  const failureCodes = new Set();
   const lifecycleIds = new Set();
   const ownedUnits = new Set();
   values.forEach((value, index) => {
     const validation = validateLifecycleDecision(value, { unitIds });
-    if (!validation.ok) errors.push(...validation.errors.map((error) => `${index}.${error}`));
+    if (!validation.ok) {
+      failureCodes.add(validation.code);
+      errors.push(...validation.errors.map((error) => `${index}.${error}`));
+    }
     if (lifecycleIds.has(value && value.lifecycleDecisionId)) errors.push("lifecycleDecisionId.duplicate");
     if (ownedUnits.has(value && value.unitId)) errors.push("unitId.duplicate");
     lifecycleIds.add(value && value.lifecycleDecisionId);
     ownedUnits.add(value && value.unitId);
   });
   return errors.length
-    ? failure("LIFECYCLE_TRANSITION_INVALID", [...new Set(errors)])
+    ? failure(failureCodes.size === 1 ? [...failureCodes][0] : "LIFECYCLE_TRANSITION_INVALID", [...new Set(errors)])
     : { ok: true, code: null, errors: [], value: values };
 }
 
@@ -207,7 +225,7 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
     return failure("LIFECYCLE_START_TARGET_FORBIDDEN", ["targetRequestCycleId"]);
   }
   if (["END", "NONE"].includes(action) && unit.slotCandidates.length) {
-    return failure("LIFECYCLE_TRANSITION_INVALID", ["verifiedSlotOperations"]);
+    return failure("LIFECYCLE_SLOT_UNVERIFIED", ["verifiedSlotOperations"]);
   }
   const input = understandingInputForValidatedContextLink(validatedContextLink);
   const operations = unit.slotCandidates.map((item) => verifiedOperation(item, input));

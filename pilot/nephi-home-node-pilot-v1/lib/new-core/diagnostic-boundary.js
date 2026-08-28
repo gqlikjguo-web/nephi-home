@@ -164,11 +164,7 @@ function createDiagnosticTraceEmitter({ traceId, sink = null } = {}) {
   });
 }
 
-function verifyNewCoreMaintainability(options) {
-  return require("./maintainability-inspector").verifyNewCoreMaintainability(options);
-}
-
 module.exports = {
   CORE_VERSION, createDiagnosticBoundaryEvent, createDiagnosticTraceEmitter, failureCodeOwner,
-  validateDiagnosticBoundaryEvent, verifyNewCoreMaintainability
+  validateDiagnosticBoundaryEvent
 };

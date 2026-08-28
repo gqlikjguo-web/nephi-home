@@ -223,7 +223,7 @@ assert.throws(() => { immutable.value.routeResult = "HANDOFF"; }, TypeError);
 assert.equal(CORE_VERSION, "new-core-v1");
 assertFailure(createDiagnosticBoundaryEvent(base({ coreVersion: "new-core-v2" })), "DIAGNOSTIC_FIELD_FORBIDDEN");
 
-// AC-OBS-013: direct validation detaches and recursively freezes caller-owned input.
+// SUPPLEMENTAL: direct validation detaches and recursively freezes caller-owned input.
 const mutableValidated = { ...success.value, inputUnitIds: [...success.value.inputUnitIds] };
 const detachedValidation = validateDiagnosticBoundaryEvent(mutableValidated);
 assert.equal(detachedValidation.ok, true);
@@ -234,7 +234,7 @@ assert.notEqual(detachedValidation.value.inputUnitIds[0], mutableValidated.input
 assert.equal(Object.isFrozen(detachedValidation.value), true);
 assert.equal(Object.isFrozen(detachedValidation.value.inputUnitIds), true);
 
-// AC-OBS-014: thenable sinks are observed without unhandled rejection and are not reported delivered.
+// SUPPLEMENTAL: thenable sinks are observed without unhandled rejection and are not reported delivered.
 (async () => {
   const rejections = [];
   const onUnhandled = (error) => rejections.push(error);

@@ -7,7 +7,7 @@
     "SEMANTIC_UNIT_INVALID": "C03", "CAPABILITY_SUBJECT_CONFLICT": "C03", "STAY_DEPENDENCY_CONFLICT": "C03", "CATALOG_IDENTITY_INVALID": "C03", "UNIT_EVIDENCE_MISSING": "C03", "UNIT_MEANING_UNSUPPORTED": "C03",
     "EVIDENCE_SOURCE_UNKNOWN": "C04", "EVIDENCE_RANGE_INVALID": "C04", "EVIDENCE_QUOTE_MISMATCH": "C04", "EVIDENCE_MATCH_AMBIGUOUS": "C04", "EVIDENCE_SCOPE_CONFLICT": "C04",
     "CONTEXT_LINK_DUPLICATE": "C05", "CONTEXT_TARGET_UNAVAILABLE": "C05", "CONTEXT_TARGET_SCOPE_CONFLICT": "C05", "CONTEXT_TARGET_AMBIGUOUS": "C05", "CONTEXT_LINK_EVIDENCE_INVALID": "C05",
-    "LIFECYCLE_TARGET_REQUIRED": "C06", "LIFECYCLE_START_TARGET_FORBIDDEN": "C06", "LIFECYCLE_TRANSITION_INVALID": "C06",
+    "LIFECYCLE_TARGET_REQUIRED": "C06", "LIFECYCLE_START_TARGET_FORBIDDEN": "C06", "LIFECYCLE_SLOT_UNVERIFIED": "C06", "LIFECYCLE_TRANSITION_INVALID": "C06", "LIFECYCLE_PROPERTY_CONFLICT": "C06",
     "ANSWER_NOT_EXECUTABLE": "C07", "CLARIFY_WITHOUT_GUEST_FIELD": "C07", "HANDOFF_WITHOUT_OPERATOR_OR_RISK": "C07", "NO_REPLY_EXECUTABLE_CONFLICT": "C07", "ROUTE_PURPOSE_CONFLICT": "C07", "ROUTING_INPUT_INVALID": "C07", "ROUTING_READINESS_INVALID": "C07",
     "CANONICAL_INPUT_NOT_ANSWER": "C08", "CANONICAL_INPUT_INCOMPLETE": "C08", "CANONICAL_ADAPTER_OWNERSHIP_CONFLICT": "C08", "invalid_canonical_request": "C08", "invalid_lodging_product": "C08", "canonical_request_required": "C08",
     "UNIT_OUTCOME_ORPHAN": "C09", "UNIT_OUTCOME_DUPLICATE": "C09", "UNIT_COVERAGE_INCOMPLETE": "C09", "CANONICAL_ITEM_ORPHAN": "C09", "AGGREGATION_ROUTE_CONFLICT": "C09", "UNIT_AGGREGATION_INVALID": "C09",
@@ -88,7 +88,7 @@
         { "name": "Unit Aggregator", "source": "lib/new-core/unit-aggregator.js", "symbol": "aggregateUnitOutcomes", "status": "implemented" }
       ],
       "failureOwner": "validateLifecycleDecision",
-      "failureCodes": ["LIFECYCLE_TARGET_REQUIRED", "LIFECYCLE_START_TARGET_FORBIDDEN", "LIFECYCLE_TRANSITION_INVALID"],
+      "failureCodes": ["LIFECYCLE_TARGET_REQUIRED", "LIFECYCLE_START_TARGET_FORBIDDEN", "LIFECYCLE_SLOT_UNVERIFIED", "LIFECYCLE_TRANSITION_INVALID", "LIFECYCLE_PROPERTY_CONFLICT"],
       "diagnosticMarkers": ["C06_LIFECYCLE_VALIDATED", "C06_LIFECYCLE_REJECTED"]
     },
     {
@@ -161,6 +161,7 @@
     { "authority": "capability", "owner": "existing capability registry", "contractId": "C08", "source": "lib/conversation-engine-v2/capability-registry.js", "symbol": "CAPABILITY_REGISTRY", "status": "implemented" },
     { "authority": "reply", "owner": "Per-unit Reply Router", "contractId": "C07", "source": "lib/new-core/unit-reply-router.js", "symbol": "createUnitRoutingDecision", "status": "implemented" },
     { "authority": "context", "owner": "Context Link Validator / Lifecycle Manager", "contractId": "C05", "source": "lib/new-core/context-link-validator.js", "symbol": "validateContextLink", "status": "implemented" },
+    { "authority": "lifecycle", "owner": "Lifecycle Manager", "contractId": "C06", "source": "lib/new-core/lifecycle-manager.js", "symbol": "createLifecycleDecision", "status": "implemented" },
     { "authority": "facts", "owner": "existing Resolver and PostgreSQL providers", "contractId": "C08", "source": "lib/conversation-engine-v2/capability-executor.js", "symbol": "executeCanonicalQueryPlans", "status": "implemented" },
     { "authority": "memory", "owner": "existing state-v3 reducer", "contractId": "C06", "source": "lib/conversation-engine-v2/conversation-state-v3-reducer.js", "symbol": "reduceConversationStateV3", "status": "implemented" },
     { "authority": "final_action", "owner": "existing FinalDecision", "contractId": "C09", "source": "lib/conversation-engine-v2/final-decision.js", "symbol": "buildFinalDecision", "status": "implemented" }

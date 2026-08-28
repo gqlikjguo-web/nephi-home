@@ -499,13 +499,13 @@ const forgedStatus = { ...clone(fourGuests.lifecycleResult.value), status: "APPL
 assert.equal(validateLifecycleDecisions([forgedStatus], { unitIds: ["unit-context"] }).code, "LIFECYCLE_TRANSITION_INVALID");
 const forgedNonPersistedGuests = clone(fourGuests.lifecycleResult.value);
 forgedNonPersistedGuests.verifiedSlotOperations[0].persistedField = null;
-assert.equal(validateLifecycleDecisions([forgedNonPersistedGuests], { unitIds: ["unit-context"] }).code, "LIFECYCLE_TRANSITION_INVALID");
+assert.equal(validateLifecycleDecisions([forgedNonPersistedGuests], { unitIds: ["unit-context"] }).code, "LIFECYCLE_PROPERTY_CONFLICT");
 const forgedSlotValue = clone(fourGuests.lifecycleResult.value);
 forgedSlotValue.verifiedSlotOperations[0].value = { guestCount: 4 };
-assert.equal(validateLifecycleDecisions([forgedSlotValue], { unitIds: ["unit-context"] }).code, "LIFECYCLE_TRANSITION_INVALID");
+assert.equal(validateLifecycleDecisions([forgedSlotValue], { unitIds: ["unit-context"] }).code, "LIFECYCLE_SLOT_UNVERIFIED");
 const forgedTransportValue = clone(driving.lifecycleResult.value);
 forgedTransportValue.verifiedSlotOperations[0].value = { transport: "driving" };
-assert.equal(validateLifecycleDecisions([forgedTransportValue], { unitIds: ["unit-context"] }).code, "LIFECYCLE_TRANSITION_INVALID");
+assert.equal(validateLifecycleDecisions([forgedTransportValue], { unitIds: ["unit-context"] }).code, "LIFECYCLE_SLOT_UNVERIFIED");
 assert.equal(validateLifecycleDecisions([
   fourGuests.lifecycleResult.value,
   { ...clone(fourGuests.lifecycleResult.value) }

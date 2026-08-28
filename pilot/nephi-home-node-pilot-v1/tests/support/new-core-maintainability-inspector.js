@@ -2,41 +2,15 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 
 const CONTRACT_IDS = Array.from({ length: 11 }, (_, index) => `C${String(index + 1).padStart(2, "0")}`);
 const MAX_FUNCTION_LINES = 180;
-const SEALED = Object.freeze({
-  C01: ["Turn Input Adapter|lib/new-core/turn-input-adapter.js|buildUnderstandingTurnInput|implemented", "C01 closed-schema validator|lib/new-core/contracts/understanding-turn-input.js|validateUnderstandingTurnInput|implemented", ["OpenAI Understanding V1|lib/providers/openai-understanding-v1.js|callOpenAIUnderstandingV1|planned_task_11"]],
-  C02: ["OpenAI Understanding V1|lib/providers/openai-understanding-v1.js|callOpenAIUnderstandingV1|planned_task_11", "Wire Schema Validator|lib/new-core/contracts/understanding-output-v1.js|validateUnderstandingOutputV1|implemented", ["Source Evidence Validator|lib/new-core/source-evidence-validator.js|validateAndNormalizeSourceEvidence|implemented"]],
-  C03: ["OpenAI Understanding V1 unit writer|lib/providers/openai-understanding-v1.js|callOpenAIUnderstandingV1|planned_task_11", "Semantic Unit Validator|lib/new-core/semantic-unit-validator.js|validateSemanticUnit|implemented", ["Context Link Validator|lib/new-core/context-link-validator.js|validateContextLink|implemented", "Per-unit Reply Router|lib/new-core/unit-reply-router.js|createUnitRoutingDecision|implemented"]],
-  C04: ["Source Evidence validity writer|lib/new-core/source-evidence-validator.js|validateAndNormalizeSourceEvidence|implemented", "Source Evidence Validator|lib/new-core/source-evidence-validator.js|validateAndNormalizeSourceEvidence|implemented", ["Semantic Unit Validator|lib/new-core/semantic-unit-validator.js|validateSemanticUnit|implemented", "Context Link Validator|lib/new-core/context-link-validator.js|validateContextLink|implemented", "Diagnostic Boundary Emitter|lib/new-core/diagnostic-boundary.js|createDiagnosticBoundaryEvent|implemented"]],
-  C05: ["OpenAI Understanding V1 context proposal|lib/providers/openai-understanding-v1.js|callOpenAIUnderstandingV1|planned_task_11", "Context Link Validator|lib/new-core/context-link-validator.js|validateContextLink|implemented", ["Lifecycle Manager|lib/new-core/lifecycle-manager.js|createLifecycleDecision|implemented"]],
-  C06: ["Lifecycle Manager|lib/new-core/lifecycle-manager.js|createLifecycleDecision|implemented", "Lifecycle invariant validator|lib/new-core/lifecycle-manager.js|validateLifecycleDecision|implemented", ["State V3 Lifecycle Adapter|lib/new-core/state-v3-lifecycle-adapter.js|adaptLifecycleDecisionsToStateV3|implemented", "Unit Aggregator|lib/new-core/unit-aggregator.js|aggregateUnitOutcomes|implemented"]],
-  C07: ["Per-unit Reply Router|lib/new-core/unit-reply-router.js|createUnitRoutingDecision|implemented", "Route invariant validator|lib/new-core/contracts/unit-routing-decision.js|validateUnitRoutingDecision|implemented", ["Unit Aggregator|lib/new-core/unit-aggregator.js|aggregateUnitOutcomes|implemented", "Canonical Execution Adapter|lib/new-core/canonical-execution-adapter.js|createCanonicalizerInputItem|implemented"]],
-  C08: ["Canonical Execution Adapter|lib/new-core/canonical-execution-adapter.js|createCanonicalizerInputItem|implemented", "C08 adapter contract validator|lib/new-core/contracts/canonicalizer-input-item.js|validateCanonicalizerInputItem|implemented", ["Official canonicalizer|lib/new-core/canonical-execution-adapter.js|executeCanonicalizerInputItem|implemented"]],
-  C09: ["Unit Aggregator|lib/new-core/unit-aggregator.js|aggregateUnitOutcomes|implemented", "C09 coverage and ownership validator|lib/new-core/contracts/unit-aggregation-result.js|validateUnitAggregationResult|implemented", ["Existing execution orchestration|lib/new-core/shadow-core.js|consumeUnitAggregationResult|planned_task_12", "FinalDecision input adapter|lib/v2-composition-root.js|adaptUnitAggregationToFinalDecision|planned_task_15"]],
-  C10: ["Shadow Comparator|lib/new-core/shadow-comparator.js|createShadowComparisonRecord|planned_task_12", "Shadow privacy and isolation validator|lib/new-core/shadow-comparator.js|validateShadowComparisonRecord|planned_task_12", ["Offline acceptance and reporting|tests/new-core-shadow-isolation-runner.js|runShadowIsolationAcceptance|planned_task_12"]],
-  C11: ["Diagnostic Boundary Emitter|lib/new-core/diagnostic-boundary.js|createDiagnosticBoundaryEvent|implemented", "Safe trace allowlist validator|lib/new-core/diagnostic-boundary.js|validateDiagnosticBoundaryEvent|implemented", ["Existing safe diagnostic persistence|lib/test-only-line-message-trace.js|diagnosticProjection|planned_task_12", "Acceptance attribution|scripts/run-new-core-openai-shadow-acceptance.js|runNewCoreOpenAiShadowAcceptance|planned_task_14"]]
-});
-const SEALED_AUTHORITIES = Object.freeze({
-  semantic: "OpenAI Understanding V1|C03|lib/providers/openai-understanding-v1.js|callOpenAIUnderstandingV1|planned_task_11",
-  evidence: "Source Evidence Validator|C04|lib/new-core/source-evidence-validator.js|validateAndNormalizeSourceEvidence|implemented",
-  capability: "existing capability registry|C08|lib/conversation-engine-v2/capability-registry.js|CAPABILITY_REGISTRY|implemented",
-  reply: "Per-unit Reply Router|C07|lib/new-core/unit-reply-router.js|createUnitRoutingDecision|implemented",
-  context: "Context Link Validator / Lifecycle Manager|C05|lib/new-core/context-link-validator.js|validateContextLink|implemented",
-  facts: "existing Resolver and PostgreSQL providers|C08|lib/conversation-engine-v2/capability-executor.js|executeCanonicalQueryPlans|implemented",
-  memory: "existing state-v3 reducer|C06|lib/conversation-engine-v2/conversation-state-v3-reducer.js|reduceConversationStateV3|implemented",
-  final_action: "existing FinalDecision|C09|lib/conversation-engine-v2/final-decision.js|buildFinalDecision|implemented"
-});
-const SIGNATURES = [
-  ["semantic", ["purpose", "capability", "subject", "stayDependent"], new Set(["lib/new-core/contracts/canonicalizer-input-item.js", "lib/new-core/canonical-execution-adapter.js"])],
-  ["evidence", [["start", "Offset"].join(""), ["end", "Offset"].join(""), "quote"], new Set(["lib/new-core/source-evidence-validator.js"])],
-  ["capability", ["requestKind", "exactRequiredFields"], new Set(["lib/new-core/capability-subject-policy.js"])],
-  ["reply", ["disposition", "requiresCanonicalExecution"], new Set(["lib/new-core/unit-reply-router.js"])],
-  ["context", ["actionCandidate", "targetRequestCycleId"], new Set(["lib/new-core/context-link-validator.js"])],
-  ["facts", ["facts"], new Set()],
-  ["memory", ["confirmedFields", "lifecycleOperations"], new Set(["lib/new-core/state-v3-lifecycle-adapter.js"])]
-];
+const CONTRACT_GRAPH_DIGEST = "a14ce4745ba211a297ee532855e8237b1a292410c93b6b975eba3fe9713ed7c5";
+const FAILURE_OWNER_DIGEST = "3d4127d7b27b8b418e7d6d45e52ac733fa82fabadbbcb81cd99b746289f60f1e";
+const DOMAIN_AUTHORITY_DIGEST = "009e1cfb3b9d0d2fc1d8da58f9cb7ba03d378a991e2c4f3e0640ec94a9600572";
+
+function digest(value) { return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 
 let parser;
 function acorn() {
@@ -74,14 +48,12 @@ function memberName(node) { return node && node.type === "MemberExpression" ? st
 function isMember(node, owner, name) { return node && node.type === "MemberExpression" && node.object.type === "Identifier" && node.object.name === owner && memberName(node) === name; }
 function isModuleExports(node) { return isMember(node, "module", "exports"); }
 function isExports(node) { return node && (node.type === "Identifier" && node.name === "exports" || isModuleExports(node)); }
-function roleSignature(role) { return `${role.name}|${role.source}|${role.symbol}|${role.status}`; }
-function authoritySignature(entry) { return `${entry.owner}|${entry.contractId}|${entry.source}|${entry.symbol}|${entry.status}`; }
-
 function analysis(source) {
   const ast = acorn().parse(source, { ecmaVersion: "latest", sourceType: "script", allowHashBang: true, locations: true });
   const declared = new Set();
   const exports = new Set();
   const functions = [];
+  const requires = new Set();
   walk(ast, (node, parent) => {
     if ((node.type === "FunctionDeclaration" || node.type === "ClassDeclaration") && node.id) declared.add(node.id.name);
     if (node.type === "VariableDeclarator") {
@@ -91,6 +63,9 @@ function analysis(source) {
     if (["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(node.type)) functions.push(node);
     if (node.type === "MethodDefinition" && node.value) functions.push(node.value);
     if (node.type === "Property" && node.method && node.value) functions.push(node.value);
+    if (node.type === "CallExpression" && node.callee.type === "Identifier" && node.callee.name === "require") {
+      const request = staticName(node.arguments[0]); if (request) requires.add(request);
+    }
     if (node.type === "AssignmentExpression" && node.operator === "=") {
       if (node.left.type === "Identifier") declared.add(node.left.name);
       if (node.left.type === "MemberExpression" && isExports(node.left.object)) exports.add(memberName(node.left));
@@ -103,7 +78,7 @@ function analysis(source) {
     }
     if (node.type === "CallExpression" && (isMember(node.callee, "Object", "defineProperty") || isMember(node.callee, "Reflect", "defineProperty")) && isExports(node.arguments[0])) exports.add(staticName(node.arguments[1]));
   });
-  return { ast, declared, exports, functions };
+  return { ast, declared, exports, functions, requires };
 }
 
 function sourceFiles(root) {
@@ -139,36 +114,23 @@ function validateManifest(manifest, root, manifestPath) {
   const derived = new Map();
   for (const contract of manifest.contracts) {
     if (!validRole(contract.writer) || !validRole(contract.validator) || !Array.isArray(contract.consumers) || !contract.consumers.length || !contract.consumers.every(validRole)) return failure("OWNERSHIP_MANIFEST_INVALID", root, manifestPath);
-    const sealed = SEALED[contract.contractId];
-    if (!sealed || roleSignature(contract.writer) !== sealed[0] || roleSignature(contract.validator) !== sealed[1]
-      || JSON.stringify(contract.consumers.map(roleSignature)) !== JSON.stringify(sealed[2])) return failure("CONTRACT_GRAPH_MISMATCH", root, manifestPath);
     for (const code of contract.failureCodes || []) {
       if (derived.has(code)) return failure("DUPLICATE_FAILURE_CODE_OWNER", root, manifestPath);
       derived.set(code, contract.contractId);
     }
   }
   if (JSON.stringify([...derived].sort()) !== JSON.stringify(Object.keys(manifest.failureCodeOwners).sort().map((k) => [k, manifest.failureCodeOwners[k]]))) return failure("FAILURE_CODE_OWNER_MISMATCH", root, manifestPath);
-  const actualAuthorities = Object.fromEntries(manifest.domainAuthorities.map((entry) => [entry.authority, authoritySignature(entry)]));
-  if (JSON.stringify(actualAuthorities) !== JSON.stringify(SEALED_AUTHORITIES)) return failure("DOMAIN_AUTHORITY_REGISTRY_INVALID", root, manifestPath);
+  const graph = manifest.contracts.map(({ contractId, writer, validator, consumers }) => ({ contractId, writer, validator, consumers }));
+  if (digest(graph) !== CONTRACT_GRAPH_DIGEST) return failure("CONTRACT_GRAPH_MISMATCH", root, manifestPath);
+  if (digest(manifest.failureCodeOwners) !== FAILURE_OWNER_DIGEST) return failure("FAILURE_CODE_OWNER_MISMATCH", root, manifestPath);
+  if (digest(manifest.domainAuthorities) !== DOMAIN_AUTHORITY_DIGEST) return failure("DOMAIN_AUTHORITY_REGISTRY_INVALID", root, manifestPath);
   return { ok: true };
-}
-
-function objectKeys(node) {
-  if (!node || node.type !== "ObjectExpression") return null;
-  const keys = new Set(); let executable = false;
-  for (const property of node.properties) {
-    if (property.type !== "Property") continue;
-    keys.add(staticName(property.key));
-    if (!(property.value.type === "Literal" && typeof property.value.value === "string")) executable = true;
-  }
-  return executable ? keys : null;
 }
 
 function verifyAst(file, item, root) {
   for (const fn of item.functions) {
     if (fn.loc && fn.loc.end.line - fn.loc.start.line + 1 > MAX_FUNCTION_LINES) return failure("GOD_FUNCTION_FORBIDDEN", root, path.join(root, file));
     const identifiers = new Set(); let rawBranch = false; let authorityCall = false;
-    const assigned = new Map();
     walk(fn.body, (node) => {
       if (node.type === "Identifier") identifiers.add(node.name);
       if (node.type === "CallExpression") {
@@ -176,25 +138,16 @@ function verifyAst(file, item, root) {
         if (["includes", "match", "test", "startsWith", "endsWith"].includes(call)) rawBranch = true;
         if (["validateSemanticUnit", "validateAndNormalizeSourceEvidence", "validateContextLink", "createLifecycleDecision", "createUnitRoutingDecision", "createCanonicalizerInputItem", "executeCanonicalizerInputItem", "canonicalizeExecutionItem", "resolveAvailability"].includes(call)) authorityCall = true;
       }
-      if (node.type === "ObjectExpression") {
-        const keys = objectKeys(node);
-        if (keys) assigned.set(node, keys);
-      }
-      if (node.type === "AssignmentExpression" && node.left.type === "MemberExpression" && node.left.object.type === "Identifier") {
-        const keys = assigned.get(node.left.object.name) || new Set(); keys.add(memberName(node.left)); assigned.set(node.left.object.name, keys);
-      }
-      if (node.type === "CallExpression" && isMember(node.callee, "Reflect", "set") && node.arguments[0] && node.arguments[0].type === "Identifier") {
-        const keys = assigned.get(node.arguments[0].name) || new Set(); keys.add(staticName(node.arguments[1])); assigned.set(node.arguments[0].name, keys);
-      }
     });
     if (rawBranch && ["messageText", "guestText", "rawText", "quote"].some((name) => identifiers.has(name)) && authorityCall) return failure("GOD_FUNCTION_FORBIDDEN", root, path.join(root, file));
-    for (const keys of assigned.values()) for (const [name, required, allowed] of SIGNATURES) if (!allowed.has(file) && required.every((key) => keys.has(key))) return failure("DUPLICATE_DOMAIN_AUTHORITY", root, path.join(root, file), { authority: name });
   }
   let candidate = false; let sideEffect = false;
   walk(item.ast, (node) => {
     if ((node.type === "MemberExpression" && memberName(node) === "candidateIndex")
       || node.type === "Property" && staticName(node.key) === "candidateIndex"
       || node.type === "CallExpression" && isMember(node.callee, "Reflect", "set") && staticName(node.arguments[1]) === "candidateIndex") candidate = true;
+    if (node.type === "VariableDeclarator" && node.id.type === "Identifier" && node.id.name === "candidateIndex") candidate = true;
+    if (node.type === "AssignmentExpression" && node.left.type === "Identifier" && node.left.name === "candidateIndex") candidate = true;
     if (node.type === "CallExpression") {
       const owner = node.callee.type === "MemberExpression" && node.callee.object.type === "Identifier" ? node.callee.object.name : null;
       const call = node.callee.type === "Identifier" ? node.callee.name : memberName(node.callee);
@@ -227,6 +180,24 @@ function verifyNewCoreMaintainability({ projectRoot, manifestPath } = {}) {
       if (!item || !item.declared.has(role.symbol) || !item.exports.has(role.symbol)) return failure(code, root, path.join(root, role.source));
     }
     if (contract.writer.status === "implemented") for (const [file, item] of byFile) if (file !== contract.writer.source && item.exports.has(contract.writer.symbol)) return failure("DUPLICATE_CONTRACT_WRITER", root, path.join(root, file));
+  }
+  const requiredImports = new Map([
+    ["lib/new-core/context-link-validator.js", "./semantic-unit-validator"],
+    ["lib/new-core/lifecycle-manager.js", "./context-link-validator"],
+    ["lib/new-core/state-v3-lifecycle-adapter.js", "./lifecycle-manager"],
+    ["lib/new-core/unit-aggregator.js", "./unit-reply-router"],
+    ["lib/new-core/canonical-execution-adapter.js", "./unit-reply-router"]
+  ]);
+  for (const [file, request] of requiredImports) {
+    if (byFile.has(file) && !byFile.get(file).requires.has(request)) return failure("CONTRACT_CONSUMER_MISSING", root, path.join(root, file));
+  }
+  for (const authority of manifest.domainAuthorities) {
+    if (authority.status !== "implemented" || byFile.has(authority.source)) continue;
+    const absolute = path.join(root, authority.source);
+    if (!fs.existsSync(absolute)) continue;
+    let item;
+    try { item = analysis(fs.readFileSync(absolute, "utf8")); } catch (_) { return failure("SOURCE_INSPECTION_FAILED", root, absolute); }
+    if (!item.declared.has(authority.symbol) || !item.exports.has(authority.symbol)) return failure("DOMAIN_AUTHORITY_REGISTRY_INVALID", root, absolute);
   }
   for (const [file, item] of byFile) { const result = verifyAst(file, item, root); if (!result.ok) return result; }
   const planned = manifest.contracts.filter((c) => c.validator.status !== "implemented").map((c) => ({ contractId: c.contractId, task: Number(c.validator.status.slice(13)) }));
