@@ -10,10 +10,66 @@ const {
 } = require("./lifecycle-manager");
 const { isTrustedUnitRoutingDecisionFor } = require("./unit-reply-router");
 const { validateCanonicalizerInputItem } = require("./contracts/canonicalizer-input-item");
+const { isPublicCatalogIdentityProjectionFor } = require("./turn-input-adapter");
 
 const C08_AUTHORITY_MARKER = new WeakSet();
 const PROVENANCE_BY_C08 = new WeakMap();
 const EXECUTABLE_LIFECYCLE_ACTIONS = new Set(["START", "CONTINUE", "MODIFY"]);
+const CANONICAL_REJECTION_CODES = new Set([
+  "invalid_canonical_request",
+  "invalid_lodging_product",
+  "canonical_request_required"
+]);
+const LEGACY_RESULT_FIELDS = new Set([
+  "candidateIndex",
+  "requestCycleId",
+  "task",
+  "transition",
+  "canonicalRequest",
+  "stateInput"
+]);
+const STATE_INPUT_FIELDS = new Set([
+  "confirmedFields",
+  "temporalResult",
+  "hasNewDateExpression",
+  "sourceEvidenceRefs"
+]);
+const CONFIRMED_FIELD_NAMES = new Set(["guests", "nights", "inventory"]);
+const TEMPORAL_METADATA_NAMES = new Set(["checkIn", "checkOut", "nights", "searchRange"]);
+const TEMPORAL_FIELD_NAMES = new Set([
+  "value",
+  "valueStatus",
+  "provenance",
+  "sourceEvidenceRefs",
+  "ruleRef",
+  "derivedFromFieldRefs"
+]);
+const TEMPORAL_PROVENANCE = new Set([null, "explicit", "context", "defaulted", "derived"]);
+const TEMPORAL_VALUE_STATUSES = new Set(["confirmed", "missing", "uncertain"]);
+const TEMPORAL_RULE_REFS = new Set([
+  null,
+  "temporal:canonical_grammar",
+  "temporal:checkout_from_checkin_and_nights",
+  "temporal:contextual_expression",
+  "temporal:available_dates_default_lookahead",
+  "PRODUCT_BASELINE:single_date_availability_default_one_night"
+]);
+const TEMPORAL_DERIVED_FIELD_REFS = new Set([
+  "stay.checkIn",
+  "stay.nights",
+  "eventTimestamp"
+]);
+const TEMPORAL_EXPRESSIONS_BY_CANDIDATE_KIND = Object.freeze({
+  absolute_date: new Set(["absolute_date"]),
+  date_range: new Set(["date_range"]),
+  relative_date: new Set(["relative_day"]),
+  relative_range: new Set(["date_range"]),
+  weekday: new Set(["relative_weekday", "weekend"]),
+  month_weekday: new Set(["month_weekday_constraint"]),
+  nights_only: new Set(["duration_only"]),
+  partial: new Set(["ambiguous"]),
+  unknown: new Set(["ambiguous"])
+});
 const TEMPORAL_KIND_COMPATIBILITY = Object.freeze({
   absolute_date: "absolute",
   date_range: "range",
@@ -38,6 +94,23 @@ function detach(value) {
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, detach(item)]));
 }
 
+function exactKeys(value, allowed) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).length === allowed.size
+    && Object.keys(value).every((key) => allowed.has(key));
+}
+
+function sameData(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function hasRecursiveKey(value, forbidden, seen = new Set()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return false;
+  seen.add(value);
+  if (Object.keys(value).some((key) => forbidden.has(key))) return true;
+  return Object.values(value).some((item) => hasRecursiveKey(item, forbidden, seen));
+}
+
 function failure(code, errors = []) {
   return { ok: false, code, errors };
 }
@@ -46,11 +119,33 @@ function boundedText(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 160;
 }
 
+function canonicalizerCatalogMatchesC01(catalog, projection) {
+  if (!Array.isArray(catalog.rooms)
+    || !Array.isArray(catalog.amenities)
+    || !Array.isArray(catalog.policies)) return false;
+  const projectedInventory = projection
+    .filter((entry) => ["room", "bundle"].includes(entry[1]))
+    .map((entry) => `${entry[0]}\u0000${entry[1]}`)
+    .sort();
+  const legacyInventory = catalog.rooms
+    .map((item) => `${item && item.canonicalId}\u0000${item && item.category}`)
+    .sort();
+  if (!sameData(projectedInventory, legacyInventory)) return false;
+  const legacyFacts = [...catalog.amenities, ...catalog.policies];
+  return projection
+    .filter((entry) => ["amenity", "policy"].includes(entry[1]))
+    .every(([catalogIdentity, kind]) => legacyFacts.some((item) => (
+      item && item.canonicalId === catalogIdentity && item.category === kind
+    )));
+}
+
 function createCanonicalizerInputItem({
   unit,
   lifecycleDecision,
   routingDecision,
-  understandingTurnInput
+  understandingTurnInput,
+  canonicalizerCatalog,
+  publicCatalogIdentityProjection
 } = {}) {
   const lifecycleInput = understandingInputForValidatedLifecycleDecision(lifecycleDecision);
   if (!lifecycleInput || lifecycleInput !== understandingTurnInput
@@ -62,6 +157,13 @@ function createCanonicalizerInputItem({
       understandingTurnInput
     })) {
     return failure("CANONICAL_ADAPTER_OWNERSHIP_CONFLICT", ["provenance"]);
+  }
+  if (!canonicalizerCatalog || typeof canonicalizerCatalog !== "object"
+    || canonicalizerCatalog.propertyId !== understandingTurnInput.propertyScope.propertyId
+    || canonicalizerCatalog.timezone !== understandingTurnInput.propertyTimezone
+    || !isPublicCatalogIdentityProjectionFor(understandingTurnInput, publicCatalogIdentityProjection)
+    || !canonicalizerCatalogMatchesC01(canonicalizerCatalog, publicCatalogIdentityProjection)) {
+    return failure("CANONICAL_ADAPTER_OWNERSHIP_CONFLICT", ["catalogProvenance"]);
   }
   if (routingDecision.disposition !== "ANSWER"
     || routingDecision.requiresCanonicalExecution !== true
@@ -85,7 +187,9 @@ function createCanonicalizerInputItem({
     unit,
     lifecycleDecision,
     routingDecision,
-    understandingTurnInput
+    understandingTurnInput,
+    canonicalizerCatalog,
+    publicCatalogIdentityProjection
   });
   return { ok: true, code: null, errors: [], value };
 }
@@ -287,30 +391,171 @@ function expectedCanonicalCapabilities(unit, entity) {
   return expected;
 }
 
-function canonicalResultMatchesC08(canonicalRequest, provenance, entity) {
+function expectedInventory(canonicalEntity) {
+  if (!canonicalEntity || canonicalEntity.status !== "resolved"
+    || !["room", "bundle"].includes(canonicalEntity.category)
+    || !boundedText(canonicalEntity.canonicalId)) return null;
+  return {
+    mode: canonicalEntity.category === "bundle" ? "bundle_only" : "room_only",
+    entityId: canonicalEntity.canonicalId
+  };
+}
+
+function expectedProduct(approvedProduct, canonicalEntity) {
+  if (approvedProduct.productType !== "any") return approvedProduct;
+  const inventory = expectedInventory(canonicalEntity);
+  if (!inventory) return productFromIdentity(null, null);
+  return productFromIdentity(inventory.entityId,
+    inventory.mode === "bundle_only" ? "bundle" : "room");
+}
+
+function temporalMetadataIsClosed(temporalState, expectedEvidenceRefs) {
+  if (!exactKeys(temporalState.provenance, TEMPORAL_METADATA_NAMES)
+    || !exactKeys(temporalState.ruleRefs, TEMPORAL_METADATA_NAMES)
+    || !exactKeys(temporalState.derivedFromFieldRefs, TEMPORAL_METADATA_NAMES)
+    || !exactKeys(temporalState.fields, TEMPORAL_METADATA_NAMES)) return false;
+  for (const name of TEMPORAL_METADATA_NAMES) {
+    const field = temporalState.fields[name];
+    if (!TEMPORAL_PROVENANCE.has(temporalState.provenance[name])
+      || !TEMPORAL_RULE_REFS.has(temporalState.ruleRefs[name])
+      || !Array.isArray(temporalState.derivedFromFieldRefs[name])
+      || temporalState.derivedFromFieldRefs[name].some((reference) => (
+        !TEMPORAL_DERIVED_FIELD_REFS.has(reference)
+      ))
+      || !exactKeys(field, TEMPORAL_FIELD_NAMES)
+      || !TEMPORAL_VALUE_STATUSES.has(field.valueStatus)
+      || !sameData(field.value, temporalState[name])
+      || field.provenance !== temporalState.provenance[name]
+      || field.ruleRef !== temporalState.ruleRefs[name]
+      || !sameData(field.derivedFromFieldRefs, temporalState.derivedFromFieldRefs[name])
+      || !sameData(field.sourceEvidenceRefs, expectedEvidenceRefs)) return false;
+  }
+  return true;
+}
+
+function canonicalTemporalMatchesC08(temporalState, provenance, contextCycle) {
+  const candidate = provenance.unit.temporalCandidate;
+  const timezone = provenance.understandingTurnInput.propertyTimezone;
+  const contextStay = contextCycle && contextCycle.confirmedInputs
+    && contextCycle.confirmedInputs.stay || null;
+  const usesContext = candidate === null && Boolean(contextStay && contextStay.checkIn);
+  const expectedEvidenceRefs = usesContext ? [] : provenance.unit.evidenceRefs;
+  if (temporalState.timezone !== timezone
+    || !sameData(temporalState.applicableTaskIds, [provenance.unit.unitId])
+    || temporalState.repairReasonCode !== ""
+    || temporalState.ambiguity !== null
+    || !temporalMetadataIsClosed(temporalState, expectedEvidenceRefs)) return false;
+  if (candidate) {
+    const expressionTypes = TEMPORAL_EXPRESSIONS_BY_CANDIDATE_KIND[candidate.kind];
+    return Boolean(expressionTypes && expressionTypes.has(temporalState.expressionType))
+      && temporalState.rawText === candidate.rawText
+      && temporalState.originalExpression === candidate.rawText
+      && temporalState.checkIn === candidate.checkInCandidate
+      && temporalState.checkOut === candidate.checkOutCandidate
+      && temporalState.nights === candidate.nightsCandidate
+      && temporalState.searchRange === null
+      && temporalState.resolutionStatus === "resolved"
+      && temporalState.resolutionSource === "canonical_temporal_grammar";
+  }
+  if (usesContext) {
+    const expectedNights = contextStay.checkOut
+      ? Math.round((Date.parse(`${contextStay.checkOut}T00:00:00Z`)
+        - Date.parse(`${contextStay.checkIn}T00:00:00Z`)) / 86400000)
+      : null;
+    return temporalState.rawText === ""
+      && temporalState.originalExpression === ""
+      && temporalState.checkIn === contextStay.checkIn
+      && temporalState.checkOut === (contextStay.checkOut || null)
+      && temporalState.nights === expectedNights
+      && temporalState.searchRange === null
+      && temporalState.expressionType === "context"
+      && temporalState.resolutionStatus === "resolved"
+      && temporalState.resolutionSource === "context";
+  }
+  return temporalState.rawText === ""
+    && temporalState.originalExpression === ""
+    && temporalState.checkIn === null
+    && temporalState.checkOut === null
+    && temporalState.nights === null
+    && temporalState.searchRange === null
+    && temporalState.expressionType === "none"
+    && temporalState.resolutionStatus === "absent"
+    && temporalState.resolutionSource === "canonical_temporal_grammar";
+}
+
+function canonicalResultMatchesC08(canonicalRequest, provenance, entity, approvedProduct, contextCycle) {
   const expectedCapabilities = expectedCanonicalCapabilities(provenance.unit, entity);
   const expectedStayDependency = provenance.unit.stayDependent ? "required" : false;
+  const definition = getCapabilityDefinition(canonicalRequest.capability);
   if (!expectedCapabilities.has(canonicalRequest.capability)
-    || canonicalRequest.stayDependency !== expectedStayDependency) return false;
+    || !definition
+    || canonicalRequest.stayDependency !== expectedStayDependency
+    || !sameData(canonicalRequest.requiredFields, definition.requiredFields)
+    || canonicalRequest.resolverId !== definition.resolverId
+    || canonicalRequest.riskLevel !== definition.riskLevel
+    || canonicalRequest.responseMode !== definition.responseMode
+    || canonicalRequest.detailIntent !== "general"
+    || !sameData(canonicalRequest.lodgingProduct,
+      expectedProduct(approvedProduct, canonicalRequest.canonicalEntity))
+    || !sameData(canonicalRequest.evidenceRefs, provenance.unit.evidenceRefs)
+    || !canonicalTemporalMatchesC08(canonicalRequest.temporalState, provenance, contextCycle)) return false;
   const subject = provenance.unit.subject;
   const canonicalEntity = canonicalRequest.canonicalEntity;
   if (subject.kind === "matched_room_set") {
+    const verifiedRoomIds = new Set(provenance.publicCatalogIdentityProjection
+      .filter((entry) => entry[1] === "room")
+      .map((entry) => entry[0]));
     return canonicalEntity.status === "matched_set"
+      && canonicalEntity.category === "room"
+      && canonicalEntity.canonicalId === null
+      && canonicalEntity.rawText === entity.rawText
       && Array.isArray(canonicalEntity.canonicalSet)
-      && canonicalEntity.canonicalSet.length > 0;
+      && canonicalEntity.canonicalSet.length > 0
+      && new Set(canonicalEntity.canonicalSet).size === canonicalEntity.canonicalSet.length
+      && canonicalEntity.canonicalSet.every((canonicalId) => verifiedRoomIds.has(canonicalId));
   }
   if (provenance.unit.capability === "location") {
-    return canonicalEntity.canonicalId === "location";
+    return canonicalEntity.status === "resolved"
+      && canonicalEntity.category === "transport"
+      && canonicalEntity.canonicalId === "location"
+      && canonicalEntity.rawText === ""
+      && sameData(canonicalEntity.canonicalSet, []);
   }
   if (["room", "bundle", "amenity", "policy", "other_verified"].includes(subject.kind)) {
-    return canonicalEntity.canonicalId === subject.catalogIdentity;
+    const projectedSubject = provenance.understandingTurnInput.publicSubjectCatalog
+      .find((item) => item.catalogIdentity === subject.catalogIdentity && item.kind === subject.kind);
+    return Boolean(projectedSubject)
+      && canonicalEntity.status === "resolved"
+      && canonicalEntity.canonicalId === subject.catalogIdentity
+      && canonicalEntity.rawText === entity.rawText
+      && sameData(canonicalEntity.canonicalSet, []);
   }
-  return subject.kind === "property" && canonicalEntity.canonicalId === null;
+  return subject.kind === "property"
+    && canonicalEntity.canonicalId === null
+    && canonicalEntity.rawText === ""
+    && sameData(canonicalEntity.canonicalSet, []);
+}
+
+function stateInputMatchesC08(stateInput, canonicalRequest, task, provenance) {
+  if (!exactKeys(stateInput, STATE_INPUT_FIELDS)
+    || !exactKeys(stateInput.confirmedFields, CONFIRMED_FIELD_NAMES)) return false;
+  const expectedGuests = task.stayCandidate.guestCountCandidate;
+  const expectedNights = task.stayCandidate.nightsCandidate;
+  const expectedHasDateExpression = Boolean(task.stayCandidate.dateExpression.rawText
+    && task.stayCandidate.dateExpression.kind !== "none");
+  return stateInput.confirmedFields.guests === expectedGuests
+    && stateInput.confirmedFields.nights === expectedNights
+    && sameData(stateInput.confirmedFields.inventory,
+      expectedInventory(canonicalRequest.canonicalEntity))
+    && sameData(stateInput.temporalResult, canonicalRequest.temporalState)
+    && stateInput.hasNewDateExpression === expectedHasDateExpression
+    && sameData(stateInput.sourceEvidenceRefs, provenance.unit.evidenceRefs);
 }
 
 function executeCanonicalizerInputItem({
   canonicalizerInputItem,
   catalog,
+  publicCatalogIdentityProjection,
   contextSnapshot
 } = {}) {
   if (!isTrustedCanonicalizerInputItem(canonicalizerInputItem)) {
@@ -328,8 +573,12 @@ function executeCanonicalizerInputItem({
     return failure("CANONICAL_ADAPTER_OWNERSHIP_CONFLICT", ["provenance"]);
   }
   const propertyScope = canonicalizerInputItem.propertyScope;
-  if (!catalog || catalog.propertyId !== propertyScope.propertyId
-    || catalog.timezone !== provenance.understandingTurnInput.propertyTimezone
+  if (catalog !== provenance.canonicalizerCatalog
+    || publicCatalogIdentityProjection !== provenance.publicCatalogIdentityProjection
+    || !isPublicCatalogIdentityProjectionFor(
+      provenance.understandingTurnInput,
+      publicCatalogIdentityProjection
+    )
     || !samePropertyScope(contextSnapshot, propertyScope)
     || !Array.isArray(contextSnapshot.cycles)) {
     return failure("CANONICAL_ADAPTER_OWNERSHIP_CONFLICT", ["propertyScope"]);
@@ -390,13 +639,30 @@ function executeCanonicalizerInputItem({
       allowSharedMessageInference: false
     });
   } catch (error) {
-    return failure(boundedText(error && error.code) ? error.code : "CANONICAL_INPUT_INCOMPLETE", ["canonicalizerRejected"]);
+    const rejectionCode = CANONICAL_REJECTION_CODES.has(error && error.code)
+      ? error.code : "CANONICAL_INPUT_INCOMPLETE";
+    return failure(rejectionCode, ["canonicalizerRejected"]);
   }
-  if (!canonicalized || !isCanonicalRequest(canonicalized.canonicalRequest)
+  if (!exactKeys(canonicalized, LEGACY_RESULT_FIELDS)
+    || canonicalized.candidateIndex !== candidateIndex
+    || canonicalized.requestCycleId !== compatibilityItem.requestCycleId
+    || !sameData(canonicalized.task, task)
+    || !sameData(canonicalized.transition, compatibilityItem.transition)
+    || !isCanonicalRequest(canonicalized.canonicalRequest)
     || canonicalized.canonicalRequest.taskId !== provenance.unit.unitId
-    || JSON.stringify(canonicalized.canonicalRequest.evidenceRefs) !== JSON.stringify(canonicalizerInputItem.evidenceRefs)
-    || !canonicalResultMatchesC08(canonicalized.canonicalRequest, provenance, entity)
-    || !canonicalized.stateInput || typeof canonicalized.stateInput !== "object") {
+    || !canonicalResultMatchesC08(
+      canonicalized.canonicalRequest,
+      provenance,
+      entity,
+      approvedProduct,
+      context.cycle
+    )
+    || !stateInputMatchesC08(
+      canonicalized.stateInput,
+      canonicalized.canonicalRequest,
+      task,
+      provenance
+    )) {
     return failure("CANONICAL_INPUT_INCOMPLETE", ["canonicalizerResult"]);
   }
   const value = deepFreeze({
@@ -404,6 +670,15 @@ function executeCanonicalizerInputItem({
     canonicalRequest: canonicalized.canonicalRequest,
     stateInput: detach(canonicalized.stateInput)
   });
+  if (hasRecursiveKey(value, new Set([
+    "candidateIndex",
+    "facts",
+    "resolvedFacts",
+    "semanticData",
+    "inferredCapability"
+  ]))) {
+    return failure("CANONICAL_INPUT_INCOMPLETE", ["canonicalizerResult"]);
+  }
   return { ok: true, code: null, errors: [], value };
 }
 

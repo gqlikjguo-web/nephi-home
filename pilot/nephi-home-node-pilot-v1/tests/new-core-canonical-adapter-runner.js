@@ -3,8 +3,12 @@
 const assert = require("node:assert/strict");
 const { CAPABILITY_REGISTRY } = require("../lib/conversation-engine-v2/capability-registry");
 const canonicalizer = require("../lib/conversation-engine-v2/canonicalizer");
+const { createCanonicalRequest } = require("../lib/conversation-engine-v2/canonical-request");
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
-const { buildUnderstandingTurnInput } = require("../lib/new-core/turn-input-adapter");
+const {
+  buildUnderstandingTurnInput,
+  buildPublicCatalogIdentityProjection
+} = require("../lib/new-core/turn-input-adapter");
 const { validateAndNormalizeSourceEvidence } = require("../lib/new-core/source-evidence-validator");
 const {
   buildPublicCatalogIdentitySet,
@@ -33,6 +37,7 @@ const NOW = "2026-08-28T08:00:00.000Z";
 const FUTURE = "2026-08-29T08:00:00.000Z";
 const scope = { propertyId: "property-c08", channel: "line-c08", userId: "guest-c08" };
 const routingRegistry = createUnitReplyRoutingRegistry(projectCapabilityRegistry(CAPABILITY_REGISTRY));
+const PROVENANCE_INPUT_BY_C08 = new WeakMap();
 const catalog = buildPropertyCatalog({
   propertyId: scope.propertyId,
   displayName: "C08 Property",
@@ -212,12 +217,16 @@ function pipeline({
 }
 
 function createC08(values) {
-  return createCanonicalizerInputItem({
+  const result = createCanonicalizerInputItem({
     unit: values.unit,
     lifecycleDecision: values.lifecycle,
     routingDecision: values.route,
-    understandingTurnInput: values.input
+    understandingTurnInput: values.input,
+    canonicalizerCatalog: catalog,
+    publicCatalogIdentityProjection: buildPublicCatalogIdentityProjection(values.input)
   });
+  if (result.ok) PROVENANCE_INPUT_BY_C08.set(result.value, values.input);
+  return result;
 }
 
 function contextSnapshot(overrides = {}) {
@@ -246,6 +255,8 @@ function execute(c08, overrides = {}) {
   return executeCanonicalizerInputItem({
     canonicalizerInputItem: c08,
     catalog: overrides.catalog || catalog,
+    publicCatalogIdentityProjection: overrides.publicCatalogIdentityProjection
+      || buildPublicCatalogIdentityProjection(PROVENANCE_INPUT_BY_C08.get(c08)),
     contextSnapshot: overrides.contextSnapshot || contextSnapshot()
   });
 }
@@ -381,7 +392,10 @@ const continued = pipeline({
     unitId: "unit-context-answer",
     capability: "capacity",
     subject: { kind: "bundle", catalogIdentity: "bundle-a" },
-    slotCandidates: [slot(contextMessage, { id: "slot-guests-c08", slot: "guest_count", value: 4 })]
+    slotCandidates: [
+      slot(contextMessage, { id: "slot-guests-c08", slot: "guest_count", value: 4 }),
+      slot(contextMessage, { id: "slot-product-c08", slot: "product", value: "bundle-a" })
+    ]
   },
   action: "CONTINUE",
   target: "cycle-c08",
@@ -481,7 +495,23 @@ assertFailure(createCanonicalizerInputItem({
   routingDecision: foreignRoom.route,
   understandingTurnInput: roomAvailability.input
 }), "CANONICAL_ADAPTER_OWNERSHIP_CONFLICT");
+const foreignCatalogAtCreation = clone(catalog);
+foreignCatalogAtCreation.rooms = foreignCatalogAtCreation.rooms.map((room) => (
+  room.canonicalId === "room-a" ? { ...room, canonicalId: "foreign-room" } : room
+));
+assertFailure(createCanonicalizerInputItem({
+  unit: roomAvailability.unit,
+  lifecycleDecision: roomAvailability.lifecycle,
+  routingDecision: roomAvailability.route,
+  understandingTurnInput: roomAvailability.input,
+  canonicalizerCatalog: foreignCatalogAtCreation,
+  publicCatalogIdentityProjection: buildPublicCatalogIdentityProjection(roomAvailability.input)
+}), "CANONICAL_ADAPTER_OWNERSHIP_CONFLICT");
 assertFailure(execute(roomC08.value, { catalog: { ...catalog, propertyId: "property-foreign" } }), "CANONICAL_ADAPTER_OWNERSHIP_CONFLICT");
+assertFailure(execute(roomC08.value, { catalog: clone(catalog) }), "CANONICAL_ADAPTER_OWNERSHIP_CONFLICT");
+assertFailure(execute(roomC08.value, {
+  publicCatalogIdentityProjection: clone(buildPublicCatalogIdentityProjection(roomAvailability.input))
+}), "CANONICAL_ADAPTER_OWNERSHIP_CONFLICT");
 assertFailure(execute(continuedC08.value, {
   contextSnapshot: contextSnapshot({ scope: { propertyId: scope.propertyId, channelId: "line-foreign", userId: scope.userId } })
 }), "CANONICAL_ADAPTER_OWNERSHIP_CONFLICT");
@@ -551,4 +581,273 @@ try {
   canonicalizer.canonicalizeExecutionItem = originalCanonicalize;
 }
 
-console.log(JSON.stringify({ suite: "new-core-canonical-adapter", caseCount: 12, passCount: 12, failCount: 0, evidenceLevel: "STRUCTURED_CONTRACT_TEST" }));
+// Review-fix adversarial matrix: the matched set returned by the legacy
+// resolver may contain only room identities in the exact trusted C01 catalog.
+// A same-property catalog containing a foreign room is not substitute authority.
+canonicalizer.canonicalizeExecutionItem = (args) => {
+  const roomA = args.catalog.rooms.find((room) => room.canonicalId === "room-a");
+  return originalCanonicalize({
+    ...args,
+    catalog: {
+      ...args.catalog,
+      rooms: [
+        roomA,
+        { ...roomA, canonicalId: "foreign-room", publicName: "Foreign Room" }
+      ]
+    }
+  });
+};
+try {
+  assertFailure(execute(matchedC08.value), "CANONICAL_INPUT_INCOMPLETE");
+} finally {
+  canonicalizer.canonicalizeExecutionItem = originalCanonicalize;
+}
+
+// Every semantic field returned by the compatibility call must be derivable
+// from the exact C08/C01/context authority. These mutations exercise the real
+// canonicalizer and alter one boundary value at a time.
+const adversarialResultMutations = [
+  {
+    name: "guestMessage",
+    c08: roomC08.value,
+    mutate(args) {
+      return originalCanonicalize({
+        ...args,
+        guestMessage: "substituted guest message without the owned temporal span"
+      });
+    }
+  },
+  {
+    name: "canonical dates",
+    c08: roomC08.value,
+    mutate(args) {
+      const result = originalCanonicalize(args);
+      const substituted = originalCanonicalize({
+        ...args,
+        guestMessage: "Room A 2030/01/02-01/04 還有房嗎？",
+        item: {
+          ...args.item,
+          task: {
+            ...args.item.task,
+            sourceText: "Room A 2030/01/02-01/04 還有房嗎？",
+            stayCandidate: {
+              ...args.item.task.stayCandidate,
+              dateExpression: { rawText: "2030/01/02-01/04", kind: "range", anchor: "message_time" },
+              checkInCandidate: "2030-01-02",
+              checkOutCandidate: "2030-01-04",
+              nightsCandidate: 2
+            }
+          }
+        }
+      });
+      return {
+        ...result,
+        canonicalRequest: substituted.canonicalRequest,
+        stateInput: {
+          ...result.stateInput,
+          temporalResult: substituted.canonicalRequest.temporalState
+        }
+      };
+    }
+  },
+  {
+    name: "lodging product",
+    c08: roomC08.value,
+    mutate(args) {
+      const result = originalCanonicalize(args);
+      const substituted = originalCanonicalize({
+        ...args,
+        item: {
+          ...args.item,
+          transition: {
+            ...args.item.transition,
+            approvedProduct: { productType: "bundle", productId: "bundle-a", roomTypeId: null, bundleId: "bundle-a" }
+          }
+        }
+      });
+      return { ...result, canonicalRequest: substituted.canonicalRequest };
+    }
+  },
+  {
+    name: "guests",
+    c08: continuedC08.value,
+    mutate(args) {
+      const result = originalCanonicalize(args);
+      return {
+        ...result,
+        stateInput: {
+          ...result.stateInput,
+          confirmedFields: { ...result.stateInput.confirmedFields, guests: 9 }
+        }
+      };
+    }
+  },
+  {
+    name: "nights",
+    c08: roomC08.value,
+    mutate(args) {
+      const result = originalCanonicalize(args);
+      return {
+        ...result,
+        stateInput: {
+          ...result.stateInput,
+          confirmedFields: { ...result.stateInput.confirmedFields, nights: 3 }
+        }
+      };
+    }
+  },
+  {
+    name: "inventory",
+    c08: roomC08.value,
+    mutate(args) {
+      const result = originalCanonicalize(args);
+      return {
+        ...result,
+        stateInput: {
+          ...result.stateInput,
+          confirmedFields: {
+            ...result.stateInput.confirmedFields,
+            inventory: { mode: "room_only", entityId: "foreign-room" }
+          }
+        }
+      };
+    }
+  },
+  {
+    name: "state evidence",
+    c08: roomC08.value,
+    mutate(args) {
+      const result = originalCanonicalize(args);
+      return {
+        ...result,
+        stateInput: {
+          ...result.stateInput,
+          sourceEvidenceRefs: [{ eventId: "foreign", messageRef: "foreign", startOffset: 0, endOffset: 1, quote: "x" }]
+        }
+      };
+    }
+  },
+  {
+    name: "facts",
+    c08: roomC08.value,
+    mutate(args) {
+      const result = originalCanonicalize(args);
+      return { ...result, facts: [{ canonicalId: "parking", answer: "invented" }] };
+    }
+  },
+  {
+    name: "extra state semantics",
+    c08: roomC08.value,
+    mutate(args) {
+      const result = originalCanonicalize(args);
+      return { ...result, stateInput: { ...result.stateInput, inferredCapability: "parking" } };
+    }
+  },
+  {
+    name: "recursive candidateIndex",
+    c08: roomC08.value,
+    mutate(args) {
+      const result = originalCanonicalize(args);
+      return { ...result, stateInput: { ...result.stateInput, nested: { candidateIndex: 77 } } };
+    }
+  },
+  {
+    name: "canonical temporal candidateIndex",
+    c08: roomC08.value,
+    mutate(args) {
+      const result = originalCanonicalize(args);
+      const temporalState = clone(result.canonicalRequest.temporalState);
+      temporalState.fields.checkIn.candidateIndex = 77;
+      const canonicalRequest = createCanonicalRequest({ ...result.canonicalRequest, temporalState });
+      return {
+        ...result,
+        canonicalRequest,
+        stateInput: { ...result.stateInput, temporalResult: canonicalRequest.temporalState }
+      };
+    }
+  },
+  {
+    name: "canonical temporal facts",
+    c08: roomC08.value,
+    mutate(args) {
+      const result = originalCanonicalize(args);
+      const temporalState = clone(result.canonicalRequest.temporalState);
+      temporalState.fields.checkIn.facts = [{ invented: true }];
+      const canonicalRequest = createCanonicalRequest({ ...result.canonicalRequest, temporalState });
+      return {
+        ...result,
+        canonicalRequest,
+        stateInput: { ...result.stateInput, temporalResult: canonicalRequest.temporalState }
+      };
+    }
+  },
+  {
+    name: "canonical temporal expression semantics",
+    c08: roomC08.value,
+    mutate(args) {
+      const result = originalCanonicalize(args);
+      const temporalState = clone(result.canonicalRequest.temporalState);
+      temporalState.expressionType = "invented_semantics";
+      const canonicalRequest = createCanonicalRequest({ ...result.canonicalRequest, temporalState });
+      return {
+        ...result,
+        canonicalRequest,
+        stateInput: { ...result.stateInput, temporalResult: canonicalRequest.temporalState }
+      };
+    }
+  },
+  {
+    name: "canonical temporal rule semantics",
+    c08: roomC08.value,
+    mutate(args) {
+      const result = originalCanonicalize(args);
+      const temporalState = clone(result.canonicalRequest.temporalState);
+      temporalState.ruleRefs.checkIn = "facts:invented";
+      temporalState.fields.checkIn.ruleRef = "facts:invented";
+      const canonicalRequest = createCanonicalRequest({ ...result.canonicalRequest, temporalState });
+      return {
+        ...result,
+        canonicalRequest,
+        stateInput: { ...result.stateInput, temporalResult: canonicalRequest.temporalState }
+      };
+    }
+  }
+];
+for (const adversarial of adversarialResultMutations) {
+  canonicalizer.canonicalizeExecutionItem = adversarial.mutate;
+  try {
+    assertFailure(execute(adversarial.c08), "CANONICAL_INPUT_INCOMPLETE");
+  } finally {
+    canonicalizer.canonicalizeExecutionItem = originalCanonicalize;
+  }
+}
+
+// Only rejection codes already owned by the canonicalizer contract survive.
+// Invented and cross-contract codes collapse to the C08 fail-closed code.
+for (const code of ["invented_semantic_repair", "PROPERTY_SCOPE_INVALID", "TURN_INPUT_INVALID"]) {
+  canonicalizer.canonicalizeExecutionItem = () => {
+    const error = new TypeError("adversarial rejection code");
+    error.code = code;
+    throw error;
+  };
+  try {
+    assertFailure(execute(roomC08.value), "CANONICAL_INPUT_INCOMPLETE");
+  } finally {
+    canonicalizer.canonicalizeExecutionItem = originalCanonicalize;
+  }
+}
+
+for (const code of ["invalid_lodging_product", "canonical_request_required"]) {
+  canonicalizer.canonicalizeExecutionItem = () => {
+    const error = new TypeError("owned canonical rejection code");
+    error.code = code;
+    throw error;
+  };
+  try {
+    assertFailure(execute(roomC08.value), code);
+  } finally {
+    canonicalizer.canonicalizeExecutionItem = originalCanonicalize;
+  }
+}
+
+console.log(JSON.stringify({ suite: "new-core-canonical-adapter", caseCount: 34, passCount: 34, failCount: 0, evidenceLevel: "STRUCTURED_CONTRACT_TEST" }));
