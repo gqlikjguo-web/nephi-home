@@ -6,6 +6,11 @@ const crypto = require("node:crypto");
 
 const CONTRACT_IDS = Array.from({ length: 11 }, (_, index) => `C${String(index + 1).padStart(2, "0")}`);
 const MAX_FUNCTION_LINES = 180;
+const MAX_EXPRESSION_RESOLUTION_DEPTH = 24;
+const MUTATION_CAPABILITIES = new Set(["db", "database", "postgres", "postgresql", "resolver", "line", "state"]);
+const MUTATION_ROLES = new Set(["client", "gateway", "mutator", "persistence", "provider", "repository", "repo", "service", "sink", "store", "writer"]);
+const MUTATING_METHODS = new Set(["delete", "execute", "insert", "persist", "remove", "reply", "resolve", "save", "send", "set", "update", "upsert", "write"]);
+const NON_MUTATION_QUALIFIERS = new Set(["descriptor", "documentation", "enum", "metadata", "projection", "record", "schema", "snapshot", "summary"]);
 const CONTRACT_GRAPH_DIGEST = "4f716c74c7fa0287fd2ecc0c947c56a87b6d96922e3a74ee9e7e696ddc298e20";
 const FAILURE_OWNER_DIGEST = "3d4127d7b27b8b418e7d6d45e52ac733fa82fabadbbcb81cd99b746289f60f1e";
 const DOMAIN_AUTHORITY_DIGEST = "009e1cfb3b9d0d2fc1d8da58f9cb7ba03d378a991e2c4f3e0640ec94a9600572";
@@ -44,30 +49,442 @@ function staticName(node) {
   return null;
 }
 
-function resolvedNode(node, bindings, seen = new Set()) {
-  if (!node || node.type !== "Identifier" || !bindings.has(node.name) || seen.has(node.name)) return node;
-  const next = new Set(seen); next.add(node.name);
-  return resolvedNode(bindings.get(node.name), bindings, next);
+function emptyResolution() {
+  return { nodes: [], names: new Set(), origins: new Set(), exhausted: false, unresolved: false, injected: false };
 }
 
-function resolvedName(node, bindings) { return staticName(resolvedNode(node, bindings)); }
+function addNode(result, node) {
+  if (!node || result.nodes.includes(node)) return;
+  if (result.nodes.length >= 32) {
+    result.exhausted = true;
+    result.unresolved = true;
+    return;
+  }
+  result.nodes.push(node);
+}
+
+function mergeResolution(target, source) {
+  source.nodes.forEach((node) => addNode(target, node));
+  source.names.forEach((name) => target.names.add(name));
+  source.origins.forEach((name) => target.origins.add(name));
+  target.exhausted ||= source.exhausted;
+  target.unresolved ||= source.unresolved;
+  target.injected ||= source.injected;
+  return target;
+}
+
+function mergeMetadata(target, source) {
+  source.names.forEach((name) => target.names.add(name));
+  source.origins.forEach((name) => target.origins.add(name));
+  target.exhausted ||= source.exhausted;
+  target.unresolved ||= source.unresolved;
+  target.injected ||= source.injected;
+  return target;
+}
+
+function propertyResolution(node, bindings, seen, depth) {
+  if (!node || node.type !== "MemberExpression") return emptyResolution();
+  if (!node.computed) {
+    const result = emptyResolution();
+    const name = staticName(node.property);
+    if (name === null) result.unresolved = true;
+    else result.names.add(name);
+    return result;
+  }
+  const result = resolveExpression(node.property, bindings, seen, depth + 1);
+  for (const resolved of result.nodes) {
+    if (resolved.type === "Identifier") continue;
+    const name = staticName(resolved);
+    if (name !== null) result.names.add(name);
+  }
+  if (!result.names.size) result.unresolved = true;
+  return result;
+}
+
+function objectPropertyResolution(node, propertyName, bindings, seen, depth) {
+  const result = emptyResolution();
+  if (!node || node.type !== "ObjectExpression") return result;
+  for (const property of node.properties) {
+    if (!property || property.type !== "Property" || property.kind !== "init") continue;
+    let names;
+    if (property.computed) {
+      const key = resolveValueNames(property.key, bindings, seen, depth + 1);
+      mergeMetadata(result, key);
+      names = key.names;
+    } else names = new Set([staticName(property.key)]);
+    if (names.has(propertyName)) mergeResolution(result, resolveExpression(property.value, bindings, seen, depth + 1));
+  }
+  return result;
+}
+
+function resolveExpression(node, bindings, seen = new Set(), depth = 0) {
+  const result = emptyResolution();
+  if (!node) {
+    result.unresolved = true;
+    return result;
+  }
+  if (depth >= MAX_EXPRESSION_RESOLUTION_DEPTH) {
+    result.exhausted = true;
+    result.unresolved = true;
+    addNode(result, node);
+    return result;
+  }
+  if (node.type === "InjectedParameter") {
+    (node.names || []).forEach((name) => result.origins.add(name));
+    result.injected = true;
+    result.unresolved = true;
+    addNode(result, node);
+    return result;
+  }
+  if (node.type === "ChainExpression") return resolveExpression(node.expression, bindings, seen, depth + 1);
+  if (node.type === "ConditionalExpression" || node.type === "LogicalExpression") {
+    const branches = node.type === "ConditionalExpression" ? [node.consequent, node.alternate] : [node.left, node.right];
+    branches.forEach((branch) => mergeResolution(result, resolveExpression(branch, bindings, seen, depth + 1)));
+    return result;
+  }
+  if (node.type === "AssignmentExpression" || node.type === "AwaitExpression" || node.type === "YieldExpression") {
+    return resolveExpression(node.type === "AssignmentExpression" ? node.right : node.argument, bindings, seen, depth + 1);
+  }
+  if (node.type === "SequenceExpression" && node.expressions.length) {
+    return resolveExpression(node.expressions[node.expressions.length - 1], bindings, seen, depth + 1);
+  }
+  if (node.type === "Identifier") {
+    result.origins.add(node.name);
+    const records = bindings.lookup(node.name, node);
+    if (!records.length) {
+      addNode(result, node);
+      return result;
+    }
+    for (const record of records) {
+      result.injected ||= record.injected;
+      if (!record.source || seen.has(record)) {
+        result.unresolved = true;
+        addNode(result, node);
+        continue;
+      }
+      const next = new Set(seen); next.add(record);
+      mergeResolution(result, resolveExpression(record.source, bindings, next, depth + 1));
+    }
+    return result;
+  }
+  if (node.type !== "MemberExpression") {
+    addNode(result, node);
+    return result;
+  }
+  const objects = resolveExpression(node.object, bindings, seen, depth + 1);
+  const properties = propertyResolution(node, bindings, seen, depth + 1);
+  mergeResolution(result, objects);
+  mergeMetadata(result, properties);
+  properties.names.forEach((name) => result.origins.add(name));
+  const resolvedMembers = [];
+  for (const object of objects.nodes) {
+    let matched = false;
+    for (const propertyName of properties.names) {
+      const property = objectPropertyResolution(object, propertyName, bindings, seen, depth + 1);
+      if (property.nodes.length) {
+        matched = true;
+        mergeResolution(result, property);
+      } else resolvedMembers.push({
+        ...node,
+        object,
+        property: { type: "Literal", value: propertyName },
+        computed: true
+      });
+    }
+    if (!matched && !properties.names.size) resolvedMembers.push({ ...node, object });
+  }
+  result.nodes = result.nodes.filter((item) => !objects.nodes.includes(item));
+  resolvedMembers.forEach((item) => addNode(result, item));
+  if (!result.nodes.length) addNode(result, node);
+  return result;
+}
+
+function resolveValueNames(node, bindings, seen = new Set(), depth = 0) {
+  const result = resolveExpression(node, bindings, seen, depth);
+  for (const resolved of result.nodes) {
+    if (resolved.type === "Identifier" || resolved.type === "InjectedParameter") continue;
+    const name = staticName(resolved);
+    if (name !== null) result.names.add(name);
+  }
+  if (!result.names.size) result.unresolved = true;
+  return result;
+}
+
+function resolveCallable(node, bindings) {
+  const result = resolveExpression(node, bindings);
+  for (const resolved of [...result.nodes]) {
+    if (resolved.type === "Identifier") result.names.add(resolved.name);
+    else if (resolved.type === "MemberExpression") mergeMetadata(result, propertyResolution(resolved, bindings, new Set(), 0));
+  }
+  result.origins.forEach((name) => result.names.add(name));
+  return result;
+}
+
 
 function memberName(node) { return node && node.type === "MemberExpression" ? staticName(node.property) : null; }
 function isMember(node, owner, name) { return node && node.type === "MemberExpression" && node.object.type === "Identifier" && node.object.name === owner && memberName(node) === name; }
 function isModuleExports(node) { return isMember(node, "module", "exports"); }
 function isExports(node) { return node && (node.type === "Identifier" && node.name === "exports" || isModuleExports(node)); }
+
+function declarePattern(pattern, declared) {
+  if (!pattern) return;
+  if (pattern.type === "Identifier") {
+    declared.add(pattern.name);
+    return;
+  }
+  if (pattern.type === "AssignmentPattern") return declarePattern(pattern.left, declared);
+  if (pattern.type === "RestElement") return declarePattern(pattern.argument, declared);
+  if (pattern.type === "ArrayPattern") {
+    pattern.elements.forEach((item) => declarePattern(item, declared));
+    return;
+  }
+  if (pattern.type === "ObjectPattern") {
+    pattern.properties.forEach((property) => {
+      declarePattern(property.type === "RestElement" ? property.argument : property.value, declared);
+    });
+  }
+}
+
+function createBindingIndex(ast) {
+  const nodeScopes = new WeakMap();
+  const root = { parent: null, kind: "program", start: ast.start, bindings: new Map() };
+
+  function childScope(parent, kind, start) {
+    return { parent, kind, start, bindings: new Map() };
+  }
+
+  function addBinding(scope, name, source, start, { conditional = false, injected = false, hoisted = false } = {}) {
+    if (!scope.bindings.has(name)) scope.bindings.set(name, []);
+    scope.bindings.get(name).push({ source, start, conditional, injected, hoisted });
+  }
+
+  function parameterSource(names) {
+    return { type: "InjectedParameter", names: [...names] };
+  }
+
+  function patternMember(source, property, index = null) {
+    if (!source) return null;
+    if (index !== null) return {
+      type: "MemberExpression", object: source, property: { type: "Literal", value: String(index) }, computed: true
+    };
+    const key = property.computed ? property.key : { type: "Literal", value: staticName(property.key) };
+    return key.value === null ? null : { type: "MemberExpression", object: source, property: key, computed: true };
+  }
+
+  function addPattern(pattern, source, scope, start, options = {}) {
+    if (!pattern) return;
+    if (pattern.type === "Identifier") {
+      addBinding(scope, pattern.name, source, start, options);
+      return;
+    }
+    if (pattern.type === "AssignmentPattern") {
+      addPattern(pattern.left, source || pattern.right, scope, start, options);
+      return;
+    }
+    if (pattern.type === "RestElement") {
+      addPattern(pattern.argument, source, scope, start, options);
+      return;
+    }
+    if (pattern.type === "ArrayPattern") {
+      pattern.elements.forEach((item, index) => addPattern(item, patternMember(source, null, index), scope, start, options));
+      return;
+    }
+    if (pattern.type === "ObjectPattern") {
+      pattern.properties.forEach((property) => {
+        if (property.type === "RestElement") addPattern(property.argument, source, scope, start, options);
+        else addPattern(property.value, patternMember(source, property), scope, start, options);
+      });
+    }
+  }
+
+  function assignmentScope(scope, name) {
+    let current = scope;
+    while (current.parent && !current.bindings.has(name)) current = current.parent;
+    return current;
+  }
+
+  function functionOwner(scope) {
+    let current = scope;
+    while (current.parent && !["function", "program"].includes(current.kind)) current = current.parent;
+    return current;
+  }
+
+  function addAssignmentPattern(pattern, source, scope, start, options = {}) {
+    if (!pattern) return;
+    if (pattern.type === "Identifier") {
+      const target = assignmentScope(scope, pattern.name);
+      addBinding(target, pattern.name, source, start, {
+        ...options,
+        conditional: options.conditional || functionOwner(target) !== functionOwner(scope)
+      });
+      return;
+    }
+    if (pattern.type === "AssignmentPattern") {
+      addAssignmentPattern(pattern.left, source || pattern.right, scope, start, options);
+      return;
+    }
+    if (pattern.type === "RestElement") {
+      addAssignmentPattern(pattern.argument, source, scope, start, options);
+      return;
+    }
+    if (pattern.type === "ArrayPattern") {
+      pattern.elements.forEach((item, index) => addAssignmentPattern(item, patternMember(source, null, index), scope, start, options));
+      return;
+    }
+    if (pattern.type === "ObjectPattern") {
+      pattern.properties.forEach((property) => {
+        if (property.type === "RestElement") addAssignmentPattern(property.argument, source, scope, start, options);
+        else addAssignmentPattern(property.value, patternMember(source, property), scope, start, options);
+      });
+    }
+  }
+
+  function variableScope(scope, kind) {
+    if (kind !== "var") return scope;
+    let current = scope;
+    while (current.parent && current.kind !== "function") current = current.parent;
+    return current;
+  }
+
+  function visitChildren(node, scope, conditional) {
+    for (const [key, value] of Object.entries(node)) {
+      if (["start", "end", "loc", "range", "type"].includes(key) || !value) continue;
+      if (Array.isArray(value)) value.forEach((item) => visit(item, scope, conditional));
+      else visit(value, scope, conditional);
+    }
+  }
+
+  function visitFunction(node, parentScope) {
+    const scope = childScope(parentScope, "function", node.start);
+    if (node.type !== "ArrowFunctionExpression" && node.id) addBinding(scope, node.id.name, node, node.start, { hoisted: true });
+    for (const parameter of node.params) {
+      addPattern(parameter, parameterSource(patternNames(parameter, { lookup: () => [] })), scope, node.start, { injected: true, hoisted: true });
+      visit(parameter, scope, false);
+    }
+    if (node.body.type === "BlockStatement") {
+      nodeScopes.set(node.body, scope);
+      node.body.body.forEach((statement) => visit(statement, scope, false));
+    } else visit(node.body, scope, false);
+  }
+
+  function visit(node, scope, conditional = false) {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) return node.forEach((item) => visit(item, scope, conditional));
+    nodeScopes.set(node, scope);
+    if (node.type === "Program") {
+      node.body.forEach((statement) => visit(statement, scope, false));
+      return;
+    }
+    if (["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(node.type)) {
+      if (node.type === "FunctionDeclaration" && node.id) addBinding(scope, node.id.name, node, node.start, { hoisted: true });
+      visitFunction(node, scope);
+      return;
+    }
+    if (node.type === "BlockStatement") {
+      const block = childScope(scope, "block", node.start);
+      node.body.forEach((statement) => visit(statement, block, conditional));
+      return;
+    }
+    if (node.type === "CatchClause") {
+      const block = childScope(scope, "block", node.start);
+      if (node.param) addPattern(node.param, parameterSource(patternNames(node.param, { lookup: () => [] })), block, node.start, { injected: true, hoisted: true });
+      visit(node.param, block, conditional);
+      visit(node.body, block, true);
+      return;
+    }
+    if (node.type === "VariableDeclaration") {
+      const target = variableScope(scope, node.kind);
+      for (const declaration of node.declarations) {
+        nodeScopes.set(declaration, scope);
+        addPattern(declaration.id, declaration.init, target, declaration.start, { conditional });
+        visit(declaration.id, scope, conditional);
+        visit(declaration.init, scope, conditional);
+      }
+      return;
+    }
+    if (node.type === "AssignmentExpression") {
+      visit(node.left, scope, conditional);
+      visit(node.right, scope, conditional);
+      addAssignmentPattern(node.left, node.operator === "=" ? node.right : null, scope, node.end, { conditional });
+      return;
+    }
+    if (node.type === "UpdateExpression") {
+      visit(node.argument, scope, conditional);
+      addAssignmentPattern(node.argument, null, scope, node.end, { conditional });
+      return;
+    }
+    if (node.type === "IfStatement") {
+      visit(node.test, scope, conditional);
+      visit(node.consequent, scope, true);
+      visit(node.alternate, scope, true);
+      return;
+    }
+    if (node.type === "ConditionalExpression") {
+      visit(node.test, scope, conditional);
+      visit(node.consequent, scope, true);
+      visit(node.alternate, scope, true);
+      return;
+    }
+    if (node.type === "LogicalExpression") {
+      visit(node.left, scope, conditional);
+      visit(node.right, scope, true);
+      return;
+    }
+    if (["ForStatement", "ForInStatement", "ForOfStatement"].includes(node.type)) {
+      const loop = childScope(scope, "block", node.start);
+      for (const key of ["init", "left", "right", "test", "update"]) visit(node[key], loop, conditional);
+      visit(node.body, loop, true);
+      return;
+    }
+    if (["WhileStatement", "DoWhileStatement"].includes(node.type)) {
+      for (const key of ["init", "left", "right", "test", "update"]) visit(node[key], scope, conditional);
+      visit(node.body, scope, true);
+      return;
+    }
+    if (node.type === "SwitchStatement") {
+      visit(node.discriminant, scope, conditional);
+      const switchScope = childScope(scope, "block", node.start);
+      node.cases.forEach((item) => visit(item, switchScope, true));
+      return;
+    }
+    if (["TryStatement", "SwitchCase"].includes(node.type)) {
+      visitChildren(node, scope, true);
+      return;
+    }
+    visitChildren(node, scope, conditional);
+  }
+
+  visit(ast, root, false);
+  return {
+    lookup(name, useNode) {
+      let scope = nodeScopes.get(useNode) || root;
+      while (scope) {
+        const records = scope.bindings.get(name);
+        if (records) {
+          const eligible = records.filter((record) => record.hoisted || record.start <= useNode.start).sort((left, right) => left.start - right.start);
+          if (!eligible.length) return [{ source: null, start: scope.start, conditional: false, injected: false, hoisted: false }];
+          let active = [];
+          for (const record of eligible) active = record.conditional ? [...active, record] : [record];
+          return active;
+        }
+        scope = scope.parent;
+      }
+      return [];
+    }
+  };
+}
+
 function analysis(source) {
   const ast = acorn().parse(source, { ecmaVersion: "latest", sourceType: "script", allowHashBang: true, locations: true });
   const declared = new Set();
   const exports = new Set();
   const functions = [];
   const requires = new Set();
-  const bindings = new Map();
+  const bindings = createBindingIndex(ast);
   walk(ast, (node, parent) => {
     if ((node.type === "FunctionDeclaration" || node.type === "ClassDeclaration") && node.id) declared.add(node.id.name);
     if (node.type === "VariableDeclarator") {
-      if (node.id.type === "Identifier") { declared.add(node.id.name); if (node.init) bindings.set(node.id.name, node.init); }
-      if (node.id.type === "ObjectPattern") node.id.properties.forEach((p) => p.value && p.value.type === "Identifier" && declared.add(p.value.name));
+      declarePattern(node.id, declared);
     }
     if (["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(node.type)) functions.push(node);
     if (node.type === "MethodDefinition" && node.value) functions.push(node.value);
@@ -76,7 +493,9 @@ function analysis(source) {
       const request = staticName(node.arguments[0]); if (request) requires.add(request);
     }
     if (node.type === "AssignmentExpression" && node.operator === "=") {
-      if (node.left.type === "Identifier") declared.add(node.left.name);
+      if (node.left.type === "Identifier") {
+        declared.add(node.left.name);
+      }
       if (node.left.type === "MemberExpression" && isExports(node.left.object)) exports.add(memberName(node.left));
       if (isModuleExports(node.left) && node.right.type === "ObjectExpression") {
         node.right.properties.forEach((p) => p.type === "Property" && exports.add(staticName(p.key)));
@@ -107,6 +526,45 @@ function sourceFiles(root) {
 function relative(root, file) { return path.relative(root, file).replaceAll(path.sep, "/") || path.basename(file); }
 function failure(code, root, file, extra = {}) { return Object.freeze({ ok: false, code, file: relative(root, file), ...extra }); }
 
+function patternNames(pattern, bindings, names = new Set()) {
+  if (!pattern) return names;
+  if (pattern.type === "Identifier") names.add(pattern.name);
+  else if (pattern.type === "AssignmentPattern") patternNames(pattern.left, bindings, names);
+  else if (pattern.type === "RestElement") patternNames(pattern.argument, bindings, names);
+  else if (pattern.type === "ArrayPattern") pattern.elements.forEach((item) => patternNames(item, bindings, names));
+  else if (pattern.type === "ObjectPattern") {
+    pattern.properties.forEach((property) => {
+      if (property.type === "RestElement") patternNames(property.argument, bindings, names);
+      else {
+        const keys = property.computed ? resolveValueNames(property.key, bindings).names : new Set([staticName(property.key)]);
+        keys.forEach((key) => { if (key !== null) names.add(key); });
+        patternNames(property.value, bindings, names);
+      }
+    });
+  }
+  return names;
+}
+
+function mutationCapabilityName(value) {
+  if (typeof value !== "string") return false;
+  const tokens = value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  if (tokens.some((token) => NON_MUTATION_QUALIFIERS.has(token))) return false;
+  if (tokens.length === 1) return MUTATION_CAPABILITIES.has(tokens[0]);
+  return tokens.some((token) => MUTATION_CAPABILITIES.has(token)) && tokens.some((token) => MUTATION_ROLES.has(token));
+}
+
+function nonMutationQualifiedName(value) {
+  if (typeof value !== "string") return false;
+  const tokens = value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return tokens.some((token) => NON_MUTATION_QUALIFIERS.has(token));
+}
+
+function qualifiedMutationSurfaceName(value) {
+  if (typeof value !== "string") return false;
+  const tokens = value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return tokens.some((token) => MUTATION_CAPABILITIES.has(token)) && tokens.some((token) => MUTATION_ROLES.has(token));
+}
+
 function validRole(role) {
   return role && typeof role === "object" && typeof role.name === "string"
     && typeof role.source === "string" && /^(?:lib|tests|scripts)\/[A-Za-z0-9_./-]+$/.test(role.source)
@@ -135,41 +593,106 @@ function validateManifest(manifest, root, manifestPath) {
   return { ok: true };
 }
 
+function receiverResolution(callee, callable, bindings) {
+  const result = emptyResolution();
+  for (const resolved of callable.nodes) {
+    if (resolved.type !== "MemberExpression") continue;
+    mergeResolution(result, resolveExpression(callee.type === "MemberExpression" ? resolved.object : resolved, bindings));
+  }
+  if (callee.type === "MemberExpression") mergeResolution(result, resolveExpression(callee.object, bindings));
+  return result;
+}
+
+function callableHasUnresolvedMethod(callee, callable, bindings) {
+  let sawMember = false;
+  let unresolved = false;
+  for (const resolved of callable.nodes) {
+    if (resolved.type !== "MemberExpression") continue;
+    sawMember = true;
+    const property = propertyResolution(resolved, bindings, new Set(), 0);
+    unresolved ||= property.unresolved || property.exhausted;
+  }
+  if (!sawMember && callee.type === "MemberExpression") {
+    const property = propertyResolution(callee, bindings, new Set(), 0);
+    unresolved ||= property.unresolved || property.exhausted;
+  }
+  return unresolved;
+}
+
+function resolutionHasUnresolvedSelection(resolution, bindings) {
+  for (const node of resolution.nodes) {
+    if (node.type !== "MemberExpression") continue;
+    const property = propertyResolution(node, bindings, new Set(), 0);
+    if (property.unresolved || property.exhausted) return true;
+  }
+  return false;
+}
+
+function injectedCapabilityBinding(pattern, source, bindings) {
+  if (!pattern || !source) return false;
+  const resolved = resolveExpression(source, bindings);
+  if (!resolved.injected) return false;
+  return [...patternNames(pattern, bindings), ...resolved.origins].some(mutationCapabilityName);
+}
+
 function verifyAst(file, item, root) {
+  const protectedSource = /(?:diagnostic|shadow)/i.test(file);
+  let sideEffect = false;
   for (const fn of item.functions) {
     if (fn.loc && fn.loc.end.line - fn.loc.start.line + 1 > MAX_FUNCTION_LINES) return failure("GOD_FUNCTION_FORBIDDEN", root, path.join(root, file));
+    if (protectedSource && fn.params.some((parameter) => [...patternNames(parameter, item.bindings)].some(mutationCapabilityName))) sideEffect = true;
     const identifiers = new Set(); let rawBranch = false; let authorityCall = false;
     walk(fn.body, (node) => {
       if (node.type === "Identifier") identifiers.add(node.name);
       if (node.type === "CallExpression") {
-        const callee = resolvedNode(node.callee, item.bindings);
-        const call = callee.type === "Identifier" ? callee.name : resolvedName(callee.property, item.bindings);
-        if (["includes", "match", "test", "startsWith", "endsWith"].includes(call)) rawBranch = true;
-        if (["validateSemanticUnit", "validateAndNormalizeSourceEvidence", "validateContextLink", "createLifecycleDecision", "createUnitRoutingDecision", "createCanonicalizerInputItem", "executeCanonicalizerInputItem", "canonicalizeExecutionItem", "resolveAvailability"].includes(call)) authorityCall = true;
+        const callable = resolveCallable(node.callee, item.bindings);
+        const isRawCall = ["includes", "match", "test", "startsWith", "endsWith"].some((name) => callable.names.has(name));
+        if (isRawCall) rawBranch = true;
+        if (["validateSemanticUnit", "validateAndNormalizeSourceEvidence", "validateContextLink", "createLifecycleDecision", "createUnitRoutingDecision", "createCanonicalizerInputItem", "executeCanonicalizerInputItem", "canonicalizeExecutionItem", "resolveAvailability"].some((name) => callable.names.has(name))
+          || callable.exhausted && !isRawCall) authorityCall = true;
       }
     });
     if (rawBranch && ["messageText", "guestText", "rawText", "quote"].some((name) => identifiers.has(name)) && authorityCall) return failure("GOD_FUNCTION_FORBIDDEN", root, path.join(root, file));
   }
-  let candidate = false; let sideEffect = false;
+  let candidate = false;
   walk(item.ast, (node) => {
-    if ((node.type === "MemberExpression" && resolvedName(node.property, item.bindings) === "candidateIndex")
-      || node.type === "Property" && staticName(node.key) === "candidateIndex"
-      || node.type === "CallExpression" && ["set", "defineProperty"].includes(memberName(resolvedNode(node.callee, item.bindings)))
-        && resolvedName(node.arguments[1], item.bindings) === "candidateIndex") candidate = true;
+    if (protectedSource && node.type === "VariableDeclarator"
+      && injectedCapabilityBinding(node.id, node.init, item.bindings)) sideEffect = true;
+    if (protectedSource && node.type === "AssignmentExpression" && node.operator === "="
+      && injectedCapabilityBinding(node.left, node.right, item.bindings)) sideEffect = true;
+    if (node.type === "MemberExpression") {
+      const property = propertyResolution(node, item.bindings, new Set(), 0);
+      if (property.names.has("candidateIndex") || property.exhausted) candidate = true;
+    }
+    if (node.type === "Property") {
+      const property = node.computed ? resolveValueNames(node.key, item.bindings) : { names: new Set([staticName(node.key)]), exhausted: false };
+      if (property.names.has("candidateIndex") || property.exhausted) candidate = true;
+    }
     if (node.type === "VariableDeclarator" && node.id.type === "Identifier" && node.id.name === "candidateIndex") candidate = true;
     if (node.type === "AssignmentExpression" && node.left.type === "Identifier" && node.left.name === "candidateIndex") candidate = true;
     if (node.type === "CallExpression") {
-      const callee = resolvedNode(node.callee, item.bindings);
-      const receiver = callee.type === "MemberExpression" ? resolvedNode(callee.object, item.bindings) : null;
-      const owner = receiver && receiver.type === "Identifier" ? receiver.name : null;
-      const call = callee.type === "Identifier" ? callee.name : resolvedName(callee.property, item.bindings);
-      if (["state", "State", "Resolver", "resolver", "LINE", "line", "database"].includes(owner)
-        || ["sendLine", "writeState", "createReview", "persist", "insertReview", "replyMessage", "resolveAvailability"].includes(call)) sideEffect = true;
-      if (/(?:diagnostic|shadow)/i.test(path.basename(file)) && callee.type === "MemberExpression" && call === null) sideEffect = true;
+      const callable = resolveCallable(node.callee, item.bindings);
+      const hasMember = node.callee.type === "MemberExpression" || callable.nodes.some((item) => item.type === "MemberExpression");
+      const setter = ["set", "defineProperty"].some((name) => callable.names.has(name));
+      const field = resolveValueNames(node.arguments[1], item.bindings);
+      if (hasMember && (setter && (field.names.has("candidateIndex") || field.exhausted)
+        || field.names.has("candidateIndex") && callable.exhausted)) candidate = true;
+      const receiver = receiverResolution(node.callee, callable, item.bindings);
+      const unresolvedSelection = resolutionHasUnresolvedSelection(receiver, item.bindings);
+      const unresolvedMethod = callableHasUnresolvedMethod(node.callee, callable, item.bindings);
+      const metadataQualified = [...receiver.origins].some(nonMutationQualifiedName);
+      const explicitQualifiedMutation = receiver.injected
+        && [...receiver.origins].some(qualifiedMutationSurfaceName)
+        && [...callable.names].some((name) => MUTATING_METHODS.has(name));
+      if ([...receiver.origins].some(mutationCapabilityName)
+        || ["sendLine", "writeState", "createReview", "persist", "insertReview", "replyMessage", "resolveAvailability"].some((name) => callable.names.has(name))
+        || protectedSource && explicitQualifiedMutation
+        || protectedSource && receiver.injected
+          && (receiver.exhausted || unresolvedSelection || unresolvedMethod && !metadataQualified)) sideEffect = true;
     }
   });
   if (file !== "lib/new-core/canonical-execution-adapter.js" && candidate) return failure("CANDIDATE_INDEX_OUTSIDE_C08", root, path.join(root, file));
-  if (/(?:diagnostic|shadow)/i.test(path.basename(file)) && sideEffect) return failure("DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN", root, path.join(root, file));
+  if (protectedSource && sideEffect) return failure("DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN", root, path.join(root, file));
   return { ok: true };
 }
 

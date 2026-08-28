@@ -241,6 +241,116 @@ const aliasedIndexRoot = isolatedSource(({ sourceRoot }) => {
   fs.writeFileSync(path.join(sourceRoot, "aliased-index.js"), `const key = "candidateIndex"; Reflect.set({}, key, 0);`);
 });
 assertGateFailure(gate(aliasedIndexRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const receiverMethodIndexRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "receiver-method-index.js"), `
+    const receiver = Reflect;
+    const method = "set";
+    const field = "candidateIndex";
+    receiver[method]({}, field, 0);
+  `);
+});
+assertGateFailure(gate(receiverMethodIndexRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const nestedIndexAliasRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "nested-index-alias.js"), `
+    const compatibility = { fields: { index: "candidateIndex" } };
+    const reflectMethods = { mutation: { write: Reflect.set } };
+    const receiver = reflectMethods.mutation;
+    const write = receiver.write;
+    write({}, compatibility["fields"].index, 0);
+  `);
+});
+assertGateFailure(gate(nestedIndexAliasRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const assignedIndexAliasesRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "assigned-index-aliases.js"), `
+    let receiver;
+    let method;
+    let field;
+    receiver = Reflect;
+    method = "set";
+    field = "candidateIndex";
+    receiver[method]({}, field, 0);
+  `);
+});
+assertGateFailure(gate(assignedIndexAliasesRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const postCallIndexReassignmentRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "post-call-index-reassignment.js"), `
+    let method = "set";
+    let field = "candidateIndex";
+    Reflect[method]({}, field, 0);
+    method = "get";
+    field = "other";
+  `);
+});
+assertGateFailure(gate(postCallIndexReassignmentRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const deferredReassignmentIndexRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "deferred-reassignment-index.js"), `
+    let field = "candidateIndex";
+    function configureLater() {
+      field = "other";
+    }
+    Reflect.set({}, field, 0);
+    module.exports = { configureLater };
+  `);
+});
+assertGateFailure(gate(deferredReassignmentIndexRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const destructuredAssignmentIndexRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "destructured-assignment-index.js"), `
+    let write;
+    ({ set: write } = Reflect);
+    const field = "candidateIndex";
+    write({}, field, 0);
+  `);
+});
+assertGateFailure(gate(destructuredAssignmentIndexRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const computedDestructuredAssignmentIndexRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "computed-destructured-assignment-index.js"), `
+    const operation = "set";
+    let write;
+    ({ [operation]: write } = Reflect);
+    const field = "candidateIndex";
+    write({}, field, 0);
+  `);
+});
+assertGateFailure(gate(computedDestructuredAssignmentIndexRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const conditionalIndexAliasRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "conditional-index-alias.js"), `
+    let field = "other";
+    if (process.env.USE_COMPATIBILITY_FIELD) {
+      field = "candidateIndex";
+    }
+    Reflect.set({}, field, 0);
+  `);
+});
+assertGateFailure(gate(conditionalIndexAliasRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const overwrittenIndexAliasRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "overwritten-index-alias.js"), `
+    let field = "candidateIndex";
+    field = "other";
+    Reflect.set({}, field, 0);
+  `);
+});
+assert.equal(gate(overwrittenIndexAliasRoot).ok, true, JSON.stringify(gate(overwrittenIndexAliasRoot)));
+const conditionalExpressionIndexRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "conditional-expression-index.js"), `
+    const field = process.env.USE_COMPATIBILITY_FIELD ? "candidateIndex" : "other";
+    Reflect.set({}, field, 0);
+  `);
+});
+assertGateFailure(gate(conditionalExpressionIndexRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const computedObjectIndexRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "computed-object-index.js"), `
+    const field = "candidateIndex";
+    module.exports = { [field]: 0 };
+  `);
+});
+assertGateFailure(gate(computedObjectIndexRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const deepIndexAliasRoot = isolatedSource(({ sourceRoot }) => {
+  const aliases = Array.from({ length: 30 }, (_, index) => (
+    index === 0 ? `const key0 = "candidateIndex";` : `const key${index} = key${index - 1};`
+  )).join("\n");
+  fs.writeFileSync(path.join(sourceRoot, "deep-index-alias.js"), `${aliases}\nReflect.set({}, key29, 0);\n`);
+});
+assertGateFailure(gate(deepIndexAliasRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
 
 // AC-MNT-008: diagnostics have one writer and are not a second persistence,
 // Resolver, state, reply, or facts boundary.
@@ -268,6 +378,94 @@ const aliasedShadowRoot = isolatedSource(({ sourceRoot }) => {
   fs.writeFileSync(path.join(sourceRoot, "shadow-aliased.js"), `const db = database; const write = db.insert; function run(x) { write(x); } module.exports = { run };`);
 });
 assertGateFailure(gate(aliasedShadowRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+const protectedCapabilityParameters = [
+  ["db", "function runShadow(db, event) { return db.insert(event); }"],
+  ["database", "function runShadow({ database: store }) { return Boolean(store); }"],
+  ["resolver-client", "function runShadow(resolverClient, input) { return resolverClient.resolve(input); }"],
+  ["line-client", "function runShadow(lineClient, message) { return lineClient.reply(message); }"],
+  ["state-store", "function runShadow(stateStore, value) { return stateStore.save(value); }"]
+];
+for (const [name, source] of protectedCapabilityParameters) {
+  const root = isolatedSource(({ sourceRoot }) => {
+    fs.writeFileSync(path.join(sourceRoot, `shadow-injected-${name}.js`), `${source}\nmodule.exports = { runShadow };\n`);
+  });
+  assertGateFailure(gate(root), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+}
+const unresolvedProtectedReceiverRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-unresolved-receiver.js"), `
+    function runShadow(dependencies, operation, event) {
+      const serviceBag = { selected: dependencies.resolver };
+      const receiver = serviceBag.selected;
+      return receiver[operation](event);
+    }
+    module.exports = { runShadow };
+  `);
+});
+assertGateFailure(gate(unresolvedProtectedReceiverRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+const fullyDynamicProtectedReceiverRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-fully-dynamic-receiver.js"), `
+    function runShadow(dependencies, capability, operation, event) {
+      const receiver = dependencies[capability];
+      return receiver[operation](event);
+    }
+    module.exports = { runShadow };
+  `);
+});
+assertGateFailure(gate(fullyDynamicProtectedReceiverRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+for (const [name, invocation] of [
+  ["static-method", "receiver.insert(event)"],
+  ["direct-call", "receiver(event)"]
+]) {
+  const root = isolatedSource(({ sourceRoot }) => {
+    fs.writeFileSync(path.join(sourceRoot, `shadow-dynamic-receiver-${name}.js`), `
+      function runShadow(dependencies, capability, event) {
+        const receiver = dependencies[capability];
+        return ${invocation};
+      }
+      module.exports = { runShadow };
+    `);
+  });
+  assertGateFailure(gate(root), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+}
+const qualifiedDynamicProtectedReceiverRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-qualified-dynamic-receiver.js"), `
+    function runShadow(dependencies, capability, event) {
+      const databaseClientSchema = dependencies[capability];
+      return databaseClientSchema.insert(event);
+    }
+    module.exports = { runShadow };
+  `);
+});
+assertGateFailure(gate(qualifiedDynamicProtectedReceiverRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+const qualifiedInjectedMutationRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-qualified-injected-mutation.js"), `
+    function runShadow(databaseClientSchema, event) {
+      return databaseClientSchema.insert(event);
+    }
+    module.exports = { runShadow };
+  `);
+});
+assertGateFailure(gate(qualifiedInjectedMutationRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+const computedInjectedCapabilityRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-computed-injected-capability.js"), `
+    const capability = "resolver";
+    function runShadow({ [capability]: service }) {
+      return Boolean(service);
+    }
+    module.exports = { runShadow };
+  `);
+});
+assertGateFailure(gate(computedInjectedCapabilityRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+const declaredInjectedCapabilityRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-declared-injected-capability.js"), `
+    function runShadow(dependencies) {
+      const databaseClient = dependencies.connection;
+      return Boolean(databaseClient);
+    }
+    module.exports = { runShadow };
+  `);
+});
+assertGateFailure(gate(declaredInjectedCapabilityRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
 
 // AC-MNT-009: the scanner is token-aware: comments, string literals, and
 // innocent consumer names do not create false writer/authority findings.
@@ -294,6 +492,152 @@ const authorityMetadataRoot = isolatedSource(({ sourceRoot }) => {
   `);
 });
 assert.equal(gate(authorityMetadataRoot).ok, true, JSON.stringify(gate(authorityMetadataRoot)));
+const harmlessProtectedMetadataRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-schema-metadata.js"), `
+    const databaseClientSchema = { type: "object" };
+    function describeStateSchema(stateSchema) {
+      const reflection = { receiver: Object, method: "keys" };
+      if (stateSchema && typeof stateSchema.validate === "function") stateSchema.validate();
+      return reflection.receiver[reflection.method](stateSchema);
+    }
+    function formatResolverMetadata(resolverMetadata) {
+      if (resolverMetadata && typeof resolverMetadata.format === "function") return resolverMetadata.format();
+      return resolverMetadata && resolverMetadata.name;
+    }
+    function invokeResolverMetadata(resolverMetadata, operation) {
+      return resolverMetadata[operation]();
+    }
+    module.exports = { databaseClientSchema, describeStateSchema, formatResolverMetadata, invokeResolverMetadata };
+  `);
+});
+assert.equal(gate(harmlessProtectedMetadataRoot).ok, true, JSON.stringify(gate(harmlessProtectedMetadataRoot)));
+const harmlessLoopScopeRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "loop-scope-metadata.js"), `
+    let field = "other";
+    for (let field = "candidateIndex"; false;) {
+      void field;
+    }
+    Reflect.set({}, field, 0);
+  `);
+});
+assert.equal(gate(harmlessLoopScopeRoot).ok, true, JSON.stringify(gate(harmlessLoopScopeRoot)));
+const harmlessSwitchScopeRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "switch-scope-metadata.js"), `
+    let field = "other";
+    switch (process.env.MODE) {
+      case "compatibility":
+        let field = "candidateIndex";
+        void field;
+        break;
+      default:
+        break;
+    }
+    Reflect.set({}, field, 0);
+  `);
+});
+assert.equal(gate(harmlessSwitchScopeRoot).ok, true, JSON.stringify(gate(harmlessSwitchScopeRoot)));
+
+// AC-MNT-004 supplemental: a raw-text branch cannot hide an imported
+// authority behind a namespace member, nested object property, or local alias.
+const importedAuthorityAliasRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "imported-authority-god-function.js"), `
+    const routing = require("./unit-reply-router");
+    const authorityBag = {
+      nested: { invoke: routing["create" + "UnitRoutingDecision"] }
+    };
+    const localAuthority = authorityBag.nested.invoke;
+    function decideFromGuestText(rawText) {
+      if (rawText.includes("parking")) return localAuthority({});
+      return null;
+    }
+    module.exports = { decideFromGuestText };
+  `);
+});
+assertGateFailure(gate(importedAuthorityAliasRoot), "GOD_FUNCTION_FORBIDDEN");
+const destructuredAuthorityAliasRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "destructured-authority-god-function.js"), `
+    const { createUnitRoutingDecision: importedRoute } = require("./unit-reply-router");
+    const localRoute = importedRoute;
+    function decideFromGuestText(messageText) {
+      if (messageText.startsWith("parking")) return localRoute({});
+      return null;
+    }
+    module.exports = { decideFromGuestText };
+  `);
+});
+assertGateFailure(gate(destructuredAuthorityAliasRoot), "GOD_FUNCTION_FORBIDDEN");
+const assignedAuthorityAliasRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "assigned-authority-god-function.js"), `
+    const routing = require("./unit-reply-router");
+    let localRoute;
+    localRoute = routing.createUnitRoutingDecision;
+    function decideFromGuestText(guestText) {
+      if (guestText.endsWith("parking")) return localRoute({});
+      return null;
+    }
+    module.exports = { decideFromGuestText };
+  `);
+});
+assertGateFailure(gate(assignedAuthorityAliasRoot), "GOD_FUNCTION_FORBIDDEN");
+const scopedAuthorityAliasRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "scoped-authority-god-function.js"), `
+    const routing = require("./unit-reply-router");
+    function forbidden(rawText) {
+      const invoke = routing.createUnitRoutingDecision;
+      if (rawText.includes("parking")) return invoke({});
+      return null;
+    }
+    function harmless() {
+      const invoke = () => null;
+      return invoke();
+    }
+    module.exports = { forbidden, harmless };
+  `);
+});
+assertGateFailure(gate(scopedAuthorityAliasRoot), "GOD_FUNCTION_FORBIDDEN");
+const scopedHarmlessAliasRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "scoped-harmless-alias.js"), `
+    const routing = require("./unit-reply-router");
+    function harmless(rawText) {
+      const invoke = () => null;
+      if (rawText.includes("parking")) return invoke({});
+      return null;
+    }
+    function authorityReference() {
+      const invoke = routing.createUnitRoutingDecision;
+      return invoke;
+    }
+    module.exports = { harmless, authorityReference };
+  `);
+});
+assert.equal(gate(scopedHarmlessAliasRoot).ok, true, JSON.stringify(gate(scopedHarmlessAliasRoot)));
+const destructuredAssignmentAuthorityRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "destructured-assignment-authority.js"), `
+    const routing = require("./unit-reply-router");
+    let route;
+    ({ createUnitRoutingDecision: route } = routing);
+    function decideFromGuestText(messageText) {
+      if (messageText.match("parking")) return route({});
+      return null;
+    }
+    module.exports = { decideFromGuestText };
+  `);
+});
+assertGateFailure(gate(destructuredAssignmentAuthorityRoot), "GOD_FUNCTION_FORBIDDEN");
+const conditionalAuthorityAliasRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "conditional-authority-alias.js"), `
+    const routing = require("./unit-reply-router");
+    const route = process.env.USE_ROUTER
+      ? routing.createUnitRoutingDecision
+      : (() => null);
+    function decideFromGuestText(rawText) {
+      if (rawText.includes("parking")) return route({});
+      return null;
+    }
+    module.exports = { decideFromGuestText };
+  `);
+});
+assertGateFailure(gate(conditionalAuthorityAliasRoot), "GOD_FUNCTION_FORBIDDEN");
 
 // SUPPLEMENTAL: exact source/symbol ownership and the final-action authority are sealed.
 const exactGraphManifest = JSON.parse(fs.readFileSync(ownershipPath, "utf8"));
