@@ -79,6 +79,7 @@ function turnInput({ messageText = "我們4位", cycles, propertyScope = scope }
       publicSubjectCatalog: [
         { catalogIdentity: "room-a", kind: "room", propertyId: propertyScope.propertyId, publicName: "Room A" },
         { catalogIdentity: "bundle-a", kind: "bundle", propertyId: propertyScope.propertyId, publicName: "Bundle A" },
+        { catalogIdentity: "matched-a", kind: "matched_room_set", propertyId: propertyScope.propertyId, publicName: "Matched A" },
         { catalogIdentity: "transport-driving", kind: "other_verified", propertyId: propertyScope.propertyId, publicName: "Driving" }
       ]
     }
@@ -174,9 +175,9 @@ function stateTask(overrides = {}) {
   });
 }
 
-function state(tasks = [stateTask()]) {
+function state(tasks = [stateTask()], stateScope = scope) {
   return createConversationStateV3({
-    ...scope,
+    ...stateScope,
     revision: 3,
     tasks,
     createdAt: NOW,
@@ -187,7 +188,10 @@ function state(tasks = [stateTask()]) {
 
 function applyDecision(previous, lifecycleResult) {
   assert.equal(lifecycleResult.ok, true);
-  const adapted = adaptLifecycleDecisionsToStateV3([lifecycleResult.value]);
+  const adapted = adaptLifecycleDecisionsToStateV3({
+    decisions: [lifecycleResult.value],
+    previous
+  });
   assert.equal(adapted.ok, true);
   return {
     adapted,
@@ -214,6 +218,39 @@ assert.equal(fourGuests.lifecycleResult.value.replyCandidate, undefined, "C06 mu
 const fourGuestState = applyDecision(state(), fourGuests.lifecycleResult);
 assert.equal(fourGuestState.next.tasks[0].guestCount, 4);
 assert.equal(fourGuestState.next.tasks[0].status, "answered");
+
+// C05 provenance binds the link to the exact validated C03 object, not merely
+// caller-controlled identifiers or an equivalent projection.
+const clonedFourGuestUnit = clone(fourGuests.unit);
+const clonedUnitDecision = createLifecycleDecision({
+  lifecycleDecisionId: "lifecycle-cloned-unit",
+  unit: clonedFourGuestUnit,
+  validatedContextLink: fourGuests.linkResult.value
+});
+assert.equal(clonedUnitDecision.ok, false);
+assert.equal(clonedUnitDecision.code, "LIFECYCLE_TRANSITION_INVALID");
+const substitutedUnitEvidence = validateAndNormalizeSourceEvidence(
+  [evidence(fourGuestsText)],
+  fourGuests.input.sourceEvents
+);
+const substitutedUnit = validateSemanticUnit({
+  unit: candidate({
+    messageText: fourGuestsText,
+    slots: [slot({ messageText: fourGuestsText, id: "slot-guests", slot: "guest_count", value: 5 })]
+  }),
+  validatedEvidenceRefs: substitutedUnitEvidence.value,
+  understandingTurnInput: fourGuests.input,
+  publicCatalogIdentitySet: buildPublicCatalogIdentitySet(fourGuests.input),
+  capabilityRegistryProjection: projectCapabilityRegistry(CAPABILITY_REGISTRY)
+});
+assert.equal(substitutedUnit.ok, true);
+const substitutedUnitDecision = createLifecycleDecision({
+  lifecycleDecisionId: "lifecycle-substituted-unit",
+  unit: substitutedUnit.value,
+  validatedContextLink: fourGuests.linkResult.value
+});
+assert.equal(substitutedUnitDecision.ok, false);
+assert.equal(substitutedUnitDecision.code, "LIFECYCLE_TRANSITION_INVALID");
 
 // 2 / AC-CTX-015: transport remains a validated turn-context operation when
 // the byte-frozen V3 schema has no matching persisted field.
@@ -243,7 +280,10 @@ assert.equal(mixed.lifecycleResult.ok, true);
 assert.equal(mixed.unit.replyCandidate.disposition, "NO_REPLY");
 assert.equal(Object.hasOwn(mixed.lifecycleResult.value, "canonicalItems"), false);
 assert.equal(Object.hasOwn(mixed.lifecycleResult.value, "resolver"), false);
-assert.equal(adaptLifecycleDecisionsToStateV3([mixed.lifecycleResult.value]).value.lifecycleOperations.length, 1);
+assert.equal(adaptLifecycleDecisionsToStateV3({
+  decisions: [mixed.lifecycleResult.value],
+  previous: state()
+}).value.lifecycleOperations.length, 1);
 
 // 4 / AC-CTX-003: an explicit active-target guest count correction applies
 // exactly the validated value.
@@ -268,6 +308,23 @@ assert.equal(bundleState.bundleId, "bundle-a");
 assert.equal(bundleState.roomTypeId, null);
 assert.doesNotMatch(JSON.stringify(bundleState), /改成包棟/);
 
+// AC-CTX-004 clarification: a C03-valid matched room set has no V3 lodging
+// product representation, so it remains turn context rather than failing C06.
+const matchedText = "改成適合的房型組合";
+const matched = validatedPipeline({
+  messageText: matchedText,
+  slots: [slot({ messageText: matchedText, id: "slot-matched", slot: "product", value: "matched-a" })]
+});
+assert.equal(matched.lifecycleResult.ok, true);
+assert.equal(matched.lifecycleResult.value.verifiedSlotOperations[0].persistedField, null);
+const matchedAdapted = adaptLifecycleDecisionsToStateV3({
+  decisions: [matched.lifecycleResult.value],
+  previous: state()
+});
+assert.equal(matchedAdapted.ok, true);
+assert.equal(matchedAdapted.value.lifecycleOperations.length, 0);
+assert.equal(matchedAdapted.value.turnContextOperations.length, 1);
+
 // 6 / AC-CTX-005 / AC-CTX-018 / AC-LIF-011: explicit unique END cancels the
 // dialogue task and owns no executable item.
 const endText = "不用了";
@@ -287,18 +344,17 @@ assert.equal(missingTarget.linkResult.ok, true);
 assert.equal(missingTarget.lifecycleResult.ok, false);
 assert.equal(missingTarget.lifecycleResult.code, "LIFECYCLE_TARGET_REQUIRED");
 
-// 8 / AC-CTX-006..007 / AC-LIF-017: ended/expired targets are unavailable to
-// the extent represented by the supplied snapshot and are never revived.
-for (const unavailableCycle of [
-  { requestCycleId: "cycle-a", status: "answered", expiresAt: PAST, slotRefs: [] },
-  { requestCycleId: "cycle-a", status: "ended", expiresAt: FUTURE, slotRefs: [] }
-]) {
-  const input = clone(turnInput());
-  input.referenceableCycles = [unavailableCycle];
-  const unavailable = validatedPipeline({ input });
-  assert.equal(unavailable.linkResult.ok, false);
-  assert.equal(unavailable.linkResult.code, "CONTEXT_TARGET_UNAVAILABLE");
-}
+// 8 / AC-CTX-006..007 / AC-LIF-017: a production-shaped expired target is
+// unavailable, while ended targets cannot enter the closed C01 projection.
+const expiredInput = turnInput({
+  cycles: [{ requestCycleId: "cycle-a", status: "answered", expiresAt: PAST, slotRefs: [] }]
+});
+const unavailable = validatedPipeline({ input: expiredInput });
+assert.equal(unavailable.linkResult.ok, false);
+assert.equal(unavailable.linkResult.code, "CONTEXT_TARGET_UNAVAILABLE");
+assert.throws(() => turnInput({
+  cycles: [{ requestCycleId: "cycle-a", status: "ended", expiresAt: FUTURE, slotRefs: [] }]
+}), (error) => error && error.code === "TURN_INPUT_INVALID");
 
 // 9 / AC-CTX-008 / AC-ISO-003: cross-property state is rejected at the C01
 // verified-scope boundary before it can become a link target.
@@ -359,13 +415,48 @@ const untrustedLink = validateContextLink({
 assert.equal(untrustedLink.ok, false);
 assert.equal(untrustedLink.code, "CONTEXT_TARGET_SCOPE_CONFLICT");
 
-// 10 / AC-CTX-018 / AC-LIF-018: duplicate target identities are ambiguous;
-// Context never chooses the latest/first/pending candidate.
-const ambiguousInput = clone(turnInput());
-ambiguousInput.referenceableCycles.push(clone(ambiguousInput.referenceableCycles[0]));
-const ambiguous = validatedPipeline({ input: ambiguousInput });
-assert.equal(ambiguous.linkResult.ok, false);
-assert.equal(ambiguous.linkResult.code, "CONTEXT_TARGET_AMBIGUOUS");
+// 10 / AC-CTX-018 / AC-LIF-018: no valid C01 can encode duplicate target IDs,
+// so ambiguity is rejected at the production C01 writer without auto-select.
+const duplicateCycle = {
+  requestCycleId: "cycle-a",
+  status: "pending",
+  expiresAt: FUTURE,
+  slotRefs: []
+};
+assert.throws(() => turnInput({ cycles: [duplicateCycle, clone(duplicateCycle)] }),
+  (error) => error && error.code === "TURN_INPUT_INVALID");
+
+// A validator-level malformed clone never reaches target classification:
+// exact C01 provenance is checked before duplicate/ended target inspection.
+const malformedClone = clone(fourGuests.input);
+malformedClone.referenceableCycles.push(clone(malformedClone.referenceableCycles[0]));
+const malformedEvidence = validateAndNormalizeSourceEvidence(
+  [evidence(fourGuestsText)],
+  malformedClone.sourceEvents
+);
+const malformedUnit = validateSemanticUnit({
+  unit: candidate({ messageText: fourGuestsText }),
+  validatedEvidenceRefs: malformedEvidence.value,
+  understandingTurnInput: malformedClone,
+  publicCatalogIdentitySet: null,
+  capabilityRegistryProjection: projectCapabilityRegistry(CAPABILITY_REGISTRY)
+});
+assert.equal(malformedUnit.ok, true);
+const malformedLink = validateContextLink({
+  unit: malformedUnit.value,
+  linkCandidate: {
+    contextLinkCandidateId: "link-context",
+    unitId: "unit-context",
+    actionCandidate: "MODIFY",
+    targetRequestCycleId: "cycle-a",
+    evidenceRefs: [evidence(fourGuestsText)]
+  },
+  understandingTurnInput: malformedClone,
+  validatedEvidenceRefs: malformedEvidence.value,
+  now: NOW
+});
+assert.equal(malformedLink.ok, false);
+assert.equal(malformedLink.code, "CONTEXT_TARGET_SCOPE_CONFLICT");
 
 // AC-LIF-001..010: exact cardinality, closed status, unit ownership, and
 // duplicate lifecycle identities fail at the lifecycle owner.
@@ -397,7 +488,10 @@ assert.equal(continued.lifecycleResult.value.action, "CONTINUE");
 assert.equal(applyDecision(state(), continued.lifecycleResult).next.tasks[0].guestCount, 4);
 const none = validatedPipeline({ action: "NONE", target: null, slots: [] });
 assert.equal(none.lifecycleResult.ok, true);
-assert.equal(adaptLifecycleDecisionsToStateV3([none.lifecycleResult.value]).value.lifecycleOperations.length, 0);
+assert.equal(adaptLifecycleDecisionsToStateV3({
+  decisions: [none.lifecycleResult.value],
+  previous: state()
+}).value.lifecycleOperations.length, 0);
 const invalidStartTarget = validatedPipeline({ action: "START", target: "cycle-a", slots: [] });
 assert.equal(invalidStartTarget.lifecycleResult.ok, false);
 assert.equal(invalidStartTarget.lifecycleResult.code, "LIFECYCLE_START_TARGET_FORBIDDEN");
@@ -423,7 +517,11 @@ assert.equal(validateLifecycleDecisions([fourGuests.lifecycleResult.value], { un
 const previous = state();
 const unchangedPath = reduceConversationStateV3({ previous, scope: { ...scope, now: NOW } });
 assert.deepEqual(unchangedPath.tasks, previous.tasks);
-const adaptedGuest = adaptLifecycleDecisionsToStateV3([fourGuests.lifecycleResult.value]);
+const adaptedGuest = adaptLifecycleDecisionsToStateV3({
+  decisions: [fourGuests.lifecycleResult.value],
+  previous
+});
+assert.equal(adaptedGuest.ok, true);
 const forgedOperations = clone(adaptedGuest.value.lifecycleOperations);
 assert.throws(() => reduceConversationStateV3({
   previous,
@@ -431,9 +529,46 @@ assert.throws(() => reduceConversationStateV3({
   scope: { ...scope, now: NOW }
 }), /state_v3_lifecycle_operations_invalid/);
 
+// The adapter and reducer jointly bind non-empty trusted operations to the
+// exact C01 scope and exact previous-state reducer invocation. The same task
+// identifier cannot be replayed across any property/channel/user dimension.
+const propertyB = { propertyId: "property-b", channel: scope.channel, userId: scope.userId };
+const channelB = { propertyId: scope.propertyId, channel: "line-b", userId: scope.userId };
+const userB = { propertyId: scope.propertyId, channel: scope.channel, userId: "guest-b" };
+for (const replayScope of [propertyB, channelB, userB]) {
+  const replayState = state([stateTask()], replayScope);
+  assert.equal(adaptLifecycleDecisionsToStateV3({
+    decisions: [fourGuests.lifecycleResult.value],
+    previous: replayState
+  }).ok, false, "adapter rejects C01/previous scope mismatch");
+  assert.throws(() => reduceConversationStateV3({
+    previous: replayState,
+    lifecycleOperations: adaptedGuest.value.lifecycleOperations,
+    scope: { ...replayScope, now: NOW }
+  }), /state_v3_lifecycle_operations_invalid/);
+}
+assert.throws(() => reduceConversationStateV3({
+  previous: clone(previous),
+  lifecycleOperations: adaptedGuest.value.lifecycleOperations,
+  scope: { ...scope, now: NOW }
+}), /state_v3_lifecycle_operations_invalid/, "operations bind to the exact previous state object");
+for (const replayScope of [propertyB, channelB, userB]) {
+  assert.throws(() => reduceConversationStateV3({
+    previous,
+    lifecycleOperations: adaptedGuest.value.lifecycleOperations,
+    scope: { ...replayScope, now: NOW }
+  }), /state_v3_lifecycle_operations_invalid/);
+}
+const correctlyBound = reduceConversationStateV3({
+  previous,
+  lifecycleOperations: adaptedGuest.value.lifecycleOperations,
+  scope: { ...scope, now: NOW }
+});
+assert.equal(correctlyBound.tasks[0].guestCount, 4);
+
 console.log(JSON.stringify({
   suite: "new-core-context-lifecycle",
   classification: "RUNTIME_COMPONENT_TEST",
-  caseCount: 27,
+  caseCount: 39,
   status: "PASS"
 }));

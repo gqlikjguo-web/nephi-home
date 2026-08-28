@@ -126,6 +126,7 @@
 - [ ] Run targeted RED.
 - [ ] Implement exact START/CONTINUE/MODIFY/END/NONE invariants and slot provenance; do not call `automaticPendingRelation()`.
 - [ ] Apply the approved Task 6 clarification: C06 status is the closed `VALIDATED` decision status; the adapter emits a branded closed `lifecycleOperations[]` input to the sole existing reducer; only existing V3 `guestCount`, lodging-product, and cancellation concepts persist, while transport/unmapped `other_supported` remain turn context and context-only updates may own zero C08.
+- [ ] Bind validated C05 to the exact validated C03 and adapter-owned C01; bind non-empty reducer operations to the exact prior state and property/channel/user scope. Keep catalog-validated `matched_room_set` as turn context because V3 has no matching persisted field.
 - [ ] Run targeted plus multi-cycle, dialogue-temporal-state, pending-arbitration, and state-v3 regressions.
 - [ ] Prove persisted state schema and DB migrations are byte-identical.
 - [ ] Commit Context/lifecycle boundary.

@@ -1,8 +1,11 @@
 "use strict";
 
-const { isValidatedLifecycleDecision } = require("./lifecycle-manager");
+const {
+  isValidatedLifecycleDecision,
+  understandingInputForValidatedLifecycleDecision
+} = require("./lifecycle-manager");
 
-const TRUSTED_OPERATION_ARRAYS = new WeakSet();
+const BINDING_BY_TRUSTED_OPERATION_ARRAY = new WeakMap();
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -12,6 +15,24 @@ function deepFreeze(value) {
 
 function failure(code, errors = []) {
   return { ok: false, code, errors };
+}
+
+function scopeProjection(value) {
+  const scope = value && value.scope || value;
+  if (!scope || typeof scope !== "object" || Array.isArray(scope)) return null;
+  const projected = {
+    propertyId: String(scope.propertyId || ""),
+    channel: String(scope.channel || scope.channelId || ""),
+    userId: String(scope.userId || scope.lineUserId || "")
+  };
+  return Object.values(projected).every(Boolean) ? projected : null;
+}
+
+function sameScope(left, right) {
+  return Boolean(left) && Boolean(right)
+    && left.propertyId === right.propertyId
+    && left.channel === right.channel
+    && left.userId === right.userId;
 }
 
 function productValue(operation) {
@@ -45,9 +66,19 @@ function productValue(operation) {
   };
 }
 
-function adaptLifecycleDecisionsToStateV3(decisions) {
+function adaptLifecycleDecisionsToStateV3({ decisions, previous } = {}) {
   if (!Array.isArray(decisions) || decisions.some((decision) => !isValidatedLifecycleDecision(decision))) {
     return failure("LIFECYCLE_TRANSITION_INVALID", ["validatedLifecycleDecisions"]);
+  }
+  if (!previous || typeof previous !== "object" || Array.isArray(previous)) {
+    return failure("LIFECYCLE_TRANSITION_INVALID", ["previous"]);
+  }
+  const previousScope = scopeProjection(previous);
+  const inputs = decisions.map(understandingInputForValidatedLifecycleDecision);
+  const inputScopes = inputs.map((input) => scopeProjection(input && input.propertyScope));
+  if (!previousScope || inputs.some((input) => !input)
+    || inputScopes.some((inputScope) => !sameScope(inputScope, previousScope))) {
+    return failure("LIFECYCLE_TRANSITION_INVALID", ["scope"]);
   }
   const lifecycleOperations = [];
   const turnContextOperations = [];
@@ -93,7 +124,10 @@ function adaptLifecycleDecisionsToStateV3(decisions) {
     }
   }
   deepFreeze(lifecycleOperations);
-  TRUSTED_OPERATION_ARRAYS.add(lifecycleOperations);
+  BINDING_BY_TRUSTED_OPERATION_ARRAY.set(lifecycleOperations, {
+    previous,
+    scope: previousScope
+  });
   return {
     ok: true,
     code: null,
@@ -102,11 +136,16 @@ function adaptLifecycleDecisionsToStateV3(decisions) {
   };
 }
 
-function isStateV3LifecycleOperations(value) {
-  return Array.isArray(value) && (value.length === 0 || TRUSTED_OPERATION_ARRAYS.has(value));
+function isStateV3LifecycleOperationsFor(value, { previous, scope } = {}) {
+  if (!Array.isArray(value)) return false;
+  const binding = BINDING_BY_TRUSTED_OPERATION_ARRAY.get(value);
+  if (value.length === 0 && !binding) return true;
+  return Boolean(binding)
+    && binding.previous === previous
+    && sameScope(binding.scope, scopeProjection(scope));
 }
 
 module.exports = {
   adaptLifecycleDecisionsToStateV3,
-  isStateV3LifecycleOperations
+  isStateV3LifecycleOperationsFor
 };

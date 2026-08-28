@@ -2,7 +2,7 @@
 
 const { validateSourceEvidence } = require("./contracts/source-evidence");
 const {
-  isValidatedContextLink,
+  isValidatedContextLinkFor,
   understandingInputForValidatedContextLink
 } = require("./context-link-validator");
 
@@ -28,6 +28,7 @@ const STATUSES = new Set(["VALIDATED"]);
 const PERSISTED_FIELDS = new Set(["guestCount", "lodgingProduct", null]);
 const PERSISTED_PRODUCT_TYPES = new Set(["room_type", "bundle", null]);
 const VALIDATED_LIFECYCLE_DECISIONS = new WeakSet();
+const INPUT_BY_VALIDATED_LIFECYCLE_DECISION = new WeakMap();
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -106,7 +107,14 @@ function validateVerifiedSlotOperation(value, errors, prefix) {
   if (value && value.slot === "guest_count" && value.persistedField !== "guestCount") {
     errors.push(`${prefix}.guestCountMapping`);
   }
-  if (value && value.slot === "product" && value.persistedField !== "lodgingProduct") {
+  if (value && value.slot === "product"
+    && !(
+      value.persistedField === "lodgingProduct"
+      || (value.operation === "SET"
+        && value.persistedField === null
+        && value.persistedProductType === null
+        && boundedText(value.value))
+    )) {
     errors.push(`${prefix}.productMapping`);
   }
   if (value && ["transport", "other_supported"].includes(value.slot)
@@ -187,9 +195,7 @@ function validateLifecycleDecisions(values, { unitIds = null } = {}) {
 }
 
 function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLink } = {}) {
-  if (!isValidatedContextLink(validatedContextLink)
-    || !unit || unit.unitId !== validatedContextLink.unitId
-    || unit.contextLinkCandidateId !== validatedContextLink.contextLinkCandidateId) {
+  if (!isValidatedContextLinkFor(validatedContextLink, unit)) {
     return failure("LIFECYCLE_TRANSITION_INVALID", ["validatedContextLink"]);
   }
   const action = validatedContextLink.actionCandidate;
@@ -205,10 +211,6 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
   }
   const input = understandingInputForValidatedContextLink(validatedContextLink);
   const operations = unit.slotCandidates.map((item) => verifiedOperation(item, input));
-  if (operations.some((operation) => operation.slot === "product"
-    && operation.operation === "SET" && operation.persistedField === null)) {
-    return failure("LIFECYCLE_SLOT_UNVERIFIED", ["product"]);
-  }
   const decision = {
     lifecycleDecisionId,
     unitId: unit.unitId,
@@ -221,11 +223,18 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
   if (!validation.ok) return validation;
   const value = deepFreeze(detach(decision));
   VALIDATED_LIFECYCLE_DECISIONS.add(value);
+  INPUT_BY_VALIDATED_LIFECYCLE_DECISION.set(value, input);
   return { ok: true, code: null, errors: [], value };
 }
 
 function isValidatedLifecycleDecision(value) {
   return Boolean(value) && typeof value === "object" && VALIDATED_LIFECYCLE_DECISIONS.has(value);
+}
+
+function understandingInputForValidatedLifecycleDecision(value) {
+  return isValidatedLifecycleDecision(value)
+    ? INPUT_BY_VALIDATED_LIFECYCLE_DECISION.get(value) || null
+    : null;
 }
 
 module.exports = {
@@ -236,5 +245,6 @@ module.exports = {
   createLifecycleDecision,
   validateLifecycleDecision,
   validateLifecycleDecisions,
-  isValidatedLifecycleDecision
+  isValidatedLifecycleDecision,
+  understandingInputForValidatedLifecycleDecision
 };

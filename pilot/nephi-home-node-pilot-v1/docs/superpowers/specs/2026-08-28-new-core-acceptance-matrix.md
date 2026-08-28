@@ -116,7 +116,7 @@ Additional semantic ownership cases `AC-SEM-011..015` cover inventory-vs-propert
 | AC-CTX-018 | “謝謝，取消剛才那個” | acknowledgement NO_REPLY plus lifecycle-only END; booking cancellation remains distinct |
 | AC-LIF-001..005 | START/CONTINUE/MODIFY/END/NONE valid shapes | exact target cardinality and ownership |
 | AC-LIF-006..010 | duplicate lifecycle ID; unknown unit; start target; missing continue target; scope conflict | fail closed at lifecycle owner |
-| AC-LIF-011..014 | lifecycle-only END/MODIFY/NONE; no-reply update | zero executable items; END and allowlisted existing V3 slots persist through the sole reducer, turn-context-only slots do not mutate V3 |
+| AC-LIF-011..014 | lifecycle-only END/MODIFY/NONE; no-reply update; matched room set | zero executable items; END and allowlisted existing V3 slots persist through the sole reducer, while transport/matched-room-set/other unmapped turn context does not mutate V3; C05/C06/reducer provenance rejects C03 substitution and cross-scope/prior-state replay |
 | AC-LIF-015..018 | task-owned continue; active pending; ended pending; ambiguous targets | actionable valid continuation preserved; invalid not silently downgraded |
 | AC-PND-001..004 | active lodging continuation with verified slot; no useful slot; new independent request; dormant pending | exact validated behavior; no automaticPendingRelation |
 | AC-PND-005..008 | pending availability date, product, guests, and capability switch | canonical slots and explicit links only |

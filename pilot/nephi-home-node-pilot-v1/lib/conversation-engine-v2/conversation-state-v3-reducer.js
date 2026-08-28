@@ -11,7 +11,7 @@ const {
   getCapabilityDefinition
 } = require("./capability-registry");
 const { resolveEntity } = require("./entity-resolver");
-const { isStateV3LifecycleOperations } = require("../new-core/state-v3-lifecycle-adapter");
+const { isStateV3LifecycleOperationsFor } = require("../new-core/state-v3-lifecycle-adapter");
 
 const PENDING_STATUSES = new Set(["pending", "needs_clarification"]);
 const CONTEXT_EXCLUDED_STATUSES = new Set(["expired", "cancelled"]);
@@ -696,7 +696,10 @@ function reduceConversationStateV3({
   scope = {}
 }) {
   const now = String(scope.now || new Date().toISOString());
-  if (!isStateV3LifecycleOperations(lifecycleOperations)) {
+  if (!isStateV3LifecycleOperationsFor(lifecycleOperations, {
+    previous,
+    scope: runtimeScope(scope)
+  })) {
     throw new TypeError("state_v3_lifecycle_operations_invalid");
   }
   const byTaskId = new Map(

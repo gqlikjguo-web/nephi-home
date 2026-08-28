@@ -7,6 +7,7 @@ const { buildPublicCatalogIdentityProjection } = require("./turn-input-adapter")
 
 const VALIDATED_CONTEXT_LINKS = new WeakSet();
 const INPUT_BY_VALIDATED_CONTEXT_LINK = new WeakMap();
+const UNIT_BY_VALIDATED_CONTEXT_LINK = new WeakMap();
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -57,6 +58,23 @@ function validateContextLink({
 } = {}) {
   const wire = validateContextLinkCandidate(linkCandidate);
   if (!wire.ok) return failure(wire.code, wire.errors);
+  if (!understandingTurnInput || typeof understandingTurnInput !== "object"
+    || !Array.isArray(understandingTurnInput.referenceableCycles)
+    || !validNow(now)) {
+    return failure("CONTEXT_TARGET_SCOPE_CONFLICT", ["referenceableSnapshot"]);
+  }
+  if (!buildPublicCatalogIdentityProjection(understandingTurnInput)) {
+    return failure("CONTEXT_TARGET_SCOPE_CONFLICT", ["referenceableSnapshot.provenance"]);
+  }
+  const inputValidation = validateUnderstandingTurnInput(understandingTurnInput);
+  if (!inputValidation.ok) {
+    return failure(
+      inputValidation.code === "PROPERTY_SCOPE_INVALID"
+        ? "CONTEXT_TARGET_SCOPE_CONFLICT"
+        : "CONTEXT_TARGET_UNAVAILABLE",
+      inputValidation.errors
+    );
+  }
   if (!unit || typeof unit !== "object"
     || !isValidatedSemanticUnitFor(understandingTurnInput, unit)
     || unit.unitId !== linkCandidate.unitId
@@ -70,11 +88,6 @@ function validateContextLink({
   }
   if (!evidenceOwned(linkCandidate.evidenceRefs, validatedEvidenceRefs)) {
     return failure("CONTEXT_LINK_EVIDENCE_INVALID", ["contextLink.evidenceRefs"]);
-  }
-  if (!understandingTurnInput || typeof understandingTurnInput !== "object"
-    || !Array.isArray(understandingTurnInput.referenceableCycles)
-    || !validNow(now)) {
-    return failure("CONTEXT_TARGET_SCOPE_CONFLICT", ["referenceableSnapshot"]);
   }
 
   const targetId = linkCandidate.targetRequestCycleId;
@@ -96,21 +109,10 @@ function validateContextLink({
     }
   }
 
-  if (!buildPublicCatalogIdentityProjection(understandingTurnInput)) {
-    return failure("CONTEXT_TARGET_SCOPE_CONFLICT", ["referenceableSnapshot.provenance"]);
-  }
-  const inputValidation = validateUnderstandingTurnInput(understandingTurnInput);
-  if (!inputValidation.ok) {
-    return failure(
-      inputValidation.code === "PROPERTY_SCOPE_INVALID"
-        ? "CONTEXT_TARGET_SCOPE_CONFLICT"
-        : "CONTEXT_TARGET_UNAVAILABLE",
-      inputValidation.errors
-    );
-  }
   const value = deepFreeze(detach(linkCandidate));
   VALIDATED_CONTEXT_LINKS.add(value);
   INPUT_BY_VALIDATED_CONTEXT_LINK.set(value, understandingTurnInput);
+  UNIT_BY_VALIDATED_CONTEXT_LINK.set(value, unit);
   return { ok: true, code: null, errors: [], value };
 }
 
@@ -122,8 +124,15 @@ function understandingInputForValidatedContextLink(value) {
   return isValidatedContextLink(value) ? INPUT_BY_VALIDATED_CONTEXT_LINK.get(value) || null : null;
 }
 
+function isValidatedContextLinkFor(value, unit) {
+  return isValidatedContextLink(value)
+    && Boolean(unit)
+    && UNIT_BY_VALIDATED_CONTEXT_LINK.get(value) === unit;
+}
+
 module.exports = {
   validateContextLink,
   isValidatedContextLink,
+  isValidatedContextLinkFor,
   understandingInputForValidatedContextLink
 };
