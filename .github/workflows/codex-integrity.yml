@@ -2,8 +2,9 @@ name: codex-integrity
 
 on:
   push:
-    branches: ["codex/**"]
+    branches: [production, test-only/node-pilot-integration]
   pull_request:
+    branches: [production, test-only/node-pilot-integration]
 
 jobs:
   verify-codex-integrity:
