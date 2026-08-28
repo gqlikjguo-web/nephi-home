@@ -4,7 +4,7 @@ const { validateSemanticUnitCandidate } = require("./contracts/semantic-unit-can
 const { capabilityPolicyFor, projectCapabilityRegistry } = require("./capability-subject-policy");
 const {
   buildPublicCatalogIdentityProjection,
-  isPublicCatalogIdentityProjection
+  isPublicCatalogIdentityProjectionFor
 } = require("./turn-input-adapter");
 
 function deepFreeze(value) {
@@ -33,8 +33,9 @@ function buildPublicCatalogIdentitySet(understandingTurnInput) {
   return buildPublicCatalogIdentityProjection(understandingTurnInput);
 }
 
-function catalogKindFor(identitySet, catalogIdentity) {
-  if (!isPublicCatalogIdentityProjection(identitySet) || typeof catalogIdentity !== "string") {
+function catalogKindFor(identitySet, understandingTurnInput, catalogIdentity) {
+  if (!isPublicCatalogIdentityProjectionFor(understandingTurnInput, identitySet)
+    || typeof catalogIdentity !== "string") {
     return null;
   }
   const match = identitySet.find(([identity]) => identity === catalogIdentity);
@@ -58,34 +59,34 @@ function evidenceOwned(refs, validatedEvidenceRefs) {
   });
 }
 
-function catalogIdentityValid(subject, identitySet) {
+function catalogIdentityValid(subject, identitySet, understandingTurnInput) {
   if (subject.kind === null) return subject.catalogIdentity === null;
   if (subject.kind === "external_place") return subject.catalogIdentity === null;
-  return catalogKindFor(identitySet, subject.catalogIdentity) === subject.kind;
+  return catalogKindFor(identitySet, understandingTurnInput, subject.catalogIdentity) === subject.kind;
 }
 
 function slotsHaveValidatedEvidence(slotCandidates, validatedEvidenceRefs) {
   return slotCandidates.every((slot) => evidenceOwned(slot.evidenceRefs, validatedEvidenceRefs));
 }
 
-function productSlotAdmission(slot, identitySet) {
+function productSlotAdmission(slot, identitySet, understandingTurnInput) {
   if (slot.slot !== "product" || slot.operation === "CLEAR") return true;
-  return ["room", "bundle", "matched_room_set"].includes(catalogKindFor(identitySet, slot.value));
+  return ["room", "bundle", "matched_room_set"].includes(catalogKindFor(identitySet, understandingTurnInput, slot.value));
 }
 
-function otherSupportedSlotAdmission(slot, identitySet, policy) {
+function otherSupportedSlotAdmission(slot, identitySet, understandingTurnInput, policy) {
   if (slot.slot !== "other_supported" || slot.operation === "CLEAR") return true;
-  return policy.allowsOtherSupported && catalogKindFor(identitySet, slot.value) === "other_verified";
+  return policy.allowsOtherSupported && catalogKindFor(identitySet, understandingTurnInput, slot.value) === "other_verified";
 }
 
-function validateSemanticUnit({ unit, validatedEvidenceRefs, publicCatalogIdentitySet, capabilityRegistryProjection } = {}) {
+function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnInput, publicCatalogIdentitySet, capabilityRegistryProjection } = {}) {
   const wire = validateSemanticUnitCandidate(unit);
   if (!wire.ok) return failure("SEMANTIC_UNIT_INVALID");
   if (!evidenceOwned(unit.evidenceRefs, validatedEvidenceRefs)
     || !slotsHaveValidatedEvidence(unit.slotCandidates, validatedEvidenceRefs)) {
     return failure("UNIT_EVIDENCE_MISSING");
   }
-  if (!catalogIdentityValid(unit.subject, publicCatalogIdentitySet)) {
+  if (!catalogIdentityValid(unit.subject, publicCatalogIdentitySet, understandingTurnInput)) {
     return failure("CATALOG_IDENTITY_INVALID");
   }
   const policy = capabilityPolicyFor(capabilityRegistryProjection, unit.capability);
@@ -93,8 +94,8 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, publicCatalogIdenti
   if (!policy.purposes.includes(unit.purpose)) return failure("UNIT_MEANING_UNSUPPORTED");
   if (!policy.subjectKinds.includes(unit.subject.kind)) return failure("CAPABILITY_SUBJECT_CONFLICT");
   if (unit.stayDependent !== policy.stayDependent) return failure("STAY_DEPENDENCY_CONFLICT");
-  if (!unit.slotCandidates.every((slot) => productSlotAdmission(slot, publicCatalogIdentitySet))
-    || !unit.slotCandidates.every((slot) => otherSupportedSlotAdmission(slot, publicCatalogIdentitySet, policy))) {
+  if (!unit.slotCandidates.every((slot) => productSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput))
+    || !unit.slotCandidates.every((slot) => otherSupportedSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput, policy))) {
     return failure("UNIT_MEANING_UNSUPPORTED");
   }
   return { ok: true, code: null, errors: [], value: deepFreeze(detach(unit)) };

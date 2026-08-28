@@ -136,6 +136,11 @@ function isPublicCatalogIdentityProjection(value) {
   return Boolean(value) && typeof value === "object" && TRUSTED_CATALOG_PROJECTIONS.has(value);
 }
 
+function isPublicCatalogIdentityProjectionFor(understandingTurnInput, value) {
+  return isPublicCatalogIdentityProjection(value)
+    && CATALOG_PROJECTION_BY_TURN_INPUT.get(understandingTurnInput) === value;
+}
+
 function buildUnderstandingTurnInput(args) {
   if (!args || typeof args !== "object" || Array.isArray(args)) {
     failure("TURN_INPUT_INVALID", ["args"]);
@@ -177,5 +182,6 @@ function buildUnderstandingTurnInput(args) {
 module.exports = {
   buildUnderstandingTurnInput,
   buildPublicCatalogIdentityProjection,
-  isPublicCatalogIdentityProjection
+  isPublicCatalogIdentityProjection,
+  isPublicCatalogIdentityProjectionFor
 };

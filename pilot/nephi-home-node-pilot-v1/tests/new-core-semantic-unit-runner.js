@@ -77,6 +77,7 @@ function validate(candidate, overrides = {}) {
   return validateSemanticUnit({
     unit: candidate,
     validatedEvidenceRefs: [evidence()],
+    understandingTurnInput: c01,
     publicCatalogIdentitySet,
     capabilityRegistryProjection,
     ...overrides
@@ -105,6 +106,21 @@ assert.throws(() => buildUnderstandingTurnInput(c01Args({
     publicSubjectCatalog: [{ catalogIdentity: "foreign-bundle", kind: "bundle", publicName: "Foreign bundle", propertyId: "property-b" }]
   }
 })), (error) => error && error.code === "PROPERTY_SCOPE_INVALID");
+const c01ForOtherProperty = buildUnderstandingTurnInput(c01Args({
+  verifiedPropertyBinding: { propertyId: "property-b", channel: "line-b" },
+  verifiedConversationScope: { channel: "line-b", userId: "guest-b" },
+  stateV3Snapshot: { scope: { propertyId: "property-b" }, referenceableCycles: [] },
+  publicCatalog: {
+    propertyId: "property-b",
+    timezone: "Asia/Taipei",
+    capabilityCatalog: ["availability"],
+    publicSubjectCatalog: [{ catalogIdentity: "bundle-b", kind: "bundle", publicName: "Bundle B", propertyId: "property-b" }]
+  }
+}));
+const otherPropertyProjection = buildPublicCatalogIdentitySet(c01ForOtherProperty);
+assertFailure(validate(unit({ subject: { kind: "bundle", catalogIdentity: "bundle-b" } }), {
+  publicCatalogIdentitySet: otherPropertyProjection
+}), "CATALOG_IDENTITY_INVALID");
 
 // AC-SEM-001..003 / AC-AVL-001..002: capability, subject, and stay remain
 // independent. In particular, a valid bundle availability question stays
