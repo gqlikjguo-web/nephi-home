@@ -39,6 +39,10 @@ function assertFailure(result, code) {
   assert.equal(Object.isFrozen(result), true);
 }
 
+function isHashedId(value) {
+  return typeof value === "string" && /^h:[a-f0-9]{64}$/.test(value);
+}
+
 // AC-OBS-001: a successful boundary event has the exact closed C11 shape.
 const success = createDiagnosticBoundaryEvent(base());
 assert.equal(success.ok, true);
@@ -61,6 +65,8 @@ assert.deepEqual(Object.keys(success.value).sort(), [
   "traceId"
 ].sort());
 assert.equal(success.value.isEarliestFailure, false);
+assert.equal(isHashedId(success.value.traceId), true);
+assert.notEqual(success.value.traceId, base().traceId);
 
 // AC-OBS-002: an owned failure remains attributable to its exact boundary.
 const evidenceFailure = createDiagnosticBoundaryEvent(base({
@@ -124,7 +130,8 @@ const routed = createDiagnosticBoundaryEvent(base({
   targetMarker: "C07_UNIT_ROUTE_VALIDATED"
 }));
 assert.equal(routed.ok, true);
-assert.deepEqual(routed.value.inputUnitIds, ["unit-a", "unit-b"]);
+assert.equal(routed.value.inputUnitIds.every(isHashedId), true);
+assert.equal(JSON.stringify(routed.value).includes("unit-a"), false);
 assert.equal(routed.value.lifecycleResult, "MODIFY");
 assert.equal(routed.value.routeResult, "CLARIFY");
 assert.equal(routed.value.canonicalResult, "NOT_REQUIRED");
@@ -143,8 +150,14 @@ for (const forbidden of [
 ]) {
   assertFailure(createDiagnosticBoundaryEvent(base(forbidden)), "DIAGNOSTIC_FIELD_FORBIDDEN");
 }
-assertFailure(createDiagnosticBoundaryEvent(base({ traceId: "sk-proj-secret123" })), "DIAGNOSTIC_FIELD_FORBIDDEN");
-assertFailure(createDiagnosticBoundaryEvent(base({ inputUnitIds: ["ghp_secret123"] })), "DIAGNOSTIC_FIELD_FORBIDDEN");
+const sensitiveIdentifiers = createDiagnosticBoundaryEvent(base({
+  traceId: "sk-proj-secret123-旅客",
+  inputUnitIds: ["ghp_secret123-房客"],
+  outputUnitIds: ["ghp_secret123-房客"]
+}));
+assert.equal(sensitiveIdentifiers.ok, true);
+assert.equal(isHashedId(sensitiveIdentifiers.value.traceId), true);
+assert.equal(JSON.stringify(sensitiveIdentifiers.value).includes("secret123"), false);
 
 // AC-OBS-006: unknown boundaries and unowned codes fail closed without reflection.
 assertFailure(createDiagnosticBoundaryEvent(base({ boundary: "C99" })), "DIAGNOSTIC_BOUNDARY_UNKNOWN");
@@ -195,13 +208,13 @@ assert.equal(createDiagnosticBoundaryEvent(base({ targetMarker: "C04_SOURCE_EVID
 // AC-OBS-010: unit lists and IDs are bounded and unique.
 assertFailure(createDiagnosticBoundaryEvent(base({ inputUnitIds: Array.from({ length: 101 }, (_, i) => `unit-${i}`) })), "DIAGNOSTIC_FIELD_FORBIDDEN");
 assertFailure(createDiagnosticBoundaryEvent(base({ outputUnitIds: ["unit-a", "unit-a"] })), "DIAGNOSTIC_FIELD_FORBIDDEN");
-assertFailure(createDiagnosticBoundaryEvent(base({ inputUnitIds: ["guest text is not an opaque id"] })), "DIAGNOSTIC_FIELD_FORBIDDEN");
+assertFailure(createDiagnosticBoundaryEvent(base({ inputUnitIds: [""] })), "DIAGNOSTIC_FIELD_FORBIDDEN");
 
 // AC-OBS-011: every emitted object is recursively immutable and detached.
 const mutableInputIds = ["unit-a"];
 const immutable = createDiagnosticBoundaryEvent(base({ inputUnitIds: mutableInputIds }));
 mutableInputIds[0] = "unit-mutated";
-assert.deepEqual(immutable.value.inputUnitIds, ["unit-a"]);
+assert.equal(isHashedId(immutable.value.inputUnitIds[0]), true);
 assert.equal(Object.isFrozen(immutable.value), true);
 assert.equal(Object.isFrozen(immutable.value.inputUnitIds), true);
 assert.throws(() => { immutable.value.routeResult = "HANDOFF"; }, TypeError);
@@ -210,4 +223,35 @@ assert.throws(() => { immutable.value.routeResult = "HANDOFF"; }, TypeError);
 assert.equal(CORE_VERSION, "new-core-v1");
 assertFailure(createDiagnosticBoundaryEvent(base({ coreVersion: "new-core-v2" })), "DIAGNOSTIC_FIELD_FORBIDDEN");
 
-console.log("new core observability runner: PASS (12 STRUCTURED_CONTRACT_TEST cases)");
+// AC-OBS-013: direct validation detaches and recursively freezes caller-owned input.
+const mutableValidated = { ...success.value, inputUnitIds: [...success.value.inputUnitIds] };
+const detachedValidation = validateDiagnosticBoundaryEvent(mutableValidated);
+assert.equal(detachedValidation.ok, true);
+assert.notEqual(detachedValidation.value, mutableValidated);
+assert.notEqual(detachedValidation.value.inputUnitIds, mutableValidated.inputUnitIds);
+mutableValidated.inputUnitIds[0] = "h:" + "0".repeat(64);
+assert.notEqual(detachedValidation.value.inputUnitIds[0], mutableValidated.inputUnitIds[0]);
+assert.equal(Object.isFrozen(detachedValidation.value), true);
+assert.equal(Object.isFrozen(detachedValidation.value.inputUnitIds), true);
+
+// AC-OBS-014: thenable sinks are observed without unhandled rejection and are not reported delivered.
+(async () => {
+  const rejections = [];
+  const onUnhandled = (error) => rejections.push(error);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const resolving = createDiagnosticTraceEmitter({ traceId: base().traceId, sink: async () => undefined });
+    assert.equal(resolving.emit(base()).delivered, false);
+    const rejecting = createDiagnosticTraceEmitter({ traceId: base().traceId, sink: async () => { throw new Error("raw async sink failure"); } });
+    assert.doesNotThrow(() => rejecting.emit(base()));
+    assert.equal(rejecting.emit(base()).delivered, false);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(rejections, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+  console.log("new core observability runner: PASS (14 STRUCTURED_CONTRACT_TEST cases)");
+})().catch((error) => {
+  console.error(error && error.stack || error);
+  process.exitCode = 1;
+});

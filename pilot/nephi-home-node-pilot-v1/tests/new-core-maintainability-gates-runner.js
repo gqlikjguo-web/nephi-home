@@ -89,6 +89,15 @@ const assignedWriterRoot = isolatedSource(({ sourceRoot }) => {
   `);
 });
 assertGateFailure(gate(assignedWriterRoot), "DUPLICATE_CONTRACT_WRITER");
+const definedWriterRoot = isolatedSource(({ sourceRoot }) => {
+  const nested = path.join(sourceRoot, "nested", "defined-writer.js");
+  fs.mkdirSync(path.dirname(nested), { recursive: true });
+  fs.writeFileSync(nested, `
+    function alternateTurnWriter() { return {}; }
+    Object.defineProperty(module.exports, "buildUnderstandingTurnInput", { value: alternateTurnWriter });
+  `);
+});
+assertGateFailure(gate(definedWriterRoot), "DUPLICATE_CONTRACT_WRITER");
 const alternateExtensionRoot = isolatedSource(({ sourceRoot }) => {
   const nested = path.join(sourceRoot, "nested", "alternate-writer.cjs");
   fs.mkdirSync(path.dirname(nested), { recursive: true });
@@ -125,6 +134,18 @@ const godFunctionRoot = isolatedSource(({ sourceRoot }) => {
   `);
 });
 assertGateFailure(gate(godFunctionRoot), "GOD_FUNCTION_FORBIDDEN");
+const classGodFunctionRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "class-god-function.js"), `
+    class TurnGod {
+      decide(messageText) {
+        if (messageText.includes("parking")) return createUnitRoutingDecision({});
+        return executeCanonicalizerInputItem({});
+      }
+    }
+    module.exports = { TurnGod };
+  `);
+});
+assertGateFailure(gate(classGodFunctionRoot), "GOD_FUNCTION_FORBIDDEN");
 
 // AC-MNT-005: existing validators stay independently callable and no contract
 // can silently drop its validator or consumer accounting.
@@ -140,6 +161,17 @@ fs.writeFileSync(routeContractPath, fs.readFileSync(routeContractPath, "utf8").r
   "function removedRouteValidator(value)"
 ));
 assertGateFailure(gate(missingValidatorRoot, missingValidatorPath), "CONTRACT_VALIDATOR_MISSING");
+const unexportedConsumerRoot = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-task10-consumer-"));
+copyDirectory(path.join(projectRoot, "lib"), path.join(unexportedConsumerRoot, "lib"));
+fs.mkdirSync(path.join(unexportedConsumerRoot, "docs"), { recursive: true });
+const unexportedConsumerManifestPath = path.join(unexportedConsumerRoot, "docs", "ownership.json");
+fs.writeFileSync(unexportedConsumerManifestPath, fs.readFileSync(ownershipPath));
+const semanticValidatorPath = path.join(unexportedConsumerRoot, "lib", "new-core", "state-v3-lifecycle-adapter.js");
+fs.writeFileSync(semanticValidatorPath, fs.readFileSync(semanticValidatorPath, "utf8").replace(
+  "  adaptLifecycleDecisionsToStateV3,\n",
+  ""
+));
+assertGateFailure(gate(unexportedConsumerRoot, unexportedConsumerManifestPath), "CONTRACT_CONSUMER_MISSING");
 const wrongGraphManifest = JSON.parse(fs.readFileSync(ownershipPath, "utf8"));
 wrongGraphManifest.contracts.find((entry) => entry.contractId === "C01").consumers[0].name = "Semantic Unit Validator";
 const wrongGraphPath = path.join(missingValidatorRoot, "docs", "wrong-graph-ownership.json");
@@ -190,6 +222,14 @@ const escapedIndexRoot = isolatedSource(({ sourceRoot }) => {
   `);
 });
 assertGateFailure(gate(escapedIndexRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const reflectedIndexRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "reflected-index.js"), `
+    const compatibility = {};
+    Reflect.set(compatibility, "candidate" + "Index", 0);
+    module.exports = compatibility;
+  `);
+});
+assertGateFailure(gate(reflectedIndexRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
 
 // AC-MNT-008: diagnostics have one writer and are not a second persistence,
 // Resolver, state, reply, or facts boundary.
@@ -200,6 +240,19 @@ const shadowSideEffectRoot = isolatedSource(({ sourceRoot }) => {
   `);
 });
 assertGateFailure(gate(shadowSideEffectRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+const shadowClassSideEffectRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-runner.js"), `
+    class ShadowRunner {
+      run(event) {
+        state.writeState(event);
+        Resolver.resolveAvailability(event);
+        LINE.replyMessage(event);
+      }
+    }
+    module.exports = { ShadowRunner };
+  `);
+});
+assertGateFailure(gate(shadowClassSideEffectRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
 
 // AC-MNT-009: the scanner is token-aware: comments, string literals, and
 // innocent consumer names do not create false writer/authority findings.
@@ -212,6 +265,43 @@ const falsePositiveRoot = isolatedSource(({ sourceRoot }) => {
   `);
 });
 assert.equal(gate(falsePositiveRoot).ok, true, JSON.stringify(gate(falsePositiveRoot)));
+const authorityMetadataRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "authority-metadata.js"), `
+    const fieldDocumentation = {
+      purpose: "wire field", capability: "wire field", subject: "wire field", stayDependent: "wire field",
+      startOffset: "wire field", endOffset: "wire field", quote: "wire field",
+      requestKind: "wire field", exactRequiredFields: "wire field",
+      disposition: "wire field", requiresCanonicalExecution: "wire field",
+      actionCandidate: "wire field", targetRequestCycleId: "wire field",
+      facts: "wire field", confirmedFields: "wire field", lifecycleOperations: "wire field"
+    };
+    module.exports = { fieldDocumentation };
+  `);
+});
+assert.equal(gate(authorityMetadataRoot).ok, true, JSON.stringify(gate(authorityMetadataRoot)));
+
+// AC-MNT-011: exact source/symbol ownership and the final-action authority are sealed.
+const exactGraphManifest = JSON.parse(fs.readFileSync(ownershipPath, "utf8"));
+exactGraphManifest.contracts.find((entry) => entry.contractId === "C02").writer.source = "lib/providers/alternate-understanding-v1.js";
+const exactGraphPath = path.join(missingValidatorRoot, "docs", "exact-graph-ownership.json");
+fs.writeFileSync(exactGraphPath, JSON.stringify(exactGraphManifest));
+assertGateFailure(gate(missingValidatorRoot, exactGraphPath), "CONTRACT_GRAPH_MISMATCH");
+assert.equal(ownershipManifest.domainAuthorities.some((entry) => entry.authority === "final_action"), true);
+
+// AC-MNT-012: failure ownership is an exact map and C06 lists only codes its implementation emits.
+assert.equal(typeof ownershipManifest.failureCodeOwners, "object");
+for (const contract of ownershipManifest.contracts) {
+  for (const code of contract.failureCodes) assert.equal(ownershipManifest.failureCodeOwners[code], contract.contractId);
+}
+assert.deepEqual(
+  ownershipManifest.contracts.find((entry) => entry.contractId === "C06").failureCodes,
+  ["LIFECYCLE_TARGET_REQUIRED", "LIFECYCLE_START_TARGET_FORBIDDEN", "LIFECYCLE_TRANSITION_INVALID"]
+);
+const wrongFailureOwnerManifest = JSON.parse(fs.readFileSync(ownershipPath, "utf8"));
+wrongFailureOwnerManifest.failureCodeOwners.EVIDENCE_QUOTE_MISMATCH = "C03";
+const wrongFailureOwnerPath = path.join(missingValidatorRoot, "docs", "wrong-failure-owner.json");
+fs.writeFileSync(wrongFailureOwnerPath, JSON.stringify(wrongFailureOwnerManifest));
+assertGateFailure(gate(missingValidatorRoot, wrongFailureOwnerPath), "FAILURE_CODE_OWNER_MISMATCH");
 
 // AC-MNT-010: arbitrary files outside lib/new-core are not scanned and cannot
 // make fixtures or old runtime into new-core authority.
@@ -222,4 +312,4 @@ const scopedRoot = isolatedSource(({ root }) => {
 });
 assert.equal(gate(scopedRoot).ok, true, JSON.stringify(gate(scopedRoot)));
 
-console.log("new core maintainability gates runner: PASS (10 STRUCTURED_CONTRACT_TEST cases)");
+console.log("new core maintainability gates runner: PASS (12 STRUCTURED_CONTRACT_TEST cases)");
