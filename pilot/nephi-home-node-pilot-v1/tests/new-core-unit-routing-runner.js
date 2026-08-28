@@ -16,7 +16,7 @@ const { createLifecycleDecision } = require("../lib/new-core/lifecycle-manager")
 const {
   createUnitReplyRoutingRegistry,
   createUnitReadiness,
-  createHandoffBasis,
+  createTrustedOperatorSafetyPolicy,
   createUnitRoutingDecision
 } = require("../lib/new-core/unit-reply-router");
 const { validateUnitRoutingDecision } = require("../lib/new-core/contracts/unit-routing-decision");
@@ -144,7 +144,7 @@ function validated({ unit, messageText, action = "START", target = null }) {
   return { unit: unitResult.value, lifecycle: lifecycleResult.value };
 }
 
-function route({ unit, lifecycle, handoffBasis = null }) {
+function route({ unit, lifecycle, operatorSafetyPolicy = null }) {
   const readiness = createUnitReadiness({ unit, lifecycleDecision: lifecycle, routingRegistry: registry });
   assert.equal(readiness.ok, true, readiness.code);
   return createUnitRoutingDecision({
@@ -152,7 +152,7 @@ function route({ unit, lifecycle, handoffBasis = null }) {
     lifecycleDecision: lifecycle,
     routingRegistry: registry,
     readiness: readiness.value,
-    handoffBasis
+    operatorSafetyPolicy
   });
 }
 
@@ -217,7 +217,7 @@ const operator = validated({
     stayDependent: false,
     temporalCandidate: null,
     disposition: "HANDOFF",
-    reasonClass: "operator_request"
+    reasonClass: "booking_mutation"
   }),
   action: "CONTINUE",
   target: "cycle-routing"
@@ -225,13 +225,13 @@ const operator = validated({
 const missingBasis = route(operator);
 assert.equal(missingBasis.ok, false);
 assert.equal(missingBasis.code, "HANDOFF_WITHOUT_OPERATOR_OR_RISK");
-const operatorBasis = createHandoffBasis({
+const operatorPolicy = createTrustedOperatorSafetyPolicy({
   unit: operator.unit,
-  operatorActionClass: "booking_mutation",
-  riskClass: null
+  lifecycleDecision: operator.lifecycle,
+  routingRegistry: registry
 });
-assert.equal(operatorBasis.ok, true);
-assert.deepEqual(route({ ...operator, handoffBasis: operatorBasis.value }).value, {
+assert.equal(operatorPolicy.ok, true);
+assert.deepEqual(route({ ...operator, operatorSafetyPolicy: operatorPolicy.value }).value, {
   unitId: "unit-routing",
   disposition: "HANDOFF",
   reasonClass: "operator_action_required",
@@ -254,15 +254,16 @@ const risk = validated({
     stayDependent: false,
     temporalCandidate: null,
     disposition: "HANDOFF",
-    reasonClass: "sensitive_request"
+    reasonClass: "access_credential"
   })
 });
-const riskBasis = createHandoffBasis({ unit: risk.unit, operatorActionClass: null, riskClass: "access_credential" });
-assert.equal(riskBasis.ok, true);
-assert.equal(route({ ...risk, handoffBasis: riskBasis.value }).value.riskClass, "access_credential");
+const riskPolicy = createTrustedOperatorSafetyPolicy({ unit: risk.unit, lifecycleDecision: risk.lifecycle, routingRegistry: registry });
+assert.equal(riskPolicy.ok, true);
+assert.equal(route({ ...risk, operatorSafetyPolicy: riskPolicy.value }).value.riskClass, "access_credential");
 
-// AC-HOF-004: a booking cancellation is not a dialogue-only END when its
-// validated unit explicitly requires an operator reservation action.
+// AC-HOF-004: cancellation END is lifecycle-only NO_REPLY. A separate
+// operator-request unit carries reservation action handoff; no HANDOFF may
+// own END.
 const cancellationText = "請取消我的訂房";
 const cancellation = validated({
   messageText: cancellationText,
@@ -275,17 +276,67 @@ const cancellation = validated({
     subject: { kind: "room", catalogIdentity: "room-a" },
     stayDependent: false,
     temporalCandidate: null,
+    disposition: "NO_REPLY",
+    reasonClass: "cancellation"
+  })
+});
+assert.equal(route(cancellation).value.disposition, "NO_REPLY");
+const cancellationOperator = validated({
+  messageText: cancellationText,
+  action: "CONTINUE",
+  target: "cycle-routing",
+  unit: candidate({
+    messageText: cancellationText,
+    unitId: "unit-cancellation-operator",
+    purpose: "operator_request",
+    capability: "booking_operator_request",
+    subject: { kind: "room", catalogIdentity: "room-a" },
+    stayDependent: false,
+    temporalCandidate: null,
     disposition: "HANDOFF",
     reasonClass: "reservation_cancellation"
   })
 });
-const cancellationBasis = createHandoffBasis({
-  unit: cancellation.unit,
-  operatorActionClass: "reservation_cancellation",
-  riskClass: null
+const cancellationOperatorPolicy = createTrustedOperatorSafetyPolicy({
+  unit: cancellationOperator.unit,
+  lifecycleDecision: cancellationOperator.lifecycle,
+  routingRegistry: registry
 });
-assert.equal(cancellationBasis.ok, true);
-assert.equal(route({ ...cancellation, handoffBasis: cancellationBasis.value }).value.disposition, "HANDOFF");
+assert.equal(cancellationOperatorPolicy.ok, true);
+assert.equal(route({ ...cancellationOperator, operatorSafetyPolicy: cancellationOperatorPolicy.value }).value.disposition, "HANDOFF");
+const operatorEnd = validated({
+  messageText: operatorText,
+  action: "END",
+  target: "cycle-routing",
+  unit: candidate({
+    messageText: operatorText,
+    unitId: "unit-operator-end",
+    purpose: "operator_request",
+    capability: "booking_operator_request",
+    subject: { kind: "room", catalogIdentity: "room-a" },
+    stayDependent: false,
+    temporalCandidate: null,
+    disposition: "HANDOFF",
+    reasonClass: "booking_mutation"
+  })
+});
+assert.equal(route(operatorEnd).code, "ROUTE_PURPOSE_CONFLICT");
+const operatorNone = validated({
+  messageText: operatorText,
+  action: "NONE",
+  unit: candidate({
+    messageText: operatorText,
+    unitId: "unit-operator-none",
+    purpose: "operator_request",
+    capability: "booking_operator_request",
+    subject: { kind: "room", catalogIdentity: "room-a" },
+    stayDependent: false,
+    temporalCandidate: null,
+    disposition: "HANDOFF",
+    reasonClass: "booking_mutation"
+  })
+});
+assert.equal(route(operatorNone).code, "ROUTE_PURPOSE_CONFLICT");
 
 // AC-NRP-001..008 / AC-RTE-004,009..012 / AC-CTX-015: acknowledgements,
 // social/off-topic content and verified context-only updates stay silent per
@@ -357,8 +408,40 @@ assert.equal(route(newQuestion).value.disposition, "ANSWER");
 
 // AC-HOF-007: an active pending continuation is not silenced; the unchanged
 // C03 and basis route identically whether its C06 is START or CONTINUE.
-const continued = route({ ...operator, handoffBasis: operatorBasis.value });
+const continued = route({ ...operator, operatorSafetyPolicy: operatorPolicy.value });
 assert.equal(continued.value.disposition, "HANDOFF");
+const operatorStart = validated({
+  messageText: operatorText,
+  action: "START",
+  unit: candidate({
+    messageText: operatorText,
+    unitId: "unit-operator-start",
+    purpose: "operator_request",
+    capability: "booking_operator_request",
+    subject: { kind: "room", catalogIdentity: "room-a" },
+    stayDependent: false,
+    temporalCandidate: null,
+    disposition: "HANDOFF",
+    reasonClass: "booking_mutation"
+  })
+});
+const startPolicy = createTrustedOperatorSafetyPolicy({
+  unit: operatorStart.unit,
+  lifecycleDecision: operatorStart.lifecycle,
+  routingRegistry: registry
+});
+assert.equal(startPolicy.ok, true);
+assert.deepEqual(
+  (({ unitId: _unitId, ...value }) => value)(route({ ...operatorStart, operatorSafetyPolicy: startPolicy.value }).value),
+  (({ unitId: _unitId, ...value }) => value)(continued.value),
+  "START and CONTINUE lifecycle actions must not alter a protected operator route"
+);
+const rawHandoffPolicy = route({
+  ...operator,
+  operatorSafetyPolicy: { unitId: operator.unit.unitId, operatorActionClass: "booking_mutation", riskClass: null }
+});
+assert.equal(rawHandoffPolicy.ok, false);
+assert.equal(rawHandoffPolicy.code, "HANDOFF_WITHOUT_OPERATOR_OR_RISK");
 
 // AC-RTE-005..008 / AC-HOF-008: contradictions fail closed. A model candidate
 // cannot route a non-actionable unit, and missing/invalid route inputs never
@@ -385,7 +468,7 @@ const invalidReadiness = createUnitRoutingDecision({
   lifecycleDecision: missingDates.lifecycle,
   routingRegistry: registry,
   readiness: { unitId: "unit-routing", status: "READY", missingGuestFields: ["stay.checkIn"] },
-  handoffBasis: null
+  operatorSafetyPolicy: null
 });
 assert.equal(invalidReadiness.ok, false);
 assert.equal(invalidReadiness.code, "ROUTING_READINESS_INVALID");
@@ -415,9 +498,37 @@ assert.doesNotThrow(() => validateUnitRoutingDecision({
 const routerPath = path.join(__dirname, "../lib/new-core/unit-reply-router.js");
 const routerSource = fs.readFileSync(routerPath, "utf8");
 assert.equal(/rawText|messageText|sourceEvents|\bquote\b/.test(routerSource), false, "router must not access raw guest text");
-const replyWriters = fs.readdirSync(path.join(__dirname, "../lib/new-core"), { withFileTypes: true })
-  .filter((entry) => entry.isFile() && entry.name.endsWith(".js"))
-  .filter((entry) => fs.readFileSync(path.join(__dirname, "../lib/new-core", entry.name), "utf8").includes("createUnitRoutingDecision"));
-assert.deepEqual(replyWriters.map((entry) => entry.name), ["unit-reply-router.js"], "C07 must have one pre-execution reply writer");
+function newCoreSourceFiles(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const filePath = path.join(directory, entry.name);
+    if (entry.isDirectory()) return newCoreSourceFiles(filePath);
+    return entry.isFile() && entry.name.endsWith(".js") ? [filePath] : [];
+  });
+}
+
+function structuralC07Writers(files) {
+  return files.filter(({ filePath, source }) => {
+    if (filePath.endsWith("contracts/unit-routing-decision.js")) return false;
+    return /(?:return|=>)\s*\(?(?:\{\s*)?[\s\S]*?disposition\s*:\s*["'](?:ANSWER|CLARIFY|HANDOFF|NO_REPLY)["'][\s\S]*?requiresCanonicalExecution\s*:/.test(source)
+      || (/requiresCanonicalExecution/.test(source) && /operatorActionClass/.test(source)
+        && /riskClass/.test(source) && /disposition\s*:/.test(source));
+  });
+}
+
+const newCoreDirectory = path.join(__dirname, "../lib/new-core");
+const productionSources = newCoreSourceFiles(newCoreDirectory).map((filePath) => ({
+  filePath: path.relative(newCoreDirectory, filePath),
+  source: fs.readFileSync(filePath, "utf8")
+}));
+assert.deepEqual(
+  structuralC07Writers(productionSources).map((item) => item.filePath),
+  ["unit-reply-router.js"],
+  "C07 must have one structural pre-execution reply writer across new-core"
+);
+assert.deepEqual(
+  structuralC07Writers([{ filePath: "bypass.js", source: "function bypass() { return { unitId: 'x', disposition: 'ANSWER', reasonClass: 'x', requiresCanonicalExecution: true, missingGuestFields: [], operatorActionClass: null, riskClass: null }; }" }]).map((item) => item.filePath),
+  ["bypass.js"],
+  "the ownership gate must detect a structural C07 writer that does not reuse router naming"
+);
 
 console.log(JSON.stringify({ suite: "new-core-unit-routing", level: "STRUCTURED_CONTRACT_TEST", caseCount: 20, passCount: 20, failCount: 0 }));

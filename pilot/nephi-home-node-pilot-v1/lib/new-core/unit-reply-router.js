@@ -17,7 +17,7 @@ const {
 
 const ROUTING_REGISTRIES = new WeakSet();
 const READINESS_BY_UNIT = new WeakMap();
-const HANDOFF_BASIS_BY_UNIT = new WeakMap();
+const TRUSTED_OPERATOR_SAFETY_POLICIES = new WeakMap();
 const ROUTING_DECISIONS = new WeakSet();
 
 const ROUTING_BLUEPRINT = Object.freeze({
@@ -34,6 +34,32 @@ const ROUTING_BLUEPRINT = Object.freeze({
   high_risk: { kind: "HANDOFF", requiredGuestFields: [] },
   null: { kind: "NO_REPLY", requiredGuestFields: [] }
 });
+const FORMAL_HANDOFF_ADMISSIONS = Object.freeze([
+  Object.freeze({
+    purpose: "operator_request",
+    capability: "booking_operator_request",
+    disposition: "HANDOFF",
+    operatorActionClasses: Object.freeze([
+      "booking_mutation",
+      "reservation_cancellation",
+      "refund_approval",
+      "date_change",
+      "special_arrangement"
+    ]),
+    riskClasses: Object.freeze([])
+  }),
+  Object.freeze({
+    purpose: "sensitive_request",
+    capability: "high_risk",
+    disposition: "HANDOFF",
+    operatorActionClasses: Object.freeze([]),
+    riskClasses: Object.freeze([
+      "access_credential",
+      "payment_claim",
+      "sensitive_request"
+    ])
+  })
+]);
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -123,58 +149,77 @@ function readinessFor(readiness, unit) {
   return readiness;
 }
 
-function createHandoffBasis({ unit, operatorActionClass = null, riskClass = null } = {}) {
-  if (!unit || typeof unit !== "object" || !OPERATOR_ACTION_CLASSES.has(operatorActionClass) && operatorActionClass !== null
-    || !RISK_CLASSES.has(riskClass) && riskClass !== null) {
-    return failure("HANDOFF_WITHOUT_OPERATOR_OR_RISK", ["basis"]);
+function formalHandoffAdmission(unit) {
+  return FORMAL_HANDOFF_ADMISSIONS.find((admission) => (
+    admission.purpose === unit.purpose
+    && admission.capability === unit.capability
+    && admission.disposition === unit.replyCandidate.disposition
+  )) || null;
+}
+
+function createTrustedOperatorSafetyPolicy({ unit, lifecycleDecision, routingRegistry } = {}) {
+  if (!validatedUnitAndLifecycle(unit, lifecycleDecision)) return failure("ROUTING_INPUT_INVALID", ["unitOrLifecycle"]);
+  const policy = routePolicyFor(routingRegistry, unit);
+  if (!policy || policy.kind !== "HANDOFF" || !["START", "CONTINUE", "MODIFY"].includes(lifecycleDecision.action)) {
+    return failure("ROUTE_PURPOSE_CONFLICT", ["routeOrLifecycle"]);
   }
-  if ((operatorActionClass === null) === (riskClass === null)) {
-    return failure("HANDOFF_WITHOUT_OPERATOR_OR_RISK", ["basis.exclusive"]);
+  const admission = formalHandoffAdmission(unit);
+  if (!admission) return failure("HANDOFF_WITHOUT_OPERATOR_OR_RISK", ["formalAdmission"]);
+  const operatorActionClass = admission.operatorActionClasses.includes(unit.replyCandidate.reasonClass)
+    ? unit.replyCandidate.reasonClass
+    : null;
+  const riskClass = admission.riskClasses.includes(unit.replyCandidate.reasonClass)
+    ? unit.replyCandidate.reasonClass
+    : null;
+  if ((operatorActionClass === null) === (riskClass === null)
+    || (operatorActionClass !== null && !OPERATOR_ACTION_CLASSES.has(operatorActionClass))
+    || (riskClass !== null && !RISK_CLASSES.has(riskClass))) {
+    return failure("HANDOFF_WITHOUT_OPERATOR_OR_RISK", ["formalAdmission.class"]);
   }
-  if (operatorActionClass !== null && !(
-    ["operator_request", "cancellation"].includes(unit.purpose)
-    && unit.capability === "booking_operator_request"
-  )) {
-    return failure("HANDOFF_WITHOUT_OPERATOR_OR_RISK", ["operatorActionClass"]);
-  }
-  if (riskClass !== null && !(
-    ["sensitive_request", "cancellation"].includes(unit.purpose)
-    && unit.capability === "high_risk"
-  )) {
-    return failure("HANDOFF_WITHOUT_OPERATOR_OR_RISK", ["riskClass"]);
-  }
+  const input = understandingInputForValidatedLifecycleDecision(lifecycleDecision);
   const value = deepFreeze({ unitId: unit.unitId, operatorActionClass, riskClass });
-  HANDOFF_BASIS_BY_UNIT.set(value, unit);
+  TRUSTED_OPERATOR_SAFETY_POLICIES.set(value, { unit, input });
   return { ok: true, code: null, errors: [], value };
 }
 
-function handoffBasisFor(handoffBasis, unit) {
-  if (!HANDOFF_BASIS_BY_UNIT.has(handoffBasis) || HANDOFF_BASIS_BY_UNIT.get(handoffBasis) !== unit
-    || !exactKeys(handoffBasis, ["unitId", "operatorActionClass", "riskClass"])
-    || handoffBasis.unitId !== unit.unitId
-    || (handoffBasis.operatorActionClass === null) === (handoffBasis.riskClass === null)) return null;
-  return handoffBasis;
+function trustedOperatorSafetyPolicyFor(operatorSafetyPolicy, unit, lifecycleDecision) {
+  const trusted = TRUSTED_OPERATOR_SAFETY_POLICIES.get(operatorSafetyPolicy);
+  if (!trusted || trusted.unit !== unit
+    || trusted.input !== understandingInputForValidatedLifecycleDecision(lifecycleDecision)
+    || !exactKeys(operatorSafetyPolicy, ["unitId", "operatorActionClass", "riskClass"])
+    || operatorSafetyPolicy.unitId !== unit.unitId
+    || (operatorSafetyPolicy.operatorActionClass === null) === (operatorSafetyPolicy.riskClass === null)) return null;
+  return operatorSafetyPolicy;
 }
 
-function routeFromValidatedInputs({ unit, routingRegistry, readiness, handoffBasis }) {
+function routeFromValidatedInputs({ unit, lifecycleDecision, routingRegistry, readiness, operatorSafetyPolicy }) {
   const policy = routePolicyFor(routingRegistry, unit);
   const validReadiness = readinessFor(readiness, unit);
   if (!policy || !validReadiness) return failure("ROUTING_READINESS_INVALID", ["readiness"]);
+  if (unit.purpose === "cancellation") {
+    if (lifecycleDecision.action !== "END" || unit.replyCandidate.disposition !== "NO_REPLY") {
+      return failure("ROUTE_PURPOSE_CONFLICT", ["cancellation.lifecycleOrDisposition"]);
+    }
+    return { disposition: "NO_REPLY", reasonClass: "no_executable_need", requiresCanonicalExecution: false, missingGuestFields: [], operatorActionClass: null, riskClass: null };
+  }
   if (policy.kind === "NO_REPLY") {
     if (unit.replyCandidate.disposition !== "NO_REPLY") return failure("ROUTE_PURPOSE_CONFLICT", ["replyCandidate"]);
     return { disposition: "NO_REPLY", reasonClass: "no_executable_need", requiresCanonicalExecution: false, missingGuestFields: [], operatorActionClass: null, riskClass: null };
   }
   if (policy.kind === "HANDOFF") {
+    if (!["START", "CONTINUE", "MODIFY"].includes(lifecycleDecision.action)) {
+      return failure("ROUTE_PURPOSE_CONFLICT", ["handoff.lifecycle"]);
+    }
     if (unit.replyCandidate.disposition !== "HANDOFF") return failure("ROUTE_PURPOSE_CONFLICT", ["replyCandidate"]);
-    const basis = handoffBasisFor(handoffBasis, unit);
-    if (!basis) return failure("HANDOFF_WITHOUT_OPERATOR_OR_RISK", ["handoffBasis"]);
+    const policyProjection = trustedOperatorSafetyPolicyFor(operatorSafetyPolicy, unit, lifecycleDecision);
+    if (!policyProjection) return failure("HANDOFF_WITHOUT_OPERATOR_OR_RISK", ["operatorSafetyPolicy"]);
     return {
       disposition: "HANDOFF",
-      reasonClass: basis.operatorActionClass !== null ? "operator_action_required" : "risk_policy_required",
+      reasonClass: policyProjection.operatorActionClass !== null ? "operator_action_required" : "risk_policy_required",
       requiresCanonicalExecution: false,
       missingGuestFields: [],
-      operatorActionClass: basis.operatorActionClass,
-      riskClass: basis.riskClass
+      operatorActionClass: policyProjection.operatorActionClass,
+      riskClass: policyProjection.riskClass
     };
   }
   if (unit.purpose !== "lodging_question") return failure("ROUTE_PURPOSE_CONFLICT", ["purpose"]);
@@ -186,9 +231,9 @@ function routeFromValidatedInputs({ unit, routingRegistry, readiness, handoffBas
   return { disposition: "ANSWER", reasonClass: "executable_lodging_need", requiresCanonicalExecution: true, missingGuestFields: [], operatorActionClass: null, riskClass: null };
 }
 
-function createUnitRoutingDecision({ unit, lifecycleDecision, routingRegistry, readiness, handoffBasis = null } = {}) {
+function createUnitRoutingDecision({ unit, lifecycleDecision, routingRegistry, readiness, operatorSafetyPolicy = null } = {}) {
   if (!validatedUnitAndLifecycle(unit, lifecycleDecision)) return failure("ROUTING_INPUT_INVALID", ["unitOrLifecycle"]);
-  const routed = routeFromValidatedInputs({ unit, routingRegistry, readiness, handoffBasis });
+  const routed = routeFromValidatedInputs({ unit, lifecycleDecision, routingRegistry, readiness, operatorSafetyPolicy });
   if (routed.ok === false) return routed;
   const decision = { unitId: unit.unitId, ...routed };
   const validation = validateUnitRoutingDecision(decision);
@@ -205,7 +250,7 @@ function isUnitRoutingDecision(value) {
 module.exports = {
   createUnitReplyRoutingRegistry,
   createUnitReadiness,
-  createHandoffBasis,
+  createTrustedOperatorSafetyPolicy,
   createUnitRoutingDecision,
   isUnitRoutingDecision
 };
