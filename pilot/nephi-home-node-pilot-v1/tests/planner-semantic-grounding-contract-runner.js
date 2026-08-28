@@ -11,7 +11,10 @@ const catalog = buildPropertyCatalog({
   displayName: "Contract Property",
   timezone: "Asia/Taipei",
   businessProfile: { googleMapsUrl: "https://maps.google.com/?q=semantic-grounding-property" },
-  rooms: [],
+  rooms: [
+    { canonicalId: "room302", id: "room302", roomTypeId: "room302", category: "room", publicName: "302四人房", displayName: "302四人房", enabled: true },
+    { canonicalId: "bundle_four_room_whole_house", id: "bundle_four_room_whole_house", bundleId: "bundle_four_room_whole_house", inventoryType: "bundle", category: "bundle", publicName: "包棟", displayName: "包棟", enabled: true, memberRoomIds: ["room302"] }
+  ],
   propertyFacts: [
     { canonicalId: "parking", category: "amenity", publicName: "停車", status: "provided", publicText: "提供停車。", aliases: [] },
     { canonicalId: "breakfast", category: "policy", publicName: "早餐說明", status: "provided", publicText: "住宿不附早餐。", aliases: [] },
@@ -81,6 +84,108 @@ const externalGrounding = {
   relation: "property_to_external_place",
   requestedOutput: "map_url"
 };
+
+function availabilityTask(message, groundingId, { category, canonicalCandidate, checkIn, checkOut }) {
+  return taskFor(message, groundingId, {
+    type: "availability",
+    requestedOutputs: ["answer"],
+    dependsOnStayContext: true,
+    entity: { category, rawText: category === "bundle" ? "包棟" : "302四人房", canonicalCandidate, confidence: 1 },
+    stayCandidate: {
+      dateExpression: { rawText: `${checkIn}–${checkOut}`, kind: "range", anchor: "message_time" },
+      checkInCandidate: checkIn,
+      checkOutCandidate: checkOut,
+      nightsCandidate: 1,
+      guestCountCandidate: null
+    }
+  });
+}
+
+{
+  const message = "入住日期：2026/10/09\n退房日期：2026/10/10\n房型：包棟\n請問這個房型目前是否還可以預訂？";
+  const task = availabilityTask(message, "production-bundle-availability", {
+    category: "bundle",
+    canonicalCandidate: "bundle_four_room_whole_house",
+    checkIn: "2026-10-09",
+    checkOut: "2026-10-10"
+  });
+  const result = canonical(message, task, {
+    subject: { scope: "property_owned", catalogIdentity: "bundle_four_room_whole_house" },
+    relation: "inventory_availability",
+    requestedOutput: "answer"
+  }, "event-production-bundle-availability");
+  assert.equal(result.semantic.tasks[0].type, "availability");
+  assert.equal(result.semantic.tasks[0].dependsOnStayContext, true);
+  assert.deepEqual(result.semantic.tasks[0].stayCandidate, task.stayCandidate);
+  assert.equal(result.canonicalRequest.capability, "bundle_availability");
+  assert.equal(result.canonicalRequest.resolverId, "availability_resolver");
+  assert.deepEqual({
+    checkIn: result.canonicalRequest.temporalState.checkIn,
+    checkOut: result.canonicalRequest.temporalState.checkOut,
+    nights: result.canonicalRequest.temporalState.nights
+  }, { checkIn: "2026-10-09", checkOut: "2026-10-10", nights: 1 });
+}
+
+{
+  const message = "302四人房，2026/10/09入住、2026/10/10退房，是否可以預訂？";
+  const task = availabilityTask(message, "room-availability", {
+    category: "room",
+    canonicalCandidate: "room302",
+    checkIn: "2026-10-09",
+    checkOut: "2026-10-10"
+  });
+  const result = canonical(message, task, {
+    subject: { scope: "property_owned", catalogIdentity: "room302" },
+    relation: "inventory_availability",
+    requestedOutput: "answer"
+  }, "event-room-availability");
+  assert.equal(result.semantic.tasks[0].type, "availability");
+  assert.equal(result.canonicalRequest.capability, "availability");
+  assert.equal(result.canonicalRequest.resolverId, "availability_resolver");
+}
+
+{
+  const message = "2026/10/04包棟多少錢？";
+  const result = canonical(message, taskFor(message, "bundle-price-control", {
+    type: "price",
+    requestedOutputs: ["price"],
+    dependsOnStayContext: true,
+    entity: { category: "bundle", rawText: "包棟", canonicalCandidate: "bundle_four_room_whole_house", confidence: 1 },
+    stayCandidate: {
+      dateExpression: { rawText: "2026/10/04", kind: "absolute", anchor: "message_time" },
+      checkInCandidate: "2026-10-04",
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    }
+  }), {
+    subject: { scope: "property_owned", catalogIdentity: "bundle_four_room_whole_house" },
+    relation: "property_fact",
+    requestedOutput: "answer"
+  }, "event-bundle-price-control");
+  assert.equal(result.semantic.tasks[0].type, "price", "a formal inventory subject grounding must not overwrite the existing price capability");
+  assert.equal(result.semantic.tasks[0].dependsOnStayContext, true);
+  assert.equal(result.canonicalRequest.capability, "price");
+}
+
+for (const [name, mutate] of [
+  ["inventory-wrong-relation", (value) => { value.semanticGroundings[0].relation = "property_fact"; }],
+  ["inventory-missing-stay", (value) => { value.tasks[0].dependsOnStayContext = false; value.tasks[0].stayCandidate = null; }],
+  ["inventory-wrong-identity", (value) => { value.semanticGroundings[0].subject.catalogIdentity = "parking"; }]
+]) {
+  const message = "2026/10/09入住、2026/10/10退房，302四人房是否可以預訂？";
+  const eventId = `event-${name}`;
+  const value = plan(message, availabilityTask(message, name, {
+    category: "room", canonicalCandidate: "room302", checkIn: "2026-10-09", checkOut: "2026-10-10"
+  }), {
+    subject: { scope: "property_owned", catalogIdentity: "room302" },
+    relation: "inventory_availability",
+    requestedOutput: "answer"
+  }, eventId);
+  mutate(value);
+  const semantic = applyPlannerSemanticContract(value, { catalog, sourceEvents: [{ eventId, messageRef: "", messageText: message }] });
+  assert.equal(semantic.tasks[0].type, "unknown", `${name}: a conflicting inventory tuple must fail closed`);
+}
 
 for (const [name, message] of [
   ["production-breakfast-shop", "民宿附近有早餐店嗎"],

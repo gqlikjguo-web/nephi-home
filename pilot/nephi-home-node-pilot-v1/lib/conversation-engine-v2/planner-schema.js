@@ -10,7 +10,7 @@ const ELIGIBILITY_EVIDENCE_KINDS = new Set(["none", "person", "room", "plan", "b
 const CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
 const SEMANTIC_KINDS = new Set(["capability", "catalog_subject", "temporal_pattern", "lodging_scope"]);
 const SEMANTIC_SUBJECT_SCOPES = new Set(["property_owned", "external_place"]);
-const SEMANTIC_RELATIONS = new Set(["collection_membership", "property_fact", "property_to_external_place"]);
+const SEMANTIC_RELATIONS = new Set(["collection_membership", "property_fact", "property_to_external_place", "inventory_availability"]);
 const SEMANTIC_REQUESTED_OUTPUTS = new Set(["answer", "map_url"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const { DETAIL_INTENTS, detailFactCandidates } = require("./detail-intent");
@@ -1317,6 +1317,47 @@ function semanticGroundingDecisions(value, catalog, sourceEvents) {
       return;
     }
     const formalEntity = subject.catalogIdentity ? formalCatalogEntity(catalog, subject.catalogIdentity) : null;
+    if (grounding.relation === "inventory_availability") {
+      const requestedOutputs = Array.isArray(task.requestedOutputs) ? task.requestedOutputs : [];
+      const taskCapabilityMatchesSubject = task.type === "availability"
+        && formalEntity && ["room", "bundle"].includes(formalEntity.category)
+        || task.type === "bundle_availability"
+          && formalEntity && formalEntity.category === "bundle";
+      decisions.set(taskIndex, grounding.requestedOutput === "answer"
+        && subject.scope === "property_owned"
+        && Boolean(formalEntity)
+        && taskCapabilityMatchesSubject
+        && requestedOutputs.length === 1
+        && ["answer", "availability"].includes(requestedOutputs[0])
+        && task.entity && task.entity.category === formalEntity.category
+        && task.entity.canonicalCandidate === formalEntity.canonicalId
+        && task.dependsOnStayContext === true
+        && validStayCandidate(task.stayCandidate)
+        ? { ok: true, kind: "preserve" }
+        : { ok: false, reason: "semantic_grounding_inventory_conflict" });
+      return;
+    }
+    if (grounding.relation === "property_fact"
+      && grounding.requestedOutput === "answer"
+      && ["price", "total_price"].includes(task.type)
+      && formalEntity && ["room", "bundle"].includes(formalEntity.category)) {
+      decisions.set(taskIndex, Array.isArray(task.requestedOutputs)
+        && task.requestedOutputs.length === 1
+        && task.requestedOutputs[0] === task.type
+        && task.entity && task.entity.category === formalEntity.category
+        && task.entity.canonicalCandidate === formalEntity.canonicalId
+        && task.dependsOnStayContext === true
+        && validStayCandidate(task.stayCandidate)
+        ? { ok: true, kind: "preserve" }
+        : { ok: false, reason: "semantic_grounding_inventory_amount_conflict" });
+      return;
+    }
+    if (["availability", "bundle_availability"].includes(task.type)
+      && task.dependsOnStayContext === true
+      && formalEntity && ["room", "bundle"].includes(formalEntity.category)) {
+      decisions.set(taskIndex, { ok: false, reason: "semantic_grounding_inventory_conflict" });
+      return;
+    }
     if (grounding.relation === "property_fact" && grounding.requestedOutput === "answer"
       && subject.catalogIdentity === null && task.type !== "amenity_list") {
       decisions.set(taskIndex, { ok: true, kind: "preserve" });
@@ -1679,7 +1720,7 @@ function plannerJsonSchema() {
       stateOperations: { type: "array", maxItems: 20, items: { type: "object", additionalProperties: false, required: ["field", "operation", "value", "sourceText"], properties: { field: stringEnum(PLANNER_OPERATION_PATHS), operation: stringEnum(OPERATIONS), value: { type: ["string", "integer", "boolean", "array", "null"], items: { type: "string" } }, sourceText: { type: "string", maxLength: 500 } } } },
       stay: { type: "object", additionalProperties: false, required: ["dateExpression", "checkInCandidate", "checkOutCandidate", "nightsCandidate", "guestCountCandidate"], properties: { dateExpression: { type: "object", additionalProperties: false, required: ["rawText", "kind", "anchor"], properties: { rawText: { type: "string", maxLength: 200 }, kind: stringEnum(DATE_KINDS), anchor: stringEnum(ANCHORS) } }, checkInCandidate: { type: ["string", "null"] }, checkOutCandidate: { type: ["string", "null"] }, nightsCandidate: { type: ["integer", "null"], minimum: 1, maximum: 60 }, guestCountCandidate: { type: ["integer", "null"], minimum: 1, maximum: 100 } } },
       tasks: { type: "array", minItems: 1, maxItems: 12, description: "One task per independently actionable guest need. Coordinated subjects remain separate, and a shared descriptor that asks an independently answerable, clarifiable, or handoff-required request must have its own task rather than being absorbed by the subject tasks.", items: { type: "object", additionalProperties: false, required: ["candidateIndex", "taskId", "groundingId", "type", "sourceText", "detailIntent", "requestedOutputs", "eligibilityEvidence", "dependsOnStayContext", "entity", "stayCandidate", "confidence"], properties: { candidateIndex: { type: "integer", minimum: 0 }, taskId: { type: "string", maxLength: 80 }, groundingId: { type: "string", minLength: 1, maxLength: 80 }, type: { ...stringEnum(TASK_TYPES), description: "Semantic capability. Monetary lodging amount, charge, or rate requests use price or total_price; the fixed maximum occupancy of one explicitly identified room or bundle uses lodging_product_capacity; lodging recommendation or date-and-guest-dependent selection does not. Property rules and conditions use policy. Missing stay dates do not turn price into policy. Requests to disclose access credentials or authentication secrets use high_risk and never policy. An identified current-property formal catalog subject fee uses a subject-compatible amenity, policy, or property_fact task, not price or total_price." }, sourceText: { type: "string", minLength: 1, maxLength: 500 }, detailIntent: stringEnum(DETAIL_INTENTS), requestedOutputs: { type: "array", description: "Requested fact for this capability. A price task uses price, a total_price task uses total_price, lodging_product_capacity uses capacity, and a general property fact uses answer. A property-subject fee uses fee.", items: { type: "string", maxLength: 80 } }, eligibilityEvidence: { type: "object", additionalProperties: false, description: "Explicit guest qualification evidence. Use none for a base availability or permission question. Use a non-none kind only when sourceText quotes the person, room, plan, booking mode, identity, or stated condition that makes this an eligibility question.", required: ["kind", "sourceText"], properties: { kind: stringEnum(ELIGIBILITY_EVIDENCE_KINDS), sourceText: { type: "string", maxLength: 200, description: "Exact excerpt from the task sourceText containing the qualification; empty when kind is none." } } }, dependsOnStayContext: { type: "boolean" }, entity: { type: "object", additionalProperties: false, required: ["category", "rawText", "canonicalCandidate", "confidence"], properties: { category: stringEnum(ENTITY_CATEGORIES), rawText: { type: "string", maxLength: 200 }, canonicalCandidate: { type: ["string", "null"], maxLength: 120 }, confidence: { type: "number", minimum: 0, maximum: 1 } } }, stayCandidate: { type: ["object", "null"], description: "When dependsOnStayContext is true, use a structured object even if all stay inputs are missing; use empty candidate fields rather than null. Use null when dependsOnStayContext is false.", additionalProperties: false, required: ["dateExpression", "checkInCandidate", "checkOutCandidate", "nightsCandidate", "guestCountCandidate"], properties: { dateExpression: { type: "object", additionalProperties: false, required: ["rawText", "kind", "anchor"], properties: { rawText: { type: "string", maxLength: 200 }, kind: stringEnum(DATE_KINDS), anchor: stringEnum(ANCHORS) } }, checkInCandidate: { type: ["string", "null"], maxLength: 40 }, checkOutCandidate: { type: ["string", "null"], maxLength: 40 }, nightsCandidate: { type: ["integer", "null"], minimum: 1, maximum: 60 }, guestCountCandidate: { type: ["integer", "null"], minimum: 1, maximum: 100 } } }, confidence: { type: "number", minimum: 0, maximum: 1 } } } },
-      semanticGroundings: { type: "array", minItems: 1, maxItems: 24, description: "Independent source-bound semantic grounding for each task. It distinguishes property-owned subjects from external places without keyword matching.", items: { type: "object", additionalProperties: false, required: ["groundingId", "provenanceRelationCandidateIndexes", "evidenceRefs", "subject", "relation", "requestedOutput"], properties: { groundingId: { type: "string", minLength: 1, maxLength: 80 }, provenanceRelationCandidateIndexes: { type: "array", minItems: 1, maxItems: 1, items: { type: "integer", minimum: 0 } }, evidenceRefs: { type: "array", minItems: 1, maxItems: 12, items: { type: "object", additionalProperties: false, required: ["eventId", "messageRef", "startOffset", "endOffset", "quote"], properties: { eventId: { type: "string", maxLength: 120 }, messageRef: { type: "string", maxLength: 120 }, startOffset: { type: "integer", minimum: 0 }, endOffset: { type: "integer", minimum: 0 }, quote: { type: "string", minLength: 1, maxLength: 500 } } } }, subject: { type: "object", additionalProperties: false, required: ["scope", "catalogIdentity"], properties: { scope: stringEnum(SEMANTIC_SUBJECT_SCOPES), catalogIdentity: { type: ["string", "null"], maxLength: 120 } } }, relation: stringEnum(SEMANTIC_RELATIONS), requestedOutput: stringEnum(SEMANTIC_REQUESTED_OUTPUTS) } } },
+      semanticGroundings: { type: "array", minItems: 1, maxItems: 24, description: "Independent source-bound semantic grounding for each task. It distinguishes property-owned subjects from external places without keyword matching.", items: { type: "object", additionalProperties: false, required: ["groundingId", "provenanceRelationCandidateIndexes", "evidenceRefs", "subject", "relation", "requestedOutput"], properties: { groundingId: { type: "string", minLength: 1, maxLength: 80 }, provenanceRelationCandidateIndexes: { type: "array", minItems: 1, maxItems: 1, items: { type: "integer", minimum: 0 } }, evidenceRefs: { type: "array", minItems: 1, maxItems: 12, items: { type: "object", additionalProperties: false, required: ["eventId", "messageRef", "startOffset", "endOffset", "quote"], properties: { eventId: { type: "string", maxLength: 120 }, messageRef: { type: "string", maxLength: 120 }, startOffset: { type: "integer", minimum: 0 }, endOffset: { type: "integer", minimum: 0 }, quote: { type: "string", minLength: 1, maxLength: 500 } } } }, subject: { type: "object", additionalProperties: false, required: ["scope", "catalogIdentity"], properties: { scope: stringEnum(SEMANTIC_SUBJECT_SCOPES), catalogIdentity: { type: ["string", "null"], maxLength: 120 } } }, relation: { ...stringEnum(SEMANTIC_RELATIONS), description: "Use inventory_availability only for a stay-dependent availability task whose property-owned subject is one formal room or bundle catalog identity." }, requestedOutput: stringEnum(SEMANTIC_REQUESTED_OUTPUTS) } } },
       contextRelationCandidates: { type: "array", maxItems: 12, items: { type: "object", additionalProperties: false, required: ["candidateIndex", "kind", "candidateRequestCycleRefs", "evidenceRefs"], properties: { candidateIndex: { type: "integer", minimum: 0 }, kind: stringEnum(CONTEXT_RELATION_KINDS), candidateRequestCycleRefs: { type: "array", items: { type: "string", maxLength: 120 } }, evidenceRefs: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, required: ["eventId", "messageRef", "startOffset", "endOffset", "quote"], properties: { eventId: { type: "string", maxLength: 120 }, messageRef: { type: "string", maxLength: 120 }, startOffset: { type: "integer", minimum: 0 }, endOffset: { type: "integer", minimum: 0 }, quote: { type: "string", minLength: 1, maxLength: 500 } } } } } } },
       ambiguities: { type: "array", items: { type: "string", maxLength: 300 } }, missingInformation: { type: "array", items: { type: "string", maxLength: 120 } }, needsHuman: { type: "boolean" }, shouldIgnore: { type: "boolean" }, reason: { type: "string", maxLength: 120 }
     }
