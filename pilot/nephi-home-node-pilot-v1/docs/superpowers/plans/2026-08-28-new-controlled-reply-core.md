@@ -72,6 +72,7 @@
 - [ ] Write RED for AC-WIR-001..008, AC-SEM-001..010, and malformed C05 IDs/targets.
 - [ ] Run the targeted runner; expect missing modules.
 - [ ] Implement closed enums, cardinality, uniqueness, and tuple shape only; keep semantic checks out of wire validation.
+- [ ] Apply the approved C03 temporal/slot wire shapes: closed temporal `{rawText,kind,checkInCandidate,checkOutCandidate,nightsCandidate}` and source-bound slot `{slotCandidateId,slot,operation,value,evidenceRefs}`; do not add a second representation.
 - [ ] Run targeted plus existing strict-schema tests; expect old tests unchanged and new tests PASS.
 - [ ] Commit contract types/validators.
 
