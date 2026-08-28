@@ -548,6 +548,15 @@ const allowlistedReadOnlyMetadataRoot = isolatedSource(({ sourceRoot }) => {
   `);
 });
 assert.equal(gate(allowlistedReadOnlyMetadataRoot).ok, true, JSON.stringify(gate(allowlistedReadOnlyMetadataRoot)));
+const summarizeShadowCollectionRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-summarize-collection.js"), `
+    function summarizeShadow(items) {
+      return items.map((item) => ({ unitId: item.unitId }));
+    }
+    module.exports = { summarizeShadow };
+  `);
+});
+assert.equal(gate(summarizeShadowCollectionRoot).ok, true, JSON.stringify(gate(summarizeShadowCollectionRoot)));
 
 // AC-MNT-009: the scanner is token-aware: comments, string literals, and
 // innocent consumer names do not create false writer/authority findings.

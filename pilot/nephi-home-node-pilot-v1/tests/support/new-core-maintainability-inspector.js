@@ -11,6 +11,10 @@ const MUTATION_CAPABILITIES = new Set(["db", "database", "postgres", "postgresql
 const MUTATION_ROLES = new Set(["client", "gateway", "mutator", "persistence", "provider", "repository", "repo", "service", "sink", "store", "writer"]);
 const MUTATING_METHODS = new Set(["delete", "execute", "insert", "persist", "remove", "reply", "resolve", "save", "send", "set", "update", "upsert", "write"]);
 const NON_MUTATION_QUALIFIERS = new Set(["descriptor", "documentation", "enum", "metadata", "projection", "record", "schema", "snapshot", "summary"]);
+const READ_ONLY_COLLECTION_METHODS = new Set([
+  "map", "filter", "reduce", "find", "findIndex", "some", "every", "slice",
+  "includes", "at", "entries", "keys", "values"
+]);
 const RAW_TEXT_ORIGINS = new Set(["messageText", "guestText", "rawText", "quote"]);
 const RAW_TEXT_INSPECTION_METHODS = new Set(["includes", "match", "test", "startsWith", "endsWith"]);
 const SEMANTIC_AUTHORITIES = new Set([
@@ -645,6 +649,20 @@ function callableHasUnresolvedMethod(callee, callable, bindings) {
   return unresolved;
 }
 
+function callableMethodResolution(callee, callable, bindings) {
+  const result = emptyResolution();
+  let sawMember = false;
+  for (const resolved of callable.nodes) {
+    if (resolved.type !== "MemberExpression") continue;
+    sawMember = true;
+    mergeMetadata(result, propertyResolution(resolved, bindings, new Set(), 0));
+  }
+  if (!sawMember && callee.type === "MemberExpression") {
+    mergeMetadata(result, propertyResolution(callee, bindings, new Set(), 0));
+  }
+  return result;
+}
+
 function resolutionHasUnresolvedSelection(resolution, bindings) {
   for (const node of resolution.nodes) {
     if (node.type !== "MemberExpression") continue;
@@ -720,8 +738,12 @@ function verifyAst(file, item, root) {
       const receiver = receiverResolution(node.callee, callable, item.bindings);
       const unresolvedSelection = resolutionHasUnresolvedSelection(receiver, item.bindings);
       const unresolvedMethod = callableHasUnresolvedMethod(node.callee, callable, item.bindings);
+      const method = callableMethodResolution(node.callee, callable, item.bindings);
       const metadataQualified = [...receiver.origins].some(nonMutationQualifiedName);
       const mutatingMethod = [...callable.names].some((name) => MUTATING_METHODS.has(name));
+      const allowlistedReadOnlyCollectionMethod = method.names.size > 0
+        && !method.unresolved && !method.exhausted
+        && [...method.names].every((name) => READ_ONLY_COLLECTION_METHODS.has(name));
       const explicitQualifiedMutation = receiver.injected
         && [...receiver.origins].some(qualifiedMutationSurfaceName)
         && mutatingMethod;
@@ -729,7 +751,7 @@ function verifyAst(file, item, root) {
         || ["sendLine", "writeState", "createReview", "persist", "insertReview", "replyMessage", "resolveAvailability"].some((name) => callable.names.has(name))
         || protectedSource && explicitQualifiedMutation
         || shadowSource && receiver.injected && hasMember
-          && (mutatingMethod || !metadataQualified)
+          && (mutatingMethod || !metadataQualified && !allowlistedReadOnlyCollectionMethod)
         || protectedSource && receiver.injected
           && (receiver.exhausted || unresolvedSelection || unresolvedMethod && !metadataQualified)) sideEffect = true;
     }
