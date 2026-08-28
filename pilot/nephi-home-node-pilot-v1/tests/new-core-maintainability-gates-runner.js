@@ -33,7 +33,7 @@ function copyDirectory(source, destination) {
 function isolatedSource(mutator) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-task10-maintainability-"));
   const sourceRoot = path.join(root, "lib", "new-core");
-  copyDirectory(path.join(projectRoot, "lib", "new-core"), sourceRoot);
+  copyDirectory(path.join(projectRoot, "lib"), path.join(root, "lib"));
   mutator({ root, sourceRoot });
   return root;
 }
@@ -237,6 +237,10 @@ const reflectedIndexRoot = isolatedSource(({ sourceRoot }) => {
   `);
 });
 assertGateFailure(gate(reflectedIndexRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
+const aliasedIndexRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "aliased-index.js"), `const key = "candidateIndex"; Reflect.set({}, key, 0);`);
+});
+assertGateFailure(gate(aliasedIndexRoot), "CANDIDATE_INDEX_OUTSIDE_C08");
 
 // AC-MNT-008: diagnostics have one writer and are not a second persistence,
 // Resolver, state, reply, or facts boundary.
@@ -260,6 +264,10 @@ const shadowClassSideEffectRoot = isolatedSource(({ sourceRoot }) => {
   `);
 });
 assertGateFailure(gate(shadowClassSideEffectRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
+const aliasedShadowRoot = isolatedSource(({ sourceRoot }) => {
+  fs.writeFileSync(path.join(sourceRoot, "shadow-aliased.js"), `const db = database; const write = db.insert; function run(x) { write(x); } module.exports = { run };`);
+});
+assertGateFailure(gate(aliasedShadowRoot), "DIAGNOSTIC_SIDE_EFFECT_FORBIDDEN");
 
 // AC-MNT-009: the scanner is token-aware: comments, string literals, and
 // innocent consumer names do not create false writer/authority findings.
@@ -309,6 +317,20 @@ wrongFailureOwnerManifest.failureCodeOwners.EVIDENCE_QUOTE_MISMATCH = "C03";
 const wrongFailureOwnerPath = path.join(missingValidatorRoot, "docs", "wrong-failure-owner.json");
 fs.writeFileSync(wrongFailureOwnerPath, JSON.stringify(wrongFailureOwnerManifest));
 assertGateFailure(gate(missingValidatorRoot, wrongFailureOwnerPath), "FAILURE_CODE_OWNER_MISMATCH");
+const markerManifest = JSON.parse(fs.readFileSync(ownershipPath, "utf8"));
+markerManifest.contracts[0].diagnosticMarkers[0] = "C01_MUTATED";
+const markerPath = path.join(missingValidatorRoot, "docs", "marker.json");
+fs.writeFileSync(markerPath, JSON.stringify(markerManifest));
+assertGateFailure(gate(missingValidatorRoot, markerPath), "CONTRACT_GRAPH_MISMATCH");
+const removedImportRoot = isolatedSource(({ root }) => {
+  const file = path.join(root, "lib", "new-core", "unit-aggregator.js");
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('require("./lifecycle-manager")', 'require("./missing-lifecycle")'));
+});
+assertGateFailure(gate(removedImportRoot), "CONTRACT_CONSUMER_MISSING");
+const missingAuthorityRoot = isolatedSource(({ root }) => {
+  fs.unlinkSync(path.join(root, "lib", "conversation-engine-v2", "final-decision.js"));
+});
+assertGateFailure(gate(missingAuthorityRoot), "DOMAIN_AUTHORITY_REGISTRY_INVALID");
 
 // AC-MNT-010: arbitrary files outside lib/new-core are not scanned and cannot
 // make fixtures or old runtime into new-core authority.

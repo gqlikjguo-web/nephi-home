@@ -6,7 +6,7 @@ const crypto = require("node:crypto");
 
 const CONTRACT_IDS = Array.from({ length: 11 }, (_, index) => `C${String(index + 1).padStart(2, "0")}`);
 const MAX_FUNCTION_LINES = 180;
-const CONTRACT_GRAPH_DIGEST = "a14ce4745ba211a297ee532855e8237b1a292410c93b6b975eba3fe9713ed7c5";
+const CONTRACT_GRAPH_DIGEST = "4f716c74c7fa0287fd2ecc0c947c56a87b6d96922e3a74ee9e7e696ddc298e20";
 const FAILURE_OWNER_DIGEST = "3d4127d7b27b8b418e7d6d45e52ac733fa82fabadbbcb81cd99b746289f60f1e";
 const DOMAIN_AUTHORITY_DIGEST = "009e1cfb3b9d0d2fc1d8da58f9cb7ba03d378a991e2c4f3e0640ec94a9600572";
 
@@ -44,6 +44,14 @@ function staticName(node) {
   return null;
 }
 
+function resolvedNode(node, bindings, seen = new Set()) {
+  if (!node || node.type !== "Identifier" || !bindings.has(node.name) || seen.has(node.name)) return node;
+  const next = new Set(seen); next.add(node.name);
+  return resolvedNode(bindings.get(node.name), bindings, next);
+}
+
+function resolvedName(node, bindings) { return staticName(resolvedNode(node, bindings)); }
+
 function memberName(node) { return node && node.type === "MemberExpression" ? staticName(node.property) : null; }
 function isMember(node, owner, name) { return node && node.type === "MemberExpression" && node.object.type === "Identifier" && node.object.name === owner && memberName(node) === name; }
 function isModuleExports(node) { return isMember(node, "module", "exports"); }
@@ -54,10 +62,11 @@ function analysis(source) {
   const exports = new Set();
   const functions = [];
   const requires = new Set();
+  const bindings = new Map();
   walk(ast, (node, parent) => {
     if ((node.type === "FunctionDeclaration" || node.type === "ClassDeclaration") && node.id) declared.add(node.id.name);
     if (node.type === "VariableDeclarator") {
-      if (node.id.type === "Identifier") declared.add(node.id.name);
+      if (node.id.type === "Identifier") { declared.add(node.id.name); if (node.init) bindings.set(node.id.name, node.init); }
       if (node.id.type === "ObjectPattern") node.id.properties.forEach((p) => p.value && p.value.type === "Identifier" && declared.add(p.value.name));
     }
     if (["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(node.type)) functions.push(node);
@@ -78,7 +87,7 @@ function analysis(source) {
     }
     if (node.type === "CallExpression" && (isMember(node.callee, "Object", "defineProperty") || isMember(node.callee, "Reflect", "defineProperty")) && isExports(node.arguments[0])) exports.add(staticName(node.arguments[1]));
   });
-  return { ast, declared, exports, functions, requires };
+  return { ast, declared, exports, functions, requires, bindings };
 }
 
 function sourceFiles(root) {
@@ -120,8 +129,7 @@ function validateManifest(manifest, root, manifestPath) {
     }
   }
   if (JSON.stringify([...derived].sort()) !== JSON.stringify(Object.keys(manifest.failureCodeOwners).sort().map((k) => [k, manifest.failureCodeOwners[k]]))) return failure("FAILURE_CODE_OWNER_MISMATCH", root, manifestPath);
-  const graph = manifest.contracts.map(({ contractId, writer, validator, consumers }) => ({ contractId, writer, validator, consumers }));
-  if (digest(graph) !== CONTRACT_GRAPH_DIGEST) return failure("CONTRACT_GRAPH_MISMATCH", root, manifestPath);
+  if (digest(manifest.contracts) !== CONTRACT_GRAPH_DIGEST) return failure("CONTRACT_GRAPH_MISMATCH", root, manifestPath);
   if (digest(manifest.failureCodeOwners) !== FAILURE_OWNER_DIGEST) return failure("FAILURE_CODE_OWNER_MISMATCH", root, manifestPath);
   if (digest(manifest.domainAuthorities) !== DOMAIN_AUTHORITY_DIGEST) return failure("DOMAIN_AUTHORITY_REGISTRY_INVALID", root, manifestPath);
   return { ok: true };
@@ -134,7 +142,8 @@ function verifyAst(file, item, root) {
     walk(fn.body, (node) => {
       if (node.type === "Identifier") identifiers.add(node.name);
       if (node.type === "CallExpression") {
-        const call = node.callee.type === "Identifier" ? node.callee.name : memberName(node.callee);
+        const callee = resolvedNode(node.callee, item.bindings);
+        const call = callee.type === "Identifier" ? callee.name : resolvedName(callee.property, item.bindings);
         if (["includes", "match", "test", "startsWith", "endsWith"].includes(call)) rawBranch = true;
         if (["validateSemanticUnit", "validateAndNormalizeSourceEvidence", "validateContextLink", "createLifecycleDecision", "createUnitRoutingDecision", "createCanonicalizerInputItem", "executeCanonicalizerInputItem", "canonicalizeExecutionItem", "resolveAvailability"].includes(call)) authorityCall = true;
       }
@@ -143,16 +152,20 @@ function verifyAst(file, item, root) {
   }
   let candidate = false; let sideEffect = false;
   walk(item.ast, (node) => {
-    if ((node.type === "MemberExpression" && memberName(node) === "candidateIndex")
+    if ((node.type === "MemberExpression" && resolvedName(node.property, item.bindings) === "candidateIndex")
       || node.type === "Property" && staticName(node.key) === "candidateIndex"
-      || node.type === "CallExpression" && isMember(node.callee, "Reflect", "set") && staticName(node.arguments[1]) === "candidateIndex") candidate = true;
+      || node.type === "CallExpression" && ["set", "defineProperty"].includes(memberName(resolvedNode(node.callee, item.bindings)))
+        && resolvedName(node.arguments[1], item.bindings) === "candidateIndex") candidate = true;
     if (node.type === "VariableDeclarator" && node.id.type === "Identifier" && node.id.name === "candidateIndex") candidate = true;
     if (node.type === "AssignmentExpression" && node.left.type === "Identifier" && node.left.name === "candidateIndex") candidate = true;
     if (node.type === "CallExpression") {
-      const owner = node.callee.type === "MemberExpression" && node.callee.object.type === "Identifier" ? node.callee.object.name : null;
-      const call = node.callee.type === "Identifier" ? node.callee.name : memberName(node.callee);
+      const callee = resolvedNode(node.callee, item.bindings);
+      const receiver = callee.type === "MemberExpression" ? resolvedNode(callee.object, item.bindings) : null;
+      const owner = receiver && receiver.type === "Identifier" ? receiver.name : null;
+      const call = callee.type === "Identifier" ? callee.name : resolvedName(callee.property, item.bindings);
       if (["state", "State", "Resolver", "resolver", "LINE", "line", "database"].includes(owner)
         || ["sendLine", "writeState", "createReview", "persist", "insertReview", "replyMessage", "resolveAvailability"].includes(call)) sideEffect = true;
+      if (/(?:diagnostic|shadow)/i.test(path.basename(file)) && callee.type === "MemberExpression" && call === null) sideEffect = true;
     }
   });
   if (file !== "lib/new-core/canonical-execution-adapter.js" && candidate) return failure("CANDIDATE_INDEX_OUTSIDE_C08", root, path.join(root, file));
@@ -181,20 +194,21 @@ function verifyNewCoreMaintainability({ projectRoot, manifestPath } = {}) {
     }
     if (contract.writer.status === "implemented") for (const [file, item] of byFile) if (file !== contract.writer.source && item.exports.has(contract.writer.symbol)) return failure("DUPLICATE_CONTRACT_WRITER", root, path.join(root, file));
   }
-  const requiredImports = new Map([
+  const requiredImports = [
     ["lib/new-core/context-link-validator.js", "./semantic-unit-validator"],
     ["lib/new-core/lifecycle-manager.js", "./context-link-validator"],
     ["lib/new-core/state-v3-lifecycle-adapter.js", "./lifecycle-manager"],
     ["lib/new-core/unit-aggregator.js", "./unit-reply-router"],
+    ["lib/new-core/unit-aggregator.js", "./lifecycle-manager"],
     ["lib/new-core/canonical-execution-adapter.js", "./unit-reply-router"]
-  ]);
+  ];
   for (const [file, request] of requiredImports) {
     if (byFile.has(file) && !byFile.get(file).requires.has(request)) return failure("CONTRACT_CONSUMER_MISSING", root, path.join(root, file));
   }
   for (const authority of manifest.domainAuthorities) {
     if (authority.status !== "implemented" || byFile.has(authority.source)) continue;
     const absolute = path.join(root, authority.source);
-    if (!fs.existsSync(absolute)) continue;
+    if (!fs.existsSync(absolute)) return failure("DOMAIN_AUTHORITY_REGISTRY_INVALID", root, absolute);
     let item;
     try { item = analysis(fs.readFileSync(absolute, "utf8")); } catch (_) { return failure("SOURCE_INSPECTION_FAILED", root, absolute); }
     if (!item.declared.has(authority.symbol) || !item.exports.has(authority.symbol)) return failure("DOMAIN_AUTHORITY_REGISTRY_INVALID", root, absolute);

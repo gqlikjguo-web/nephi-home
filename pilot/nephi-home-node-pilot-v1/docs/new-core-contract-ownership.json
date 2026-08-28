@@ -23,7 +23,7 @@
       "consumers": [
         { "name": "OpenAI Understanding V1", "source": "lib/providers/openai-understanding-v1.js", "symbol": "callOpenAIUnderstandingV1", "status": "planned_task_11" }
       ],
-      "failureOwner": "validateUnderstandingTurnInput",
+      "failureOwner": { "source": "lib/new-core/contracts/understanding-turn-input.js", "symbol": "validateUnderstandingTurnInput" },
       "failureCodes": ["TURN_INPUT_INVALID", "PROPERTY_SCOPE_INVALID", "SOURCE_EVENT_DUPLICATE", "CONTEXT_WINDOW_INVALID"],
       "diagnosticMarkers": ["C01_TURN_INPUT_VALIDATED", "C01_TURN_INPUT_REJECTED"]
     },
@@ -35,7 +35,7 @@
       "consumers": [
         { "name": "Source Evidence Validator", "source": "lib/new-core/source-evidence-validator.js", "symbol": "validateAndNormalizeSourceEvidence", "status": "implemented" }
       ],
-      "failureOwner": "validateUnderstandingOutputV1",
+      "failureOwner": { "source": "lib/new-core/contracts/understanding-output-v1.js", "symbol": "validateUnderstandingOutputV1" },
       "failureCodes": ["UNDERSTANDING_SCHEMA_INVALID", "UNIT_ID_DUPLICATE", "UNKNOWN_WIRE_FIELD", "UNDERSTANDING_CARDINALITY_INVALID", "UNDERSTANDING_PROVIDER_TIMEOUT"],
       "diagnosticMarkers": ["C02_UNDERSTANDING_RECEIVED", "C02_WIRE_SCHEMA_REJECTED", "C02_PROVIDER_TIMEOUT"]
     },
@@ -48,7 +48,7 @@
         { "name": "Context Link Validator", "source": "lib/new-core/context-link-validator.js", "symbol": "validateContextLink", "status": "implemented" },
         { "name": "Per-unit Reply Router", "source": "lib/new-core/unit-reply-router.js", "symbol": "createUnitRoutingDecision", "status": "implemented" }
       ],
-      "failureOwner": "validateSemanticUnit",
+      "failureOwner": { "source": "lib/new-core/semantic-unit-validator.js", "symbol": "validateSemanticUnit" },
       "failureCodes": ["SEMANTIC_UNIT_INVALID", "CAPABILITY_SUBJECT_CONFLICT", "STAY_DEPENDENCY_CONFLICT", "CATALOG_IDENTITY_INVALID", "UNIT_EVIDENCE_MISSING", "UNIT_MEANING_UNSUPPORTED"],
       "diagnosticMarkers": ["C03_SEMANTIC_UNIT_VALIDATED", "C03_SEMANTIC_UNIT_REJECTED"]
     },
@@ -62,7 +62,7 @@
         { "name": "Context Link Validator", "source": "lib/new-core/context-link-validator.js", "symbol": "validateContextLink", "status": "implemented" },
         { "name": "Diagnostic Boundary Emitter", "source": "lib/new-core/diagnostic-boundary.js", "symbol": "createDiagnosticBoundaryEvent", "status": "implemented" }
       ],
-      "failureOwner": "validateAndNormalizeSourceEvidence",
+      "failureOwner": { "source": "lib/new-core/source-evidence-validator.js", "symbol": "validateAndNormalizeSourceEvidence" },
       "failureCodes": ["EVIDENCE_SOURCE_UNKNOWN", "EVIDENCE_RANGE_INVALID", "EVIDENCE_QUOTE_MISMATCH", "EVIDENCE_MATCH_AMBIGUOUS", "EVIDENCE_SCOPE_CONFLICT"],
       "diagnosticMarkers": ["C04_SOURCE_EVIDENCE_VALIDATED", "C04_SOURCE_EVIDENCE_REJECTED"]
     },
@@ -74,7 +74,7 @@
       "consumers": [
         { "name": "Lifecycle Manager", "source": "lib/new-core/lifecycle-manager.js", "symbol": "createLifecycleDecision", "status": "implemented" }
       ],
-      "failureOwner": "validateContextLink",
+      "failureOwner": { "source": "lib/new-core/context-link-validator.js", "symbol": "validateContextLink" },
       "failureCodes": ["CONTEXT_LINK_DUPLICATE", "CONTEXT_TARGET_UNAVAILABLE", "CONTEXT_TARGET_SCOPE_CONFLICT", "CONTEXT_TARGET_AMBIGUOUS", "CONTEXT_LINK_EVIDENCE_INVALID"],
       "diagnosticMarkers": ["C05_CONTEXT_LINK_VALIDATED", "C05_CONTEXT_LINK_REJECTED"]
     },
@@ -87,7 +87,7 @@
         { "name": "State V3 Lifecycle Adapter", "source": "lib/new-core/state-v3-lifecycle-adapter.js", "symbol": "adaptLifecycleDecisionsToStateV3", "status": "implemented" },
         { "name": "Unit Aggregator", "source": "lib/new-core/unit-aggregator.js", "symbol": "aggregateUnitOutcomes", "status": "implemented" }
       ],
-      "failureOwner": "validateLifecycleDecision",
+      "failureOwner": { "source": "lib/new-core/lifecycle-manager.js", "symbol": "validateLifecycleDecision" },
       "failureCodes": ["LIFECYCLE_TARGET_REQUIRED", "LIFECYCLE_START_TARGET_FORBIDDEN", "LIFECYCLE_SLOT_UNVERIFIED", "LIFECYCLE_TRANSITION_INVALID", "LIFECYCLE_PROPERTY_CONFLICT"],
       "diagnosticMarkers": ["C06_LIFECYCLE_VALIDATED", "C06_LIFECYCLE_REJECTED"]
     },
@@ -100,7 +100,7 @@
         { "name": "Unit Aggregator", "source": "lib/new-core/unit-aggregator.js", "symbol": "aggregateUnitOutcomes", "status": "implemented" },
         { "name": "Canonical Execution Adapter", "source": "lib/new-core/canonical-execution-adapter.js", "symbol": "createCanonicalizerInputItem", "status": "implemented" }
       ],
-      "failureOwner": "validateUnitRoutingDecision",
+      "failureOwner": { "source": "lib/new-core/contracts/unit-routing-decision.js", "symbol": "validateUnitRoutingDecision" },
       "failureCodes": ["ANSWER_NOT_EXECUTABLE", "CLARIFY_WITHOUT_GUEST_FIELD", "HANDOFF_WITHOUT_OPERATOR_OR_RISK", "NO_REPLY_EXECUTABLE_CONFLICT", "ROUTE_PURPOSE_CONFLICT", "ROUTING_INPUT_INVALID", "ROUTING_READINESS_INVALID"],
       "diagnosticMarkers": ["C07_UNIT_ROUTE_VALIDATED", "C07_UNIT_ROUTE_REJECTED"]
     },
@@ -112,7 +112,7 @@
       "consumers": [
         { "name": "Official canonicalizer", "source": "lib/new-core/canonical-execution-adapter.js", "symbol": "executeCanonicalizerInputItem", "status": "implemented" }
       ],
-      "failureOwner": "validateCanonicalizerInputItem",
+      "failureOwner": { "source": "lib/new-core/contracts/canonicalizer-input-item.js", "symbol": "validateCanonicalizerInputItem" },
       "failureCodes": ["CANONICAL_INPUT_NOT_ANSWER", "CANONICAL_INPUT_INCOMPLETE", "CANONICAL_ADAPTER_OWNERSHIP_CONFLICT", "invalid_canonical_request", "invalid_lodging_product", "canonical_request_required"],
       "diagnosticMarkers": ["C08_CANONICAL_ADAPTER_ACCEPTED", "C08_CANONICAL_ADAPTER_REJECTED"]
     },
@@ -125,7 +125,7 @@
         { "name": "Existing execution orchestration", "source": "lib/new-core/shadow-core.js", "symbol": "consumeUnitAggregationResult", "status": "planned_task_12" },
         { "name": "FinalDecision input adapter", "source": "lib/v2-composition-root.js", "symbol": "adaptUnitAggregationToFinalDecision", "status": "planned_task_15" }
       ],
-      "failureOwner": "validateUnitAggregationResult",
+      "failureOwner": { "source": "lib/new-core/contracts/unit-aggregation-result.js", "symbol": "validateUnitAggregationResult" },
       "failureCodes": ["UNIT_OUTCOME_ORPHAN", "UNIT_OUTCOME_DUPLICATE", "UNIT_COVERAGE_INCOMPLETE", "CANONICAL_ITEM_ORPHAN", "AGGREGATION_ROUTE_CONFLICT", "UNIT_AGGREGATION_INVALID"],
       "diagnosticMarkers": ["C09_AGGREGATION_VALIDATED", "C09_AGGREGATION_REJECTED"]
     },
@@ -137,7 +137,7 @@
       "consumers": [
         { "name": "Offline acceptance and reporting", "source": "tests/new-core-shadow-isolation-runner.js", "symbol": "runShadowIsolationAcceptance", "status": "planned_task_12" }
       ],
-      "failureOwner": "validateShadowComparisonRecord",
+      "failureOwner": { "source": "lib/new-core/shadow-comparator.js", "symbol": "validateShadowComparisonRecord" },
       "failureCodes": ["SHADOW_SIDE_EFFECT_ATTEMPT", "SHADOW_RECORD_UNSAFE", "SHADOW_COMPARISON_INCOMPLETE"],
       "diagnosticMarkers": ["C10_SHADOW_COMPARISON_VALIDATED", "C10_SHADOW_COMPARISON_REJECTED"]
     },
@@ -150,7 +150,7 @@
         { "name": "Existing safe diagnostic persistence", "source": "lib/test-only-line-message-trace.js", "symbol": "diagnosticProjection", "status": "planned_task_12" },
         { "name": "Acceptance attribution", "source": "scripts/run-new-core-openai-shadow-acceptance.js", "symbol": "runNewCoreOpenAiShadowAcceptance", "status": "planned_task_14" }
       ],
-      "failureOwner": "validateDiagnosticBoundaryEvent",
+      "failureOwner": { "source": "lib/new-core/diagnostic-boundary.js", "symbol": "validateDiagnosticBoundaryEvent" },
       "failureCodes": ["DIAGNOSTIC_FIELD_FORBIDDEN", "DIAGNOSTIC_CODE_UNOWNED", "DIAGNOSTIC_BOUNDARY_UNKNOWN"],
       "diagnosticMarkers": ["C11_DIAGNOSTIC_VALIDATED", "C11_DIAGNOSTIC_REJECTED"]
     }
