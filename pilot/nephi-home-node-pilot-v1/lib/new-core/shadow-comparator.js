@@ -106,90 +106,116 @@ function safeArray(value) {
 }
 
 function projectSemanticUnit(item, index) {
-  if (!item || typeof item !== "object") return null;
-  const purpose = PURPOSES.has(item.purpose) ? item.purpose : null;
-  const capability = CAPABILITIES.has(item.capability) ? item.capability : null;
-  const subjectKind = SUBJECT_KINDS.has(item.subjectKind)
-    ? item.subjectKind
-    : SUBJECT_KINDS.has(item.subject && item.subject.kind) ? item.subject.kind : null;
-  if (purpose === null) return null;
   return {
     keyHash: safeHash(item.keyHash || item.unitId, `semantic-${index}`),
-    purpose,
-    capability,
-    subjectKind,
-    stayDependent: item.stayDependent === true,
-    status: SUMMARY_STATUSES.has(item.status) ? item.status : "VALIDATED",
-    failureCode: safeFailureCode(item.failureCode)
+    purpose: item.purpose,
+    capability: item.capability,
+    subjectKind: item.subjectKind,
+    stayDependent: item.stayDependent,
+    status: item.status,
+    failureCode: item.failureCode
   };
 }
 
 function projectRoute(item, index) {
-  if (!item || typeof item !== "object" || !DISPOSITIONS.has(item.disposition)) return null;
   return {
     keyHash: safeHash(item.keyHash || item.unitId, `route-${index}`),
     disposition: item.disposition,
-    requiresCanonicalExecution: item.requiresCanonicalExecution === true,
-    status: SUMMARY_STATUSES.has(item.status) ? item.status : "VALIDATED",
-    failureCode: safeFailureCode(item.failureCode)
+    requiresCanonicalExecution: item.requiresCanonicalExecution,
+    status: item.status,
+    failureCode: item.failureCode
   };
 }
 
 function projectLifecycle(item, index) {
-  if (!item || typeof item !== "object" || !LIFECYCLE_ACTIONS.has(item.action)) return null;
   return {
     keyHash: safeHash(item.keyHash || item.unitId, `lifecycle-${index}`),
     action: item.action,
-    slotOperationCount: boundedCount(item.slotOperationCount !== undefined
-      ? item.slotOperationCount
-      : Array.isArray(item.verifiedSlotOperations) ? item.verifiedSlotOperations.length : 0),
-    status: SUMMARY_STATUSES.has(item.status) ? item.status : "VALIDATED",
-    failureCode: safeFailureCode(item.failureCode)
+    slotOperationCount: item.slotOperationCount,
+    status: item.status,
+    failureCode: item.failureCode
   };
 }
 
 function projectCanonicalItem(item, index) {
-  if (!item || typeof item !== "object") return null;
-  const capability = CAPABILITIES.has(item.capability)
-    ? item.capability
-    : CAPABILITIES.has(item.capabilityCandidate) ? item.capabilityCandidate : null;
-  const subjectKind = SUBJECT_KINDS.has(item.subjectKind)
-    ? item.subjectKind
-    : SUBJECT_KINDS.has(item.subjectCandidate && item.subjectCandidate.kind)
-      ? item.subjectCandidate.kind : null;
-  const temporalKind = TEMPORAL_KINDS.has(item.temporalKind)
-    ? item.temporalKind
-    : TEMPORAL_KINDS.has(item.temporalCandidate && item.temporalCandidate.kind)
-      ? item.temporalCandidate.kind : null;
-  if (capability === null || subjectKind === null) return null;
   return {
     keyHash: safeHash(item.keyHash || item.unitId, `canonical-${index}`),
-    capability,
-    subjectKind,
-    stayDependent: item.stayDependent === true,
-    temporalKind,
-    slotOperationCount: boundedCount(item.slotOperationCount !== undefined
-      ? item.slotOperationCount
-      : Array.isArray(item.verifiedSlotInputs) ? item.verifiedSlotInputs.length : 0),
-    status: CANONICAL_STATUSES.has(item.status) ? item.status : "ACCEPTED",
-    failureCode: safeFailureCode(item.failureCode)
+    capability: item.capability,
+    subjectKind: item.subjectKind,
+    stayDependent: item.stayDependent,
+    temporalKind: item.temporalKind,
+    slotOperationCount: item.slotOperationCount,
+    status: item.status,
+    failureCode: item.failureCode
   };
 }
 
+function sourceEntryKeys(field, identityField) {
+  let fields;
+  if (field === "semanticUnits") fields = ENTRY_FIELDS.semanticUnits;
+  else if (field === "routes") fields = ENTRY_FIELDS.routes;
+  else if (field === "lifecycles") fields = ENTRY_FIELDS.lifecycles;
+  else fields = ENTRY_FIELDS.canonicalItems;
+  return fields.map((key) => key === "keyHash" ? identityField : key);
+}
+
+function validSourceIdentity(item) {
+  if (Object.hasOwn(item, "keyHash")) return HASH_PATTERN.test(item.keyHash);
+  return typeof item.unitId === "string" && item.unitId.length > 0 && item.unitId.length <= 160;
+}
+
+function validateSourceEntry(field, item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)
+    || !(exactKeys(item, sourceEntryKeys(field, "keyHash"))
+      || exactKeys(item, sourceEntryKeys(field, "unitId")))
+    || !validSourceIdentity(item) || !validFailureCode(item.failureCode)) return false;
+  if (field === "semanticUnits") {
+    return PURPOSES.has(item.purpose) && CAPABILITIES.has(item.capability)
+      && SUBJECT_KINDS.has(item.subjectKind) && typeof item.stayDependent === "boolean"
+      && SUMMARY_STATUSES.has(item.status);
+  }
+  if (field === "routes") {
+    return DISPOSITIONS.has(item.disposition) && typeof item.requiresCanonicalExecution === "boolean"
+      && SUMMARY_STATUSES.has(item.status);
+  }
+  if (field === "lifecycles") {
+    return LIFECYCLE_ACTIONS.has(item.action)
+      && boundedCount(item.slotOperationCount) === item.slotOperationCount
+      && SUMMARY_STATUSES.has(item.status);
+  }
+  return CAPABILITIES.has(item.capability) && item.capability !== null
+    && SUBJECT_KINDS.has(item.subjectKind) && item.subjectKind !== null
+    && typeof item.stayDependent === "boolean" && TEMPORAL_KINDS.has(item.temporalKind)
+    && boundedCount(item.slotOperationCount) === item.slotOperationCount
+    && CANONICAL_STATUSES.has(item.status);
+}
+
+function validateSourceCoreSummary(value) {
+  if (!exactKeys(value, SUMMARY_FIELDS)) return false;
+  const validateField = (items, field) => {
+    if (!Array.isArray(items) || items.length > MAX_SUMMARY_ITEMS
+      || !items.every((item) => validateSourceEntry(field, item))) return false;
+    const keys = items.map((item) => item.keyHash || item.unitId);
+    return new Set(keys).size === keys.length;
+  };
+  return validateField(value.semanticUnits, "semanticUnits")
+    && validateField(value.routes, "routes")
+    && validateField(value.lifecycles, "lifecycles")
+    && validateField(value.canonicalItems, "canonicalItems");
+}
+
 function projectCoreSummary(value) {
-  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  const project = (field, projector) => safeArray(source[field]).map(projector).filter(Boolean);
+  if (!validateSourceCoreSummary(value)) return null;
   return deepFreeze({
-    semanticUnits: project("semanticUnits", projectSemanticUnit),
-    routes: project("routes", projectRoute),
-    lifecycles: project("lifecycles", projectLifecycle),
-    canonicalItems: project("canonicalItems", projectCanonicalItem)
+    semanticUnits: value.semanticUnits.map(projectSemanticUnit),
+    routes: value.routes.map(projectRoute),
+    lifecycles: value.lifecycles.map(projectLifecycle),
+    canonicalItems: value.canonicalItems.map(projectCanonicalItem)
   });
 }
 
 function signatureHash(entry) {
-  const { keyHash: _keyHash, ...semanticShape } = entry;
-  return hash(JSON.stringify(semanticShape));
+  return hash(JSON.stringify(entry));
 }
 
 function occurrenceCount(values, target, end = values.length) {
@@ -300,12 +326,14 @@ function validateShadowComparisonRecord(value) {
     }
     const sideEffectFailure = validateSideEffectCounters(value.sideEffectCounters);
     if (sideEffectFailure) return fixedFailure(sideEffectFailure);
+    if (!validateCoreSummary(value.oldCoreSummary)
+      || !validateCoreSummary(value.newCoreSummary)
+      || !validateDiffSummary(value.diffSummary, value.oldCoreSummary, value.newCoreSummary)) {
+      return fixedFailure("SHADOW_COMPARISON_INCOMPLETE");
+    }
     if (value.schemaVersion !== 1 || value.coreVersion !== CORE_VERSION
       || !SHA_PATTERN.test(value.coreSha) || !HASH_PATTERN.test(value.traceHash)
       || !RECORD_STATUSES.has(value.status)
-      || !validateCoreSummary(value.oldCoreSummary)
-      || !validateCoreSummary(value.newCoreSummary)
-      || !validateDiffSummary(value.diffSummary, value.oldCoreSummary, value.newCoreSummary)
       || !Array.isArray(value.validationCodes) || value.validationCodes.length > MAX_CODES
       || !value.validationCodes.every((code) => VALIDATION_CODES.has(code))
       || !Array.isArray(value.failureCodes) || value.failureCodes.length > MAX_CODES
@@ -335,6 +363,10 @@ function createShadowComparisonRecord({
   try {
     if (coreVersion !== CORE_VERSION || typeof traceId !== "string" || traceId.length < 1
       || traceId.length > 160 || !SHA_PATTERN.test(coreSha)) {
+      return fixedFailure("SHADOW_COMPARISON_INCOMPLETE");
+    }
+    if (!validateSourceCoreSummary(oldCoreOutcomeSummary)
+      || !validateSourceCoreSummary(newCoreOutcomeSummary)) {
       return fixedFailure("SHADOW_COMPARISON_INCOMPLETE");
     }
     const oldCoreSummary = projectCoreSummary(oldCoreOutcomeSummary);

@@ -6,7 +6,11 @@ const {
   createShadowComparisonRecord,
   validateShadowComparisonRecord
 } = require("../lib/new-core/shadow-comparator");
-const { runReadOnlyShadowCore } = require("../lib/new-core/shadow-core");
+const { callOpenAIUnderstandingV1 } = require("../lib/providers/openai-understanding-v1");
+const {
+  assembleReadOnlyShadowComparison,
+  runReadOnlyShadowCore
+} = require("../lib/new-core/shadow-core");
 
 const NOW = "2026-08-29T08:00:00.000Z";
 const CORE_SHA = "58f83ba08d7d1bfcf28fea4330ec35d760dfa006";
@@ -165,41 +169,57 @@ function understandingOptions(payload) {
 function oldSummary() {
   return {
     semanticUnits: [{
-      unitId: "old-unit-answer",
+      unitId: "unit-answer",
       purpose: "lodging_question",
       capability: "property_fact",
       subjectKind: "amenity",
       stayDependent: false,
       status: "VALIDATED",
-      failureCode: null,
-      guestText: "must-not-survive"
+      failureCode: null
     }],
     routes: [{
-      unitId: "old-unit-answer",
+      unitId: "unit-answer",
       disposition: "ANSWER",
       requiresCanonicalExecution: true,
       status: "VALIDATED",
       failureCode: null
     }],
     lifecycles: [{
-      unitId: "old-unit-answer",
+      unitId: "unit-answer",
       action: "START",
       slotOperationCount: 0,
       status: "VALIDATED",
       failureCode: null
     }],
     canonicalItems: [{
-      unitId: "old-unit-answer",
+      unitId: "unit-answer",
       capability: "property_fact",
       subjectKind: "amenity",
       stayDependent: false,
       temporalKind: null,
       slotOperationCount: 0,
       status: "ACCEPTED",
-      failureCode: null,
-      facts: [{ text: "must-not-survive" }]
+      failureCode: null
     }]
   };
+}
+
+function emptySummary() {
+  return { semanticUnits: [], routes: [], lifecycles: [], canonicalItems: [] };
+}
+
+async function fakeUnderstanding(payload, input) {
+  return callOpenAIUnderstandingV1(input, understandingOptions(payload));
+}
+
+async function assembleFake(payload, oldCoreOutcomeSummary = oldSummary(), input = turnInput()) {
+  const understandingResult = await fakeUnderstanding(payload, input);
+  return assembleReadOnlyShadowComparison({
+    understandingTurnInput: input,
+    oldCoreOutcomeSummary,
+    coreSha: CORE_SHA,
+    understandingResult
+  });
 }
 
 function sideEffectTrap() {
@@ -251,15 +271,7 @@ async function runShadowIsolationAcceptance() {
   // AC-SHD-001..007: Task 11 and Tasks 6-9 run without any writer,
   // Resolver, PostgreSQL, or LINE capability being present on the callable
   // dependency surface. Success and a failed sibling both preserve zero use.
-  const record = await runReadOnlyShadowCore({
-    understandingTurnInput: input,
-    oldCoreOutcomeSummary: old,
-    coreSha: CORE_SHA,
-    timeoutMs: 500,
-    dependencies: trappedDependencies(trap, {
-      understandingOptions: understandingOptions(providerPayload())
-    })
-  });
+  const record = await assembleFake(providerPayload(), old, input);
   assert.equal(validateShadowComparisonRecord(record).ok, true);
   assert.equal(record.status, "PARTIAL", JSON.stringify(record));
   assert.deepEqual(record.sideEffectCounters, {
@@ -274,36 +286,14 @@ async function runShadowIsolationAcceptance() {
   assert.equal(JSON.stringify(input), inputBefore, "C01 and its bounded snapshots must remain unchanged");
   assert.equal(JSON.stringify(old), oldBefore, "old-core summary must remain unchanged");
   assert.equal(record.newCoreSummary.semanticUnits.length, 2, "valid siblings must survive a failed unit");
-  assert.equal(record.newCoreSummary.canonicalItems.length, 1);
+  assert.equal(record.newCoreSummary.canonicalItems.length, 1, JSON.stringify(record));
   assert.equal(record.failureCodes.includes("EVIDENCE_QUOTE_MISMATCH"), true);
 
   const successTrap = sideEffectTrap();
-  const successful = await runReadOnlyShadowCore({
-    understandingTurnInput: input,
-    oldCoreOutcomeSummary: old,
-    coreSha: CORE_SHA,
-    dependencies: trappedDependencies(successTrap, {
-      understandingOptions: understandingOptions(providerPayload({ includeFailure: false }))
-    })
-  });
+  const successful = await assembleFake(providerPayload({ includeFailure: false }), old);
   assert.equal(successful.status, "SUCCESS");
   assertZeroSideEffects(successTrap.counters);
   assert.deepEqual(successful.sideEffectCounters, record.sideEffectCounters);
-
-  let nestedDiagnosticSinkCalls = 0;
-  const nestedCallback = await runReadOnlyShadowCore({
-    understandingTurnInput: input,
-    oldCoreOutcomeSummary: old,
-    coreSha: CORE_SHA,
-    dependencies: {
-      understandingOptions: {
-        ...understandingOptions(providerPayload({ includeFailure: false })),
-        onDiagnostic: () => { nestedDiagnosticSinkCalls += 1; }
-      }
-    }
-  });
-  assert.equal(nestedCallback.status, "SUCCESS");
-  assert.equal(nestedDiagnosticSinkCalls, 0, "shadow must remove nested diagnostic sinks");
 
   // AC-SHD-008: the closed C10 projection carries hashes and bounded enums,
   // never raw guest/history text, evidence quotes, facts, or property IDs.
@@ -312,7 +302,6 @@ async function runShadowIsolationAcceptance() {
     MESSAGE,
     "private-guest-fragment",
     "bounded-history-fragment",
-    "must-not-survive",
     "property-shadow-a",
     "停車資訊",
     "謝謝"
@@ -336,72 +325,24 @@ async function runShadowIsolationAcceptance() {
   // AC-SHD-010: an understanding exception cannot escape into or influence
   // the old core; it produces a valid, sanitized failed C10 record.
   const failureTrap = sideEffectTrap();
-  const failingOptions = understandingOptions(providerPayload({ includeFailure: false }));
-  failingOptions.fetchImpl = async () => { throw new Error(MESSAGE); };
-  const failed = await runReadOnlyShadowCore({
+  const failed = assembleReadOnlyShadowComparison({
     understandingTurnInput: input,
     oldCoreOutcomeSummary: old,
     coreSha: CORE_SHA,
-    dependencies: trappedDependencies(failureTrap, {
-      understandingOptions: failingOptions
-    })
+    understandingResult: { guestText: MESSAGE }
   });
   assert.equal(validateShadowComparisonRecord(failed).ok, true);
   assert.equal(failed.status, "FAILED");
-  assert.deepEqual(failed.failureCodes, ["UNDERSTANDING_SCHEMA_INVALID"]);
+  assert.deepEqual(failed.failureCodes, ["SHADOW_COMPARISON_INCOMPLETE"]);
   assert.equal(JSON.stringify(failed).includes(MESSAGE), false);
   assertZeroSideEffects(failureTrap.counters);
 
-  // Timeout is bounded, sanitized, and side-effect neutral.
-  const timeoutTrap = sideEffectTrap();
-  let activeTimeoutAttempts = 0;
-  let postReturnWork = 0;
-  let timeoutReturned = false;
-  const timeoutOptions = understandingOptions(providerPayload({ includeFailure: false }));
-  timeoutOptions.fetchImpl = async (_url, request) => new Promise((resolve, reject) => {
-    activeTimeoutAttempts += 1;
-    const lateTimer = setTimeout(() => {
-      activeTimeoutAttempts -= 1;
-      if (timeoutReturned) postReturnWork += 1;
-      resolve(structuredResponse(providerPayload({ includeFailure: false })));
-    }, 100);
-    request.signal.addEventListener("abort", () => {
-      clearTimeout(lateTimer);
-      activeTimeoutAttempts -= 1;
-      const error = new Error("aborted test transport");
-      error.name = "AbortError";
-      reject(error);
-    }, { once: true });
-  });
-  const started = Date.now();
-  const timedOut = await runReadOnlyShadowCore({
-    understandingTurnInput: input,
-    oldCoreOutcomeSummary: old,
-    coreSha: CORE_SHA,
-    timeoutMs: 20,
-    dependencies: trappedDependencies(timeoutTrap, {
-      understandingOptions: timeoutOptions
-    })
-  });
-  timeoutReturned = true;
-  assert.equal(Date.now() - started < 500, true, "shadow timeout must be bounded");
-  assert.equal(timedOut.status, "FAILED");
-  assert.deepEqual(timedOut.failureCodes, ["UNDERSTANDING_PROVIDER_TIMEOUT"]);
-  assert.equal(activeTimeoutAttempts, 0, "timeout must settle every Task 11 transport attempt before return");
-  await new Promise((resolve) => setTimeout(resolve, 120));
-  assert.equal(postReturnWork, 0, "timeout must leave no post-return shadow work");
-  assertZeroSideEffects(timeoutTrap.counters);
-
   // Property isolation: a property-B catalog identity in a property-A C01 is
   // rejected at C03, while C10 contains no property identity or foreign fact.
-  const isolated = await runReadOnlyShadowCore({
-    understandingTurnInput: input,
-    oldCoreOutcomeSummary: {},
-    coreSha: CORE_SHA,
-    dependencies: {
-      understandingOptions: understandingOptions(providerPayload({ crossProperty: true, includeFailure: false }))
-    }
-  });
+  const isolated = await assembleFake(
+    providerPayload({ crossProperty: true, includeFailure: false }),
+    emptySummary()
+  );
   assert.equal(isolated.failureCodes.includes("CATALOG_IDENTITY_INVALID"), true);
   assert.equal(JSON.stringify(isolated).includes("parking-property-b"), false);
   assert.equal(JSON.stringify(isolated).includes("property-shadow-a"), false);
@@ -412,8 +353,8 @@ async function runShadowIsolationAcceptance() {
     coreVersion: "new-core-v1",
     coreSha: CORE_SHA,
     traceId: input.traceId,
-    oldCoreOutcomeSummary: {},
-    newCoreOutcomeSummary: {},
+    oldCoreOutcomeSummary: emptySummary(),
+    newCoreOutcomeSummary: emptySummary(),
     validationCodes: [],
     failureCodes: [],
     sideEffectCounters: {
@@ -431,8 +372,8 @@ async function runShadowIsolationAcceptance() {
     coreVersion: "new-core-v1",
     coreSha: CORE_SHA,
     traceId: input.traceId,
-    oldCoreOutcomeSummary: {},
-    newCoreOutcomeSummary: {},
+    oldCoreOutcomeSummary: emptySummary(),
+    newCoreOutcomeSummary: emptySummary(),
     validationCodes: ["C01_PROPERTY_SECRET"],
     failureCodes: [],
     sideEffectCounters: record.sideEffectCounters
@@ -441,10 +382,117 @@ async function runShadowIsolationAcceptance() {
   assert.equal(unsafeMarker.code, "SHADOW_RECORD_UNSAFE");
   assert.equal(validateShadowComparisonRecord({ ...record, guestText: MESSAGE }).code, "SHADOW_RECORD_UNSAFE");
 
+  // Review fix probes: the production entry point has no caller-controlled
+  // provider transport seam, tuple ownership participates in comparison, and
+  // incomplete source summaries fail closed rather than becoming empty arrays.
+  let callerTransportCalls = 0;
+  const adversarialTrap = sideEffectTrap();
+  const rejectedTransportSeam = await runReadOnlyShadowCore({
+    understandingTurnInput: input,
+    oldCoreOutcomeSummary: old,
+    coreSha: CORE_SHA,
+    providerConfig: {
+      apiKey: "test-only-key",
+      model: "gpt-4.1-mini",
+      fetchImpl: async () => {
+        callerTransportCalls += 1;
+        return structuredResponse(providerPayload({ includeFailure: false }));
+      }
+    }
+  });
+  assert.equal(callerTransportCalls, 0, "production shadow must not invoke a caller transport");
+  assert.deepEqual(rejectedTransportSeam, {
+    ok: false,
+    code: "SHADOW_COMPARISON_INCOMPLETE"
+  });
+  const rejectedAdversarialCapabilities = await runReadOnlyShadowCore({
+    understandingTurnInput: input,
+    oldCoreOutcomeSummary: old,
+    coreSha: CORE_SHA,
+    dependencies: trappedDependencies(adversarialTrap)
+  });
+  assert.deepEqual(rejectedAdversarialCapabilities, rejectedTransportSeam);
+  assertZeroSideEffects(adversarialTrap.counters);
+
+  const ownedA = oldSummary();
+  ownedA.semanticUnits.push({
+    ...ownedA.semanticUnits[0],
+    unitId: "unit-b",
+    capability: "amenity"
+  });
+  ownedA.routes.push({ ...ownedA.routes[0], unitId: "unit-b", disposition: "HANDOFF" });
+  ownedA.lifecycles.push({ ...ownedA.lifecycles[0], unitId: "unit-b", action: "END" });
+  ownedA.canonicalItems.push({
+    ...ownedA.canonicalItems[0],
+    unitId: "unit-b",
+    capability: "amenity"
+  });
+  const ownedB = JSON.parse(JSON.stringify(ownedA));
+  ownedB.routes[0].disposition = "HANDOFF";
+  ownedB.routes[1].disposition = "ANSWER";
+  ownedB.lifecycles[0].action = "END";
+  ownedB.lifecycles[1].action = "START";
+  ownedB.canonicalItems[0].capability = "amenity";
+  ownedB.canonicalItems[1].capability = "property_fact";
+  const swappedOwnership = createShadowComparisonRecord({
+    coreVersion: "new-core-v1",
+    coreSha: CORE_SHA,
+    traceId: input.traceId,
+    oldCoreOutcomeSummary: ownedA,
+    newCoreOutcomeSummary: ownedB,
+    validationCodes: [],
+    failureCodes: [],
+    sideEffectCounters: record.sideEffectCounters
+  });
+  assert.equal(swappedOwnership.ok, true);
+  assert.equal(swappedOwnership.value.diffSummary.routes.match, false,
+    "route values swapped across unit owners must mismatch");
+  assert.equal(swappedOwnership.value.diffSummary.lifecycles.match, false,
+    "lifecycle values swapped across unit owners must mismatch");
+  assert.equal(swappedOwnership.value.diffSummary.canonicalItems.match, false,
+    "canonical values swapped across unit owners must mismatch");
+
+  const missingSummaryField = createShadowComparisonRecord({
+    coreVersion: "new-core-v1",
+    coreSha: CORE_SHA,
+    traceId: input.traceId,
+    oldCoreOutcomeSummary: { semanticUnits: [], routes: [], lifecycles: [] },
+    newCoreOutcomeSummary: emptySummary(),
+    validationCodes: [],
+    failureCodes: [],
+    sideEffectCounters: record.sideEffectCounters
+  });
+  assert.equal(missingSummaryField.ok, false);
+  assert.equal(missingSummaryField.code, "SHADOW_COMPARISON_INCOMPLETE");
+
+  const malformedSummaryEntry = createShadowComparisonRecord({
+    coreVersion: "new-core-v1",
+    coreSha: CORE_SHA,
+    traceId: input.traceId,
+    oldCoreOutcomeSummary: {
+      semanticUnits: [{ unitId: "unit-a", purpose: "lodging_question" }],
+      routes: [],
+      lifecycles: [],
+      canonicalItems: []
+    },
+    newCoreOutcomeSummary: emptySummary(),
+    validationCodes: [],
+    failureCodes: [],
+    sideEffectCounters: record.sideEffectCounters
+  });
+  assert.equal(malformedSummaryEntry.ok, false);
+  assert.equal(malformedSummaryEntry.code, "SHADOW_COMPARISON_INCOMPLETE");
+  const malformedClosedRecord = JSON.parse(JSON.stringify(record));
+  delete malformedClosedRecord.newCoreSummary.routes[0].disposition;
+  assert.equal(
+    validateShadowComparisonRecord(malformedClosedRecord).code,
+    "SHADOW_COMPARISON_INCOMPLETE"
+  );
+
   console.log(JSON.stringify({
     suite: "new-core-shadow-isolation",
-    classification: "RUNTIME_COMPONENT_TEST",
-    caseCount: 19,
+    classification: "FAKE_INTEGRATION",
+    caseCount: 24,
     status: "PASS",
     sideEffectCounters: record.sideEffectCounters
   }));
