@@ -31,7 +31,7 @@ const EMPTY_CORE_SUMMARY = deepFreeze({
 const PRODUCTION_INPUT_FIELDS = Object.freeze([
   "understandingTurnInput", "oldCoreOutcomeSummary", "coreSha", "providerConfig"
 ]);
-const PROVIDER_CONFIG_FIELDS = Object.freeze(["apiKey", "model"]);
+const PROVIDER_CONFIG_FIELDS = Object.freeze(["apiKey"]);
 const MAX_DATA_ONLY_DEPTH = 8;
 const MAX_DATA_ONLY_NODES = 5000;
 const MAX_DATA_ONLY_ARRAY_ITEMS = 100;
@@ -136,17 +136,14 @@ function projectProductionInput(options) {
   if (!projected) return null;
   const provider = ownDataDescriptors(projected.providerConfig.value, PROVIDER_CONFIG_FIELDS, true);
   if (!provider || typeof provider.apiKey.value !== "string"
-    || provider.apiKey.value.length < 1 || provider.apiKey.value.length > 1000
-    || typeof provider.model.value !== "string"
-    || provider.model.value.length < 1 || provider.model.value.length > 160) return null;
+    || provider.apiKey.value.length < 1 || provider.apiKey.value.length > 1000) return null;
   const oldCoreOutcomeSummary = trustedOldCoreSnapshot(projected.oldCoreOutcomeSummary.value);
   return Object.freeze({
     understandingTurnInput: projected.understandingTurnInput.value,
     oldCoreOutcomeSummary,
     coreSha: projected.coreSha.value,
     providerConfig: Object.freeze({
-      apiKey: provider.apiKey.value,
-      model: provider.model.value
+      apiKey: provider.apiKey.value
     })
   });
 }
@@ -510,8 +507,7 @@ async function runReadOnlyShadowCore(options = {}) {
   let understandingResult;
   try {
     understandingResult = await callOpenAIUnderstandingV1(understandingTurnInput, {
-      apiKey: providerConfig.apiKey,
-      model: providerConfig.model
+      apiKey: providerConfig.apiKey
     });
   } catch (error) {
     return failedRecord({

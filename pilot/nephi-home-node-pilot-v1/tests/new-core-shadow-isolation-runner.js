@@ -147,6 +147,7 @@ function structuredResponse(payload) {
     status: 200,
     headers: { get: () => "req-shadow" },
     text: async () => JSON.stringify({
+      model: "gpt-5.6-luna",
       status: "completed",
       output: [{
         type: "message",
@@ -159,7 +160,6 @@ function structuredResponse(payload) {
 function understandingOptions(payload) {
   return {
     apiKey: "test-only-key",
-    model: "gpt-4.1-mini",
     fetchImpl: async () => structuredResponse(payload),
     retryDelayMs: 0,
     waitImpl: async () => undefined,
@@ -478,7 +478,6 @@ async function runShadowIsolationAcceptance() {
     coreSha: CORE_SHA,
     providerConfig: {
       apiKey: "test-only-key",
-      model: "gpt-4.1-mini",
       fetchImpl: async () => {
         callerTransportCalls += 1;
         return structuredResponse(providerPayload({ includeFailure: false }));
@@ -500,7 +499,7 @@ async function runShadowIsolationAcceptance() {
   assertZeroSideEffects(adversarialTrap.counters);
 
   let providerGetterCalls = 0;
-  const accessorProviderConfig = { model: "gpt-4.1-mini" };
+  const accessorProviderConfig = {};
   Object.defineProperty(accessorProviderConfig, "apiKey", {
     enumerable: true,
     get() {
@@ -519,8 +518,7 @@ async function runShadowIsolationAcceptance() {
 
   let providerProxyTrapCalls = 0;
   const proxyProviderConfig = new Proxy({
-    apiKey: "test-only-key",
-    model: "gpt-4.1-mini"
+    apiKey: "test-only-key"
   }, {
     ownKeys(target) {
       providerProxyTrapCalls += 1;
@@ -554,7 +552,7 @@ async function runShadowIsolationAcceptance() {
     understandingTurnInput: input,
     oldCoreOutcomeSummary,
     coreSha: CORE_SHA,
-    providerConfig: { apiKey: "test-only-key", model: "gpt-4.1-mini" }
+    providerConfig: { apiKey: "test-only-key" }
   });
   const assertSanitizedOldSummaryFailure = (value) => {
     assert.equal(validateShadowComparisonRecord(value).ok, true, JSON.stringify(value));

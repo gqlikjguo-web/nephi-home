@@ -22,8 +22,8 @@ const SEMANTIC_AUTHORITIES = new Set([
   "createLifecycleDecision", "createUnitRoutingDecision", "createCanonicalizerInputItem",
   "executeCanonicalizerInputItem", "canonicalizeExecutionItem", "resolveAvailability"
 ]);
-const CONTRACT_GRAPH_DIGEST = "4f716c74c7fa0287fd2ecc0c947c56a87b6d96922e3a74ee9e7e696ddc298e20";
-const FAILURE_OWNER_DIGEST = "3d4127d7b27b8b418e7d6d45e52ac733fa82fabadbbcb81cd99b746289f60f1e";
+const CONTRACT_GRAPH_DIGEST = "23fdec57124fae2ca3f291ea190f24ed68024805ea79a6b514bd88000739cbe4";
+const FAILURE_OWNER_DIGEST = "6d5b6ade70414d1b9370095e6efcd96e6178721a06a5a1a940df4ca33be99a51";
 const DOMAIN_AUTHORITY_DIGEST = "009e1cfb3b9d0d2fc1d8da58f9cb7ba03d378a991e2c4f3e0640ec94a9600572";
 
 function digest(value) { return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex"); }

@@ -41,6 +41,10 @@ const {
 } = require("../new-core/semantic-unit-validator");
 const { validateContextLink } = require("../new-core/context-link-validator");
 const { createDiagnosticTraceEmitter } = require("../new-core/diagnostic-boundary");
+const {
+  NEW_CORE_OPENAI_MODEL,
+  assertNewCoreOpenAiModelIdentity
+} = require("../new-core/openai-model-authority");
 
 const RESPONSES_URL = "https://api.openai.com/v1/responses";
 const PROVIDER_NAME = "openai";
@@ -260,9 +264,9 @@ function instructions() {
   ].join("\n");
 }
 
-function providerRequestBody(understandingTurnInput, model) {
+function providerRequestBody(understandingTurnInput) {
   return {
-    model,
+    model: NEW_CORE_OPENAI_MODEL,
     safety_identifier: sha256(understandingTurnInput.propertyScope.userId),
     input: [
       { role: "system", content: [{ type: "input_text", text: instructions() }] },
@@ -287,9 +291,13 @@ function structuredOutputText(payload) {
   const parts = output
     .flatMap((item) => Array.isArray(item && item.content) ? item.content : []);
   if (parts.some((part) => part && part.type === "refusal")) return null;
-  if (output.length !== 1 || !output[0] || output[0].type !== "message"
-    || !Array.isArray(output[0].content) || output[0].content.length !== 1) return null;
-  const part = output[0].content[0];
+  const unexpected = output.filter((item) => !item || !["reasoning", "message"].includes(item.type));
+  const reasoning = output.filter((item) => item && item.type === "reasoning");
+  const messages = output.filter((item) => item && item.type === "message");
+  if (unexpected.length || reasoning.length > 1 || messages.length !== 1
+    || !Array.isArray(messages[0].content) || messages[0].content.length !== 1) return null;
+  if (reasoning.some((item) => !Array.isArray(item.content) || item.content.length !== 0)) return null;
+  const part = messages[0].content[0];
   return part && part.type === "output_text" && typeof part.text === "string" && part.text.length > 0
     ? part.text : null;
 }
@@ -310,7 +318,9 @@ async function readProviderPayload(response) {
   catch { return { bodyPresent: true, parseFailed: true, payload: null }; }
 }
 
-function providerFailure(code, category, { timeout = false, retryable = false, status = 0, providerError = {} } = {}) {
+function providerFailure(code, category, {
+  timeout = false, retryable = false, status = 0, providerError = {}, resolvedModel = ""
+} = {}) {
   const error = new Error(code);
   error.code = code;
   error.errorCategory = category;
@@ -321,6 +331,7 @@ function providerFailure(code, category, { timeout = false, retryable = false, s
   error.providerErrorType = safeToken(providerError.type, 120);
   error.providerErrorCode = safeToken(providerError.code, 120);
   error.providerErrorParam = safeToken(providerError.param, 200);
+  error.resolvedModel = safeToken(resolvedModel, 160);
   Object.defineProperty(error, INTERNAL_PROVIDER_FAILURE, { value: true });
   return error;
 }
@@ -355,7 +366,9 @@ function safeAttempt(details) {
     httpStatus: details.httpStatus,
     providerRequestId: safeToken(details.providerRequestId, 200),
     responseBodyPresent: Boolean(details.responseBodyPresent),
-    parsedOutputPresent: Boolean(details.parsedOutputPresent)
+    parsedOutputPresent: Boolean(details.parsedOutputPresent),
+    requestedModel: NEW_CORE_OPENAI_MODEL,
+    resolvedModel: safeToken(details.resolvedModel, 160)
   });
 }
 
@@ -363,6 +376,8 @@ function providerDiagnostic(attempts) {
   const values = attempts.slice(0, MAX_PROVIDER_ATTEMPTS).map(safeAttempt);
   const retried = values.length > 1;
   return deepFreeze({
+    requestedModel: NEW_CORE_OPENAI_MODEL,
+    resolvedModel: values.length ? values.at(-1).resolvedModel : "",
     providerAttemptCount: values.length,
     retryPerformed: retried,
     retrySucceeded: retried && values.at(-1).errorCategory === "",
@@ -370,7 +385,7 @@ function providerDiagnostic(attempts) {
   });
 }
 
-async function requestOnce({ apiKey, model, fetchImpl, timeoutMs, requestIdFactory, understandingTurnInput }, attemptNumber) {
+async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, understandingTurnInput }, attemptNumber) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let httpStatus = 0;
@@ -388,7 +403,7 @@ async function requestOnce({ apiKey, model, fetchImpl, timeoutMs, requestIdFacto
         "X-Client-Request-Id": clientRequestId
       },
       signal: controller.signal,
-      body: JSON.stringify(providerRequestBody(understandingTurnInput, model))
+      body: JSON.stringify(providerRequestBody(understandingTurnInput))
     });
     httpStatus = Number.isInteger(Number(response && (response.status || response.statusCode)))
       ? Number(response.status || response.statusCode) : 0;
@@ -401,6 +416,12 @@ async function requestOnce({ apiKey, model, fetchImpl, timeoutMs, requestIdFacto
     if (read.parseFailed || !read.bodyPresent) {
       throw providerFailure("UNDERSTANDING_SCHEMA_INVALID", "parse_failure", { status: httpStatus });
     }
+    const resolvedModel = read.payload && read.payload.model;
+    try {
+      assertNewCoreOpenAiModelIdentity(NEW_CORE_OPENAI_MODEL, resolvedModel);
+    } catch {
+      throw providerFailure("MODEL_IDENTITY_MISMATCH", "model_identity", { status: httpStatus, resolvedModel });
+    }
     const text = structuredOutputText(read.payload);
     if (!text) {
       throw providerFailure("UNDERSTANDING_SCHEMA_INVALID", "structured_output_failure", { status: httpStatus });
@@ -412,7 +433,7 @@ async function requestOnce({ apiKey, model, fetchImpl, timeoutMs, requestIdFacto
         value,
         attempt: safeAttempt({
           attemptNumber, timeoutMs, timeout: false, retryable: false, errorCategory: "",
-          httpStatus, providerRequestId, responseBodyPresent, parsedOutputPresent
+          httpStatus, providerRequestId, responseBodyPresent, parsedOutputPresent, resolvedModel
         })
       };
     } catch {
@@ -434,7 +455,8 @@ async function requestOnce({ apiKey, model, fetchImpl, timeoutMs, requestIdFacto
       httpStatus,
       providerRequestId,
       responseBodyPresent,
-      parsedOutputPresent
+      parsedOutputPresent,
+      resolvedModel: error.resolvedModel
     });
     throw error;
   } finally {
@@ -552,10 +574,10 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
   if (!buildPublicCatalogIdentityProjection(understandingTurnInput)) {
     throw understandingError("PROPERTY_SCOPE_INVALID");
   }
+  if (Object.hasOwn(options, "model")) throw understandingError("MODEL_IDENTITY_MISMATCH");
   const apiKey = String(options.apiKey || "").trim();
-  const model = String(options.model || "").trim();
   const fetchImpl = options.fetchImpl || globalThis.fetch;
-  if (!apiKey || !model || typeof fetchImpl !== "function") {
+  if (!apiKey || typeof fetchImpl !== "function") {
     throw understandingError("UNDERSTANDING_SCHEMA_INVALID");
   }
   const timeoutMs = boundedPositiveInteger(options.timeoutMs, DEFAULT_PROVIDER_TIMEOUT_MS);
@@ -588,7 +610,6 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     try {
       const response = await requestOnce({
         apiKey,
-        model,
         fetchImpl,
         timeoutMs: Math.min(timeoutMs, remainingMs),
         requestIdFactory,
@@ -607,7 +628,9 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
         continue;
       }
       const code = error.code === "UNDERSTANDING_PROVIDER_TIMEOUT"
-        ? "UNDERSTANDING_PROVIDER_TIMEOUT" : "UNDERSTANDING_SCHEMA_INVALID";
+        ? "UNDERSTANDING_PROVIDER_TIMEOUT"
+        : error.code === "MODEL_IDENTITY_MISMATCH"
+          ? "MODEL_IDENTITY_MISMATCH" : "UNDERSTANDING_SCHEMA_INVALID";
       const finalError = understandingError(code, attempts);
       emit(traceEmitter, understandingTurnInput, {
         boundary: "C02", unitIds: [], outputUnitIds: [], status: "FAILURE", code,

@@ -107,17 +107,28 @@ function providerOutput(overrides = {}) {
   };
 }
 
-function response(status, body, requestId = "") {
+function response(status, body, requestId = "", resolvedModel = "gpt-5.6-luna") {
+  let safeBody = String(body);
+  if (status >= 200 && status < 300) {
+    try {
+      const parsed = JSON.parse(safeBody);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        && !Object.hasOwn(parsed, "model")) {
+        safeBody = JSON.stringify({ model: resolvedModel, ...parsed });
+      }
+    } catch { /* malformed-body tests must remain malformed */ }
+  }
   return {
     ok: status >= 200 && status < 300,
     status,
     headers: { get: (name) => String(name).toLowerCase() === "x-request-id" ? requestId : null },
-    text: async () => String(body)
+    text: async () => safeBody
   };
 }
 
-function structuredResponse(value = providerOutput(), status = "completed", requestId = "req-understanding-a") {
+function structuredResponse(value = providerOutput(), status = "completed", requestId = "req-understanding-a", resolvedModel = "gpt-5.6-luna") {
   return response(200, JSON.stringify({
+    model: resolvedModel,
     status,
     output: [{
       type: "message",
@@ -210,7 +221,6 @@ async function captureError(operation) {
 function options(fetchImpl, overrides = {}) {
   return {
     apiKey: "test-only-key",
-    model: "gpt-4.1-mini",
     fetchImpl,
     retryDelayMs: 0,
     waitImpl: async () => undefined,
@@ -238,7 +248,7 @@ async function main() {
   assert.equal(calls, 1, "valid understanding must use exactly one provider call");
   assert.equal(capturedUrl, "https://api.openai.com/v1/responses");
   const body = JSON.parse(capturedRequest.body);
-  assert.equal(body.model, "gpt-4.1-mini");
+  assert.equal(body.model, "gpt-5.6-luna");
   assert.equal(Object.hasOwn(body, "temperature"), false);
   assert.equal(Object.hasOwn(body, "top_p"), false);
   assert.equal(body.text.format.type, "json_schema");
@@ -273,6 +283,8 @@ async function main() {
   assert.equal(result.validatedUnits.length, 1);
   assert.equal(result.validatedContextLinks.length, 1);
   assert.equal(Object.isFrozen(result), true);
+  assert.equal(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].requestedModel, "gpt-5.6-luna");
+  assert.equal(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].resolvedModel, "gpt-5.6-luna");
   assert.equal(Object.isFrozen(result.understandingOutput), true);
   assert.equal(Object.isFrozen(result.validatedUnits[0]), true);
   assert.equal(isTrustedUnderstandingResult(result), true);
@@ -681,11 +693,58 @@ async function main() {
   assert.equal(isTrustedUnderstandingResult(forgedResult), false);
   assert.equal(forgedAccessorReads, 0, "trust rejection must not inspect forged result fields");
 
+  let overrideCalls = 0;
+  const overrideError = await captureError(() => callOpenAIUnderstandingV1(input, {
+    ...options(async () => {
+      overrideCalls += 1;
+      return successfulResponse();
+    }),
+    model: "gpt-4.1-mini"
+  }));
+  assert.equal(overrideCalls, 0, "caller model override must fail before transport");
+  assert.equal(overrideError.code, "MODEL_IDENTITY_MISMATCH");
+
+  const mismatchError = await captureError(() => callOpenAIUnderstandingV1(input, options(async () => (
+    structuredResponse(providerOutput(), "completed", "req-model-mismatch", "gpt-4.1-mini")
+  ))));
+  assert.equal(mismatchError.code, "MODEL_IDENTITY_MISMATCH");
+  assert.equal(mismatchError[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].requestedModel, "gpt-5.6-luna");
+  assert.equal(mismatchError[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].resolvedModel, "gpt-4.1-mini");
+
+  const reasoningResult = await callOpenAIUnderstandingV1(input, options(async () => response(200, JSON.stringify({
+    model: "gpt-5.6-luna",
+    status: "completed",
+    output: [
+      { type: "reasoning", content: [], encrypted_content: null, summary: [] },
+      { type: "message", status: "completed", content: [{ type: "output_text", text: JSON.stringify(providerOutput()) }] }
+    ]
+  }))));
+  assert.equal(reasoningResult.validatedUnits.length, 1);
+
+  for (const output of [
+    [{ type: "reasoning", content: [] }],
+    [{ type: "reasoning", content: [] },
+      { type: "message", content: [{ type: "output_text", text: JSON.stringify(providerOutput()) }] },
+      { type: "message", content: [{ type: "output_text", text: JSON.stringify(providerOutput()) }] }],
+    [{ type: "reasoning", content: [] },
+      { type: "message", content: [{ type: "refusal", refusal: "no" }] }],
+    [{ type: "tool_call", content: [] },
+      { type: "message", content: [{ type: "output_text", text: JSON.stringify(providerOutput()) }] }]
+  ]) {
+    const unsafeEnvelope = await captureError(() => callOpenAIUnderstandingV1(
+      input,
+      options(async () => response(200, JSON.stringify({
+        model: "gpt-5.6-luna", status: "completed", output
+      })))
+    ));
+    assert.equal(unsafeEnvelope.code, "UNDERSTANDING_SCHEMA_INVALID");
+  }
+
   console.log(JSON.stringify({
     suite: "new-core-openai-adapter-contract",
     classification: "FAKE_INTEGRATION",
     provider: "STRUCTURED/FAKE",
-    caseCount: 44,
+    caseCount: 51,
     status: "PASS"
   }));
 }
