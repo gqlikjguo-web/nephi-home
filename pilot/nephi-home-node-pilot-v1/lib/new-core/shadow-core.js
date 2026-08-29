@@ -37,6 +37,7 @@ const MAX_DATA_ONLY_NODES = 5000;
 const MAX_DATA_ONLY_ARRAY_ITEMS = 100;
 const MAX_DATA_ONLY_OBJECT_FIELDS = 20;
 const MAX_DATA_ONLY_STRING_LENGTH = 500;
+const TRUSTED_OLD_CORE_SUMMARIES = new WeakSet();
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -120,6 +121,16 @@ function cloneDataOnly(root) {
   return clone(root, 0);
 }
 
+function trustedOldCoreSnapshot(value) {
+  if (value && typeof value === "object" && TRUSTED_OLD_CORE_SUMMARIES.has(value)) return value;
+  const detached = cloneDataOnly(value);
+  if (!detached.ok) return null;
+  const projected = projectCoreSummary(detached.value);
+  if (!projected) return null;
+  TRUSTED_OLD_CORE_SUMMARIES.add(projected);
+  return projected;
+}
+
 function projectProductionInput(options) {
   const projected = ownDataDescriptors(options, PRODUCTION_INPUT_FIELDS, true);
   if (!projected) return null;
@@ -128,9 +139,7 @@ function projectProductionInput(options) {
     || provider.apiKey.value.length < 1 || provider.apiKey.value.length > 1000
     || typeof provider.model.value !== "string"
     || provider.model.value.length < 1 || provider.model.value.length > 160) return null;
-  const detachedOldSummary = cloneDataOnly(projected.oldCoreOutcomeSummary.value);
-  const oldCoreOutcomeSummary = detachedOldSummary.ok
-    ? projectCoreSummary(detachedOldSummary.value) : null;
+  const oldCoreOutcomeSummary = trustedOldCoreSnapshot(projected.oldCoreOutcomeSummary.value);
   return Object.freeze({
     understandingTurnInput: projected.understandingTurnInput.value,
     oldCoreOutcomeSummary,
@@ -392,14 +401,10 @@ function assembleReadOnlyShadowComparison({
   coreSha,
   understandingResult
 } = {}) {
-  const inputValidation = validateUnderstandingTurnInput(understandingTurnInput);
-  if (!inputValidation.ok) {
-    return failedRecord({
-      input: understandingTurnInput,
-      oldCoreOutcomeSummary,
-      coreSha,
-      failureCodes: [inputValidation.code]
-    });
+  try {
+    oldCoreOutcomeSummary = trustedOldCoreSnapshot(oldCoreOutcomeSummary);
+  } catch (_) {
+    oldCoreOutcomeSummary = null;
   }
   if (!oldCoreOutcomeSummary) {
     return failedRecord({
@@ -407,6 +412,15 @@ function assembleReadOnlyShadowComparison({
       oldCoreOutcomeSummary: EMPTY_CORE_SUMMARY,
       coreSha,
       failureCodes: ["SHADOW_COMPARISON_INCOMPLETE"]
+    });
+  }
+  const inputValidation = validateUnderstandingTurnInput(understandingTurnInput);
+  if (!inputValidation.ok) {
+    return failedRecord({
+      input: understandingTurnInput,
+      oldCoreOutcomeSummary,
+      coreSha,
+      failureCodes: [inputValidation.code]
     });
   }
   if (!validUnderstandingResult(understandingResult)) {

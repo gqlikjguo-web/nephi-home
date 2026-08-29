@@ -366,6 +366,62 @@ async function runShadowIsolationAcceptance() {
   assert.deepEqual(rejectedForgedResult.failureCodes, ["SHADOW_COMPARISON_INCOMPLETE"]);
   assert.equal(forgedAccessorReads, 0, "shadow must reject forged provenance before field access");
 
+  const genuineUnderstandingResult = await fakeUnderstanding(
+    providerPayload({ includeFailure: false }),
+    input
+  );
+  let pureOldAccessorCalls = 0;
+  const pureAccessorOld = oldSummary();
+  Object.defineProperty(pureAccessorOld.routes[0], "disposition", {
+    enumerable: true,
+    get() {
+      pureOldAccessorCalls += 1;
+      throw new Error("pure-boundary getter must not execute");
+    }
+  });
+  const rejectedPureAccessorOld = assembleReadOnlyShadowComparison({
+    understandingTurnInput: input,
+    oldCoreOutcomeSummary: pureAccessorOld,
+    coreSha: CORE_SHA,
+    understandingResult: genuineUnderstandingResult
+  });
+  assert.equal(validateShadowComparisonRecord(rejectedPureAccessorOld).ok, true);
+  assert.equal(rejectedPureAccessorOld.status, "FAILED");
+  assert.deepEqual(rejectedPureAccessorOld.failureCodes, ["SHADOW_COMPARISON_INCOMPLETE"]);
+  assert.deepEqual(rejectedPureAccessorOld.sideEffectCounters, record.sideEffectCounters);
+  assert.equal(pureOldAccessorCalls, 0, "pure assembly must reject before old-summary getter access");
+
+  let pureOldProxyCalls = 0;
+  const pureProxyOld = oldSummary();
+  pureProxyOld.routes[0] = new Proxy(pureProxyOld.routes[0], {
+    ownKeys(target) {
+      pureOldProxyCalls += 1;
+      return Reflect.ownKeys(target);
+    },
+    getOwnPropertyDescriptor(target, property) {
+      pureOldProxyCalls += 1;
+      return Reflect.getOwnPropertyDescriptor(target, property);
+    },
+    getPrototypeOf(target) {
+      pureOldProxyCalls += 1;
+      return Reflect.getPrototypeOf(target);
+    },
+    get(target, property, receiver) {
+      pureOldProxyCalls += 1;
+      return Reflect.get(target, property, receiver);
+    }
+  });
+  const rejectedPureProxyOld = assembleReadOnlyShadowComparison({
+    understandingTurnInput: input,
+    oldCoreOutcomeSummary: pureProxyOld,
+    coreSha: CORE_SHA,
+    understandingResult: genuineUnderstandingResult
+  });
+  assert.equal(validateShadowComparisonRecord(rejectedPureProxyOld).ok, true);
+  assert.equal(rejectedPureProxyOld.status, "FAILED");
+  assert.deepEqual(rejectedPureProxyOld.failureCodes, ["SHADOW_COMPARISON_INCOMPLETE"]);
+  assert.equal(pureOldProxyCalls, 0, "pure assembly must reject proxy before traps");
+
   // Property isolation: a property-B catalog identity in a property-A C01 is
   // rejected at C03, while C10 contains no property identity or foreign fact.
   const isolated = await assembleFake(
@@ -651,7 +707,7 @@ async function runShadowIsolationAcceptance() {
   console.log(JSON.stringify({
     suite: "new-core-shadow-isolation",
     classification: "FAKE_INTEGRATION",
-    caseCount: 41,
+    caseCount: 48,
     status: "PASS",
     sideEffectCounters: record.sideEffectCounters
   }));
