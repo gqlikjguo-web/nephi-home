@@ -34,7 +34,7 @@ function unit(overrides = {}) {
     stayDependent: true,
     temporalCandidate: null,
     contextLinkCandidateId: "link-semantic",
-    replyCandidate: { disposition: "ANSWER", reasonClass: "lodging_need" },
+    safetyCandidate: null,
     slotCandidates: [],
     confidenceBand: "high",
     ...overrides
@@ -175,7 +175,7 @@ assert.equal(validate(unit({
   capability: null,
   subject: { kind: null, catalogIdentity: null },
   stayDependent: false,
-  replyCandidate: { disposition: "NO_REPLY", reasonClass: "acknowledgement" }
+  safetyCandidate: null
 })).ok, true);
 assert.equal(validate(unit({
   capability: "location",
@@ -241,6 +241,7 @@ assert.equal(validate(unit({
   capability: "booking_operator_request",
   subject: { kind: "other_verified", catalogIdentity: "verified-service" },
   stayDependent: false,
+  safetyCandidate: { operatorActionClass: "special_arrangement", riskClass: null },
   slotCandidates: [{
     slotCandidateId: "slot-other",
     slot: "other_supported",
@@ -249,6 +250,37 @@ assert.equal(validate(unit({
     evidenceRefs: [evidence()]
   }]
 })).ok, true);
+assertFailure(validate(unit({
+  safetyCandidate: { operatorActionClass: null, riskClass: "access_credential" }
+})), "UNIT_MEANING_UNSUPPORTED");
+assertFailure(validate(unit({
+  purpose: "operator_request",
+  capability: "booking_operator_request",
+  subject: { kind: "other_verified", catalogIdentity: "verified-service" },
+  stayDependent: false,
+  safetyCandidate: { operatorActionClass: null, riskClass: "access_credential" },
+  slotCandidates: [{
+    slotCandidateId: "slot-other",
+    slot: "other_supported",
+    operation: "SET",
+    value: "verified-service",
+    evidenceRefs: [evidence()]
+  }]
+})), "UNIT_MEANING_UNSUPPORTED");
+assertFailure(validate(unit({
+  purpose: "operator_request",
+  capability: "booking_operator_request",
+  subject: { kind: "other_verified", catalogIdentity: "verified-service" },
+  stayDependent: false,
+  safetyCandidate: null,
+  slotCandidates: [{
+    slotCandidateId: "slot-other",
+    slot: "other_supported",
+    operation: "SET",
+    value: "verified-service",
+    evidenceRefs: [evidence()]
+  }]
+})), "UNIT_MEANING_UNSUPPORTED");
 
 // AC-SEM-008 / AC-EVD-010: C04 evidence must be owned by this unit or its
 // slots. A source-shaped but unvalidated ref cannot be admitted or rewritten.
@@ -279,6 +311,6 @@ assert.deepEqual(frozenEvidence, [evidence()]);
 console.log(JSON.stringify({
   suite: "new-core-semantic-unit",
   classification: "STRUCTURED_CONTRACT_TEST",
-  caseCount: 34,
+  caseCount: 37,
   status: "PASS"
 }));

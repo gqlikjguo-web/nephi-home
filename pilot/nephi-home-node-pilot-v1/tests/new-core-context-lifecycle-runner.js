@@ -102,7 +102,7 @@ function candidate({ messageText = "我們4位", slots = [], purpose = "context_
     stayDependent: false,
     temporalCandidate: null,
     contextLinkCandidateId: "link-context",
-    replyCandidate: { disposition: "NO_REPLY", reasonClass: "context_only" },
+    safetyCandidate: null,
     slotCandidates: slots,
     confidenceBand: "high",
     ...overrides
@@ -220,7 +220,7 @@ assert.equal(fourGuests.lifecycleResult.ok, true);
 assert.equal(fourGuests.lifecycleResult.value.status, "VALIDATED");
 assert.equal(fourGuests.lifecycleResult.value.action, "MODIFY");
 assert.equal(fourGuests.lifecycleResult.value.verifiedSlotOperations[0].persistedField, "guestCount");
-assert.equal(fourGuests.lifecycleResult.value.replyCandidate, undefined, "C06 must not rewrite or own reply");
+assert.equal(fourGuests.lifecycleResult.value.safetyCandidate, undefined, "C06 must not rewrite or own safety meaning");
 const fourGuestState = applyDecision(state(), fourGuests.lifecycleResult);
 assert.equal(fourGuestState.next.tasks[0].guestCount, 4);
 assert.equal(fourGuestState.next.tasks[0].status, "answered");
@@ -283,7 +283,7 @@ const mixed = validatedPipeline({
   ]
 });
 assert.equal(mixed.lifecycleResult.ok, true);
-assert.equal(mixed.unit.replyCandidate.disposition, "NO_REPLY");
+assert.equal(mixed.unit.safetyCandidate, null);
 assert.equal(Object.hasOwn(mixed.lifecycleResult.value, "canonicalItems"), false);
 assert.equal(Object.hasOwn(mixed.lifecycleResult.value, "resolver"), false);
 assert.equal(adaptLifecycleDecisionsToStateV3({
@@ -478,7 +478,7 @@ const capabilitySwitch = validatedPipeline({
     capability: "availability",
     subject: { kind: "room", catalogIdentity: "room-a" },
     stayDependent: true,
-    replyCandidate: { disposition: "ANSWER", reasonClass: "lodging_need" }
+    safetyCandidate: null
   }
 });
 assert.equal(capabilitySwitch.lifecycleResult.ok, true);

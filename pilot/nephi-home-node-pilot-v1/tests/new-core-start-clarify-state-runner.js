@@ -100,7 +100,7 @@ const rawUnit = {
   stayDependent: true,
   temporalCandidate: null,
   contextLinkCandidateId: "link-start-clarify",
-  replyCandidate: { disposition: "CLARIFY", reasonClass: "missing_stay_dates" },
+  safetyCandidate: null,
   slotCandidates: [],
   confidenceBand: "high"
 };
@@ -362,7 +362,7 @@ const followUpRawUnit = {
     nightsCandidate: 1
   },
   contextLinkCandidateId: "link-start-clarify-follow-up",
-  replyCandidate: { disposition: "ANSWER", reasonClass: "lodging_need" },
+  safetyCandidate: null,
   slotCandidates: [],
   confidenceBand: "high"
 };

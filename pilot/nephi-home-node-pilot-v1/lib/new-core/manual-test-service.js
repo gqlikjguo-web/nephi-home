@@ -73,9 +73,9 @@ function projectFailureUnit(unit) {
       checkInCandidate: temporal.checkInCandidate || null, checkOutCandidate: temporal.checkOutCandidate || null,
       nightsCandidate: Number.isInteger(temporal.nightsCandidate) ? temporal.nightsCandidate : null
     },
-    replyCandidate: unit.replyCandidate ? {
-      disposition: bounded(unit.replyCandidate.disposition, 40),
-      reasonClass: bounded(unit.replyCandidate.reasonClass, 80)
+    safetyCandidate: unit.safetyCandidate ? {
+      operatorActionClass: unit.safetyCandidate.operatorActionClass === null ? null : bounded(unit.safetyCandidate.operatorActionClass, 80),
+      riskClass: unit.safetyCandidate.riskClass === null ? null : bounded(unit.safetyCandidate.riskClass, 80)
     } : null
   };
 }
@@ -95,7 +95,7 @@ function buildManualTestFailureDiagnostics({ understanding, outcomes } = {}) {
       ? { layer: providerFailure.boundary || "C03-C05", failureCode: providerFailure.failureCode }
       : outcome.failure;
     const unit = outcome && outcome.unit || rawUnits.find((item) => item.unitId === unitId);
-    const projected = projectFailureUnit(unit) || { unitId: bounded(unitId, 160), purpose: "", capability: null, subject: { kind: null, catalogIdentity: null }, temporalCandidate: null, replyCandidate: null };
+    const projected = projectFailureUnit(unit) || { unitId: bounded(unitId, 160), purpose: "", capability: null, subject: { kind: null, catalogIdentity: null }, temporalCandidate: null, safetyCandidate: null };
     return {
       ...projected,
       readiness: outcome && outcome.readiness ? {

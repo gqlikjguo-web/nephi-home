@@ -61,7 +61,7 @@ function unit(overrides = {}) {
     stayDependent: true,
     temporalCandidate: null,
     contextLinkCandidateId: "link-1",
-    replyCandidate: { disposition: "ANSWER", reasonClass: "lodging_need" },
+    safetyCandidate: null,
     slotCandidates: [],
     confidenceBand: "high",
     ...overrides
@@ -154,7 +154,7 @@ for (const invalidCandidate of [
   unit({ subject: { kind: "room" } }),
   unit({ stayDependent: "true" }),
   unit({ evidenceRefs: [] }),
-  unit({ replyCandidate: { disposition: "ROUTE_NOW", reasonClass: "x" } }),
+  unit({ safetyCandidate: { operatorActionClass: "unknown", riskClass: null } }),
   unit({ temporalCandidate: temporal({ kind: "executed_date" }) }),
   unit({ temporalCandidate: temporal({ rawText: "9/20", kind: "absolute_date", checkInCandidate: "9/20", checkOutCandidate: null, nightsCandidate: null }) }),
   unit({ temporalCandidate: temporal({ rawText: "2026/02/30", kind: "absolute_date", checkInCandidate: "2026-02-30", checkOutCandidate: null, nightsCandidate: null }) }),
@@ -176,7 +176,7 @@ assert.equal(validateSemanticUnitCandidate(unit({
   capability: null,
   subject: { kind: null, catalogIdentity: null },
   stayDependent: false,
-  replyCandidate: { disposition: "NO_REPLY", reasonClass: "context_only" },
+  safetyCandidate: null,
   slotCandidates: [
     slot(),
     slot({ slotCandidateId: "slot-2", slot: "transport", value: "driving", evidenceRefs: [evidence({ quote: "有開車" })] })

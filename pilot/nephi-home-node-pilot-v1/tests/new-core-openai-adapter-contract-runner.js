@@ -82,7 +82,7 @@ function unit(overrides = {}) {
     stayDependent: false,
     temporalCandidate: null,
     contextLinkCandidateId: "link-a",
-    replyCandidate: { disposition: "NO_REPLY", reasonClass: "acknowledgement" },
+    safetyCandidate: null,
     slotCandidates: [],
     confidenceBand: "high",
     ...overrides
@@ -168,7 +168,7 @@ function availabilityUnit(overrides = {}) {
     subject: { kind: "room", catalogIdentity: "room-a" },
     stayDependent: true,
     contextLinkCandidateId: "link-availability",
-    replyCandidate: { disposition: "ANSWER", reasonClass: "availability" },
+    safetyCandidate: null,
     ...overrides
   });
 }
@@ -269,7 +269,7 @@ async function main() {
   );
   assert.deepEqual(
     body.text.format.schema.properties.understandingOutput.properties.units.items.required.sort(),
-    ["capability", "confidenceBand", "contextLinkCandidateId", "evidenceRefs", "purpose", "replyCandidate", "slotCandidates", "stayDependent", "subject", "temporalCandidate", "unitId"].sort()
+    ["capability", "confidenceBand", "contextLinkCandidateId", "evidenceRefs", "purpose", "safetyCandidate", "slotCandidates", "stayDependent", "subject", "temporalCandidate", "unitId"].sort()
   );
   assert.deepEqual(
     body.text.format.schema.properties.contextLinkCandidates.items.required.sort(),
@@ -394,7 +394,7 @@ async function main() {
           capability: "availability",
           subject: { kind: "property", catalogIdentity: "property-a" },
           stayDependent: true,
-          replyCandidate: { disposition: "ANSWER", reasonClass: "lodging_need" }
+          safetyCandidate: null
         })]
       }
     }));

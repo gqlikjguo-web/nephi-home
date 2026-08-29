@@ -37,7 +37,7 @@ async function fakeTurn({ input, state, property, sideEffectGuard, now: timestam
     failedUnitDiagnostics: [{
       unitId: "unit-diagnostic", purpose: "lodging_question", capability: "availability",
       subject: { kind: "room", catalogIdentity: null }, temporalCandidate: { rawText: "8/31", kind: "partial", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null },
-      replyCandidate: { disposition: "ANSWER", reasonClass: "executable_lodging_need" }, readiness: null,
+      safetyCandidate: null, readiness: null,
       failureCodes: { C03: "CAPABILITY_SUBJECT_CONFLICT", C06: null, C07: null },
       earliestFailure: { layer: "C03", failureCode: "CAPABILITY_SUBJECT_CONFLICT" }
     }], requestedModel: "gpt-5.6-luna", resolvedModel: "gpt-5.6-luna"
@@ -96,7 +96,7 @@ async function json(url, method = "GET", body, sentCookie = cookie) {
     unitId: "unit-availability", evidenceRefs: [], purpose: "lodging_question", capability: "availability",
     subject: { kind: "property", catalogIdentity: null }, stayDependent: true,
     temporalCandidate: { rawText: "今天", kind: "relative_date", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null },
-    contextLinkCandidateId: "link-availability", replyCandidate: { disposition: "CLARIFY", reasonClass: "missing_guest_fields" },
+    contextLinkCandidateId: "link-availability", safetyCandidate: null,
     slotCandidates: [], confidenceBand: "high"
   };
   const failureDiagnostics = buildManualTestFailureDiagnostics({
@@ -107,7 +107,7 @@ async function json(url, method = "GET", body, sentCookie = cookie) {
     outcomes: [{
       unit: failedUnit,
       readiness: { unitId: "unit-availability", status: "READY", missingGuestFields: [] },
-      failure: { layer: "C07", failureCode: "ROUTE_PURPOSE_CONFLICT" }
+      failure: { layer: "C07", failureCode: "ROUTING_READINESS_INVALID" }
     }]
   });
   assert.deepEqual(failureDiagnostics, [{
@@ -116,10 +116,10 @@ async function json(url, method = "GET", body, sentCookie = cookie) {
     capability: "availability",
     subject: { kind: "property", catalogIdentity: null },
     temporalCandidate: { rawText: "今天", kind: "relative_date", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null },
-    replyCandidate: { disposition: "CLARIFY", reasonClass: "missing_guest_fields" },
+    safetyCandidate: null,
     readiness: { status: "READY", missingGuestFields: [] },
-    failureCodes: { C03: null, C06: null, C07: "ROUTE_PURPOSE_CONFLICT" },
-    earliestFailure: { layer: "C07", failureCode: "ROUTE_PURPOSE_CONFLICT" }
+    failureCodes: { C03: null, C06: null, C07: "ROUTING_READINESS_INVALID" },
+    earliestFailure: { layer: "C07", failureCode: "ROUTING_READINESS_INVALID" }
   }]);
 
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-manual-page-"));
@@ -143,7 +143,7 @@ async function json(url, method = "GET", body, sentCookie = cookie) {
     assert.deepEqual(diagnosticFailure.body.data.diagnostic.failedUnits[0], {
       unitId: "unit-diagnostic", purpose: "lodging_question", capability: "availability",
       subject: { kind: "room", catalogIdentity: null }, temporalCandidate: { rawText: "8/31", kind: "partial", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null },
-      replyCandidate: { disposition: "ANSWER", reasonClass: "executable_lodging_need" }, readiness: null,
+      safetyCandidate: null, readiness: null,
       failureCodes: { C03: "CAPABILITY_SUBJECT_CONFLICT", C06: null, C07: null },
       earliestFailure: { layer: "C03", failureCode: "CAPABILITY_SUBJECT_CONFLICT" }
     });

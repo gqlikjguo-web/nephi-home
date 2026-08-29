@@ -13,12 +13,12 @@ const UNIT_FIELDS = Object.freeze([
   "stayDependent",
   "temporalCandidate",
   "contextLinkCandidateId",
-  "replyCandidate",
+  "safetyCandidate",
   "slotCandidates",
   "confidenceBand"
 ]);
 const SUBJECT_FIELDS = Object.freeze(["kind", "catalogIdentity"]);
-const REPLY_CANDIDATE_FIELDS = Object.freeze(["disposition", "reasonClass"]);
+const SAFETY_CANDIDATE_FIELDS = Object.freeze(["operatorActionClass", "riskClass"]);
 const TEMPORAL_CANDIDATE_FIELDS = Object.freeze([
   "rawText",
   "kind",
@@ -72,7 +72,14 @@ const SUBJECT_KINDS = new Set([
   "other_verified",
   null
 ]);
-const REPLY_DISPOSITIONS = new Set(["ANSWER", "CLARIFY", "HANDOFF", "NO_REPLY"]);
+const OPERATOR_ACTION_CLASSES = new Set([
+  "booking_mutation",
+  "reservation_cancellation",
+  "refund_approval",
+  "date_change",
+  "special_arrangement"
+]);
+const RISK_CLASSES = new Set(["access_credential", "payment_claim", "sensitive_request"]);
 const CONFIDENCE_BANDS = new Set(["low", "medium", "high"]);
 const TEMPORAL_KINDS = new Set([
   "absolute_date",
@@ -175,6 +182,26 @@ function validateSlotCandidate(value, errors, index) {
   return unknownWireField || evidence.unknownWireField;
 }
 
+function validateSafetyCandidate(value, errors) {
+  if (value === null) return false;
+  let unknownWireField = false;
+  if (!exactKeys(value, SAFETY_CANDIDATE_FIELDS)) {
+    errors.push("safetyCandidate.keys");
+    unknownWireField ||= hasUnknownFields(value, SAFETY_CANDIDATE_FIELDS);
+  }
+  if (value && value.operatorActionClass !== null
+    && !OPERATOR_ACTION_CLASSES.has(value.operatorActionClass)) {
+    errors.push("safetyCandidate.operatorActionClass");
+  }
+  if (value && value.riskClass !== null && !RISK_CLASSES.has(value.riskClass)) {
+    errors.push("safetyCandidate.riskClass");
+  }
+  if (value && (value.operatorActionClass === null) === (value.riskClass === null)) {
+    errors.push("safetyCandidate.exclusiveClass");
+  }
+  return unknownWireField;
+}
+
 function validateSemanticUnitCandidate(value) {
   const errors = [];
   let unknownWireField = false;
@@ -200,16 +227,7 @@ function validateSemanticUnitCandidate(value) {
   if (typeof (value && value.stayDependent) !== "boolean") errors.push("stayDependent");
   unknownWireField ||= validateTemporalCandidate(value && value.temporalCandidate, errors);
   if (!boundedText(value && value.contextLinkCandidateId)) errors.push("contextLinkCandidateId");
-  if (!exactKeys(value && value.replyCandidate, REPLY_CANDIDATE_FIELDS)) {
-    errors.push("replyCandidate.keys");
-    unknownWireField ||= hasUnknownFields(value && value.replyCandidate, REPLY_CANDIDATE_FIELDS);
-  }
-  if (!REPLY_DISPOSITIONS.has(value && value.replyCandidate && value.replyCandidate.disposition)) {
-    errors.push("replyCandidate.disposition");
-  }
-  if (!boundedText(value && value.replyCandidate && value.replyCandidate.reasonClass)) {
-    errors.push("replyCandidate.reasonClass");
-  }
+  unknownWireField ||= validateSafetyCandidate(value && value.safetyCandidate, errors);
   if (!Array.isArray(value && value.slotCandidates) || value.slotCandidates.length > MAX_SLOT_CANDIDATES) {
     errors.push("slotCandidates");
   } else {
@@ -233,7 +251,8 @@ module.exports = {
   PURPOSES,
   CAPABILITIES,
   SUBJECT_KINDS,
-  REPLY_DISPOSITIONS,
+  OPERATOR_ACTION_CLASSES,
+  RISK_CLASSES,
   CONFIDENCE_BANDS,
   TEMPORAL_KINDS,
   SLOT_NAMES,

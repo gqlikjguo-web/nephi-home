@@ -97,8 +97,7 @@ function candidate({
     checkOutCandidate: "2026-09-02",
     nightsCandidate: 1
   },
-  disposition = "ANSWER",
-  reasonClass = "lodging_need"
+  safetyCandidate = null
 } = {}) {
   return {
     unitId,
@@ -109,7 +108,7 @@ function candidate({
     stayDependent,
     temporalCandidate,
     contextLinkCandidateId: `link-${unitId}`,
-    replyCandidate: { disposition, reasonClass },
+    safetyCandidate,
     slotCandidates: [],
     confidenceBand: "high"
   };
@@ -231,8 +230,7 @@ for (const incomplete of [
         checkOutCandidate: null,
         nightsCandidate: incomplete.nightsCandidate
       },
-      disposition: "CLARIFY",
-      reasonClass: "missing_stay_dates"
+      safetyCandidate: null
     })
   });
   assert.deepEqual(route(pipeline).value.missingGuestFields, ["stay.checkIn", "stay.checkOut"]);
@@ -246,8 +244,7 @@ const missingDates = validated({
   unit: candidate({
     messageText: missingDatesText,
     temporalCandidate: null,
-    disposition: "CLARIFY",
-    reasonClass: "missing_stay_dates"
+    safetyCandidate: null
   })
 });
 assert.deepEqual(route(missingDates).value, {
@@ -272,8 +269,7 @@ const operator = validated({
     subject: { kind: "room", catalogIdentity: "room-a" },
     stayDependent: false,
     temporalCandidate: null,
-    disposition: "HANDOFF",
-    reasonClass: "booking_mutation"
+    safetyCandidate: { operatorActionClass: "booking_mutation", riskClass: null }
   }),
   action: "CONTINUE",
   target: "cycle-routing"
@@ -309,8 +305,7 @@ const risk = validated({
     subject: { kind: "other_verified", catalogIdentity: "safety-a" },
     stayDependent: false,
     temporalCandidate: null,
-    disposition: "HANDOFF",
-    reasonClass: "access_credential"
+    safetyCandidate: { operatorActionClass: null, riskClass: "access_credential" }
   })
 });
 const riskPolicy = createTrustedOperatorSafetyPolicy({ unit: risk.unit, lifecycleDecision: risk.lifecycle, routingRegistry: registry });
@@ -321,23 +316,6 @@ assert.equal(route({ ...risk, operatorSafetyPolicy: riskPolicy.value }).value.ri
 // operator-request unit carries reservation action handoff; no HANDOFF may
 // own END.
 const cancellationText = "請取消我的訂房";
-const combinedCancellation = validated({
-  messageText: cancellationText,
-  action: "END",
-  target: "cycle-routing",
-  unit: candidate({
-    messageText: cancellationText,
-    purpose: "cancellation",
-    capability: "booking_operator_request",
-    subject: { kind: "room", catalogIdentity: "room-a" },
-    stayDependent: false,
-    temporalCandidate: null,
-    disposition: "NO_REPLY",
-    reasonClass: "cancellation"
-  })
-});
-assert.equal(route(combinedCancellation).ok, false, "a booking-operator cancellation may not combine END with NO_REPLY");
-assert.equal(route(combinedCancellation).code, "ROUTE_PURPOSE_CONFLICT");
 const cancellation = validated({
   messageText: cancellationText,
   action: "END",
@@ -349,9 +327,7 @@ const cancellation = validated({
     capability: null,
     subject: { kind: null, catalogIdentity: null },
     stayDependent: false,
-    temporalCandidate: null,
-    disposition: "NO_REPLY",
-    reasonClass: "cancellation"
+    temporalCandidate: null
   })
 });
 assert.equal(route(cancellation).value.disposition, "NO_REPLY");
@@ -367,8 +343,7 @@ const cancellationOperator = validated({
     subject: { kind: "room", catalogIdentity: "room-a" },
     stayDependent: false,
     temporalCandidate: null,
-    disposition: "HANDOFF",
-    reasonClass: "reservation_cancellation"
+    safetyCandidate: { operatorActionClass: "reservation_cancellation", riskClass: null }
   })
 });
 const cancellationOperatorPolicy = createTrustedOperatorSafetyPolicy({
@@ -390,8 +365,7 @@ const operatorEnd = validated({
     subject: { kind: "room", catalogIdentity: "room-a" },
     stayDependent: false,
     temporalCandidate: null,
-    disposition: "HANDOFF",
-    reasonClass: "booking_mutation"
+    safetyCandidate: { operatorActionClass: "booking_mutation", riskClass: null }
   })
 });
 assert.equal(route(operatorEnd).code, "ROUTE_PURPOSE_CONFLICT");
@@ -406,8 +380,7 @@ const operatorNone = validated({
     subject: { kind: "room", catalogIdentity: "room-a" },
     stayDependent: false,
     temporalCandidate: null,
-    disposition: "HANDOFF",
-    reasonClass: "booking_mutation"
+    safetyCandidate: { operatorActionClass: "booking_mutation", riskClass: null }
   })
 });
 assert.equal(route(operatorNone).code, "ROUTE_PURPOSE_CONFLICT");
@@ -517,8 +490,7 @@ const operatorStart = validated({
     subject: { kind: "room", catalogIdentity: "room-a" },
     stayDependent: false,
     temporalCandidate: null,
-    disposition: "HANDOFF",
-    reasonClass: "booking_mutation"
+    safetyCandidate: { operatorActionClass: "booking_mutation", riskClass: null }
   })
 });
 const startPolicy = createTrustedOperatorSafetyPolicy({
@@ -539,9 +511,9 @@ const rawHandoffPolicy = route({
 assert.equal(rawHandoffPolicy.ok, false);
 assert.equal(rawHandoffPolicy.code, "HANDOFF_WITHOUT_OPERATOR_OR_RISK");
 
-// AC-RTE-005..008 / AC-HOF-008: contradictions fail closed. A model candidate
-// cannot route a non-actionable unit, and missing/invalid route inputs never
-// choose an unknown shortcut route.
+// AC-RTE-005..008 / AC-HOF-008: C07 is the sole disposition authority. A
+// non-actionable validated acknowledgement stays silent without a model reply
+// proposal, and malformed deterministic inputs still fail closed.
 const contradictoryText = "謝謝";
 const contradictory = validated({
   messageText: contradictoryText,
@@ -551,14 +523,12 @@ const contradictory = validated({
     capability: null,
     subject: { kind: null, catalogIdentity: null },
     stayDependent: false,
-    temporalCandidate: null,
-    disposition: "ANSWER",
-    reasonClass: "unknown"
+    temporalCandidate: null
   })
 });
 const contradictionResult = route(contradictory);
-assert.equal(contradictionResult.ok, false);
-assert.equal(contradictionResult.code, "ROUTE_PURPOSE_CONFLICT");
+assert.equal(contradictionResult.ok, true);
+assert.equal(contradictionResult.value.disposition, "NO_REPLY");
 const invalidReadiness = createUnitRoutingDecision({
   unit: missingDates.unit,
   lifecycleDecision: missingDates.lifecycle,

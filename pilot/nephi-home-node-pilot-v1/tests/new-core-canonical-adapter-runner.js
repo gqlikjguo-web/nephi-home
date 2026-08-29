@@ -171,7 +171,7 @@ function candidate(messageText, overrides = {}) {
     stayDependent: true,
     temporalCandidate: temporal(),
     contextLinkCandidateId: overrides.contextLinkCandidateId || `link-${messageText.length}`,
-    replyCandidate: { disposition: "ANSWER", reasonClass: "lodging_need" },
+    safetyCandidate: null,
     slotCandidates: [],
     confidenceBand: "high",
     ...overrides
@@ -530,7 +530,7 @@ assert.equal(canonicalApprovedContext.value.stateInput.confirmedFields.inventory
 // NO_REPLY, and even a structurally ANSWER lifecycle END own no canonical item.
 const clarify = pipeline({
   messageText: "Room A 還有嗎？",
-  unitOverrides: { unitId: "unit-clarify", temporalCandidate: null, replyCandidate: { disposition: "CLARIFY", reasonClass: "missing_stay_dates" } },
+  unitOverrides: { unitId: "unit-clarify", temporalCandidate: null, safetyCandidate: null },
   turnSuffix: "clarify"
 });
 assertFailure(createC08(clarify), "CANONICAL_INPUT_NOT_ANSWER");
@@ -543,7 +543,7 @@ const handoff = pipeline({
     subject: { kind: "other_verified", catalogIdentity: "operator-c08" },
     stayDependent: false,
     temporalCandidate: null,
-    replyCandidate: { disposition: "HANDOFF", reasonClass: "reservation_cancellation" }
+    safetyCandidate: { operatorActionClass: "reservation_cancellation", riskClass: null }
   },
   turnSuffix: "handoff"
 });
@@ -557,7 +557,7 @@ const noReply = pipeline({
     subject: { kind: null, catalogIdentity: null },
     stayDependent: false,
     temporalCandidate: null,
-    replyCandidate: { disposition: "NO_REPLY", reasonClass: "acknowledgement" }
+    safetyCandidate: null
   },
   action: "NONE",
   turnSuffix: "no-reply"

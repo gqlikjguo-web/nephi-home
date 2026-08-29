@@ -47,7 +47,6 @@ const FORMAL_HANDOFF_ADMISSIONS = Object.freeze([
   Object.freeze({
     purpose: "operator_request",
     capability: "booking_operator_request",
-    disposition: "HANDOFF",
     operatorActionClasses: Object.freeze([
       "booking_mutation",
       "reservation_cancellation",
@@ -60,7 +59,6 @@ const FORMAL_HANDOFF_ADMISSIONS = Object.freeze([
   Object.freeze({
     purpose: "sensitive_request",
     capability: "high_risk",
-    disposition: "HANDOFF",
     operatorActionClasses: Object.freeze([]),
     riskClasses: Object.freeze([
       "access_credential",
@@ -168,7 +166,6 @@ function formalHandoffAdmission(unit) {
   return FORMAL_HANDOFF_ADMISSIONS.find((admission) => (
     admission.purpose === unit.purpose
     && admission.capability === unit.capability
-    && admission.disposition === unit.replyCandidate.disposition
   )) || null;
 }
 
@@ -180,11 +177,12 @@ function createTrustedOperatorSafetyPolicy({ unit, lifecycleDecision, routingReg
   }
   const admission = formalHandoffAdmission(unit);
   if (!admission) return failure("HANDOFF_WITHOUT_OPERATOR_OR_RISK", ["formalAdmission"]);
-  const operatorActionClass = admission.operatorActionClasses.includes(unit.replyCandidate.reasonClass)
-    ? unit.replyCandidate.reasonClass
+  const candidate = unit.safetyCandidate;
+  const operatorActionClass = candidate && admission.operatorActionClasses.includes(candidate.operatorActionClass)
+    ? candidate.operatorActionClass
     : null;
-  const riskClass = admission.riskClasses.includes(unit.replyCandidate.reasonClass)
-    ? unit.replyCandidate.reasonClass
+  const riskClass = candidate && admission.riskClasses.includes(candidate.riskClass)
+    ? candidate.riskClass
     : null;
   if ((operatorActionClass === null) === (riskClass === null)
     || (operatorActionClass !== null && !OPERATOR_ACTION_CLASSES.has(operatorActionClass))
@@ -212,21 +210,19 @@ function routeFromValidatedInputs({ unit, lifecycleDecision, routingRegistry, re
   const validReadiness = readinessFor(readiness, unit);
   if (!policy || !validReadiness) return failure("ROUTING_READINESS_INVALID", ["readiness"]);
   if (unit.purpose === "cancellation") {
-    if (lifecycleDecision.action !== "END" || unit.replyCandidate.disposition !== "NO_REPLY"
+    if (lifecycleDecision.action !== "END"
       || unit.capability !== null || unit.subject.kind !== null || unit.subject.catalogIdentity !== null) {
       return failure("ROUTE_PURPOSE_CONFLICT", ["cancellation.lifecycleOrDisposition"]);
     }
     return { disposition: "NO_REPLY", reasonClass: "no_executable_need", requiresCanonicalExecution: false, missingGuestFields: [], operatorActionClass: null, riskClass: null };
   }
   if (policy.kind === "NO_REPLY") {
-    if (unit.replyCandidate.disposition !== "NO_REPLY") return failure("ROUTE_PURPOSE_CONFLICT", ["replyCandidate"]);
     return { disposition: "NO_REPLY", reasonClass: "no_executable_need", requiresCanonicalExecution: false, missingGuestFields: [], operatorActionClass: null, riskClass: null };
   }
   if (policy.kind === "HANDOFF") {
     if (!["START", "CONTINUE", "MODIFY"].includes(lifecycleDecision.action)) {
       return failure("ROUTE_PURPOSE_CONFLICT", ["handoff.lifecycle"]);
     }
-    if (unit.replyCandidate.disposition !== "HANDOFF") return failure("ROUTE_PURPOSE_CONFLICT", ["replyCandidate"]);
     const policyProjection = trustedOperatorSafetyPolicyFor(operatorSafetyPolicy, unit, lifecycleDecision);
     if (!policyProjection) return failure("HANDOFF_WITHOUT_OPERATOR_OR_RISK", ["operatorSafetyPolicy"]);
     return {
@@ -240,10 +236,8 @@ function routeFromValidatedInputs({ unit, lifecycleDecision, routingRegistry, re
   }
   if (unit.purpose !== "lodging_question") return failure("ROUTE_PURPOSE_CONFLICT", ["purpose"]);
   if (validReadiness.status === "MISSING_GUEST_FIELDS") {
-    if (unit.replyCandidate.disposition !== "CLARIFY") return failure("ROUTE_PURPOSE_CONFLICT", ["replyCandidate"]);
     return { disposition: "CLARIFY", reasonClass: "missing_guest_fields", requiresCanonicalExecution: false, missingGuestFields: [...validReadiness.missingGuestFields], operatorActionClass: null, riskClass: null };
   }
-  if (unit.replyCandidate.disposition !== "ANSWER") return failure("ROUTE_PURPOSE_CONFLICT", ["replyCandidate"]);
   return { disposition: "ANSWER", reasonClass: "executable_lodging_need", requiresCanonicalExecution: true, missingGuestFields: [], operatorActionClass: null, riskClass: null };
 }
 

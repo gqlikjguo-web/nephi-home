@@ -14,7 +14,8 @@ const {
   PURPOSES,
   CAPABILITIES,
   SUBJECT_KINDS,
-  REPLY_DISPOSITIONS,
+  OPERATOR_ACTION_CLASSES,
+  RISK_CLASSES,
   CONFIDENCE_BANDS,
   TEMPORAL_KINDS,
   SLOT_NAMES,
@@ -225,10 +226,15 @@ function semanticUnitSchema(understandingTurnInput) {
     stayDependent: { type: "boolean" },
     temporalCandidate: temporalCandidateSchema(),
     contextLinkCandidateId: stringSchema(),
-    replyCandidate: objectSchema({
-      disposition: enumSchema(REPLY_DISPOSITIONS),
-      reasonClass: stringSchema()
-    }, "A language-derived proposal; deterministic routing remains a later authority."),
+    safetyCandidate: {
+      anyOf: [
+        { type: "null" },
+        objectSchema({
+          operatorActionClass: { type: ["string", "null"], enum: [...OPERATOR_ACTION_CLASSES, null] },
+          riskClass: { type: ["string", "null"], enum: [...RISK_CLASSES, null] }
+        }, "Safety meaning only. Exactly one class is non-null; this never chooses reply disposition.")
+      ]
+    },
     slotCandidates: arraySchema(slotCandidateSchema(), { maxItems: MAX_SLOT_CANDIDATES }),
     confidenceBand: enumSchema(CONFIDENCE_BANDS)
   }, "Exactly one immutable semantic candidate. Do not emit facts, canonical dates, resolver data, state writes, or final copy.");
@@ -268,8 +274,9 @@ function instructions() {
     "Use only the bounded C01 source events, recent conversation, referenceable cycles, capability catalog, and public subject catalog supplied by the developer message.",
     "Recent conversation helps interpret language and references but is never a property-fact source. Evidence must cite exact C01 sourceEvents UTF-16 coordinates and quote text.",
     "When the current source message supplies missing values for a referenceable pending cycle, represent the composite pending lodging request with its trusted lodging purpose, capability, and subject identity, and propose CONTINUE targeting that exact requestCycleId; do not emit a capability-bearing supplement unit, and never invent or substitute cycle identity.",
-    "For that continuation, compare only the supplied candidate values with the cycle's missingFields: propose CLARIFY while any required guest field remains missing, and propose ANSWER only when the candidate is ready; deterministic routing remains authoritative.",
-    "Capability, subject, stay dependency, reply proposal, and Context action are independent candidates. Do not derive one merely from another.",
+    "For that continuation, compare only the supplied candidate values with the cycle's missingFields; deterministic routing alone decides whether to answer or clarify.",
+    "Capability, subject, stay dependency, safety meaning, and Context action are independent candidates. Never propose ANSWER, CLARIFY, HANDOFF, or NO_REPLY.",
+    "Set safetyCandidate only for operator_request/booking_operator_request or sensitive_request/high_risk. Exactly one of operatorActionClass and riskClass must be non-null; otherwise safetyCandidate is null.",
     "Temporal candidates preserve source meaning only. Do not invent an implicit year, canonical date, availability, price, policy truth, amenity truth, location fact, or any other formal fact.",
     "Do not emit resolver IDs, query plans, state mutations, final reply text, message-level routing, task indexes, credentials, private data, or fields outside the schema.",
     "When meaning or reference is uncertain, preserve that uncertainty in the declared candidate fields; never invent a catalog identity or Context target.",

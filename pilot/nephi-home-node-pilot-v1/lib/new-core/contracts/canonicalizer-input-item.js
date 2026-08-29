@@ -50,7 +50,7 @@ function validateCanonicalizerInputItem(value) {
     stayDependent: value && value.stayDependent,
     temporalCandidate: value && value.temporalCandidate,
     contextLinkCandidateId: "canonical-adapter-contract",
-    replyCandidate: { disposition: "ANSWER", reasonClass: "executable_lodging_need" },
+    safetyCandidate: null,
     slotCandidates: [],
     confidenceBand: "high"
   });

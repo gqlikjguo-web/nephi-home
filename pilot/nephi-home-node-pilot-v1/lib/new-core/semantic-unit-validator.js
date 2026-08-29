@@ -85,6 +85,19 @@ function otherSupportedSlotAdmission(slot, identitySet, understandingTurnInput, 
   return policy.allowsOtherSupported && catalogKindFor(identitySet, understandingTurnInput, slot.value) === "other_verified";
 }
 
+function safetyCandidateAdmission(unit) {
+  const safety = unit.safetyCandidate;
+  if (unit.capability === "booking_operator_request") {
+    return unit.purpose === "operator_request" && safety !== null
+      && safety.operatorActionClass !== null && safety.riskClass === null;
+  }
+  if (unit.capability === "high_risk") {
+    return unit.purpose === "sensitive_request" && safety !== null
+      && safety.operatorActionClass === null && safety.riskClass !== null;
+  }
+  return safety === null;
+}
+
 function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnInput, publicCatalogIdentitySet, capabilityRegistryProjection } = {}) {
   const wire = validateSemanticUnitCandidate(unit);
   if (!wire.ok) return failure("SEMANTIC_UNIT_INVALID");
@@ -100,6 +113,7 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnIn
   if (!policy.purposes.includes(unit.purpose)) return failure("UNIT_MEANING_UNSUPPORTED");
   if (!policy.subjectKinds.includes(unit.subject.kind)) return failure("CAPABILITY_SUBJECT_CONFLICT");
   if (unit.stayDependent !== policy.stayDependent) return failure("STAY_DEPENDENCY_CONFLICT");
+  if (!safetyCandidateAdmission(unit)) return failure("UNIT_MEANING_UNSUPPORTED");
   if (!unit.slotCandidates.every((slot) => productSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput))
     || !unit.slotCandidates.every((slot) => otherSupportedSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput, policy))) {
     return failure("UNIT_MEANING_UNSUPPORTED");

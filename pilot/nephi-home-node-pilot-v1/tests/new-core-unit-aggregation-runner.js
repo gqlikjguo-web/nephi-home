@@ -90,8 +90,7 @@ function candidate({
   subject = { kind: "policy", catalogIdentity: "policy-aggregation" },
   stayDependent = false,
   temporalCandidate = null,
-  disposition = "ANSWER",
-  reasonClass = "lodging_need"
+  safetyCandidate = null
 }) {
   return {
     unitId,
@@ -102,7 +101,7 @@ function candidate({
     stayDependent,
     temporalCandidate,
     contextLinkCandidateId: `link-${unitId}`,
-    replyCandidate: { disposition, reasonClass },
+    safetyCandidate,
     slotCandidates: [],
     confidenceBand: "high"
   };
@@ -257,8 +256,7 @@ const handoff = pipeline({
     purpose: "operator_request",
     capability: "booking_operator_request",
     subject: { kind: "room", catalogIdentity: "room-aggregation" },
-    disposition: "HANDOFF",
-    reasonClass: "booking_mutation"
+    safetyCandidate: { operatorActionClass: "booking_mutation", riskClass: null }
   }),
   action: "CONTINUE",
   target: "cycle-aggregation"
@@ -268,9 +266,7 @@ const clarify = pipeline({
     unitId: "unit-clarify",
     capability: "availability",
     subject: { kind: "room", catalogIdentity: "room-aggregation" },
-    stayDependent: true,
-    disposition: "CLARIFY",
-    reasonClass: "missing_stay_dates"
+    stayDependent: true
   })
 });
 const noReply = pipeline({
@@ -278,9 +274,7 @@ const noReply = pipeline({
     unitId: "unit-no-reply",
     purpose: "acknowledgement",
     capability: null,
-    subject: { kind: null, catalogIdentity: null },
-    disposition: "NO_REPLY",
-    reasonClass: "acknowledgement"
+    subject: { kind: null, catalogIdentity: null }
   }),
   action: "NONE"
 });

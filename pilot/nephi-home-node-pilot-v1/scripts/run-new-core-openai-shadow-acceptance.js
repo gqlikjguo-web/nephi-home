@@ -107,7 +107,7 @@ function rawUnitProjection(unit) {
     subjectKind: unit.subject && unit.subject.kind,
     subjectIdentityHash: unit.subject && unit.subject.catalogIdentity ? hash(unit.subject.catalogIdentity) : null,
     stayDependent: unit.stayDependent, temporalCandidate: unit.temporalCandidate,
-    replyCandidate: unit.replyCandidate,
+    safetyCandidate: unit.safetyCandidate,
     slotCandidates: unit.slotCandidates
   };
 }
@@ -131,7 +131,7 @@ function controlledUnitProjection(unit, understanding, c10) {
 function semanticShape(run) {
   return run.rawUnits.map((unit) => [
     unit.purpose, unit.capability, unit.subjectKind, unit.stayDependent,
-    unit.replyCandidate && unit.replyCandidate.disposition
+    unit.safetyCandidate && (unit.safetyCandidate.operatorActionClass || unit.safetyCandidate.riskClass)
   ].map((value) => value === null ? "null" : String(value)).join("|")).sort().join(";") || "NO_RAW_UNIT";
 }
 
@@ -144,22 +144,22 @@ function rawMeaningMatches(caseId, rawUnits, rawLinks = []) {
   const noDanger = rawUnits.every((unit) => !["high_risk", "policy", "property_fact", "unsupported"].includes(unit.capability));
   if (["AC-PRD-001", "AC-PRD-002", "AC-OAI-001"].includes(caseId)) {
     return rawUnits.length > 0 && rawUnits.every((unit) => unit.purpose === "acknowledgement"
-      && unit.capability === null && unit.replyCandidate.disposition === "NO_REPLY");
+      && unit.capability === null && unit.safetyCandidate === null);
   }
   if (caseId === "AC-PRD-003") return noDanger && rawUnits.some((unit) => ["supplement", "context_update"].includes(unit.purpose)
-    && unit.capability === null && unit.replyCandidate.disposition === "NO_REPLY"
+    && unit.capability === null && unit.safetyCandidate === null
     && unit.slotCandidates.some((slot) => slot.slot === "guest_count" && slot.value === 4)
     && unit.slotCandidates.some((slot) => slot.slot === "transport"));
   if (caseId === "AC-PRD-004") return noDanger && rawUnits.some((unit) => ["availability", "available_dates"].includes(unit.capability)
     && unit.stayDependent && unit.temporalCandidate);
   if (caseId === "AC-PRD-005") return noDanger && rawUnits.some((unit) => unit.subjectKind === "bundle"
-    && (unit.replyCandidate.disposition === "CLARIFY" || rawLinks.some((link) => link.unitIdHash === unit.unitIdHash
-      && ["CONTINUE", "MODIFY"].includes(link.actionCandidate))));
+    && rawLinks.some((link) => link.unitIdHash === unit.unitIdHash
+      && ["CONTINUE", "MODIFY"].includes(link.actionCandidate)));
   if (caseId === "AC-OAI-002") return rawUnits.some((unit) => unit.capability === "availability"
     && unit.subjectKind === "bundle" && unit.stayDependent && unit.temporalCandidate
     && unit.temporalCandidate.checkInCandidate && unit.temporalCandidate.checkOutCandidate);
   if (caseId === "AC-OAI-003") return rawUnits.some((unit) => unit.capability === "price"
-    && unit.subjectKind === "bundle" && unit.stayDependent && unit.replyCandidate.disposition === "CLARIFY");
+    && unit.subjectKind === "bundle" && unit.stayDependent && unit.temporalCandidate === null);
   return false;
 }
 
@@ -202,7 +202,8 @@ function classifyRun(caseDefinition, run) {
 function understandingText(run) {
   const counts = {};
   for (const unit of run.rawUnits) {
-    const shape = `${unit.purpose}/${unit.capability || "無 capability"}/${unit.subjectKind || "無 subject"}/${unit.replyCandidate.disposition}`;
+    const safety = unit.safetyCandidate && (unit.safetyCandidate.operatorActionClass || unit.safetyCandidate.riskClass) || "無 safety";
+    const shape = `${unit.purpose}/${unit.capability || "無 capability"}/${unit.subjectKind || "無 subject"}/${safety}`;
     counts[shape] = (counts[shape] || 0) + 1;
   }
   return Object.entries(counts).map(([shape, count]) => `${shape}×${count}`).join("；") || "沒有可審查理解";

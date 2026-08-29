@@ -45,7 +45,7 @@ const baseRun = {
   caseId: "AC-PRD-001", runNumber: 1,
   requestedModel: "gpt-5.6-luna", resolvedModel: "gpt-5.6-luna",
   semanticShape: "acknowledgement|null|null|false|NONE|NO_REPLY|0",
-  rawUnits: [{ purpose: "acknowledgement", capability: null, subjectKind: null, stayDependent: false, replyCandidate: { disposition: "NO_REPLY" } }],
+  rawUnits: [{ purpose: "acknowledgement", capability: null, subjectKind: null, stayDependent: false, safetyCandidate: null }],
   units: [{ purpose: "acknowledgement", capability: null, subjectKind: null, stayDependent: false, contextAction: "NONE", lifecycle: "NONE", replyDisposition: "NO_REPLY", c08Owned: false }],
   failureCodes: [], c11Markers: ["C02_UNDERSTANDING_RECEIVED", "C03_SEMANTIC_UNIT_VALIDATED", "C09_AGGREGATION_VALIDATED"],
   sideEffectCounters: { stateWrites: 0, messageWrites: 0, reviewWrites: 0, resolverCalls: 0, postgresMutations: 0, lineCalls: 0 },

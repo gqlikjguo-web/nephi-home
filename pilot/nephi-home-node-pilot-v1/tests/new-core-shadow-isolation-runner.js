@@ -91,7 +91,7 @@ function semanticUnit(overrides = {}) {
     stayDependent: false,
     temporalCandidate: null,
     contextLinkCandidateId: "link-answer",
-    replyCandidate: { disposition: "ANSWER", reasonClass: "lodging_need" },
+    safetyCandidate: null,
     slotCandidates: [],
     confidenceBand: "high",
     ...overrides
@@ -106,7 +106,7 @@ function acknowledgementUnit() {
     capability: null,
     subject: { kind: null, catalogIdentity: null },
     contextLinkCandidateId: "link-ack",
-    replyCandidate: { disposition: "NO_REPLY", reasonClass: "acknowledgement" }
+    safetyCandidate: null
   });
 }
 
