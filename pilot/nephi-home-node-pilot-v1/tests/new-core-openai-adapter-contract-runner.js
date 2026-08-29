@@ -4,7 +4,8 @@ const assert = require("node:assert/strict");
 const { buildUnderstandingTurnInput } = require("../lib/new-core/turn-input-adapter");
 const {
   OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC,
-  callOpenAIUnderstandingV1
+  callOpenAIUnderstandingV1,
+  isTrustedUnderstandingResult
 } = require("../lib/providers/openai-understanding-v1");
 
 const NOW = "2026-08-29T08:00:00.000Z";
@@ -273,6 +274,8 @@ async function main() {
   assert.equal(result.validatedContextLinks.length, 1);
   assert.equal(Object.isFrozen(result), true);
   assert.equal(Object.isFrozen(result.understandingOutput), true);
+  assert.equal(Object.isFrozen(result.validatedUnits[0]), true);
+  assert.equal(isTrustedUnderstandingResult(result), true);
   assert.deepEqual(diagnostics.map((event) => event.targetMarker), [
     "C02_UNDERSTANDING_RECEIVED",
     "C04_SOURCE_EVIDENCE_VALIDATED",
@@ -320,6 +323,7 @@ async function main() {
       }]);
       assert.equal(Object.isFrozen(siblingResult.failedUnits), true);
       assert.equal(Object.isFrozen(siblingResult.failedUnits[0]), true);
+      assert.equal(isTrustedUnderstandingResult(siblingResult), true);
       assert.equal(
         siblingBoundaryDiagnostics.some((event) => event.targetMarker === siblingFailureMarkers[invalidBoundary]),
         true,
@@ -659,11 +663,29 @@ async function main() {
   assert.equal(invalidInputCalls, 0);
   assert.equal(invalidInputError.code, "TURN_INPUT_INVALID");
 
+  // Task 12 provenance is private and checked without reading attacker fields.
+  let forgedAccessorReads = 0;
+  const forgedResult = {};
+  for (const field of ["validatedUnits", "validatedContextLinks", "failedUnits"]) {
+    Object.defineProperty(forgedResult, field, {
+      enumerable: true,
+      get() {
+        forgedAccessorReads += 1;
+        return [];
+      }
+    });
+  }
+  Object.defineProperty(forgedResult, OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC, {
+    value: Object.freeze({ providerAttemptCount: 1 })
+  });
+  assert.equal(isTrustedUnderstandingResult(forgedResult), false);
+  assert.equal(forgedAccessorReads, 0, "trust rejection must not inspect forged result fields");
+
   console.log(JSON.stringify({
     suite: "new-core-openai-adapter-contract",
     classification: "FAKE_INTEGRATION",
     provider: "STRUCTURED/FAKE",
-    caseCount: 40,
+    caseCount: 44,
     status: "PASS"
   }));
 }

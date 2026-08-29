@@ -53,6 +53,7 @@ const MAX_QUOTE_LENGTH = 500;
 const RETRYABLE_TRANSPORT_CATEGORIES = new Set(["timeout", "network", "rate_limit", "provider_5xx"]);
 const OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.openAiUnderstandingV1ProviderDiagnostic");
 const INTERNAL_PROVIDER_FAILURE = Symbol("openAiUnderstandingV1ProviderFailure");
+const TRUSTED_UNDERSTANDING_RESULTS = new WeakSet();
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function deepFreeze(value, seen = new Set()) {
@@ -789,12 +790,20 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     writable: false,
     value: providerDiagnostic(attempts)
   });
-  return deepFreeze(result);
+  const trustedResult = deepFreeze(result);
+  TRUSTED_UNDERSTANDING_RESULTS.add(trustedResult);
+  return trustedResult;
+}
+
+function isTrustedUnderstandingResult(value) {
+  return Boolean(value) && typeof value === "object"
+    && TRUSTED_UNDERSTANDING_RESULTS.has(value);
 }
 
 module.exports = {
   OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC,
   callOpenAIUnderstandingV1,
   instructions,
+  isTrustedUnderstandingResult,
   openAiUnderstandingV1ProviderSchema
 };

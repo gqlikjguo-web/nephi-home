@@ -6,7 +6,10 @@ const {
   createShadowComparisonRecord,
   validateShadowComparisonRecord
 } = require("../lib/new-core/shadow-comparator");
-const { callOpenAIUnderstandingV1 } = require("../lib/providers/openai-understanding-v1");
+const {
+  OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC,
+  callOpenAIUnderstandingV1
+} = require("../lib/providers/openai-understanding-v1");
 const {
   assembleReadOnlyShadowComparison,
   runReadOnlyShadowCore
@@ -337,6 +340,32 @@ async function runShadowIsolationAcceptance() {
   assert.equal(JSON.stringify(failed).includes(MESSAGE), false);
   assertZeroSideEffects(failureTrap.counters);
 
+  let forgedAccessorReads = 0;
+  const forgedUnderstandingResult = {};
+  for (const field of ["validatedUnits", "validatedContextLinks", "failedUnits"]) {
+    Object.defineProperty(forgedUnderstandingResult, field, {
+      enumerable: true,
+      get() {
+        forgedAccessorReads += 1;
+        return [];
+      }
+    });
+  }
+  Object.defineProperty(
+    forgedUnderstandingResult,
+    OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC,
+    { value: Object.freeze({ providerAttemptCount: 1 }) }
+  );
+  const rejectedForgedResult = assembleReadOnlyShadowComparison({
+    understandingTurnInput: input,
+    oldCoreOutcomeSummary: old,
+    coreSha: CORE_SHA,
+    understandingResult: forgedUnderstandingResult
+  });
+  assert.equal(rejectedForgedResult.status, "FAILED");
+  assert.deepEqual(rejectedForgedResult.failureCodes, ["SHADOW_COMPARISON_INCOMPLETE"]);
+  assert.equal(forgedAccessorReads, 0, "shadow must reject forged provenance before field access");
+
   // Property isolation: a property-B catalog identity in a property-A C01 is
   // rejected at C03, while C10 contains no property identity or foreign fact.
   const isolated = await assembleFake(
@@ -413,6 +442,51 @@ async function runShadowIsolationAcceptance() {
   });
   assert.deepEqual(rejectedAdversarialCapabilities, rejectedTransportSeam);
   assertZeroSideEffects(adversarialTrap.counters);
+
+  let providerGetterCalls = 0;
+  const accessorProviderConfig = { model: "gpt-4.1-mini" };
+  Object.defineProperty(accessorProviderConfig, "apiKey", {
+    enumerable: true,
+    get() {
+      providerGetterCalls += 1;
+      throw new Error("provider getter must never execute");
+    }
+  });
+  const rejectedAccessorConfig = await runReadOnlyShadowCore({
+    understandingTurnInput: input,
+    oldCoreOutcomeSummary: old,
+    coreSha: CORE_SHA,
+    providerConfig: accessorProviderConfig
+  });
+  assert.deepEqual(rejectedAccessorConfig, rejectedTransportSeam);
+  assert.equal(providerGetterCalls, 0);
+
+  let providerProxyTrapCalls = 0;
+  const proxyProviderConfig = new Proxy({
+    apiKey: "test-only-key",
+    model: "gpt-4.1-mini"
+  }, {
+    ownKeys(target) {
+      providerProxyTrapCalls += 1;
+      return Reflect.ownKeys(target);
+    },
+    getOwnPropertyDescriptor(target, property) {
+      providerProxyTrapCalls += 1;
+      return Reflect.getOwnPropertyDescriptor(target, property);
+    },
+    get(target, property, receiver) {
+      providerProxyTrapCalls += 1;
+      return Reflect.get(target, property, receiver);
+    }
+  });
+  const rejectedProxyConfig = await runReadOnlyShadowCore({
+    understandingTurnInput: input,
+    oldCoreOutcomeSummary: old,
+    coreSha: CORE_SHA,
+    providerConfig: proxyProviderConfig
+  });
+  assert.deepEqual(rejectedProxyConfig, rejectedTransportSeam);
+  assert.equal(providerProxyTrapCalls, 0, "proxy configs must reject without callback traps");
 
   const ownedA = oldSummary();
   ownedA.semanticUnits.push({
@@ -492,7 +566,7 @@ async function runShadowIsolationAcceptance() {
   console.log(JSON.stringify({
     suite: "new-core-shadow-isolation",
     classification: "FAKE_INTEGRATION",
-    caseCount: 24,
+    caseCount: 30,
     status: "PASS",
     sideEffectCounters: record.sideEffectCounters
   }));

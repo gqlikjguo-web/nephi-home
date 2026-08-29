@@ -1,9 +1,10 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { types: utilTypes } = require("node:util");
 const {
-  OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC,
-  callOpenAIUnderstandingV1
+  callOpenAIUnderstandingV1,
+  isTrustedUnderstandingResult
 } = require("../providers/openai-understanding-v1");
 const { validateUnderstandingTurnInput } = require("./contracts/understanding-turn-input");
 const { buildPublicCatalogIdentityProjection } = require("./turn-input-adapter");
@@ -37,10 +38,36 @@ function deepFreeze(value) {
   return Object.freeze(value);
 }
 
-function exactKeys(value, fields) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-    && Object.keys(value).length === fields.length
-    && Object.keys(value).every((field) => fields.includes(field));
+function ownDataDescriptors(value, fields, requirePlainObject = false) {
+  if (!value || typeof value !== "object" || utilTypes.isProxy(value)
+    || requirePlainObject && Object.getPrototypeOf(value) !== Object.prototype) return null;
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const keys = Reflect.ownKeys(descriptors);
+  if (keys.length !== fields.length || !keys.every((field) => fields.includes(field))) return null;
+  for (const field of fields) {
+    const descriptor = descriptors[field];
+    if (!descriptor || !Object.hasOwn(descriptor, "value")) return null;
+  }
+  return descriptors;
+}
+
+function projectProductionInput(options) {
+  const projected = ownDataDescriptors(options, PRODUCTION_INPUT_FIELDS, true);
+  if (!projected) return null;
+  const provider = ownDataDescriptors(projected.providerConfig.value, PROVIDER_CONFIG_FIELDS, true);
+  if (!provider || typeof provider.apiKey.value !== "string"
+    || provider.apiKey.value.length < 1 || provider.apiKey.value.length > 1000
+    || typeof provider.model.value !== "string"
+    || provider.model.value.length < 1 || provider.model.value.length > 160) return null;
+  return Object.freeze({
+    understandingTurnInput: projected.understandingTurnInput.value,
+    oldCoreOutcomeSummary: projected.oldCoreOutcomeSummary.value,
+    coreSha: projected.coreSha.value,
+    providerConfig: Object.freeze({
+      apiKey: provider.apiKey.value,
+      model: provider.model.value
+    })
+  });
 }
 
 function lifecycleDecisionId(unitId, index) {
@@ -127,26 +154,26 @@ function consumeUnitAggregationResult(aggregationResult) {
 }
 
 function failedRecord({ input, oldCoreOutcomeSummary, coreSha, failureCodes }) {
-  const result = createShadowComparisonRecord({
-    coreVersion: input && input.coreVersion,
-    coreSha,
-    traceId: input && input.traceId,
-    oldCoreOutcomeSummary,
-    newCoreOutcomeSummary: EMPTY_CORE_SUMMARY,
-    validationCodes: [],
-    failureCodes: uniqueCodes(failureCodes),
-    sideEffectCounters: ZERO_SIDE_EFFECT_COUNTERS
-  });
-  if (result.ok) return result.value;
-  return deepFreeze({ ok: false, code: result.code });
+  try {
+    const result = createShadowComparisonRecord({
+      coreVersion: input && input.coreVersion,
+      coreSha,
+      traceId: input && input.traceId,
+      oldCoreOutcomeSummary,
+      newCoreOutcomeSummary: EMPTY_CORE_SUMMARY,
+      validationCodes: [],
+      failureCodes: uniqueCodes(failureCodes),
+      sideEffectCounters: ZERO_SIDE_EFFECT_COUNTERS
+    });
+    if (result.ok) return result.value;
+    return deepFreeze({ ok: false, code: result.code });
+  } catch (_) {
+    return Object.freeze({ ok: false, code: "SHADOW_COMPARISON_INCOMPLETE" });
+  }
 }
 
 function validUnderstandingResult(value) {
-  return Boolean(value) && typeof value === "object"
-    && Array.isArray(value.validatedUnits)
-    && Array.isArray(value.validatedContextLinks)
-    && Array.isArray(value.failedUnits)
-    && Object.hasOwn(value, OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC);
+  return isTrustedUnderstandingResult(value);
 }
 
 function processUnit({
@@ -349,14 +376,13 @@ function assembleReadOnlyShadowComparison({
 }
 
 async function runReadOnlyShadowCore(options = {}) {
-  if (!exactKeys(options, PRODUCTION_INPUT_FIELDS)
-    || !exactKeys(options.providerConfig, PROVIDER_CONFIG_FIELDS)
-    || typeof options.providerConfig.apiKey !== "string"
-    || options.providerConfig.apiKey.length < 1
-    || options.providerConfig.apiKey.length > 1000
-    || typeof options.providerConfig.model !== "string"
-    || options.providerConfig.model.length < 1
-    || options.providerConfig.model.length > 160) {
+  let productionInput;
+  try {
+    productionInput = projectProductionInput(options);
+  } catch (_) {
+    return Object.freeze({ ok: false, code: "SHADOW_COMPARISON_INCOMPLETE" });
+  }
+  if (!productionInput) {
     return Object.freeze({ ok: false, code: "SHADOW_COMPARISON_INCOMPLETE" });
   }
   const {
@@ -364,8 +390,13 @@ async function runReadOnlyShadowCore(options = {}) {
     oldCoreOutcomeSummary,
     coreSha,
     providerConfig
-  } = options;
-  const inputValidation = validateUnderstandingTurnInput(understandingTurnInput);
+  } = productionInput;
+  let inputValidation;
+  try {
+    inputValidation = validateUnderstandingTurnInput(understandingTurnInput);
+  } catch (_) {
+    return Object.freeze({ ok: false, code: "SHADOW_COMPARISON_INCOMPLETE" });
+  }
   if (!inputValidation.ok) {
     return failedRecord({
       input: understandingTurnInput,
