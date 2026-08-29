@@ -11,7 +11,7 @@ const POLICY_FIELDS = Object.freeze([
 ]);
 
 const POLICY_BLUEPRINT = Object.freeze({
-  availability: { registryCapabilities: ["availability", "bundle_availability"], subjectKinds: ["room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
+  availability: { registryCapabilities: ["availability", "bundle_availability"], subjectKinds: ["property", "room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
   available_dates: { registryCapabilities: ["available_dates"], subjectKinds: ["room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
   price: { registryCapabilities: ["price"], subjectKinds: ["room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
   total_price: { registryCapabilities: ["total_price"], subjectKinds: ["room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },

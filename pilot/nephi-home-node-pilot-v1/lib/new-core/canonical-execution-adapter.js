@@ -196,7 +196,7 @@ function catalogSubject(input, subject) {
 function compatibilityEntity(input, unit) {
   const subject = unit.subject;
   const publicSubject = catalogSubject(input, subject);
-  if (subject.kind !== "external_place" && !publicSubject) return null;
+  if (subject.kind !== "external_place" && subject.kind !== "property" && !publicSubject) return null;
   if (unit.capability === "location") {
     return { category: "transport", rawText: "", canonicalCandidate: "location", confidence: 1 };
   }

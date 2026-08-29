@@ -61,9 +61,13 @@ function evidenceOwned(refs, validatedEvidenceRefs) {
   });
 }
 
-function catalogIdentityValid(subject, identitySet, understandingTurnInput) {
+function catalogIdentityValid(unit, identitySet, understandingTurnInput) {
+  const subject = unit.subject;
   if (subject.kind === null) return subject.catalogIdentity === null;
   if (subject.kind === "external_place") return subject.catalogIdentity === null;
+  if (unit.capability === "availability" && subject.kind === "property") {
+    return subject.catalogIdentity === null;
+  }
   return catalogKindFor(identitySet, understandingTurnInput, subject.catalogIdentity) === subject.kind;
 }
 
@@ -88,7 +92,7 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnIn
     || !slotsHaveValidatedEvidence(unit.slotCandidates, validatedEvidenceRefs)) {
     return failure("UNIT_EVIDENCE_MISSING");
   }
-  if (!catalogIdentityValid(unit.subject, publicCatalogIdentitySet, understandingTurnInput)) {
+  if (!catalogIdentityValid(unit, publicCatalogIdentitySet, understandingTurnInput)) {
     return failure("CATALOG_IDENTITY_INVALID");
   }
   const policy = capabilityPolicyFor(capabilityRegistryProjection, unit.capability);

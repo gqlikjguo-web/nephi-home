@@ -137,6 +137,15 @@ assert.notEqual(validAvailability.value, availableBundle);
 assert.equal(Object.isFrozen(validAvailability.value), true);
 assert.deepEqual(availableBundle, availableBundleBefore, "semantic validation never mutates C03");
 
+const genericAvailability = validate(unit({
+  subject: { kind: "property", catalogIdentity: null }
+}));
+assert.equal(genericAvailability.ok, true, genericAvailability.code);
+assert.deepEqual(genericAvailability.value.subject, {
+  kind: "property",
+  catalogIdentity: null
+});
+
 // AC-AVL-005 / AC-PRI-001..005 / AC-RDY-001..010: inventory families retain
 // their independently declared subject and required stay dependency.
 for (const candidate of [
@@ -190,6 +199,7 @@ for (const candidate of [
 assertFailure(validate(unit({ evidenceRefs: [] })), "SEMANTIC_UNIT_INVALID");
 assertFailure(validate(unit({ subject: { kind: "room", catalogIdentity: "invented-room" } })), "CATALOG_IDENTITY_INVALID");
 assertFailure(validate(unit({ subject: { kind: "bundle", catalogIdentity: "room-a" } })), "CATALOG_IDENTITY_INVALID");
+assertFailure(validate(unit({ subject: { kind: "property", catalogIdentity: "property-a" } })), "CATALOG_IDENTITY_INVALID");
 assertFailure(validate(unit({ capability: "amenity", subject: { kind: "bundle", catalogIdentity: "bundle-a" }, stayDependent: false })), "CAPABILITY_SUBJECT_CONFLICT");
 assertFailure(validate(unit({ stayDependent: false })), "STAY_DEPENDENCY_CONFLICT");
 assertFailure(validate(unit({ capability: "property_fact", subject: { kind: "bundle", catalogIdentity: "bundle-a" }, stayDependent: false })), "CAPABILITY_SUBJECT_CONFLICT");
@@ -211,7 +221,7 @@ forgedRegistryProjection.availability = {
   allowsOtherSupported: false
 };
 assertFailure(validate(unit({
-  subject: { kind: "property", catalogIdentity: "property-a" },
+  subject: { kind: "property", catalogIdentity: null },
   stayDependent: false
 }), { capabilityRegistryProjection: forgedRegistryProjection }), "UNIT_MEANING_UNSUPPORTED");
 assertFailure(validate(unit({

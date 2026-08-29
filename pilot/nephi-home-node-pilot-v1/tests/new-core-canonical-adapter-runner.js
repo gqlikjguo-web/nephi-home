@@ -323,6 +323,26 @@ assert.deepEqual([
 ], ["2026-10-09", "2026-10-10", 1]);
 assert.deepEqual(canonicalRoom.value.canonicalRequest.evidenceRefs, roomAvailability.unit.evidenceRefs);
 
+const genericAvailability = pipeline({
+  messageText: "2026/10/09-10/10 還有房嗎？",
+  unitOverrides: {
+    unitId: "unit-generic-property-availability",
+    subject: { kind: "property", catalogIdentity: null }
+  },
+  turnSuffix: "generic-property-availability"
+});
+const genericC08 = createC08(genericAvailability);
+assert.equal(genericC08.ok, true, JSON.stringify(genericC08));
+const canonicalGeneric = execute(genericC08.value);
+assert.equal(canonicalGeneric.ok, true, canonicalGeneric.code);
+assert.equal(canonicalGeneric.value.canonicalRequest.capability, "availability");
+assert.equal(canonicalGeneric.value.canonicalRequest.canonicalEntity.status, "not_requested");
+assert.equal(canonicalGeneric.value.canonicalRequest.canonicalEntity.canonicalId, null);
+assert.equal(canonicalGeneric.value.canonicalRequest.lodgingProduct.productType, "any");
+assert.equal(canonicalGeneric.value.canonicalRequest.lodgingProduct.roomTypeId, null);
+assert.equal(canonicalGeneric.value.canonicalRequest.lodgingProduct.bundleId, null);
+assert.deepEqual(canonicalGeneric.value.stateInput.confirmedFields.inventory, null);
+
 // Round-2 ruling: C03 temporal candidates are source-bound AI candidates, not
 // executable dates. The sole official canonicalizer may reject those fields
 // and repair them from its canonical temporal grammar.
