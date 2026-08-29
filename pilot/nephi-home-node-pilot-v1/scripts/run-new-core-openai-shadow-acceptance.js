@@ -269,7 +269,7 @@ async function executeRun(caseDefinition, runNumber, apiKey, coreSha) {
       c11Markers: [...new Set([...diagnostics.map((item) => item.targetMarker), ...(c10.validationCodes || [])])],
       c10Diff: c10.diffSummary || null, failureCodes,
       sideEffectCounters: c10.sideEffectCounters || null,
-      propertyIsolation: input.propertyScope.propertyId === PROPERTY_ID && c10.status !== "FAILED"
+      propertyIsolation: input.propertyScope.propertyId === PROPERTY_ID
     };
     run.semanticShape = semanticShape(run);
     return run;

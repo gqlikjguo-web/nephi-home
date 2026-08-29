@@ -716,10 +716,20 @@ async function main() {
     status: "completed",
     output: [
       { type: "reasoning", content: [], encrypted_content: null, summary: [] },
+      { type: "reasoning", content: [], encrypted_content: null, summary: [] },
       { type: "message", status: "completed", content: [{ type: "output_text", text: JSON.stringify(providerOutput()) }] }
     ]
   }))));
   assert.equal(reasoningResult.validatedUnits.length, 1);
+
+  const reasoningOnlyError = await captureError(() => callOpenAIUnderstandingV1(
+    input,
+    options(async () => response(200, JSON.stringify({
+      model: "gpt-5.6-luna", status: "completed", output: [{ type: "reasoning", content: [] }]
+    })))
+  ));
+  assert.equal(reasoningOnlyError.code, "UNDERSTANDING_SCHEMA_INVALID");
+  assert.equal(reasoningOnlyError[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].resolvedModel, "gpt-5.6-luna");
 
   for (const output of [
     [{ type: "reasoning", content: [] }],

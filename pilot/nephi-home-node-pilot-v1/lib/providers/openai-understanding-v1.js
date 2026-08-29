@@ -294,8 +294,9 @@ function structuredOutputText(payload) {
   const unexpected = output.filter((item) => !item || !["reasoning", "message"].includes(item.type));
   const reasoning = output.filter((item) => item && item.type === "reasoning");
   const messages = output.filter((item) => item && item.type === "message");
-  if (unexpected.length || reasoning.length > 1 || messages.length !== 1
+  if (unexpected.length || reasoning.length > 8 || messages.length !== 1
     || !Array.isArray(messages[0].content) || messages[0].content.length !== 1) return null;
+  if (messages[0].status !== undefined && messages[0].status !== "completed") return null;
   if (reasoning.some((item) => !Array.isArray(item.content) || item.content.length !== 0)) return null;
   const part = messages[0].content[0];
   return part && part.type === "output_text" && typeof part.text === "string" && part.text.length > 0
@@ -392,6 +393,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
   let providerRequestId = "";
   let responseBodyPresent = false;
   let parsedOutputPresent = false;
+  let resolvedModel = "";
   try {
     const generatedId = String(requestIdFactory() || "");
     const clientRequestId = UUID_PATTERN.test(generatedId) ? generatedId : crypto.randomUUID();
@@ -416,7 +418,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
     if (read.parseFailed || !read.bodyPresent) {
       throw providerFailure("UNDERSTANDING_SCHEMA_INVALID", "parse_failure", { status: httpStatus });
     }
-    const resolvedModel = read.payload && read.payload.model;
+    resolvedModel = read.payload && read.payload.model;
     try {
       assertNewCoreOpenAiModelIdentity(NEW_CORE_OPENAI_MODEL, resolvedModel);
     } catch {
@@ -424,7 +426,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
     }
     const text = structuredOutputText(read.payload);
     if (!text) {
-      throw providerFailure("UNDERSTANDING_SCHEMA_INVALID", "structured_output_failure", { status: httpStatus });
+      throw providerFailure("UNDERSTANDING_SCHEMA_INVALID", "structured_output_failure", { status: httpStatus, resolvedModel });
     }
     try {
       const value = JSON.parse(text);
@@ -437,7 +439,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
         })
       };
     } catch {
-      throw providerFailure("UNDERSTANDING_SCHEMA_INVALID", "parse_failure", { status: httpStatus });
+      throw providerFailure("UNDERSTANDING_SCHEMA_INVALID", "parse_failure", { status: httpStatus, resolvedModel });
     }
   } catch (caught) {
     let error = caught;
