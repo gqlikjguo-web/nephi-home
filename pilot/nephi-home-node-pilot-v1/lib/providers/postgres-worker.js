@@ -57,6 +57,15 @@ function customReplyRow(row) {
     updatedAt: iso(row.updated_at)
   } : null;
 }
+function newCoreTestTurnRow(row) {
+  return row ? {
+    turnId: row.turn_id, testSessionId: row.test_session_id, propertyId: row.property_id,
+    ownerId: row.owner_id, generation: row.generation, traceId: row.trace_id,
+    timestamp: iso(row.occurred_at), input: row.input_text,
+    predictedResponse: row.predicted_response, diagnostic: dataValue({ data: row.safe_diagnostic }),
+    manualReview: { status: row.review_status, problemCategory: row.problem_category, note: row.review_note }
+  } : null;
+}
 function testOnlyLineTraceRow(row) {
   return row ? {
     propertyId: row.property_id,
@@ -85,6 +94,32 @@ async function loadAdminSession(tokenHash){const r=await client.query("SELECT to
 
 async function operation(name, args) {
   if (name === "ready") return true;
+  if(name==="createNewCoreTestSession"){
+    const x=args[0],r=await client.query("INSERT INTO new_core_test_sessions(test_session_id,property_id,owner_id,generation,state_v3,created_at,updated_at) VALUES($1,$2,$3,$4,$5::jsonb,$6,$7) RETURNING *",[x.testSessionId,x.propertyId,x.ownerId,x.generation,JSON.stringify(x.state),x.createdAt,x.updatedAt]),row=r.rows[0];
+    return{testSessionId:row.test_session_id,propertyId:row.property_id,ownerId:row.owner_id,generation:row.generation,state:row.state_v3,createdAt:new Date(row.created_at).toISOString(),updatedAt:new Date(row.updated_at).toISOString()};
+  }
+  if(name==="getNewCoreTestSession"){
+    const r=await client.query("SELECT * FROM new_core_test_sessions WHERE test_session_id=$1 AND owner_id=$2 AND property_id=$3",args),row=r.rows[0];
+    return row?{testSessionId:row.test_session_id,propertyId:row.property_id,ownerId:row.owner_id,generation:row.generation,state:row.state_v3,createdAt:new Date(row.created_at).toISOString(),updatedAt:new Date(row.updated_at).toISOString()}:null;
+  }
+  if(name==="saveNewCoreTestTurn"){
+    const x=args[0],s=x.session,t=x.turn;await client.query("BEGIN");try{const updated=await client.query("UPDATE new_core_test_sessions SET state_v3=$4::jsonb,updated_at=$5 WHERE test_session_id=$1 AND owner_id=$2 AND property_id=$3 AND generation=$6 AND COALESCE((state_v3->>'revision')::integer,0)=$7 RETURNING test_session_id",[s.testSessionId,s.ownerId,s.propertyId,JSON.stringify(x.state),t.timestamp,s.generation,Number(s.state&&s.state.revision||0)]);if(updated.rows.length!==1){const error=new Error("new_core_test_session_conflict");error.code="TEST_SESSION_CONFLICT";error.status=409;throw error;}await client.query("INSERT INTO new_core_test_turns(turn_id,test_session_id,property_id,owner_id,generation,trace_id,occurred_at,input_text,predicted_response,safe_diagnostic) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)",[t.turnId,t.testSessionId,t.propertyId,t.ownerId,t.generation,t.traceId,t.timestamp,t.input,t.predictedResponse,JSON.stringify(t.diagnostic)]);await client.query("COMMIT");return t;}catch(error){await client.query("ROLLBACK");throw error;}
+  }
+  if(name==="resetNewCoreTestConversation"){
+    const [id,owner,property,state]=args,r=await client.query("UPDATE new_core_test_sessions SET generation=generation+1,state_v3=$4::jsonb,updated_at=now() WHERE test_session_id=$1 AND owner_id=$2 AND property_id=$3 RETURNING *",[id,owner,property,JSON.stringify(state)]),row=r.rows[0];return row?{testSessionId:row.test_session_id,propertyId:row.property_id,ownerId:row.owner_id,generation:row.generation,state:row.state_v3,createdAt:new Date(row.created_at).toISOString(),updatedAt:new Date(row.updated_at).toISOString()}:null;
+  }
+  if(name==="listNewCoreTestTurns"){
+    const r=await client.query("SELECT * FROM new_core_test_turns WHERE test_session_id=$1 AND owner_id=$2 AND property_id=$3 ORDER BY occurred_at",args);return r.rows.map(newCoreTestTurnRow);
+  }
+  if(name==="reviewNewCoreTestTurn"){
+    const [id,owner,property,status,category,note]=args,r=await client.query("UPDATE new_core_test_turns SET review_status=$4,problem_category=$5,review_note=$6 WHERE turn_id=$1 AND owner_id=$2 AND property_id=$3 RETURNING *",[id,owner,property,status,category,note]);return r.rows[0]?newCoreTestTurnRow(r.rows[0]):null;
+  }
+  if(name==="listNewCoreTestRecords"){
+    const [owner,property,filter]=args,clause=filter==="problem"?" AND review_status='PROBLEM'":filter==="unmarked"?" AND review_status='UNMARKED'":"",r=await client.query(`SELECT * FROM new_core_test_turns WHERE owner_id=$1 AND property_id=$2${clause} ORDER BY occurred_at DESC LIMIT 100`,[owner,property]);return r.rows.map(newCoreTestTurnRow);
+  }
+  if(name==="getNewCoreTestRecordByTraceId"){
+    const r=await client.query("SELECT * FROM new_core_test_turns WHERE trace_id=$1 AND owner_id=$2 AND property_id=$3",args);return r.rows[0]?newCoreTestTurnRow(r.rows[0]):null;
+  }
   if(name==="customReplies_list"){
     const r=await client.query("SELECT * FROM property_custom_replies WHERE property_id=$1 ORDER BY created_at,rule_id",[args[0]]);
     return r.rows.map(customReplyRow);

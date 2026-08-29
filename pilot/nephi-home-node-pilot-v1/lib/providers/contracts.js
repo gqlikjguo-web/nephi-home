@@ -48,6 +48,14 @@ class PersistenceProvider {
   deleteConversationState() { return notImplemented("PersistenceProvider", "deleteConversationState"); }
   upsertTestOnlyLineTrace() { return notImplemented("PersistenceProvider", "upsertTestOnlyLineTrace"); }
   listTestOnlyLineTraces() { return notImplemented("PersistenceProvider", "listTestOnlyLineTraces"); }
+  createNewCoreTestSession() { return notImplemented("PersistenceProvider", "createNewCoreTestSession"); }
+  getNewCoreTestSession() { return notImplemented("PersistenceProvider", "getNewCoreTestSession"); }
+  saveNewCoreTestTurn() { return notImplemented("PersistenceProvider", "saveNewCoreTestTurn"); }
+  resetNewCoreTestConversation() { return notImplemented("PersistenceProvider", "resetNewCoreTestConversation"); }
+  listNewCoreTestTurns() { return notImplemented("PersistenceProvider", "listNewCoreTestTurns"); }
+  reviewNewCoreTestTurn() { return notImplemented("PersistenceProvider", "reviewNewCoreTestTurn"); }
+  listNewCoreTestRecords() { return notImplemented("PersistenceProvider", "listNewCoreTestRecords"); }
+  getNewCoreTestRecordByTraceId() { return notImplemented("PersistenceProvider", "getNewCoreTestRecordByTraceId"); }
   resolveReview() { return notImplemented("PersistenceProvider", "resolveReview"); }
 }
 

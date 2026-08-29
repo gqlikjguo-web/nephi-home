@@ -25,6 +25,7 @@ const { createGithubActionsOidcVerifier } = require("./lib/test-only-acceptance-
 const { readOperationalAcceptanceDataIntegrity, syncTestOnlyAcceptanceData } = require("./lib/providers/test-only-acceptance-data");
 const { runWithTestOnlyAcceptanceRawUnderstanding } = require("./lib/test-only-raw-understanding-diagnostic");
 const { isDateKey, isPriceType, resolveDatePrice } = require("./lib/date-price-authority");
+const { createNewCoreManualTestService } = require("./lib/new-core/manual-test-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -795,6 +796,7 @@ function createRequestHandler(service, options = {}) {
   const testOnlyAcceptanceDataInitializer = options.testOnlyAcceptanceDataInitializer;
   const testOnlyAcceptanceOidcVerifier = options.testOnlyAcceptanceOidcVerifier;
   const testOnlyLineMessageTrace = options.testOnlyLineMessageTrace;
+  const newCoreManualTest = options.newCoreManualTest;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
   const publicBrand = options.publicBrand || createPublicBrand();
   const testOnlyEnvironment = options.testOnlyEnvironment === true;
@@ -812,6 +814,14 @@ function createRequestHandler(service, options = {}) {
     if (!verified) throw new AppError(403, "ACCEPTANCE_OIDC_REJECTED", "GitHub Actions acceptance identity was rejected");
     return { kind: "github_actions_oidc" };
   }
+  async function authorizeNewCoreManualTest(request) {
+    const token = cookieValue(request, "nephi_admin_session");
+    const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+    if (!session) throw new AppError(401, "LOGIN_REQUIRED", "請先登入");
+    const accessible = session.propertyId === "nephi_home" || Array.isArray(session.properties) && session.properties.some((item) => item.propertyId === "nephi_home");
+    if (!accessible) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權存取尼腓的家");
+    return session;
+  }
   return async function handleRequest(request, response) {
     const url = new URL(request.url, "http://127.0.0.1");
     const pathname = url.pathname;
@@ -821,6 +831,27 @@ function createRequestHandler(service, options = {}) {
         return sendData(response, { status: "ready", testOnly: testOnlyEnvironment, commit: deploymentCommit, deployment: deploymentIdentity });
       }
       if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
+      if (pathname === "/admin/new-core-test" && request.method === "GET") {
+        if (!newCoreManualTest) throw new AppError(503, "NEW_CORE_TEST_UNAVAILABLE", "新核心人工測試目前無法使用");
+        await authorizeNewCoreManualTest(request);
+        return sendStatic(response, "admin-new-core-test.html", publicBrand);
+      }
+      if (pathname.startsWith("/api/admin/new-core-test")) {
+        if (!newCoreManualTest) throw new AppError(503, "NEW_CORE_TEST_UNAVAILABLE", "新核心人工測試目前無法使用");
+        const session = await authorizeNewCoreManualTest(request);
+        if (request.method === "POST" && pathname === "/api/admin/new-core-test/sessions") return sendData(response, await newCoreManualTest.createSession(session, (await readJsonBody(request)).propertyId), 201);
+        if (request.method === "GET" && pathname === "/api/admin/new-core-test/records") return sendData(response, { items: await newCoreManualTest.records(session, url.searchParams.get("filter") || "all") });
+        const turnMatch = /^\/api\/admin\/new-core-test\/sessions\/([^/]+)\/turns$/.exec(pathname);
+        if (turnMatch && request.method === "POST") return sendData(response, await newCoreManualTest.runTurn(turnMatch[1], session, await readJsonBody(request)), 201);
+        if (turnMatch && request.method === "GET") return sendData(response, { items: await newCoreManualTest.listTurns(turnMatch[1], session) });
+        const resetMatch = /^\/api\/admin\/new-core-test\/sessions\/([^/]+)\/new-conversation$/.exec(pathname);
+        if (resetMatch && request.method === "POST") return sendData(response, await newCoreManualTest.newConversation(resetMatch[1], session, await readJsonBody(request)));
+        const reviewMatch = /^\/api\/admin\/new-core-test\/turns\/([^/]+)\/review$/.exec(pathname);
+        if (reviewMatch && request.method === "PATCH") return sendData(response, await newCoreManualTest.review(reviewMatch[1], session, await readJsonBody(request)));
+        const traceMatch = /^\/api\/admin\/new-core-test\/records\/([^/]+)$/.exec(pathname);
+        if (traceMatch && request.method === "GET") { const record = await newCoreManualTest.trace(traceMatch[1], session); if (!record) throw new AppError(404, "TEST_RECORD_NOT_FOUND", "找不到測試紀錄"); return sendData(response, record); }
+        throw new AppError(404, "NOT_FOUND", "Not found");
+      }
       if (request.method === "POST" && pathname === "/api/admin/test-only/conversation-acceptance") {
         if (typeof testOnlyAcceptanceHandler !== "function") return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
         const identity = await authorizeTestOnlyAcceptance(request);
@@ -1371,6 +1402,7 @@ function createApp(options = {}) {
   const acceptanceTraces = new Map();
   const captureSafeTrace = (entry) => { testOnlyLineMessageTrace.diagnostic(entry); const safe = formatSafeTestOnlyConversationTrace(entry); logSafeTestOnlyConversationTrace(entry); if (safe && safe.traceId) { const list = acceptanceTraces.get(safe.traceId) || []; list.push(safe); acceptanceTraces.set(safe.traceId, list.slice(-40)); } };
   const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: testOnlyLineMessageTrace.active, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null });
+  const newCoreManualTest = createNewCoreManualTestService({ persistence: providers.kind === "postgres" ? providers.persistence : null, providers, service, apiKey: String(runtimeEnv.OPENAI_API_KEY || ""), now, ...(typeof options.newCoreManualTestExecuteTurn === "function" ? { executeTurn: options.newCoreManualTestExecuteTurn } : {}) });
   const customReplyTestHandler = async (body = {}) => {
     const propertyId = String(body.propertyId || body.customerId || "").trim();
     const ruleId = String(body.ruleId || "").trim();
@@ -1532,7 +1564,7 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
+  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
 }
 

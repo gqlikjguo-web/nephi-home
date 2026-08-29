@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
+    "test:new-core-manual-test-page": "node tests/new-core-manual-test-page-runner.js",
     "start": "node server.js",
     "preflight:task": "node scripts/task-preflight.js",
     "migrate:postgres": "node scripts/migrate-postgres.js",
