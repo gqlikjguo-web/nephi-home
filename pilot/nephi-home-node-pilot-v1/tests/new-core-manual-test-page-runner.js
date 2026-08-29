@@ -7,6 +7,8 @@ const os = require("node:os");
 const path = require("node:path");
 const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
+const { normalizeManualTestFailureRefs } = require("../lib/new-core/manual-test-service");
+const { aggregateUnitOutcomes } = require("../lib/new-core/unit-aggregator");
 
 const root = path.resolve(__dirname, "..");
 const adminSessionValue = crypto.randomUUID();
@@ -36,6 +38,25 @@ async function json(url, method = "GET", body, sentCookie = cookie) {
 }
 
 (async () => {
+  const mappedFailures = normalizeManualTestFailureRefs([
+    { unitId: "unit-availability", failureCode: "ROUTE_PURPOSE_CONFLICT" },
+    { unitId: "unit-availability", failureCode: "ROUTE_PURPOSE_CONFLICT" }
+  ]);
+  assert.deepEqual(mappedFailures, [
+    { unitId: "unit-availability", failureCode: "ROUTE_PURPOSE_CONFLICT" }
+  ]);
+  assert.equal(Object.isFrozen(mappedFailures), true);
+  assert.equal(Object.isFrozen(mappedFailures[0]), true);
+  const mappedAggregation = aggregateUnitOutcomes({
+    turnId: "turn-manual-upstream-failure",
+    validatedUnits: [],
+    lifecycleDecisions: [],
+    routingDecisions: [],
+    failedUnits: mappedFailures
+  });
+  assert.equal(mappedAggregation.ok, true, mappedAggregation.code);
+  assert.equal(mappedAggregation.value.failedUnits[0].failureCode, "ROUTE_PURPOSE_CONFLICT");
+
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-manual-page-"));
   const providers = createJsonProviders({ dataFile: path.join(temp, "data.json"), seedFile: path.join(root, "fixtures/seed.json"), now });
   const factsProviders = createJsonProviders({ dataFile: path.join(temp, "facts-data.json"), seedFile: path.join(root, "fixtures/seed.json"), now });

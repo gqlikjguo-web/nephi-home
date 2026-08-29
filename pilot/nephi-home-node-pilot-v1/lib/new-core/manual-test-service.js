@@ -46,6 +46,17 @@ function assertSafe(value) {
   }
 }
 function bounded(value, limit = 500) { return String(value == null ? "" : value).slice(0, limit); }
+function normalizeManualTestFailureRefs(values = []) {
+  const refs = values
+    .filter((item, index) => (
+      item && typeof item.unitId === "string" && item.unitId.length > 0 && item.unitId.length <= 160
+      && typeof item.failureCode === "string" && item.failureCode.length > 0 && item.failureCode.length <= 160
+      && values.findIndex((candidate) => candidate && candidate.unitId === item.unitId) === index
+    ))
+    .map((item) => ({ unitId: item.unitId, failureCode: item.failureCode }));
+  refs.forEach(Object.freeze);
+  return Object.freeze(refs);
+}
 function projectDiagnostic(result, traceId, counters) {
   const units = Array.isArray(result.understanding && result.understanding.units) ? result.understanding.units : [];
   const decision = result.finalDecision || {}, response = result.finalResponse || {}, resolver = result.resolver || {}, earliest = result.earliestFailure || null;
@@ -125,7 +136,11 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
     outcomes.push({ unit, lifecycleDecision: lifecycle.value, routingDecision: routing.value, canonicalItem: c08.ok ? c08.value : null, failure: c08.ok ? null : { layer: "C08", failureCode: c08.code } });
   }
   const successful = outcomes.filter((item) => item.routingDecision);
-  const aggregation = aggregateUnitOutcomes({ turnId: input.turnId, validatedUnits: successful.map((x) => x.unit), lifecycleDecisions: successful.map((x) => x.lifecycleDecision), routingDecisions: successful.map((x) => x.routingDecision), canonicalItems: successful.map((x) => x.canonicalItem).filter(Boolean), failedUnits: [...understanding.failedUnits, ...outcomes.filter((x) => x.failure).map((x) => ({ unitId: x.unit.unitId, failureCode: x.failure.failureCode }))] });
+  const failedUnits = normalizeManualTestFailureRefs([
+    ...understanding.failedUnits,
+    ...outcomes.filter((x) => x.failure).map((x) => ({ unitId: x.unit.unitId, failureCode: x.failure.failureCode }))
+  ]);
+  const aggregation = aggregateUnitOutcomes({ turnId: input.turnId, validatedUnits: successful.map((x) => x.unit), lifecycleDecisions: successful.map((x) => x.lifecycleDecision), routingDecisions: successful.map((x) => x.routingDecision), canonicalItems: successful.map((x) => x.canonicalItem).filter(Boolean), failedUnits });
   if (!aggregation.ok) { const error = new Error(aggregation.code); error.code = aggregation.code; throw error; }
   const adapted = adaptLifecycleDecisionsToStateV3({ decisions: successful.map((x) => x.lifecycleDecision), aggregationResult: aggregation.value, previous: state });
   if (!adapted.ok) { const error = new Error(adapted.code); error.code = adapted.code; throw error; }
@@ -189,4 +204,4 @@ function createNewCoreManualTestService({ persistence, providers, service, facts
   };
 }
 
-module.exports = { PROPERTY_ID, CHANNEL, SIDE_EFFECT_COUNTERS, createNewCoreManualTestService, executeNewCoreManualTurn };
+module.exports = { PROPERTY_ID, CHANNEL, SIDE_EFFECT_COUNTERS, createNewCoreManualTestService, executeNewCoreManualTurn, normalizeManualTestFailureRefs };
