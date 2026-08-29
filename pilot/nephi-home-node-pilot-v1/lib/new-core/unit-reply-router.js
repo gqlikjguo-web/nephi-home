@@ -20,6 +20,14 @@ const READINESS_BY_UNIT = new WeakMap();
 const TRUSTED_OPERATOR_SAFETY_POLICIES = new WeakMap();
 const C07_AUTHORITY_MARKER = new WeakSet();
 const PROVENANCE_BY_C07_DECISION = new WeakMap();
+const CANONICALIZABLE_TEMPORAL_KINDS = new Set([
+  "absolute_date",
+  "date_range",
+  "relative_date",
+  "relative_range",
+  "weekday",
+  "month_weekday"
+]);
 
 const ROUTING_BLUEPRINT = Object.freeze({
   availability: { kind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"] },
@@ -115,8 +123,14 @@ function createUnitReplyRoutingRegistry(capabilityRegistryProjection) {
 }
 
 function guestFieldPresent(unit, field) {
-  if (field === "stay.checkIn") return Boolean(unit.temporalCandidate && unit.temporalCandidate.checkInCandidate);
-  if (field === "stay.checkOut") return Boolean(unit.temporalCandidate && unit.temporalCandidate.checkOutCandidate);
+  if (["stay.checkIn", "stay.checkOut"].includes(field)) {
+    const temporal = unit.temporalCandidate;
+    const candidateField = field === "stay.checkIn" ? "checkInCandidate" : "checkOutCandidate";
+    return Boolean(temporal && (
+      temporal[candidateField]
+      || CANONICALIZABLE_TEMPORAL_KINDS.has(temporal.kind)
+    ));
+  }
   if (field === "stay.guests") return unit.slotCandidates.some((slot) => (
     slot.slot === "guest_count" && slot.operation === "SET" && Number.isInteger(slot.value) && slot.value > 0
   ));

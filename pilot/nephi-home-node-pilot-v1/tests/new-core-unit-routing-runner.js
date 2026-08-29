@@ -183,6 +183,56 @@ for (const spec of [
   });
 }
 
+// A validated relative-day expression is complete enough to enter the sole
+// canonical temporal authority even when OpenAI correctly leaves executable
+// dates null. Removing that admission would prematurely clarify before C08.
+const relativeDateText = "今天有房嗎";
+const relativeDate = validated({
+  messageText: relativeDateText,
+  unit: candidate({
+    messageText: relativeDateText,
+    temporalCandidate: {
+      rawText: "今天",
+      kind: "relative_date",
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null
+    }
+  })
+});
+assert.deepEqual(route(relativeDate).value, {
+  unitId: "unit-routing",
+  disposition: "ANSWER",
+  reasonClass: "executable_lodging_need",
+  requiresCanonicalExecution: true,
+  missingGuestFields: [],
+  operatorActionClass: null,
+  riskClass: null
+});
+
+for (const incomplete of [
+  { messageText: "住兩晚有房嗎", rawText: "住兩晚", kind: "nights_only", nightsCandidate: 2 },
+  { messageText: "九月有房嗎", rawText: "九月", kind: "partial", nightsCandidate: null },
+  { messageText: "某天有房嗎", rawText: "某天", kind: "unknown", nightsCandidate: null }
+]) {
+  const pipeline = validated({
+    messageText: incomplete.messageText,
+    unit: candidate({
+      messageText: incomplete.messageText,
+      temporalCandidate: {
+        rawText: incomplete.rawText,
+        kind: incomplete.kind,
+        checkInCandidate: null,
+        checkOutCandidate: null,
+        nightsCandidate: incomplete.nightsCandidate
+      },
+      disposition: "CLARIFY",
+      reasonClass: "missing_stay_dates"
+    })
+  });
+  assert.deepEqual(route(pipeline).value.missingGuestFields, ["stay.checkIn", "stay.checkOut"]);
+}
+
 // AC-RTE-002 / AC-AVL-004 / AC-PRI-003 / AC-HOF-009: only formally missing
 // guest inputs clarify a lodging need; neither unknown nor lifecycle chooses it.
 const missingDatesText = "還有房嗎";
