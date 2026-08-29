@@ -297,7 +297,8 @@ function structuredOutputText(payload) {
   if (unexpected.length || reasoning.length > 8 || messages.length !== 1
     || !Array.isArray(messages[0].content) || messages[0].content.length !== 1) return null;
   if (messages[0].status !== undefined && messages[0].status !== "completed") return null;
-  if (reasoning.some((item) => !Array.isArray(item.content) || item.content.length !== 0)) return null;
+  if (reasoning.some((item) => item.content !== undefined
+    && (!Array.isArray(item.content) || item.content.length !== 0))) return null;
   const part = messages[0].content[0];
   return part && part.type === "output_text" && typeof part.text === "string" && part.text.length > 0
     ? part.text : null;

@@ -832,12 +832,12 @@ function createRequestHandler(service, options = {}) {
       }
       if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
       if (pathname === "/admin/new-core-test" && request.method === "GET") {
-        if (!newCoreManualTest) throw new AppError(503, "NEW_CORE_TEST_UNAVAILABLE", "新核心人工測試目前無法使用");
+        if (!newCoreManualTest) throw new AppError(503, "NEW_CORE_MANUAL_TEST_FACTS_AUTHORITY_REQUIRED", "新核心人工測試缺少正式唯讀資料來源");
         await authorizeNewCoreManualTest(request);
         return sendStatic(response, "admin-new-core-test.html", publicBrand);
       }
       if (pathname.startsWith("/api/admin/new-core-test")) {
-        if (!newCoreManualTest) throw new AppError(503, "NEW_CORE_TEST_UNAVAILABLE", "新核心人工測試目前無法使用");
+        if (!newCoreManualTest) throw new AppError(503, "NEW_CORE_MANUAL_TEST_FACTS_AUTHORITY_REQUIRED", "新核心人工測試缺少正式唯讀資料來源");
         const session = await authorizeNewCoreManualTest(request);
         if (request.method === "POST" && pathname === "/api/admin/new-core-test/sessions") return sendData(response, await newCoreManualTest.createSession(session, (await readJsonBody(request)).propertyId), 201);
         if (request.method === "GET" && pathname === "/api/admin/new-core-test/records") return sendData(response, { items: await newCoreManualTest.records(session, url.searchParams.get("filter") || "all") });
@@ -1402,7 +1402,16 @@ function createApp(options = {}) {
   const acceptanceTraces = new Map();
   const captureSafeTrace = (entry) => { testOnlyLineMessageTrace.diagnostic(entry); const safe = formatSafeTestOnlyConversationTrace(entry); logSafeTestOnlyConversationTrace(entry); if (safe && safe.traceId) { const list = acceptanceTraces.get(safe.traceId) || []; list.push(safe); acceptanceTraces.set(safe.traceId, list.slice(-40)); } };
   const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: testOnlyLineMessageTrace.active, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null });
-  const newCoreManualTest = createNewCoreManualTestService({ persistence: providers.kind === "postgres" ? providers.persistence : null, providers, service, apiKey: String(runtimeEnv.OPENAI_API_KEY || ""), now, ...(typeof options.newCoreManualTestExecuteTurn === "function" ? { executeTurn: options.newCoreManualTestExecuteTurn } : {}) });
+  const manualTestFactsDatabaseUrl = String(runtimeEnv.NEW_CORE_MANUAL_TEST_FACTS_DATABASE_URL || "").trim();
+  const ownedNewCoreManualTestFactsProviders = !options.newCoreManualTestFactsProviders && testOnlyEnvironment && manualTestFactsDatabaseUrl
+    ? createProviders({ databaseUrl: manualTestFactsDatabaseUrl }) : null;
+  const newCoreManualTestFactsProviders = options.newCoreManualTestFactsProviders || ownedNewCoreManualTestFactsProviders || (!testOnlyEnvironment ? providers : null);
+  const newCoreManualTestFactsService = newCoreManualTestFactsProviders
+    ? options.newCoreManualTestFactsService || (newCoreManualTestFactsProviders === providers ? service : createMvpService(newCoreManualTestFactsProviders, { now, safeTraceFormatter: formatSafeTestOnlyConversationTrace }))
+    : null;
+  const newCoreManualTest = newCoreManualTestFactsProviders
+    ? createNewCoreManualTestService({ persistence: providers.kind === "postgres" ? providers.persistence : null, providers, service, factsProviders: newCoreManualTestFactsProviders, factsService: newCoreManualTestFactsService, apiKey: String(runtimeEnv.OPENAI_API_KEY || ""), now, ...(typeof options.newCoreManualTestExecuteTurn === "function" ? { executeTurn: options.newCoreManualTestExecuteTurn } : {}) })
+    : null;
   const customReplyTestHandler = async (body = {}) => {
     const propertyId = String(body.propertyId || body.customerId || "").trim();
     const ruleId = String(body.ruleId || "").trim();
@@ -1565,7 +1574,7 @@ function createApp(options = {}) {
     return { accepted: true };
   };
   const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
-  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
+  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof ownedNewCoreManualTestFactsProviders?.close === "function") await ownedNewCoreManualTestFactsProviders.close(); if (typeof providers.close === "function") await providers.close(); } };
 }
 
 if (require.main === module) {

@@ -576,7 +576,7 @@ async function main() {
     ["structured-plus-extra-output-object", async () => response(200, JSON.stringify({
       status: "completed",
       output: [
-        { type: "reasoning", summary: [] },
+        { type: "reasoning", summary: [], content: [{ type: "reasoning_text", text: "hidden" }] },
         { type: "message", content: [{ type: "output_text", text: JSON.stringify(providerOutput()) }] }
       ]
     })), "UNDERSTANDING_SCHEMA_INVALID"],
@@ -721,6 +721,16 @@ async function main() {
     ]
   }))));
   assert.equal(reasoningResult.validatedUnits.length, 1);
+
+  const reasoningWithoutContentResult = await callOpenAIUnderstandingV1(input, options(async () => response(200, JSON.stringify({
+    model: "gpt-5.6-luna",
+    status: "completed",
+    output: [
+      { id: "rs_safe", type: "reasoning", encrypted_content: null, summary: [] },
+      { type: "message", status: "completed", content: [{ type: "output_text", text: JSON.stringify(providerOutput()) }] }
+    ]
+  }))));
+  assert.equal(reasoningWithoutContentResult.validatedUnits.length, 1, "bounded Luna reasoning item may omit content");
 
   const reasoningOnlyError = await captureError(() => callOpenAIUnderstandingV1(
     input,
