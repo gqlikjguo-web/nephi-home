@@ -488,6 +488,91 @@ async function runShadowIsolationAcceptance() {
   assert.deepEqual(rejectedProxyConfig, rejectedTransportSeam);
   assert.equal(providerProxyTrapCalls, 0, "proxy configs must reject without callback traps");
 
+  const originalGlobalFetch = globalThis.fetch;
+  let hostileSummaryProviderCalls = 0;
+  globalThis.fetch = async () => {
+    hostileSummaryProviderCalls += 1;
+    return structuredResponse(providerPayload({ includeFailure: false }));
+  };
+  const runHostileOldSummary = (oldCoreOutcomeSummary) => runReadOnlyShadowCore({
+    understandingTurnInput: input,
+    oldCoreOutcomeSummary,
+    coreSha: CORE_SHA,
+    providerConfig: { apiKey: "test-only-key", model: "gpt-4.1-mini" }
+  });
+  const assertSanitizedOldSummaryFailure = (value) => {
+    assert.equal(validateShadowComparisonRecord(value).ok, true, JSON.stringify(value));
+    assert.equal(value.status, "FAILED");
+    assert.deepEqual(value.failureCodes, ["SHADOW_COMPARISON_INCOMPLETE"]);
+    assert.deepEqual(value.sideEffectCounters, record.sideEffectCounters);
+  };
+  try {
+    let outerOldAccessorCalls = 0;
+    const outerAccessorOld = oldSummary();
+    Object.defineProperty(outerAccessorOld, "routes", {
+      enumerable: true,
+      get() {
+        outerOldAccessorCalls += 1;
+        throw new Error("outer old-summary getter must not execute");
+      }
+    });
+    assertSanitizedOldSummaryFailure(await runHostileOldSummary(outerAccessorOld));
+    assert.equal(outerOldAccessorCalls, 0);
+
+    let nestedOldAccessorCalls = 0;
+    const nestedAccessorOld = oldSummary();
+    Object.defineProperty(nestedAccessorOld.routes[0], "disposition", {
+      enumerable: true,
+      get() {
+        nestedOldAccessorCalls += 1;
+        throw new Error("nested old-summary getter must not execute");
+      }
+    });
+    assertSanitizedOldSummaryFailure(await runHostileOldSummary(nestedAccessorOld));
+    assert.equal(nestedOldAccessorCalls, 0);
+
+    let oldProxyTrapCalls = 0;
+    const oldProxyHandler = {
+      ownKeys(target) {
+        oldProxyTrapCalls += 1;
+        return Reflect.ownKeys(target);
+      },
+      getOwnPropertyDescriptor(target, property) {
+        oldProxyTrapCalls += 1;
+        return Reflect.getOwnPropertyDescriptor(target, property);
+      },
+      getPrototypeOf(target) {
+        oldProxyTrapCalls += 1;
+        return Reflect.getPrototypeOf(target);
+      },
+      get(target, property, receiver) {
+        oldProxyTrapCalls += 1;
+        return Reflect.get(target, property, receiver);
+      }
+    };
+    assertSanitizedOldSummaryFailure(await runHostileOldSummary(
+      new Proxy(oldSummary(), oldProxyHandler)
+    ));
+    const nestedProxyOld = oldSummary();
+    nestedProxyOld.routes[0] = new Proxy(nestedProxyOld.routes[0], oldProxyHandler);
+    assertSanitizedOldSummaryFailure(await runHostileOldSummary(nestedProxyOld));
+    assert.equal(oldProxyTrapCalls, 0, "old-summary proxies must reject before traps");
+
+    const cyclicOld = oldSummary();
+    cyclicOld.self = cyclicOld;
+    assertSanitizedOldSummaryFailure(await runHostileOldSummary(cyclicOld));
+    const executableOld = oldSummary();
+    executableOld.routes[0].callback = () => MESSAGE;
+    executableOld[Symbol("unsafe-old-summary")] = MESSAGE;
+    const rejectedExecutableOld = await runHostileOldSummary(executableOld);
+    assertSanitizedOldSummaryFailure(rejectedExecutableOld);
+    assert.equal(JSON.stringify(rejectedExecutableOld).includes(MESSAGE), false);
+  } finally {
+    globalThis.fetch = originalGlobalFetch;
+  }
+  assert.equal(hostileSummaryProviderCalls, 0,
+    "invalid old summaries must reject before the official Task 11 transport");
+
   const ownedA = oldSummary();
   ownedA.semanticUnits.push({
     ...ownedA.semanticUnits[0],
@@ -566,7 +651,7 @@ async function runShadowIsolationAcceptance() {
   console.log(JSON.stringify({
     suite: "new-core-shadow-isolation",
     classification: "FAKE_INTEGRATION",
-    caseCount: 30,
+    caseCount: 41,
     status: "PASS",
     sideEffectCounters: record.sideEffectCounters
   }));

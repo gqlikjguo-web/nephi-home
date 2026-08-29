@@ -20,7 +20,8 @@ const { createCanonicalizerInputItem } = require("./canonical-execution-adapter"
 const { aggregateUnitOutcomes, isTrustedUnitAggregationResult } = require("./unit-aggregator");
 const {
   ZERO_SIDE_EFFECT_COUNTERS,
-  createShadowComparisonRecord
+  createShadowComparisonRecord,
+  projectCoreSummary
 } = require("./shadow-comparator");
 
 const HANDOFF_CAPABILITIES = new Set(["booking_operator_request", "high_risk"]);
@@ -31,6 +32,11 @@ const PRODUCTION_INPUT_FIELDS = Object.freeze([
   "understandingTurnInput", "oldCoreOutcomeSummary", "coreSha", "providerConfig"
 ]);
 const PROVIDER_CONFIG_FIELDS = Object.freeze(["apiKey", "model"]);
+const MAX_DATA_ONLY_DEPTH = 8;
+const MAX_DATA_ONLY_NODES = 5000;
+const MAX_DATA_ONLY_ARRAY_ITEMS = 100;
+const MAX_DATA_ONLY_OBJECT_FIELDS = 20;
+const MAX_DATA_ONLY_STRING_LENGTH = 500;
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -51,6 +57,69 @@ function ownDataDescriptors(value, fields, requirePlainObject = false) {
   return descriptors;
 }
 
+function primitiveDataOnlyValue(value) {
+  if (value === null || typeof value === "boolean") return { ok: true, value };
+  if (typeof value === "string" && value.length <= MAX_DATA_ONLY_STRING_LENGTH) {
+    return { ok: true, value };
+  }
+  if (typeof value === "number" && Number.isSafeInteger(value) && Math.abs(value) <= 1000) {
+    return { ok: true, value };
+  }
+  return { ok: false, value: null };
+}
+
+function cloneDataOnly(root) {
+  const ancestors = new WeakSet();
+  let nodes = 0;
+  function cloneArray(value, depth) {
+    if (value.length > MAX_DATA_ONLY_ARRAY_ITEMS) return { ok: false, value: null };
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Reflect.ownKeys(descriptors);
+    if (keys.length !== value.length + 1 || !Object.hasOwn(descriptors, "length")) {
+      return { ok: false, value: null };
+    }
+    const detached = [];
+    for (let index = 0; index < value.length; index += 1) {
+      const descriptor = descriptors[String(index)];
+      if (!descriptor || !Object.hasOwn(descriptor, "value")) return { ok: false, value: null };
+      const item = clone(descriptor.value, depth + 1);
+      if (!item.ok) return item;
+      detached.push(item.value);
+    }
+    return { ok: true, value: Object.freeze(detached) };
+  }
+  function cloneObject(value, depth) {
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Reflect.ownKeys(descriptors);
+    if (keys.length > MAX_DATA_ONLY_OBJECT_FIELDS
+      || keys.some((key) => typeof key !== "string")) return { ok: false, value: null };
+    const entries = [];
+    for (const key of keys) {
+      const descriptor = descriptors[key];
+      if (!descriptor || !Object.hasOwn(descriptor, "value")) return { ok: false, value: null };
+      const item = clone(descriptor.value, depth + 1);
+      if (!item.ok) return item;
+      entries.push([key, item.value]);
+    }
+    return { ok: true, value: Object.freeze(Object.fromEntries(entries)) };
+  }
+  function clone(value, depth) {
+    if (!value || typeof value !== "object") return primitiveDataOnlyValue(value);
+    if (depth > MAX_DATA_ONLY_DEPTH || nodes >= MAX_DATA_ONLY_NODES
+      || utilTypes.isProxy(value) || ancestors.has(value)) return { ok: false, value: null };
+    const isArray = Array.isArray(value);
+    if (Object.getPrototypeOf(value) !== (isArray ? Array.prototype : Object.prototype)) {
+      return { ok: false, value: null };
+    }
+    nodes += 1;
+    ancestors.add(value);
+    const result = isArray ? cloneArray(value, depth) : cloneObject(value, depth);
+    ancestors.delete(value);
+    return result;
+  }
+  return clone(root, 0);
+}
+
 function projectProductionInput(options) {
   const projected = ownDataDescriptors(options, PRODUCTION_INPUT_FIELDS, true);
   if (!projected) return null;
@@ -59,9 +128,12 @@ function projectProductionInput(options) {
     || provider.apiKey.value.length < 1 || provider.apiKey.value.length > 1000
     || typeof provider.model.value !== "string"
     || provider.model.value.length < 1 || provider.model.value.length > 160) return null;
+  const detachedOldSummary = cloneDataOnly(projected.oldCoreOutcomeSummary.value);
+  const oldCoreOutcomeSummary = detachedOldSummary.ok
+    ? projectCoreSummary(detachedOldSummary.value) : null;
   return Object.freeze({
     understandingTurnInput: projected.understandingTurnInput.value,
-    oldCoreOutcomeSummary: projected.oldCoreOutcomeSummary.value,
+    oldCoreOutcomeSummary,
     coreSha: projected.coreSha.value,
     providerConfig: Object.freeze({
       apiKey: provider.apiKey.value,
@@ -329,6 +401,14 @@ function assembleReadOnlyShadowComparison({
       failureCodes: [inputValidation.code]
     });
   }
+  if (!oldCoreOutcomeSummary) {
+    return failedRecord({
+      input: understandingTurnInput,
+      oldCoreOutcomeSummary: EMPTY_CORE_SUMMARY,
+      coreSha,
+      failureCodes: ["SHADOW_COMPARISON_INCOMPLETE"]
+    });
+  }
   if (!validUnderstandingResult(understandingResult)) {
     return failedRecord({
       input: understandingTurnInput,
@@ -403,6 +483,14 @@ async function runReadOnlyShadowCore(options = {}) {
       oldCoreOutcomeSummary,
       coreSha,
       failureCodes: [inputValidation.code]
+    });
+  }
+  if (!oldCoreOutcomeSummary) {
+    return failedRecord({
+      input: understandingTurnInput,
+      oldCoreOutcomeSummary: EMPTY_CORE_SUMMARY,
+      coreSha,
+      failureCodes: ["SHADOW_COMPARISON_INCOMPLETE"]
     });
   }
   let understandingResult;
