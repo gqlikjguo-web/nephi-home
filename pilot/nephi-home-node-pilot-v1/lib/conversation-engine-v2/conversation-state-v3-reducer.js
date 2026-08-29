@@ -11,7 +11,11 @@ const {
   getCapabilityDefinition
 } = require("./capability-registry");
 const { resolveEntity } = require("./entity-resolver");
-const { isStateV3LifecycleOperationsFor } = require("../new-core/state-v3-lifecycle-adapter");
+const {
+  isStateV3LifecycleOperationsFor,
+  isStateV3TaskCreationsFor,
+  isStateV3CanonicalTaskBindingsFor
+} = require("../new-core/state-v3-lifecycle-adapter");
 
 const PENDING_STATUSES = new Set(["pending", "needs_clarification"]);
 const CONTEXT_EXCLUDED_STATUSES = new Set(["expired", "cancelled"]);
@@ -685,6 +689,51 @@ function applyLifecycleOperations(byTaskId, lifecycleOperations, now) {
   }
 }
 
+function applyTaskCreations(byTaskId, taskCreations, now, revision) {
+  for (const creation of taskCreations) {
+    let taskId = creation.taskIdCandidate;
+    if (byTaskId.has(taskId)) {
+      taskId = `${creation.taskIdCandidate}#${revision}`;
+      let collision = 1;
+      while (byTaskId.has(taskId)) {
+        taskId = `${creation.taskIdCandidate}#${revision}-${collision}`;
+        collision += 1;
+      }
+    }
+    const taskType = contractTaskType(creation.capability);
+    const candidate = {
+      taskType,
+      productType: creation.productType,
+      productId: creation.productId,
+      roomTypeId: creation.roomTypeId,
+      bundleId: creation.bundleId,
+      checkIn: creation.checkIn,
+      checkOut: creation.checkOut,
+      guestCount: creation.guestCount,
+      searchFrom: creation.searchFrom,
+      searchTo: creation.searchTo
+    };
+    const readiness = evaluateTaskReadiness(candidate);
+    if (readiness.status !== "missing"
+      || JSON.stringify(readiness.missingFields) !== JSON.stringify(creation.missingFields)) {
+      throw new TypeError("state_v3_start_task_readiness_mismatch");
+    }
+    byTaskId.set(taskId, createConversationTaskV3({
+      taskId,
+      ...candidate,
+      entityId: creation.entityId,
+      entityCategory: creation.entityCategory,
+      detailIntent: creation.detailIntent,
+      knownFields: readiness.knownFields,
+      missingFields: readiness.missingFields,
+      status: "needs_clarification",
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: new Date(Date.parse(now) + 24 * 60 * 60 * 1000).toISOString()
+    }));
+  }
+}
+
 function reduceConversationStateV3({
   previous,
   canonicalItems = [],
@@ -693,6 +742,8 @@ function reduceConversationStateV3({
   endedTaskIds = [],
   clarificationTaskIds = [],
   lifecycleOperations = [],
+  taskCreations = [],
+  canonicalTaskBindings = [],
   scope = {}
 }) {
   const now = String(scope.now || new Date().toISOString());
@@ -701,6 +752,19 @@ function reduceConversationStateV3({
     scope: runtimeScope(scope)
   })) {
     throw new TypeError("state_v3_lifecycle_operations_invalid");
+  }
+  if (!isStateV3TaskCreationsFor(taskCreations, {
+    previous,
+    scope: runtimeScope(scope)
+  })) {
+    throw new TypeError("state_v3_task_creations_invalid");
+  }
+  if (!isStateV3CanonicalTaskBindingsFor(canonicalTaskBindings, {
+    previous,
+    scope: runtimeScope(scope),
+    canonicalItems
+  })) {
+    throw new TypeError("state_v3_canonical_task_bindings_invalid");
   }
   const byTaskId = new Map(
     (previous && previous.tasks || []).map((task) => [
@@ -711,6 +775,12 @@ function reduceConversationStateV3({
     ])
   );
   applyLifecycleOperations(byTaskId, lifecycleOperations, now);
+  applyTaskCreations(
+    byTaskId,
+    taskCreations,
+    now,
+    Number.isInteger(previous && previous.revision) ? previous.revision + 1 : 1
+  );
   const clarificationIds = new Set(clarificationTaskIds.map(String));
   for (const taskId of new Set(endedTaskIds)) {
     const prior = byTaskId.get(taskId);
@@ -726,6 +796,9 @@ function reduceConversationStateV3({
   );
   const outcomeByTaskId = new Map(
     executionOutcomes.map((outcome) => [outcome.taskId, outcome])
+  );
+  const canonicalTaskBindingByUnitId = new Map(
+    canonicalTaskBindings.map((binding) => [binding.unitId, binding])
   );
   for (const item of canonicalItems) {
     const request = item.canonicalRequest;
@@ -744,7 +817,14 @@ function reduceConversationStateV3({
         ? "missing"
         : formal.readiness.status
     };
-    const stateTaskId = item.requestCycleId || request.taskId;
+    const canonicalTaskBinding = canonicalTaskBindingByUnitId.get(item.unitId);
+    if (canonicalTaskBinding
+      && !currentTask(byTaskId.get(canonicalTaskBinding.requestCycleId), now)) {
+      throw new TypeError("state_v3_canonical_target_unavailable");
+    }
+    const stateTaskId = canonicalTaskBinding && canonicalTaskBinding.requestCycleId
+      || item.requestCycleId
+      || request.taskId;
     const prior = byTaskId.get(stateTaskId);
     byTaskId.set(stateTaskId, createConversationTaskV3({
       taskId: stateTaskId,
