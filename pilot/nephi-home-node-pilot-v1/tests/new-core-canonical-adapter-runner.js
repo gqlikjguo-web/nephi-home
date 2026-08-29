@@ -112,8 +112,13 @@ function turnInput(messageText, overrides = {}) {
       scope,
       referenceableCycles: [{
         requestCycleId: "cycle-c08",
+        requestKind: "availability",
+        capability: "availability",
         status: "answered",
         expiresAt: FUTURE,
+        subject: { kind: "bundle", catalogIdentity: "bundle-a" },
+        missingFields: [],
+        confirmedValues: { checkIn: "2026-09-01", checkOut: "2026-09-03", guestCount: 3, searchFrom: null, searchTo: null },
         slotRefs: ["checkIn", "checkOut", "guestCount", "productId"]
       }]
     },

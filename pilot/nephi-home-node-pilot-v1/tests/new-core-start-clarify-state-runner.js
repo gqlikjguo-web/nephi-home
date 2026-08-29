@@ -322,8 +322,13 @@ const followUpInput = buildUnderstandingTurnInput({
     scope,
     referenceableCycles: [{
       requestCycleId: next.tasks[0].taskId,
+      requestKind: "pricing",
+      capability: "price",
       status: "pending",
       expiresAt: next.tasks[0].expiresAt,
+      subject: { kind: "bundle", catalogIdentity: "bundle-all" },
+      missingFields: next.tasks[0].missingFields,
+      confirmedValues: { checkIn: null, checkOut: null, guestCount: null, searchFrom: null, searchTo: null },
       slotRefs: next.tasks[0].knownFields
     }]
   },

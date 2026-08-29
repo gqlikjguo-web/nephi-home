@@ -65,12 +65,18 @@ function turnInput({ messageText = "我們4位", cycles, propertyScope = scope }
     recentConversation: [],
     stateV3Snapshot: {
       scope: propertyScope,
-      referenceableCycles: cycles || [{
+      referenceableCycles: (cycles || [{
         requestCycleId: "cycle-a",
         status: "pending",
         expiresAt: FUTURE,
         slotRefs: ["guestCount", "productId", "checkIn", "checkOut"]
-      }]
+      }]).map((cycle) => ({
+        requestKind: "availability", capability: "availability",
+        subject: { kind: "room", catalogIdentity: "room-a" },
+        missingFields: [],
+        confirmedValues: { checkIn: null, checkOut: null, guestCount: null, searchFrom: null, searchTo: null },
+        ...cycle
+      }))
     },
     publicCatalog: {
       propertyId: propertyScope.propertyId,

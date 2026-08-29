@@ -134,6 +134,15 @@ function validateTemporalCandidate(value, errors) {
   }
   const checkIn = fullIsoDate(value && value.checkInCandidate);
   const checkOut = fullIsoDate(value && value.checkOutCandidate);
+  if (value && value.kind === "absolute_date" && (
+    checkIn === null
+    || value.checkOutCandidate !== null
+  )) {
+    errors.push("temporalCandidate.kindCandidateConflict");
+  }
+  if (value && value.kind === "partial" && (checkIn !== null || checkOut !== null)) {
+    errors.push("temporalCandidate.kindCandidateConflict");
+  }
   if (checkIn !== null && checkOut !== null && value && value.nightsCandidate !== null
     && (checkOut <= checkIn || (checkOut - checkIn) / 86400000 !== value.nightsCandidate)) {
     errors.push("temporalCandidate.contradiction");

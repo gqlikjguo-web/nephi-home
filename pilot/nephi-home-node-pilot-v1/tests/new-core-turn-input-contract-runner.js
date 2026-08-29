@@ -47,8 +47,19 @@ function validArgs(overrides = {}) {
       scope: { propertyId: "property-a", channel: "line-binding-a", userId: "guest-a" },
       referenceableCycles: [{
         requestCycleId: "cycle-a",
+        requestKind: "pricing",
+        capability: "price",
         status: "active",
         expiresAt: "2026-08-29T08:00:00.000Z",
+        subject: { kind: "room", catalogIdentity: "room-a" },
+        missingFields: ["checkIn", "checkOut"],
+        confirmedValues: {
+          checkIn: null,
+          checkOut: null,
+          guestCount: null,
+          searchFrom: null,
+          searchTo: null
+        },
         slotRefs: ["stay.checkIn"]
       }]
     },
@@ -84,6 +95,8 @@ assert.deepEqual(valid.propertyScope, {
 });
 assert.equal(Object.isFrozen(valid), true);
 assert.equal(Object.isFrozen(valid.sourceEvents), true);
+assert.deepEqual(valid.referenceableCycles[0], validArgs().stateV3Snapshot.referenceableCycles[0]);
+assert.deepEqual(valid.recentConversation[0].referenceableCycleIds, ["cycle-a"]);
 assert.equal(Object.hasOwn(valid, "facts"), false);
 assert.equal(Object.hasOwn(valid.publicSubjectCatalog[0], "propertyId"), false);
 assert.doesNotMatch(JSON.stringify(valid), /must-not-leak/);

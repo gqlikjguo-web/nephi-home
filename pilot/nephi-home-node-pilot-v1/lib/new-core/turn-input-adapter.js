@@ -97,8 +97,22 @@ function projectCycles(snapshot, propertyId) {
     assertPropertyClaim(propertyId, cycle && cycle.propertyId, `referenceableCycles.${index}.propertyId`);
     return {
       requestCycleId: cycle && cycle.requestCycleId,
+      requestKind: cycle && cycle.requestKind,
+      capability: cycle && cycle.capability,
       status: cycle && cycle.status,
       expiresAt: cycle && cycle.expiresAt,
+      subject: cycle && cycle.subject && {
+        kind: cycle.subject.kind,
+        catalogIdentity: cycle.subject.catalogIdentity
+      },
+      missingFields: cycle && cycle.missingFields,
+      confirmedValues: cycle && cycle.confirmedValues && {
+        checkIn: cycle.confirmedValues.checkIn,
+        checkOut: cycle.confirmedValues.checkOut,
+        guestCount: cycle.confirmedValues.guestCount,
+        searchFrom: cycle.confirmedValues.searchFrom,
+        searchTo: cycle.confirmedValues.searchTo
+      },
       slotRefs: cycle && cycle.slotRefs
     };
   });

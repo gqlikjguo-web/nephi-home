@@ -41,7 +41,7 @@ function assertScope(propertyId) { if (propertyId && propertyId !== PROPERTY_ID)
 function assertSafe(value) {
   if (!value || typeof value !== "object") return;
   for (const [key, item] of Object.entries(value)) {
-    if (DENIED_KEYS.test(key)) { const error = new Error("unsafe_diagnostic_key"); error.code = "TEST_DIAGNOSTIC_UNSAFE"; throw error; }
+    if (key !== "rawText" && DENIED_KEYS.test(key)) { const error = new Error("unsafe_diagnostic_key"); error.code = "TEST_DIAGNOSTIC_UNSAFE"; throw error; }
     assertSafe(item);
   }
 }
@@ -57,6 +57,60 @@ function normalizeManualTestFailureRefs(values = []) {
   refs.forEach(Object.freeze);
   return Object.freeze(refs);
 }
+function projectFailureUnit(unit) {
+  if (!unit || typeof unit !== "object") return null;
+  const temporal = unit.temporalCandidate;
+  return {
+    unitId: bounded(unit.unitId, 160),
+    purpose: bounded(unit.purpose, 80),
+    capability: unit.capability == null ? null : bounded(unit.capability, 80),
+    subject: {
+      kind: unit.subject && unit.subject.kind == null ? null : bounded(unit.subject && unit.subject.kind, 80),
+      catalogIdentity: unit.subject && unit.subject.catalogIdentity == null ? null : bounded(unit.subject.catalogIdentity, 160)
+    },
+    temporalCandidate: temporal == null ? null : {
+      rawText: bounded(temporal.rawText, 200), kind: bounded(temporal.kind, 80),
+      checkInCandidate: temporal.checkInCandidate || null, checkOutCandidate: temporal.checkOutCandidate || null,
+      nightsCandidate: Number.isInteger(temporal.nightsCandidate) ? temporal.nightsCandidate : null
+    },
+    replyCandidate: unit.replyCandidate ? {
+      disposition: bounded(unit.replyCandidate.disposition, 40),
+      reasonClass: bounded(unit.replyCandidate.reasonClass, 80)
+    } : null
+  };
+}
+function buildManualTestFailureDiagnostics({ understanding, outcomes } = {}) {
+  const rawUnits = Array.isArray(understanding && understanding.understandingOutput && understanding.understandingOutput.units)
+    ? understanding.understandingOutput.units : [];
+  const providerFailures = Array.isArray(understanding && understanding.failedUnits) ? understanding.failedUnits : [];
+  const outcomeFailures = (Array.isArray(outcomes) ? outcomes : []).filter((item) => item && item.failure);
+  const unitIds = [...new Set([
+    ...providerFailures.map((item) => item.unitId),
+    ...outcomeFailures.map((item) => item.unit && item.unit.unitId)
+  ].filter(Boolean))];
+  return unitIds.map((unitId) => {
+    const providerFailure = providerFailures.find((item) => item.unitId === unitId) || null;
+    const outcome = outcomeFailures.find((item) => item.unit && item.unit.unitId === unitId) || null;
+    const failure = providerFailure
+      ? { layer: providerFailure.boundary || "C03-C05", failureCode: providerFailure.failureCode }
+      : outcome.failure;
+    const unit = outcome && outcome.unit || rawUnits.find((item) => item.unitId === unitId);
+    const projected = projectFailureUnit(unit) || { unitId: bounded(unitId, 160), purpose: "", capability: null, subject: { kind: null, catalogIdentity: null }, temporalCandidate: null, replyCandidate: null };
+    return {
+      ...projected,
+      readiness: outcome && outcome.readiness ? {
+        status: bounded(outcome.readiness.status, 40),
+        missingGuestFields: (outcome.readiness.missingGuestFields || []).slice(0, 20).map((item) => bounded(item, 80))
+      } : null,
+      failureCodes: {
+        C03: failure.layer === "C03" ? bounded(failure.failureCode, 80) : null,
+        C06: failure.layer === "C06" ? bounded(failure.failureCode, 80) : null,
+        C07: failure.layer === "C07" ? bounded(failure.failureCode, 80) : null
+      },
+      earliestFailure: { layer: bounded(failure.layer, 80), failureCode: bounded(failure.failureCode, 80) }
+    };
+  });
+}
 function projectDiagnostic(result, traceId, counters) {
   const units = Array.isArray(result.understanding && result.understanding.units) ? result.understanding.units : [];
   const decision = result.finalDecision || {}, response = result.finalResponse || {}, resolver = result.resolver || {}, earliest = result.earliestFailure || null;
@@ -66,7 +120,9 @@ function projectDiagnostic(result, traceId, counters) {
     resolver: { name: bounded(resolver.name, 120), foundOfficialData: resolver.foundOfficialData === true, status: bounded(resolver.status, 160) },
     finalDecision: { action: bounded(decision.action, 40), reasonCode: bounded(decision.reasonCode, 120), taskIds: (decision.taskIds || []).slice(0, 20).map((item) => bounded(item, 160)), missingFields: (decision.missingFields || []).slice(0, 20).map((item) => bounded(item, 80)), reviewRequired: decision.reviewRequired === true },
     finalResponse: { action: bounded(response.action, 40), shouldReply: response.shouldReply === true, replyText: bounded(response.replyText, 1200) }, earliestFailure: earliest ? { layer: bounded(earliest.layer, 80), failureCode: bounded(earliest.failureCode, 80) } : null,
-    failureCode: earliest ? bounded(earliest.failureCode, 80) : null, traceId, requestedModel: bounded(result.requestedModel, 160), resolvedModel: bounded(result.resolvedModel, 160), sideEffectCounters: clone(counters)
+    failureCode: earliest ? bounded(earliest.failureCode, 80) : null,
+    failedUnits: (result.failedUnitDiagnostics || []).slice(0, 8).map(clone),
+    traceId, requestedModel: bounded(result.requestedModel, 160), resolvedModel: bounded(result.resolvedModel, 160), sideEffectCounters: clone(counters)
   };
   assertSafe(projected); return projected;
 }
@@ -88,7 +144,57 @@ function publicCatalog(property, catalog) {
 function turnStateSnapshot(state, scope, now) {
   const context = buildContextSnapshotV3(state, { ...scope, now });
   const tasks = new Map((state.tasks || []).map((task) => [task.taskId, task]));
-  return { scope, referenceableCycles: context.cycles.map((cycle) => ({ requestCycleId: cycle.requestCycleId, status: cycle.status, expiresAt: cycle.contextReuseExpiresAt, slotRefs: [...new Set(tasks.get(cycle.requestCycleId)?.knownFields || [])] })) };
+  return { scope, referenceableCycles: context.cycles.map((cycle) => {
+    const task = tasks.get(cycle.requestCycleId);
+    const topic = cycle.confirmedInputs.topic;
+    const inventory = cycle.confirmedInputs.inventory;
+    const requestKind = cycle.requestKind;
+    const definition = CAPABILITY_REGISTRY[requestKind];
+    const capability = requestKind === "pricing" ? "price"
+      : requestKind === "location" ? "property_fact"
+        : definition && definition.acceptedCandidateTypes.includes(requestKind)
+          ? requestKind
+          : definition && definition.acceptedCandidateTypes[0];
+    const subjectKind = topic.category || (inventory.mode === "any" ? "property" : null);
+    return {
+      requestCycleId: cycle.requestCycleId,
+      requestKind,
+      capability,
+      status: cycle.status === "needs_clarification" ? "pending" : cycle.status,
+      expiresAt: cycle.contextReuseExpiresAt,
+      subject: { kind: subjectKind, catalogIdentity: topic.canonicalId || inventory.entityId || null },
+      missingFields: [...new Set(task && task.missingFields || [])],
+      confirmedValues: {
+        checkIn: cycle.confirmedInputs.stay.checkIn,
+        checkOut: cycle.confirmedInputs.stay.checkOut,
+        guestCount: cycle.confirmedInputs.stay.guests,
+        searchFrom: cycle.confirmedInputs.stay.searchRange && cycle.confirmedInputs.stay.searchRange.from || null,
+        searchTo: cycle.confirmedInputs.stay.searchRange && cycle.confirmedInputs.stay.searchRange.to || null
+      },
+      slotRefs: [...new Set(task && task.knownFields || [])]
+    };
+  }) };
+}
+function bindRecentConversationToCycles(history, state, referenceableCycles) {
+  const allowed = new Set(referenceableCycles.map((cycle) => cycle.requestCycleId));
+  const cycleIdsByTimestamp = new Map();
+  for (const task of state.tasks || []) {
+    if (!allowed.has(task.taskId)) continue;
+    for (const timestamp of new Set([task.createdAt, task.updatedAt])) {
+      const ids = cycleIdsByTimestamp.get(timestamp) || [];
+      ids.push(task.taskId);
+      cycleIdsByTimestamp.set(timestamp, ids);
+    }
+  }
+  return history.map((turn) => ({
+    eventId: turn.turnId,
+    messageRef: turn.turnId,
+    role: "guest",
+    timestamp: turn.timestamp,
+    messageKind: "text",
+    messageText: turn.input,
+    referenceableCycleIds: [...new Set(cycleIdsByTimestamp.get(turn.timestamp) || [])]
+  }));
 }
 function canonicalizerCatalog(input) {
   const project = (subject) => ({ canonicalId: subject.catalogIdentity, category: subject.kind, publicName: subject.publicName });
@@ -131,9 +237,9 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
     if (!readiness.ok) { outcomes.push({ unit, lifecycleDecision: lifecycle.value, failure: { layer: "C07", failureCode: readiness.code } }); continue; }
     const safety = HANDOFF_CAPABILITIES.has(unit.capability) ? createTrustedOperatorSafetyPolicy({ unit, lifecycleDecision: lifecycle.value, routingRegistry: registry }) : null;
     const routing = createUnitRoutingDecision({ unit, lifecycleDecision: lifecycle.value, routingRegistry: registry, readiness: readiness.value, operatorSafetyPolicy: safety && safety.ok ? safety.value : null });
-    if (!routing.ok) { outcomes.push({ unit, lifecycleDecision: lifecycle.value, failure: { layer: "C07", failureCode: routing.code } }); continue; }
+    if (!routing.ok) { outcomes.push({ unit, lifecycleDecision: lifecycle.value, readiness: readiness.value, failure: { layer: "C07", failureCode: routing.code } }); continue; }
     const c08 = routing.value.disposition === "ANSWER" ? createCanonicalizerInputItem({ unit, lifecycleDecision: lifecycle.value, routingDecision: routing.value, understandingTurnInput: c01, canonicalizerCatalog: c08Catalog, publicCatalogIdentityProjection: projection }) : { ok: true, value: null };
-    outcomes.push({ unit, lifecycleDecision: lifecycle.value, routingDecision: routing.value, canonicalItem: c08.ok ? c08.value : null, failure: c08.ok ? null : { layer: "C08", failureCode: c08.code } });
+    outcomes.push({ unit, lifecycleDecision: lifecycle.value, readiness: readiness.value, routingDecision: routing.value, canonicalItem: c08.ok ? c08.value : null, failure: c08.ok ? null : { layer: "C08", failureCode: c08.code } });
   }
   const successful = outcomes.filter((item) => item.routingDecision);
   const failedUnits = normalizeManualTestFailureRefs([
@@ -166,7 +272,7 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
   const nextState = reduceConversationStateV3({ previous: state, canonicalItems, formalRequests, executionOutcomes, clarificationTaskIds: finalDecision.action === "clarification" ? finalDecision.executionSummary.notReadyTaskIds : [], lifecycleOperations: adapted.lifecycleOperations, taskCreations: adapted.taskCreations, canonicalTaskBindings: adapted.canonicalTaskBindings, scope: { ...scope, now } });
   const provider = understanding[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC] || {};
   const failure = outcomes.find((x) => x.failure) && outcomes.find((x) => x.failure).failure || understanding.failedUnits[0] && { layer: understanding.failedUnits[0].boundary || "C03-C05", failureCode: understanding.failedUnits[0].failureCode } || null;
-  return { state: nextState, understanding: { summary: understanding.validatedUnits.map((x) => `${x.purpose}/${x.capability}/${x.subject.kind}`).join("；"), units: understanding.validatedUnits.map((x) => ({ purpose: x.purpose, capability: x.capability, subject: x.subject, temporal: x.temporalCandidate, guestCount: x.slotCandidates.find((slot) => slot.slot === "guest_count")?.value || null })) }, lifecycle: successful.map((x) => x.lifecycleDecision.action), routing: dispositions, resolver: { name: "existing canonical Resolver", foundOfficialData: executionOutcomes.some((x) => x.outcome === "answered"), status: executionOutcomes.map((x) => x.outcome).join(",") || "NOT_APPLICABLE" }, finalDecision, finalResponse, earliestFailure: failure, requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL, resolvedModel: provider.resolvedModel || "" };
+  return { state: nextState, understanding: { summary: understanding.validatedUnits.map((x) => `${x.purpose}/${x.capability}/${x.subject.kind}`).join("；"), units: understanding.validatedUnits.map((x) => ({ purpose: x.purpose, capability: x.capability, subject: x.subject, temporal: x.temporalCandidate, guestCount: x.slotCandidates.find((slot) => slot.slot === "guest_count")?.value || null })) }, lifecycle: successful.map((x) => x.lifecycleDecision.action), routing: dispositions, resolver: { name: "existing canonical Resolver", foundOfficialData: executionOutcomes.some((x) => x.outcome === "answered"), status: executionOutcomes.map((x) => x.outcome).join(",") || "NOT_APPLICABLE" }, finalDecision, finalResponse, earliestFailure: failure, failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }), requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL, resolvedModel: provider.resolvedModel || "" };
 }
 
 function createNewCoreManualTestService({ persistence, providers, service, factsProviders = providers, factsService = service, apiKey, now = () => new Date(), executeTurn = executeNewCoreManualTurn } = {}) {
@@ -180,7 +286,9 @@ function createNewCoreManualTestService({ persistence, providers, service, facts
     const message = String(body.input || "").trim().slice(0, 1000); if (!message) throw failure("TEST_INPUT_REQUIRED", 400, "請輸入客人訊息");
     const current = await requireSession(id, session); const turnId = crypto.randomUUID(), traceId = crypto.randomUUID(), timestamp = now().toISOString();
     const history = await repository.listTurns(id, ownerId(session), PROPERTY_ID);
-    const recentConversation = history.filter((turn) => turn.generation === current.generation).slice(-10).map((turn) => ({ eventId: turn.turnId, messageRef: turn.turnId, role: "guest", timestamp: turn.timestamp, messageKind: "text", messageText: turn.input, referenceableCycleIds: [] }));
+    const generationHistory = history.filter((turn) => turn.generation === current.generation).slice(-10);
+    const snapshot = turnStateSnapshot(current.state, scopeFor(id), timestamp);
+    const recentConversation = bindRecentConversationToCycles(generationHistory, current.state, snapshot.referenceableCycles);
     const property = factsProviders.customerSettings.getProperty(PROPERTY_ID); if (!property) { const error = new Error("property_not_found"); error.code = "PROPERTY_NOT_FOUND"; throw error; }
     let result; const sideEffectGuard = createSideEffectGuard();
     try {
@@ -204,4 +312,4 @@ function createNewCoreManualTestService({ persistence, providers, service, facts
   };
 }
 
-module.exports = { PROPERTY_ID, CHANNEL, SIDE_EFFECT_COUNTERS, createNewCoreManualTestService, executeNewCoreManualTurn, normalizeManualTestFailureRefs };
+module.exports = { PROPERTY_ID, CHANNEL, SIDE_EFFECT_COUNTERS, bindRecentConversationToCycles, buildManualTestFailureDiagnostics, createNewCoreManualTestService, executeNewCoreManualTurn, normalizeManualTestFailureRefs, turnStateSnapshot };

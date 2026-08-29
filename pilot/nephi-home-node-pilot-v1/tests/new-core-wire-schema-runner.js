@@ -135,6 +135,9 @@ assert.equal(caseATemporal.checkOutCandidate, null);
 assert.doesNotMatch(JSON.stringify(caseATemporal), /2026/);
 for (const candidate of [
   unit({ temporalCandidate: caseATemporal }),
+  unit({ temporalCandidate: temporal({ rawText: "2026/09/20", kind: "absolute_date", checkInCandidate: "2026-09-20", checkOutCandidate: null, nightsCandidate: null }) }),
+  unit({ temporalCandidate: temporal({ rawText: "今天", kind: "relative_date", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null }) }),
+  unit({ temporalCandidate: temporal({ rawText: "明天", kind: "relative_date", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null }) }),
   unit({ temporalCandidate: temporal({ rawText: "10/9到10/10", kind: "date_range", checkInCandidate: "10/9", checkOutCandidate: "10/10", nightsCandidate: null }) }),
   unit({ temporalCandidate: temporal({ rawText: "明年2/4到2/7", kind: "relative_range", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null }) }),
   unit({ temporalCandidate: temporal({ rawText: "下週六", kind: "weekday", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null }) }),
@@ -153,6 +156,11 @@ for (const invalidCandidate of [
   unit({ evidenceRefs: [] }),
   unit({ replyCandidate: { disposition: "ROUTE_NOW", reasonClass: "x" } }),
   unit({ temporalCandidate: temporal({ kind: "executed_date" }) }),
+  unit({ temporalCandidate: temporal({ rawText: "9/20", kind: "absolute_date", checkInCandidate: "9/20", checkOutCandidate: null, nightsCandidate: null }) }),
+  unit({ temporalCandidate: temporal({ rawText: "2026/02/30", kind: "absolute_date", checkInCandidate: "2026-02-30", checkOutCandidate: null, nightsCandidate: null }) }),
+  unit({ temporalCandidate: temporal({ rawText: "2026/09/20", kind: "absolute_date", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null }) }),
+  unit({ temporalCandidate: temporal({ rawText: "2026/09/20", kind: "absolute_date", checkInCandidate: "2026-09-20", checkOutCandidate: "9/21", nightsCandidate: null }) }),
+  unit({ temporalCandidate: temporal({ rawText: "2026/09/20", kind: "partial", checkInCandidate: "2026-09-20", checkOutCandidate: null, nightsCandidate: null }) }),
   unit({ temporalCandidate: temporal({ resolverResult: "forbidden" }) }),
   unit({ temporalCandidate: temporal({ checkInCandidate: "2026-10-09", checkOutCandidate: "2026-10-10", nightsCandidate: 2 }) }),
   unit({ lifecycleAction: "END" })

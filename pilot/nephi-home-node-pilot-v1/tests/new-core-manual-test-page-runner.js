@@ -7,7 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
-const { normalizeManualTestFailureRefs } = require("../lib/new-core/manual-test-service");
+const { bindRecentConversationToCycles, buildManualTestFailureDiagnostics, normalizeManualTestFailureRefs, turnStateSnapshot } = require("../lib/new-core/manual-test-service");
 const { aggregateUnitOutcomes } = require("../lib/new-core/unit-aggregator");
 
 const root = path.resolve(__dirname, "..");
@@ -28,6 +28,20 @@ async function fakeTurn({ input, state, property, sideEffectGuard, now: timestam
   historyLengths.push(input.recentConversation.length);
   if (input.message === "provider failure") { const error = new Error("failed"); error.code = "UNDERSTANDING_PROVIDER_FAILURE"; throw error; }
   if (input.message === "side effect") sideEffectGuard.lineSend();
+  if (input.message === "diagnostic failure") return {
+    state, understanding: { summary: "", units: [] }, lifecycle: [], routing: [],
+    resolver: { name: "existing canonical Resolver", foundOfficialData: false, status: "NOT_APPLICABLE" },
+    finalDecision: { action: "no_reply", reasonCode: "new_core_no_reply", taskIds: [], missingFields: [], reviewRequired: false, executionSummary: {} },
+    finalResponse: { action: "no_reply", shouldReply: false, replyText: "" },
+    earliestFailure: { layer: "C03", failureCode: "CAPABILITY_SUBJECT_CONFLICT" },
+    failedUnitDiagnostics: [{
+      unitId: "unit-diagnostic", purpose: "lodging_question", capability: "availability",
+      subject: { kind: "room", catalogIdentity: null }, temporalCandidate: { rawText: "8/31", kind: "partial", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null },
+      replyCandidate: { disposition: "ANSWER", reasonClass: "executable_lodging_need" }, readiness: null,
+      failureCodes: { C03: "CAPABILITY_SUBJECT_CONFLICT", C06: null, C07: null },
+      earliestFailure: { layer: "C03", failureCode: "CAPABILITY_SUBJECT_CONFLICT" }
+    }], requestedModel: "gpt-5.6-luna", resolvedModel: "gpt-5.6-luna"
+  };
   const continuation = calls > 0;
   return { state: nextState(state, timestamp), understanding: { summary: continuation ? "補充日期，承接正式 pending cycle" : "詢問包棟價格，缺日期", units: [{ purpose: "lodging_question", capability: "price", subject: { kind: "bundle", catalogIdentity: "bundle_all" } }] }, lifecycle: [continuation ? "CONTINUE" : "START"], routing: [continuation ? "ANSWER" : "CLARIFY"], resolver: { name: "existing canonical Resolver", foundOfficialData: continuation, status: continuation ? "answered" : "NOT_APPLICABLE" }, finalDecision: continuation ? { action: "reply", reasonCode: "execution_answered", taskIds: ["formal-cycle-1"], missingFields: [], reviewRequired: false, executionSummary: {} } : { action: "clarification", reasonCode: "missing_information", taskIds: ["formal-cycle-1"], missingFields: ["checkIn", "checkOut"], reviewRequired: false, executionSummary: { notReadyTaskIds: ["formal-cycle-1"] } }, finalResponse: continuation ? { action: "reply", shouldReply: true, replyText: "正式資料預計回覆" } : { action: "clarification", shouldReply: true, replyText: "請提供入住日期。" }, earliestFailure: null, requestedModel: "gpt-5.6-luna", resolvedModel: "gpt-5.6-luna" };
 }
@@ -38,6 +52,27 @@ async function json(url, method = "GET", body, sentCookie = cookie) {
 }
 
 (async () => {
+  const pendingState = {
+    scope: { propertyId: "nephi_home", channel: "new-core-manual-test", userId: "manual-test:test" },
+    tasks: [{
+      taskId: "pending-price-bundle", taskType: "pricing", productType: "bundle", productId: "bundle_all",
+      roomTypeId: null, bundleId: "bundle_all", checkIn: null, checkOut: null, guestCount: 4,
+      searchFrom: null, searchTo: null, entityId: "bundle_all", entityCategory: "bundle", detailIntent: "general",
+      knownFields: ["guestCount", "productId"], missingFields: ["checkIn", "checkOut"], status: "needs_clarification",
+      createdAt: "2026-08-29T11:59:00.000Z", updatedAt: "2026-08-29T11:59:00.000Z", expiresAt: "2026-08-30T11:59:00.000Z"
+    }]
+  };
+  const pendingSnapshot = turnStateSnapshot(pendingState, pendingState.scope, "2026-08-29T12:00:00.000Z");
+  assert.deepEqual(pendingSnapshot.referenceableCycles[0], {
+    requestCycleId: "pending-price-bundle", requestKind: "pricing", capability: "price", status: "pending",
+    expiresAt: "2026-08-30T11:59:00.000Z", subject: { kind: "bundle", catalogIdentity: "bundle_all" },
+    missingFields: ["checkIn", "checkOut"],
+    confirmedValues: { checkIn: null, checkOut: null, guestCount: 4, searchFrom: null, searchTo: null },
+    slotRefs: ["guestCount", "productId"]
+  });
+  const boundHistory = bindRecentConversationToCycles([{ turnId: "prior-turn", timestamp: "2026-08-29T11:59:00.000Z", input: "想了解包棟價格" }], pendingState, pendingSnapshot.referenceableCycles);
+  assert.deepEqual(boundHistory[0].referenceableCycleIds, ["pending-price-bundle"]);
+
   const mappedFailures = normalizeManualTestFailureRefs([
     { unitId: "unit-availability", failureCode: "ROUTE_PURPOSE_CONFLICT" },
     { unitId: "unit-availability", failureCode: "ROUTE_PURPOSE_CONFLICT" }
@@ -57,6 +92,36 @@ async function json(url, method = "GET", body, sentCookie = cookie) {
   assert.equal(mappedAggregation.ok, true, mappedAggregation.code);
   assert.equal(mappedAggregation.value.failedUnits[0].failureCode, "ROUTE_PURPOSE_CONFLICT");
 
+  const failedUnit = {
+    unitId: "unit-availability", evidenceRefs: [], purpose: "lodging_question", capability: "availability",
+    subject: { kind: "property", catalogIdentity: null }, stayDependent: true,
+    temporalCandidate: { rawText: "今天", kind: "relative_date", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null },
+    contextLinkCandidateId: "link-availability", replyCandidate: { disposition: "CLARIFY", reasonClass: "missing_guest_fields" },
+    slotCandidates: [], confidenceBand: "high"
+  };
+  const failureDiagnostics = buildManualTestFailureDiagnostics({
+    understanding: {
+      understandingOutput: { schemaVersion: 1, turnId: "turn-failure", units: [failedUnit] },
+      failedUnits: []
+    },
+    outcomes: [{
+      unit: failedUnit,
+      readiness: { unitId: "unit-availability", status: "READY", missingGuestFields: [] },
+      failure: { layer: "C07", failureCode: "ROUTE_PURPOSE_CONFLICT" }
+    }]
+  });
+  assert.deepEqual(failureDiagnostics, [{
+    unitId: "unit-availability",
+    purpose: "lodging_question",
+    capability: "availability",
+    subject: { kind: "property", catalogIdentity: null },
+    temporalCandidate: { rawText: "今天", kind: "relative_date", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null },
+    replyCandidate: { disposition: "CLARIFY", reasonClass: "missing_guest_fields" },
+    readiness: { status: "READY", missingGuestFields: [] },
+    failureCodes: { C03: null, C06: null, C07: "ROUTE_PURPOSE_CONFLICT" },
+    earliestFailure: { layer: "C07", failureCode: "ROUTE_PURPOSE_CONFLICT" }
+  }]);
+
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-manual-page-"));
   const providers = createJsonProviders({ dataFile: path.join(temp, "data.json"), seedFile: path.join(root, "fixtures/seed.json"), now });
   const factsProviders = createJsonProviders({ dataFile: path.join(temp, "facts-data.json"), seedFile: path.join(root, "fixtures/seed.json"), now });
@@ -74,6 +139,16 @@ async function json(url, method = "GET", body, sentCookie = cookie) {
     const page = await fetch(`${running.url}/admin/new-core-test`, { headers: { cookie } }); assert.equal(page.status, 200); const html = await page.text(); assert.match(html, /JunZan AI 新核心測試/); assert.match(html, /gpt-5\.6-luna/); assert.doesNotMatch(html, /model.*select/iu);
     const forged = await json(`${running.url}/api/admin/new-core-test/sessions`, "POST", { propertyId: "other" }); assert.equal(forged.status, 403);
     const created = await json(`${running.url}/api/admin/new-core-test/sessions`, "POST", {}); assert.equal(created.status, 201, JSON.stringify(created.body)); const id = created.body.data.testSessionId; assert.match(id, /^[0-9a-f-]{36}$/i);
+    const diagnosticFailure = await json(`${running.url}/api/admin/new-core-test/sessions/${id}/turns`, "POST", { input: "diagnostic failure" }); assert.equal(diagnosticFailure.status, 201, JSON.stringify(diagnosticFailure.body));
+    assert.deepEqual(diagnosticFailure.body.data.diagnostic.failedUnits[0], {
+      unitId: "unit-diagnostic", purpose: "lodging_question", capability: "availability",
+      subject: { kind: "room", catalogIdentity: null }, temporalCandidate: { rawText: "8/31", kind: "partial", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null },
+      replyCandidate: { disposition: "ANSWER", reasonClass: "executable_lodging_need" }, readiness: null,
+      failureCodes: { C03: "CAPABILITY_SUBJECT_CONFLICT", C06: null, C07: null },
+      earliestFailure: { layer: "C03", failureCode: "CAPABILITY_SUBJECT_CONFLICT" }
+    });
+    const persistedDiagnostic = await json(`${running.url}/api/admin/new-core-test/records/${diagnosticFailure.body.data.traceId}`);
+    assert.deepEqual(persistedDiagnostic.body.data.diagnostic.failedUnits, diagnosticFailure.body.data.diagnostic.failedUnits);
     const first = await json(`${running.url}/api/admin/new-core-test/sessions/${id}/turns`, "POST", { input: "想了解包棟價格" }); assert.equal(first.status, 201, JSON.stringify(first.body)); assert.equal(first.body.data.diagnostic.context[0], "START"); assert.equal(first.body.data.diagnostic.finalResponse.action, "clarification");
     assert.equal(factsPropertyName, "正式 facts authority", "manual test must read property facts from the dedicated facts authority");
     const second = await json(`${running.url}/api/admin/new-core-test/sessions/${id}/turns`, "POST", { input: "9/20" }); assert.equal(second.status, 201); assert.equal(second.body.data.diagnostic.context[0], "CONTINUE"); assert.equal(second.body.data.predictedResponse, "正式資料預計回覆");

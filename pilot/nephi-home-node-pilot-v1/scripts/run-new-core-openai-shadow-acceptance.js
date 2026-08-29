@@ -45,14 +45,22 @@ function caseContext(caseId) {
     recentConversation: [event("prd004", "guest", CASES[3].input, ["cycle-prd-004"])],
     referenceableCycles: [{
       propertyId: PROPERTY_ID, requestCycleId: "cycle-prd-004", status: "active",
-      expiresAt: "2026-08-30T08:00:00.000Z", slotRefs: ["temporal"]
+      requestKind: "availability", capability: "availability",
+      expiresAt: "2026-08-30T08:00:00.000Z",
+      subject: { kind: "property", catalogIdentity: null }, missingFields: [],
+      confirmedValues: { checkIn: "2027-02-04", checkOut: "2027-02-07", guestCount: null, searchFrom: null, searchTo: null },
+      slotRefs: ["temporal"]
     }]
   };
   if (caseId === "AC-PRD-003") return {
     recentConversation: [event("prd003-prior", "guest", "我們準備入住", ["cycle-prd-003"])],
     referenceableCycles: [{
       propertyId: PROPERTY_ID, requestCycleId: "cycle-prd-003", status: "active",
-      expiresAt: "2026-08-30T08:00:00.000Z", slotRefs: []
+      requestKind: "availability", capability: "availability",
+      expiresAt: "2026-08-30T08:00:00.000Z",
+      subject: { kind: "property", catalogIdentity: null }, missingFields: ["checkIn", "checkOut"],
+      confirmedValues: { checkIn: null, checkOut: null, guestCount: null, searchFrom: null, searchTo: null },
+      slotRefs: []
     }]
   };
   return { recentConversation: [], referenceableCycles: [] };

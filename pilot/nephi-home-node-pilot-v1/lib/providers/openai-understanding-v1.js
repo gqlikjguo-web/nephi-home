@@ -172,16 +172,27 @@ function evidenceArraySchema() {
 }
 
 function temporalCandidateSchema() {
+  const temporalFields = (kind, checkInCandidate, checkOutCandidate) => ({
+    rawText: stringSchema(MAX_QUOTE_LENGTH),
+    kind,
+    checkInCandidate,
+    checkOutCandidate,
+    nightsCandidate: { type: ["integer", "null"], minimum: 1 }
+  });
+  const isoDateCandidate = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", maxLength: 10 };
   return {
     anyOf: [
       { type: "null" },
-      objectSchema({
-        rawText: stringSchema(MAX_QUOTE_LENGTH),
-        kind: enumSchema(TEMPORAL_KINDS),
-        checkInCandidate: nullableStringSchema(80),
-        checkOutCandidate: nullableStringSchema(80),
-        nightsCandidate: { type: ["integer", "null"], minimum: 1 }
-      }, "Source meaning only. Do not add an implicit year or executable date.")
+      objectSchema(temporalFields(
+        enumSchema(["absolute_date"], "Only an explicit complete calendar date may use absolute_date."),
+        isoDateCandidate,
+        { type: "null" }
+      ), "A complete source date. checkInCandidate must be a valid YYYY-MM-DD candidate; a date range uses date_range instead."),
+      objectSchema(temporalFields(
+        enumSchema([...TEMPORAL_KINDS].filter((kind) => kind !== "absolute_date")),
+        nullableStringSchema(80),
+        nullableStringSchema(80)
+      ), "Source meaning only. A date missing its year is partial, never absolute_date. Do not add an implicit year or executable date.")
     ]
   };
 }
@@ -256,6 +267,8 @@ function instructions() {
     "Split every independent source meaning into one unit and emit exactly one matching context-link candidate per unit.",
     "Use only the bounded C01 source events, recent conversation, referenceable cycles, capability catalog, and public subject catalog supplied by the developer message.",
     "Recent conversation helps interpret language and references but is never a property-fact source. Evidence must cite exact C01 sourceEvents UTF-16 coordinates and quote text.",
+    "When the current source message supplies missing values for a referenceable pending cycle, represent the composite pending lodging request with its trusted lodging purpose, capability, and subject identity, and propose CONTINUE targeting that exact requestCycleId; do not emit a capability-bearing supplement unit, and never invent or substitute cycle identity.",
+    "For that continuation, compare only the supplied candidate values with the cycle's missingFields: propose CLARIFY while any required guest field remains missing, and propose ANSWER only when the candidate is ready; deterministic routing remains authoritative.",
     "Capability, subject, stay dependency, reply proposal, and Context action are independent candidates. Do not derive one merely from another.",
     "Temporal candidates preserve source meaning only. Do not invent an implicit year, canonical date, availability, price, policy truth, amenity truth, location fact, or any other formal fact.",
     "Do not emit resolver IDs, query plans, state mutations, final reply text, message-level routing, task indexes, credentials, private data, or fields outside the schema.",

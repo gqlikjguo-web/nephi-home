@@ -57,8 +57,13 @@ const turnInput = buildUnderstandingTurnInput({
     scope,
     referenceableCycles: [{
       requestCycleId: "cycle-aggregation",
+      requestKind: "availability",
+      capability: "availability",
       status: "pending",
       expiresAt: "2026-08-29T08:00:00.000Z",
+      subject: { kind: "room", catalogIdentity: "room-aggregation" },
+      missingFields: [],
+      confirmedValues: { checkIn: null, checkOut: null, guestCount: null, searchFrom: null, searchTo: null },
       slotRefs: []
     }]
   },
@@ -177,8 +182,13 @@ function foreignAnswerFor(unitId) {
       scope,
       referenceableCycles: [{
         requestCycleId: "cycle-aggregation",
+        requestKind: "availability",
+        capability: "availability",
         status: "pending",
         expiresAt: "2026-08-29T08:00:00.000Z",
+        subject: { kind: "room", catalogIdentity: "room-aggregation" },
+        missingFields: [],
+        confirmedValues: { checkIn: null, checkOut: null, guestCount: null, searchFrom: null, searchTo: null },
         slotRefs: []
       }]
     },

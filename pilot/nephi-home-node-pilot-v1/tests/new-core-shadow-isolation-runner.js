@@ -47,8 +47,13 @@ function turnInput(propertyId = "property-shadow-a") {
       scope: { propertyId, channel: "line-shadow", userId: "guest-shadow" },
       referenceableCycles: [{
         requestCycleId: "cycle-shadow",
+        requestKind: "availability",
+        capability: "availability",
         status: "active",
         expiresAt: "2026-08-30T08:00:00.000Z",
+        subject: { kind: "room", catalogIdentity: "room-shadow" },
+        missingFields: [],
+        confirmedValues: { checkIn: null, checkOut: null, guestCount: null, searchFrom: null, searchTo: null },
         slotRefs: []
       }]
     },

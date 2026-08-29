@@ -60,8 +60,13 @@ function input(messageText) {
       scope,
       referenceableCycles: [{
         requestCycleId: "cycle-routing",
+        requestKind: "availability",
+        capability: "availability",
         status: "pending",
         expiresAt: "2026-08-29T08:00:00.000Z",
+        subject: { kind: "room", catalogIdentity: "room-a" },
+        missingFields: [],
+        confirmedValues: { checkIn: null, checkOut: null, guestCount: null, searchFrom: null, searchTo: null },
         slotRefs: []
       }]
     },

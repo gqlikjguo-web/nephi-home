@@ -38,8 +38,13 @@ function c01(overrides = {}) {
       scope: { propertyId: "property-a", channel: "line-a", userId: "guest-a" },
       referenceableCycles: [{
         requestCycleId: "cycle-a",
+        requestKind: "availability",
+        capability: "availability",
         status: "active",
         expiresAt: "2026-08-30T08:00:00.000Z",
+        subject: { kind: "room", catalogIdentity: "room-a" },
+        missingFields: ["checkIn"],
+        confirmedValues: { checkIn: null, checkOut: null, guestCount: null, searchFrom: null, searchTo: null },
         slotRefs: ["stay.checkIn"]
       }]
     },
@@ -254,6 +259,8 @@ async function main() {
   assert.equal(body.text.format.type, "json_schema");
   assert.equal(body.text.format.name, "junzan_understanding_v1");
   assert.equal(body.text.format.strict, true);
+  assert.match(body.input[0].content[0].text, /composite pending lodging request/u);
+  assert.match(body.input[0].content[0].text, /cycle's missingFields/u);
   strictObjectAudit(body.text.format.schema);
   assert.deepEqual(body.text.format.schema.required.sort(), ["contextLinkCandidates", "understandingOutput"]);
   assert.deepEqual(
@@ -301,7 +308,7 @@ async function main() {
   // contaminate a valid acknowledgement, regardless of sibling order.
   const siblingFailureCodes = {
     C04: "EVIDENCE_QUOTE_MISMATCH",
-    C03: "CAPABILITY_SUBJECT_CONFLICT",
+    C03: "CATALOG_IDENTITY_INVALID",
     C05: "CONTEXT_TARGET_UNAVAILABLE"
   };
   const siblingFailureMarkers = {
@@ -396,7 +403,7 @@ async function main() {
   assert.deepEqual(semanticResult.validatedUnits, []);
   assert.deepEqual(semanticResult.failedUnits, [{
     unitId: "unit-a",
-    failureCode: "CAPABILITY_SUBJECT_CONFLICT",
+    failureCode: "CATALOG_IDENTITY_INVALID",
     boundary: "C03"
   }]);
   assert.deepEqual(semanticDiagnostics.map((event) => event.targetMarker), [

@@ -36,9 +36,22 @@ const RECENT_CONVERSATION_FIELDS = Object.freeze([
 ]);
 const REFERENCEABLE_CYCLE_FIELDS = Object.freeze([
   "requestCycleId",
+  "requestKind",
+  "capability",
   "status",
   "expiresAt",
+  "subject",
+  "missingFields",
+  "confirmedValues",
   "slotRefs"
+]);
+const REFERENCEABLE_SUBJECT_FIELDS = Object.freeze(["kind", "catalogIdentity"]);
+const CONFIRMED_VALUE_FIELDS = Object.freeze([
+  "checkIn",
+  "checkOut",
+  "guestCount",
+  "searchFrom",
+  "searchTo"
 ]);
 const PUBLIC_SUBJECT_FIELDS = Object.freeze([
   "catalogIdentity",
@@ -75,6 +88,14 @@ function boundedText(value, limit = MAX_ID_LENGTH) {
 
 function timestamp(value) {
   return boundedText(value, 80) && Number.isFinite(Date.parse(value));
+}
+
+function nullableBoundedText(value, limit = MAX_ID_LENGTH) {
+  return value === null || boundedText(value, limit);
+}
+
+function nullableDate(value) {
+  return value === null || typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(value);
 }
 
 function uniqueBoundedStrings(value, limit, itemLimit = MAX_ID_LENGTH) {
@@ -173,11 +194,35 @@ function validateUnderstandingTurnInput(value) {
       if (!boundedText(cycle && cycle.requestCycleId)) {
         errors.push(`referenceableCycles.${index}.requestCycleId`);
       }
+      if (!boundedText(cycle && cycle.requestKind)) {
+        errors.push(`referenceableCycles.${index}.requestKind`);
+      }
+      if (!boundedText(cycle && cycle.capability)) {
+        errors.push(`referenceableCycles.${index}.capability`);
+      }
       if (!REFERENCEABLE_STATUSES.has(cycle && cycle.status)) {
         errors.push(`referenceableCycles.${index}.status`);
       }
       if (!timestamp(cycle && cycle.expiresAt)) {
         errors.push(`referenceableCycles.${index}.expiresAt`);
+      }
+      if (!exactKeys(cycle && cycle.subject, REFERENCEABLE_SUBJECT_FIELDS)
+        || !SUBJECT_KINDS.has(cycle && cycle.subject && cycle.subject.kind)
+        || !nullableBoundedText(cycle && cycle.subject && cycle.subject.catalogIdentity)) {
+        errors.push(`referenceableCycles.${index}.subject`);
+      }
+      if (!uniqueBoundedStrings(cycle && cycle.missingFields, MAX_REFERENCEABLE_CYCLES)) {
+        errors.push(`referenceableCycles.${index}.missingFields`);
+      }
+      if (!exactKeys(cycle && cycle.confirmedValues, CONFIRMED_VALUE_FIELDS)
+        || !nullableDate(cycle && cycle.confirmedValues && cycle.confirmedValues.checkIn)
+        || !nullableDate(cycle && cycle.confirmedValues && cycle.confirmedValues.checkOut)
+        || !nullableDate(cycle && cycle.confirmedValues && cycle.confirmedValues.searchFrom)
+        || !nullableDate(cycle && cycle.confirmedValues && cycle.confirmedValues.searchTo)
+        || !(cycle && cycle.confirmedValues && cycle.confirmedValues.guestCount === null
+          || Number.isInteger(cycle && cycle.confirmedValues && cycle.confirmedValues.guestCount)
+            && cycle.confirmedValues.guestCount > 0)) {
+        errors.push(`referenceableCycles.${index}.confirmedValues`);
       }
       if (!uniqueBoundedStrings(cycle && cycle.slotRefs, MAX_REFERENCEABLE_CYCLES)) {
         errors.push(`referenceableCycles.${index}.slotRefs`);
