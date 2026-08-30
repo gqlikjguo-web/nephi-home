@@ -108,6 +108,7 @@ function candidate({
 }
 
 function pipeline({ unit, action = "START", target = null }) {
+  const relationKind = { START: "NEW_REQUEST", CONTINUE: "SUPPLEMENT", MODIFY: "MODIFICATION", END: "TERMINATION", NONE: "NONE" }[action];
   const semantic = validateSemanticUnit({
     unit,
     validatedEvidenceRefs: normalizedEvidence.value,
@@ -121,8 +122,8 @@ function pipeline({ unit, action = "START", target = null }) {
     linkCandidate: {
       contextLinkCandidateId: unit.contextLinkCandidateId,
       unitId: unit.unitId,
-      actionCandidate: action,
-      targetRequestCycleId: target,
+      relationKind,
+      targetRequestCycleIdCandidate: target,
       evidenceRefs: [evidence()]
     },
     understandingTurnInput: turnInput,
@@ -218,8 +219,8 @@ function foreignAnswerFor(unitId) {
     linkCandidate: {
       contextLinkCandidateId: rawUnit.contextLinkCandidateId,
       unitId,
-      actionCandidate: "START",
-      targetRequestCycleId: null,
+      relationKind: "NEW_REQUEST",
+      targetRequestCycleIdCandidate: null,
       evidenceRefs: [evidence()]
     },
     understandingTurnInput: foreignInput,
@@ -258,8 +259,8 @@ const handoff = pipeline({
     subject: { kind: "room", catalogIdentity: "room-aggregation" },
     safetyCandidate: { operatorActionClass: "booking_mutation", riskClass: null }
   }),
-  action: "CONTINUE",
-  target: "cycle-aggregation"
+  action: "START",
+  target: null
 });
 const clarify = pipeline({
   unit: candidate({
@@ -316,8 +317,8 @@ assert.equal(aggregated.value.unitOutcomes[1].canonicalItem, canonicalAnswer);
 assert.equal(aggregated.value.unitOutcomes[2].canonicalItem, null);
 assert.equal(aggregated.value.unitOutcomes[3].canonicalItem, null);
 assert.equal(aggregated.value.unitOutcomes[1].routingDecision, answer.route, "C09 keeps the exact C07 route rather than promoting a turn route");
-assert.equal(aggregated.value.unitOutcomes[2].lifecycleDecision, handoff.lifecycle, "C09 keeps the protected pending lifecycle reference");
-assert.equal(aggregated.value.unitOutcomes[2].lifecycleDecision.targetRequestCycleId, "cycle-aggregation");
+assert.equal(aggregated.value.unitOutcomes[2].lifecycleDecision, handoff.lifecycle, "C09 keeps the authoritative lifecycle reference");
+assert.equal(aggregated.value.unitOutcomes[2].lifecycleDecision.targetRequestCycleId, null);
 assert.equal(aggregated.value.unitOutcomes[4].failure, failedUnit, "a failed unit remains explicit without erasing an answer sibling");
 assert.equal(aggregated.value.unitOutcomes[1].downstreamOutcomeRef, downstreamAnswer.outcomeRef);
 assert.deepEqual(aggregated.value.failedUnits, [failedUnit, invalidSibling], "an invalid pre-C03 sibling remains explicit beside validated work");

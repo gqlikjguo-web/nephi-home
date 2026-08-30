@@ -111,6 +111,50 @@ function buildManualTestFailureDiagnostics({ understanding, outcomes } = {}) {
     };
   });
 }
+function projectStateTransitionDiagnostic(value, traceId) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    traceId: bounded(traceId, 160),
+    c09Outcomes: (value.c09Outcomes || []).slice(0, 8).map((outcome) => ({
+      unitId: bounded(outcome.unitId, 160),
+      purpose: bounded(outcome.purpose, 80),
+      capability: outcome.capability == null ? null : bounded(outcome.capability, 80),
+      subject: {
+        kind: outcome.subject && outcome.subject.kind == null ? null : bounded(outcome.subject && outcome.subject.kind, 80),
+        catalogIdentity: outcome.subject && outcome.subject.catalogIdentity == null ? null : bounded(outcome.subject && outcome.subject.catalogIdentity, 160)
+      },
+      lifecycle: {
+        action: bounded(outcome.lifecycle && outcome.lifecycle.action, 40),
+        targetRequestCycleId: outcome.lifecycle && outcome.lifecycle.targetRequestCycleId == null ? null : bounded(outcome.lifecycle.targetRequestCycleId, 160)
+      },
+      routing: {
+        disposition: bounded(outcome.routing && outcome.routing.disposition, 40),
+        requiresCanonicalExecution: outcome.routing && outcome.routing.requiresCanonicalExecution === true,
+        missingGuestFields: (outcome.routing && outcome.routing.missingGuestFields || []).slice(0, 20).map((item) => bounded(item, 80))
+      },
+      canonicalItemPresent: outcome.canonicalItemPresent === true,
+      failureCode: outcome.failureCode == null ? null : bounded(outcome.failureCode, 80)
+    })),
+    taskCreations: (value.taskCreations || []).slice(0, 8).map((creation) => ({
+      unitId: bounded(creation.unitId, 160),
+      taskIdCandidate: bounded(creation.taskIdCandidate, 160),
+      capability: bounded(creation.capability, 80),
+      productType: bounded(creation.productType, 80),
+      productId: creation.productId == null ? null : bounded(creation.productId, 160),
+      expectedStatus: "needs_clarification",
+      missingFields: (creation.missingFields || []).slice(0, 20).map((item) => bounded(item, 80))
+    })),
+    taskCreationCount: Number.isInteger(value.taskCreationCount) ? value.taskCreationCount : 0,
+    reducerTaskCreationInputCount: Number.isInteger(value.reducerTaskCreationInputCount) ? value.reducerTaskCreationInputCount : 0,
+    lifecycleOperationCount: Number.isInteger(value.lifecycleOperationCount) ? value.lifecycleOperationCount : 0,
+    reducerInputTaskCount: Number.isInteger(value.reducerInputTaskCount) ? value.reducerInputTaskCount : 0,
+    reducerOutputTaskCount: Number.isInteger(value.reducerOutputTaskCount) ? value.reducerOutputTaskCount : 0,
+    zeroCreationReason: value.zeroCreationReason ? {
+      reason: bounded(value.zeroCreationReason.reason, 120),
+      failureCode: value.zeroCreationReason.failureCode == null ? null : bounded(value.zeroCreationReason.failureCode, 80)
+    } : null
+  };
+}
 function projectDiagnostic(result, traceId, counters) {
   const units = Array.isArray(result.understanding && result.understanding.units) ? result.understanding.units : [];
   const decision = result.finalDecision || {}, response = result.finalResponse || {}, resolver = result.resolver || {}, earliest = result.earliestFailure || null;
@@ -122,6 +166,7 @@ function projectDiagnostic(result, traceId, counters) {
     finalResponse: { action: bounded(response.action, 40), shouldReply: response.shouldReply === true, replyText: bounded(response.replyText, 1200) }, earliestFailure: earliest ? { layer: bounded(earliest.layer, 80), failureCode: bounded(earliest.failureCode, 80) } : null,
     failureCode: earliest ? bounded(earliest.failureCode, 80) : null,
     failedUnits: (result.failedUnitDiagnostics || []).slice(0, 8).map(clone),
+    stateTransition: projectStateTransitionDiagnostic(result.stateTransitionDiagnostics, traceId),
     traceId, requestedModel: bounded(result.requestedModel, 160), resolvedModel: bounded(result.resolvedModel, 160), sideEffectCounters: clone(counters)
   };
   assertSafe(projected); return projected;
@@ -241,23 +286,27 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
     const c08 = routing.value.disposition === "ANSWER" ? createCanonicalizerInputItem({ unit, lifecycleDecision: lifecycle.value, routingDecision: routing.value, understandingTurnInput: c01, canonicalizerCatalog: c08Catalog, publicCatalogIdentityProjection: projection }) : { ok: true, value: null };
     outcomes.push({ unit, lifecycleDecision: lifecycle.value, readiness: readiness.value, routingDecision: routing.value, canonicalItem: c08.ok ? c08.value : null, failure: c08.ok ? null : { layer: "C08", failureCode: c08.code } });
   }
+  const contextSnapshot = buildContextSnapshotV3(state, { ...scope, now });
+  const canonicalItems = [];
   const successful = outcomes.filter((item) => item.routingDecision);
+  for (const outcome of successful.filter((x) => x.canonicalItem)) {
+    const result = executeCanonicalizerInputItem({ canonicalizerInputItem: outcome.canonicalItem, catalog: c08Catalog, publicCatalogIdentityProjection: projection, contextSnapshot });
+    if (!result.ok) { outcome.canonicalItem = null; outcome.failure = { layer: "C08", failureCode: result.code }; continue; }
+    outcome.canonicalItem = result.value;
+    canonicalItems.push(result.value);
+  }
   const failedUnits = normalizeManualTestFailureRefs([
     ...understanding.failedUnits,
     ...outcomes.filter((x) => x.failure).map((x) => ({ unitId: x.unit.unitId, failureCode: x.failure.failureCode }))
   ]);
-  const aggregation = aggregateUnitOutcomes({ turnId: input.turnId, validatedUnits: successful.map((x) => x.unit), lifecycleDecisions: successful.map((x) => x.lifecycleDecision), routingDecisions: successful.map((x) => x.routingDecision), canonicalItems: successful.map((x) => x.canonicalItem).filter(Boolean), failedUnits });
+  const aggregation = aggregateUnitOutcomes({ turnId: input.turnId, validatedUnits: successful.map((x) => x.unit), lifecycleDecisions: successful.map((x) => x.lifecycleDecision), routingDecisions: successful.map((x) => x.routingDecision), canonicalItems, failedUnits });
   if (!aggregation.ok) { const error = new Error(aggregation.code); error.code = aggregation.code; throw error; }
   const adapted = adaptLifecycleDecisionsToStateV3({ decisions: successful.map((x) => x.lifecycleDecision), aggregationResult: aggregation.value, previous: state });
   if (!adapted.ok) { const error = new Error(adapted.code); error.code = adapted.code; throw error; }
-  const contextSnapshot = buildContextSnapshotV3(state, { ...scope, now });
-  const canonicalItems = [];
-  for (const outcome of successful.filter((x) => x.canonicalItem)) {
-    const result = executeCanonicalizerInputItem({ canonicalizerInputItem: outcome.canonicalItem, catalog: c08Catalog, publicCatalogIdentityProjection: projection, contextSnapshot });
-    if (!result.ok) { outcome.failure = { layer: "C08", failureCode: result.code }; continue; }
-    canonicalItems.push({ ...result.value, requestCycleId: outcome.lifecycleDecision.targetRequestCycleId || outcome.unit.unitId });
-  }
-  const formalRequests = canonicalItems.map((item) => buildCanonicalFormalRequest({ property, canonicalRequest: item.canonicalRequest, requestCycleId: item.requestCycleId, confirmedInputs: executionConditionsV3(state, item) }));
+  const formalRequests = canonicalItems.map((item) => {
+    const outcome = successful.find((candidate) => candidate.unit.unitId === item.unitId);
+    return buildCanonicalFormalRequest({ property, canonicalRequest: item.canonicalRequest, requestCycleId: outcome.lifecycleDecision.targetRequestCycleId || outcome.unit.unitId, confirmedInputs: executionConditionsV3(state, item) });
+  });
   const queryPlans = formalRequests.map(buildCanonicalQueryPlan).filter(Boolean);
   const rawExecutionOutcomes = [...formalRequests.filter((x) => x.readiness.status !== "ready").map(resultForNotReady), ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: resolver.availability, availableDatesResolver: resolver.availableDates, priceOverrides: resolver.priceOverrides(), datePriceClassifications: resolver.dateClassifications() })];
   const executionOutcomes = applyControlledReplyRules({ rules: resolver.customReplies(), property, canonicalItems, executionOutcomes: rawExecutionOutcomes, now });
@@ -269,10 +318,41 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
   const missingFields = successful.flatMap((x) => x.routingDecision.missingGuestFields);
   const finalDecision = executionOutcomes.length ? buildFinalDecision({ executionOutcomes, claimValidation }) : noExecutionDecision(executionOutcomes, dispositions, missingFields);
   const finalResponse = buildFinalResponse({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation });
-  const nextState = reduceConversationStateV3({ previous: state, canonicalItems, formalRequests, executionOutcomes, clarificationTaskIds: finalDecision.action === "clarification" ? finalDecision.executionSummary.notReadyTaskIds : [], lifecycleOperations: adapted.lifecycleOperations, taskCreations: adapted.taskCreations, canonicalTaskBindings: adapted.canonicalTaskBindings, scope: { ...scope, now } });
+  const nextState = reduceConversationStateV3({ previous: state, canonicalItems, formalRequests, executionOutcomes, clarificationTaskIds: finalDecision.action === "clarification" ? finalDecision.executionSummary.notReadyTaskIds : [], lifecycleOperations: adapted.value.lifecycleOperations, taskCreations: adapted.value.taskCreations, canonicalTaskBindings: adapted.value.canonicalTaskBindings, scope: { ...scope, now } });
+  const adapterOutput = adapted.value;
+  const startClarifyOutcomes = aggregation.value.unitOutcomes.filter((outcome) => (
+    outcome.lifecycleDecision.action === "START"
+    && outcome.routingDecision.disposition === "CLARIFY"
+    && outcome.routingDecision.requiresCanonicalExecution === false
+    && outcome.canonicalItem === null
+  ));
+  const zeroCreationReason = adapterOutput.taskCreations.length > 0 ? null
+    : startClarifyOutcomes.length > 0
+      ? { reason: "START_CLARIFY_MAPPING_EMPTY", failureCode: "START_CLARIFY_TASK_CREATION_MISSING" }
+      : { reason: "NO_START_CLARIFY_OUTCOME", failureCode: null };
+  const stateTransitionDiagnostics = {
+    traceId: input.traceId,
+    c09Outcomes: aggregation.value.unitOutcomes.map((outcome) => ({
+      unitId: outcome.unitId,
+      purpose: outcome.unit.purpose,
+      capability: outcome.unit.capability,
+      subject: outcome.unit.subject,
+      lifecycle: { action: outcome.lifecycleDecision.action, targetRequestCycleId: outcome.lifecycleDecision.targetRequestCycleId },
+      routing: { disposition: outcome.routingDecision.disposition, requiresCanonicalExecution: outcome.routingDecision.requiresCanonicalExecution, missingGuestFields: outcome.routingDecision.missingGuestFields },
+      canonicalItemPresent: outcome.canonicalItem !== null,
+      failureCode: outcome.failure && outcome.failure.failureCode || null
+    })),
+    taskCreations: adapterOutput.taskCreations,
+    taskCreationCount: adapterOutput.taskCreations.length,
+    reducerTaskCreationInputCount: adapterOutput.taskCreations.length,
+    lifecycleOperationCount: adapterOutput.lifecycleOperations.length,
+    reducerInputTaskCount: state.tasks.length,
+    reducerOutputTaskCount: nextState.tasks.length,
+    zeroCreationReason
+  };
   const provider = understanding[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC] || {};
   const failure = outcomes.find((x) => x.failure) && outcomes.find((x) => x.failure).failure || understanding.failedUnits[0] && { layer: understanding.failedUnits[0].boundary || "C03-C05", failureCode: understanding.failedUnits[0].failureCode } || null;
-  return { state: nextState, understanding: { summary: understanding.validatedUnits.map((x) => `${x.purpose}/${x.capability}/${x.subject.kind}`).join("；"), units: understanding.validatedUnits.map((x) => ({ purpose: x.purpose, capability: x.capability, subject: x.subject, temporal: x.temporalCandidate, guestCount: x.slotCandidates.find((slot) => slot.slot === "guest_count")?.value || null })) }, lifecycle: successful.map((x) => x.lifecycleDecision.action), routing: dispositions, resolver: { name: "existing canonical Resolver", foundOfficialData: executionOutcomes.some((x) => x.outcome === "answered"), status: executionOutcomes.map((x) => x.outcome).join(",") || "NOT_APPLICABLE" }, finalDecision, finalResponse, earliestFailure: failure, failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }), requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL, resolvedModel: provider.resolvedModel || "" };
+  return { state: nextState, understanding: { summary: understanding.validatedUnits.map((x) => `${x.purpose}/${x.capability}/${x.subject.kind}`).join("；"), units: understanding.validatedUnits.map((x) => ({ purpose: x.purpose, capability: x.capability, subject: x.subject, temporal: x.temporalCandidate, guestCount: x.slotCandidates.find((slot) => slot.slot === "guest_count")?.value || null })) }, lifecycle: successful.map((x) => x.lifecycleDecision.action), routing: dispositions, resolver: { name: "existing canonical Resolver", foundOfficialData: executionOutcomes.some((x) => x.outcome === "answered"), status: executionOutcomes.map((x) => x.outcome).join(",") || "NOT_APPLICABLE" }, finalDecision, finalResponse, earliestFailure: failure, failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }), stateTransitionDiagnostics, requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL, resolvedModel: provider.resolvedModel || "" };
 }
 
 function createNewCoreManualTestService({ persistence, providers, service, factsProviders = providers, factsService = service, apiKey, now = () => new Date(), executeTurn = executeNewCoreManualTurn } = {}) {

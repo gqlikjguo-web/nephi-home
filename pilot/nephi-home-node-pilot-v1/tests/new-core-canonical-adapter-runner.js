@@ -114,7 +114,7 @@ function turnInput(messageText, overrides = {}) {
         requestCycleId: "cycle-c08",
         requestKind: "availability",
         capability: "availability",
-        status: "answered",
+        status: "pending",
         expiresAt: FUTURE,
         subject: { kind: "bundle", catalogIdentity: "bundle-a" },
         missingFields: [],
@@ -185,6 +185,7 @@ function pipeline({
   target = null,
   turnSuffix = "base"
 }) {
+  const relationKind = { START: "NEW_REQUEST", CONTINUE: "SUPPLEMENT", MODIFY: "MODIFICATION", END: "TERMINATION", NONE: "NONE" }[action];
   const input = turnInput(messageText, { turnSuffix });
   const rawUnit = candidate(messageText, unitOverrides);
   const normalizedEvidence = validateAndNormalizeSourceEvidence(rawUnit.evidenceRefs, input.sourceEvents);
@@ -202,8 +203,8 @@ function pipeline({
     linkCandidate: {
       contextLinkCandidateId: semantic.value.contextLinkCandidateId,
       unitId: semantic.value.unitId,
-      actionCandidate: action,
-      targetRequestCycleId: target,
+      relationKind,
+      targetRequestCycleIdCandidate: target,
       evidenceRefs: semantic.value.evidenceRefs
     },
     understandingTurnInput: input,
@@ -477,7 +478,7 @@ const continued = pipeline({
   messageText: contextMessage,
   unitOverrides: {
     unitId: "unit-context-answer",
-    capability: "capacity",
+    capability: "availability",
     subject: { kind: "bundle", catalogIdentity: "bundle-a" },
     slotCandidates: [
       slot(contextMessage, { id: "slot-guests-c08", slot: "guest_count", value: 4 }),
@@ -495,36 +496,6 @@ const canonicalContinued = execute(continuedC08.value);
 assert.equal(canonicalContinued.ok, true, canonicalContinued.code);
 assert.equal(canonicalContinued.value.stateInput.confirmedFields.guests, 4);
 assert.equal(canonicalContinued.value.canonicalRequest.lodgingProduct.bundleId, "bundle-a");
-
-// The exact approved context remains canonicalizer input authority on
-// CONTINUE. C03 need not duplicate dates already owned by that context.
-const approvedContextContinuation = pipeline({
-  messageText: "parking question",
-  unitOverrides: {
-    unitId: "unit-approved-context-continuation",
-    capability: "property_fact",
-    subject: { kind: "amenity", catalogIdentity: "parking" },
-    stayDependent: false,
-    temporalCandidate: null
-  },
-  action: "CONTINUE",
-  target: "cycle-c08",
-  turnSuffix: "approved-context-continuation"
-});
-const approvedContextC08 = createC08(approvedContextContinuation);
-assert.equal(approvedContextC08.ok, true, approvedContextC08.code);
-const canonicalApprovedContext = execute(approvedContextC08.value);
-assert.equal(canonicalApprovedContext.ok, true, canonicalApprovedContext.code);
-assert.deepEqual([
-  canonicalApprovedContext.value.canonicalRequest.temporalState.expressionType,
-  canonicalApprovedContext.value.canonicalRequest.temporalState.checkIn,
-  canonicalApprovedContext.value.canonicalRequest.temporalState.checkOut,
-  canonicalApprovedContext.value.canonicalRequest.temporalState.resolutionSource
-], ["context", "2026-09-01", "2026-09-03", "approved_context"]);
-assert.equal(canonicalApprovedContext.value.canonicalRequest.canonicalEntity.category, "amenity");
-assert.equal(canonicalApprovedContext.value.canonicalRequest.lodgingProduct.productType, "bundle");
-assert.equal(canonicalApprovedContext.value.canonicalRequest.lodgingProduct.bundleId, "bundle-a");
-assert.equal(canonicalApprovedContext.value.stateInput.confirmedFields.inventory, null);
 
 // AC-CAN-009: only a trusted exact ANSWER may own C08. CLARIFY, HANDOFF,
 // NO_REPLY, and even a structurally ANSWER lifecycle END own no canonical item.
@@ -563,22 +534,6 @@ const noReply = pipeline({
   turnSuffix: "no-reply"
 });
 assertFailure(createC08(noReply), "CANONICAL_INPUT_NOT_ANSWER");
-const lifecycleOnly = pipeline({
-  messageText: "parking question",
-  unitOverrides: {
-    unitId: "unit-answer-end",
-    capability: "property_fact",
-    subject: { kind: "amenity", catalogIdentity: "parking" },
-    stayDependent: false,
-    temporalCandidate: null
-  },
-  action: "END",
-  target: "cycle-c08",
-  turnSuffix: "answer-end"
-});
-assert.equal(lifecycleOnly.route.disposition, "ANSWER", "this proves C08 closes the lifecycle/router gap itself");
-assertFailure(createC08(lifecycleOnly), "CANONICAL_INPUT_NOT_ANSWER");
-
 // AC-CAN-010: missing/invalid evidence and closed-schema additions fail at
 // the C08 contract instead of being repaired from source text or catalog data.
 assertFailure(validateCanonicalizerInputItem({

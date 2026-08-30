@@ -26,7 +26,7 @@ const {
 } = require("../new-core/contracts/source-evidence");
 const {
   MAX_CONTEXT_LINKS,
-  ACTION_CANDIDATES,
+  RELATION_KINDS,
   validateContextLinkCandidate
 } = require("../new-core/contracts/context-link-candidate");
 const {
@@ -245,14 +245,14 @@ function contextLinkSchema(understandingTurnInput) {
   return objectSchema({
     contextLinkCandidateId: stringSchema(),
     unitId: stringSchema(),
-    actionCandidate: enumSchema(ACTION_CANDIDATES),
-    targetRequestCycleId: {
+    relationKind: enumSchema(RELATION_KINDS),
+    targetRequestCycleIdCandidate: {
       type: ["string", "null"],
       enum: [...new Set([...cycleIds, null])],
       maxLength: MAX_ID_LENGTH
     },
     evidenceRefs: evidenceArraySchema()
-  }, "One language-derived Context proposal for one unit; never guess a target not present in C01.");
+  }, "One non-authoritative language-derived Context relation for one unit; never guess a target not present in C01.");
 }
 
 function openAiUnderstandingV1ProviderSchema(understandingTurnInput) {
@@ -273,9 +273,10 @@ function instructions() {
     "Split every independent source meaning into one unit and emit exactly one matching context-link candidate per unit.",
     "Use only the bounded C01 source events, recent conversation, referenceable cycles, capability catalog, and public subject catalog supplied by the developer message.",
     "Recent conversation helps interpret language and references but is never a property-fact source. Evidence must cite exact C01 sourceEvents UTF-16 coordinates and quote text.",
-    "When the current source message supplies missing values for a referenceable pending cycle, represent the composite pending lodging request with its trusted lodging purpose, capability, and subject identity, and propose CONTINUE targeting that exact requestCycleId; do not emit a capability-bearing supplement unit, and never invent or substitute cycle identity.",
+    "When the current source message supplies missing values for a referenceable pending cycle, represent the composite pending lodging request with its trusted lodging purpose, capability, and subject identity, describe relationKind SUPPLEMENT, and cite that exact requestCycleId as targetRequestCycleIdCandidate; do not emit a capability-bearing supplement unit, and never invent or substitute cycle identity.",
+    "Context relation is semantic evidence, never a lifecycle decision. Use NEW_REQUEST for an independent actionable request, SUPPLEMENT for additional information completing an existing request, MODIFICATION for an explicit change to an existing request, TERMINATION for an explicit end, and NONE only when no conversational relation is expressed. The deterministic core alone chooses START, CONTINUE, MODIFY, END, or NONE.",
     "For that continuation, compare only the supplied candidate values with the cycle's missingFields; deterministic routing alone decides whether to answer or clarify.",
-    "Capability, subject, stay dependency, safety meaning, and Context action are independent candidates. Never propose ANSWER, CLARIFY, HANDOFF, or NO_REPLY.",
+    "Capability, subject, stay dependency, safety meaning, and Context relation are independent candidates. Never propose ANSWER, CLARIFY, HANDOFF, NO_REPLY, START, CONTINUE, MODIFY, END, or lifecycle NONE.",
     "Set safetyCandidate only for operator_request/booking_operator_request or sensitive_request/high_risk. Exactly one of operatorActionClass and riskClass must be non-null; otherwise safetyCandidate is null.",
     "Temporal candidates preserve source meaning only. Do not invent an implicit year, canonical date, availability, price, policy truth, amenity truth, location fact, or any other formal fact.",
     "Do not emit resolver IDs, query plans, state mutations, final reply text, message-level routing, task indexes, credentials, private data, or fields outside the schema.",

@@ -7,11 +7,11 @@ const MAX_ID_LENGTH = 160;
 const CONTEXT_LINK_FIELDS = Object.freeze([
   "contextLinkCandidateId",
   "unitId",
-  "actionCandidate",
-  "targetRequestCycleId",
+  "relationKind",
+  "targetRequestCycleIdCandidate",
   "evidenceRefs"
 ]);
-const ACTION_CANDIDATES = new Set(["START", "CONTINUE", "MODIFY", "END", "NONE"]);
+const RELATION_KINDS = new Set(["NEW_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION", "NONE"]);
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -37,9 +37,10 @@ function validateContextLinkCandidate(value) {
   }
   if (!boundedText(value && value.contextLinkCandidateId)) errors.push("contextLinkCandidateId");
   if (!boundedText(value && value.unitId)) errors.push("unitId");
-  if (!ACTION_CANDIDATES.has(value && value.actionCandidate)) errors.push("actionCandidate");
-  if (value && value.targetRequestCycleId !== null && !boundedText(value.targetRequestCycleId)) {
-    errors.push("targetRequestCycleId");
+  if (!RELATION_KINDS.has(value && value.relationKind)) errors.push("relationKind");
+  if (value && value.targetRequestCycleIdCandidate !== null
+    && !boundedText(value.targetRequestCycleIdCandidate)) {
+    errors.push("targetRequestCycleIdCandidate");
   }
   const evidence = validateSourceEvidence(value && value.evidenceRefs);
   if (!evidence.ok) errors.push(...evidence.errors.map((error) => `evidenceRefs.${error}`));
@@ -80,7 +81,7 @@ module.exports = {
   MAX_EVIDENCE_REFS,
   MAX_CONTEXT_LINKS,
   CONTEXT_LINK_FIELDS,
-  ACTION_CANDIDATES,
+  RELATION_KINDS,
   validateContextLinkCandidate,
   validateContextLinkCandidates
 };

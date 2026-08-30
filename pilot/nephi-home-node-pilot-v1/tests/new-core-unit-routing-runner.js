@@ -115,6 +115,7 @@ function candidate({
 }
 
 function validated({ unit, messageText, action = "START", target = null }) {
+  const relationKind = { START: "NEW_REQUEST", CONTINUE: "SUPPLEMENT", MODIFY: "MODIFICATION", END: "TERMINATION", NONE: "NONE" }[action];
   const turnInput = input(messageText);
   const evidenceResult = validateAndNormalizeSourceEvidence([evidence(messageText)], turnInput.sourceEvents);
   assert.equal(evidenceResult.ok, true);
@@ -131,8 +132,8 @@ function validated({ unit, messageText, action = "START", target = null }) {
     linkCandidate: {
       contextLinkCandidateId: unit.contextLinkCandidateId,
       unitId: unit.unitId,
-      actionCandidate: action,
-      targetRequestCycleId: target,
+      relationKind,
+      targetRequestCycleIdCandidate: target,
       evidenceRefs: [evidence(messageText)]
     },
     understandingTurnInput: turnInput,
@@ -271,8 +272,8 @@ const operator = validated({
     temporalCandidate: null,
     safetyCandidate: { operatorActionClass: "booking_mutation", riskClass: null }
   }),
-  action: "CONTINUE",
-  target: "cycle-routing"
+  action: "START",
+  target: null
 });
 const missingBasis = route(operator);
 assert.equal(missingBasis.ok, false);
@@ -333,8 +334,8 @@ const cancellation = validated({
 assert.equal(route(cancellation).value.disposition, "NO_REPLY");
 const cancellationOperator = validated({
   messageText: cancellationText,
-  action: "CONTINUE",
-  target: "cycle-routing",
+  action: "START",
+  target: null,
   unit: candidate({
     messageText: cancellationText,
     unitId: "unit-cancellation-operator",
@@ -353,38 +354,6 @@ const cancellationOperatorPolicy = createTrustedOperatorSafetyPolicy({
 });
 assert.equal(cancellationOperatorPolicy.ok, true);
 assert.equal(route({ ...cancellationOperator, operatorSafetyPolicy: cancellationOperatorPolicy.value }).value.disposition, "HANDOFF");
-const operatorEnd = validated({
-  messageText: operatorText,
-  action: "END",
-  target: "cycle-routing",
-  unit: candidate({
-    messageText: operatorText,
-    unitId: "unit-operator-end",
-    purpose: "operator_request",
-    capability: "booking_operator_request",
-    subject: { kind: "room", catalogIdentity: "room-a" },
-    stayDependent: false,
-    temporalCandidate: null,
-    safetyCandidate: { operatorActionClass: "booking_mutation", riskClass: null }
-  })
-});
-assert.equal(route(operatorEnd).code, "ROUTE_PURPOSE_CONFLICT");
-const operatorNone = validated({
-  messageText: operatorText,
-  action: "NONE",
-  unit: candidate({
-    messageText: operatorText,
-    unitId: "unit-operator-none",
-    purpose: "operator_request",
-    capability: "booking_operator_request",
-    subject: { kind: "room", catalogIdentity: "room-a" },
-    stayDependent: false,
-    temporalCandidate: null,
-    safetyCandidate: { operatorActionClass: "booking_mutation", riskClass: null }
-  })
-});
-assert.equal(route(operatorNone).code, "ROUTE_PURPOSE_CONFLICT");
-
 // AC-NRP-001..008 / AC-RTE-004,009..012 / AC-CTX-015: acknowledgements,
 // social/off-topic content and verified context-only updates stay silent per
 // unit even when lifecycle is START, MODIFY, or NONE.

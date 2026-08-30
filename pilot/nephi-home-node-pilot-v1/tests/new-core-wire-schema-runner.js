@@ -81,8 +81,8 @@ function contextLink(overrides = {}) {
   return {
     contextLinkCandidateId: "link-1",
     unitId: "unit-1",
-    actionCandidate: "START",
-    targetRequestCycleId: null,
+    relationKind: "NEW_REQUEST",
+    targetRequestCycleIdCandidate: null,
     evidenceRefs: [evidence()],
     ...overrides
   };
@@ -226,8 +226,8 @@ assert.equal(validateContextLinkCandidate(contextLink()).ok, true);
 for (const invalidLink of [
   contextLink({ contextLinkCandidateId: "" }),
   contextLink({ unitId: "" }),
-  contextLink({ actionCandidate: "GUESS" }),
-  contextLink({ targetRequestCycleId: "" }),
+  contextLink({ relationKind: "GUESS" }),
+  contextLink({ targetRequestCycleIdCandidate: "" }),
   contextLink({ evidenceRefs: [] }),
   contextLink({ candidateIndex: 0 })
 ]) {

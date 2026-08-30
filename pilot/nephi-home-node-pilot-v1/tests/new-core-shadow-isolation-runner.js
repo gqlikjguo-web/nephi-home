@@ -122,8 +122,8 @@ function link(unit, overrides = {}) {
   return {
     contextLinkCandidateId: unit.contextLinkCandidateId,
     unitId: unit.unitId,
-    actionCandidate: unit.purpose === "acknowledgement" ? "NONE" : "START",
-    targetRequestCycleId: null,
+    relationKind: unit.purpose === "acknowledgement" ? "NONE" : "NEW_REQUEST",
+    targetRequestCycleIdCandidate: null,
     evidenceRefs: unit.evidenceRefs,
     ...overrides
   };

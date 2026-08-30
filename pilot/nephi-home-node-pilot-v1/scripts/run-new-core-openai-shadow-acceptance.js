@@ -121,7 +121,7 @@ function controlledUnitProjection(unit, understanding, c10) {
   return {
     purpose: unit.purpose, capability: unit.capability, subjectKind: unit.subject.kind,
     stayDependent: unit.stayDependent, temporalCandidate: unit.temporalCandidate,
-    contextAction: link ? link.actionCandidate : null,
+    contextRelation: link ? link.relationKind : null,
     lifecycle: lifecycle ? lifecycle.action : null,
     replyDisposition: route ? route.disposition : null,
     c08Owned: Boolean(find("canonicalItems"))
@@ -154,7 +154,7 @@ function rawMeaningMatches(caseId, rawUnits, rawLinks = []) {
     && unit.stayDependent && unit.temporalCandidate);
   if (caseId === "AC-PRD-005") return noDanger && rawUnits.some((unit) => unit.subjectKind === "bundle"
     && rawLinks.some((link) => link.unitIdHash === unit.unitIdHash
-      && ["CONTINUE", "MODIFY"].includes(link.actionCandidate)));
+      && ["SUPPLEMENT", "MODIFICATION"].includes(link.relationKind)));
   if (caseId === "AC-OAI-002") return rawUnits.some((unit) => unit.capability === "availability"
     && unit.subjectKind === "bundle" && unit.stayDependent && unit.temporalCandidate
     && unit.temporalCandidate.checkInCandidate && unit.temporalCandidate.checkOutCandidate);
@@ -172,7 +172,7 @@ function controlledBehaviorMatches(caseId, units) {
   if (caseId === "AC-PRD-004") return units.some((unit) => ["availability", "available_dates"].includes(unit.capability)
     && unit.replyDisposition !== "HANDOFF" && unit.replyDisposition !== "NO_REPLY");
   if (caseId === "AC-PRD-005") return units.some((unit) => unit.subjectKind === "bundle"
-    && (["CONTINUE", "MODIFY"].includes(unit.contextAction) || unit.replyDisposition === "CLARIFY"));
+    && (["SUPPLEMENT", "MODIFICATION"].includes(unit.contextRelation) || unit.replyDisposition === "CLARIFY"));
   if (caseId === "AC-OAI-002") return units.some((unit) => unit.capability === "availability"
     && unit.subjectKind === "bundle" && unit.replyDisposition === "ANSWER" && unit.c08Owned);
   if (caseId === "AC-OAI-003") return units.some((unit) => unit.capability === "price"
@@ -260,8 +260,8 @@ async function executeRun(caseDefinition, runNumber, apiKey, coreSha) {
     });
     const rawUnits = understanding.understandingOutput.units.map(rawUnitProjection);
     const rawLinks = understanding.contextLinkCandidates.map((link) => ({
-      unitIdHash: hash(link.unitId), actionCandidate: link.actionCandidate,
-      targetRequestCycleIdHash: link.targetRequestCycleId ? hash(link.targetRequestCycleId) : null
+      unitIdHash: hash(link.unitId), relationKind: link.relationKind,
+      targetRequestCycleIdHash: link.targetRequestCycleIdCandidate ? hash(link.targetRequestCycleIdCandidate) : null
     }));
     const units = understanding.validatedUnits.map((unit) => controlledUnitProjection(unit, understanding, c10));
     const failureCodes = [...understanding.failedUnits.map((item) => item.failureCode), ...(c10.failureCodes || [])];

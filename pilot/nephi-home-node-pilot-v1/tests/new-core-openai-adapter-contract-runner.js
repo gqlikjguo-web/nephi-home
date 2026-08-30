@@ -93,8 +93,8 @@ function link(overrides = {}) {
   return {
     contextLinkCandidateId: "link-a",
     unitId: "unit-a",
-    actionCandidate: "NONE",
-    targetRequestCycleId: null,
+    relationKind: "NONE",
+    targetRequestCycleIdCandidate: null,
     evidenceRefs: [evidence()],
     ...overrides
   };
@@ -189,7 +189,7 @@ function siblingOutput({ invalidBoundary, invalidFirst }) {
       ? { subject: { kind: "property", catalogIdentity: "property-a" } }
       : {};
   const linkOverrides = invalidBoundary === "C05"
-    ? { actionCandidate: "CONTINUE", targetRequestCycleId: "cycle-missing" }
+    ? { relationKind: "SUPPLEMENT", targetRequestCycleIdCandidate: "cycle-missing" }
     : {};
   const acknowledgement = unit();
   const availability = availabilityUnit(availabilityOverrides);
@@ -273,7 +273,7 @@ async function main() {
   );
   assert.deepEqual(
     body.text.format.schema.properties.contextLinkCandidates.items.required.sort(),
-    ["actionCandidate", "contextLinkCandidateId", "evidenceRefs", "targetRequestCycleId", "unitId"].sort()
+    ["contextLinkCandidateId", "evidenceRefs", "relationKind", "targetRequestCycleIdCandidate", "unitId"].sort()
   );
   assert.deepEqual(
     body.text.format.schema.properties.understandingOutput.properties.units.items.properties.evidenceRefs.items.required.sort(),
@@ -524,7 +524,7 @@ async function main() {
   const contextDiagnostics = [];
   const contextResult = await callOpenAIUnderstandingV1(input, options(async () =>
     successfulResponse(providerOutput({
-      contextLinkCandidates: [link({ actionCandidate: "CONTINUE", targetRequestCycleId: "cycle-missing" })]
+      contextLinkCandidates: [link({ relationKind: "SUPPLEMENT", targetRequestCycleIdCandidate: "cycle-missing" })]
     })), { onDiagnostic: (event) => contextDiagnostics.push(event) }));
   assert.deepEqual(contextResult.validatedUnits, []);
   assert.deepEqual(contextResult.failedUnits, [{

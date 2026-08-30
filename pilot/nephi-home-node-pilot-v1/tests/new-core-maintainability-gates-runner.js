@@ -197,7 +197,7 @@ const duplicateAuthorityCases = [
   ["evidence", "function shadowEvidenceWriter(){ return { startOffset: 0, endOffset: 1, quote: 'x' }; }"],
   ["capability", "function shadowCapabilityWriter(){ return { requestKind: 'x', exactRequiredFields: [] }; }"],
   ["reply", "function shadowReplyWriter(){ return { disposition: 'NO_REPLY', requiresCanonicalExecution: false }; }"],
-  ["context", "function shadowContextWriter(){ return { actionCandidate: 'NONE', targetRequestCycleId: null }; }"],
+  ["context", "function shadowContextWriter(){ return { relationKind: 'NONE', targetRequestCycleIdCandidate: null }; }"],
   ["facts", "function shadowFactsWriter(){ return { facts: [] }; }"],
   ["memory", "function shadowMemoryWriter(){ return { confirmedFields: {}, lifecycleOperations: [] }; }"],
 ];
@@ -602,7 +602,7 @@ const authorityMetadataRoot = isolatedSource(({ sourceRoot }) => {
       startOffset: "wire field", endOffset: "wire field", quote: "wire field",
       requestKind: "wire field", exactRequiredFields: "wire field",
       disposition: "wire field", requiresCanonicalExecution: "wire field",
-      actionCandidate: "wire field", targetRequestCycleId: "wire field",
+      relationKind: "wire field", targetRequestCycleIdCandidate: "wire field",
       facts: "wire field", confirmedFields: "wire field", lifecycleOperations: "wire field"
     };
     module.exports = { fieldDocumentation };

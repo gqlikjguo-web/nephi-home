@@ -117,8 +117,8 @@ const context = validateContextLink({
   linkCandidate: {
     contextLinkCandidateId: rawUnit.contextLinkCandidateId,
     unitId: rawUnit.unitId,
-    actionCandidate: "START",
-    targetRequestCycleId: null,
+    relationKind: "NEW_REQUEST",
+    targetRequestCycleIdCandidate: null,
     evidenceRefs: [evidence()]
   },
   understandingTurnInput: input,
@@ -252,8 +252,8 @@ const duplicateSlotContext = validateContextLink({
   linkCandidate: {
     contextLinkCandidateId: duplicateSlotRawUnit.contextLinkCandidateId,
     unitId: duplicateSlotRawUnit.unitId,
-    actionCandidate: "START",
-    targetRequestCycleId: null,
+    relationKind: "NEW_REQUEST",
+    targetRequestCycleIdCandidate: null,
     evidenceRefs: [evidence()]
   },
   understandingTurnInput: input,
@@ -379,8 +379,8 @@ const followUpContext = validateContextLink({
   linkCandidate: {
     contextLinkCandidateId: followUpRawUnit.contextLinkCandidateId,
     unitId: followUpRawUnit.unitId,
-    actionCandidate: "CONTINUE",
-    targetRequestCycleId: next.tasks[0].taskId,
+    relationKind: "SUPPLEMENT",
+    targetRequestCycleIdCandidate: next.tasks[0].taskId,
     evidenceRefs: [followUpEvidence]
   },
   understandingTurnInput: followUpInput,
@@ -514,8 +514,8 @@ const independentContext = validateContextLink({
   linkCandidate: {
     contextLinkCandidateId: followUpRawUnit.contextLinkCandidateId,
     unitId: followUpRawUnit.unitId,
-    actionCandidate: "START",
-    targetRequestCycleId: null,
+    relationKind: "NEW_REQUEST",
+    targetRequestCycleIdCandidate: null,
     evidenceRefs: [followUpEvidence]
   },
   understandingTurnInput: followUpInput,

@@ -43,7 +43,19 @@ async function fakeTurn({ input, state, property, sideEffectGuard, now: timestam
     }], requestedModel: "gpt-5.6-luna", resolvedModel: "gpt-5.6-luna"
   };
   const continuation = calls > 0;
-  return { state: nextState(state, timestamp), understanding: { summary: continuation ? "補充日期，承接正式 pending cycle" : "詢問包棟價格，缺日期", units: [{ purpose: "lodging_question", capability: "price", subject: { kind: "bundle", catalogIdentity: "bundle_all" } }] }, lifecycle: [continuation ? "CONTINUE" : "START"], routing: [continuation ? "ANSWER" : "CLARIFY"], resolver: { name: "existing canonical Resolver", foundOfficialData: continuation, status: continuation ? "answered" : "NOT_APPLICABLE" }, finalDecision: continuation ? { action: "reply", reasonCode: "execution_answered", taskIds: ["formal-cycle-1"], missingFields: [], reviewRequired: false, executionSummary: {} } : { action: "clarification", reasonCode: "missing_information", taskIds: ["formal-cycle-1"], missingFields: ["checkIn", "checkOut"], reviewRequired: false, executionSummary: { notReadyTaskIds: ["formal-cycle-1"] } }, finalResponse: continuation ? { action: "reply", shouldReply: true, replyText: "正式資料預計回覆" } : { action: "clarification", shouldReply: true, replyText: "請提供入住日期。" }, earliestFailure: null, requestedModel: "gpt-5.6-luna", resolvedModel: "gpt-5.6-luna" };
+  return { state: nextState(state, timestamp), understanding: { summary: continuation ? "補充日期，承接正式 pending cycle" : "詢問包棟價格，缺日期", units: [{ purpose: "lodging_question", capability: "price", subject: { kind: "bundle", catalogIdentity: "bundle_all" } }] }, lifecycle: [continuation ? "CONTINUE" : "START"], routing: [continuation ? "ANSWER" : "CLARIFY"], resolver: { name: "existing canonical Resolver", foundOfficialData: continuation, status: continuation ? "answered" : "NOT_APPLICABLE" }, finalDecision: continuation ? { action: "reply", reasonCode: "execution_answered", taskIds: ["formal-cycle-1"], missingFields: [], reviewRequired: false, executionSummary: {} } : { action: "clarification", reasonCode: "missing_information", taskIds: ["formal-cycle-1"], missingFields: ["checkIn", "checkOut"], reviewRequired: false, executionSummary: { notReadyTaskIds: ["formal-cycle-1"] } }, finalResponse: continuation ? { action: "reply", shouldReply: true, replyText: "正式資料預計回覆" } : { action: "clarification", shouldReply: true, replyText: "請提供入住日期。" }, earliestFailure: null, requestedModel: "gpt-5.6-luna", resolvedModel: "gpt-5.6-luna",
+    stateTransitionDiagnostics: {
+      traceId: input.traceId,
+      c09Outcomes: [{ unitId: "unit-start", purpose: "lodging_question", capability: "price", subject: { kind: "bundle", catalogIdentity: "bundle_all" }, lifecycle: { action: continuation ? "CONTINUE" : "START", targetRequestCycleId: continuation ? "formal-cycle-1" : null }, routing: { disposition: continuation ? "ANSWER" : "CLARIFY", requiresCanonicalExecution: continuation, missingGuestFields: continuation ? [] : ["stay.checkIn", "stay.checkOut"] }, canonicalItemPresent: continuation, failureCode: null }],
+      taskCreations: continuation ? [] : [{ unitId: "unit-start", taskIdCandidate: "unit-start", capability: "price", productType: "bundle", productId: "bundle_all", expectedStatus: "needs_clarification", missingFields: ["checkIn", "checkOut"] }],
+      taskCreationCount: continuation ? 0 : 1,
+      reducerTaskCreationInputCount: continuation ? 0 : 1,
+      lifecycleOperationCount: 0,
+      reducerInputTaskCount: continuation ? 1 : 0,
+      reducerOutputTaskCount: continuation ? 1 : 1,
+      zeroCreationReason: continuation ? { reason: "NO_START_CLARIFY_OUTCOME", failureCode: null } : null
+    }
+  };
 }
 
 async function json(url, method = "GET", body, sentCookie = cookie) {
@@ -150,6 +162,17 @@ async function json(url, method = "GET", body, sentCookie = cookie) {
     const persistedDiagnostic = await json(`${running.url}/api/admin/new-core-test/records/${diagnosticFailure.body.data.traceId}`);
     assert.deepEqual(persistedDiagnostic.body.data.diagnostic.failedUnits, diagnosticFailure.body.data.diagnostic.failedUnits);
     const first = await json(`${running.url}/api/admin/new-core-test/sessions/${id}/turns`, "POST", { input: "想了解包棟價格" }); assert.equal(first.status, 201, JSON.stringify(first.body)); assert.equal(first.body.data.diagnostic.context[0], "START"); assert.equal(first.body.data.diagnostic.finalResponse.action, "clarification");
+    assert.deepEqual(first.body.data.diagnostic.stateTransition, {
+      traceId: first.body.data.traceId,
+      c09Outcomes: [{ unitId: "unit-start", purpose: "lodging_question", capability: "price", subject: { kind: "bundle", catalogIdentity: "bundle_all" }, lifecycle: { action: "START", targetRequestCycleId: null }, routing: { disposition: "CLARIFY", requiresCanonicalExecution: false, missingGuestFields: ["stay.checkIn", "stay.checkOut"] }, canonicalItemPresent: false, failureCode: null }],
+      taskCreations: [{ unitId: "unit-start", taskIdCandidate: "unit-start", capability: "price", productType: "bundle", productId: "bundle_all", expectedStatus: "needs_clarification", missingFields: ["checkIn", "checkOut"] }],
+      taskCreationCount: 1,
+      reducerTaskCreationInputCount: 1,
+      lifecycleOperationCount: 0,
+      reducerInputTaskCount: 0,
+      reducerOutputTaskCount: 1,
+      zeroCreationReason: null
+    });
     assert.equal(factsPropertyName, "正式 facts authority", "manual test must read property facts from the dedicated facts authority");
     const second = await json(`${running.url}/api/admin/new-core-test/sessions/${id}/turns`, "POST", { input: "9/20" }); assert.equal(second.status, 201); assert.equal(second.body.data.diagnostic.context[0], "CONTINUE"); assert.equal(second.body.data.predictedResponse, "正式資料預計回覆");
     assert.deepEqual(second.body.data.diagnostic.sideEffectCounters, { LINE_SEND: 0, PRODUCTION_STATE_WRITE: 0, PRODUCTION_MESSAGE_WRITE: 0, PRODUCTION_REVIEW_WRITE: 0, BOOKING_MUTATION: 0, FACTS_PROPERTY_MUTATION: 0 });

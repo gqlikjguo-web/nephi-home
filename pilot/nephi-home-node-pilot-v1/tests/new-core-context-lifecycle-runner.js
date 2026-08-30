@@ -119,6 +119,10 @@ function slot({ messageText, id, slot: slotName, value, operation = "SET" }) {
   };
 }
 
+function relationForAction(action) {
+  return { START: "NEW_REQUEST", CONTINUE: "SUPPLEMENT", MODIFY: "MODIFICATION", END: "TERMINATION", NONE: "NONE" }[action];
+}
+
 function validatedPipeline({
   messageText = "我們4位",
   slots = [],
@@ -143,8 +147,8 @@ function validatedPipeline({
     linkCandidate: {
       contextLinkCandidateId: "link-context",
       unitId: "unit-context",
-      actionCandidate: action,
-      targetRequestCycleId: target,
+      relationKind: relationForAction(action),
+      targetRequestCycleIdCandidate: target,
       evidenceRefs: [evidence(messageText)]
     },
     understandingTurnInput: input,
@@ -340,15 +344,16 @@ assert.equal(ended.lifecycleResult.value.verifiedSlotOperations.length, 0);
 assert.equal(Object.hasOwn(ended.lifecycleResult.value, "canonicalItems"), false);
 assert.equal(applyDecision(state(), ended.lifecycleResult).next.tasks[0].status, "cancelled");
 
-// 7 / AC-CTX-007 / AC-PND-001: an unknown or omitted target fails closed and
-// no pending task is selected as a likely continuation.
+// 7 / AC-CTX-007 / AC-PND-001: an unknown target fails closed, while an
+// omitted candidate deterministically binds the only compatible pending task.
 const unknownTarget = validatedPipeline({ target: "cycle-unknown" });
 assert.equal(unknownTarget.linkResult.ok, false);
 assert.equal(unknownTarget.linkResult.code, "CONTEXT_TARGET_UNAVAILABLE");
 const missingTarget = validatedPipeline({ target: null });
 assert.equal(missingTarget.linkResult.ok, true);
-assert.equal(missingTarget.lifecycleResult.ok, false);
-assert.equal(missingTarget.lifecycleResult.code, "LIFECYCLE_TARGET_REQUIRED");
+assert.equal(missingTarget.lifecycleResult.ok, true);
+assert.equal(missingTarget.lifecycleResult.value.action, "MODIFY");
+assert.equal(missingTarget.lifecycleResult.value.targetRequestCycleId, "cycle-a");
 
 // 8 / AC-CTX-006..007 / AC-LIF-017: a production-shaped expired target is
 // unavailable, while ended targets cannot enter the closed C01 projection.
@@ -382,8 +387,8 @@ const crossScopeLink = validateContextLink({
   linkCandidate: {
     contextLinkCandidateId: "link-context",
     unitId: "unit-context",
-    actionCandidate: "MODIFY",
-    targetRequestCycleId: "cycle-a",
+    relationKind: "MODIFICATION",
+    targetRequestCycleIdCandidate: "cycle-a",
     evidenceRefs: [evidence(fourGuestsText)]
   },
   understandingTurnInput: propertyBInput,
@@ -410,8 +415,8 @@ const untrustedLink = validateContextLink({
   linkCandidate: {
     contextLinkCandidateId: "link-context",
     unitId: "unit-context",
-    actionCandidate: "MODIFY",
-    targetRequestCycleId: "cycle-a",
+    relationKind: "MODIFICATION",
+    targetRequestCycleIdCandidate: "cycle-a",
     evidenceRefs: [evidence(fourGuestsText)]
   },
   understandingTurnInput: untrustedInputClone,
@@ -453,8 +458,8 @@ const malformedLink = validateContextLink({
   linkCandidate: {
     contextLinkCandidateId: "link-context",
     unitId: "unit-context",
-    actionCandidate: "MODIFY",
-    targetRequestCycleId: "cycle-a",
+    relationKind: "MODIFICATION",
+    targetRequestCycleIdCandidate: "cycle-a",
     evidenceRefs: [evidence(fourGuestsText)]
   },
   understandingTurnInput: malformedClone,
@@ -499,8 +504,8 @@ assert.equal(adaptLifecycleDecisionsToStateV3({
   previous: state()
 }).value.lifecycleOperations.length, 0);
 const invalidStartTarget = validatedPipeline({ action: "START", target: "cycle-a", slots: [] });
-assert.equal(invalidStartTarget.lifecycleResult.ok, false);
-assert.equal(invalidStartTarget.lifecycleResult.code, "LIFECYCLE_START_TARGET_FORBIDDEN");
+assert.equal(invalidStartTarget.linkResult.ok, false);
+assert.equal(invalidStartTarget.linkResult.code, "CONTEXT_TARGET_SCOPE_CONFLICT");
 const forgedStatus = { ...clone(fourGuests.lifecycleResult.value), status: "APPLIED" };
 assert.equal(validateLifecycleDecisions([forgedStatus], { unitIds: ["unit-context"] }).code, "LIFECYCLE_TRANSITION_INVALID");
 const forgedNonPersistedGuests = clone(fourGuests.lifecycleResult.value);

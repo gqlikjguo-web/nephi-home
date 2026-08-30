@@ -3,6 +3,7 @@
 const { validateSourceEvidence } = require("./contracts/source-evidence");
 const {
   isValidatedContextLinkFor,
+  contextRelationEvidenceForValidatedLink,
   understandingInputForValidatedContextLink
 } = require("./context-link-validator");
 
@@ -216,13 +217,53 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
   if (!isValidatedContextLinkFor(validatedContextLink, unit)) {
     return failure("LIFECYCLE_TRANSITION_INVALID", ["validatedContextLink"]);
   }
-  const action = validatedContextLink.actionCandidate;
-  const target = validatedContextLink.targetRequestCycleId;
-  if (["CONTINUE", "MODIFY", "END"].includes(action) && target === null) {
-    return failure("LIFECYCLE_TARGET_REQUIRED", ["targetRequestCycleId"]);
-  }
-  if (["START", "NONE"].includes(action) && target !== null) {
-    return failure("LIFECYCLE_START_TARGET_FORBIDDEN", ["targetRequestCycleId"]);
+  const relation = contextRelationEvidenceForValidatedLink(validatedContextLink, unit);
+  if (!relation) return failure("LIFECYCLE_TRANSITION_INVALID", ["contextRelationEvidence"]);
+  const chooseTarget = (targetIds) => {
+    if (relation.targetRequestCycleIdCandidate !== null) {
+      return targetIds.includes(relation.targetRequestCycleIdCandidate)
+        ? { ok: true, target: relation.targetRequestCycleIdCandidate }
+        : failure("CONTEXT_TARGET_UNAVAILABLE", ["targetRequestCycleIdCandidate"]);
+    }
+    if (targetIds.length === 1) return { ok: true, target: targetIds[0] };
+    if (targetIds.length > 1) return failure("CONTEXT_TARGET_AMBIGUOUS", ["referenceableCycles"]);
+    return failure("CONTEXT_TARGET_UNAVAILABLE", ["referenceableCycles"]);
+  };
+  const nonActionable = new Set(["acknowledgement", "social", "off_topic"]);
+  let action;
+  let target = null;
+  if (nonActionable.has(unit.purpose)) {
+    action = "NONE";
+  } else if (relation.relationKind === "NEW_REQUEST") {
+    action = unit.capability !== null || unit.purpose === "context_update" ? "START" : "NONE";
+  } else if (unit.purpose === "cancellation" || relation.relationKind === "TERMINATION") {
+    const selected = chooseTarget(relation.compatibleExistingTargetIds);
+    if (!selected.ok) return selected;
+    action = "END";
+    target = selected.target;
+  } else if (unit.purpose === "correction" || relation.relationKind === "MODIFICATION") {
+    const selected = chooseTarget(relation.compatibleExistingTargetIds);
+    if (!selected.ok) return selected;
+    action = "MODIFY";
+    target = selected.target;
+  } else if (["supplement", "context_update"].includes(unit.purpose)
+    || relation.relationKind === "SUPPLEMENT") {
+    const selected = chooseTarget(relation.compatiblePendingTargetIds);
+    if (!selected.ok) return selected;
+    action = "CONTINUE";
+    target = selected.target;
+  } else if (unit.capability !== null) {
+    if (relation.relationKind === "NEW_REQUEST"
+      || relation.compatiblePendingTargetIds.length === 0) {
+      action = "START";
+    } else {
+      const selected = chooseTarget(relation.compatiblePendingTargetIds);
+      if (!selected.ok) return selected;
+      action = "CONTINUE";
+      target = selected.target;
+    }
+  } else {
+    action = "NONE";
   }
   if (["END", "NONE"].includes(action) && unit.slotCandidates.length) {
     return failure("LIFECYCLE_SLOT_UNVERIFIED", ["verifiedSlotOperations"]);

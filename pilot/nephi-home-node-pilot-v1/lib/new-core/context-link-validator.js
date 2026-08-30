@@ -8,6 +8,7 @@ const { buildPublicCatalogIdentityProjection } = require("./turn-input-adapter")
 const VALIDATED_CONTEXT_LINKS = new WeakSet();
 const INPUT_BY_VALIDATED_CONTEXT_LINK = new WeakMap();
 const UNIT_BY_VALIDATED_CONTEXT_LINK = new WeakMap();
+const RELATION_EVIDENCE_BY_VALIDATED_CONTEXT_LINK = new WeakMap();
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -47,6 +48,14 @@ function evidenceOwned(refs, validatedEvidenceRefs) {
 
 function validNow(now) {
   return typeof now === "string" && Number.isFinite(Date.parse(now));
+}
+
+function cycleIdentityCompatible(unit, cycle) {
+  if (!unit || !cycle) return false;
+  if (unit.capability === null) return true;
+  return cycle.capability === unit.capability
+    && cycle.subject && cycle.subject.kind === unit.subject.kind
+    && cycle.subject.catalogIdentity === unit.subject.catalogIdentity;
 }
 
 function validateContextLink({
@@ -90,7 +99,10 @@ function validateContextLink({
     return failure("CONTEXT_LINK_EVIDENCE_INVALID", ["contextLink.evidenceRefs"]);
   }
 
-  const targetId = linkCandidate.targetRequestCycleId;
+  const targetId = linkCandidate.targetRequestCycleIdCandidate;
+  if (["NEW_REQUEST", "NONE"].includes(linkCandidate.relationKind) && targetId !== null) {
+    return failure("CONTEXT_TARGET_SCOPE_CONFLICT", ["targetRequestCycleIdCandidate.relation"]);
+  }
   if (targetId !== null) {
     const matching = understandingTurnInput.referenceableCycles.filter(
       (cycle) => cycle && cycle.requestCycleId === targetId
@@ -107,12 +119,31 @@ function validateContextLink({
       || Date.parse(target.expiresAt) <= Date.parse(now)) {
       return failure("CONTEXT_TARGET_UNAVAILABLE", ["targetRequestCycleId"]);
     }
+    if (!cycleIdentityCompatible(unit, target)) {
+      return failure("CONTEXT_TARGET_SCOPE_CONFLICT", ["targetRequestCycleIdCandidate.identity"]);
+    }
   }
 
   const value = deepFreeze(detach(linkCandidate));
+  const compatibleExistingTargetIds = understandingTurnInput.referenceableCycles
+    .filter((cycle) => ["active", "pending", "answered"].includes(cycle.status)
+      && Date.parse(cycle.expiresAt) > Date.parse(now)
+      && cycleIdentityCompatible(unit, cycle))
+    .map((cycle) => cycle.requestCycleId);
+  const compatiblePendingTargetIds = understandingTurnInput.referenceableCycles
+    .filter((cycle) => cycle.status === "pending"
+      && Date.parse(cycle.expiresAt) > Date.parse(now)
+      && cycleIdentityCompatible(unit, cycle))
+    .map((cycle) => cycle.requestCycleId);
   VALIDATED_CONTEXT_LINKS.add(value);
   INPUT_BY_VALIDATED_CONTEXT_LINK.set(value, understandingTurnInput);
   UNIT_BY_VALIDATED_CONTEXT_LINK.set(value, unit);
+  RELATION_EVIDENCE_BY_VALIDATED_CONTEXT_LINK.set(value, deepFreeze({
+    relationKind: value.relationKind,
+    targetRequestCycleIdCandidate: value.targetRequestCycleIdCandidate,
+    compatibleExistingTargetIds,
+    compatiblePendingTargetIds
+  }));
   return { ok: true, code: null, errors: [], value };
 }
 
@@ -130,9 +161,16 @@ function isValidatedContextLinkFor(value, unit) {
     && UNIT_BY_VALIDATED_CONTEXT_LINK.get(value) === unit;
 }
 
+function contextRelationEvidenceForValidatedLink(value, unit) {
+  return isValidatedContextLinkFor(value, unit)
+    ? RELATION_EVIDENCE_BY_VALIDATED_CONTEXT_LINK.get(value) || null
+    : null;
+}
+
 module.exports = {
   validateContextLink,
   isValidatedContextLink,
   isValidatedContextLinkFor,
+  contextRelationEvidenceForValidatedLink,
   understandingInputForValidatedContextLink
 };
