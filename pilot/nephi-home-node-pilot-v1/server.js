@@ -815,6 +815,12 @@ function createRequestHandler(service, options = {}) {
     return { kind: "github_actions_oidc" };
   }
   async function authorizeNewCoreManualTest(request) {
+    if (testOnlyEnvironment) return Object.freeze({
+      userId: "test-only-public-new-core-test",
+      propertyId: "nephi_home",
+      username: "test-only-public",
+      properties: Object.freeze([{ propertyId: "nephi_home" }])
+    });
     const token = cookieValue(request, "nephi_admin_session");
     const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
     if (!session) throw new AppError(401, "LOGIN_REQUIRED", "請先登入");

@@ -11,8 +11,6 @@ const { bindRecentConversationToCycles, buildManualTestFailureDiagnostics, norma
 const { aggregateUnitOutcomes } = require("../lib/new-core/unit-aggregator");
 
 const root = path.resolve(__dirname, "..");
-const adminSessionValue = crypto.randomUUID();
-const cookie = `nephi_admin_session=${adminSessionValue}`;
 const now = () => new Date("2026-08-29T12:00:00.000Z");
 let calls = 0;
 const historyLengths = [];
@@ -58,7 +56,7 @@ async function fakeTurn({ input, state, property, sideEffectGuard, now: timestam
   };
 }
 
-async function json(url, method = "GET", body, sentCookie = cookie) {
+async function json(url, method = "GET", body, sentCookie = "") {
   const response = await fetch(url, { method, headers: { ...(sentCookie ? { cookie: sentCookie } : {}), ...(body === undefined ? {} : { "content-type": "application/json" }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const payload = await response.json(); return { status: response.status, body: payload };
 }
@@ -144,11 +142,12 @@ async function json(url, method = "GET", body, sentCookie = cookie) {
   const factsOriginalGetProperty = factsProviders.customerSettings.getProperty.bind(factsProviders.customerSettings);
   factsProviders.customerSettings.getProperty = (id) => id === "nephi_home" ? { ...factsDemoProperty, propertyId: "nephi_home", displayName: "正式 facts authority" } : factsOriginalGetProperty(id);
   providers.persistence.getAdminSession = async (hash) => hash && hash.length === 64 ? { userId: "admin-owner", propertyId: "nephi_home", username: "owner", properties: [{ propertyId: "nephi_home" }] } : null;
-  const app = createApp({ providers, newCoreManualTestFactsProviders: factsProviders, adminAuthRequired: true, now, runtimeEnv: { OPENAI_API_KEY: Array(33).join("x") }, newCoreManualTestExecuteTurn: fakeTurn, lineBindingEnv: {} });
+  const app = createApp({ providers, newCoreManualTestFactsProviders: factsProviders, adminAuthRequired: true, testOnlyEnvironment: true, now, runtimeEnv: { OPENAI_API_KEY: Array(33).join("x") }, newCoreManualTestExecuteTurn: fakeTurn, lineBindingEnv: {} });
   const running = await app.start(0, "127.0.0.1");
   try {
-    const denied = await fetch(`${running.url}/admin/new-core-test`); assert.equal(denied.status, 401);
-    const page = await fetch(`${running.url}/admin/new-core-test`, { headers: { cookie } }); assert.equal(page.status, 200); const html = await page.text(); assert.match(html, /JunZan AI 新核心測試/); assert.match(html, /gpt-5\.6-luna/); assert.doesNotMatch(html, /model.*select/iu);
+    const page = await fetch(`${running.url}/admin/new-core-test`); assert.equal(page.status, 200); const html = await page.text(); assert.match(html, /JunZan AI 新核心測試/); assert.match(html, /gpt-5\.6-luna/); assert.doesNotMatch(html, /model.*select/iu);
+    const adminPage = await fetch(`${running.url}/admin`); assert.equal(adminPage.status, 200); assert.match(await adminPage.text(), /業者登入/, "the normal admin page must remain a login surface");
+    const adminSessionDenied = await json(`${running.url}/api/admin/session`); assert.equal(adminSessionDenied.status, 401, "test-only public manual test access must not bypass other admin APIs");
     const forged = await json(`${running.url}/api/admin/new-core-test/sessions`, "POST", { propertyId: "other" }); assert.equal(forged.status, 403);
     const created = await json(`${running.url}/api/admin/new-core-test/sessions`, "POST", {}); assert.equal(created.status, 201, JSON.stringify(created.body)); const id = created.body.data.testSessionId; assert.match(id, /^[0-9a-f-]{36}$/i);
     const diagnosticFailure = await json(`${running.url}/api/admin/new-core-test/sessions/${id}/turns`, "POST", { input: "diagnostic failure" }); assert.equal(diagnosticFailure.status, 201, JSON.stringify(diagnosticFailure.body));
@@ -190,6 +189,14 @@ async function json(url, method = "GET", body, sentCookie = cookie) {
     assert.match(serverSource, /NEW_CORE_MANUAL_TEST_FACTS_DATABASE_URL/);
     assert.match(serverSource, /NEW_CORE_MANUAL_TEST_FACTS_AUTHORITY_REQUIRED/);
     for (const secret of ["apiKey", "authorization", "cookie", "reasoning", "prompt", "databaseUrl"]) assert.equal(JSON.stringify(second.body.data.diagnostic).includes(secret), false);
-    console.log(JSON.stringify({ suite: "new-core-manual-test-page", caseCount: 29, passCount: 29, fakeIntegration: true, realOpenAICalls: 0, sideEffects: second.body.data.diagnostic.sideEffectCounters }));
+    const productionApp = createApp({ providers, newCoreManualTestFactsProviders: factsProviders, adminAuthRequired: true, testOnlyEnvironment: false, now, runtimeEnv: { OPENAI_API_KEY: Array(33).join("x") }, newCoreManualTestExecuteTurn: fakeTurn, lineBindingEnv: {} });
+    const productionRunning = await productionApp.start(0, "127.0.0.1");
+    try {
+      const productionDenied = await fetch(`${productionRunning.url}/admin/new-core-test`);
+      assert.equal(productionDenied.status, 401, "non-test-only manual test page must retain admin authentication");
+      const productionApiDenied = await json(`${productionRunning.url}/api/admin/new-core-test/sessions`, "POST", {});
+      assert.equal(productionApiDenied.status, 401, "non-test-only manual test API must retain admin authentication");
+    } finally { await productionApp.stop(); }
+    console.log(JSON.stringify({ suite: "new-core-manual-test-page", caseCount: 33, passCount: 33, fakeIntegration: true, realOpenAICalls: 0, sideEffects: second.body.data.diagnostic.sideEffectCounters }));
   } finally { await app.stop(); }
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
