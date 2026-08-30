@@ -123,8 +123,8 @@ function link(unit, overrides = {}) {
     contextLinkCandidateId: unit.contextLinkCandidateId,
     unitId: unit.unitId,
     relationKind: unit.purpose === "acknowledgement" ? "NONE" : "NEW_REQUEST",
-    targetRequestCycleIdCandidate: null,
-    evidenceRefs: unit.evidenceRefs,
+    currentSourceEvidenceRefs: unit.evidenceRefs,
+    referencedHistoryEventRefs: [],
     ...overrides
   };
 }

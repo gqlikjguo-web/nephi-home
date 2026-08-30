@@ -38,7 +38,21 @@ async function fakeTurn({ input, state, property, sideEffectGuard, now: timestam
       safetyCandidate: null, readiness: null,
       failureCodes: { C03: "CAPABILITY_SUBJECT_CONFLICT", C06: null, C07: null },
       earliestFailure: { layer: "C03", failureCode: "CAPABILITY_SUBJECT_CONFLICT" }
-    }], requestedModel: "gpt-5.6-luna", resolvedModel: "gpt-5.6-luna"
+    }],
+    contextRelationDiagnostics: {
+      traceId: input.traceId,
+      candidates: [{
+        contextLinkCandidateId: "link-diagnostic", unitId: "unit-diagnostic",
+        relationKind: "SUPPLEMENT", resolvedTargetRequestCycleId: "pending-price-bundle",
+        currentSourceEvidenceRefs: [{ eventId: input.turnId, messageRef: input.turnId, startOffset: 0, endOffset: 2, quote: "測試" }],
+        referencedHistoryEventRefs: [{ eventId: "event-history", messageRef: "message-history" }]
+      }],
+      referenceableCycles: [{
+        requestCycleId: "pending-price-bundle", status: "pending", capability: "price",
+        subject: { kind: "bundle", catalogIdentity: "bundle_all" }
+      }]
+    },
+    requestedModel: "gpt-5.6-luna", resolvedModel: "gpt-5.6-luna"
   };
   const continuation = calls > 0;
   return { state: nextState(state, timestamp), understanding: { summary: continuation ? "補充日期，承接正式 pending cycle" : "詢問包棟價格，缺日期", units: [{ purpose: "lodging_question", capability: "price", subject: { kind: "bundle", catalogIdentity: "bundle_all" } }] }, lifecycle: [continuation ? "CONTINUE" : "START"], routing: [continuation ? "ANSWER" : "CLARIFY"], resolver: { name: "existing canonical Resolver", foundOfficialData: continuation, status: continuation ? "answered" : "NOT_APPLICABLE" }, finalDecision: continuation ? { action: "reply", reasonCode: "execution_answered", taskIds: ["formal-cycle-1"], missingFields: [], reviewRequired: false, executionSummary: {} } : { action: "clarification", reasonCode: "missing_information", taskIds: ["formal-cycle-1"], missingFields: ["checkIn", "checkOut"], reviewRequired: false, executionSummary: { notReadyTaskIds: ["formal-cycle-1"] } }, finalResponse: continuation ? { action: "reply", shouldReply: true, replyText: "正式資料預計回覆" } : { action: "clarification", shouldReply: true, replyText: "請提供入住日期。" }, earliestFailure: null, requestedModel: "gpt-5.6-luna", resolvedModel: "gpt-5.6-luna",
@@ -157,6 +171,19 @@ async function json(url, method = "GET", body, sentCookie = "") {
       safetyCandidate: null, readiness: null,
       failureCodes: { C03: "CAPABILITY_SUBJECT_CONFLICT", C06: null, C07: null },
       earliestFailure: { layer: "C03", failureCode: "CAPABILITY_SUBJECT_CONFLICT" }
+    });
+    assert.deepEqual(diagnosticFailure.body.data.diagnostic.contextRelations, {
+      traceId: diagnosticFailure.body.data.traceId,
+      candidates: [{
+        contextLinkCandidateId: "link-diagnostic", unitId: "unit-diagnostic",
+        relationKind: "SUPPLEMENT", resolvedTargetRequestCycleId: "pending-price-bundle",
+        currentSourceEvidenceRefs: [{ eventId: diagnosticFailure.body.data.turnId, messageRef: diagnosticFailure.body.data.turnId, startOffset: 0, endOffset: 2, quote: "測試" }],
+        referencedHistoryEventRefs: [{ eventId: "event-history", messageRef: "message-history" }]
+      }],
+      referenceableCycles: [{
+        requestCycleId: "pending-price-bundle", status: "pending", capability: "price",
+        subject: { kind: "bundle", catalogIdentity: "bundle_all" }
+      }]
     });
     const persistedDiagnostic = await json(`${running.url}/api/admin/new-core-test/records/${diagnosticFailure.body.data.traceId}`);
     assert.deepEqual(persistedDiagnostic.body.data.diagnostic.failedUnits, diagnosticFailure.body.data.diagnostic.failedUnits);

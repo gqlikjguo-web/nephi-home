@@ -55,7 +55,11 @@ function input(messageText) {
     verifiedPropertyBinding: { propertyId: scope.propertyId, channel: scope.channel },
     verifiedConversationScope: { channel: scope.channel, userId: scope.userId },
     sourceEvents: [sourceEvent(messageText)],
-    recentConversation: [],
+    recentConversation: [{
+      eventId: "event-history-routing", messageRef: "message-history-routing", role: "guest",
+      timestamp: "2026-08-28T07:00:00.000Z", messageKind: "text", messageText: "先前需求",
+      referenceableCycleIds: ["cycle-routing"]
+    }],
     stateV3Snapshot: {
       scope,
       referenceableCycles: [{
@@ -133,8 +137,10 @@ function validated({ unit, messageText, action = "START", target = null }) {
       contextLinkCandidateId: unit.contextLinkCandidateId,
       unitId: unit.unitId,
       relationKind,
-      targetRequestCycleIdCandidate: target,
-      evidenceRefs: [evidence(messageText)]
+      currentSourceEvidenceRefs: [evidence(messageText)],
+      referencedHistoryEventRefs: target === null ? [] : [{
+        eventId: "event-history-routing", messageRef: "message-history-routing"
+      }]
     },
     understandingTurnInput: turnInput,
     validatedEvidenceRefs: evidenceResult.value,

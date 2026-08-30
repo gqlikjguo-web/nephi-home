@@ -220,10 +220,10 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
   const relation = contextRelationEvidenceForValidatedLink(validatedContextLink, unit);
   if (!relation) return failure("LIFECYCLE_TRANSITION_INVALID", ["contextRelationEvidence"]);
   const chooseTarget = (targetIds) => {
-    if (relation.targetRequestCycleIdCandidate !== null) {
-      return targetIds.includes(relation.targetRequestCycleIdCandidate)
-        ? { ok: true, target: relation.targetRequestCycleIdCandidate }
-        : failure("CONTEXT_TARGET_UNAVAILABLE", ["targetRequestCycleIdCandidate"]);
+    if (relation.resolvedTargetRequestCycleId !== null) {
+      return targetIds.includes(relation.resolvedTargetRequestCycleId)
+        ? { ok: true, target: relation.resolvedTargetRequestCycleId }
+        : failure("CONTEXT_TARGET_UNAVAILABLE", ["resolvedTargetRequestCycleId"]);
     }
     if (targetIds.length === 1) return { ok: true, target: targetIds[0] };
     if (targetIds.length > 1) return failure("CONTEXT_TARGET_AMBIGUOUS", ["referenceableCycles"]);

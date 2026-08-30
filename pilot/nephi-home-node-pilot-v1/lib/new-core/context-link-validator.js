@@ -58,6 +58,16 @@ function cycleIdentityCompatible(unit, cycle) {
     && cycle.subject.catalogIdentity === unit.subject.catalogIdentity;
 }
 
+function historyRefKey(reference) {
+  return reference && typeof reference === "object"
+    ? JSON.stringify([reference.eventId, reference.messageRef])
+    : null;
+}
+
+function allowedStatuses(relationKind) {
+  return relationKind === "SUPPLEMENT" ? new Set(["pending"]) : new Set(["active", "pending", "answered"]);
+}
+
 function validateContextLink({
   unit,
   linkCandidate,
@@ -95,34 +105,42 @@ function validateContextLink({
       ["contextLink.unitOwnership"]
     );
   }
-  if (!evidenceOwned(linkCandidate.evidenceRefs, validatedEvidenceRefs)) {
-    return failure("CONTEXT_LINK_EVIDENCE_INVALID", ["contextLink.evidenceRefs"]);
+  if (!evidenceOwned(linkCandidate.currentSourceEvidenceRefs, validatedEvidenceRefs)) {
+    return failure("CONTEXT_LINK_EVIDENCE_INVALID", ["contextLink.currentSourceEvidenceRefs"]);
   }
 
-  const targetId = linkCandidate.targetRequestCycleIdCandidate;
-  if (["NEW_REQUEST", "NONE"].includes(linkCandidate.relationKind) && targetId !== null) {
-    return failure("CONTEXT_TARGET_SCOPE_CONFLICT", ["targetRequestCycleIdCandidate.relation"]);
+  const relationTargets = ["SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(linkCandidate.relationKind);
+  const recentCountsByRef = understandingTurnInput.recentConversation.reduce((counts, event) => {
+    const key = historyRefKey(event);
+    counts.set(key, (counts.get(key) || 0) + 1);
+    return counts;
+  }, new Map());
+  if (linkCandidate.referencedHistoryEventRefs.some((reference) => recentCountsByRef.get(historyRefKey(reference)) > 1)) {
+    return failure("CONTEXT_TARGET_AMBIGUOUS", ["referencedHistoryEventRefs.duplicate"]);
   }
-  if (targetId !== null) {
-    const matching = understandingTurnInput.referenceableCycles.filter(
-      (cycle) => cycle && cycle.requestCycleId === targetId
-    );
-    if (matching.length > 1) {
-      return failure("CONTEXT_TARGET_AMBIGUOUS", ["targetRequestCycleId"]);
-    }
-    if (matching.length === 0) {
-      return failure("CONTEXT_TARGET_UNAVAILABLE", ["targetRequestCycleId"]);
-    }
-    const target = matching[0];
-    if (!["active", "pending", "answered"].includes(target.status)
-      || !Number.isFinite(Date.parse(target.expiresAt))
-      || Date.parse(target.expiresAt) <= Date.parse(now)) {
-      return failure("CONTEXT_TARGET_UNAVAILABLE", ["targetRequestCycleId"]);
-    }
-    if (!cycleIdentityCompatible(unit, target)) {
-      return failure("CONTEXT_TARGET_SCOPE_CONFLICT", ["targetRequestCycleIdCandidate.identity"]);
-    }
+  const recentByRef = new Map(understandingTurnInput.recentConversation.map((event) => [
+    historyRefKey(event), event
+  ]));
+  const historyEvents = linkCandidate.referencedHistoryEventRefs.map((reference) => recentByRef.get(historyRefKey(reference)));
+  if (historyEvents.some((event) => !event)) {
+    return failure("CONTEXT_TARGET_UNAVAILABLE", ["referencedHistoryEventRefs"]);
   }
+  const boundCycleIds = new Set(historyEvents.flatMap((event) => event.referenceableCycleIds));
+  const statuses = allowedStatuses(linkCandidate.relationKind);
+  const resolvedTargets = understandingTurnInput.referenceableCycles.filter((cycle) => (
+    boundCycleIds.has(cycle.requestCycleId)
+    && statuses.has(cycle.status)
+    && Number.isFinite(Date.parse(cycle.expiresAt))
+    && Date.parse(cycle.expiresAt) > Date.parse(now)
+    && cycleIdentityCompatible(unit, cycle)
+  ));
+  if (relationTargets && resolvedTargets.length === 0) {
+    return failure("CONTEXT_TARGET_UNAVAILABLE", ["referencedHistoryEventRefs.target"]);
+  }
+  if (relationTargets && resolvedTargets.length > 1) {
+    return failure("CONTEXT_TARGET_AMBIGUOUS", ["referencedHistoryEventRefs.target"]);
+  }
+  const resolvedTargetRequestCycleId = relationTargets ? resolvedTargets[0].requestCycleId : null;
 
   const value = deepFreeze(detach(linkCandidate));
   const compatibleExistingTargetIds = understandingTurnInput.referenceableCycles
@@ -140,7 +158,7 @@ function validateContextLink({
   UNIT_BY_VALIDATED_CONTEXT_LINK.set(value, unit);
   RELATION_EVIDENCE_BY_VALIDATED_CONTEXT_LINK.set(value, deepFreeze({
     relationKind: value.relationKind,
-    targetRequestCycleIdCandidate: value.targetRequestCycleIdCandidate,
+    resolvedTargetRequestCycleId,
     compatibleExistingTargetIds,
     compatiblePendingTargetIds
   }));

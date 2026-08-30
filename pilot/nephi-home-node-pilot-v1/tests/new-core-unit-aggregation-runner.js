@@ -123,8 +123,8 @@ function pipeline({ unit, action = "START", target = null }) {
       contextLinkCandidateId: unit.contextLinkCandidateId,
       unitId: unit.unitId,
       relationKind,
-      targetRequestCycleIdCandidate: target,
-      evidenceRefs: [evidence()]
+      currentSourceEvidenceRefs: [evidence()],
+      referencedHistoryEventRefs: []
     },
     understandingTurnInput: turnInput,
     validatedEvidenceRefs: normalizedEvidence.value,
@@ -220,8 +220,8 @@ function foreignAnswerFor(unitId) {
       contextLinkCandidateId: rawUnit.contextLinkCandidateId,
       unitId,
       relationKind: "NEW_REQUEST",
-      targetRequestCycleIdCandidate: null,
-      evidenceRefs: [evidence()]
+      currentSourceEvidenceRefs: [evidence()],
+      referencedHistoryEventRefs: []
     },
     understandingTurnInput: foreignInput,
     validatedEvidenceRefs: foreignEvidence.value,

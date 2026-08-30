@@ -42,7 +42,8 @@ const {
 } = require("../new-core/semantic-unit-validator");
 const {
   CAPABILITY_REGISTRY_PROJECTION,
-  capabilityPolicyFor
+  capabilityPolicyFor,
+  catalogIdentityRuleFor
 } = require("../new-core/capability-subject-policy");
 const { validateContextLink } = require("../new-core/context-link-validator");
 const { createDiagnosticTraceEmitter } = require("../new-core/diagnostic-boundary");
@@ -213,13 +214,14 @@ function slotCandidateSchema() {
 }
 
 function subjectBranchSchema(understandingTurnInput, capability, kind) {
-  if (kind === null || kind === "external_place"
-    || capability === "availability" && kind === "property") {
+  const identityRule = catalogIdentityRuleFor(CAPABILITY_REGISTRY_PROJECTION, capability, kind);
+  if (identityRule === "NULL") {
     return objectSchema({
       kind: enumSchema([kind]),
       catalogIdentity: enumSchema([null])
     });
   }
+  if (identityRule !== "PUBLIC_CATALOG") return null;
   const catalogIdentities = understandingTurnInput.publicSubjectCatalog
     .filter((subject) => subject.kind === kind)
     .map((subject) => subject.catalogIdentity);
@@ -229,14 +231,14 @@ function subjectBranchSchema(understandingTurnInput, capability, kind) {
   });
 }
 
-function safetyCandidateSchema(capability) {
-  if (capability === "booking_operator_request") {
+function safetyCandidateSchema(policy) {
+  if (policy.safetyShape === "operator_action") {
     return objectSchema({
       operatorActionClass: enumSchema([...OPERATOR_ACTION_CLASSES]),
       riskClass: enumSchema([null])
     }, "Trusted operator-action meaning only; this never chooses reply disposition.");
   }
-  if (capability === "high_risk") {
+  if (policy.safetyShape === "risk") {
     return objectSchema({
       operatorActionClass: enumSchema([null]),
       riskClass: enumSchema([...RISK_CLASSES])
@@ -281,13 +283,13 @@ function semanticUnitBranchSchema(understandingTurnInput, capability) {
   return objectSchema({
     unitId: stringSchema(),
     evidenceRefs: evidenceArraySchema(),
-    purpose: enumSchema(policy.purposes, "One independent source meaning; do not merge separately actionable meanings."),
+    purpose: enumSchema(policy.safetyPurposes, "One independent source meaning; do not merge separately actionable meanings."),
     capability: enumSchema([capability], "Language-derived capability candidate only; never answer facts."),
     subject: { anyOf: subjectBranches },
     stayDependent: enumSchema([policy.stayDependent]),
     temporalCandidate: temporalCandidateSchema(),
     contextLinkCandidateId: stringSchema(),
-    safetyCandidate: safetyCandidateSchema(capability),
+    safetyCandidate: safetyCandidateSchema(policy),
     slotCandidates: arraySchema(slotCandidateSchema(), { maxItems: MAX_SLOT_CANDIDATES }),
     confidenceBand: enumSchema(CONFIDENCE_BANDS)
   }, "Exactly one immutable semantic candidate. Do not emit facts, canonical dates, resolver data, state writes, or final copy.");
@@ -302,18 +304,21 @@ function semanticUnitSchema(understandingTurnInput) {
 }
 
 function contextLinkSchema(understandingTurnInput) {
-  const cycleIds = understandingTurnInput.referenceableCycles.map((cycle) => cycle.requestCycleId);
+  const historyRefs = understandingTurnInput.recentConversation.map((event) => objectSchema({
+    eventId: { type: "string", enum: [event.eventId], maxLength: MAX_ID_LENGTH },
+    messageRef: { type: "string", enum: [event.messageRef], maxLength: MAX_ID_LENGTH }
+  }));
   return objectSchema({
     contextLinkCandidateId: stringSchema(),
     unitId: stringSchema(),
-    relationKind: enumSchema(RELATION_KINDS),
-    targetRequestCycleIdCandidate: {
-      type: ["string", "null"],
-      enum: [...new Set([...cycleIds, null])],
-      maxLength: MAX_ID_LENGTH
-    },
-    evidenceRefs: evidenceArraySchema()
-  }, "One non-authoritative language-derived Context relation for one unit; never guess a target not present in C01.");
+    relationKind: enumSchema(RELATION_KINDS,
+      "Use NEW_REQUEST unless current-source semantic evidence explicitly supplements, modifies, or terminates one compatible prior cycle."),
+    currentSourceEvidenceRefs: evidenceArraySchema(),
+    referencedHistoryEventRefs: arraySchema(
+      historyRefs.length ? { anyOf: historyRefs } : objectSchema({ eventId: stringSchema(), messageRef: stringSchema() }),
+      { maxItems: historyRefs.length ? MAX_EVIDENCE_REFS : 0 }
+    )
+  }, "One non-authoritative relation evidenced by current source and, only when targeted, cited prior history events. Never emit or select an internal requestCycleId.");
 }
 
 function openAiUnderstandingV1ProviderSchema(understandingTurnInput) {
@@ -334,8 +339,9 @@ function instructions() {
     "Split every independent source meaning into one unit and emit exactly one matching context-link candidate per unit.",
     "Use only the bounded C01 source events, recent conversation, referenceable cycles, capability catalog, and public subject catalog supplied by the developer message.",
     "Recent conversation helps interpret language and references but is never a property-fact source. Evidence must cite exact C01 sourceEvents UTF-16 coordinates and quote text.",
-    "When the current source message supplies missing values for a referenceable pending cycle, represent the composite pending lodging request with its trusted lodging purpose, capability, and subject identity, describe relationKind SUPPLEMENT, and cite that exact requestCycleId as targetRequestCycleIdCandidate; do not emit a capability-bearing supplement unit, and never invent or substitute cycle identity.",
+    "When the current source message supplies missing values for a prior pending request, represent the composite lodging meaning with its trusted capability and subject identity, use SUPPLEMENT, cite the exact prior history event/message refs, and never emit or infer an internal requestCycleId.",
     "Context relation is semantic evidence, never a lifecycle decision. Use NEW_REQUEST for an independent actionable request, SUPPLEMENT for additional information completing an existing request, MODIFICATION for an explicit change to an existing request, TERMINATION for an explicit end, and NONE only when no conversational relation is expressed. The deterministic core alone chooses START, CONTINUE, MODIFY, END, or NONE.",
+    "SUPPLEMENT, MODIFICATION, or TERMINATION requires current-source evidence plus exact referencedHistoryEventRefs. Topic proximity, recency, or a shared date/availability word is not relation evidence. A complete standalone lodging request is NEW_REQUEST with no history refs.",
     "For that continuation, compare only the supplied candidate values with the cycle's missingFields; deterministic routing alone decides whether to answer or clarify.",
     "Capability, subject, stay dependency, and safety meaning are source-derived candidates, but their combination must match one capability-discriminated schema branch. Never use a null subject kind, catalog identity, stay dependency, purpose, or safety shape that conflicts with the selected capability. Context relation remains separate semantic evidence. Never propose ANSWER, CLARIFY, HANDOFF, NO_REPLY, START, CONTINUE, MODIFY, END, or lifecycle NONE.",
     "Set safetyCandidate only for operator_request/booking_operator_request or sensitive_request/high_risk. Exactly one of operatorActionClass and riskClass must be non-null; otherwise safetyCandidate is null.",
@@ -347,12 +353,30 @@ function instructions() {
 }
 
 function providerRequestBody(understandingTurnInput) {
+  const modelInput = {
+    ...understandingTurnInput,
+    recentConversation: understandingTurnInput.recentConversation.map(({ referenceableCycleIds, ...event }) => ({
+      ...event,
+      referenceableRequestSummaries: referenceableCycleIds.map((requestCycleId) => {
+        const cycle = understandingTurnInput.referenceableCycles.find((candidate) => candidate.requestCycleId === requestCycleId);
+        return cycle ? {
+          requestKind: cycle.requestKind,
+          capability: cycle.capability,
+          status: cycle.status,
+          subject: cycle.subject,
+          missingFields: cycle.missingFields,
+          confirmedValues: cycle.confirmedValues
+        } : null;
+      }).filter(Boolean)
+    })),
+    referenceableCycles: undefined
+  };
   return {
     model: NEW_CORE_OPENAI_MODEL,
     safety_identifier: sha256(understandingTurnInput.propertyScope.userId),
     input: [
       { role: "system", content: [{ type: "input_text", text: instructions() }] },
-      { role: "developer", content: [{ type: "input_text", text: JSON.stringify(understandingTurnInput) }] }
+      { role: "developer", content: [{ type: "input_text", text: JSON.stringify(modelInput) }] }
     ],
     text: {
       format: {
@@ -622,6 +646,10 @@ function envelopeWireFailure(value, understandingTurnInput) {
     && linkIdCounts.get(candidate.contextLinkCandidateId) === 1)) {
     return "UNDERSTANDING_SCHEMA_INVALID";
   }
+  if (units.some((unit) => unit.temporalCandidate !== null
+    && !unit.evidenceRefs.some((reference) => reference.quote.includes(unit.temporalCandidate.rawText)))) {
+    return "UNDERSTANDING_SCHEMA_INVALID";
+  }
   return null;
 }
 
@@ -638,10 +666,10 @@ function normalizeUnitEvidence(unit, linkCandidates, sourceEvents) {
   }
   const normalizedLinkCandidates = [];
   for (const linkCandidate of linkCandidates) {
-    const linkEvidence = validateAndNormalizeSourceEvidence(linkCandidate.evidenceRefs, sourceEvents);
+    const linkEvidence = validateAndNormalizeSourceEvidence(linkCandidate.currentSourceEvidenceRefs, sourceEvents);
     if (!linkEvidence.ok) return linkEvidence;
     validatedEvidenceRefs.push(...linkEvidence.value);
-    normalizedLinkCandidates.push({ ...linkCandidate, evidenceRefs: linkEvidence.value });
+    normalizedLinkCandidates.push({ ...linkCandidate, currentSourceEvidenceRefs: linkEvidence.value });
   }
   return {
     ok: true,
@@ -782,7 +810,7 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     });
   }
   for (const orphanLink of orphanDuplicateLinks) {
-    const linkEvidence = validateAndNormalizeSourceEvidence(orphanLink.evidenceRefs, understandingTurnInput.sourceEvents);
+    const linkEvidence = validateAndNormalizeSourceEvidence(orphanLink.currentSourceEvidenceRefs, understandingTurnInput.sourceEvents);
     if (!linkEvidence.ok) {
       recordFailure(orphanLink.unitId, linkEvidence.code, "C04");
       emit(traceEmitter, understandingTurnInput, {

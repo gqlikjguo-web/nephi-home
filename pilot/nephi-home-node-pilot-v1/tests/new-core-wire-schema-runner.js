@@ -82,8 +82,8 @@ function contextLink(overrides = {}) {
     contextLinkCandidateId: "link-1",
     unitId: "unit-1",
     relationKind: "NEW_REQUEST",
-    targetRequestCycleIdCandidate: null,
-    evidenceRefs: [evidence()],
+    currentSourceEvidenceRefs: [evidence()],
+    referencedHistoryEventRefs: [],
     ...overrides
   };
 }
@@ -222,15 +222,23 @@ for (const invalidEvidence of [[], [evidence({ eventId: "" })], [evidence({ endO
   assertFailure(validateSourceEvidence(invalidEvidence), "UNDERSTANDING_SCHEMA_INVALID");
 }
 
-// C05 permits only a closed language-derived proposal. Target lookup and
-// action/target consistency are deferred to the Context validator.
+// C05 permits only source-bound relation evidence. Provider output cannot
+// select an internal requestCycleId; target resolution belongs to Context.
 assert.equal(validateContextLinkCandidate(contextLink()).ok, true);
+assertFailure(validateContextLinkCandidate(contextLink({
+  targetRequestCycleIdCandidate: "cycle-internal"
+})), "UNDERSTANDING_SCHEMA_INVALID");
+assert.equal(validateContextLinkCandidate(contextLink({
+  relationKind: "SUPPLEMENT",
+  referencedHistoryEventRefs: [{ eventId: "history-event-1", messageRef: "history-message-1" }]
+})).ok, true);
 for (const invalidLink of [
   contextLink({ contextLinkCandidateId: "" }),
   contextLink({ unitId: "" }),
   contextLink({ relationKind: "GUESS" }),
-  contextLink({ targetRequestCycleIdCandidate: "" }),
-  contextLink({ evidenceRefs: [] }),
+  contextLink({ currentSourceEvidenceRefs: [] }),
+  contextLink({ relationKind: "SUPPLEMENT", referencedHistoryEventRefs: [] }),
+  contextLink({ referencedHistoryEventRefs: [{ eventId: "", messageRef: "history-message-1" }] }),
   contextLink({ candidateIndex: 0 })
 ]) {
   assertFailure(validateContextLinkCandidate(invalidLink), "UNDERSTANDING_SCHEMA_INVALID");

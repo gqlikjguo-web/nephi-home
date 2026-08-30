@@ -261,7 +261,7 @@ async function executeRun(caseDefinition, runNumber, apiKey, coreSha) {
     const rawUnits = understanding.understandingOutput.units.map(rawUnitProjection);
     const rawLinks = understanding.contextLinkCandidates.map((link) => ({
       unitIdHash: hash(link.unitId), relationKind: link.relationKind,
-      targetRequestCycleIdHash: link.targetRequestCycleIdCandidate ? hash(link.targetRequestCycleIdCandidate) : null
+      referencedHistoryEventRefHashes: (link.referencedHistoryEventRefs || []).map((reference) => hash(`${reference.eventId}:${reference.messageRef}`))
     }));
     const units = understanding.validatedUnits.map((unit) => controlledUnitProjection(unit, understanding, c10));
     const failureCodes = [...understanding.failedUnits.map((item) => item.failureCode), ...(c10.failureCodes || [])];

@@ -8,9 +8,10 @@ const CONTEXT_LINK_FIELDS = Object.freeze([
   "contextLinkCandidateId",
   "unitId",
   "relationKind",
-  "targetRequestCycleIdCandidate",
-  "evidenceRefs"
+  "currentSourceEvidenceRefs",
+  "referencedHistoryEventRefs"
 ]);
+const HISTORY_EVENT_REF_FIELDS = Object.freeze(["eventId", "messageRef"]);
 const RELATION_KINDS = new Set(["NEW_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION", "NONE"]);
 
 function isPlainObject(value) {
@@ -38,13 +39,29 @@ function validateContextLinkCandidate(value) {
   if (!boundedText(value && value.contextLinkCandidateId)) errors.push("contextLinkCandidateId");
   if (!boundedText(value && value.unitId)) errors.push("unitId");
   if (!RELATION_KINDS.has(value && value.relationKind)) errors.push("relationKind");
-  if (value && value.targetRequestCycleIdCandidate !== null
-    && !boundedText(value.targetRequestCycleIdCandidate)) {
-    errors.push("targetRequestCycleIdCandidate");
-  }
-  const evidence = validateSourceEvidence(value && value.evidenceRefs);
-  if (!evidence.ok) errors.push(...evidence.errors.map((error) => `evidenceRefs.${error}`));
+  const evidence = validateSourceEvidence(value && value.currentSourceEvidenceRefs);
+  if (!evidence.ok) errors.push(...evidence.errors.map((error) => `currentSourceEvidenceRefs.${error}`));
   unknownWireField ||= evidence.unknownWireField;
+  const historyRefs = value && value.referencedHistoryEventRefs;
+  if (!Array.isArray(historyRefs) || historyRefs.length > MAX_EVIDENCE_REFS) {
+    errors.push("referencedHistoryEventRefs");
+  } else {
+    const identities = new Set();
+    historyRefs.forEach((reference, index) => {
+      if (!exactKeys(reference, HISTORY_EVENT_REF_FIELDS)
+        || !boundedText(reference && reference.eventId)
+        || !boundedText(reference && reference.messageRef)) {
+        errors.push(`referencedHistoryEventRefs.${index}`);
+      }
+      const identity = JSON.stringify([reference && reference.eventId, reference && reference.messageRef]);
+      if (identities.has(identity)) errors.push("referencedHistoryEventRefs.duplicate");
+      identities.add(identity);
+    });
+  }
+  if (["NEW_REQUEST", "NONE"].includes(value && value.relationKind)
+    && Array.isArray(historyRefs) && historyRefs.length !== 0) errors.push("referencedHistoryEventRefs.forbidden");
+  if (["SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(value && value.relationKind)
+    && Array.isArray(historyRefs) && historyRefs.length === 0) errors.push("referencedHistoryEventRefs.required");
   const uniqueErrors = [...new Set(errors)];
   return uniqueErrors.length
     ? { ok: false, code: "UNDERSTANDING_SCHEMA_INVALID", errors: uniqueErrors, unknownWireField }
@@ -81,6 +98,7 @@ module.exports = {
   MAX_EVIDENCE_REFS,
   MAX_CONTEXT_LINKS,
   CONTEXT_LINK_FIELDS,
+  HISTORY_EVENT_REF_FIELDS,
   RELATION_KINDS,
   validateContextLinkCandidate,
   validateContextLinkCandidates

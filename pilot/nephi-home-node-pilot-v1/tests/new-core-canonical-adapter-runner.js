@@ -107,7 +107,11 @@ function turnInput(messageText, overrides = {}) {
       messageKind: "text",
       messageText
     }],
-    recentConversation: [],
+    recentConversation: [{
+      eventId: "event-c08-history", messageRef: "message-c08-history", role: "guest",
+      timestamp: "2026-08-28T07:00:00.000Z", messageKind: "text", messageText: "先前需求",
+      referenceableCycleIds: ["cycle-c08"]
+    }],
     stateV3Snapshot: {
       scope,
       referenceableCycles: [{
@@ -204,8 +208,10 @@ function pipeline({
       contextLinkCandidateId: semantic.value.contextLinkCandidateId,
       unitId: semantic.value.unitId,
       relationKind,
-      targetRequestCycleIdCandidate: target,
-      evidenceRefs: semantic.value.evidenceRefs
+      currentSourceEvidenceRefs: semantic.value.evidenceRefs,
+      referencedHistoryEventRefs: target === null ? [] : [{
+        eventId: "event-c08-history", messageRef: "message-c08-history"
+      }]
     },
     understandingTurnInput: input,
     validatedEvidenceRefs: normalizedEvidence.value,

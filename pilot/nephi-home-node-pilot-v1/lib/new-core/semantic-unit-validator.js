@@ -1,7 +1,12 @@
 "use strict";
 
 const { validateSemanticUnitCandidate } = require("./contracts/semantic-unit-candidate");
-const { capabilityPolicyFor, projectCapabilityRegistry } = require("./capability-subject-policy");
+const {
+  capabilityPolicyFor,
+  catalogIdentityRuleFor,
+  projectCapabilityRegistry,
+  safetyCandidateMatchesPolicy
+} = require("./capability-subject-policy");
 const {
   buildPublicCatalogIdentityProjection,
   isPublicCatalogIdentityProjectionFor
@@ -61,13 +66,11 @@ function evidenceOwned(refs, validatedEvidenceRefs) {
   });
 }
 
-function catalogIdentityValid(unit, identitySet, understandingTurnInput) {
+function catalogIdentityValid(unit, identitySet, understandingTurnInput, capabilityRegistryProjection) {
   const subject = unit.subject;
-  if (subject.kind === null) return subject.catalogIdentity === null;
-  if (subject.kind === "external_place") return subject.catalogIdentity === null;
-  if (unit.capability === "availability" && subject.kind === "property") {
-    return subject.catalogIdentity === null;
-  }
+  const rule = catalogIdentityRuleFor(capabilityRegistryProjection, unit.capability, subject.kind);
+  if (rule === "NULL") return subject.catalogIdentity === null;
+  if (rule !== "PUBLIC_CATALOG") return false;
   return catalogKindFor(identitySet, understandingTurnInput, subject.catalogIdentity) === subject.kind;
 }
 
@@ -85,19 +88,6 @@ function otherSupportedSlotAdmission(slot, identitySet, understandingTurnInput, 
   return policy.allowsOtherSupported && catalogKindFor(identitySet, understandingTurnInput, slot.value) === "other_verified";
 }
 
-function safetyCandidateAdmission(unit) {
-  const safety = unit.safetyCandidate;
-  if (unit.capability === "booking_operator_request") {
-    return unit.purpose === "operator_request" && safety !== null
-      && safety.operatorActionClass !== null && safety.riskClass === null;
-  }
-  if (unit.capability === "high_risk") {
-    return unit.purpose === "sensitive_request" && safety !== null
-      && safety.operatorActionClass === null && safety.riskClass !== null;
-  }
-  return safety === null;
-}
-
 function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnInput, publicCatalogIdentitySet, capabilityRegistryProjection } = {}) {
   const wire = validateSemanticUnitCandidate(unit);
   if (!wire.ok) return failure("SEMANTIC_UNIT_INVALID");
@@ -105,15 +95,17 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnIn
     || !slotsHaveValidatedEvidence(unit.slotCandidates, validatedEvidenceRefs)) {
     return failure("UNIT_EVIDENCE_MISSING");
   }
-  if (!catalogIdentityValid(unit, publicCatalogIdentitySet, understandingTurnInput)) {
-    return failure("CATALOG_IDENTITY_INVALID");
-  }
   const policy = capabilityPolicyFor(capabilityRegistryProjection, unit.capability);
   if (!policy) return failure("UNIT_MEANING_UNSUPPORTED");
+  if (!catalogIdentityValid(unit, publicCatalogIdentitySet, understandingTurnInput, capabilityRegistryProjection)) {
+    return failure("CATALOG_IDENTITY_INVALID");
+  }
   if (!policy.purposes.includes(unit.purpose)) return failure("UNIT_MEANING_UNSUPPORTED");
   if (!policy.subjectKinds.includes(unit.subject.kind)) return failure("CAPABILITY_SUBJECT_CONFLICT");
   if (unit.stayDependent !== policy.stayDependent) return failure("STAY_DEPENDENCY_CONFLICT");
-  if (!safetyCandidateAdmission(unit)) return failure("UNIT_MEANING_UNSUPPORTED");
+  if (!safetyCandidateMatchesPolicy(capabilityRegistryProjection, unit.capability, unit.purpose, unit.safetyCandidate)) {
+    return failure("UNIT_MEANING_UNSUPPORTED");
+  }
   if (!unit.slotCandidates.every((slot) => productSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput))
     || !unit.slotCandidates.every((slot) => otherSupportedSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput, policy))) {
     return failure("UNIT_MEANING_UNSUPPORTED");

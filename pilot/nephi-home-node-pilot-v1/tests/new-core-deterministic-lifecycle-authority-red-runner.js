@@ -41,7 +41,11 @@ function input(text, cycles = []) {
     verifiedPropertyBinding: { propertyId: scope.propertyId, channel: scope.channel },
     verifiedConversationScope: { channel: scope.channel, userId: scope.userId },
     sourceEvents: [{ eventId: "event-current", messageRef: "message-current", role: "guest", timestamp: NOW, messageKind: "text", messageText: text }],
-    recentConversation: [],
+    recentConversation: cycles.length ? [{
+      eventId: "event-history", messageRef: "message-history", role: "guest",
+      timestamp: "2026-08-29T07:00:00.000Z", messageKind: "text", messageText: "先前需求",
+      referenceableCycleIds: cycles.map((candidate) => candidate.requestCycleId)
+    }] : [],
     stateV3Snapshot: { scope, referenceableCycles: cycles },
     publicCatalog: {
       propertyId: scope.propertyId,
@@ -83,8 +87,10 @@ function runBoundary({ id, text, unit, cycles = [], relationKind = "NONE", targe
       contextLinkCandidateId: `link-${id}`,
       unitId: `unit-${id}`,
       relationKind,
-      targetRequestCycleIdCandidate,
-      evidenceRefs: [evidence(text)]
+      currentSourceEvidenceRefs: [evidence(text)],
+      referencedHistoryEventRefs: targetRequestCycleIdCandidate === null ? [] : [{
+        eventId: "event-history", messageRef: "message-history"
+      }]
     },
     understandingTurnInput: turnInput,
     validatedEvidenceRefs: normalizedEvidence.value,
@@ -114,15 +120,15 @@ const cases = [
   { id: "bundle_price_actionable_none", expected: { ok: true, action: "START", targetRequestCycleId: null },
     actual: runBoundary({ id: "bundle-price", text: "禮拜六包棟多少錢", unit: { ...actionable("price", "bundle", "bundle-a", true), temporalCandidate: { rawText: "禮拜六", kind: "weekday", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null } } }) },
   { id: "unique_pending_supplement", expected: { ok: true, action: "CONTINUE", targetRequestCycleId: "cycle-a" },
-    actual: runBoundary({ id: "continue", text: "9/20到9/21", cycles: [cycle("cycle-a")], relationKind: "SUPPLEMENT", unit: { ...actionable("price", "bundle", "bundle-a", true), temporalCandidate: { rawText: "9/20到9/21", kind: "partial", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null } } }) },
+    actual: runBoundary({ id: "continue", text: "9/20到9/21", cycles: [cycle("cycle-a")], relationKind: "SUPPLEMENT", targetRequestCycleIdCandidate: "history-evidence", unit: { ...actionable("price", "bundle", "bundle-a", true), temporalCandidate: { rawText: "9/20到9/21", kind: "partial", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null } } }) },
   { id: "acknowledgement_none", expected: { ok: true, action: "NONE", targetRequestCycleId: null },
     actual: runBoundary({ id: "ack", text: "好的，謝謝您", unit: { purpose: "acknowledgement", capability: null, subject: { kind: null, catalogIdentity: null }, stayDependent: false } }) },
   { id: "explicit_modify", expected: { ok: true, action: "MODIFY", targetRequestCycleId: "cycle-a" },
     actual: runBoundary({ id: "modify", text: "改成9/21", cycles: [cycle("cycle-a")], relationKind: "MODIFICATION", targetRequestCycleIdCandidate: "cycle-a", unit: { purpose: "correction", capability: null, subject: { kind: null, catalogIdentity: null }, stayDependent: false } }) },
   { id: "explicit_end", expected: { ok: true, action: "END", targetRequestCycleId: "cycle-a" },
     actual: runBoundary({ id: "end", text: "不用查了", cycles: [cycle("cycle-a")], relationKind: "TERMINATION", targetRequestCycleIdCandidate: "cycle-a", unit: { purpose: "cancellation", capability: null, subject: { kind: null, catalogIdentity: null }, stayDependent: false } }) },
-  { id: "ambiguous_pending_targets", expected: { ok: false, code: "CONTEXT_TARGET_AMBIGUOUS", boundary: "C06" },
-    actual: runBoundary({ id: "ambiguous", text: "9/20到9/21", cycles: [cycle("cycle-a"), cycle("cycle-b")], relationKind: "SUPPLEMENT", unit: { ...actionable("price", "bundle", "bundle-a", true), temporalCandidate: { rawText: "9/20到9/21", kind: "partial", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null } } }) }
+  { id: "ambiguous_pending_targets", expected: { ok: false, code: "CONTEXT_TARGET_AMBIGUOUS", boundary: "C05" },
+    actual: runBoundary({ id: "ambiguous", text: "9/20到9/21", cycles: [cycle("cycle-a"), cycle("cycle-b")], relationKind: "SUPPLEMENT", targetRequestCycleIdCandidate: "history-evidence", unit: { ...actionable("price", "bundle", "bundle-a", true), temporalCandidate: { rawText: "9/20到9/21", kind: "partial", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null } } }) }
 ];
 
 const results = cases.map((item) => ({

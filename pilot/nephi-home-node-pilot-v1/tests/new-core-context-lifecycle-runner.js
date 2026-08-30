@@ -48,7 +48,7 @@ function evidence(messageText = "我們4位") {
   };
 }
 
-function turnInput({ messageText = "我們4位", cycles, propertyScope = scope } = {}) {
+function turnInput({ messageText = "我們4位", cycles, propertyScope = scope, recentConversation } = {}) {
   return buildUnderstandingTurnInput({
     coreVersion: "new-core-v1",
     traceId: "trace-context-lifecycle",
@@ -62,7 +62,11 @@ function turnInput({ messageText = "我們4位", cycles, propertyScope = scope }
       userId: propertyScope.userId
     },
     sourceEvents: [sourceEvent(messageText)],
-    recentConversation: [],
+    recentConversation: recentConversation || [{
+      eventId: "event-history-context", messageRef: "message-history-context", role: "guest",
+      timestamp: "2026-08-28T07:00:00.000Z", messageKind: "text", messageText: "先前需求",
+      referenceableCycleIds: [...new Set((cycles || [{ requestCycleId: "cycle-a" }]).map((cycle) => cycle.requestCycleId))]
+    }],
     stateV3Snapshot: {
       scope: propertyScope,
       referenceableCycles: (cycles || [{
@@ -148,8 +152,11 @@ function validatedPipeline({
       contextLinkCandidateId: "link-context",
       unitId: "unit-context",
       relationKind: relationForAction(action),
-      targetRequestCycleIdCandidate: target,
-      evidenceRefs: [evidence(messageText)]
+      currentSourceEvidenceRefs: [evidence(messageText)],
+      referencedHistoryEventRefs: target === null ? [] : [{
+        eventId: target === "cycle-unknown" ? "event-history-missing" : "event-history-context",
+        messageRef: target === "cycle-unknown" ? "message-history-missing" : "message-history-context"
+      }]
     },
     understandingTurnInput: input,
     validatedEvidenceRefs: evidenceResult.value,
@@ -344,16 +351,27 @@ assert.equal(ended.lifecycleResult.value.verifiedSlotOperations.length, 0);
 assert.equal(Object.hasOwn(ended.lifecycleResult.value, "canonicalItems"), false);
 assert.equal(applyDecision(state(), ended.lifecycleResult).next.tasks[0].status, "cancelled");
 
-// 7 / AC-CTX-007 / AC-PND-001: an unknown target fails closed, while an
-// omitted candidate deterministically binds the only compatible pending task.
+// 7 / AC-CTX-007 / AC-PND-001: unknown or omitted history evidence fails
+// closed; only a cited history event can resolve the formal target.
 const unknownTarget = validatedPipeline({ target: "cycle-unknown" });
 assert.equal(unknownTarget.linkResult.ok, false);
 assert.equal(unknownTarget.linkResult.code, "CONTEXT_TARGET_UNAVAILABLE");
 const missingTarget = validatedPipeline({ target: null });
-assert.equal(missingTarget.linkResult.ok, true);
-assert.equal(missingTarget.lifecycleResult.ok, true);
-assert.equal(missingTarget.lifecycleResult.value.action, "MODIFY");
-assert.equal(missingTarget.lifecycleResult.value.targetRequestCycleId, "cycle-a");
+assert.equal(missingTarget.linkResult.ok, false);
+assert.equal(missingTarget.linkResult.code, "UNDERSTANDING_SCHEMA_INVALID");
+const duplicateHistoryInput = turnInput({
+  cycles: [
+    { requestCycleId: "cycle-a", status: "pending", expiresAt: FUTURE, slotRefs: [] },
+    { requestCycleId: "cycle-b", status: "pending", expiresAt: FUTURE, slotRefs: [] }
+  ],
+  recentConversation: [
+    { eventId: "event-history-context", messageRef: "message-history-context", role: "guest", timestamp: "2026-08-28T07:00:00.000Z", messageKind: "text", messageText: "先前需求A", referenceableCycleIds: ["cycle-a"] },
+    { eventId: "event-history-context", messageRef: "message-history-context", role: "guest", timestamp: "2026-08-28T07:01:00.000Z", messageKind: "text", messageText: "先前需求B", referenceableCycleIds: ["cycle-b"] }
+  ]
+});
+const duplicateHistory = validatedPipeline({ input: duplicateHistoryInput, target: "history-evidence" });
+assert.equal(duplicateHistory.linkResult.ok, false);
+assert.equal(duplicateHistory.linkResult.code, "CONTEXT_TARGET_AMBIGUOUS");
 
 // 8 / AC-CTX-006..007 / AC-LIF-017: a production-shaped expired target is
 // unavailable, while ended targets cannot enter the closed C01 projection.
@@ -388,8 +406,8 @@ const crossScopeLink = validateContextLink({
     contextLinkCandidateId: "link-context",
     unitId: "unit-context",
     relationKind: "MODIFICATION",
-    targetRequestCycleIdCandidate: "cycle-a",
-    evidenceRefs: [evidence(fourGuestsText)]
+    currentSourceEvidenceRefs: [evidence(fourGuestsText)],
+    referencedHistoryEventRefs: [{ eventId: "event-history-context", messageRef: "message-history-context" }]
   },
   understandingTurnInput: propertyBInput,
   validatedEvidenceRefs: [evidence(fourGuestsText)],
@@ -416,8 +434,8 @@ const untrustedLink = validateContextLink({
     contextLinkCandidateId: "link-context",
     unitId: "unit-context",
     relationKind: "MODIFICATION",
-    targetRequestCycleIdCandidate: "cycle-a",
-    evidenceRefs: [evidence(fourGuestsText)]
+    currentSourceEvidenceRefs: [evidence(fourGuestsText)],
+    referencedHistoryEventRefs: [{ eventId: "event-history-context", messageRef: "message-history-context" }]
   },
   understandingTurnInput: untrustedInputClone,
   validatedEvidenceRefs: untrustedUnitEvidence.value,
@@ -459,8 +477,8 @@ const malformedLink = validateContextLink({
     contextLinkCandidateId: "link-context",
     unitId: "unit-context",
     relationKind: "MODIFICATION",
-    targetRequestCycleIdCandidate: "cycle-a",
-    evidenceRefs: [evidence(fourGuestsText)]
+    currentSourceEvidenceRefs: [evidence(fourGuestsText)],
+    referencedHistoryEventRefs: [{ eventId: "event-history-context", messageRef: "message-history-context" }]
   },
   understandingTurnInput: malformedClone,
   validatedEvidenceRefs: malformedEvidence.value,
@@ -505,7 +523,7 @@ assert.equal(adaptLifecycleDecisionsToStateV3({
 }).value.lifecycleOperations.length, 0);
 const invalidStartTarget = validatedPipeline({ action: "START", target: "cycle-a", slots: [] });
 assert.equal(invalidStartTarget.linkResult.ok, false);
-assert.equal(invalidStartTarget.linkResult.code, "CONTEXT_TARGET_SCOPE_CONFLICT");
+assert.equal(invalidStartTarget.linkResult.code, "UNDERSTANDING_SCHEMA_INVALID");
 const forgedStatus = { ...clone(fourGuests.lifecycleResult.value), status: "APPLIED" };
 assert.equal(validateLifecycleDecisions([forgedStatus], { unitIds: ["unit-context"] }).code, "LIFECYCLE_TRANSITION_INVALID");
 const forgedNonPersistedGuests = clone(fourGuests.lifecycleResult.value);

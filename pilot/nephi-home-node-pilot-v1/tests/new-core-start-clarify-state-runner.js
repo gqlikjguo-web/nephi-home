@@ -118,8 +118,8 @@ const context = validateContextLink({
     contextLinkCandidateId: rawUnit.contextLinkCandidateId,
     unitId: rawUnit.unitId,
     relationKind: "NEW_REQUEST",
-    targetRequestCycleIdCandidate: null,
-    evidenceRefs: [evidence()]
+    currentSourceEvidenceRefs: [evidence()],
+    referencedHistoryEventRefs: []
   },
   understandingTurnInput: input,
   validatedEvidenceRefs: normalizedEvidence.value,
@@ -253,8 +253,8 @@ const duplicateSlotContext = validateContextLink({
     contextLinkCandidateId: duplicateSlotRawUnit.contextLinkCandidateId,
     unitId: duplicateSlotRawUnit.unitId,
     relationKind: "NEW_REQUEST",
-    targetRequestCycleIdCandidate: null,
-    evidenceRefs: [evidence()]
+    currentSourceEvidenceRefs: [evidence()],
+    referencedHistoryEventRefs: []
   },
   understandingTurnInput: input,
   validatedEvidenceRefs: normalizedEvidence.value,
@@ -317,7 +317,11 @@ const followUpInput = buildUnderstandingTurnInput({
     messageKind: "text",
     messageText: followUpMessage
   }],
-  recentConversation: [],
+  recentConversation: [{
+    eventId: "event-start-clarify-history", messageRef: "message-start-clarify-history", role: "guest",
+    timestamp: "2026-08-28T07:00:00.000Z", messageKind: "text", messageText: MESSAGE,
+    referenceableCycleIds: [next.tasks[0].taskId]
+  }],
   stateV3Snapshot: {
     scope,
     referenceableCycles: [{
@@ -380,8 +384,10 @@ const followUpContext = validateContextLink({
     contextLinkCandidateId: followUpRawUnit.contextLinkCandidateId,
     unitId: followUpRawUnit.unitId,
     relationKind: "SUPPLEMENT",
-    targetRequestCycleIdCandidate: next.tasks[0].taskId,
-    evidenceRefs: [followUpEvidence]
+    currentSourceEvidenceRefs: [followUpEvidence],
+    referencedHistoryEventRefs: [{
+      eventId: "event-start-clarify-history", messageRef: "message-start-clarify-history"
+    }]
   },
   understandingTurnInput: followUpInput,
   validatedEvidenceRefs: followUpNormalizedEvidence.value,
@@ -515,8 +521,8 @@ const independentContext = validateContextLink({
     contextLinkCandidateId: followUpRawUnit.contextLinkCandidateId,
     unitId: followUpRawUnit.unitId,
     relationKind: "NEW_REQUEST",
-    targetRequestCycleIdCandidate: null,
-    evidenceRefs: [followUpEvidence]
+    currentSourceEvidenceRefs: [followUpEvidence],
+    referencedHistoryEventRefs: []
   },
   understandingTurnInput: followUpInput,
   validatedEvidenceRefs: followUpNormalizedEvidence.value,

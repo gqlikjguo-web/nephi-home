@@ -30,20 +30,6 @@ const CANONICALIZABLE_TEMPORAL_KINDS = new Set([
   "month_weekday"
 ]);
 
-const ROUTING_BLUEPRINT = Object.freeze({
-  availability: { kind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"] },
-  available_dates: { kind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"] },
-  price: { kind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"] },
-  total_price: { kind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"] },
-  capacity: { kind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut", "stay.guests"] },
-  property_fact: { kind: "ANSWER", requiredGuestFields: [] },
-  amenity: { kind: "ANSWER", requiredGuestFields: [] },
-  policy: { kind: "ANSWER", requiredGuestFields: [] },
-  location: { kind: "ANSWER", requiredGuestFields: [] },
-  booking_operator_request: { kind: "HANDOFF", requiredGuestFields: [] },
-  high_risk: { kind: "HANDOFF", requiredGuestFields: [] },
-  null: { kind: "NO_REPLY", requiredGuestFields: [] }
-});
 const FORMAL_HANDOFF_ADMISSIONS = Object.freeze([
   Object.freeze({
     purpose: "operator_request",
@@ -109,10 +95,11 @@ function routePolicyFor(routingRegistry, unit) {
 function createUnitReplyRoutingRegistry(capabilityRegistryProjection) {
   if (capabilityRegistryProjection !== CAPABILITY_REGISTRY_PROJECTION) return null;
   const entries = [];
-  for (const [capability, policy] of Object.entries(ROUTING_BLUEPRINT)) {
-    if (!capabilityPolicyFor(capabilityRegistryProjection, capability === "null" ? null : capability)) return null;
+  for (const capability of Object.keys(capabilityRegistryProjection)) {
+    const policy = capabilityPolicyFor(capabilityRegistryProjection, capability === "null" ? null : capability);
+    if (!policy) return null;
     entries.push([capability === "null" ? null : capability, {
-      kind: policy.kind,
+      kind: policy.routeKind,
       requiredGuestFields: [...policy.requiredGuestFields]
     }]);
   }

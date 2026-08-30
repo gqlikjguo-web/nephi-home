@@ -96,8 +96,8 @@ function link(overrides = {}) {
     contextLinkCandidateId: "link-a",
     unitId: "unit-a",
     relationKind: "NONE",
-    targetRequestCycleIdCandidate: null,
-    evidenceRefs: [evidence()],
+    currentSourceEvidenceRefs: [evidence()],
+    referencedHistoryEventRefs: [],
     ...overrides
   };
 }
@@ -179,8 +179,80 @@ function availabilityLink(overrides = {}) {
   return link({
     contextLinkCandidateId: "link-availability",
     unitId: "unit-availability",
-    evidenceRefs: [evidence({ startOffset: 3, endOffset: 6, quote: "有房嗎" })],
+    currentSourceEvidenceRefs: [evidence({ startOffset: 3, endOffset: 6, quote: "有房嗎" })],
     ...overrides
+  });
+}
+
+function contextRelationVarianceInput(overrides = {}) {
+  return c01({
+    sourceEvents: [{
+      eventId: "event-a",
+      messageRef: "message-a",
+      role: "guest",
+      timestamp: NOW,
+      messageKind: "text",
+      messageText: "9/16有房嗎"
+    }],
+    recentConversation: [{
+      eventId: "history-bundle",
+      messageRef: "history-bundle-message",
+      role: "guest",
+      timestamp: "2026-08-29T07:58:00.000Z",
+      messageKind: "text",
+      messageText: "9/18包棟還有位子嗎",
+      referenceableCycleIds: ["cycle-bundle"]
+    }],
+    stateV3Snapshot: {
+      scope: { propertyId: "property-a", channel: "line-a", userId: "guest-a" },
+      referenceableCycles: [{
+        requestCycleId: "cycle-bundle",
+        requestKind: "availability",
+        capability: "availability",
+        status: "answered",
+        expiresAt: "2026-08-30T08:00:00.000Z",
+        subject: { kind: "bundle", catalogIdentity: "bundle-a" },
+        missingFields: [],
+        confirmedValues: { checkIn: "2026-09-18", checkOut: "2026-09-19", guestCount: null, searchFrom: null, searchTo: null },
+        slotRefs: ["productType", "bundleId", "checkIn", "checkOut"]
+      }]
+    },
+    publicCatalog: {
+      propertyId: "property-a",
+      timezone: "Asia/Taipei",
+      capabilityCatalog: ["availability"],
+      publicSubjectCatalog: [
+        { catalogIdentity: "property-a", kind: "property", propertyId: "property-a", publicName: "Property A" },
+        { catalogIdentity: "bundle-a", kind: "bundle", propertyId: "property-a", publicName: "Bundle A" }
+      ]
+    },
+    ...overrides
+  });
+}
+
+function incompatibleContextRelationOutput() {
+  return providerOutput({
+    understandingOutput: {
+      ...providerOutput().understandingOutput,
+      units: [availabilityUnit({
+        unitId: "unit-a",
+        contextLinkCandidateId: "link-a",
+        evidenceRefs: [evidence({ endOffset: 7, quote: "9/16有房嗎" })],
+        subject: { kind: "property", catalogIdentity: null },
+        temporalCandidate: {
+          rawText: "9/16",
+          kind: "month_day",
+          checkInCandidate: null,
+          checkOutCandidate: null,
+          nightsCandidate: null
+        }
+      })]
+    },
+    contextLinkCandidates: [link({
+      relationKind: "MODIFICATION",
+      currentSourceEvidenceRefs: [evidence({ endOffset: 7, quote: "9/16有房嗎" })],
+      referencedHistoryEventRefs: [{ eventId: "history-bundle", messageRef: "history-bundle-message" }]
+    })]
   });
 }
 
@@ -238,7 +310,7 @@ function siblingOutput({ invalidBoundary, invalidFirst }) {
       ? { subject: { kind: "property", catalogIdentity: "property-a" } }
       : {};
   const linkOverrides = invalidBoundary === "C05"
-    ? { relationKind: "SUPPLEMENT", targetRequestCycleIdCandidate: "cycle-missing" }
+    ? { relationKind: "SUPPLEMENT", referencedHistoryEventRefs: [{ eventId: "missing", messageRef: "missing" }] }
     : {};
   const acknowledgement = unit();
   const availability = availabilityUnit(availabilityOverrides);
@@ -308,7 +380,7 @@ async function main() {
   assert.equal(body.text.format.type, "json_schema");
   assert.equal(body.text.format.name, "junzan_understanding_v1");
   assert.equal(body.text.format.strict, true);
-  assert.match(body.input[0].content[0].text, /composite pending lodging request/u);
+  assert.match(body.input[0].content[0].text, /composite lodging meaning/u);
   assert.match(body.input[0].content[0].text, /cycle's missingFields/u);
   strictObjectAudit(body.text.format.schema);
   assert.deepEqual(body.text.format.schema.required.sort(), ["contextLinkCandidates", "understandingOutput"]);
@@ -327,18 +399,16 @@ async function main() {
   );
   assert.deepEqual(
     body.text.format.schema.properties.contextLinkCandidates.items.required.sort(),
-    ["contextLinkCandidateId", "evidenceRefs", "relationKind", "targetRequestCycleIdCandidate", "unitId"].sort()
+    ["contextLinkCandidateId", "currentSourceEvidenceRefs", "referencedHistoryEventRefs", "relationKind", "unitId"].sort()
   );
   assert.deepEqual(
     unitBranches[0].properties.evidenceRefs.items.required.sort(),
     ["endOffset", "eventId", "messageRef", "quote", "startOffset"].sort()
   );
   assert.equal(JSON.stringify(body.input).includes("must-not-leak"), false);
-  assert.deepEqual(
-    JSON.parse(body.input[1].content[0].text),
-    input,
-    "the sole provider developer input must be exact bounded C01"
-  );
+  const providerDeveloperInput = JSON.parse(body.input[1].content[0].text);
+  assert.equal(JSON.stringify(providerDeveloperInput).includes("requestCycleId"), false,
+    "the provider must never receive internal cycle identities");
   assert.deepEqual(result.understandingOutput, providerOutput().understandingOutput);
   assert.deepEqual(result.contextLinkCandidates, providerOutput().contextLinkCandidates);
   assert.equal(result.validatedUnits.length, 1);
@@ -356,6 +426,70 @@ async function main() {
     "C05_CONTEXT_LINK_VALIDATED"
   ]);
   assert.equal(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].providerAttemptCount, 1);
+
+  const inconsistentTemporalError = await captureError(() => callOpenAIUnderstandingV1(
+    contextRelationVarianceInput({ recentConversation: [], stateV3Snapshot: { scope: { propertyId: "property-a", channel: "line-a", userId: "guest-a" }, referenceableCycles: [] } }),
+    options(async () => successfulResponse(providerOutput({
+      understandingOutput: {
+        ...providerOutput().understandingOutput,
+        units: [availabilityUnit({
+          evidenceRefs: [evidence({ endOffset: 7, quote: "9/16有房嗎" })],
+          subject: { kind: "property", catalogIdentity: null },
+          temporalCandidate: { rawText: "明天", kind: "relative_date", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null }
+        })]
+      },
+      contextLinkCandidates: [availabilityLink({
+        currentSourceEvidenceRefs: [evidence({ endOffset: 7, quote: "9/16有房嗎" })]
+      })]
+    })))
+  ));
+  assert.equal(inconsistentTemporalError.code, "UNDERSTANDING_SCHEMA_INVALID",
+    "a temporal candidate must be grounded in its declared unit evidence");
+
+  // Luna cites history evidence only. C05 resolves that evidence against the
+  // formal cycle binding and rejects an identity-incompatible target.
+  let incompatibleRelationCalls = 0;
+  const incompatibleRelationDiagnostics = [];
+  const incompatibleRelationResult = await callOpenAIUnderstandingV1(
+    contextRelationVarianceInput(),
+    options(async () => {
+      incompatibleRelationCalls += 1;
+      return successfulResponse(incompatibleContextRelationOutput());
+    }, { onDiagnostic: (event) => incompatibleRelationDiagnostics.push(event) })
+  );
+  assert.equal(incompatibleRelationCalls, 1, "semantic relation inconsistency must never resample");
+  assert.deepEqual(incompatibleRelationResult.failedUnits.map((failure) => failure.failureCode), ["CONTEXT_TARGET_UNAVAILABLE"]);
+  assert.equal(incompatibleRelationResult.validatedContextLinks.length, 0);
+  assert.ok(incompatibleRelationDiagnostics.some((event) => event.targetMarker === "C05_CONTEXT_LINK_REJECTED"));
+
+  const unboundTargetResult = await callOpenAIUnderstandingV1(
+    contextRelationVarianceInput({ recentConversation: [] }),
+    options(async () => successfulResponse(providerOutput({
+      understandingOutput: {
+        ...providerOutput().understandingOutput,
+        units: [availabilityUnit({
+          unitId: "unit-a",
+          contextLinkCandidateId: "link-a",
+          evidenceRefs: [evidence({ endOffset: 7, quote: "9/16有房嗎" })],
+          subject: { kind: "bundle", catalogIdentity: "bundle-a" },
+          temporalCandidate: {
+            rawText: "9/16",
+            kind: "month_day",
+            checkInCandidate: null,
+            checkOutCandidate: null,
+            nightsCandidate: null
+          }
+        })]
+      },
+      contextLinkCandidates: [link({
+        relationKind: "MODIFICATION",
+        currentSourceEvidenceRefs: [evidence({ endOffset: 7, quote: "9/16有房嗎" })],
+        referencedHistoryEventRefs: [{ eventId: "history-bundle", messageRef: "history-bundle-message" }]
+      })]
+    })))
+  );
+  assert.deepEqual(unboundTargetResult.failedUnits.map((failure) => failure.failureCode), ["CONTEXT_TARGET_UNAVAILABLE"],
+    "targeted relations require a trusted C01 conversation-to-cycle binding");
 
   // After the response passes the global C02 wire contract, C04/C03/C05
   // failures are unit-scoped. A failing availability sibling cannot erase or
@@ -507,7 +641,7 @@ async function main() {
         availabilityLink(),
         link({
           unitId: "unit-availability",
-          evidenceRefs: [evidence({ startOffset: 3, endOffset: 6, quote: "有房嗎" })]
+          currentSourceEvidenceRefs: [evidence({ startOffset: 3, endOffset: 6, quote: "有房嗎" })]
         })
       ]
     }))));
@@ -533,7 +667,7 @@ async function main() {
     successfulResponse(providerOutput({
       contextLinkCandidates: [
         link(),
-        link({ unitId: "unit-b", evidenceRefs: [evidence({ quote: "不存在" })] })
+        link({ unitId: "unit-b", currentSourceEvidenceRefs: [evidence({ quote: "不存在" })] })
       ]
     })), { onDiagnostic: (event) => foreignLinkDiagnostics.push(event) }));
   assert.deepEqual(foreignLinkResult.validatedUnits.map((candidate) => candidate.unitId), ["unit-a"]);
@@ -578,7 +712,10 @@ async function main() {
   const contextDiagnostics = [];
   const contextResult = await callOpenAIUnderstandingV1(input, options(async () =>
     successfulResponse(providerOutput({
-      contextLinkCandidates: [link({ relationKind: "SUPPLEMENT", targetRequestCycleIdCandidate: "cycle-missing" })]
+      contextLinkCandidates: [link({
+        relationKind: "SUPPLEMENT",
+        referencedHistoryEventRefs: [{ eventId: "missing", messageRef: "missing" }]
+      })]
     })), { onDiagnostic: (event) => contextDiagnostics.push(event) }));
   assert.deepEqual(contextResult.validatedUnits, []);
   assert.deepEqual(contextResult.failedUnits, [{

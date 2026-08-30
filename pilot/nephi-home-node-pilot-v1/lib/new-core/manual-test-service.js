@@ -14,6 +14,7 @@ const { buildFinalDecision } = require("../conversation-engine-v2/final-decision
 const { buildFinalResponse } = require("../conversation-engine-v2/final-response-renderer");
 const { applyControlledReplyRules } = require("../custom-reply-rules");
 const { buildUnderstandingTurnInput, buildPublicCatalogIdentityProjection } = require("./turn-input-adapter");
+const { contextRelationEvidenceForValidatedLink } = require("./context-link-validator");
 const { projectCapabilityRegistry } = require("./semantic-unit-validator");
 const { createLifecycleDecision } = require("./lifecycle-manager");
 const { createUnitReplyRoutingRegistry, createUnitReadiness, createTrustedOperatorSafetyPolicy, createUnitRoutingDecision } = require("./unit-reply-router");
@@ -155,6 +156,31 @@ function projectStateTransitionDiagnostic(value, traceId) {
     } : null
   };
 }
+function projectContextRelationDiagnostic(value, traceId) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    traceId: bounded(traceId, 160),
+    candidates: (value.candidates || []).slice(0, 8).map((candidate) => ({
+      contextLinkCandidateId: bounded(candidate.contextLinkCandidateId, 160),
+      unitId: bounded(candidate.unitId, 160),
+      relationKind: bounded(candidate.relationKind, 40),
+      resolvedTargetRequestCycleId: candidate.resolvedTargetRequestCycleId == null
+        ? null : bounded(candidate.resolvedTargetRequestCycleId, 160),
+      currentSourceEvidenceRefs: (candidate.currentSourceEvidenceRefs || []).slice(0, 20).map(clone),
+      referencedHistoryEventRefs: (candidate.referencedHistoryEventRefs || []).slice(0, 20).map(clone)
+    })),
+    referenceableCycles: (value.referenceableCycles || []).slice(0, 20).map((cycle) => ({
+      requestCycleId: bounded(cycle.requestCycleId, 160),
+      status: bounded(cycle.status, 40),
+      capability: cycle.capability == null ? null : bounded(cycle.capability, 80),
+      subject: {
+        kind: cycle.subject && cycle.subject.kind == null ? null : bounded(cycle.subject && cycle.subject.kind, 80),
+        catalogIdentity: cycle.subject && cycle.subject.catalogIdentity == null
+          ? null : bounded(cycle.subject.catalogIdentity, 160)
+      }
+    }))
+  };
+}
 function projectDiagnostic(result, traceId, counters) {
   const units = Array.isArray(result.understanding && result.understanding.units) ? result.understanding.units : [];
   const decision = result.finalDecision || {}, response = result.finalResponse || {}, resolver = result.resolver || {}, earliest = result.earliestFailure || null;
@@ -166,6 +192,7 @@ function projectDiagnostic(result, traceId, counters) {
     finalResponse: { action: bounded(response.action, 40), shouldReply: response.shouldReply === true, replyText: bounded(response.replyText, 1200) }, earliestFailure: earliest ? { layer: bounded(earliest.layer, 80), failureCode: bounded(earliest.failureCode, 80) } : null,
     failureCode: earliest ? bounded(earliest.failureCode, 80) : null,
     failedUnits: (result.failedUnitDiagnostics || []).slice(0, 8).map(clone),
+    contextRelations: projectContextRelationDiagnostic(result.contextRelationDiagnostics, traceId),
     stateTransition: projectStateTransitionDiagnostic(result.stateTransitionDiagnostics, traceId),
     traceId, requestedModel: bounded(result.requestedModel, 160), resolvedModel: bounded(result.resolvedModel, 160), sideEffectCounters: clone(counters)
   };
@@ -352,7 +379,12 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
   };
   const provider = understanding[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC] || {};
   const failure = outcomes.find((x) => x.failure) && outcomes.find((x) => x.failure).failure || understanding.failedUnits[0] && { layer: understanding.failedUnits[0].boundary || "C03-C05", failureCode: understanding.failedUnits[0].failureCode } || null;
-  return { state: nextState, understanding: { summary: understanding.validatedUnits.map((x) => `${x.purpose}/${x.capability}/${x.subject.kind}`).join("；"), units: understanding.validatedUnits.map((x) => ({ purpose: x.purpose, capability: x.capability, subject: x.subject, temporal: x.temporalCandidate, guestCount: x.slotCandidates.find((slot) => slot.slot === "guest_count")?.value || null })) }, lifecycle: successful.map((x) => x.lifecycleDecision.action), routing: dispositions, resolver: { name: "existing canonical Resolver", foundOfficialData: executionOutcomes.some((x) => x.outcome === "answered"), status: executionOutcomes.map((x) => x.outcome).join(",") || "NOT_APPLICABLE" }, finalDecision, finalResponse, earliestFailure: failure, failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }), stateTransitionDiagnostics, requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL, resolvedModel: provider.resolvedModel || "" };
+  const contextCandidates = understanding.validatedContextLinks.map((link) => {
+    const unit = understanding.validatedUnits.find((candidate) => candidate.unitId === link.unitId);
+    const relation = unit ? contextRelationEvidenceForValidatedLink(link, unit) : null;
+    return { ...link, resolvedTargetRequestCycleId: relation && relation.resolvedTargetRequestCycleId };
+  });
+  return { state: nextState, understanding: { summary: understanding.validatedUnits.map((x) => `${x.purpose}/${x.capability}/${x.subject.kind}`).join("；"), units: understanding.validatedUnits.map((x) => ({ purpose: x.purpose, capability: x.capability, subject: x.subject, temporal: x.temporalCandidate, guestCount: x.slotCandidates.find((slot) => slot.slot === "guest_count")?.value || null })) }, lifecycle: successful.map((x) => x.lifecycleDecision.action), routing: dispositions, resolver: { name: "existing canonical Resolver", foundOfficialData: executionOutcomes.some((x) => x.outcome === "answered"), status: executionOutcomes.map((x) => x.outcome).join(",") || "NOT_APPLICABLE" }, finalDecision, finalResponse, earliestFailure: failure, failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }), contextRelationDiagnostics: { traceId: input.traceId, candidates: contextCandidates, referenceableCycles: c01.referenceableCycles }, stateTransitionDiagnostics, requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL, resolvedModel: provider.resolvedModel || "" };
 }
 
 function createNewCoreManualTestService({ persistence, providers, service, factsProviders = providers, factsService = service, apiKey, now = () => new Date(), executeTurn = executeNewCoreManualTurn } = {}) {
