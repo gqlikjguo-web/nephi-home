@@ -215,6 +215,32 @@ assert.deepEqual(route(relativeDate).value, {
   riskClass: null
 });
 
+// A complete source month/day is ready for the sole canonical temporal
+// authority even though Understanding must not invent its missing year.
+const monthDayText = "9/11有房嗎";
+const monthDay = validated({
+  messageText: monthDayText,
+  unit: candidate({
+    messageText: monthDayText,
+    temporalCandidate: {
+      rawText: "9/11",
+      kind: "month_day",
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null
+    }
+  })
+});
+assert.deepEqual(route(monthDay).value, {
+  unitId: "unit-routing",
+  disposition: "ANSWER",
+  reasonClass: "executable_lodging_need",
+  requiresCanonicalExecution: true,
+  missingGuestFields: [],
+  operatorActionClass: null,
+  riskClass: null
+});
+
 for (const incomplete of [
   { messageText: "住兩晚有房嗎", rawText: "住兩晚", kind: "nights_only", nightsCandidate: 2 },
   { messageText: "九月有房嗎", rawText: "九月", kind: "partial", nightsCandidate: null },

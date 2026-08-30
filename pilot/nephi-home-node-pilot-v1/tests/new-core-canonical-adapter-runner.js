@@ -349,6 +349,33 @@ assert.equal(canonicalGeneric.value.canonicalRequest.lodgingProduct.roomTypeId, 
 assert.equal(canonicalGeneric.value.canonicalRequest.lodgingProduct.bundleId, null);
 assert.deepEqual(canonicalGeneric.value.stateInput.confirmedFields.inventory, null);
 
+// A source-complete month/day keeps its year unset through Understanding and
+// is resolved only by the official canonical temporal authority at C08.
+const monthDayAvailability = pipeline({
+  messageText: "9/11有房嗎",
+  unitOverrides: {
+    unitId: "unit-month-day-availability",
+    subject: { kind: "property", catalogIdentity: null },
+    temporalCandidate: {
+      rawText: "9/11",
+      kind: "month_day",
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null
+    }
+  },
+  turnSuffix: "month-day-availability"
+});
+const monthDayC08 = createC08(monthDayAvailability);
+assert.equal(monthDayC08.ok, true, monthDayC08.code);
+const canonicalMonthDay = execute(monthDayC08.value);
+assert.equal(canonicalMonthDay.ok, true, canonicalMonthDay.code);
+assert.deepEqual([
+  canonicalMonthDay.value.canonicalRequest.temporalState.checkIn,
+  canonicalMonthDay.value.canonicalRequest.temporalState.checkOut,
+  canonicalMonthDay.value.canonicalRequest.temporalState.nights
+], ["2026-09-11", "2026-09-12", 1]);
+
 // Round-2 ruling: C03 temporal candidates are source-bound AI candidates, not
 // executable dates. The sole official canonicalizer may reject those fields
 // and repair them from its canonical temporal grammar.

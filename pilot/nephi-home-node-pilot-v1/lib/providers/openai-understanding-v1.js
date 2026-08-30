@@ -193,7 +193,7 @@ function temporalCandidateSchema() {
         enumSchema([...TEMPORAL_KINDS].filter((kind) => kind !== "absolute_date")),
         nullableStringSchema(80),
         nullableStringSchema(80)
-      ), "Source meaning only. A date missing its year is partial, never absolute_date. Do not add an implicit year or executable date.")
+      ), "Source meaning only. A complete month/day whose year is omitted is month_day with null date candidates. Other incomplete dates are partial. Never add an implicit year or executable date.")
     ]
   };
 }

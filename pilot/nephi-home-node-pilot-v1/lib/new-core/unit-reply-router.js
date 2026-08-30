@@ -22,6 +22,7 @@ const C07_AUTHORITY_MARKER = new WeakSet();
 const PROVENANCE_BY_C07_DECISION = new WeakMap();
 const CANONICALIZABLE_TEMPORAL_KINDS = new Set([
   "absolute_date",
+  "month_day",
   "date_range",
   "relative_date",
   "relative_range",

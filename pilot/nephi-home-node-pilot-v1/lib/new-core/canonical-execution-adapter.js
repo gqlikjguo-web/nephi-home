@@ -39,6 +39,7 @@ const STATE_INPUT_FIELDS = new Set([
 const CONFIRMED_FIELD_NAMES = new Set(["guests", "nights", "inventory"]);
 const TEMPORAL_KIND_COMPATIBILITY = Object.freeze({
   absolute_date: "absolute",
+  month_day: "absolute",
   date_range: "range",
   relative_date: "relative",
   relative_range: "range",

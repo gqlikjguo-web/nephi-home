@@ -83,6 +83,7 @@ const RISK_CLASSES = new Set(["access_credential", "payment_claim", "sensitive_r
 const CONFIDENCE_BANDS = new Set(["low", "medium", "high"]);
 const TEMPORAL_KINDS = new Set([
   "absolute_date",
+  "month_day",
   "date_range",
   "relative_date",
   "relative_range",
@@ -147,7 +148,7 @@ function validateTemporalCandidate(value, errors) {
   )) {
     errors.push("temporalCandidate.kindCandidateConflict");
   }
-  if (value && value.kind === "partial" && (checkIn !== null || checkOut !== null)) {
+  if (value && ["month_day", "partial"].includes(value.kind) && (checkIn !== null || checkOut !== null)) {
     errors.push("temporalCandidate.kindCandidateConflict");
   }
   if (checkIn !== null && checkOut !== null && value && value.nightsCandidate !== null
