@@ -2,10 +2,12 @@
 
 const assert = require("node:assert/strict");
 const { buildUnderstandingTurnInput } = require("../lib/new-core/turn-input-adapter");
+const { CAPABILITIES } = require("../lib/new-core/contracts/semantic-unit-candidate");
 const {
   OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC,
   callOpenAIUnderstandingV1,
-  isTrustedUnderstandingResult
+  isTrustedUnderstandingResult,
+  openAiUnderstandingV1ProviderSchema
 } = require("../lib/providers/openai-understanding-v1");
 
 const NOW = "2026-08-29T08:00:00.000Z";
@@ -182,6 +184,53 @@ function availabilityLink(overrides = {}) {
   });
 }
 
+function schemaAccepts(schema, value) {
+  if (schema.anyOf) return schema.anyOf.some((candidate) => schemaAccepts(candidate, value));
+  const types = Array.isArray(schema.type) ? schema.type : schema.type ? [schema.type] : [];
+  const actualType = value === null ? "null" : Array.isArray(value) ? "array" : Number.isInteger(value) ? "integer" : typeof value;
+  if (types.length && !types.includes(actualType)) return false;
+  if (schema.enum && !schema.enum.includes(value)) return false;
+  if (actualType === "string" && (value.length < (schema.minLength || 0) || value.length > (schema.maxLength || Infinity) || schema.pattern && !new RegExp(schema.pattern).test(value))) return false;
+  if (actualType === "integer" && schema.minimum !== undefined && value < schema.minimum) return false;
+  if (actualType === "array") {
+    if (value.length < (schema.minItems || 0) || value.length > (schema.maxItems || Infinity)) return false;
+    return value.every((item) => schemaAccepts(schema.items, item));
+  }
+  if (actualType === "object") {
+    const properties = schema.properties || {};
+    if ((schema.required || []).some((key) => !Object.hasOwn(value, key))) return false;
+    if (schema.additionalProperties === false && Object.keys(value).some((key) => !Object.hasOwn(properties, key))) return false;
+    return Object.entries(properties).every(([key, child]) => !Object.hasOwn(value, key) || schemaAccepts(child, value[key]));
+  }
+  return true;
+}
+
+const discriminatedInput = c01({
+  publicCatalog: {
+    propertyId: "property-a",
+    timezone: "Asia/Taipei",
+    capabilityCatalog: ["availability", "amenity", "property_fact"],
+    publicSubjectCatalog: [
+      { catalogIdentity: "property-a", kind: "property", propertyId: "property-a", publicName: "Property A" },
+      { catalogIdentity: "room-a", kind: "room", propertyId: "property-a", publicName: "Room A" },
+      { catalogIdentity: "bundle-a", kind: "bundle", propertyId: "property-a", publicName: "Bundle A" },
+      { catalogIdentity: "parking", kind: "amenity", propertyId: "property-a", publicName: "Parking" }
+    ]
+  }
+});
+const semanticUnitProviderSchema = openAiUnderstandingV1ProviderSchema(discriminatedInput)
+  .properties.understandingOutput.properties.units.items;
+assert.equal(schemaAccepts(semanticUnitProviderSchema, availabilityUnit({ subject: { kind: null, catalogIdentity: null } })), false,
+  "provider schema must reject availability without a lodging subject before C03");
+assert.equal(schemaAccepts(semanticUnitProviderSchema, availabilityUnit({ capability: "amenity", subject: { kind: "amenity", catalogIdentity: "parking" }, stayDependent: true })), false,
+  "provider schema must reject stay-dependent amenity output before C03");
+for (const valid of [
+  availabilityUnit({ subject: { kind: "property", catalogIdentity: null } }),
+  availabilityUnit({ subject: { kind: "room", catalogIdentity: "room-a" } }),
+  availabilityUnit({ subject: { kind: "bundle", catalogIdentity: "bundle-a" } }),
+  availabilityUnit({ capability: "amenity", subject: { kind: "amenity", catalogIdentity: "parking" }, stayDependent: false })
+]) assert.equal(schemaAccepts(semanticUnitProviderSchema, valid), true);
+
 function siblingOutput({ invalidBoundary, invalidFirst }) {
   const availabilityOverrides = invalidBoundary === "C04"
     ? { evidenceRefs: [evidence({ startOffset: 3, endOffset: 6, quote: "不存在" })] }
@@ -267,8 +316,13 @@ async function main() {
     body.text.format.schema.properties.understandingOutput.required.sort(),
     ["schemaVersion", "turnId", "units"]
   );
-  assert.deepEqual(
-    body.text.format.schema.properties.understandingOutput.properties.units.items.required.sort(),
+  const unitBranches = body.text.format.schema.properties.understandingOutput.properties.units.items.anyOf;
+  assert.ok(unitBranches.length <= CAPABILITIES.size);
+  for (const requiredCapability of ["availability"]) assert.ok(
+    unitBranches.some((branch) => branch.properties.capability.enum.includes(requiredCapability))
+  );
+  for (const branch of unitBranches) assert.deepEqual(
+    branch.required.sort(),
     ["capability", "confidenceBand", "contextLinkCandidateId", "evidenceRefs", "purpose", "safetyCandidate", "slotCandidates", "stayDependent", "subject", "temporalCandidate", "unitId"].sort()
   );
   assert.deepEqual(
@@ -276,7 +330,7 @@ async function main() {
     ["contextLinkCandidateId", "evidenceRefs", "relationKind", "targetRequestCycleIdCandidate", "unitId"].sort()
   );
   assert.deepEqual(
-    body.text.format.schema.properties.understandingOutput.properties.units.items.properties.evidenceRefs.items.required.sort(),
+    unitBranches[0].properties.evidenceRefs.items.required.sort(),
     ["endOffset", "eventId", "messageRef", "quote", "startOffset"].sort()
   );
   assert.equal(JSON.stringify(body.input).includes("must-not-leak"), false);

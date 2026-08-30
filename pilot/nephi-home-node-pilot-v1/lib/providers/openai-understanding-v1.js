@@ -40,6 +40,10 @@ const {
   projectCapabilityRegistry,
   validateSemanticUnit
 } = require("../new-core/semantic-unit-validator");
+const {
+  CAPABILITY_REGISTRY_PROJECTION,
+  capabilityPolicyFor
+} = require("../new-core/capability-subject-policy");
 const { validateContextLink } = require("../new-core/context-link-validator");
 const { createDiagnosticTraceEmitter } = require("../new-core/diagnostic-boundary");
 const {
@@ -208,36 +212,93 @@ function slotCandidateSchema() {
   }, "A source-bound slot proposal only; it is not a state mutation.");
 }
 
-function semanticUnitSchema(understandingTurnInput) {
-  const catalogIdentities = understandingTurnInput.publicSubjectCatalog.map((subject) => subject.catalogIdentity);
+function subjectBranchSchema(understandingTurnInput, capability, kind) {
+  if (kind === null || kind === "external_place"
+    || capability === "availability" && kind === "property") {
+    return objectSchema({
+      kind: enumSchema([kind]),
+      catalogIdentity: enumSchema([null])
+    });
+  }
+  const catalogIdentities = understandingTurnInput.publicSubjectCatalog
+    .filter((subject) => subject.kind === kind)
+    .map((subject) => subject.catalogIdentity);
+  return catalogIdentities.length === 0 ? null : objectSchema({
+    kind: enumSchema([kind]),
+    catalogIdentity: enumSchema(catalogIdentities)
+  });
+}
+
+function safetyCandidateSchema(capability) {
+  if (capability === "booking_operator_request") {
+    return objectSchema({
+      operatorActionClass: enumSchema([...OPERATOR_ACTION_CLASSES]),
+      riskClass: enumSchema([null])
+    }, "Trusted operator-action meaning only; this never chooses reply disposition.");
+  }
+  if (capability === "high_risk") {
+    return objectSchema({
+      operatorActionClass: enumSchema([null]),
+      riskClass: enumSchema([...RISK_CLASSES])
+    }, "Trusted risk meaning only; this never chooses reply disposition.");
+  }
+  return { type: "null" };
+}
+
+function semanticUnitBranchSchema(understandingTurnInput, capability) {
+  const policy = capabilityPolicyFor(CAPABILITY_REGISTRY_PROJECTION, capability);
+  if (!policy) {
+    const catalogIdentities = understandingTurnInput.publicSubjectCatalog.map((subject) => subject.catalogIdentity);
+    return objectSchema({
+      unitId: stringSchema(),
+      evidenceRefs: evidenceArraySchema(),
+      purpose: enumSchema(PURPOSES, "One independent source meaning; do not merge separately actionable meanings."),
+      capability: enumSchema([capability], "Unsupported language-derived capability candidate; never answer facts."),
+      subject: objectSchema({
+        kind: enumSchema(SUBJECT_KINDS),
+        catalogIdentity: enumSchema([...new Set([...catalogIdentities, null])])
+      }),
+      stayDependent: { type: "boolean" },
+      temporalCandidate: temporalCandidateSchema(),
+      contextLinkCandidateId: stringSchema(),
+      safetyCandidate: {
+        anyOf: [
+          { type: "null" },
+          objectSchema({
+            operatorActionClass: enumSchema([...OPERATOR_ACTION_CLASSES, null]),
+            riskClass: enumSchema([...RISK_CLASSES, null])
+          })
+        ]
+      },
+      slotCandidates: arraySchema(slotCandidateSchema(), { maxItems: MAX_SLOT_CANDIDATES }),
+      confidenceBand: enumSchema(CONFIDENCE_BANDS)
+    }, "An explicitly unsupported semantic candidate that remains fail-closed at C03.");
+  }
+  const subjectBranches = policy.subjectKinds
+    .map((kind) => subjectBranchSchema(understandingTurnInput, capability, kind))
+    .filter(Boolean);
+  if (subjectBranches.length === 0) return null;
   return objectSchema({
     unitId: stringSchema(),
     evidenceRefs: evidenceArraySchema(),
-    purpose: enumSchema(PURPOSES, "One independent source meaning; do not merge separately actionable meanings."),
-    capability: enumSchema(CAPABILITIES, "Language-derived capability candidate only; never answer facts."),
-    subject: objectSchema({
-      kind: enumSchema(SUBJECT_KINDS),
-      catalogIdentity: {
-        type: ["string", "null"],
-        enum: [...new Set([...catalogIdentities, null])],
-        maxLength: MAX_ID_LENGTH
-      }
-    }),
-    stayDependent: { type: "boolean" },
+    purpose: enumSchema(policy.purposes, "One independent source meaning; do not merge separately actionable meanings."),
+    capability: enumSchema([capability], "Language-derived capability candidate only; never answer facts."),
+    subject: { anyOf: subjectBranches },
+    stayDependent: enumSchema([policy.stayDependent]),
     temporalCandidate: temporalCandidateSchema(),
     contextLinkCandidateId: stringSchema(),
-    safetyCandidate: {
-      anyOf: [
-        { type: "null" },
-        objectSchema({
-          operatorActionClass: { type: ["string", "null"], enum: [...OPERATOR_ACTION_CLASSES, null] },
-          riskClass: { type: ["string", "null"], enum: [...RISK_CLASSES, null] }
-        }, "Safety meaning only. Exactly one class is non-null; this never chooses reply disposition.")
-      ]
-    },
+    safetyCandidate: safetyCandidateSchema(capability),
     slotCandidates: arraySchema(slotCandidateSchema(), { maxItems: MAX_SLOT_CANDIDATES }),
     confidenceBand: enumSchema(CONFIDENCE_BANDS)
   }, "Exactly one immutable semantic candidate. Do not emit facts, canonical dates, resolver data, state writes, or final copy.");
+}
+
+function semanticUnitSchema(understandingTurnInput) {
+  return {
+    anyOf: [...CAPABILITIES]
+      .map((capability) => semanticUnitBranchSchema(understandingTurnInput, capability))
+      .filter(Boolean)
+  };
 }
 
 function contextLinkSchema(understandingTurnInput) {
@@ -276,7 +337,7 @@ function instructions() {
     "When the current source message supplies missing values for a referenceable pending cycle, represent the composite pending lodging request with its trusted lodging purpose, capability, and subject identity, describe relationKind SUPPLEMENT, and cite that exact requestCycleId as targetRequestCycleIdCandidate; do not emit a capability-bearing supplement unit, and never invent or substitute cycle identity.",
     "Context relation is semantic evidence, never a lifecycle decision. Use NEW_REQUEST for an independent actionable request, SUPPLEMENT for additional information completing an existing request, MODIFICATION for an explicit change to an existing request, TERMINATION for an explicit end, and NONE only when no conversational relation is expressed. The deterministic core alone chooses START, CONTINUE, MODIFY, END, or NONE.",
     "For that continuation, compare only the supplied candidate values with the cycle's missingFields; deterministic routing alone decides whether to answer or clarify.",
-    "Capability, subject, stay dependency, safety meaning, and Context relation are independent candidates. Never propose ANSWER, CLARIFY, HANDOFF, NO_REPLY, START, CONTINUE, MODIFY, END, or lifecycle NONE.",
+    "Capability, subject, stay dependency, and safety meaning are source-derived candidates, but their combination must match one capability-discriminated schema branch. Never use a null subject kind, catalog identity, stay dependency, purpose, or safety shape that conflicts with the selected capability. Context relation remains separate semantic evidence. Never propose ANSWER, CLARIFY, HANDOFF, NO_REPLY, START, CONTINUE, MODIFY, END, or lifecycle NONE.",
     "Set safetyCandidate only for operator_request/booking_operator_request or sensitive_request/high_risk. Exactly one of operatorActionClass and riskClass must be non-null; otherwise safetyCandidate is null.",
     "Temporal candidates preserve source meaning only. Do not invent an implicit year, canonical date, availability, price, policy truth, amenity truth, location fact, or any other formal fact.",
     "Do not emit resolver IDs, query plans, state mutations, final reply text, message-level routing, task indexes, credentials, private data, or fields outside the schema.",
