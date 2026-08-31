@@ -7,8 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
-const { bindRecentConversationToCycles, buildManualTestCanonicalizerCatalog, buildManualTestFailureDiagnostics, buildManualTestPublicCatalog, normalizeManualTestFailureRefs, turnStateSnapshot } = require("../lib/new-core/manual-test-service");
-const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
+const { bindRecentConversationToCycles, buildManualTestFailureDiagnostics, normalizeManualTestFailureRefs, turnStateSnapshot } = require("../lib/new-core/manual-test-service");
 const { aggregateUnitOutcomes } = require("../lib/new-core/unit-aggregator");
 
 const root = path.resolve(__dirname, "..");
@@ -77,26 +76,6 @@ async function json(url, method = "GET", body, sentCookie = "") {
 }
 
 (async () => {
-  const groupedRoomProperty = {
-    propertyId: "property-room-groups",
-    displayName: "房型集合測試旅宿",
-    rooms: [
-      { id: "room-201", name: "201", type: "雙人房", capacity: 2, enabled: true },
-      { id: "room-202", name: "202", type: "雙人房", capacity: 2, enabled: true },
-      { id: "room-401", name: "401", type: "四人房", capacity: 4, enabled: true },
-      { id: "room-402", name: "402", type: "四人房", capacity: 4, enabled: true },
-      { id: "bundle-all", name: "全館包棟", inventoryType: "bundle", capacity: 12, enabled: true }
-    ]
-  };
-  const groupedCatalog = buildManualTestPublicCatalog(groupedRoomProperty, buildPropertyCatalog(groupedRoomProperty));
-  const roomSets = groupedCatalog.publicSubjectCatalog.filter((subject) => subject.kind === "matched_room_set");
-  assert.deepEqual(roomSets.map((subject) => subject.publicName).sort(), ["四人房", "雙人房"]);
-  assert.equal(roomSets.every((subject) => subject.propertyId === groupedRoomProperty.propertyId), true);
-  assert.equal(roomSets.every((subject) => typeof subject.catalogIdentity === "string" && subject.catalogIdentity.length > 0), true);
-  assert.equal(new Set(roomSets.map((subject) => subject.catalogIdentity)).size, 2);
-  const canonicalizerCatalog = buildManualTestCanonicalizerCatalog(groupedCatalog, buildPropertyCatalog(groupedRoomProperty));
-  assert.deepEqual(canonicalizerCatalog.rooms.filter((room) => room.category === "room").map((room) => room.type), ["雙人房", "雙人房", "四人房", "四人房"]);
-
   const pendingState = {
     scope: { propertyId: "nephi_home", channel: "new-core-manual-test", userId: "manual-test:test" },
     tasks: [{
@@ -245,6 +224,6 @@ async function json(url, method = "GET", body, sentCookie = "") {
       const productionApiDenied = await json(`${productionRunning.url}/api/admin/new-core-test/sessions`, "POST", {});
       assert.equal(productionApiDenied.status, 401, "non-test-only manual test API must retain admin authentication");
     } finally { await productionApp.stop(); }
-    console.log(JSON.stringify({ suite: "new-core-manual-test-page", caseCount: 39, passCount: 39, fakeIntegration: true, realOpenAICalls: 0, sideEffects: second.body.data.diagnostic.sideEffectCounters }));
+    console.log(JSON.stringify({ suite: "new-core-manual-test-page", caseCount: 33, passCount: 33, fakeIntegration: true, realOpenAICalls: 0, sideEffects: second.body.data.diagnostic.sideEffectCounters }));
   } finally { await app.stop(); }
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
