@@ -32,8 +32,8 @@ function detach(value, seen = new Map()) {
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, detach(item, seen)]));
 }
 
-function failure(code) {
-  return { ok: false, code, errors: [] };
+function failure(code, rejectionReasons = []) {
+  return { ok: false, code, errors: [...rejectionReasons] };
 }
 
 function buildPublicCatalogIdentitySet(understandingTurnInput) {
@@ -96,19 +96,21 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnIn
     return failure("UNIT_EVIDENCE_MISSING");
   }
   const policy = capabilityPolicyFor(capabilityRegistryProjection, unit.capability);
-  if (!policy) return failure("UNIT_MEANING_UNSUPPORTED");
+  if (!policy) return failure("UNIT_MEANING_UNSUPPORTED", ["capability_policy_missing"]);
   if (!catalogIdentityValid(unit, publicCatalogIdentitySet, understandingTurnInput, capabilityRegistryProjection)) {
-    return failure("CATALOG_IDENTITY_INVALID");
+    return failure("CATALOG_IDENTITY_INVALID", ["catalog_identity_invalid"]);
   }
-  if (!policy.purposes.includes(unit.purpose)) return failure("UNIT_MEANING_UNSUPPORTED");
-  if (!policy.subjectKinds.includes(unit.subject.kind)) return failure("CAPABILITY_SUBJECT_CONFLICT");
-  if (unit.stayDependent !== policy.stayDependent) return failure("STAY_DEPENDENCY_CONFLICT");
+  if (!policy.purposes.includes(unit.purpose)) return failure("UNIT_MEANING_UNSUPPORTED", ["purpose_not_allowed"]);
+  if (!policy.subjectKinds.includes(unit.subject.kind)) return failure("CAPABILITY_SUBJECT_CONFLICT", ["subject_kind_not_allowed"]);
+  if (unit.stayDependent !== policy.stayDependent) return failure("STAY_DEPENDENCY_CONFLICT", ["stay_dependency_mismatch"]);
   if (!safetyCandidateMatchesPolicy(capabilityRegistryProjection, unit.capability, unit.purpose, unit.safetyCandidate)) {
-    return failure("UNIT_MEANING_UNSUPPORTED");
+    return failure("UNIT_MEANING_UNSUPPORTED", ["safety_candidate_mismatch"]);
   }
-  if (!unit.slotCandidates.every((slot) => productSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput))
-    || !unit.slotCandidates.every((slot) => otherSupportedSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput, policy))) {
-    return failure("UNIT_MEANING_UNSUPPORTED");
+  if (!unit.slotCandidates.every((slot) => productSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput))) {
+    return failure("UNIT_MEANING_UNSUPPORTED", ["product_slot_not_grounded"]);
+  }
+  if (!unit.slotCandidates.every((slot) => otherSupportedSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput, policy))) {
+    return failure("UNIT_MEANING_UNSUPPORTED", ["other_supported_slot_not_grounded"]);
   }
   const value = deepFreeze(detach(unit));
   INPUT_BY_VALIDATED_SEMANTIC_UNIT.set(value, understandingTurnInput);

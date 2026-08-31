@@ -55,6 +55,13 @@ async function fakeTurn({ input, state, property, sideEffectGuard, now: timestam
         subject: { kind: "bundle", catalogIdentity: "bundle_all" }
       }]
     },
+    roomGroupBoundaryDiagnostics: {
+      c01PublicSubjectCatalog: [{ catalogIdentity: "matched-room-set-test", kind: "matched_room_set", publicName: "four_person" }],
+      providerSubjectCatalog: [{ catalogIdentity: "matched-room-set-test", kind: "matched_room_set", publicName: "four_person" }],
+      providerSubjectEnums: { matched_room_set: ["matched-room-set-test"] },
+      lunaStructuredUnits: [{ unitId: "unit-diagnostic", subject: { kind: "property", catalogIdentity: null }, evidenceRefs: [], slotCandidates: [], confidenceBand: "high" }],
+      c03Rejections: [{ unitId: "unit-diagnostic", failureCode: "CAPABILITY_SUBJECT_CONFLICT", rejectionReasons: ["subject_kind_not_allowed"] }]
+    },
     requestedModel: "gpt-5.6-luna", resolvedModel: "gpt-5.6-luna"
   };
   const continuation = calls > 0;
@@ -211,6 +218,13 @@ async function json(url, method = "GET", body, sentCookie = "") {
         requestCycleId: "pending-price-bundle", status: "pending", capability: "price",
         subject: { kind: "bundle", catalogIdentity: "bundle_all" }
       }]
+    });
+    assert.deepEqual(diagnosticFailure.body.data.diagnostic.roomGroupBoundary, {
+      c01PublicSubjectCatalog: [{ catalogIdentity: "matched-room-set-test", kind: "matched_room_set", publicName: "four_person" }],
+      providerSubjectCatalog: [{ catalogIdentity: "matched-room-set-test", kind: "matched_room_set", publicName: "four_person" }],
+      providerSubjectEnums: { matched_room_set: ["matched-room-set-test"] },
+      lunaStructuredUnits: [{ unitId: "unit-diagnostic", subject: { kind: "property", catalogIdentity: null }, evidenceRefs: [], slotCandidates: [], confidenceBand: "high" }],
+      c03Rejections: [{ unitId: "unit-diagnostic", failureCode: "CAPABILITY_SUBJECT_CONFLICT", rejectionReasons: ["subject_kind_not_allowed"] }]
     });
     const persistedDiagnostic = await json(`${running.url}/api/admin/new-core-test/records/${diagnosticFailure.body.data.traceId}`);
     assert.deepEqual(persistedDiagnostic.body.data.diagnostic.failedUnits, diagnosticFailure.body.data.diagnostic.failedUnits);

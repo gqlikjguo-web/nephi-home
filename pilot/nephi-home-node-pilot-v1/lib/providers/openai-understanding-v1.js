@@ -62,6 +62,7 @@ const MAX_ID_LENGTH = 160;
 const MAX_QUOTE_LENGTH = 500;
 const RETRYABLE_TRANSPORT_CATEGORIES = new Set(["timeout", "network", "rate_limit", "provider_5xx"]);
 const OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC = Symbol.for("junzan.openAiUnderstandingV1ProviderDiagnostic");
+const OPENAI_UNDERSTANDING_V1_BOUNDARY_TRACE = Symbol.for("junzan.openAiUnderstandingV1BoundaryTrace");
 const INTERNAL_PROVIDER_FAILURE = Symbol("openAiUnderstandingV1ProviderFailure");
 const TRUSTED_UNDERSTANDING_RESULTS = new WeakSet();
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -780,6 +781,7 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
   const orphanDuplicateLinks = rawLinks.filter((candidate) =>
     !rawUnitKeys.has(unitKey(candidate.unitId, candidate.contextLinkCandidateId)));
   const failuresByUnitId = new Map();
+  const c03Rejections = [];
   const recordFailure = (unitId, failureCode, boundary) => {
     if (!failuresByUnitId.has(unitId)) {
       failuresByUnitId.set(unitId, deepFreeze({ unitId, failureCode, boundary }));
@@ -845,6 +847,7 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     });
     if (!semantic.ok) {
       recordFailure(rawUnit.unitId, semantic.code, "C03");
+      c03Rejections.push(deepFreeze({ unitId: rawUnit.unitId, failureCode: semantic.code, rejectionReasons: [...semantic.errors] }));
       emit(traceEmitter, understandingTurnInput, {
         boundary: "C03", unitIds: [rawUnit.unitId], outputUnitIds: [], status: "FAILURE",
         code: semantic.code, marker: "C03_SEMANTIC_UNIT_REJECTED", nowMs
@@ -926,6 +929,17 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     writable: false,
     value: providerDiagnostic(attempts)
   });
+  Object.defineProperty(result, OPENAI_UNDERSTANDING_V1_BOUNDARY_TRACE, {
+    enumerable: false,
+    configurable: false,
+    writable: false,
+    value: (() => {
+      const subjectCatalog = understandingTurnInput.publicSubjectCatalog.map((subject) => ({ ...subject }));
+      const subjectEnums = Object.fromEntries([...new Set(subjectCatalog.map((subject) => subject.kind))]
+        .map((kind) => [kind, subjectCatalog.filter((subject) => subject.kind === kind).map((subject) => subject.catalogIdentity)]));
+      return deepFreeze({ subjectCatalog, subjectEnums, c03Rejections });
+    })()
+  });
   const trustedResult = deepFreeze(result);
   TRUSTED_UNDERSTANDING_RESULTS.add(trustedResult);
   return trustedResult;
@@ -937,6 +951,7 @@ function isTrustedUnderstandingResult(value) {
 }
 
 module.exports = {
+  OPENAI_UNDERSTANDING_V1_BOUNDARY_TRACE,
   OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC,
   callOpenAIUnderstandingV1,
   instructions,

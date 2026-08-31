@@ -21,7 +21,7 @@ const { createUnitReplyRoutingRegistry, createUnitReadiness, createTrustedOperat
 const { createCanonicalizerInputItem, executeCanonicalizerInputItem } = require("./canonical-execution-adapter");
 const { aggregateUnitOutcomes } = require("./unit-aggregator");
 const { adaptLifecycleDecisionsToStateV3 } = require("./state-v3-lifecycle-adapter");
-const { callOpenAIUnderstandingV1, OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC } = require("../providers/openai-understanding-v1");
+const { callOpenAIUnderstandingV1, OPENAI_UNDERSTANDING_V1_BOUNDARY_TRACE, OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC } = require("../providers/openai-understanding-v1");
 const { NEW_CORE_OPENAI_MODEL } = require("./openai-model-authority");
 const { NewCoreManualTestRepository } = require("./manual-test-repository");
 
@@ -194,6 +194,7 @@ function projectDiagnostic(result, traceId, counters) {
     failedUnits: (result.failedUnitDiagnostics || []).slice(0, 8).map(clone),
     contextRelations: projectContextRelationDiagnostic(result.contextRelationDiagnostics, traceId),
     stateTransition: projectStateTransitionDiagnostic(result.stateTransitionDiagnostics, traceId),
+    roomGroupBoundary: result.roomGroupBoundaryDiagnostics ? clone(result.roomGroupBoundaryDiagnostics) : null,
     traceId, requestedModel: bounded(result.requestedModel, 160), resolvedModel: bounded(result.resolvedModel, 160), sideEffectCounters: clone(counters)
   };
   assertSafe(projected); return projected;
@@ -395,13 +396,31 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
     zeroCreationReason
   };
   const provider = understanding[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC] || {};
+  const boundaryTrace = understanding[OPENAI_UNDERSTANDING_V1_BOUNDARY_TRACE] || {};
   const failure = outcomes.find((x) => x.failure) && outcomes.find((x) => x.failure).failure || understanding.failedUnits[0] && { layer: understanding.failedUnits[0].boundary || "C03-C05", failureCode: understanding.failedUnits[0].failureCode } || null;
   const contextCandidates = understanding.validatedContextLinks.map((link) => {
     const unit = understanding.validatedUnits.find((candidate) => candidate.unitId === link.unitId);
     const relation = unit ? contextRelationEvidenceForValidatedLink(link, unit) : null;
     return { ...link, resolvedTargetRequestCycleId: relation && relation.resolvedTargetRequestCycleId };
   });
-  return { state: nextState, understanding: { summary: understanding.validatedUnits.map((x) => `${x.purpose}/${x.capability}/${x.subject.kind}`).join("；"), units: understanding.validatedUnits.map((x) => ({ purpose: x.purpose, capability: x.capability, subject: x.subject, temporal: x.temporalCandidate, guestCount: x.slotCandidates.find((slot) => slot.slot === "guest_count")?.value || null })) }, lifecycle: successful.map((x) => x.lifecycleDecision.action), routing: dispositions, resolver: { name: "existing canonical Resolver", foundOfficialData: executionOutcomes.some((x) => x.outcome === "answered"), status: executionOutcomes.map((x) => x.outcome).join(",") || "NOT_APPLICABLE" }, finalDecision, finalResponse, earliestFailure: failure, failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }), contextRelationDiagnostics: { traceId: input.traceId, candidates: contextCandidates, referenceableCycles: c01.referenceableCycles }, stateTransitionDiagnostics, requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL, resolvedModel: provider.resolvedModel || "" };
+  const roomGroupBoundaryDiagnostics = {
+    c01PublicSubjectCatalog: c01.publicSubjectCatalog.map(clone),
+    providerSubjectCatalog: (boundaryTrace.subjectCatalog || []).map(clone),
+    providerSubjectEnums: clone(boundaryTrace.subjectEnums || {}),
+    lunaStructuredUnits: understanding.understandingOutput.units.map((unit) => ({
+      unitId: unit.unitId,
+      purpose: unit.purpose,
+      capability: unit.capability,
+      subject: clone(unit.subject),
+      stayDependent: unit.stayDependent,
+      temporalCandidate: clone(unit.temporalCandidate),
+      evidenceRefs: unit.evidenceRefs.map(clone),
+      slotCandidates: unit.slotCandidates.map(clone),
+      confidenceBand: unit.confidenceBand
+    })),
+    c03Rejections: (boundaryTrace.c03Rejections || []).map(clone)
+  };
+  return { state: nextState, understanding: { summary: understanding.validatedUnits.map((x) => `${x.purpose}/${x.capability}/${x.subject.kind}`).join("；"), units: understanding.validatedUnits.map((x) => ({ purpose: x.purpose, capability: x.capability, subject: x.subject, temporal: x.temporalCandidate, guestCount: x.slotCandidates.find((slot) => slot.slot === "guest_count")?.value || null })) }, lifecycle: successful.map((x) => x.lifecycleDecision.action), routing: dispositions, resolver: { name: "existing canonical Resolver", foundOfficialData: executionOutcomes.some((x) => x.outcome === "answered"), status: executionOutcomes.map((x) => x.outcome).join(",") || "NOT_APPLICABLE" }, finalDecision, finalResponse, earliestFailure: failure, failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }), contextRelationDiagnostics: { traceId: input.traceId, candidates: contextCandidates, referenceableCycles: c01.referenceableCycles }, stateTransitionDiagnostics, roomGroupBoundaryDiagnostics, requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL, resolvedModel: provider.resolvedModel || "" };
 }
 
 function createNewCoreManualTestService({ persistence, providers, service, factsProviders = providers, factsService = service, apiKey, now = () => new Date(), executeTurn = executeNewCoreManualTurn } = {}) {
