@@ -211,6 +211,18 @@ function createSideEffectGuard() {
 }
 function publicCatalog(property, catalog) {
   const subjects = [...catalog.rooms, ...catalog.amenities, ...catalog.policies].map((item) => ({ catalogIdentity: item.canonicalId, kind: item.category === "room" ? "room" : item.category === "bundle" ? "bundle" : catalog.amenities.includes(item) ? "amenity" : "policy", propertyId: property.propertyId, publicName: item.publicName }));
+  const roomsByType = new Map();
+  for (const room of catalog.rooms) {
+    if (room.category !== "room" || !room.type) continue;
+    const rooms = roomsByType.get(room.type) || [];
+    rooms.push(room);
+    roomsByType.set(room.type, rooms);
+  }
+  for (const [roomType, rooms] of roomsByType) {
+    if (rooms.length < 2) continue;
+    const digest = crypto.createHash("sha256").update(`${property.propertyId}\0${roomType}`, "utf8").digest("hex").slice(0, 24);
+    subjects.push({ catalogIdentity: `matched-room-set-${digest}`, kind: "matched_room_set", propertyId: property.propertyId, publicName: roomType });
+  }
   return { propertyId: property.propertyId, timezone: catalog.timezone, capabilityCatalog: Object.keys(CAPABILITY_REGISTRY), publicSubjectCatalog: subjects };
 }
 function turnStateSnapshot(state, scope, now) {
@@ -268,9 +280,14 @@ function bindRecentConversationToCycles(history, state, referenceableCycles) {
     referenceableCycleIds: [...new Set(cycleIdsByTimestamp.get(turn.timestamp) || [])]
   }));
 }
-function canonicalizerCatalog(input) {
-  const project = (subject) => ({ canonicalId: subject.catalogIdentity, category: subject.kind, publicName: subject.publicName });
-  return { propertyId: input.propertyScope.propertyId, timezone: input.propertyTimezone, rooms: input.publicSubjectCatalog.filter((x) => ["room", "bundle"].includes(x.kind)).map(project), amenities: input.publicSubjectCatalog.filter((x) => x.kind === "amenity").map(project), policies: input.publicSubjectCatalog.filter((x) => x.kind === "policy").map(project) };
+function canonicalizerCatalog(input, officialCatalog) {
+  const officialInventory = new Map((officialCatalog.rooms || []).map((item) => [item.canonicalId, item]));
+  const projectInventory = (subject) => {
+    const official = subject.kind === "room" ? officialInventory.get(subject.catalogIdentity) : null;
+    return { canonicalId: subject.catalogIdentity, category: subject.kind, publicName: subject.publicName, type: official && official.type || "", aliases: official && Array.isArray(official.aliases) ? [...official.aliases] : [] };
+  };
+  const projectFact = (subject) => ({ canonicalId: subject.catalogIdentity, category: subject.kind, publicName: subject.publicName });
+  return { propertyId: input.propertyScope.propertyId, timezone: input.propertyTimezone, rooms: input.publicSubjectCatalog.filter((item) => ["room", "bundle"].includes(item.kind)).map(projectInventory), amenities: input.publicSubjectCatalog.filter((item) => item.kind === "amenity").map(projectFact), policies: input.publicSubjectCatalog.filter((item) => item.kind === "policy").map(projectFact) };
 }
 function legacyTaskResult(execution) {
   const base = { taskId: execution.taskId, type: execution.type, facts: execution.facts || {} };
@@ -298,7 +315,7 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
   const c01 = buildUnderstandingTurnInput({ coreVersion: "new-core-v1", traceId: input.traceId, turnId: input.turnId, verifiedPropertyBinding: { propertyId: PROPERTY_ID, channel: CHANNEL }, verifiedConversationScope: { channel: CHANNEL, userId: scope.userId }, sourceEvents: [{ eventId: input.turnId, messageRef: input.turnId, role: "guest", timestamp: now, messageKind: "text", messageText: input.message }], recentConversation: input.recentConversation, stateV3Snapshot: turnStateSnapshot(state, scope, now), publicCatalog: publicCatalog(property, catalog) });
   const understanding = await callOpenAIUnderstandingV1(c01, { apiKey: providerConfig.apiKey });
   const registry = createUnitReplyRoutingRegistry(projectCapabilityRegistry(CAPABILITY_REGISTRY));
-  const c08Catalog = canonicalizerCatalog(c01);
+  const c08Catalog = canonicalizerCatalog(c01, catalog);
   const projection = buildPublicCatalogIdentityProjection(c01);
   const outcomes = [];
   for (const [index, unit] of understanding.validatedUnits.entries()) {
@@ -424,4 +441,4 @@ function createNewCoreManualTestService({ persistence, providers, service, facts
   };
 }
 
-module.exports = { PROPERTY_ID, CHANNEL, SIDE_EFFECT_COUNTERS, bindRecentConversationToCycles, buildManualTestFailureDiagnostics, createNewCoreManualTestService, executeNewCoreManualTurn, normalizeManualTestFailureRefs, turnStateSnapshot };
+module.exports = { PROPERTY_ID, CHANNEL, SIDE_EFFECT_COUNTERS, bindRecentConversationToCycles, buildManualTestCanonicalizerCatalog: canonicalizerCatalog, buildManualTestFailureDiagnostics, buildManualTestPublicCatalog: publicCatalog, createNewCoreManualTestService, executeNewCoreManualTurn, normalizeManualTestFailureRefs, turnStateSnapshot };

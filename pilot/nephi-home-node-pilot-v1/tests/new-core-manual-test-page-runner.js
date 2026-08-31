@@ -7,8 +7,11 @@ const os = require("node:os");
 const path = require("node:path");
 const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
-const { bindRecentConversationToCycles, buildManualTestFailureDiagnostics, normalizeManualTestFailureRefs, turnStateSnapshot } = require("../lib/new-core/manual-test-service");
+const { bindRecentConversationToCycles, buildManualTestCanonicalizerCatalog, buildManualTestFailureDiagnostics, buildManualTestPublicCatalog, normalizeManualTestFailureRefs, turnStateSnapshot } = require("../lib/new-core/manual-test-service");
 const { aggregateUnitOutcomes } = require("../lib/new-core/unit-aggregator");
+const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
+const { resolveEntity } = require("../lib/conversation-engine-v2/entity-resolver");
+const { buildUnderstandingTurnInput } = require("../lib/new-core/turn-input-adapter");
 
 const root = path.resolve(__dirname, "..");
 const now = () => new Date("2026-08-29T12:00:00.000Z");
@@ -76,6 +79,30 @@ async function json(url, method = "GET", body, sentCookie = "") {
 }
 
 (async () => {
+  const groupedProperty = {
+    propertyId: "property-room-groups", displayName: "Room Group Property", timezone: "Asia/Taipei",
+    rooms: [
+      { id: "room-double-a", name: "Double A", type: "double", aliases: ["Double room"], enabled: true },
+      { id: "room-double-b", name: "Double B", type: "double", aliases: ["Double room"], enabled: true },
+      { id: "room-four-a", name: "Four A", type: "four_person", aliases: ["Four-person room"], enabled: true },
+      { id: "room-four-b", name: "Four B", type: "four_person", aliases: ["Four-person room"], enabled: true },
+      { id: "room-disabled", name: "Disabled Four", type: "four_person", aliases: ["Four-person room"], enabled: false },
+      { id: "bundle-all", name: "Whole Property", type: "four_person", inventoryType: "bundle", enabled: true }
+    ], commonAnswers: {}
+  };
+  const officialCatalog = buildPropertyCatalog(groupedProperty);
+  const publicCatalog = buildManualTestPublicCatalog(groupedProperty, officialCatalog);
+  const groups = publicCatalog.publicSubjectCatalog.filter((subject) => subject.kind === "matched_room_set");
+  assert.deepEqual(groups.map((subject) => subject.publicName).sort(), ["double", "four_person"]);
+  assert.equal(groups.every((subject) => subject.propertyId === groupedProperty.propertyId), true);
+  const c01 = buildUnderstandingTurnInput({ coreVersion: "new-core-v1", traceId: "trace-groups", turnId: "turn-groups", verifiedPropertyBinding: { propertyId: groupedProperty.propertyId, channel: "manual-test" }, verifiedConversationScope: { channel: "manual-test", userId: "group-user" }, sourceEvents: [{ eventId: "event-groups", messageRef: "message-groups", role: "guest", timestamp: "2026-09-01T00:00:00.000Z", messageKind: "text", messageText: "Four-person room 9/10 availability" }], recentConversation: [], stateV3Snapshot: { scope: { propertyId: groupedProperty.propertyId, channel: "manual-test", userId: "group-user" }, referenceableCycles: [] }, publicCatalog });
+  const trustedCatalog = buildManualTestCanonicalizerCatalog(c01, officialCatalog);
+  assert.deepEqual(trustedCatalog.rooms.map((room) => room.canonicalId).sort(), ["bundle-all", "room-double-a", "room-double-b", "room-four-a", "room-four-b"]);
+  assert.deepEqual(trustedCatalog.rooms.filter((room) => room.category === "room").map((room) => room.type).sort(), ["double", "double", "four_person", "four_person"]);
+  const matched = resolveEntity(trustedCatalog, { category: "room", rawText: "four_person", canonicalCandidate: null });
+  assert.equal(matched.status, "matched_set");
+  assert.deepEqual(matched.entities.map((room) => room.canonicalId).sort(), ["room-four-a", "room-four-b"]);
+
   const pendingState = {
     scope: { propertyId: "nephi_home", channel: "new-core-manual-test", userId: "manual-test:test" },
     tasks: [{
