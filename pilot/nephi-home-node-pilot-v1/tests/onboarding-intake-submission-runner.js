@@ -32,7 +32,7 @@ function intakePayload(name, suffix) {
     phone: `09000000${suffix === "Alpha" ? "01" : "02"}`,
     email: `${suffix.toLowerCase()}@example.test`,
     address: `測試地址 ${suffix}`,
-    googleMapsUrl: "",
+    googleMapsUrl: `https://maps.app.goo.gl/${suffix}OnboardingMap`,
     checkInTime: "15:00",
     checkOutTime: "11:00",
     line: { hasOfficialAccount: false, contactLink: "" },
@@ -243,6 +243,22 @@ function intakePayload(name, suffix) {
       && result.body.data.knowledge.length === 0
       && !Array.isArray(result.body.data.propertyFacts));
     const betaPayload = intakePayload("friendly_property_beta", "Beta");
+    result = await saveDraft(beta, { ...betaPayload, googleMapsUrl: "" });
+    assert.equal(result.response.status, 200, JSON.stringify(result.body));
+    result = await request(`${running.url}/api/public/onboarding/drafts/${beta.applicationId}/submit`, {
+      method: "POST",
+      headers: { "x-onboarding-draft-token": beta.draftToken }
+    });
+    check("缺少 Google Maps 網址不得完成 onboarding", result.response.status === 400
+      && result.body.error.code === "APPLICATION_INCOMPLETE");
+    result = await saveDraft(beta, { ...betaPayload, googleMapsUrl: "https://example.com/not-google-maps" });
+    assert.equal(result.response.status, 200, JSON.stringify(result.body));
+    result = await request(`${running.url}/api/public/onboarding/drafts/${beta.applicationId}/submit`, {
+      method: "POST",
+      headers: { "x-onboarding-draft-token": beta.draftToken }
+    });
+    check("無效 Google Maps 網址不得完成 onboarding", result.response.status === 400
+      && result.body.error.code === "APPLICATION_INCOMPLETE");
     result = await saveDraft(beta, betaPayload);
     check("Beta 草稿保存成功", result.response.status === 200 && result.body.data.propertyName === "friendly_property_beta");
 
