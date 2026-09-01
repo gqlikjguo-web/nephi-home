@@ -247,6 +247,16 @@ function safetyCandidateSchema(policy) {
   return { type: "null" };
 }
 
+function capabilityDescription(capability) {
+  if (capability === "availability") {
+    return "Use availability for a specific supplied stay date or date range when the guest asks whether lodging, a room, a room set, or a bundle is available then. This is a language-derived capability candidate only; never answer facts.";
+  }
+  if (capability === "available_dates") {
+    return "Use available_dates only to search for which stay dates are available when the guest asks what, which, nearest, or upcoming dates can be booked rather than asking about a specific supplied stay date. This is a language-derived capability candidate only; never answer facts.";
+  }
+  return "Language-derived capability candidate only; never answer facts.";
+}
+
 function semanticUnitBranchSchema(understandingTurnInput, capability) {
   const policy = capabilityPolicyFor(CAPABILITY_REGISTRY_PROJECTION, capability);
   if (!policy) {
@@ -284,7 +294,7 @@ function semanticUnitBranchSchema(understandingTurnInput, capability) {
     unitId: stringSchema(),
     evidenceRefs: evidenceArraySchema(),
     purpose: enumSchema(policy.safetyPurposes, "One independent source meaning; do not merge separately actionable meanings."),
-    capability: enumSchema([capability], "Language-derived capability candidate only; never answer facts."),
+    capability: enumSchema([capability], capabilityDescription(capability)),
     subject: { anyOf: subjectBranches },
     stayDependent: enumSchema([policy.stayDependent]),
     temporalCandidate: temporalCandidateSchema(),
@@ -344,6 +354,7 @@ function instructions() {
     "SUPPLEMENT, MODIFICATION, or TERMINATION requires current-source evidence plus exact referencedHistoryEventRefs. Topic proximity, recency, or a shared date/availability word is not relation evidence. A complete standalone lodging request is NEW_REQUEST with no history refs.",
     "For that continuation, compare only the supplied candidate values with the cycle's missingFields; deterministic routing alone decides whether to answer or clarify.",
     "Capability, subject, stay dependency, and safety meaning are source-derived candidates, but their combination must match one capability-discriminated schema branch. Never use a null subject kind, catalog identity, stay dependency, purpose, or safety shape that conflicts with the selected capability. Context relation remains separate semantic evidence. Never propose ANSWER, CLARIFY, HANDOFF, NO_REPLY, START, CONTINUE, MODIFY, END, or lifecycle NONE.",
+    "A supplied specific stay date or date range with a question about whether lodging, a room, a room set, or a bundle is available then is availability. A search asking which dates are available, the nearest available date, or upcoming bookable dates is available_dates. Never use available_dates merely because a fixed-date availability question mentions a date.",
     "Set safetyCandidate only for operator_request/booking_operator_request or sensitive_request/high_risk. Exactly one of operatorActionClass and riskClass must be non-null; otherwise safetyCandidate is null.",
     "Temporal candidates preserve source meaning only. Do not invent an implicit year, canonical date, availability, price, policy truth, amenity truth, location fact, or any other formal fact.",
     "Do not emit resolver IDs, query plans, state mutations, final reply text, message-level routing, task indexes, credentials, private data, or fields outside the schema.",

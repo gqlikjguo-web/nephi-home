@@ -6,6 +6,7 @@ const { CAPABILITIES } = require("../lib/new-core/contracts/semantic-unit-candid
 const {
   OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC,
   callOpenAIUnderstandingV1,
+  instructions,
   isTrustedUnderstandingResult,
   openAiUnderstandingV1ProviderSchema
 } = require("../lib/providers/openai-understanding-v1");
@@ -276,6 +277,31 @@ function schemaAccepts(schema, value) {
   }
   return true;
 }
+
+function semanticCapabilityBranch(schema, capability) {
+  return schema.properties.understandingOutput.properties.units.items.anyOf
+    .find((branch) => branch.properties.capability.enum.includes(capability));
+}
+
+const capabilityBoundaryInput = contextRelationVarianceInput();
+const capabilityBoundarySchema = openAiUnderstandingV1ProviderSchema(capabilityBoundaryInput);
+const availabilityCapability = semanticCapabilityBranch(capabilityBoundarySchema, "availability");
+const availableDatesCapability = semanticCapabilityBranch(capabilityBoundarySchema, "available_dates");
+assert.match(
+  availabilityCapability.properties.capability.description,
+  /specific supplied stay date or date range/i,
+  "availability schema guidance must own fixed-date inventory questions"
+);
+assert.match(
+  availableDatesCapability.properties.capability.description,
+  /search for which stay dates are available/i,
+  "available_dates schema guidance must own open-date inventory searches"
+);
+assert.match(
+  instructions(),
+  /A supplied specific stay date or date range.*availability.*which dates are available.*available_dates/i,
+  "provider guidance must distinguish fixed-date availability from open-date available_dates"
+);
 
 const discriminatedInput = c01({
   publicCatalog: {
