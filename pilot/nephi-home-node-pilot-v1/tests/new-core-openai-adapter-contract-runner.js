@@ -471,6 +471,12 @@ async function main() {
   ));
   assert.equal(inconsistentTemporalError.code, "UNDERSTANDING_SCHEMA_INVALID",
     "a temporal candidate must be grounded in its declared unit evidence");
+  assert.deepEqual(inconsistentTemporalError.schemaViolation, {
+    validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID",
+    fieldPath: "understandingOutput.units.0.temporalCandidate.rawText",
+    expected: "exact substring of understandingOutput.units.0.evidenceRefs[].quote",
+    actual: "string:not_grounded"
+  }, "schema rejection diagnostics must identify the exact safe field without persisting source text");
 
   // Luna cites history evidence only. C05 resolves that evidence against the
   // formal cycle binding and rejects an identity-incompatible target.

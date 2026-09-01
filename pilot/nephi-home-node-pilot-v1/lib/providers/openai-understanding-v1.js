@@ -584,10 +584,11 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
   }
 }
 
-function understandingError(code, providerAttempts) {
+function understandingError(code, providerAttempts, schemaViolation = null) {
   const error = new Error(code);
   error.code = code;
   error.provider = PROVIDER_NAME;
+  if (schemaViolation) error.schemaViolation = deepFreeze(detach(schemaViolation));
   if (providerAttempts) {
     Object.defineProperty(error, OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC, {
       enumerable: false,
@@ -630,19 +631,79 @@ function emit(traceEmitter, input, details) {
   traceEmitter.emit(diagnosticInput(input, details));
 }
 
+function valueType(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  if (Number.isInteger(value)) return "integer";
+  return typeof value;
+}
+
+function pathValue(value, path) {
+  return String(path).split(".").reduce((current, key) => {
+    if (current === null || current === undefined) return undefined;
+    return current[Number.isInteger(Number(key)) ? Number(key) : key];
+  }, value);
+}
+
+function safeActual(value, enumLike = false) {
+  if (enumLike && (value === null || ["string", "number", "boolean"].includes(typeof value))) {
+    const token = safeToken(value === null ? "null" : value, 80);
+    return token ? `enum:${token}` : `${valueType(value)}:invalid`;
+  }
+  return `type:${valueType(value)}`;
+}
+
+function expectedForValidationPath(path) {
+  const leaf = String(path).split(".").at(-1);
+  if (["purpose", "capability", "kind", "confidenceBand", "relationKind", "slot", "operation"].includes(leaf)) {
+    return "allowed enum declared by Understanding V1 schema";
+  }
+  if (["schemaVersion", "nightsCandidate", "startOffset", "endOffset"].includes(leaf)) return "integer in declared range";
+  if (["stayDependent"].includes(leaf)) return "boolean";
+  if (["units", "slotCandidates", "evidenceRefs", "currentSourceEvidenceRefs", "referencedHistoryEventRefs"].includes(leaf)) return "array with declared cardinality";
+  if (["subject", "temporalCandidate", "safetyCandidate"].includes(leaf)) return "declared object or null shape";
+  if (leaf === "keys") return "exact declared object fields";
+  return "value satisfying Understanding V1 field contract";
+}
+
+function validationViolation(code, path, root) {
+  const value = pathValue(root, path.replace(/^understandingOutput\./u, ""));
+  const leaf = String(path).split(".").at(-1);
+  return {
+    validationErrorCode: code,
+    fieldPath: path,
+    expected: expectedForValidationPath(path),
+    actual: safeActual(value, ["purpose", "capability", "kind", "confidenceBand", "relationKind", "slot", "operation"].includes(leaf))
+  };
+}
+
 function envelopeWireFailure(value, understandingTurnInput) {
-  if (!exactKeys(value, ["understandingOutput", "contextLinkCandidates"])) return "UNKNOWN_WIRE_FIELD";
+  if (!exactKeys(value, ["understandingOutput", "contextLinkCandidates"])) return {
+    code: "UNKNOWN_WIRE_FIELD",
+    violation: { validationErrorCode: "UNKNOWN_WIRE_FIELD", fieldPath: "$", expected: "exact envelope fields", actual: safeActual(value) }
+  };
   const outputValidation = validateUnderstandingOutputV1(value.understandingOutput);
-  if (!outputValidation.ok) return outputValidation.code;
-  if (value.understandingOutput.turnId !== understandingTurnInput.turnId) return "UNDERSTANDING_SCHEMA_INVALID";
+  if (!outputValidation.ok) {
+    const path = `understandingOutput.${outputValidation.errors[0]}`;
+    return { code: outputValidation.code, violation: validationViolation(outputValidation.code, path, value.understandingOutput) };
+  }
+  if (value.understandingOutput.turnId !== understandingTurnInput.turnId) return {
+    code: "UNDERSTANDING_SCHEMA_INVALID",
+    violation: { validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID", fieldPath: "understandingOutput.turnId", expected: "enum:C01.turnId", actual: "string:mismatch" }
+  };
   const links = value.contextLinkCandidates;
   if (!Array.isArray(links) || links.length > MAX_CONTEXT_LINKS) {
-    return "UNDERSTANDING_CARDINALITY_INVALID";
+    return { code: "UNDERSTANDING_CARDINALITY_INVALID", violation: { validationErrorCode: "UNDERSTANDING_CARDINALITY_INVALID", fieldPath: "contextLinkCandidates", expected: "array with declared cardinality", actual: safeActual(links) } };
   }
   const units = value.understandingOutput.units;
-  for (const candidate of links) {
+  for (const [index, candidate] of links.entries()) {
     const validation = validateContextLinkCandidate(candidate);
-    if (!validation.ok) return validation.unknownWireField ? "UNKNOWN_WIRE_FIELD" : "UNDERSTANDING_SCHEMA_INVALID";
+    if (!validation.ok) {
+      const code = validation.unknownWireField ? "UNKNOWN_WIRE_FIELD" : "UNDERSTANDING_SCHEMA_INVALID";
+      const localPath = validation.errors[0];
+      const path = `contextLinkCandidates.${index}.${localPath}`;
+      return { code, violation: validationViolation(code, path, value) };
+    }
   }
   const unitKeys = new Set(units.map((unit) => JSON.stringify([unit.unitId, unit.contextLinkCandidateId])));
   const linkIdCounts = new Map();
@@ -651,15 +712,21 @@ function envelopeWireFailure(value, understandingTurnInput) {
   }
   if (units.some((unit) => !links.some((candidate) =>
     candidate.contextLinkCandidateId === unit.contextLinkCandidateId && candidate.unitId === unit.unitId))) {
-    return "UNDERSTANDING_SCHEMA_INVALID";
+    return { code: "UNDERSTANDING_SCHEMA_INVALID", violation: { validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID", fieldPath: "contextLinkCandidates", expected: "one matching link for every unitId/contextLinkCandidateId pair", actual: "pair:missing" } };
   }
   if (links.some((candidate) => !unitKeys.has(JSON.stringify([candidate.unitId, candidate.contextLinkCandidateId]))
     && linkIdCounts.get(candidate.contextLinkCandidateId) === 1)) {
-    return "UNDERSTANDING_SCHEMA_INVALID";
+    return { code: "UNDERSTANDING_SCHEMA_INVALID", violation: { validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID", fieldPath: "contextLinkCandidates", expected: "every link bound to an emitted unit", actual: "pair:orphan" } };
   }
-  if (units.some((unit) => unit.temporalCandidate !== null
-    && !unit.evidenceRefs.some((reference) => reference.quote.includes(unit.temporalCandidate.rawText)))) {
-    return "UNDERSTANDING_SCHEMA_INVALID";
+  const ungroundedTemporalIndex = units.findIndex((unit) => unit.temporalCandidate !== null
+    && !unit.evidenceRefs.some((reference) => reference.quote.includes(unit.temporalCandidate.rawText)));
+  if (ungroundedTemporalIndex !== -1) {
+    return { code: "UNDERSTANDING_SCHEMA_INVALID", violation: {
+      validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID",
+      fieldPath: `understandingOutput.units.${ungroundedTemporalIndex}.temporalCandidate.rawText`,
+      expected: `exact substring of understandingOutput.units.${ungroundedTemporalIndex}.evidenceRefs[].quote`,
+      actual: "string:not_grounded"
+    } };
   }
   return null;
 }
@@ -765,13 +832,13 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     }
   }
 
-  const wireCode = envelopeWireFailure(providerValue, understandingTurnInput);
-  if (wireCode) {
+  const wireFailure = envelopeWireFailure(providerValue, understandingTurnInput);
+  if (wireFailure) {
     emit(traceEmitter, understandingTurnInput, {
       boundary: "C02", unitIds: [], outputUnitIds: [], status: "FAILURE",
-      code: wireCode, marker: "C02_WIRE_SCHEMA_REJECTED", nowMs
+      code: wireFailure.code, marker: "C02_WIRE_SCHEMA_REJECTED", nowMs
     });
-    throw understandingError(wireCode, attempts);
+    throw understandingError(wireFailure.code, attempts, wireFailure.violation);
   }
 
   const rawOutput = providerValue.understandingOutput;
