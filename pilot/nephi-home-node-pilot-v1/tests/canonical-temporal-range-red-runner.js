@@ -115,6 +115,46 @@ for (const testCase of CASES) {
   );
 }
 
+const MONTH_SEARCH_RANGE_CASES = Object.freeze([
+  { rawText: "9月", from: "2026-09-01", to: "2026-10-01" },
+  { rawText: "10月", from: "2026-10-01", to: "2026-11-01" },
+  { rawText: "1月", from: "2027-01-01", to: "2027-02-01" }
+]);
+
+for (const testCase of MONTH_SEARCH_RANGE_CASES) {
+  const actual = resolveCanonicalTemporal({
+    guestMessage: `${testCase.rawText}有哪些日期可以住？`,
+    candidateSourceText: `${testCase.rawText}有哪些日期可以住？`,
+    plannerCandidate: {
+      dateExpression: { rawText: testCase.rawText, kind: "none", anchor: "message_time" },
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null,
+      guestCountCandidate: null
+    },
+    eventTimestamp: Date.parse("2026-09-01T21:24:49+08:00"),
+    timezone: TIMEZONE,
+    defaultSearchRangeDays: 31,
+    defaultSearchRangeRuleRef: "temporal:available_dates_default_lookahead",
+    applicableTaskIds: ["available-dates"]
+  });
+  assert.deepEqual(
+    {
+      resolutionStatus: actual.resolutionStatus,
+      checkIn: actual.checkIn,
+      checkOut: actual.checkOut,
+      searchRange: actual.searchRange
+    },
+    {
+      resolutionStatus: "resolved",
+      checkIn: null,
+      checkOut: null,
+      searchRange: { from: testCase.from, to: testCase.to }
+    },
+    `${testCase.rawText} must resolve to that calendar month's search range`
+  );
+}
+
 const EXPLICIT_NIGHT_CASES = Object.freeze([
   { rawText: "8/18、19兩個晚上", checkIn: "2026-08-18", checkOut: "2026-08-20", nights: 2 },
   { rawText: "8/31、9/1兩晚", checkIn: "2026-08-31", checkOut: "2026-09-02", nights: 2 },
