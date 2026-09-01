@@ -35,13 +35,18 @@ const { buildFinalDecision } = require("./final-decision");
 const { SAFE_HANDOFF_TEXT, buildFinalResponse } = require("./final-response-renderer");
 const { applyControlledReplyRules } = require("../custom-reply-rules");
 const { recentConversationSafeSummary } = require("../recent-conversation-safe-diagnostic");
-const { publicAvailabilityUrlForProperty } = require("../public-property-routing");
+const { publicSlugForProperty } = require("../public-property-routing");
 
 const NON_ACTIONABLE_TASK_TYPES = new Set(["unknown"]);
 const TEMPORAL_FAILURE_STATUSES = new Set(["unresolved"]);
 const PENDING_STATUSES = new Set(["pending", "needs_clarification"]);
 function decideFinal(input) { return buildFinalDecision(input); }
 function renderFinal(input) { return buildFinalResponse(input); }
+function publicAvailabilityUrl(publicBaseUrl, property) {
+  const base = String(publicBaseUrl || "").replace(/\/+$/, "");
+  const slug = publicSlugForProperty(property);
+  return base && slug ? `${base}/${encodeURIComponent(slug)}` : "";
+}
 function sourceEventsForInput(input = {}) {
   const events = Array.isArray(input.sourceEvents) ? input.sourceEvents : [];
   const normalized = events.map((event) => ({
@@ -903,7 +908,7 @@ class ConversationEngineV2 {
     const rejectionReasonCodes = [];
     this.trace(traceId, "composer", { outputLength: replyText.length, outputSha256: crypto.createHash("sha256").update(replyText, "utf8").digest("hex"), coveredTaskIds: claimedTaskIds || inputTaskIds, missingTaskIds: claimValidation.missingTaskIds, unexpectedTaskIds: claimValidation.unexpectedTaskIds, composerSource, validationResult: rejectionReasonCodes.length ? "rejected" : "accepted", rejectionReasonCodes, fallbackOccurred, ...(this.diagnosticDetail ? { composerInput: responsePlan, finalOutput: replyText } : {}), sections: responsePlan.sections.map((section) => ({ taskId: section.taskId, responseMode: section.responseMode, type: section.type })) });
     this.trace(traceId, "claim_validator", { errors: claimValidation.errors, coveredTaskIds: claimValidation.coveredTaskIds, missingTaskIds: claimValidation.missingTaskIds, unexpectedTaskIds: claimValidation.unexpectedTaskIds });
-    const finalResponse = renderFinal({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation, publicAvailabilityUrl: publicAvailabilityUrlForProperty(this.publicBaseUrl, property) });
+    const finalResponse = renderFinal({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation, publicAvailabilityUrl: publicAvailabilityUrl(this.publicBaseUrl, property) });
     const messageRecord = { channelId: input.channelId, lineUserId: input.lineUserId, eventId: input.eventId, eventTimestamp: input.eventTimestamp, guestMessage: input.messageText, detectedIntent: "multi_task_v2", replyType: `${finalResponse.action}_v2`, replyText: finalResponse.replyText, route: `final_decision_${finalResponse.action}`, shouldReply: finalResponse.shouldReply, noReply: !finalResponse.shouldReply, needsReview: finalDecision.reviewRequired, humanHandoff: finalDecision.action === "handoff", status: finalDecision.reviewRequired ? "pending" : "resolved", processingStatus: "decided", decisionReason: finalDecision.reasonCode, requestCycleRefs: requestCycleRefs(canonicalItems.map((item) => item.requestCycleId)) };
     if (typeof this.persistence.updateMessageEvent === "function") this.persistence.updateMessageEvent(input.customerId, input.channelId, input.eventId, messageRecord);
     else this.persistence.appendMessageLog(input.customerId, messageRecord);
