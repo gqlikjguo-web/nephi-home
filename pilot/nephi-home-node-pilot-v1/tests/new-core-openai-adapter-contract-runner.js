@@ -302,6 +302,11 @@ assert.match(
   /A supplied specific stay date or date range.*availability.*which dates are available.*available_dates/i,
   "provider guidance must distinguish fixed-date availability from open-date available_dates"
 );
+assert.match(
+  instructions(),
+  /relationship between the property and any named or unnamed external place.*location.*external_place/i,
+  "provider guidance must preserve the formal generic external-place location meaning"
+);
 
 const discriminatedInput = c01({
   publicCatalog: {
