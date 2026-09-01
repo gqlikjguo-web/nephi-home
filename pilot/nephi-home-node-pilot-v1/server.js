@@ -1416,7 +1416,7 @@ function createApp(options = {}) {
     ? options.newCoreManualTestFactsService || (newCoreManualTestFactsProviders === providers ? service : createMvpService(newCoreManualTestFactsProviders, { now, safeTraceFormatter: formatSafeTestOnlyConversationTrace }))
     : null;
   const newCoreManualTest = newCoreManualTestFactsProviders
-    ? createNewCoreManualTestService({ persistence: providers.kind === "postgres" ? providers.persistence : null, providers, service, factsProviders: newCoreManualTestFactsProviders, factsService: newCoreManualTestFactsService, apiKey: String(runtimeEnv.OPENAI_API_KEY || ""), publicBaseUrl: publicBrand.publicBaseUrl, now, ...(typeof options.newCoreManualTestExecuteTurn === "function" ? { executeTurn: options.newCoreManualTestExecuteTurn } : {}) })
+    ? createNewCoreManualTestService({ persistence: providers.kind === "postgres" ? providers.persistence : null, providers, service, factsProviders: newCoreManualTestFactsProviders, factsService: newCoreManualTestFactsService, apiKey: String(runtimeEnv.OPENAI_API_KEY || ""), now, ...(typeof options.newCoreManualTestExecuteTurn === "function" ? { executeTurn: options.newCoreManualTestExecuteTurn } : {}) })
     : null;
   const customReplyTestHandler = async (body = {}) => {
     const propertyId = String(body.propertyId || body.customerId || "").trim();
