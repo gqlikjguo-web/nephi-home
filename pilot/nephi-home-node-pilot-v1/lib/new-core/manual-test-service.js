@@ -210,8 +210,8 @@ function createSideEffectGuard() {
     factsPropertyMutation: () => { counters.FACTS_PROPERTY_MUTATION += 1; blocked("TEST_FACTS_PROPERTY_MUTATION_FORBIDDEN"); }
   };
 }
-function publicCatalog(property, catalog) {
-  const subjects = [...catalog.rooms, ...catalog.amenities, ...catalog.policies].map((item) => ({ catalogIdentity: item.canonicalId, kind: item.category === "room" ? "room" : item.category === "bundle" ? "bundle" : catalog.amenities.includes(item) ? "amenity" : "policy", propertyId: property.propertyId, publicName: item.publicName }));
+function buildManualTestPublicCatalog(property, catalog) {
+  const subjects = [...catalog.rooms, ...catalog.amenities, ...catalog.policies].map((item) => ({ catalogIdentity: item.canonicalId, kind: item.category === "room" ? "room" : item.category === "bundle" ? "bundle" : item.category === "transport" ? "external_place" : catalog.amenities.includes(item) ? "amenity" : "policy", propertyId: property.propertyId, publicName: item.publicName }));
   return { propertyId: property.propertyId, timezone: catalog.timezone, capabilityCatalog: Object.keys(CAPABILITY_REGISTRY), publicSubjectCatalog: subjects };
 }
 function turnStateSnapshot(state, scope, now) {
@@ -269,9 +269,9 @@ function bindRecentConversationToCycles(history, state, referenceableCycles) {
     referenceableCycleIds: [...new Set(cycleIdsByTimestamp.get(turn.timestamp) || [])]
   }));
 }
-function canonicalizerCatalog(input) {
-  const project = (subject) => ({ canonicalId: subject.catalogIdentity, category: subject.kind, publicName: subject.publicName });
-  return { propertyId: input.propertyScope.propertyId, timezone: input.propertyTimezone, rooms: input.publicSubjectCatalog.filter((x) => ["room", "bundle"].includes(x.kind)).map(project), amenities: input.publicSubjectCatalog.filter((x) => x.kind === "amenity").map(project), policies: input.publicSubjectCatalog.filter((x) => x.kind === "policy").map(project) };
+function buildManualTestCanonicalizerCatalog(input) {
+  const project = (subject) => ({ canonicalId: subject.catalogIdentity, category: subject.kind === "external_place" ? "transport" : subject.kind, publicName: subject.publicName });
+  return { propertyId: input.propertyScope.propertyId, timezone: input.propertyTimezone, rooms: input.publicSubjectCatalog.filter((x) => ["room", "bundle"].includes(x.kind)).map(project), amenities: input.publicSubjectCatalog.filter((x) => x.kind === "amenity").map(project), policies: input.publicSubjectCatalog.filter((x) => ["policy", "external_place"].includes(x.kind)).map(project) };
 }
 function legacyTaskResult(execution) {
   const base = { taskId: execution.taskId, type: execution.type, facts: execution.facts || {} };
@@ -296,10 +296,10 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
   if (!sideEffectGuard || ["lineSend", "productionStateWrite", "productionMessageWrite", "productionReviewWrite", "bookingMutation", "factsPropertyMutation"].some((method) => typeof sideEffectGuard[method] !== "function")) throw failure("TEST_SIDE_EFFECT_GUARD_REQUIRED", 500, "人工測試副作用隔離未配置");
   const scope = state.scope;
   const catalog = buildPropertyCatalog(property);
-  const c01 = buildUnderstandingTurnInput({ coreVersion: "new-core-v1", traceId: input.traceId, turnId: input.turnId, verifiedPropertyBinding: { propertyId: PROPERTY_ID, channel: CHANNEL }, verifiedConversationScope: { channel: CHANNEL, userId: scope.userId }, sourceEvents: [{ eventId: input.turnId, messageRef: input.turnId, role: "guest", timestamp: now, messageKind: "text", messageText: input.message }], recentConversation: input.recentConversation, stateV3Snapshot: turnStateSnapshot(state, scope, now), publicCatalog: publicCatalog(property, catalog) });
+  const c01 = buildUnderstandingTurnInput({ coreVersion: "new-core-v1", traceId: input.traceId, turnId: input.turnId, verifiedPropertyBinding: { propertyId: PROPERTY_ID, channel: CHANNEL }, verifiedConversationScope: { channel: CHANNEL, userId: scope.userId }, sourceEvents: [{ eventId: input.turnId, messageRef: input.turnId, role: "guest", timestamp: now, messageKind: "text", messageText: input.message }], recentConversation: input.recentConversation, stateV3Snapshot: turnStateSnapshot(state, scope, now), publicCatalog: buildManualTestPublicCatalog(property, catalog) });
   const understanding = await callOpenAIUnderstandingV1(c01, { apiKey: providerConfig.apiKey });
   const registry = createUnitReplyRoutingRegistry(projectCapabilityRegistry(CAPABILITY_REGISTRY));
-  const c08Catalog = canonicalizerCatalog(c01);
+  const c08Catalog = buildManualTestCanonicalizerCatalog(c01);
   const projection = buildPublicCatalogIdentityProjection(c01);
   const outcomes = [];
   for (const [index, unit] of understanding.validatedUnits.entries()) {
@@ -425,4 +425,4 @@ function createNewCoreManualTestService({ persistence, providers, service, facts
   };
 }
 
-module.exports = { PROPERTY_ID, CHANNEL, SIDE_EFFECT_COUNTERS, bindRecentConversationToCycles, buildManualTestFailureDiagnostics, createNewCoreManualTestService, executeNewCoreManualTurn, normalizeManualTestFailureRefs, turnStateSnapshot };
+module.exports = { PROPERTY_ID, CHANNEL, SIDE_EFFECT_COUNTERS, bindRecentConversationToCycles, buildManualTestCanonicalizerCatalog, buildManualTestFailureDiagnostics, buildManualTestPublicCatalog, createNewCoreManualTestService, executeNewCoreManualTurn, normalizeManualTestFailureRefs, turnStateSnapshot };

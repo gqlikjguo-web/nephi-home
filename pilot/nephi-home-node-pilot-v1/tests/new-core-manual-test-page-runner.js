@@ -7,7 +7,9 @@ const os = require("node:os");
 const path = require("node:path");
 const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
-const { bindRecentConversationToCycles, buildManualTestFailureDiagnostics, normalizeManualTestFailureRefs, turnStateSnapshot } = require("../lib/new-core/manual-test-service");
+const manualTestService = require("../lib/new-core/manual-test-service");
+const { bindRecentConversationToCycles, buildManualTestFailureDiagnostics, normalizeManualTestFailureRefs, turnStateSnapshot } = manualTestService;
+const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { aggregateUnitOutcomes } = require("../lib/new-core/unit-aggregator");
 const { publicAvailabilityUrlForProperty } = require("../lib/public-property-routing");
 
@@ -79,6 +81,26 @@ async function json(url, method = "GET", body, sentCookie = "") {
 }
 
 (async () => {
+  assert.equal(typeof manualTestService.buildManualTestPublicCatalog, "function",
+    "manual-test C01 must expose its formal public catalog projection for contract verification");
+  assert.equal(typeof manualTestService.buildManualTestCanonicalizerCatalog, "function",
+    "manual-test C08 must expose its C01-derived trusted catalog projection for contract verification");
+  const locationProperty = {
+    propertyId: "property-location", timezone: "Asia/Taipei", rooms: [], propertyFacts: [], commonAnswers: {},
+    businessProfile: { address: "approved address", googleMapsUrl: "https://maps.app.goo.gl/AbCdEf123456" }
+  };
+  const locationCatalog = buildPropertyCatalog(locationProperty);
+  const locationC01Catalog = manualTestService.buildManualTestPublicCatalog(locationProperty, locationCatalog);
+  assert.deepEqual(locationC01Catalog.publicSubjectCatalog.find((item) => item.catalogIdentity === "location"), {
+    catalogIdentity: "location", kind: "external_place", propertyId: "property-location", publicName: "位置與導航"
+  });
+  const locationC08Catalog = manualTestService.buildManualTestCanonicalizerCatalog({
+    propertyScope: { propertyId: "property-location" }, propertyTimezone: "Asia/Taipei",
+    publicSubjectCatalog: locationC01Catalog.publicSubjectCatalog
+  });
+  assert.deepEqual(locationC08Catalog.policies.find((item) => item.canonicalId === "location"), {
+    canonicalId: "location", category: "transport", publicName: "位置與導航"
+  }, "the C01-derived C08 catalog must preserve the formal transport category");
   assert.equal(publicAvailabilityUrlForProperty("https://test.example/", {
     propertyId: "property-a", businessProfile: { publicSlug: "property-public" }
   }), "https://test.example/propertypublic");
