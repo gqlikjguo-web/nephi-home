@@ -228,7 +228,8 @@ function turnStateSnapshot(state, scope, now) {
         : definition && definition.acceptedCandidateTypes.includes(requestKind)
           ? requestKind
           : definition && definition.acceptedCandidateTypes[0];
-    const subjectKind = topic.category || (inventory.mode === "any" ? "property" : null);
+    const subjectKind = topic.category === "transport" ? "external_place"
+      : topic.category || (inventory.mode === "any" ? "property" : null);
     return {
       requestCycleId: cycle.requestCycleId,
       requestKind,

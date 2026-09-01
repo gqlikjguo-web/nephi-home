@@ -122,6 +122,19 @@ async function json(url, method = "GET", body, sentCookie = "") {
     confirmedValues: { checkIn: null, checkOut: null, guestCount: 4, searchFrom: null, searchTo: null },
     slotRefs: ["guestCount", "productId"]
   });
+  const answeredLocationState = {
+    scope: pendingState.scope,
+    tasks: [{
+      taskId: "answered-location", taskType: "location", productType: "any", productId: null,
+      roomTypeId: null, bundleId: null, checkIn: null, checkOut: null, guestCount: null,
+      searchFrom: null, searchTo: null, entityId: "location", entityCategory: "transport", detailIntent: "general",
+      knownFields: [], missingFields: [], status: "answered",
+      createdAt: "2026-08-29T11:59:00.000Z", updatedAt: "2026-08-29T11:59:00.000Z", expiresAt: "2026-08-30T11:59:00.000Z"
+    }]
+  };
+  const answeredLocationSnapshot = turnStateSnapshot(answeredLocationState, answeredLocationState.scope, "2026-08-29T12:00:00.000Z");
+  assert.equal(answeredLocationSnapshot.referenceableCycles[0].subject.kind, "external_place",
+    "an answered location task must project the formal C01 external_place subject kind on the next turn");
   const boundHistory = bindRecentConversationToCycles([{ turnId: "prior-turn", timestamp: "2026-08-29T11:59:00.000Z", input: "想了解包棟價格" }], pendingState, pendingSnapshot.referenceableCycles);
   assert.deepEqual(boundHistory[0].referenceableCycleIds, ["pending-price-bundle"]);
 
