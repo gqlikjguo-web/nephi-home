@@ -10,6 +10,7 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
 const manualTestService = require("../lib/new-core/manual-test-service");
 const { bindRecentConversationToCycles, buildManualTestFailureDiagnostics, normalizeManualTestFailureRefs, turnStateSnapshot } = manualTestService;
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
+const { resolveEntity } = require("../lib/conversation-engine-v2/entity-resolver");
 const { aggregateUnitOutcomes } = require("../lib/new-core/unit-aggregator");
 const { publicAvailabilityUrlForProperty } = require("../lib/public-property-routing");
 
@@ -101,6 +102,36 @@ async function json(url, method = "GET", body, sentCookie = "") {
   assert.deepEqual(locationC08Catalog.policies.find((item) => item.canonicalId === "location"), {
     canonicalId: "location", category: "transport", publicName: "位置與導航"
   }, "the C01-derived C08 catalog must preserve the formal transport category");
+  const roomGroupProperty = {
+    propertyId: "property-room-groups", timezone: "Asia/Taipei", commonAnswers: {},
+    rooms: [
+      { id: "double-a", name: "A", type: "雙人房", capacity: 2, aliases: ["雙人房"], enabled: true },
+      { id: "double-b", name: "B", type: "雙人房", capacity: 2, aliases: ["雙人房"], enabled: true },
+      { id: "quad-a", name: "C", type: "四人房", capacity: 4, aliases: ["四人房"], enabled: true },
+      { id: "quad-b", name: "D", type: "四人房", capacity: 4, aliases: ["四人房"], enabled: true },
+      { id: "quad-disabled", name: "Disabled", type: "四人房", capacity: 4, aliases: ["四人房"], enabled: false },
+      { id: "bundle-all", name: "Bundle", type: "四人房", inventoryType: "bundle", enabled: true }
+    ]
+  };
+  const roomGroupOfficialCatalog = buildPropertyCatalog(roomGroupProperty);
+  const roomGroupC01Catalog = manualTestService.buildManualTestPublicCatalog(roomGroupProperty, roomGroupOfficialCatalog);
+  assert.deepEqual(roomGroupC01Catalog.publicSubjectCatalog
+    .filter((item) => item.kind === "matched_room_set")
+    .map((item) => item.publicName).sort(), ["四人房", "雙人房"],
+  "C01 must publish property-scoped identities for formal repeated room types");
+  const roomGroupC08Catalog = manualTestService.buildManualTestCanonicalizerCatalog({
+    propertyScope: { propertyId: roomGroupProperty.propertyId },
+    propertyTimezone: roomGroupProperty.timezone,
+    publicSubjectCatalog: roomGroupC01Catalog.publicSubjectCatalog
+  }, roomGroupOfficialCatalog);
+  const matchedQuad = resolveEntity(roomGroupC08Catalog, {
+    category: "room", rawText: "四人房", canonicalCandidate: null
+  });
+  assert.equal(matchedQuad.status, "matched_set",
+    "the C01-derived trusted C08 catalog must retain formal grouping metadata");
+  assert.deepEqual(matchedQuad.entities.map((item) => item.canonicalId).sort(), ["quad-a", "quad-b"]);
+  assert.equal(roomGroupC08Catalog.rooms.some((item) => item.canonicalId === "quad-disabled"), false);
+  assert.equal(matchedQuad.entities.some((item) => item.canonicalId === "bundle-all"), false);
   assert.equal(publicAvailabilityUrlForProperty("https://test.example/", {
     propertyId: "property-a", businessProfile: { publicSlug: "property-public" }
   }), "https://test.example/propertypublic");
