@@ -17,7 +17,7 @@ const POLICY_FIELDS = Object.freeze([
 
 const EXECUTION_POLICY = Object.freeze({
   availability: { routeKind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"], temporalRequirementClass: "stay", safetyShape: "none" },
-  available_dates: { routeKind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"], temporalRequirementClass: "stay", safetyShape: "none" },
+  available_dates: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "search_range", safetyShape: "none" },
   price: { routeKind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"], temporalRequirementClass: "stay", safetyShape: "none" },
   total_price: { routeKind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"], temporalRequirementClass: "stay", safetyShape: "none" },
   capacity: { routeKind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut", "stay.guests"], temporalRequirementClass: "stay", safetyShape: "none" },
@@ -32,7 +32,7 @@ const EXECUTION_POLICY = Object.freeze({
 
 const POLICY_BLUEPRINT = Object.freeze({
   availability: { registryCapabilities: ["availability", "bundle_availability"], subjectKinds: ["property", "room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
-  available_dates: { registryCapabilities: ["available_dates"], subjectKinds: ["room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
+  available_dates: { registryCapabilities: ["available_dates"], subjectKinds: ["property", "room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
   price: { registryCapabilities: ["price"], subjectKinds: ["room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
   total_price: { registryCapabilities: ["total_price"], subjectKinds: ["room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
   capacity: { registryCapabilities: ["capacity"], subjectKinds: ["room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
@@ -97,7 +97,7 @@ function capabilityPolicyFor(projection, capability) {
     || !Array.isArray(policy.purposes) || policy.purposes.length === 0
     || !["ANSWER", "HANDOFF", "NO_REPLY"].includes(policy.routeKind)
     || !Array.isArray(policy.requiredGuestFields)
-    || !["stay", "none"].includes(policy.temporalRequirementClass)
+    || !["stay", "search_range", "none"].includes(policy.temporalRequirementClass)
     || !["none", "operator_action", "risk"].includes(policy.safetyShape)) {
     return null;
   }
@@ -112,7 +112,7 @@ function catalogIdentityRuleFor(projection, capability, subjectKind) {
   const policy = capabilityPolicyFor(projection, capability);
   if (!policy) return null;
   return subjectKind === null || subjectKind === "external_place"
-    || capability === "availability" && subjectKind === "property"
+    || ["availability", "available_dates"].includes(capability) && subjectKind === "property"
     ? "NULL"
     : "PUBLIC_CATALOG";
 }

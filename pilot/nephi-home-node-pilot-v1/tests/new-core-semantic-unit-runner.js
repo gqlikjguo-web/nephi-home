@@ -8,6 +8,9 @@ const {
   projectCapabilityRegistry,
   validateSemanticUnit
 } = require("../lib/new-core/semantic-unit-validator");
+const {
+  capabilityPolicyFor
+} = require("../lib/new-core/capability-subject-policy");
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -145,6 +148,24 @@ assert.deepEqual(genericAvailability.value.subject, {
   kind: "property",
   catalogIdentity: null
 });
+
+const availableDatesPolicy = capabilityPolicyFor(capabilityRegistryProjection, "available_dates");
+assert.equal(
+  validate(unit({ capability: "available_dates", subject: { kind: "property", catalogIdentity: null } })).ok,
+  true,
+  "generic property-wide available_dates must be admitted"
+);
+assert.equal(availableDatesPolicy.subjectKinds.includes("property"), true);
+assert.deepEqual(availableDatesPolicy.requiredGuestFields, []);
+assert.equal(availableDatesPolicy.temporalRequirementClass, "search_range");
+const fixedAvailabilityPolicy = capabilityPolicyFor(capabilityRegistryProjection, "availability");
+assert.deepEqual(fixedAvailabilityPolicy.requiredGuestFields, ["stay.checkIn", "stay.checkOut"]);
+assert.equal(fixedAvailabilityPolicy.temporalRequirementClass, "stay");
+for (const subject of [
+  { kind: "property", catalogIdentity: null },
+  { kind: "room", catalogIdentity: "room-a" },
+  { kind: "bundle", catalogIdentity: "bundle-a" }
+]) assert.equal(validate(unit({ subject })).ok, true, `fixed-date availability must retain ${subject.kind} admission`);
 
 // AC-AVL-005 / AC-PRI-001..005 / AC-RDY-001..010: inventory families retain
 // their independently declared subject and required stay dependency.
