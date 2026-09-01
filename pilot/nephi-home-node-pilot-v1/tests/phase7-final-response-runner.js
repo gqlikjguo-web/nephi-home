@@ -116,6 +116,20 @@ assert.equal(clarification.replyText.includes("人數"), false);
 assert.equal(clarification.replyText.includes("房型"), false);
 cases.push(clarification);
 
+const availabilityClarification = buildFinalResponse({
+  finalDecision: decision("clarification", { missingFields: ["stay.checkIn", "stay.checkOut"] }),
+  responsePlan: plan([clarificationSection]),
+  validatedReplyText: "請告訴我入住日期。",
+  claimValidation: { ok: true, errors: [] },
+  publicAvailabilityUrl: "https://example.test/demo/availability"
+});
+assert.deepEqual(availabilityClarification, {
+  action: "clarification",
+  replyText: "請提供入住日期。\n查房連結：https://example.test/demo/availability",
+  shouldReply: true
+});
+cases.push(availabilityClarification);
+
 const answeredAndClarification = buildFinalResponse({
   finalDecision: decision("clarification", { missingFields: ["stay.checkIn"] }),
   responsePlan: plan([answeredSection, clarificationSection]),
@@ -247,8 +261,8 @@ for (const output of cases) {
 }
 assert.deepEqual(
   cases.map((output) => output.action),
-  ["reply", "clarification", "clarification", "clarification", "handoff", "handoff", "handoff", "no_reply", "handoff"],
+  ["reply", "clarification", "clarification", "clarification", "clarification", "handoff", "handoff", "handoff", "no_reply", "handoff"],
   "final response action must always remain the FinalDecision action"
 );
 
-console.log("phase7 final response: PASS (9 scenarios + action consistency)");
+console.log("phase7 final response: PASS (10 scenarios + action consistency)");

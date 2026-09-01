@@ -9,20 +9,23 @@ const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const { bindRecentConversationToCycles, buildManualTestFailureDiagnostics, normalizeManualTestFailureRefs, turnStateSnapshot } = require("../lib/new-core/manual-test-service");
 const { aggregateUnitOutcomes } = require("../lib/new-core/unit-aggregator");
+const { publicAvailabilityUrlForProperty } = require("../lib/public-property-routing");
 
 const root = path.resolve(__dirname, "..");
 const now = () => new Date("2026-08-29T12:00:00.000Z");
 let calls = 0;
 const historyLengths = [];
 let factsPropertyName = "";
+let observedPublicBaseUrl = "";
 
 function nextState(state, timestamp) {
   calls += 1;
   return state;
 }
 
-async function fakeTurn({ input, state, property, sideEffectGuard, now: timestamp }) {
+async function fakeTurn({ input, state, property, publicBaseUrl, sideEffectGuard, now: timestamp }) {
   factsPropertyName = property.displayName;
+  observedPublicBaseUrl = publicBaseUrl;
   historyLengths.push(input.recentConversation.length);
   if (input.message === "provider failure") { const error = new Error("failed"); error.code = "UNDERSTANDING_PROVIDER_FAILURE"; throw error; }
   if (input.message === "side effect") sideEffectGuard.lineSend();
@@ -76,6 +79,9 @@ async function json(url, method = "GET", body, sentCookie = "") {
 }
 
 (async () => {
+  assert.equal(publicAvailabilityUrlForProperty("https://test.example/", {
+    propertyId: "property-a", businessProfile: { publicSlug: "property-public" }
+  }), "https://test.example/propertypublic");
   const pendingState = {
     scope: { propertyId: "nephi_home", channel: "new-core-manual-test", userId: "manual-test:test" },
     tasks: [{
@@ -156,7 +162,7 @@ async function json(url, method = "GET", body, sentCookie = "") {
   const factsOriginalGetProperty = factsProviders.customerSettings.getProperty.bind(factsProviders.customerSettings);
   factsProviders.customerSettings.getProperty = (id) => id === "nephi_home" ? { ...factsDemoProperty, propertyId: "nephi_home", displayName: "正式 facts authority" } : factsOriginalGetProperty(id);
   providers.persistence.getAdminSession = async (hash) => hash && hash.length === 64 ? { userId: "admin-owner", propertyId: "nephi_home", username: "owner", properties: [{ propertyId: "nephi_home" }] } : null;
-  const app = createApp({ providers, newCoreManualTestFactsProviders: factsProviders, adminAuthRequired: true, testOnlyEnvironment: true, now, runtimeEnv: { OPENAI_API_KEY: Array(33).join("x") }, newCoreManualTestExecuteTurn: fakeTurn, lineBindingEnv: {} });
+  const app = createApp({ providers, newCoreManualTestFactsProviders: factsProviders, adminAuthRequired: true, testOnlyEnvironment: true, now, runtimeEnv: { OPENAI_API_KEY: Array(33).join("x") }, publicBrandEnv: { PUBLIC_BASE_URL: "https://test.example" }, newCoreManualTestExecuteTurn: fakeTurn, lineBindingEnv: {} });
   const running = await app.start(0, "127.0.0.1");
   try {
     const page = await fetch(`${running.url}/admin/new-core-test`); assert.equal(page.status, 200); const html = await page.text(); assert.match(html, /JunZan AI 新核心測試/); assert.match(html, /gpt-5\.6-luna/); assert.doesNotMatch(html, /model.*select/iu);
@@ -200,6 +206,7 @@ async function json(url, method = "GET", body, sentCookie = "") {
       zeroCreationReason: null
     });
     assert.equal(factsPropertyName, "正式 facts authority", "manual test must read property facts from the dedicated facts authority");
+    assert.equal(observedPublicBaseUrl, "https://test.example", "manual test must receive the existing runtime public URL authority");
     const second = await json(`${running.url}/api/admin/new-core-test/sessions/${id}/turns`, "POST", { input: "9/20" }); assert.equal(second.status, 201); assert.equal(second.body.data.diagnostic.context[0], "CONTINUE"); assert.equal(second.body.data.predictedResponse, "正式資料預計回覆");
     assert.deepEqual(second.body.data.diagnostic.sideEffectCounters, { LINE_SEND: 0, PRODUCTION_STATE_WRITE: 0, PRODUCTION_MESSAGE_WRITE: 0, PRODUCTION_REVIEW_WRITE: 0, BOOKING_MUTATION: 0, FACTS_PROPERTY_MUTATION: 0 });
     const injected = await json(`${running.url}/api/admin/new-core-test/sessions/${id}/turns`, "POST", { input: "x", model: "gpt-4.1-mini" }); assert.equal(injected.status, 400);

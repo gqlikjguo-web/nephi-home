@@ -24,6 +24,7 @@ const { adaptLifecycleDecisionsToStateV3 } = require("./state-v3-lifecycle-adapt
 const { callOpenAIUnderstandingV1, OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC } = require("../providers/openai-understanding-v1");
 const { NEW_CORE_OPENAI_MODEL } = require("./openai-model-authority");
 const { NewCoreManualTestRepository } = require("./manual-test-repository");
+const { publicAvailabilityUrlForProperty } = require("../public-property-routing");
 
 const PROPERTY_ID = "nephi_home";
 const CHANNEL = "new-core-manual-test";
@@ -291,7 +292,7 @@ function noExecutionDecision(outcomes, dispositions, missingFields) {
   return buildFinalDecision({ executionOutcomes: outcomes });
 }
 
-async function executeNewCoreManualTurn({ input, state, property, resolver, providerConfig, sideEffectGuard, now }) {
+async function executeNewCoreManualTurn({ input, state, property, resolver, providerConfig, publicBaseUrl, sideEffectGuard, now }) {
   if (!sideEffectGuard || ["lineSend", "productionStateWrite", "productionMessageWrite", "productionReviewWrite", "bookingMutation", "factsPropertyMutation"].some((method) => typeof sideEffectGuard[method] !== "function")) throw failure("TEST_SIDE_EFFECT_GUARD_REQUIRED", 500, "人工測試副作用隔離未配置");
   const scope = state.scope;
   const catalog = buildPropertyCatalog(property);
@@ -344,7 +345,7 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
   const dispositions = successful.map((x) => x.routingDecision.disposition);
   const missingFields = successful.flatMap((x) => x.routingDecision.missingGuestFields);
   const finalDecision = executionOutcomes.length ? buildFinalDecision({ executionOutcomes, claimValidation }) : noExecutionDecision(executionOutcomes, dispositions, missingFields);
-  const finalResponse = buildFinalResponse({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation });
+  const finalResponse = buildFinalResponse({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation, publicAvailabilityUrl: publicAvailabilityUrlForProperty(publicBaseUrl, property) });
   const nextState = reduceConversationStateV3({ previous: state, canonicalItems, formalRequests, executionOutcomes, clarificationTaskIds: finalDecision.action === "clarification" ? finalDecision.executionSummary.notReadyTaskIds : [], lifecycleOperations: adapted.value.lifecycleOperations, taskCreations: adapted.value.taskCreations, canonicalTaskBindings: adapted.value.canonicalTaskBindings, scope: { ...scope, now } });
   const adapterOutput = adapted.value;
   const startClarifyOutcomes = aggregation.value.unitOutcomes.filter((outcome) => (
@@ -387,7 +388,7 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
   return { state: nextState, understanding: { summary: understanding.validatedUnits.map((x) => `${x.purpose}/${x.capability}/${x.subject.kind}`).join("；"), units: understanding.validatedUnits.map((x) => ({ purpose: x.purpose, capability: x.capability, subject: x.subject, temporal: x.temporalCandidate, guestCount: x.slotCandidates.find((slot) => slot.slot === "guest_count")?.value || null })) }, lifecycle: successful.map((x) => x.lifecycleDecision.action), routing: dispositions, resolver: { name: "existing canonical Resolver", foundOfficialData: executionOutcomes.some((x) => x.outcome === "answered"), status: executionOutcomes.map((x) => x.outcome).join(",") || "NOT_APPLICABLE" }, finalDecision, finalResponse, earliestFailure: failure, failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }), contextRelationDiagnostics: { traceId: input.traceId, candidates: contextCandidates, referenceableCycles: c01.referenceableCycles }, stateTransitionDiagnostics, requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL, resolvedModel: provider.resolvedModel || "" };
 }
 
-function createNewCoreManualTestService({ persistence, providers, service, factsProviders = providers, factsService = service, apiKey, now = () => new Date(), executeTurn = executeNewCoreManualTurn } = {}) {
+function createNewCoreManualTestService({ persistence, providers, service, factsProviders = providers, factsService = service, apiKey, publicBaseUrl = "", now = () => new Date(), executeTurn = executeNewCoreManualTurn } = {}) {
   const repository = new NewCoreManualTestRepository({ persistence, now });
   const resolver = { availability: (query) => factsService.searchAvailability(query), availableDates: (query) => factsService.searchAvailableDates(query), priceOverrides: () => factsProviders.customerSettings.listInventoryPriceOverrides(PROPERTY_ID), dateClassifications: () => factsProviders.customerSettings.listDatePriceClassifications(PROPERTY_ID), customReplies: () => factsProviders.customReplies ? factsProviders.customReplies.list(PROPERTY_ID) : [] };
   function scopeFor(id) { return { propertyId: PROPERTY_ID, channel: CHANNEL, userId: userIdFor(id) }; }
@@ -404,7 +405,7 @@ function createNewCoreManualTestService({ persistence, providers, service, facts
     const property = factsProviders.customerSettings.getProperty(PROPERTY_ID); if (!property) { const error = new Error("property_not_found"); error.code = "PROPERTY_NOT_FOUND"; throw error; }
     let result; const sideEffectGuard = createSideEffectGuard();
     try {
-      result = await executeTurn({ input: { turnId, traceId, message, recentConversation }, state: current.state, property, resolver, providerConfig: { apiKey }, sideEffectGuard, now: timestamp });
+      result = await executeTurn({ input: { turnId, traceId, message, recentConversation }, state: current.state, property, resolver, providerConfig: { apiKey }, publicBaseUrl, sideEffectGuard, now: timestamp });
     } catch (error) {
       const failureCode = /^[A-Z][A-Z0-9_]{1,79}$/.test(String(error && error.code || "")) ? error.code : "NEW_CORE_RUNTIME_FAILURE";
       const finalDecision = buildFinalDecision({ plannerFailure: failureCode });
