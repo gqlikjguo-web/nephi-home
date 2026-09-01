@@ -355,6 +355,28 @@ assert.equal(canonicalGeneric.value.canonicalRequest.lodgingProduct.roomTypeId, 
 assert.equal(canonicalGeneric.value.canonicalRequest.lodgingProduct.bundleId, null);
 assert.deepEqual(canonicalGeneric.value.stateInput.confirmedFields.inventory, null);
 
+// An exact executable capability must win over a broader compatibility
+// definition that also accepts the same candidate type. The availability
+// definition accepts available_dates for legacy compatibility, but the exact
+// available_dates definition owns search-range canonicalization.
+const genericAvailableDates = pipeline({
+  messageText: "有哪些日期有房",
+  unitOverrides: {
+    unitId: "unit-generic-property-available-dates",
+    capability: "available_dates",
+    subject: { kind: "property", catalogIdentity: null },
+    temporalCandidate: null
+  },
+  turnSuffix: "generic-property-available-dates"
+});
+const genericAvailableDatesC08 = createC08(genericAvailableDates);
+assert.equal(genericAvailableDatesC08.ok, true, genericAvailableDatesC08.code);
+const canonicalGenericAvailableDates = execute(genericAvailableDatesC08.value);
+assert.equal(canonicalGenericAvailableDates.ok, true, canonicalGenericAvailableDates.code);
+assert.equal(canonicalGenericAvailableDates.value.canonicalRequest.capability, "available_dates");
+assert.equal(canonicalGenericAvailableDates.value.canonicalRequest.requiredFields.includes("stay.searchRange"), true);
+assert.equal(Boolean(canonicalGenericAvailableDates.value.canonicalRequest.temporalState.searchRange), true);
+
 // A source-complete month/day keeps its year unset through Understanding and
 // is resolved only by the official canonical temporal authority at C08.
 const monthDayAvailability = pipeline({

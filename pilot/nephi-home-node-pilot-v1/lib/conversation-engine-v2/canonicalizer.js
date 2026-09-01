@@ -106,12 +106,12 @@ function selectCapabilityDefinition(task, entity) {
   if (entitySpecific && definitionMatches(entitySpecific, task, entity)) {
     return entitySpecific;
   }
+  const exact = getCapabilityDefinition(task.type);
+  if (exact && definitionMatches(exact, task, entity)) return exact;
   const matches = Object.values(CAPABILITY_REGISTRY)
     .filter((definition) => definition.acceptedCandidateTypes.includes(definition.capability))
     .filter((definition) => definitionMatches(definition, task, entity));
   if (matches.length) return matches[0];
-  const exact = getCapabilityDefinition(task.type);
-  if (exact && definitionMatches(exact, task, entity)) return exact;
   return getCapabilityDefinition("unknown");
 }
 
