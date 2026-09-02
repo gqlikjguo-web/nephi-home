@@ -163,6 +163,31 @@ function run() {
   assert.equal(changedValidation.ok, false);
   assert.ok(changedValidation.errors.includes("resolverId_registry_mismatch"));
 
+  const matchedSetRequest = createCanonicalRequest({
+    ...request,
+    taskId: "matched-set-availability",
+    canonicalEntity: {
+      status: "matched_set",
+      category: "room",
+      canonicalId: null,
+      canonicalSet: ["double-a", "double-b"],
+      rawText: "double rooms"
+    },
+    lodgingProduct: { productType: "any", productId: null, roomTypeId: null, bundleId: null },
+    temporalState: { ...request.temporalState, applicableTaskIds: ["matched-set-availability"] }
+  });
+  const matchedSetFormal = buildCanonicalFormalRequest({
+    property: { propertyId: "property-alpha" },
+    canonicalRequest: matchedSetRequest,
+    requestCycleId: "matched-set-cycle",
+    confirmedInputs: {
+      stay: { checkIn: "2026-08-06", checkOut: "2026-08-07", guests: null },
+      inventory: { mode: "any", entityId: null, features: [] }
+    }
+  });
+  assert.deepEqual(matchedSetFormal.resolverTask.roomTypeSet, ["double-a", "double-b"],
+    "CanonicalRequest matched set must survive into the resolver task");
+
   const capacityDefinition = getCapabilityDefinition("capacity");
   const capacityRequest = createCanonicalRequest({
     taskId: "capacity-0",

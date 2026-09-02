@@ -226,6 +226,9 @@ function buildCanonicalFormalRequest({
     taskType: readinessTaskType(request.capability),
     productType: request.lodgingProduct.productType,
     productId: request.lodgingProduct.productId,
+    ...(request.canonicalEntity.status === "matched_set"
+      ? { roomTypeSet: [...request.canonicalEntity.canonicalSet] }
+      : {}),
     checkIn: stay.checkIn,
     checkOut: stay.checkOut,
     guestCount: stay.guests,
