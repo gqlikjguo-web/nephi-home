@@ -404,6 +404,7 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       lineUrl: property.lineUrl || "",
       contactInfo: String(property.businessProfile && property.businessProfile.contactInfo || ""),
       checkInTime: String(property.safeFacts && property.safeFacts.checkInTime || ""),
+      earlyCheckInPolicy: String(property.safeFacts && property.safeFacts.earlyCheckInPolicy || ""),
       latestArrivalTime: String(property.safeFacts && property.safeFacts.latestArrivalTime || ""),
       checkOutTime: String(property.safeFacts && property.safeFacts.checkOutTime || "")
     };
@@ -417,6 +418,7 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     const googleMapsUrl = normalizeGoogleMapsUrl(input.googleMapsUrl);
     const contactInfo = cleanText(input.contactInfo, 300);
     const checkInTime = cleanText(input.checkInTime, 5);
+    const earlyCheckInPolicy = cleanText(input.earlyCheckInPolicy, 500);
     const latestArrivalTime = cleanText(input.latestArrivalTime, 500);
     const checkOutTime = cleanText(input.checkOutTime, 5);
     const lineUrl = cleanText(input.lineUrl, 500);
@@ -428,6 +430,8 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       if (parsed.protocol !== "https:" || !LINE_URL_HOSTS.has(parsed.hostname.toLowerCase())) throw new AppError(400, "INVALID_LINE_URL", "LINE 官方帳號網址格式不正確");
     }
     const commonAnswers = { ...(property.safeFacts || {}), checkInTime, checkOutTime };
+    if (earlyCheckInPolicy) commonAnswers.earlyCheckInPolicy = earlyCheckInPolicy;
+    else delete commonAnswers.earlyCheckInPolicy;
     if (latestArrivalTime) commonAnswers.latestArrivalTime = latestArrivalTime;
     else delete commonAnswers.latestArrivalTime;
     const updated = repository.updatePropertyProfile(property.customerId, {
@@ -444,6 +448,7 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       lineUrl: updated.contactLink || "",
       contactInfo: String(updated.businessProfile && updated.businessProfile.contactInfo || ""),
       checkInTime: String(updated.commonAnswers && updated.commonAnswers.checkInTime || ""),
+      earlyCheckInPolicy: String(updated.commonAnswers && updated.commonAnswers.earlyCheckInPolicy || ""),
       latestArrivalTime: String(updated.commonAnswers && updated.commonAnswers.latestArrivalTime || ""),
       checkOutTime: String(updated.commonAnswers && updated.commonAnswers.checkOutTime || "")
     };

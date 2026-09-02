@@ -199,6 +199,7 @@ function resolvedAmenity(property, canonicalId) {
         lineUrl: "",
         contactInfo: "Newest contact",
         checkInTime: "16:00",
+        earlyCheckInPolicy: "提前入住須先詢問並依當日房況確認",
         latestArrivalTime: "無固定時間，請入住前與我們確認",
         checkOutTime: "10:00"
       })
@@ -206,7 +207,9 @@ function resolvedAmenity(property, canonicalId) {
     assert.equal(savedProfile.response.status, 200);
     assert.equal(savedProfile.body.data.address, "Newest formal address");
     assert.equal(savedProfile.body.data.aiName, "新小比");
+    assert.equal(savedProfile.body.data.earlyCheckInPolicy, "提前入住須先詢問並依當日房況確認");
     assert.equal(providers.customerSettings.getProperty(PROPERTY_ID).businessProfile.aiName, "新小比");
+    assert.equal(providers.customerSettings.getProperty(PROPERTY_ID).commonAnswers.earlyCheckInPolicy, "提前入住須先詢問並依當日房況確認");
 
     const bundles = await request(running.url, `/api/bundles?customerId=${PROPERTY_ID}`);
     assert.equal(bundles.response.status, 200);
@@ -312,6 +315,7 @@ function resolvedAmenity(property, canonicalId) {
     assert.equal(location.address, "Newest formal address");
     assert.equal(location.mapUrl, "https://maps.app.goo.gl/NewestFormal");
     assert.equal(singing.catalog.policies.find((item) => item.canonicalId === "check_in").answer, "16:00");
+    assert.equal(singing.catalog.policies.find((item) => item.canonicalId === "check_in__early_arrival_policy").answer, "提前入住須先詢問並依當日房況確認");
     assert.equal(singing.catalog.policies.find((item) => item.canonicalId === "check_in__latest_arrival_policy").answer, "無固定時間，請入住前與我們確認");
     assert.equal(singing.catalog.policies.find((item) => item.canonicalId === "check_out").answer, "10:00");
 

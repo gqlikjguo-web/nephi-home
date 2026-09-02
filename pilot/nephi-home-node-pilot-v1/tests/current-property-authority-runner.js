@@ -11,6 +11,7 @@ const property = {
   businessProfile: { address: "正式地址", googleMapsUrl: mapUrl },
   commonAnswers: {
     checkInTime: "15:00",
+    earlyCheckInPolicy: "提前入住須事先詢問並依當天房況確認",
     latestArrivalTime: "最晚 22:00，超過請提前聯絡",
     checkOutTime: "11:00",
     parkingRule: "LEGACY PARKING MUST NOT ANSWER",
@@ -48,6 +49,7 @@ assert.equal(byId("pets").answer, "目前後台正式寵物說明");
 assert.equal(byId("travel_subsidy").answer, "目前後台正式國旅補助說明");
 
 assert.equal(byId("check_in").answer, "15:00");
+assert.equal(byId("check_in__early_arrival_policy").answer, "提前入住須事先詢問並依當天房況確認");
 assert.equal(byId("check_in__latest_arrival_policy").answer, "最晚 22:00，超過請提前聯絡");
 assert.equal(byId("check_out").answer, "11:00");
 assert.equal(byId("location").answer, mapUrl);
