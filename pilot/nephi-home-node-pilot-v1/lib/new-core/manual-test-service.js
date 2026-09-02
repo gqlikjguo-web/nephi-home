@@ -13,7 +13,13 @@ const { validateClaims } = require("../conversation-engine-v2/claim-validator");
 const { buildFinalDecision } = require("../conversation-engine-v2/final-decision");
 const { buildFinalResponse } = require("../conversation-engine-v2/final-response-renderer");
 const { applyControlledReplyRules } = require("../custom-reply-rules");
-const { buildUnderstandingTurnInput, buildPublicCatalogIdentityProjection } = require("./turn-input-adapter");
+const {
+  buildC01PublicCatalog,
+  buildC01TrustedCanonicalizerCatalog,
+  buildUnderstandingTurnInput,
+  buildPublicCatalogIdentityProjection,
+  catalogCategoryToSubjectKind
+} = require("./turn-input-adapter");
 const { contextRelationEvidenceForValidatedLink } = require("./context-link-validator");
 const { projectCapabilityRegistry } = require("./semantic-unit-validator");
 const { createLifecycleDecision } = require("./lifecycle-manager");
@@ -210,28 +216,9 @@ function createSideEffectGuard() {
     factsPropertyMutation: () => { counters.FACTS_PROPERTY_MUTATION += 1; blocked("TEST_FACTS_PROPERTY_MUTATION_FORBIDDEN"); }
   };
 }
-function buildManualTestPublicCatalog(property, catalog) {
-  const subjects = [...catalog.rooms, ...catalog.amenities, ...catalog.policies].map((item) => ({ catalogIdentity: item.canonicalId, kind: item.category === "room" ? "room" : item.category === "bundle" ? "bundle" : item.category === "transport" ? "external_place" : catalog.amenities.includes(item) ? "amenity" : "policy", propertyId: property.propertyId, publicName: item.publicName }));
-  const roomsByType = new Map();
-  for (const room of catalog.rooms) {
-    if (room.category !== "room" || !room.type) continue;
-    const rooms = roomsByType.get(room.type) || [];
-    rooms.push(room);
-    roomsByType.set(room.type, rooms);
-  }
-  for (const [roomType, rooms] of roomsByType) {
-    if (rooms.length < 2) continue;
-    const digest = crypto.createHash("sha256")
-      .update(`${property.propertyId}\0${roomType}`, "utf8").digest("hex").slice(0, 24);
-    subjects.push({
-      catalogIdentity: `matched-room-set-${digest}`,
-      kind: "matched_room_set",
-      propertyId: property.propertyId,
-      publicName: roomType
-    });
-  }
-  return { propertyId: property.propertyId, timezone: catalog.timezone, capabilityCatalog: Object.keys(CAPABILITY_REGISTRY), publicSubjectCatalog: subjects };
-}
+const buildManualTestPublicCatalog = (property, catalog) => (
+  buildC01PublicCatalog(property, catalog, Object.keys(CAPABILITY_REGISTRY))
+);
 function turnStateSnapshot(state, scope, now) {
   const context = buildContextSnapshotV3(state, { ...scope, now });
   const tasks = new Map((state.tasks || []).map((task) => [task.taskId, task]));
@@ -246,8 +233,8 @@ function turnStateSnapshot(state, scope, now) {
         : definition && definition.acceptedCandidateTypes.includes(requestKind)
           ? requestKind
           : definition && definition.acceptedCandidateTypes[0];
-    const subjectKind = topic.category === "transport" ? "external_place"
-      : topic.category || (inventory.mode === "any" ? "property" : null);
+    const subjectKind = catalogCategoryToSubjectKind(topic.category)
+      || (inventory.mode === "any" ? "property" : null);
     return {
       requestCycleId: cycle.requestCycleId,
       requestKind,
@@ -288,26 +275,7 @@ function bindRecentConversationToCycles(history, state, referenceableCycles) {
     referenceableCycleIds: [...new Set(cycleIdsByTimestamp.get(turn.timestamp) || [])]
   }));
 }
-function buildManualTestCanonicalizerCatalog(input, officialCatalog = null) {
-  const officialRooms = officialCatalog && officialCatalog.propertyId === input.propertyScope.propertyId
-    ? new Map((officialCatalog.rooms || []).map((item) => [item.canonicalId, item]))
-    : new Map();
-  const project = (subject) => {
-    const official = subject.kind === "room"
-      ? officialRooms.get(subject.catalogIdentity)
-      : null;
-    return {
-      canonicalId: subject.catalogIdentity,
-      category: subject.kind === "external_place" ? "transport" : subject.kind,
-      publicName: subject.publicName,
-      ...(official ? {
-        type: official.type || "",
-        aliases: Array.isArray(official.aliases) ? [...official.aliases] : []
-      } : {})
-    };
-  };
-  return { propertyId: input.propertyScope.propertyId, timezone: input.propertyTimezone, rooms: input.publicSubjectCatalog.filter((x) => ["room", "bundle"].includes(x.kind)).map(project), amenities: input.publicSubjectCatalog.filter((x) => x.kind === "amenity").map(project), policies: input.publicSubjectCatalog.filter((x) => ["policy", "external_place"].includes(x.kind)).map(project) };
-}
+const buildManualTestCanonicalizerCatalog = buildC01TrustedCanonicalizerCatalog;
 function legacyTaskResult(execution) {
   const base = { taskId: execution.taskId, type: execution.type, facts: execution.facts || {} };
   if (["answered", "no_availability"].includes(execution.outcome)) return { ...base, status: "answered" };

@@ -1,5 +1,7 @@
 "use strict";
 
+const crypto = require("node:crypto");
+
 const {
   UNDERSTANDING_TURN_INPUT_SCHEMA_VERSION,
   MAX_SOURCE_EVENTS,
@@ -64,6 +66,14 @@ function assertNoForgedProperty(args, propertyId) {
     assertPropertyClaim(propertyId, event && event.customerId, `sourceEvents.${index}.customerId`);
     assertPropertyClaim(propertyId, event && event.query && event.query.propertyId, `sourceEvents.${index}.query.propertyId`);
   }
+}
+
+function catalogCategoryToSubjectKind(category) {
+  return category === "transport" ? "external_place" : category;
+}
+
+function subjectKindToCatalogCategory(kind) {
+  return kind === "external_place" ? "transport" : kind;
 }
 
 function projectEvent(event, includeCycleIds) {
@@ -140,6 +150,67 @@ function projectCatalog(catalog, propertyId) {
   };
 }
 
+function buildC01PublicCatalog(property, catalog, capabilityCatalog) {
+  if (!property || !catalog || catalog.propertyId !== property.propertyId) {
+    failure("PROPERTY_SCOPE_INVALID", ["publicCatalog.propertyId"]);
+  }
+  const subjects = [...catalog.rooms, ...catalog.amenities, ...catalog.policies].map((item) => ({
+    catalogIdentity: item.canonicalId,
+    kind: catalogCategoryToSubjectKind(item.category),
+    propertyId: property.propertyId,
+    publicName: item.publicName
+  }));
+  const roomsByType = new Map();
+  for (const room of catalog.rooms) {
+    if (room.category !== "room" || !room.type) continue;
+    const rooms = roomsByType.get(room.type) || [];
+    rooms.push(room);
+    roomsByType.set(room.type, rooms);
+  }
+  for (const [roomType, rooms] of roomsByType) {
+    if (rooms.length < 2) continue;
+    const digest = crypto.createHash("sha256")
+      .update(`${property.propertyId}\0${roomType}`, "utf8").digest("hex").slice(0, 24);
+    subjects.push({
+      catalogIdentity: `matched-room-set-${digest}`,
+      kind: "matched_room_set",
+      propertyId: property.propertyId,
+      publicName: roomType
+    });
+  }
+  return {
+    propertyId: property.propertyId,
+    timezone: catalog.timezone,
+    capabilityCatalog: [...capabilityCatalog],
+    publicSubjectCatalog: subjects
+  };
+}
+
+function buildC01TrustedCanonicalizerCatalog(input, officialCatalog = null) {
+  const officialRooms = officialCatalog && officialCatalog.propertyId === input.propertyScope.propertyId
+    ? new Map((officialCatalog.rooms || []).map((item) => [item.canonicalId, item]))
+    : new Map();
+  const project = (subject) => {
+    const official = subject.kind === "room" ? officialRooms.get(subject.catalogIdentity) : null;
+    return {
+      canonicalId: subject.catalogIdentity,
+      category: subjectKindToCatalogCategory(subject.kind),
+      publicName: subject.publicName,
+      ...(official ? {
+        type: official.type || "",
+        aliases: Array.isArray(official.aliases) ? [...official.aliases] : []
+      } : {})
+    };
+  };
+  return {
+    propertyId: input.propertyScope.propertyId,
+    timezone: input.propertyTimezone,
+    rooms: input.publicSubjectCatalog.filter((subject) => ["room", "bundle"].includes(subject.kind)).map(project),
+    amenities: input.publicSubjectCatalog.filter((subject) => subject.kind === "amenity").map(project),
+    policies: input.publicSubjectCatalog.filter((subject) => ["policy", "external_place"].includes(subject.kind)).map(project)
+  };
+}
+
 function buildPublicCatalogIdentityProjection(understandingTurnInput) {
   const cached = CATALOG_PROJECTION_BY_TURN_INPUT.get(understandingTurnInput);
   if (cached) return cached;
@@ -194,8 +265,12 @@ function buildUnderstandingTurnInput(args) {
 }
 
 module.exports = {
+  buildC01PublicCatalog,
+  buildC01TrustedCanonicalizerCatalog,
   buildUnderstandingTurnInput,
   buildPublicCatalogIdentityProjection,
+  catalogCategoryToSubjectKind,
   isPublicCatalogIdentityProjection,
-  isPublicCatalogIdentityProjectionFor
+  isPublicCatalogIdentityProjectionFor,
+  subjectKindToCatalogCategory
 };

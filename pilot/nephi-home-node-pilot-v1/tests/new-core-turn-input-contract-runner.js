@@ -5,10 +5,23 @@ const {
   validateUnderstandingTurnInput
 } = require("../lib/new-core/contracts/understanding-turn-input");
 const {
-  buildUnderstandingTurnInput
+  buildC01PublicCatalog,
+  buildC01TrustedCanonicalizerCatalog,
+  buildUnderstandingTurnInput,
+  catalogCategoryToSubjectKind,
+  subjectKindToCatalogCategory
 } = require("../lib/new-core/turn-input-adapter");
 
 const NOW = "2026-08-28T08:00:00.000Z";
+
+assert.equal(typeof buildC01PublicCatalog, "function",
+  "room grouping must be owned by the shared C01 catalog boundary");
+assert.equal(typeof buildC01TrustedCanonicalizerCatalog, "function",
+  "C08 metadata must be projected from the same shared C01 catalog authority");
+assert.equal(typeof catalogCategoryToSubjectKind, "function",
+  "catalog-to-C01 category translation must have one shared authority");
+assert.equal(typeof subjectKindToCatalogCategory, "function",
+  "C01-to-canonicalizer category translation must have one shared authority");
 
 function validArgs(overrides = {}) {
   return {

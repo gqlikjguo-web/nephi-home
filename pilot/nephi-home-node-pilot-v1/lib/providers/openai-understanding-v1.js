@@ -261,10 +261,13 @@ function semanticUnitBranchSchema(understandingTurnInput, capability) {
   const policy = capabilityPolicyFor(CAPABILITY_REGISTRY_PROJECTION, capability);
   if (!policy) {
     const catalogIdentities = understandingTurnInput.publicSubjectCatalog.map((subject) => subject.catalogIdentity);
+    const policyOwnedPurposes = new Set(Object.values(CAPABILITY_REGISTRY_PROJECTION)
+      .flatMap((candidatePolicy) => candidatePolicy.purposes));
     return objectSchema({
       unitId: stringSchema(),
       evidenceRefs: evidenceArraySchema(),
-      purpose: enumSchema(PURPOSES, "One independent source meaning; do not merge separately actionable meanings."),
+      purpose: enumSchema([...PURPOSES].filter((purpose) => !policyOwnedPurposes.has(purpose)),
+        "Only a source meaning with no declared capability policy may use unsupported."),
       capability: enumSchema([capability], "Unsupported language-derived capability candidate; never answer facts."),
       subject: objectSchema({
         kind: enumSchema(SUBJECT_KINDS),

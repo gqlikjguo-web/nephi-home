@@ -327,6 +327,12 @@ assert.equal(schemaAccepts(semanticUnitProviderSchema, availabilityUnit({ subjec
   "provider schema must reject availability without a lodging subject before C03");
 assert.equal(schemaAccepts(semanticUnitProviderSchema, availabilityUnit({ capability: "amenity", subject: { kind: "amenity", catalogIdentity: "parking" }, stayDependent: true })), false,
   "provider schema must reject stay-dependent amenity output before C03");
+assert.equal(schemaAccepts(semanticUnitProviderSchema, unit({
+  purpose: "cancellation",
+  capability: "unsupported",
+  subject: { kind: null, catalogIdentity: null },
+  stayDependent: false
+})), false, "provider schema must not admit cancellation through the unsupported branch when null capability owns END");
 for (const valid of [
   availabilityUnit({ subject: { kind: "property", catalogIdentity: null } }),
   availabilityUnit({ subject: { kind: "room", catalogIdentity: "room-a" } }),
