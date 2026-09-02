@@ -307,6 +307,11 @@ assert.match(
   /relationship between the property and any named or unnamed external place.*location.*external_place/i,
   "provider guidance must preserve the formal generic external-place location meaning"
 );
+assert.match(
+  instructions(),
+  /occupancy.*guest_count.*must not.*matched_room_set.*explicitly names.*lodging product type/i,
+  "provider guidance must keep occupancy count separate from an explicitly named room-group product"
+);
 
 const discriminatedInput = c01({
   publicCatalog: {
