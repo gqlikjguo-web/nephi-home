@@ -288,8 +288,11 @@ function routeAction(dispositions) {
   if (dispositions.includes("CLARIFY")) return "clarification";
   return dispositions.includes("ANSWER") ? "reply" : "no_reply";
 }
-function noExecutionDecision(outcomes, dispositions, missingFields) {
+function noExecutionDecision(outcomes, dispositions, missingFields, failedUnits = []) {
   const action = routeAction(dispositions);
+  if (dispositions.length === 0 && failedUnits.length > 0) {
+    return buildFinalDecision({ plannerFailure: failedUnits[0].failureCode });
+  }
   if (action === "no_reply") return buildFinalDecision({ executionOutcomes: [], noReplyReason: "new_core_no_reply" });
   if (action === "handoff") return buildFinalDecision({ executionOutcomes: [{ taskId: "new-core-handoff", type: "human_help", outcome: "unknown", reason: "human_help" }] });
   if (action === "clarification") return buildFinalDecision({ executionOutcomes: [{ taskId: "new-core-clarify", type: "price", outcome: "not_ready", readinessStatus: "missing_information", missingFields }] });
@@ -349,7 +352,7 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
   const claimValidation = validateClaims(replyText, responsePlan, canonicalItems.map((x) => x.canonicalRequest.taskId));
   const dispositions = successful.map((x) => x.routingDecision.disposition);
   const missingFields = successful.flatMap((x) => x.routingDecision.missingGuestFields);
-  const finalDecision = executionOutcomes.length ? buildFinalDecision({ executionOutcomes, claimValidation }) : noExecutionDecision(executionOutcomes, dispositions, missingFields);
+  const finalDecision = executionOutcomes.length ? buildFinalDecision({ executionOutcomes, claimValidation }) : noExecutionDecision(executionOutcomes, dispositions, missingFields, failedUnits);
   const finalResponse = buildFinalResponse({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation, publicAvailabilityUrl: publicAvailabilityUrlForProperty(publicBaseUrl, property) });
   const nextState = reduceConversationStateV3({ previous: state, canonicalItems, formalRequests, executionOutcomes, clarificationTaskIds: finalDecision.action === "clarification" ? finalDecision.executionSummary.notReadyTaskIds : [], lifecycleOperations: adapted.value.lifecycleOperations, taskCreations: adapted.value.taskCreations, canonicalTaskBindings: adapted.value.canonicalTaskBindings, scope: { ...scope, now } });
   const adapterOutput = adapted.value;
@@ -430,4 +433,4 @@ function createNewCoreManualTestService({ persistence, providers, service, facts
   };
 }
 
-module.exports = { PROPERTY_ID, CHANNEL, SIDE_EFFECT_COUNTERS, bindRecentConversationToCycles, buildManualTestCanonicalizerCatalog, buildManualTestFailureDiagnostics, buildManualTestPublicCatalog, createNewCoreManualTestService, executeNewCoreManualTurn, normalizeManualTestFailureRefs, turnStateSnapshot };
+module.exports = { PROPERTY_ID, CHANNEL, SIDE_EFFECT_COUNTERS, bindRecentConversationToCycles, buildManualTestCanonicalizerCatalog, buildManualTestFailureDiagnostics, buildManualTestPublicCatalog, createNewCoreManualTestService, executeNewCoreManualTurn, noExecutionDecision, normalizeManualTestFailureRefs, turnStateSnapshot };

@@ -8,7 +8,7 @@ const path = require("node:path");
 const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const manualTestService = require("../lib/new-core/manual-test-service");
-const { bindRecentConversationToCycles, buildManualTestFailureDiagnostics, normalizeManualTestFailureRefs, turnStateSnapshot } = manualTestService;
+const { bindRecentConversationToCycles, buildManualTestFailureDiagnostics, noExecutionDecision, normalizeManualTestFailureRefs, turnStateSnapshot } = manualTestService;
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { resolveEntity } = require("../lib/conversation-engine-v2/entity-resolver");
 const { aggregateUnitOutcomes } = require("../lib/new-core/unit-aggregator");
@@ -88,6 +88,18 @@ async function json(url, method = "GET", body, sentCookie = "") {
 }
 
 (async () => {
+  assert.equal(typeof noExecutionDecision, "function", "the no-execution FinalDecision boundary must be contract-testable");
+  const failedUnitRefs = Object.freeze([Object.freeze({ unitId: "unit-failed", failureCode: "UNIT_MEANING_UNSUPPORTED" })]);
+  assert.equal(noExecutionDecision([], ["NO_REPLY"], [], failedUnitRefs).action, "no_reply",
+    "a formal C07 NO_REPLY disposition remains authoritative");
+  const failedOnlyDecision = noExecutionDecision([], [], [], failedUnitRefs);
+  assert.equal(failedOnlyDecision.action, "handoff",
+    "failed units without a formal disposition must use the existing FinalDecision handoff authority");
+  assert.equal(failedOnlyDecision.reasonCode, "UNIT_MEANING_UNSUPPORTED");
+  assert.equal(noExecutionDecision([], ["ANSWER"], [], []).action, "no_reply",
+    "an ANSWER disposition without execution cannot fabricate an answer");
+  assert.equal(noExecutionDecision([], ["CLARIFY"], ["stay.checkIn"], []).action, "clarification");
+  assert.equal(noExecutionDecision([], ["HANDOFF"], [], []).action, "handoff");
   assert.equal(typeof manualTestService.buildManualTestPublicCatalog, "function",
     "manual-test C01 must expose its formal public catalog projection for contract verification");
   assert.equal(typeof manualTestService.buildManualTestCanonicalizerCatalog, "function",
@@ -310,6 +322,6 @@ async function json(url, method = "GET", body, sentCookie = "") {
       const productionApiDenied = await json(`${productionRunning.url}/api/admin/new-core-test/sessions`, "POST", {});
       assert.equal(productionApiDenied.status, 401, "non-test-only manual test API must retain admin authentication");
     } finally { await productionApp.stop(); }
-    console.log(JSON.stringify({ suite: "new-core-manual-test-page", caseCount: 33, passCount: 33, fakeIntegration: true, realOpenAICalls: 0, sideEffects: second.body.data.diagnostic.sideEffectCounters }));
+    console.log(JSON.stringify({ suite: "new-core-manual-test-page", caseCount: 39, passCount: 39, fakeIntegration: true, realOpenAICalls: 0, sideEffects: second.body.data.diagnostic.sideEffectCounters }));
   } finally { await app.stop(); }
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
