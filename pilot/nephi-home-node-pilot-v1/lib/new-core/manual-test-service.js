@@ -339,6 +339,21 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
     return buildCanonicalFormalRequest({ property, canonicalRequest: item.canonicalRequest, requestCycleId: outcome.lifecycleDecision.targetRequestCycleId || outcome.unit.unitId, confirmedInputs: executionConditionsV3(state, item) });
   });
   const queryPlans = formalRequests.map(buildCanonicalQueryPlan).filter(Boolean);
+  const roomGroupUnitIds = new Set(successful
+    .filter((outcome) => outcome.unit.subject.kind === "matched_room_set")
+    .map((outcome) => outcome.unit.unitId));
+  if (roomGroupUnitIds.size > 0) {
+    console.log(`NEW_CORE_ROOM_GROUP_TRACE ${JSON.stringify({
+      traceId: input.traceId,
+      officialRooms: c08Catalog.rooms.filter((room) => room.category === "room")
+        .map((room) => ({ canonicalId: room.canonicalId, type: room.type || "", aliases: room.aliases || [] })),
+      canonicalSets: canonicalItems.filter((item) => roomGroupUnitIds.has(item.unitId))
+        .map((item) => item.canonicalRequest.canonicalEntity.canonicalSet),
+      formalSets: formalRequests.filter((request) => roomGroupUnitIds.has(request.taskId))
+        .map((request) => request.entity.canonicalSet),
+      queryRoomTypeSets: queryPlans.map((plan) => plan.request && plan.request.roomTypeSet || [])
+    })}`);
+  }
   const rawExecutionOutcomes = [...formalRequests.filter((x) => x.readiness.status !== "ready").map(resultForNotReady), ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: resolver.availability, availableDatesResolver: resolver.availableDates, priceOverrides: resolver.priceOverrides(), datePriceClassifications: resolver.dateClassifications() })];
   const executionOutcomes = applyControlledReplyRules({ rules: resolver.customReplies(), property, canonicalItems, executionOutcomes: rawExecutionOutcomes, now });
   const taskResults = executionOutcomes.map(legacyTaskResult);
