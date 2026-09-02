@@ -26,6 +26,7 @@ const { readOperationalAcceptanceDataIntegrity, syncTestOnlyAcceptanceData } = r
 const { runWithTestOnlyAcceptanceRawUnderstanding } = require("./lib/test-only-raw-understanding-diagnostic");
 const { isDateKey, isPriceType, resolveDatePrice } = require("./lib/date-price-authority");
 const { createNewCoreManualTestService } = require("./lib/new-core/manual-test-service");
+const { createNewCoreProductionTurnAdapter } = require("./lib/new-core/production-turn-adapter");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -1407,7 +1408,21 @@ function createApp(options = {}) {
   };
   const acceptanceTraces = new Map();
   const captureSafeTrace = (entry) => { testOnlyLineMessageTrace.diagnostic(entry); const safe = formatSafeTestOnlyConversationTrace(entry); logSafeTestOnlyConversationTrace(entry); if (safe && safe.traceId) { const list = acceptanceTraces.get(safe.traceId) || []; list.push(safe); acceptanceTraces.set(safe.traceId, list.slice(-40)); } };
-  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: testOnlyLineMessageTrace.active, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null });
+  const newCoreLineCandidateEnabled = testOnlyEnvironment
+    && String(runtimeEnv.NEW_CORE_LINE_CANDIDATE_ENABLED || "").trim().toLowerCase() === "true";
+  const newCoreLineEngine = newCoreLineCandidateEnabled
+    ? createNewCoreProductionTurnAdapter({
+      persistence: providers.persistence,
+      customerSettings: providers.customerSettings,
+      service,
+      customReplies: providers.customReplies || { list: () => [] },
+      providerConfig: { apiKey: String(runtimeEnv.OPENAI_API_KEY || "") },
+      publicBaseUrl: publicBrand.publicBaseUrl,
+      now,
+      ...(typeof options.newCoreProductionExecuteTurn === "function" ? { executeTurn: options.newCoreProductionExecuteTurn } : {})
+    })
+    : null;
+  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: testOnlyLineMessageTrace.active, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null, lineEngine: newCoreLineEngine });
   const manualTestFactsDatabaseUrl = String(runtimeEnv.NEW_CORE_MANUAL_TEST_FACTS_DATABASE_URL || "").trim();
   const ownedNewCoreManualTestFactsProviders = !options.newCoreManualTestFactsProviders && testOnlyEnvironment && manualTestFactsDatabaseUrl
     ? createProviders({ databaseUrl: manualTestFactsDatabaseUrl }) : null;
@@ -1560,7 +1575,7 @@ function createApp(options = {}) {
         const decision = String(result.finalDecision && result.finalDecision.action || result.finalResponse && result.finalResponse.action || "no_reply");
         testOnlyLineMessageTrace.finalResponse({ traceId: result.traceId, eventId: input.eventId, propertyId: id, finalDecision: result.finalDecision, finalResponse: result.finalResponse });
         const traceTransport = (details) => { const { replyText: _replyText, ...diagnostic } = details; emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
-        const persistedDecision = await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired), safeTrace });
+        const persistedDecision = await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired), safeTrace, ...(Array.isArray(result.requestCycleRefs) ? { requestCycleRefs: result.requestCycleRefs } : {}) });
         if (persistedDecision) acceptanceTraces.delete(result.traceId);
         if (finalResponseShouldReply === false) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "final_response_should_reply_false", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
         if (!finalResponseReplyText.trim()) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_empty_reply", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); }
