@@ -70,6 +70,10 @@ function catalogIdentityValid(unit, identitySet, understandingTurnInput, capabil
   const subject = unit.subject;
   const rule = catalogIdentityRuleFor(capabilityRegistryProjection, unit.capability, subject.kind);
   if (rule === "NULL") return subject.catalogIdentity === null;
+  if (rule === "NULL_OR_PUBLIC_CATALOG") {
+    return subject.catalogIdentity === null
+      || catalogKindFor(identitySet, understandingTurnInput, subject.catalogIdentity) === subject.kind;
+  }
   if (rule !== "PUBLIC_CATALOG") return false;
   return catalogKindFor(identitySet, understandingTurnInput, subject.catalogIdentity) === subject.kind;
 }

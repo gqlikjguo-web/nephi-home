@@ -271,6 +271,14 @@ assert.equal(validate(unit({
     evidenceRefs: [evidence()]
   }]
 })).ok, true);
+assert.equal(validate(unit({
+  purpose: "operator_request",
+  capability: "booking_operator_request",
+  subject: { kind: "other_verified", catalogIdentity: null },
+  stayDependent: false,
+  safetyCandidate: { operatorActionClass: "date_change", riskClass: null },
+  slotCandidates: []
+})).ok, true, "a generic date-change operator request must have a catalog-independent formal subject");
 assertFailure(validate(unit({
   safetyCandidate: { operatorActionClass: null, riskClass: "access_credential" }
 })), "UNIT_MEANING_UNSUPPORTED");

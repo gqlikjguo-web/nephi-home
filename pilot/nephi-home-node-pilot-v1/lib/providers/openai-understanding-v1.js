@@ -221,13 +221,16 @@ function subjectBranchSchema(understandingTurnInput, capability, kind) {
       catalogIdentity: enumSchema([null])
     });
   }
-  if (identityRule !== "PUBLIC_CATALOG") return null;
+  if (!["PUBLIC_CATALOG", "NULL_OR_PUBLIC_CATALOG"].includes(identityRule)) return null;
   const catalogIdentities = understandingTurnInput.publicSubjectCatalog
     .filter((subject) => subject.kind === kind)
     .map((subject) => subject.catalogIdentity);
-  return catalogIdentities.length === 0 ? null : objectSchema({
+  const allowedIdentities = identityRule === "NULL_OR_PUBLIC_CATALOG"
+    ? [...catalogIdentities, null]
+    : catalogIdentities;
+  return allowedIdentities.length === 0 ? null : objectSchema({
     kind: enumSchema([kind]),
-    catalogIdentity: enumSchema(catalogIdentities)
+    catalogIdentity: enumSchema(allowedIdentities)
   });
 }
 

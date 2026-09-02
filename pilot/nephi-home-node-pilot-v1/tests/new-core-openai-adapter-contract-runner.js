@@ -435,6 +435,12 @@ async function main() {
   for (const requiredCapability of ["availability"]) assert.ok(
     unitBranches.some((branch) => branch.properties.capability.enum.includes(requiredCapability))
   );
+  const operatorBranch = unitBranches.find((branch) => branch.properties.capability.enum.includes("booking_operator_request"));
+  assert.ok(operatorBranch.properties.subject.anyOf.some((subjectBranch) =>
+    subjectBranch.properties.kind.enum.includes("other_verified")
+      && subjectBranch.properties.catalogIdentity.enum.length === 1
+      && subjectBranch.properties.catalogIdentity.enum[0] === null
+  ), "booking operator requests must expose a catalog-independent generic subject");
   for (const branch of unitBranches) assert.deepEqual(
     branch.required.sort(),
     ["capability", "confidenceBand", "contextLinkCandidateId", "evidenceRefs", "purpose", "safetyCandidate", "slotCandidates", "stayDependent", "subject", "temporalCandidate", "unitId"].sort()

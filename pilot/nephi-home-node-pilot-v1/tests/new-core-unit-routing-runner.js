@@ -325,6 +325,28 @@ assert.deepEqual(route({ ...operator, operatorSafetyPolicy: operatorPolicy.value
   operatorActionClass: "booking_mutation",
   riskClass: null
 });
+const genericDateChangeText = "generic operator date change";
+const genericDateChange = validated({
+  messageText: genericDateChangeText,
+  unit: candidate({
+    messageText: genericDateChangeText,
+    purpose: "operator_request",
+    capability: "booking_operator_request",
+    subject: { kind: "other_verified", catalogIdentity: null },
+    stayDependent: false,
+    temporalCandidate: null,
+    safetyCandidate: { operatorActionClass: "date_change", riskClass: null }
+  }),
+  action: "START",
+  target: null
+});
+const genericDateChangePolicy = createTrustedOperatorSafetyPolicy({
+  unit: genericDateChange.unit,
+  lifecycleDecision: genericDateChange.lifecycle,
+  routingRegistry: registry
+});
+assert.equal(genericDateChangePolicy.ok, true);
+assert.equal(route({ ...genericDateChange, operatorSafetyPolicy: genericDateChangePolicy.value }).value.disposition, "HANDOFF");
 
 // AC-RTE-003 / AC-HOF-001: a high-risk unit routes only from its explicit risk
 // basis, not because the router saw message content.
