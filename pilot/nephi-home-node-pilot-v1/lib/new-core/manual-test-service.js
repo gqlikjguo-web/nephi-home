@@ -8,6 +8,7 @@ const { buildC01TrustedCanonicalizerCatalog } = require("./turn-input-adapter");
 const { c08ExecutionDiagnosticFor } = require("./canonical-execution-adapter");
 const { NEW_CORE_OPENAI_MODEL } = require("./openai-model-authority");
 const { NewCoreManualTestRepository } = require("./manual-test-repository");
+const { OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC } = require("../providers/openai-understanding-v1");
 
 const PROPERTY_ID = "nephi_home";
 const CHANNEL = "new-core-manual-test";
@@ -167,6 +168,7 @@ function projectDiagnostic(result, traceId, counters) {
     c08: (result.c08Diagnostics || []).slice(0, 8).map(clone),
     contextRelations: projectContextRelationDiagnostic(result.contextRelationDiagnostics, traceId),
     stateTransition: projectStateTransitionDiagnostic(result.stateTransitionDiagnostics, traceId),
+    ...(result.understandingEvidence ? { understandingEvidence: clone(result.understandingEvidence) } : {}),
     traceId, requestedModel: bounded(result.requestedModel, 160), resolvedModel: bounded(result.resolvedModel, 160), sideEffectCounters: clone(counters)
   };
   assertSafe(projected); return projected;
@@ -205,6 +207,8 @@ async function executeNewCoreManualTurn(args) {
   });
   const { artifacts, ...coreResult } = result;
   const { understanding, outcomes, aggregation, adapted, previousState, contextCandidates } = artifacts;
+  const understandingEvidence = understanding[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC]
+    && understanding[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].understandingEvidence;
   const startClarifyOutcomes = aggregation.unitOutcomes.filter((outcome) => (
     outcome.lifecycleDecision.action === "START"
     && outcome.routingDecision.disposition === "CLARIFY"
@@ -237,6 +241,7 @@ async function executeNewCoreManualTurn(args) {
   };
   return {
     ...coreResult,
+    understandingEvidence,
     failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }),
     c08Diagnostics: outcomes.filter((outcome) => outcome.c08ExecutionResult).map((outcome) => ({
       unitId: outcome.unit.unitId,

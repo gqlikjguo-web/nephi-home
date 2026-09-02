@@ -368,8 +368,8 @@ function instructions() {
   ].join("\n");
 }
 
-function providerRequestBody(understandingTurnInput) {
-  const modelInput = {
+function providerVisibleInput(understandingTurnInput) {
+  return {
     ...understandingTurnInput,
     recentConversation: understandingTurnInput.recentConversation.map(({ referenceableCycleIds, ...event }) => ({
       ...event,
@@ -387,6 +387,10 @@ function providerRequestBody(understandingTurnInput) {
     })),
     referenceableCycles: undefined
   };
+}
+
+function providerRequestBody(understandingTurnInput) {
+  const modelInput = providerVisibleInput(understandingTurnInput);
   return {
     model: NEW_CORE_OPENAI_MODEL,
     safety_identifier: sha256(understandingTurnInput.propertyScope.userId),
@@ -496,7 +500,7 @@ function safeAttempt(details) {
   });
 }
 
-function providerDiagnostic(attempts) {
+function providerDiagnostic(attempts, evidence = null) {
   const values = attempts.slice(0, MAX_PROVIDER_ATTEMPTS).map(safeAttempt);
   const retried = values.length > 1;
   return deepFreeze({
@@ -505,7 +509,22 @@ function providerDiagnostic(attempts) {
     providerAttemptCount: values.length,
     retryPerformed: retried,
     retrySucceeded: retried && values.at(-1).errorCategory === "",
-    providerAttempts: values
+    providerAttempts: values,
+    ...(evidence ? { understandingEvidence: evidence } : {})
+  });
+}
+
+function understandingEvidence(understandingTurnInput, structuredOutput) {
+  return deepFreeze({
+    providerVisibleInput: detach(providerVisibleInput(understandingTurnInput)),
+    providerGuidance: instructions().split("\n").filter((item) => (
+      /capability|subject|safetyCandidate|operator_request|booking_operator_request|uncertain/iu.test(item)
+    )),
+    schemaBranches: {
+      policy: semanticUnitBranchSchema(understandingTurnInput, "policy"),
+      booking_operator_request: semanticUnitBranchSchema(understandingTurnInput, "booking_operator_request")
+    },
+    structuredOutput: detach(structuredOutput)
   });
 }
 
@@ -1007,7 +1026,7 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     enumerable: false,
     configurable: false,
     writable: false,
-    value: providerDiagnostic(attempts)
+    value: providerDiagnostic(attempts, understandingEvidence(understandingTurnInput, providerValue))
   });
   const trustedResult = deepFreeze(result);
   TRUSTED_UNDERSTANDING_RESULTS.add(trustedResult);

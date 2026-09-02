@@ -458,6 +458,13 @@ async function main() {
   assert.equal(Object.isFrozen(result), true);
   assert.equal(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].requestedModel, "gpt-5.6-luna");
   assert.equal(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].resolvedModel, "gpt-5.6-luna");
+  assert.deepEqual(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].understandingEvidence.providerVisibleInput.sourceEvents, input.sourceEvents);
+  assert.deepEqual(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].understandingEvidence.structuredOutput, {
+    understandingOutput: result.understandingOutput,
+    contextLinkCandidates: result.contextLinkCandidates
+  });
+  assert.ok(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].understandingEvidence.providerGuidance.some((item) => item.includes("safetyCandidate")));
+  assert.ok(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].understandingEvidence.schemaBranches.booking_operator_request);
   assert.equal(Object.isFrozen(result.understandingOutput), true);
   assert.equal(Object.isFrozen(result.validatedUnits[0]), true);
   assert.equal(isTrustedUnderstandingResult(result), true);
