@@ -12,8 +12,16 @@ const POLICY_FIELDS = Object.freeze([
   "requiredGuestFields",
   "temporalRequirementClass",
   "safetyShape",
-  "safetyPurposes"
+  "safetyPurposes",
+  "understandingDescription"
 ]);
+
+const UNDERSTANDING_DESCRIPTIONS = Object.freeze({
+  availability: "Use availability for a specific supplied stay date or date range when the guest asks whether lodging, a room, a room set, or a bundle is available then. This is a language-derived capability candidate only; never answer facts.",
+  available_dates: "Use available_dates only to search for which stay dates are available when the guest asks which, nearest, or upcoming dates can be booked rather than asking about a specific supplied stay date. This is a language-derived capability candidate only; never answer facts.",
+  policy: "Use policy only to ask an approved lodging policy fact, including check-in or check-out times. A request for an operator to change a reservation or its stay dates is not a policy question.",
+  booking_operator_request: "Use booking_operator_request when the guest asks an operator to create, change, cancel, refund, or otherwise act on a reservation. A requested reservation date change is operator action, not a question about the property's check-in or check-out time policy."
+});
 
 const EXECUTION_POLICY = Object.freeze({
   availability: { routeKind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"], temporalRequirementClass: "stay", safetyShape: "none" },
@@ -74,7 +82,9 @@ function buildCapabilityRegistryProjection(registry) {
       temporalRequirementClass: executionPolicy.temporalRequirementClass,
       safetyShape: executionPolicy.safetyShape,
       safetyPurposes: executionPolicy.safetyShape === "operator_action" ? ["operator_request"]
-        : executionPolicy.safetyShape === "risk" ? ["sensitive_request"] : [...policy.purposes]
+        : executionPolicy.safetyShape === "risk" ? ["sensitive_request"] : [...policy.purposes],
+      understandingDescription: UNDERSTANDING_DESCRIPTIONS[capability]
+        || "Language-derived capability candidate only; never answer facts."
     }]);
   }
   return deepFreeze(Object.fromEntries(entries));
@@ -98,7 +108,8 @@ function capabilityPolicyFor(projection, capability) {
     || !["ANSWER", "HANDOFF", "NO_REPLY"].includes(policy.routeKind)
     || !Array.isArray(policy.requiredGuestFields)
     || !["stay", "search_range", "none"].includes(policy.temporalRequirementClass)
-    || !["none", "operator_action", "risk"].includes(policy.safetyShape)) {
+    || !["none", "operator_action", "risk"].includes(policy.safetyShape)
+    || typeof policy.understandingDescription !== "string" || policy.understandingDescription.length === 0) {
     return null;
   }
   if (!Array.isArray(policy.safetyPurposes) || policy.safetyPurposes.length === 0

@@ -250,16 +250,6 @@ function safetyCandidateSchema(policy) {
   return { type: "null" };
 }
 
-function capabilityDescription(capability) {
-  if (capability === "availability") {
-    return "Use availability for a specific supplied stay date or date range when the guest asks whether lodging, a room, a room set, or a bundle is available then. This is a language-derived capability candidate only; never answer facts.";
-  }
-  if (capability === "available_dates") {
-    return "Use available_dates only to search for which stay dates are available when the guest asks what, which, nearest, or upcoming dates can be booked rather than asking about a specific supplied stay date. This is a language-derived capability candidate only; never answer facts.";
-  }
-  return "Language-derived capability candidate only; never answer facts.";
-}
-
 function semanticUnitBranchSchema(understandingTurnInput, capability) {
   const policy = capabilityPolicyFor(CAPABILITY_REGISTRY_PROJECTION, capability);
   if (!policy) {
@@ -300,7 +290,7 @@ function semanticUnitBranchSchema(understandingTurnInput, capability) {
     unitId: stringSchema(),
     evidenceRefs: evidenceArraySchema(),
     purpose: enumSchema(policy.safetyPurposes, "One independent source meaning; do not merge separately actionable meanings."),
-    capability: enumSchema([capability], capabilityDescription(capability)),
+    capability: enumSchema([capability], policy.understandingDescription),
     subject: { anyOf: subjectBranches },
     stayDependent: enumSchema([policy.stayDependent]),
     temporalCandidate: temporalCandidateSchema(),
