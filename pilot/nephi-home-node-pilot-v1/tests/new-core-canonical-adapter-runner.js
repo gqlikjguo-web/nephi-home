@@ -46,6 +46,7 @@ const {
 } = require("../lib/new-core/unit-reply-router");
 const {
   createCanonicalizerInputItem,
+  c08ExecutionDiagnosticFor,
   executeCanonicalizerInputItem,
   isTrustedCanonicalizerInputItem
 } = require("../lib/new-core/canonical-execution-adapter");
@@ -325,6 +326,15 @@ assert.deepEqual(roomC08.value.propertyScope, roomAvailability.input.propertySco
 assert.equal(Object.isFrozen(roomC08.value), true);
 const canonicalRoom = execute(roomC08.value);
 assert.equal(canonicalRoom.ok, true, canonicalRoom.code);
+const canonicalRoomBusinessOutput = JSON.stringify(canonicalRoom);
+const canonicalRoomDiagnostic = c08ExecutionDiagnosticFor(canonicalRoom);
+assert.equal(JSON.stringify(canonicalRoom), canonicalRoomBusinessOutput);
+assert.equal(canonicalRoomDiagnostic.input.capability, "availability");
+assert.equal(canonicalRoomDiagnostic.input.subject.kind, "room");
+assert.equal(canonicalRoomDiagnostic.input.subject.catalogIdentity, "room-a");
+assert.equal(canonicalRoomDiagnostic.canonicalizerCalled, true);
+assert.equal(canonicalRoomDiagnostic.exactCondition, "SUCCESS");
+assert.equal(Object.isFrozen(canonicalRoomDiagnostic), true);
 assert.equal(canonicalRoom.value.unitId, roomAvailability.unit.unitId);
 assert.equal(canonicalRoom.value.canonicalRequest.capability, "availability");
 assert.equal(canonicalRoom.value.canonicalRequest.canonicalEntity.canonicalId, "room-a");
@@ -639,6 +649,20 @@ assertFailure(execute(roomC08.value, { catalog: clone(catalog) }), "CANONICAL_AD
 assertFailure(execute(roomC08.value, {
   publicCatalogIdentityProjection: clone(buildPublicCatalogIdentityProjection(roomAvailability.input))
 }), "CANONICAL_ADAPTER_OWNERSHIP_CONFLICT");
+
+const incompleteCompatibility = executeCanonicalizerInputItem({
+  canonicalizerInputItem: continuedC08.value,
+  catalog,
+  publicCatalogIdentityProjection: buildPublicCatalogIdentityProjection(continued.input),
+  contextSnapshot: contextSnapshot({ cycles: [] })
+});
+assertFailure(incompleteCompatibility, "CANONICAL_INPUT_INCOMPLETE");
+const incompleteCompatibilityBusinessOutput = JSON.stringify(incompleteCompatibility);
+const incompleteCompatibilityDiagnostic = c08ExecutionDiagnosticFor(incompleteCompatibility);
+assert.equal(JSON.stringify(incompleteCompatibility), incompleteCompatibilityBusinessOutput);
+assert.equal(incompleteCompatibilityDiagnostic.failureCode, "CANONICAL_INPUT_INCOMPLETE");
+assert.equal(incompleteCompatibilityDiagnostic.exactCondition, "contextTarget");
+assert.deepEqual(incompleteCompatibilityDiagnostic.errors, ["contextTarget"]);
 assertFailure(execute(continuedC08.value, {
   contextSnapshot: contextSnapshot({ scope: { propertyId: scope.propertyId, channelId: "line-foreign", userId: scope.userId } })
 }), "CANONICAL_ADAPTER_OWNERSHIP_CONFLICT");

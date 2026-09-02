@@ -24,7 +24,7 @@ const { contextRelationEvidenceForValidatedLink } = require("./context-link-vali
 const { projectCapabilityRegistry } = require("./semantic-unit-validator");
 const { createLifecycleDecision } = require("./lifecycle-manager");
 const { createUnitReplyRoutingRegistry, createUnitReadiness, createTrustedOperatorSafetyPolicy, createUnitRoutingDecision } = require("./unit-reply-router");
-const { createCanonicalizerInputItem, executeCanonicalizerInputItem } = require("./canonical-execution-adapter");
+const { createCanonicalizerInputItem, c08ExecutionDiagnosticFor, executeCanonicalizerInputItem } = require("./canonical-execution-adapter");
 const { aggregateUnitOutcomes } = require("./unit-aggregator");
 const { adaptLifecycleDecisionsToStateV3 } = require("./state-v3-lifecycle-adapter");
 const { callOpenAIUnderstandingV1, OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC } = require("../providers/openai-understanding-v1");
@@ -199,6 +199,7 @@ function projectDiagnostic(result, traceId, counters) {
     finalResponse: { action: bounded(response.action, 40), shouldReply: response.shouldReply === true, replyText: bounded(response.replyText, 1200) }, earliestFailure: earliest ? { layer: bounded(earliest.layer, 80), failureCode: bounded(earliest.failureCode, 80), ...(earliest.schemaViolation ? { schemaViolation: { validationErrorCode: bounded(earliest.schemaViolation.validationErrorCode, 80), fieldPath: bounded(earliest.schemaViolation.fieldPath, 240), expected: bounded(earliest.schemaViolation.expected, 240), actual: bounded(earliest.schemaViolation.actual, 160) } } : {}) } : null,
     failureCode: earliest ? bounded(earliest.failureCode, 80) : null,
     failedUnits: (result.failedUnitDiagnostics || []).slice(0, 8).map(clone),
+    c08: (result.c08Diagnostics || []).slice(0, 8).map(clone),
     contextRelations: projectContextRelationDiagnostic(result.contextRelationDiagnostics, traceId),
     stateTransition: projectStateTransitionDiagnostic(result.stateTransitionDiagnostics, traceId),
     traceId, requestedModel: bounded(result.requestedModel, 160), resolvedModel: bounded(result.resolvedModel, 160), sideEffectCounters: clone(counters)
@@ -322,6 +323,7 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
   const successful = outcomes.filter((item) => item.routingDecision);
   for (const outcome of successful.filter((x) => x.canonicalItem)) {
     const result = executeCanonicalizerInputItem({ canonicalizerInputItem: outcome.canonicalItem, catalog: c08Catalog, publicCatalogIdentityProjection: projection, contextSnapshot });
+    outcome.c08Diagnostic = c08ExecutionDiagnosticFor(result);
     if (!result.ok) { outcome.canonicalItem = null; outcome.failure = { layer: "C08", failureCode: result.code }; continue; }
     outcome.canonicalItem = result.value;
     canonicalItems.push(result.value);
@@ -388,7 +390,7 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
     const relation = unit ? contextRelationEvidenceForValidatedLink(link, unit) : null;
     return { ...link, resolvedTargetRequestCycleId: relation && relation.resolvedTargetRequestCycleId };
   });
-  return { state: nextState, understanding: { summary: understanding.validatedUnits.map((x) => `${x.purpose}/${x.capability}/${x.subject.kind}`).join("；"), units: understanding.validatedUnits.map((x) => ({ purpose: x.purpose, capability: x.capability, subject: x.subject, temporal: x.temporalCandidate, guestCount: x.slotCandidates.find((slot) => slot.slot === "guest_count")?.value || null })) }, lifecycle: successful.map((x) => x.lifecycleDecision.action), routing: dispositions, resolver: { name: "existing canonical Resolver", foundOfficialData: executionOutcomes.some((x) => x.outcome === "answered"), status: executionOutcomes.map((x) => x.outcome).join(",") || "NOT_APPLICABLE" }, finalDecision, finalResponse, earliestFailure: failure, failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }), contextRelationDiagnostics: { traceId: input.traceId, candidates: contextCandidates, referenceableCycles: c01.referenceableCycles }, stateTransitionDiagnostics, requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL, resolvedModel: provider.resolvedModel || "" };
+  return { state: nextState, understanding: { summary: understanding.validatedUnits.map((x) => `${x.purpose}/${x.capability}/${x.subject.kind}`).join("；"), units: understanding.validatedUnits.map((x) => ({ purpose: x.purpose, capability: x.capability, subject: x.subject, temporal: x.temporalCandidate, guestCount: x.slotCandidates.find((slot) => slot.slot === "guest_count")?.value || null })) }, lifecycle: successful.map((x) => x.lifecycleDecision.action), routing: dispositions, resolver: { name: "existing canonical Resolver", foundOfficialData: executionOutcomes.some((x) => x.outcome === "answered"), status: executionOutcomes.map((x) => x.outcome).join(",") || "NOT_APPLICABLE" }, finalDecision, finalResponse, earliestFailure: failure, failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }), c08Diagnostics: outcomes.filter((x) => x.c08Diagnostic).map((x) => ({ unitId: x.unit.unitId, ...x.c08Diagnostic })), contextRelationDiagnostics: { traceId: input.traceId, candidates: contextCandidates, referenceableCycles: c01.referenceableCycles }, stateTransitionDiagnostics, requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL, resolvedModel: provider.resolvedModel || "" };
 }
 
 function createNewCoreManualTestService({ persistence, providers, service, factsProviders = providers, factsService = service, apiKey, publicBaseUrl = "", now = () => new Date(), executeTurn = executeNewCoreManualTurn } = {}) {

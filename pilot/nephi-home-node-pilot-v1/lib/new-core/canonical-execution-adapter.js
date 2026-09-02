@@ -16,6 +16,7 @@ const { isPublicCatalogIdentityProjectionFor } = require("./turn-input-adapter")
 const C08_AUTHORITY_MARKER = new WeakSet();
 const PROVENANCE_BY_C08 = new WeakMap();
 const OFFICIAL_CANONICAL_RESULTS = new WeakSet();
+const EXECUTION_DIAGNOSTICS = new WeakMap();
 const EXECUTABLE_LIFECYCLE_ACTIONS = new Set(["START", "CONTINUE", "MODIFY"]);
 const CANONICAL_REJECTION_CODES = new Set([
   "invalid_canonical_request",
@@ -81,6 +82,40 @@ function hasRecursiveKey(value, forbidden, seen = new Set()) {
 
 function failure(code, errors = []) {
   return { ok: false, code, errors };
+}
+
+function withExecutionDiagnostic(result, diagnostic) {
+  EXECUTION_DIAGNOSTICS.set(result, deepFreeze(detach(diagnostic)));
+  return result;
+}
+
+function c08ExecutionDiagnosticFor(result) {
+  const diagnostic = result && EXECUTION_DIAGNOSTICS.get(result);
+  return diagnostic ? deepFreeze(detach(diagnostic)) : null;
+}
+
+function executionInputDiagnostic(provenance, canonicalizerInputItem) {
+  const productSlots = provenance.lifecycleDecision.verifiedSlotOperations
+    .filter((operation) => operation.slot === "product")
+    .map(detach);
+  return {
+    input: {
+      capability: provenance.unit.capability,
+      subject: detach(provenance.unit.subject),
+      productSlots,
+      groundingEvidence: detach(canonicalizerInputItem.evidenceRefs)
+    },
+    compatibilityMapping: null,
+    canonicalizerCalled: false,
+    canonicalizerResult: null,
+    canonicalSubject: null,
+    canonicalSet: [],
+    requiredFields: [],
+    missingFields: [],
+    errors: [],
+    failureCode: null,
+    exactCondition: null
+  };
 }
 
 function boundedText(value) {
@@ -462,14 +497,42 @@ function executeCanonicalizerInputItem({
     return failure("CANONICAL_ADAPTER_OWNERSHIP_CONFLICT", ["propertyScope"]);
   }
   const context = contextCycleFor(provenance, contextSnapshot);
-  if (!context.ok) return failure("CANONICAL_INPUT_INCOMPLETE", ["contextTarget"]);
+  const diagnostic = executionInputDiagnostic(provenance, canonicalizerInputItem);
+  if (!context.ok) {
+    return withExecutionDiagnostic(failure("CANONICAL_INPUT_INCOMPLETE", ["contextTarget"]), {
+      ...diagnostic,
+      errors: ["contextTarget"],
+      failureCode: "CANONICAL_INPUT_INCOMPLETE",
+      exactCondition: "contextTarget"
+    });
+  }
   const entity = compatibilityEntity(provenance.understandingTurnInput, provenance.unit);
   const approvedProduct = approvedProductFor(provenance, context.cycle);
   const sources = sourcesForEvidence(provenance.understandingTurnInput, canonicalizerInputItem.evidenceRefs);
   const temporal = sources && compatibilityTemporal(provenance.unit, sources);
   const guestOperation = uniqueSlotOperation(provenance.lifecycleDecision.verifiedSlotOperations, "guest_count");
+  diagnostic.compatibilityMapping = {
+    context: detach(context),
+    entity: detach(entity),
+    approvedProduct: detach(approvedProduct),
+    sources: detach(sources),
+    temporal: detach(temporal),
+    guestOperation: detach(guestOperation)
+  };
   if (!entity || !approvedProduct || !sources || !temporal || guestOperation === undefined) {
-    return failure("CANONICAL_INPUT_INCOMPLETE", ["compatibilityMapping"]);
+    const missing = [
+      !entity ? "entity" : null,
+      !approvedProduct ? "approvedProduct" : null,
+      !sources ? "sources" : null,
+      !temporal ? "temporal" : null,
+      guestOperation === undefined ? "guestOperation" : null
+    ].filter(Boolean);
+    return withExecutionDiagnostic(failure("CANONICAL_INPUT_INCOMPLETE", ["compatibilityMapping"]), {
+      ...diagnostic,
+      errors: ["compatibilityMapping", ...missing],
+      failureCode: "CANONICAL_INPUT_INCOMPLETE",
+      exactCondition: `compatibilityMapping:${missing.join(",")}`
+    });
   }
   const guestCountCandidate = guestOperation && guestOperation.operation === "SET"
     ? guestOperation.value : null;
@@ -507,6 +570,7 @@ function executeCanonicalizerInputItem({
   };
   let canonicalized;
   try {
+    diagnostic.canonicalizerCalled = true;
     canonicalized = OFFICIAL_CANONICALIZE_EXECUTION_ITEM({
       item: compatibilityItem,
       relation,
@@ -522,28 +586,58 @@ function executeCanonicalizerInputItem({
   } catch (error) {
     const rejectionCode = CANONICAL_REJECTION_CODES.has(error && error.code)
       ? error.code : "CANONICAL_INPUT_INCOMPLETE";
-    return failure(rejectionCode, ["canonicalizerRejected"]);
+    return withExecutionDiagnostic(failure(rejectionCode, ["canonicalizerRejected"]), {
+      ...diagnostic,
+      errors: ["canonicalizerRejected"],
+      failureCode: rejectionCode,
+      exactCondition: "canonicalizerRejected"
+    });
   }
-  if (!OFFICIAL_CANONICAL_RESULTS.has(canonicalized)
-    || !exactKeys(canonicalized, LEGACY_RESULT_FIELDS)
-    || canonicalized.candidateIndex !== candidateIndex
-    || canonicalized.requestCycleId !== compatibilityItem.requestCycleId
-    || !sameData(canonicalized.task, task)
-    || !sameData(canonicalized.transition, compatibilityItem.transition)
-    || !isCanonicalRequest(canonicalized.canonicalRequest)
-    || canonicalized.canonicalRequest.taskId !== provenance.unit.unitId
-    || !canonicalResultIsStructurallyConsistent(
+  diagnostic.canonicalizerResult = detach(canonicalized);
+  diagnostic.canonicalSubject = detach(canonicalized && canonicalized.canonicalRequest
+    && canonicalized.canonicalRequest.canonicalEntity);
+  diagnostic.canonicalSet = detach(diagnostic.canonicalSubject
+    && diagnostic.canonicalSubject.canonicalSet || []);
+  diagnostic.requiredFields = detach(canonicalized && canonicalized.canonicalRequest
+    && canonicalized.canonicalRequest.requiredFields || []);
+  diagnostic.missingFields = detach(canonicalized && canonicalized.canonicalRequest
+    && canonicalized.canonicalRequest.readiness
+    && canonicalized.canonicalRequest.readiness.missingFields || []);
+  const resultChecks = {
+    officialResultOwnership: OFFICIAL_CANONICAL_RESULTS.has(canonicalized),
+    exactLegacyShape: exactKeys(canonicalized, LEGACY_RESULT_FIELDS),
+    candidateIndex: canonicalized && canonicalized.candidateIndex === candidateIndex,
+    requestCycleId: canonicalized
+      && canonicalized.requestCycleId === compatibilityItem.requestCycleId,
+    task: canonicalized && sameData(canonicalized.task, task),
+    transition: canonicalized && sameData(canonicalized.transition, compatibilityItem.transition),
+    canonicalRequest: Boolean(canonicalized) && isCanonicalRequest(canonicalized.canonicalRequest)
+  };
+  resultChecks.canonicalTaskId = resultChecks.canonicalRequest
+    && canonicalized.canonicalRequest.taskId === provenance.unit.unitId;
+  resultChecks.canonicalSubjectAndProduct = resultChecks.canonicalTaskId
+    && canonicalResultIsStructurallyConsistent(
       canonicalized.canonicalRequest,
       provenance,
       approvedProduct
-    )
-    || !stateInputMatchesC08(
+    );
+  resultChecks.stateInput = resultChecks.canonicalSubjectAndProduct
+    && stateInputMatchesC08(
       canonicalized.stateInput,
       canonicalized.canonicalRequest,
       task,
       provenance
-    )) {
-    return failure("CANONICAL_INPUT_INCOMPLETE", ["canonicalizerResult"]);
+    );
+  const failedResultChecks = Object.entries(resultChecks)
+    .filter(([, passed]) => !passed)
+    .map(([name]) => name);
+  if (failedResultChecks.length > 0) {
+    return withExecutionDiagnostic(failure("CANONICAL_INPUT_INCOMPLETE", ["canonicalizerResult"]), {
+      ...diagnostic,
+      errors: ["canonicalizerResult", ...failedResultChecks],
+      failureCode: "CANONICAL_INPUT_INCOMPLETE",
+      exactCondition: `canonicalizerResult:${failedResultChecks.join(",")}`
+    });
   }
   const value = deepFreeze({
     unitId: provenance.unit.unitId,
@@ -557,12 +651,22 @@ function executeCanonicalizerInputItem({
     "semanticData",
     "inferredCapability"
   ]))) {
-    return failure("CANONICAL_INPUT_INCOMPLETE", ["canonicalizerResult"]);
+    return withExecutionDiagnostic(failure("CANONICAL_INPUT_INCOMPLETE", ["canonicalizerResult"]), {
+      ...diagnostic,
+      errors: ["canonicalizerResult", "forbiddenRecursiveKey"],
+      failureCode: "CANONICAL_INPUT_INCOMPLETE",
+      exactCondition: "canonicalizerResult:forbiddenRecursiveKey"
+    });
   }
-  return { ok: true, code: null, errors: [], value };
+  return withExecutionDiagnostic({ ok: true, code: null, errors: [], value }, {
+    ...diagnostic,
+    failureCode: null,
+    exactCondition: "SUCCESS"
+  });
 }
 
 module.exports = {
+  c08ExecutionDiagnosticFor,
   createCanonicalizerInputItem,
   executeCanonicalizerInputItem,
   isTrustedCanonicalizerInputItem

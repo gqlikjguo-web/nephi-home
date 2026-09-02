@@ -45,6 +45,12 @@ async function fakeTurn({ input, state, property, publicBaseUrl, sideEffectGuard
       failureCodes: { C03: "CAPABILITY_SUBJECT_CONFLICT", C06: null, C07: null },
       earliestFailure: { layer: "C03", failureCode: "CAPABILITY_SUBJECT_CONFLICT" }
     }],
+    c08Diagnostics: [{
+      unitId: "unit-diagnostic",
+      input: { capability: "availability", subject: { kind: "room", catalogIdentity: "room302" }, productSlots: [], groundingEvidence: [] },
+      compatibilityMapping: { context: { ok: true, cycle: null }, entity: null, approvedProduct: { productType: "room_type", productId: "room302", roomTypeId: "room302", bundleId: null }, sources: [], temporal: {}, guestOperation: null },
+      canonicalizerCalled: false, canonicalizerResult: null, canonicalSubject: null, canonicalSet: [], requiredFields: [], missingFields: [], errors: ["compatibilityMapping", "entity"], failureCode: "CANONICAL_INPUT_INCOMPLETE", exactCondition: "compatibilityMapping:entity"
+    }],
     contextRelationDiagnostics: {
       traceId: input.traceId,
       candidates: [{
@@ -244,6 +250,12 @@ async function json(url, method = "GET", body, sentCookie = "") {
       failureCodes: { C03: "CAPABILITY_SUBJECT_CONFLICT", C06: null, C07: null },
       earliestFailure: { layer: "C03", failureCode: "CAPABILITY_SUBJECT_CONFLICT" }
     });
+    assert.deepEqual(diagnosticFailure.body.data.diagnostic.c08, [{
+      unitId: "unit-diagnostic",
+      input: { capability: "availability", subject: { kind: "room", catalogIdentity: "room302" }, productSlots: [], groundingEvidence: [] },
+      compatibilityMapping: { context: { ok: true, cycle: null }, entity: null, approvedProduct: { productType: "room_type", productId: "room302", roomTypeId: "room302", bundleId: null }, sources: [], temporal: {}, guestOperation: null },
+      canonicalizerCalled: false, canonicalizerResult: null, canonicalSubject: null, canonicalSet: [], requiredFields: [], missingFields: [], errors: ["compatibilityMapping", "entity"], failureCode: "CANONICAL_INPUT_INCOMPLETE", exactCondition: "compatibilityMapping:entity"
+    }]);
     assert.deepEqual(diagnosticFailure.body.data.diagnostic.contextRelations, {
       traceId: diagnosticFailure.body.data.traceId,
       candidates: [{
@@ -259,6 +271,7 @@ async function json(url, method = "GET", body, sentCookie = "") {
     });
     const persistedDiagnostic = await json(`${running.url}/api/admin/new-core-test/records/${diagnosticFailure.body.data.traceId}`);
     assert.deepEqual(persistedDiagnostic.body.data.diagnostic.failedUnits, diagnosticFailure.body.data.diagnostic.failedUnits);
+    assert.deepEqual(persistedDiagnostic.body.data.diagnostic.c08, diagnosticFailure.body.data.diagnostic.c08);
     const first = await json(`${running.url}/api/admin/new-core-test/sessions/${id}/turns`, "POST", { input: "想了解包棟價格" }); assert.equal(first.status, 201, JSON.stringify(first.body)); assert.equal(first.body.data.diagnostic.context[0], "START"); assert.equal(first.body.data.diagnostic.finalResponse.action, "clarification");
     assert.deepEqual(first.body.data.diagnostic.stateTransition, {
       traceId: first.body.data.traceId,
