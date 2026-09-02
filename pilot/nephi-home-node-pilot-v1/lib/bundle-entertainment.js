@@ -8,11 +8,11 @@ const PRESET_AMENITIES = Object.freeze([
   ["electric_mahjong", "電動麻將桌", ["電動麻將"]], ["mahjong", "一般麻將", ["麻將"]],
   ["board_games", "桌遊", []], ["game_console", "Switch／遊戲主機", ["Switch", "遊戲主機"]],
   ["projector", "投影機／大螢幕", ["投影機", "大螢幕"]], ["billiards", "撞球桌", ["撞球"]],
-  ["darts", "飛鏢", []], ["table_football", "桌上足球", []], ["massage_chair", "按摩椅", []],
+  ["darts", "飛鏢", []], ["table_football", "桌上足球", []],
   ["bbq", "烤肉區／烤肉設備", ["烤肉", "烤肉區", "烤肉設備"]], ["splash_pool", "戲水池", []],
   ["swimming_pool", "游泳池", []], ["children_play_area", "兒童遊戲區", []], ["slide", "溜滑梯", []],
   ["sandpit", "沙坑", []], ["outdoor_yard", "戶外庭院", ["庭院"]], ["shared_living_room", "公共客廳", ["客廳"]],
-  ["kitchen", "廚房", []], ["hot_pot_equipment", "火鍋設備", ["火鍋"]], ["streaming_media", "Netflix／影音串流", ["Netflix", "影音串流"]]
+  ["kitchen", "廚房", []], ["hot_pot_equipment", "火鍋設備", ["火鍋"]]
 ].map(([key, displayName, aliases], position) => Object.freeze({ key, displayName, aliases: Object.freeze(aliases), source: "preset", position })));
 const presetByKey = new Map(PRESET_AMENITIES.map((item) => [item.key, item]));
 function count(value) { return [...String(value || "")].length; }

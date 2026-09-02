@@ -90,10 +90,13 @@ function seedDate(offsetDays) {
   assert.match(adminCss, /monthly-inventory-controls/, "monthly controls must have an explicit aligned layout");
   assert.match(adminCss, /min-height:60px/, "mobile monthly inventory rows must use the compact 60px target");
   const checkInIndex = adminHtml.indexOf('id="profileCheckInTime"');
+  const earlyCheckInIndex = adminHtml.indexOf('id="profileEarlyCheckInPolicy"');
   const latestArrivalIndex = adminHtml.indexOf('id="profileLatestArrivalTime"');
   const checkOutIndex = adminHtml.indexOf('id="profileCheckOutTime"');
-  assert.equal(checkInIndex >= 0 && latestArrivalIndex > checkInIndex && checkOutIndex > latestArrivalIndex, true, "the optional latest-arrival time input must appear between check-in and check-out");
+  assert.equal(checkInIndex >= 0 && earlyCheckInIndex > checkInIndex && latestArrivalIndex > earlyCheckInIndex && checkOutIndex > latestArrivalIndex, true, "optional early/latest arrival policies must appear between check-in and check-out");
+  assert.match(adminHtml, /<textarea id="profileEarlyCheckInPolicy"[^>]*maxlength="500"/, "early check-in policy must use a free-text operator input");
   assert.match(adminHtml, /<textarea id="profileLatestArrivalTime"[^>]*maxlength="500"/, "latest arrival must use a free-text operator input");
+  assert.match(adminScript, /profileEarlyCheckInPolicy/, "the admin profile client must load and save earlyCheckInPolicy");
   assert.match(adminScript, /profileLatestArrivalTime/, "the admin profile client must load and save latestArrivalTime");
   assert.match(guestCss, /max-width: 390px/, "guest mobile layout must include a narrow-screen rule");
   assert.match(adminCss, /status-toggle/, "the admin toggle must have an explicit mobile-safe presentation");
@@ -112,7 +115,7 @@ function seedDate(offsetDays) {
       name: "尼腓的家",
       lineUrl: "https://lin.ee/nephiOfficial",
       businessProfile: { googleMapsUrl: "https://maps.app.goo.gl/nephi" },
-      safeFacts: { checkInTime: "15:00", latestArrivalTime: "21:30", checkOutTime: "11:00" },
+      safeFacts: { checkInTime: "15:00", earlyCheckInPolicy: "Alpha 提前入住規則", latestArrivalTime: "21:30", checkOutTime: "11:00" },
       rooms: [
         { id: "room301", roomCode: "R-A", displayName: "陽光客房", name: "陽光客房", highlights: ["採光佳", "安靜"], type: "double", capacity: 2, enabled: true, mondayThursdayPrice: 2000 },
         { id: "room302", name: "家庭房", type: "family", capacity: 4, enabled: true, mondayThursdayPrice: 3000 },
@@ -123,7 +126,7 @@ function seedDate(offsetDays) {
       customerId: "other_home",
       name: "另一間旅宿",
       lineUrl: "https://lin.ee/otherOfficial",
-      safeFacts: { checkInTime: "14:00", latestArrivalTime: "20:00", checkOutTime: "10:00" },
+      safeFacts: { checkInTime: "14:00", earlyCheckInPolicy: "Beta 提前入住規則", latestArrivalTime: "20:00", checkOutTime: "10:00" },
       rooms: [{ id: "other", name: "另一間房", type: "other", capacity: 2, enabled: true, mondayThursdayPrice: 1000 }],
       availability: { [checkInDate]: { other: "available" } }
     }, {
@@ -191,15 +194,20 @@ function seedDate(offsetDays) {
     assert.equal((await json(`${running.url}/api/room-pricing?customerId=other_home`)).body.data.rooms[0].displayName, "另一間房", "room writes must remain property-scoped");
 
     const initialProfile = await json(`${running.url}/api/property-profile?propertyId=nephi_home`);
+    assert.equal(initialProfile.body.data.earlyCheckInPolicy, "Alpha 提前入住規則", "the profile API must load the property's existing optional early check-in policy");
     assert.equal(initialProfile.body.data.latestArrivalTime, "21:30", "the profile API must load the property's existing optional latest-arrival time");
     const latestArrivalText = "最晚22:00，超過請提前聯絡";
-    const profileResponse = await fetch(`${running.url}/api/property-profile`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", propertyName: "更新後旅宿", googleMapsUrl: "https://maps.app.goo.gl/nephi", lineUrl: "https://lin.ee/nephiOfficial", contactInfo: "0900-000-000", checkInTime: "15:00", latestArrivalTime: latestArrivalText, checkOutTime: "11:00" }) });
+    const earlyCheckInText = "如需提前入住，請事先詢問，是否可以提前需依當天房況確認。";
+    const profileResponse = await fetch(`${running.url}/api/property-profile`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", propertyName: "更新後旅宿", googleMapsUrl: "https://maps.app.goo.gl/nephi", lineUrl: "https://lin.ee/nephiOfficial", contactInfo: "0900-000-000", checkInTime: "15:00", earlyCheckInPolicy: earlyCheckInText, latestArrivalTime: latestArrivalText, checkOutTime: "11:00" }) });
     const profile = await profileResponse.json();
     assert.equal(profileResponse.status, 200, "the minimal profile must update property-scoped data");
     assert.equal(profile.data.propertyName, "更新後旅宿");
     assert.equal(profile.data.checkInTime, "15:00");
+    assert.equal(profile.data.earlyCheckInPolicy, earlyCheckInText);
     assert.equal(profile.data.latestArrivalTime, latestArrivalText);
     assert.equal(profile.data.checkOutTime, "11:00");
+    assert.equal(app.providers.customerSettings.getProperty("nephi_home").commonAnswers.earlyCheckInPolicy, earlyCheckInText, "the JSON provider must round-trip the early check-in policy");
+    assert.equal(app.providers.customerSettings.getProperty("other_home").commonAnswers.earlyCheckInPolicy, "Beta 提前入住規則", "updating one property must not change another property's early check-in policy");
     assert.equal(app.providers.customerSettings.getProperty("nephi_home").commonAnswers.latestArrivalTime, latestArrivalText, "the JSON provider must round-trip the complete operator text");
     assert.equal(app.providers.customerSettings.getProperty("other_home").commonAnswers.latestArrivalTime, "20:00", "updating one property must not change another property");
     assert.equal((await json(`${running.url}/api/public/property?slug=nephihome`)).body.data.propertyName, "更新後旅宿", "public metadata must read the same property data");
@@ -210,6 +218,7 @@ function seedDate(offsetDays) {
     assert.equal(clearLatestArrival.status, 200);
     assert.equal(clearedProfile.data.latestArrivalTime, "");
     assert.equal(Object.hasOwn(app.providers.customerSettings.getProperty("nephi_home").commonAnswers, "latestArrivalTime"), false, "clearing the optional value must delete its JSON key");
+    assert.equal(Object.hasOwn(app.providers.customerSettings.getProperty("nephi_home").commonAnswers, "earlyCheckInPolicy"), false, "omitting the optional early check-in value must clear its JSON key");
     assert.equal(app.providers.customerSettings.getProperty("nephi_home").commonAnswers.checkInTime, "15:00");
     assert.equal(app.providers.customerSettings.getProperty("nephi_home").commonAnswers.checkOutTime, "11:00");
     assert.equal(app.providers.customerSettings.getProperty("other_home").commonAnswers.latestArrivalTime, "20:00", "clearing one property must not change another property");

@@ -24,8 +24,10 @@ const base = {
 };
 
 (() => {
-  const expectedKeys = ["singing", "electric_mahjong", "mahjong", "board_games", "game_console", "projector", "billiards", "darts", "table_football", "massage_chair", "bbq", "splash_pool", "swimming_pool", "children_play_area", "slide", "sandpit", "outdoor_yard", "shared_living_room", "kitchen", "hot_pot_equipment", "streaming_media"];
+  const expectedKeys = ["singing", "electric_mahjong", "mahjong", "board_games", "game_console", "projector", "billiards", "darts", "table_football", "bbq", "splash_pool", "swimming_pool", "children_play_area", "slide", "sandpit", "outdoor_yard", "shared_living_room", "kitchen", "hot_pot_equipment"];
   assert.deepEqual(PRESET_AMENITIES.map((item) => item.key), expectedKeys);
+  assert.equal(normalizeEntertainmentAmenities([{ key: "massage_chair", provided: true, statusSource: "operator", source: "preset" }]).some((item) => item.key === "massage_chair"), false, "massage chairs must not remain a formal bundle option");
+  assert.equal(normalizeEntertainmentAmenities([{ key: "streaming_media", provided: true, statusSource: "operator", source: "preset" }]).some((item) => item.key === "streaming_media"), false, "Netflix/streaming must not remain a formal bundle option");
   for (const type of ["單人房", "雙人房", "三人房", "四人房", "五人房", "六人房", "八人房", "家庭房", "親子房", "和室", "通鋪", "套房", "Villa", "其他"]) assert.ok(ROOM_TYPES.includes(type));
   const normalized = normalizeEntertainmentAmenities(base.bundles[0].entertainmentAmenities);
   assert.equal(normalized.find((item) => item.key === "bbq").provided, null, "legacy checkbox false is not an explicit operator denial");
@@ -89,6 +91,8 @@ const base = {
   assert.equal(onboardingHtml.includes("Channel ID"), false);
   assert.ok(onboardingJs.includes("房型名稱") && onboardingJs.includes("entertainmentAmenities"));
   assert.ok(adminHtml.includes("bundleAmenities") && adminJs.includes("entertainmentAmenities"));
+  assert.equal(adminJs.includes('["massage_chair","按摩椅"]'), false, "admin bundle options must not expose massage chairs");
+  assert.equal(adminJs.includes('["streaming_media","Netflix／影音串流"]'), false, "admin bundle options must not expose Netflix/streaming");
   assert.match(onboardingJs, /未知.*有.*沒有/s, "onboarding equipment must expose a tri-state choice");
   assert.match(adminJs, /未知.*有.*沒有/s, "admin equipment must expose a tri-state choice");
   assert.equal(onboardingJs.includes('pool:"是否有戲水池或游泳池"'), false, "onboarding FAQ must not duplicate equipment existence authority");

@@ -226,14 +226,18 @@ function propertyFactTask(taskId, type, sourceText, category, canonicalCandidate
   const beta = property("property_beta", "Beta");
   beta.propertyFacts = beta.propertyFacts.filter((item) => item.canonicalId !== "travel_subsidy");
   const alphaLatestArrivalText = "最晚22:00，超過請提前聯絡";
-  alpha.commonAnswers = { ...alpha.commonAnswers, checkInTime: "15:00", latestArrivalTime: alphaLatestArrivalText, checkOutTime: "11:00" };
-  beta.commonAnswers = { ...beta.commonAnswers, checkInTime: "14:00", latestArrivalTime: "20:00", checkOutTime: "10:00" };
+  const alphaEarlyCheckInText = "Alpha early check-in requires confirmation";
+  alpha.commonAnswers = { ...alpha.commonAnswers, checkInTime: "15:00", earlyCheckInPolicy: alphaEarlyCheckInText, latestArrivalTime: alphaLatestArrivalText, checkOutTime: "11:00" };
+  beta.commonAnswers = { ...beta.commonAnswers, checkInTime: "14:00", earlyCheckInPolicy: "Beta early check-in policy", latestArrivalTime: "20:00", checkOutTime: "10:00" };
 
   const alphaCatalog = buildPropertyCatalog(alpha);
   const alphaGeneralCheckIn = alphaCatalog.policies.find((item) => item.canonicalId === "check_in");
+  const alphaEarlyCheckIn = alphaCatalog.policies.find((item) => item.canonicalId === "check_in__early_arrival_policy");
   const alphaLatestArrival = alphaCatalog.policies.find((item) => item.canonicalId === "check_in__latest_arrival_policy");
   const betaLatestArrival = buildPropertyCatalog(beta).policies.find((item) => item.canonicalId === "check_in__latest_arrival_policy");
   assert.equal(alphaGeneralCheckIn.answer, "15:00", "general check-in must remain backed only by checkInTime");
+  assert.equal(alphaEarlyCheckIn.answer, alphaEarlyCheckInText, "early check-in must have its own property-scoped formal fact");
+  assert.equal(buildPropertyCatalog(beta).policies.find((item) => item.canonicalId === "check_in__early_arrival_policy").answer, "Beta early check-in policy", "early check-in facts must remain property-scoped");
   assert.ok(alphaLatestArrival, "latestArrivalTime must create check_in__latest_arrival_policy");
   assert.ok(betaLatestArrival, "each property must create its own latest-arrival detail identity");
   assert.deepEqual(

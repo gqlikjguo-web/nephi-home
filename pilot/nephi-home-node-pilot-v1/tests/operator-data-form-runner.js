@@ -33,9 +33,13 @@ const { createJsonProviders } = require("../lib/providers/json-providers");
     const adminResponse = await fetch(`${running.url}/admin`);
     assert.equal(adminResponse.status, 200);
     const html = await adminResponse.text();
-    for (const id of ["propertyFactsForm", "propertyFactsList", "propertyFactAdd", "propertyFactsStatus"]) {
+    for (const id of ["propertyFactsForm", "propertyFactsList", "propertyFactsStatus"]) {
       assert.equal(html.includes(`id="${id}"`), true, `admin form must expose ${id}`);
     }
+    assert.equal(html.includes('id="propertyFactAdd"'), false, "admin must not expose an entry for adding arbitrary formal facts");
+    const adminScriptResponse = await fetch(`${running.url}/assets/admin.js`);
+    assert.equal(adminScriptResponse.status, 200);
+    assert.equal((await adminScriptResponse.text()).includes('$("propertyFactAdd").onclick'), false, "admin script must not retain the removed add-fact entrypoint");
     assert.equal(html.includes('id="equipmentFactsList"'), true, "admin form must expose controlled high-frequency equipment");
     assert.equal(html.includes('id="controlledPolicyFactsList"'), false, "controlled policy cards must be grouped in the shared equipment card layout");
     assert.equal(html.includes('id="controlledPolicyFactsTemplate"'), false, "breakfast and pet cards must not use a separate full-width template");

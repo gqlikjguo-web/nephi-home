@@ -21,6 +21,7 @@ const LOCATION_ALIASES = Object.freeze(["location", "navigation", "directions", 
 // profile form. All other property facts must come from propertyFacts.
 const PROPERTY_SETTING_CATALOG = Object.freeze([
   ["checkInTime", "check_in", "入住", "policy"],
+  ["earlyCheckInPolicy", "check_in__early_arrival_policy", "提前入住規則", "policy"],
   ["latestArrivalTime", "check_in__latest_arrival_policy", "最晚入住時間", "policy"],
   ["checkOutTime", "check_out", "退房", "policy"]
 ]);
