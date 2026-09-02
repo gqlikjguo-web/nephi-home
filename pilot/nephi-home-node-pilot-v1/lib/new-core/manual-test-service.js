@@ -1,43 +1,19 @@
 "use strict";
 
 const crypto = require("node:crypto");
-const { CAPABILITY_REGISTRY } = require("../conversation-engine-v2/capability-registry");
-const { buildPropertyCatalog } = require("../conversation-engine-v2/property-catalog");
 const { createConversationStateV3 } = require("../conversation-contracts/conversation-state-v3");
-const { buildContextSnapshotV3, executionConditionsV3, reduceConversationStateV3 } = require("../conversation-engine-v2/conversation-state-v3-reducer");
-const { buildCanonicalFormalRequest, buildCanonicalQueryPlan, resultForNotReady } = require("../conversation-engine-v2/formal-request");
-const { executeCanonicalQueryPlans } = require("../conversation-engine-v2/capability-executor");
-const { buildResponsePlan } = require("../conversation-engine-v2/response-planner");
-const { composeControlledReply } = require("../conversation-engine-v2/controlled-composer");
-const { validateClaims } = require("../conversation-engine-v2/claim-validator");
 const { buildFinalDecision } = require("../conversation-engine-v2/final-decision");
 const { buildFinalResponse } = require("../conversation-engine-v2/final-response-renderer");
-const { applyControlledReplyRules } = require("../custom-reply-rules");
-const {
-  buildC01PublicCatalog,
-  buildC01TrustedCanonicalizerCatalog,
-  buildUnderstandingTurnInput,
-  buildPublicCatalogIdentityProjection,
-  catalogCategoryToSubjectKind
-} = require("./turn-input-adapter");
-const { contextRelationEvidenceForValidatedLink } = require("./context-link-validator");
-const { projectCapabilityRegistry } = require("./semantic-unit-validator");
-const { createLifecycleDecision } = require("./lifecycle-manager");
-const { createUnitReplyRoutingRegistry, createUnitReadiness, createTrustedOperatorSafetyPolicy, createUnitRoutingDecision } = require("./unit-reply-router");
-const { createCanonicalizerInputItem, c08ExecutionDiagnosticFor, executeCanonicalizerInputItem } = require("./canonical-execution-adapter");
-const { aggregateUnitOutcomes } = require("./unit-aggregator");
-const { adaptLifecycleDecisionsToStateV3 } = require("./state-v3-lifecycle-adapter");
-const { callOpenAIUnderstandingV1, OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC } = require("../providers/openai-understanding-v1");
+const { buildC01TrustedCanonicalizerCatalog } = require("./turn-input-adapter");
+const { c08ExecutionDiagnosticFor } = require("./canonical-execution-adapter");
 const { NEW_CORE_OPENAI_MODEL } = require("./openai-model-authority");
 const { NewCoreManualTestRepository } = require("./manual-test-repository");
-const { publicAvailabilityUrlForProperty } = require("../public-property-routing");
 
 const PROPERTY_ID = "nephi_home";
 const CHANNEL = "new-core-manual-test";
 const REVIEW_STATUSES = new Set(["CORRECT", "PROBLEM"]);
 const PROBLEM_CATEGORIES = new Set(["Luna理解錯", "回覆內容錯", "不該回卻回了", "該回卻沒回", "應該追問", "不該轉人工", "應該轉人工", "Context承接錯", "日期錯", "房型/包棟錯", "房價錯", "房況錯", "設備/政策資料錯", "其他"]);
 const SIDE_EFFECT_COUNTERS = Object.freeze({ LINE_SEND: 0, PRODUCTION_STATE_WRITE: 0, PRODUCTION_MESSAGE_WRITE: 0, PRODUCTION_REVIEW_WRITE: 0, BOOKING_MUTATION: 0, FACTS_PROPERTY_MUTATION: 0 });
-const HANDOFF_CAPABILITIES = new Set(["booking_operator_request", "high_risk"]);
 const DENIED_KEYS = /(?:api.?key|authorization|cookie|credential|token|secret|headers?|prompt|reasoning|raw|database.?url|private.?notes?)/iu;
 
 function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
@@ -54,17 +30,6 @@ function assertSafe(value) {
   }
 }
 function bounded(value, limit = 500) { return String(value == null ? "" : value).slice(0, limit); }
-function normalizeManualTestFailureRefs(values = []) {
-  const refs = values
-    .filter((item, index) => (
-      item && typeof item.unitId === "string" && item.unitId.length > 0 && item.unitId.length <= 160
-      && typeof item.failureCode === "string" && item.failureCode.length > 0 && item.failureCode.length <= 160
-      && values.findIndex((candidate) => candidate && candidate.unitId === item.unitId) === index
-    ))
-    .map((item) => ({ unitId: item.unitId, failureCode: item.failureCode }));
-  refs.forEach(Object.freeze);
-  return Object.freeze(refs);
-}
 function projectFailureUnit(unit) {
   if (!unit || typeof unit !== "object") return null;
   const temporal = unit.temporalCandidate;
@@ -217,158 +182,42 @@ function createSideEffectGuard() {
     factsPropertyMutation: () => { counters.FACTS_PROPERTY_MUTATION += 1; blocked("TEST_FACTS_PROPERTY_MUTATION_FORBIDDEN"); }
   };
 }
-const buildManualTestPublicCatalog = (property, catalog) => (
-  buildC01PublicCatalog(property, catalog, Object.keys(CAPABILITY_REGISTRY))
-);
-function turnStateSnapshot(state, scope, now) {
-  const context = buildContextSnapshotV3(state, { ...scope, now });
-  const tasks = new Map((state.tasks || []).map((task) => [task.taskId, task]));
-  return { scope, referenceableCycles: context.cycles.map((cycle) => {
-    const task = tasks.get(cycle.requestCycleId);
-    const topic = cycle.confirmedInputs.topic;
-    const inventory = cycle.confirmedInputs.inventory;
-    const requestKind = cycle.requestKind;
-    const definition = CAPABILITY_REGISTRY[requestKind];
-    const capability = requestKind === "pricing" ? "price"
-      : requestKind === "location" ? "property_fact"
-        : definition && definition.acceptedCandidateTypes.includes(requestKind)
-          ? requestKind
-          : definition && definition.acceptedCandidateTypes[0];
-    const subjectKind = catalogCategoryToSubjectKind(topic.category)
-      || (inventory.mode === "any" ? "property" : null);
-    return {
-      requestCycleId: cycle.requestCycleId,
-      requestKind,
-      capability,
-      status: cycle.status === "needs_clarification" ? "pending" : cycle.status,
-      expiresAt: cycle.contextReuseExpiresAt,
-      subject: { kind: subjectKind, catalogIdentity: topic.canonicalId || inventory.entityId || null },
-      missingFields: [...new Set(task && task.missingFields || [])],
-      confirmedValues: {
-        checkIn: cycle.confirmedInputs.stay.checkIn,
-        checkOut: cycle.confirmedInputs.stay.checkOut,
-        guestCount: cycle.confirmedInputs.stay.guests,
-        searchFrom: cycle.confirmedInputs.stay.searchRange && cycle.confirmedInputs.stay.searchRange.from || null,
-        searchTo: cycle.confirmedInputs.stay.searchRange && cycle.confirmedInputs.stay.searchRange.to || null
-      },
-      slotRefs: [...new Set(task && task.knownFields || [])]
-    };
-  }) };
-}
-function bindRecentConversationToCycles(history, state, referenceableCycles) {
-  const allowed = new Set(referenceableCycles.map((cycle) => cycle.requestCycleId));
-  const cycleIdsByTimestamp = new Map();
-  for (const task of state.tasks || []) {
-    if (!allowed.has(task.taskId)) continue;
-    for (const timestamp of new Set([task.createdAt, task.updatedAt])) {
-      const ids = cycleIdsByTimestamp.get(timestamp) || [];
-      ids.push(task.taskId);
-      cycleIdsByTimestamp.set(timestamp, ids);
-    }
-  }
-  return history.map((turn) => ({
-    eventId: turn.turnId,
-    messageRef: turn.turnId,
-    role: "guest",
-    timestamp: turn.timestamp,
-    messageKind: "text",
-    messageText: turn.input,
-    referenceableCycleIds: [...new Set(cycleIdsByTimestamp.get(turn.timestamp) || [])]
-  }));
-}
+const {
+  bindRecentConversationToCycles,
+  buildPublicCatalog: buildManualTestPublicCatalog,
+  executeNewCoreTurn,
+  noExecutionDecision,
+  normalizeFailureRefs,
+  turnStateSnapshot
+} = require("./application-service");
+const normalizeManualTestFailureRefs = normalizeFailureRefs;
 const buildManualTestCanonicalizerCatalog = buildC01TrustedCanonicalizerCatalog;
-function legacyTaskResult(execution) {
-  const base = { taskId: execution.taskId, type: execution.type, facts: execution.facts || {} };
-  if (["answered", "no_availability"].includes(execution.outcome)) return { ...base, status: "answered" };
-  if (execution.outcome === "not_ready") return { ...base, status: "needs_clarification", missingInputs: execution.missingFields || [] };
-  return { ...base, status: "needs_human", reason: execution.reason || execution.outcome, review: true };
-}
-function routeAction(dispositions) {
-  if (dispositions.includes("HANDOFF")) return "handoff";
-  if (dispositions.includes("CLARIFY")) return "clarification";
-  return dispositions.includes("ANSWER") ? "reply" : "no_reply";
-}
-function noExecutionDecision(outcomes, dispositions, missingFields, failedUnits = []) {
-  const action = routeAction(dispositions);
-  if (dispositions.length === 0 && failedUnits.length > 0) {
-    return buildFinalDecision({ plannerFailure: failedUnits[0].failureCode });
-  }
-  if (action === "no_reply") return buildFinalDecision({ executionOutcomes: [], noReplyReason: "new_core_no_reply" });
-  if (action === "handoff") return buildFinalDecision({ executionOutcomes: [{ taskId: "new-core-handoff", type: "human_help", outcome: "unknown", reason: "human_help" }] });
-  if (action === "clarification") return buildFinalDecision({ executionOutcomes: [{ taskId: "new-core-clarify", type: "price", outcome: "not_ready", readinessStatus: "missing_information", missingFields }] });
-  return buildFinalDecision({ executionOutcomes: outcomes });
-}
 
-async function executeNewCoreManualTurn({ input, state, property, resolver, providerConfig, publicBaseUrl, sideEffectGuard, now }) {
-  if (!sideEffectGuard || ["lineSend", "productionStateWrite", "productionMessageWrite", "productionReviewWrite", "bookingMutation", "factsPropertyMutation"].some((method) => typeof sideEffectGuard[method] !== "function")) throw failure("TEST_SIDE_EFFECT_GUARD_REQUIRED", 500, "人工測試副作用隔離未配置");
-  const scope = state.scope;
-  const catalog = buildPropertyCatalog(property);
-  const c01 = buildUnderstandingTurnInput({ coreVersion: "new-core-v1", traceId: input.traceId, turnId: input.turnId, verifiedPropertyBinding: { propertyId: PROPERTY_ID, channel: CHANNEL }, verifiedConversationScope: { channel: CHANNEL, userId: scope.userId }, sourceEvents: [{ eventId: input.turnId, messageRef: input.turnId, role: "guest", timestamp: now, messageKind: "text", messageText: input.message }], recentConversation: input.recentConversation, stateV3Snapshot: turnStateSnapshot(state, scope, now), publicCatalog: buildManualTestPublicCatalog(property, catalog) });
-  const understanding = await callOpenAIUnderstandingV1(c01, { apiKey: providerConfig.apiKey });
-  const registry = createUnitReplyRoutingRegistry(projectCapabilityRegistry(CAPABILITY_REGISTRY));
-  const c08Catalog = buildManualTestCanonicalizerCatalog(c01, catalog);
-  const projection = buildPublicCatalogIdentityProjection(c01);
-  const outcomes = [];
-  for (const [index, unit] of understanding.validatedUnits.entries()) {
-    const link = understanding.validatedContextLinks.find((item) => item.unitId === unit.unitId);
-    const lifecycle = createLifecycleDecision({ lifecycleDecisionId: `manual-${input.turnId}-${index}`, unit, validatedContextLink: link });
-    if (!lifecycle.ok) { outcomes.push({ unit, failure: { layer: "C06", failureCode: lifecycle.code } }); continue; }
-    const readiness = createUnitReadiness({ unit, lifecycleDecision: lifecycle.value, routingRegistry: registry });
-    if (!readiness.ok) { outcomes.push({ unit, lifecycleDecision: lifecycle.value, failure: { layer: "C07", failureCode: readiness.code } }); continue; }
-    const safety = HANDOFF_CAPABILITIES.has(unit.capability) ? createTrustedOperatorSafetyPolicy({ unit, lifecycleDecision: lifecycle.value, routingRegistry: registry }) : null;
-    const routing = createUnitRoutingDecision({ unit, lifecycleDecision: lifecycle.value, routingRegistry: registry, readiness: readiness.value, operatorSafetyPolicy: safety && safety.ok ? safety.value : null });
-    if (!routing.ok) { outcomes.push({ unit, lifecycleDecision: lifecycle.value, readiness: readiness.value, failure: { layer: "C07", failureCode: routing.code } }); continue; }
-    const c08 = routing.value.disposition === "ANSWER" ? createCanonicalizerInputItem({ unit, lifecycleDecision: lifecycle.value, routingDecision: routing.value, understandingTurnInput: c01, canonicalizerCatalog: c08Catalog, publicCatalogIdentityProjection: projection }) : { ok: true, value: null };
-    outcomes.push({ unit, lifecycleDecision: lifecycle.value, readiness: readiness.value, routingDecision: routing.value, canonicalItem: c08.ok ? c08.value : null, failure: c08.ok ? null : { layer: "C08", failureCode: c08.code } });
+async function executeNewCoreManualTurn(args) {
+  const { sideEffectGuard } = args;
+  if (!sideEffectGuard || ["lineSend", "productionStateWrite", "productionMessageWrite", "productionReviewWrite", "bookingMutation", "factsPropertyMutation"].some((method) => typeof sideEffectGuard[method] !== "function")) {
+    throw failure("TEST_SIDE_EFFECT_GUARD_REQUIRED", 500, "人工測試副作用隔離未配置");
   }
-  const contextSnapshot = buildContextSnapshotV3(state, { ...scope, now });
-  const canonicalItems = [];
-  const successful = outcomes.filter((item) => item.routingDecision);
-  for (const outcome of successful.filter((x) => x.canonicalItem)) {
-    const result = executeCanonicalizerInputItem({ canonicalizerInputItem: outcome.canonicalItem, catalog: c08Catalog, publicCatalogIdentityProjection: projection, contextSnapshot });
-    outcome.c08Diagnostic = c08ExecutionDiagnosticFor(result);
-    if (!result.ok) { outcome.canonicalItem = null; outcome.failure = { layer: "C08", failureCode: result.code }; continue; }
-    outcome.canonicalItem = result.value;
-    canonicalItems.push(result.value);
-  }
-  const failedUnits = normalizeManualTestFailureRefs([
-    ...understanding.failedUnits,
-    ...outcomes.filter((x) => x.failure).map((x) => ({ unitId: x.unit.unitId, failureCode: x.failure.failureCode }))
-  ]);
-  const aggregation = aggregateUnitOutcomes({ turnId: input.turnId, validatedUnits: successful.map((x) => x.unit), lifecycleDecisions: successful.map((x) => x.lifecycleDecision), routingDecisions: successful.map((x) => x.routingDecision), canonicalItems, failedUnits });
-  if (!aggregation.ok) { const error = new Error(aggregation.code); error.code = aggregation.code; throw error; }
-  const adapted = adaptLifecycleDecisionsToStateV3({ decisions: successful.map((x) => x.lifecycleDecision), aggregationResult: aggregation.value, previous: state });
-  if (!adapted.ok) { const error = new Error(adapted.code); error.code = adapted.code; throw error; }
-  const formalRequests = canonicalItems.map((item) => {
-    const outcome = successful.find((candidate) => candidate.unit.unitId === item.unitId);
-    return buildCanonicalFormalRequest({ property, canonicalRequest: item.canonicalRequest, requestCycleId: outcome.lifecycleDecision.targetRequestCycleId || outcome.unit.unitId, confirmedInputs: executionConditionsV3(state, item) });
+  const result = await executeNewCoreTurn({
+    ...args,
+    scope: args.state.scope,
+    lifecycleDecisionIdPrefix: "manual"
   });
-  const queryPlans = formalRequests.map(buildCanonicalQueryPlan).filter(Boolean);
-  const rawExecutionOutcomes = [...formalRequests.filter((x) => x.readiness.status !== "ready").map(resultForNotReady), ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: resolver.availability, availableDatesResolver: resolver.availableDates, priceOverrides: resolver.priceOverrides(), datePriceClassifications: resolver.dateClassifications() })];
-  const executionOutcomes = applyControlledReplyRules({ rules: resolver.customReplies(), property, canonicalItems, executionOutcomes: rawExecutionOutcomes, now });
-  const taskResults = executionOutcomes.map(legacyTaskResult);
-  const responsePlan = buildResponsePlan({ propertyId: PROPERTY_ID, taskResults, inputTaskIds: canonicalItems.map((x) => x.canonicalRequest.taskId), canonicalRequests: canonicalItems.map((x) => x.canonicalRequest), reviewActions: [] });
-  const replyText = composeControlledReply(responsePlan);
-  const claimValidation = validateClaims(replyText, responsePlan, canonicalItems.map((x) => x.canonicalRequest.taskId));
-  const dispositions = successful.map((x) => x.routingDecision.disposition);
-  const missingFields = successful.flatMap((x) => x.routingDecision.missingGuestFields);
-  const finalDecision = executionOutcomes.length ? buildFinalDecision({ executionOutcomes, claimValidation }) : noExecutionDecision(executionOutcomes, dispositions, missingFields, failedUnits);
-  const finalResponse = buildFinalResponse({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation, publicAvailabilityUrl: publicAvailabilityUrlForProperty(publicBaseUrl, property) });
-  const nextState = reduceConversationStateV3({ previous: state, canonicalItems, formalRequests, executionOutcomes, clarificationTaskIds: finalDecision.action === "clarification" ? finalDecision.executionSummary.notReadyTaskIds : [], lifecycleOperations: adapted.value.lifecycleOperations, taskCreations: adapted.value.taskCreations, canonicalTaskBindings: adapted.value.canonicalTaskBindings, scope: { ...scope, now } });
-  const adapterOutput = adapted.value;
-  const startClarifyOutcomes = aggregation.value.unitOutcomes.filter((outcome) => (
+  const { artifacts, ...coreResult } = result;
+  const { understanding, outcomes, aggregation, adapted, previousState, contextCandidates } = artifacts;
+  const startClarifyOutcomes = aggregation.unitOutcomes.filter((outcome) => (
     outcome.lifecycleDecision.action === "START"
     && outcome.routingDecision.disposition === "CLARIFY"
     && outcome.routingDecision.requiresCanonicalExecution === false
     && outcome.canonicalItem === null
   ));
-  const zeroCreationReason = adapterOutput.taskCreations.length > 0 ? null
+  const zeroCreationReason = adapted.taskCreations.length > 0 ? null
     : startClarifyOutcomes.length > 0
       ? { reason: "START_CLARIFY_MAPPING_EMPTY", failureCode: "START_CLARIFY_TASK_CREATION_MISSING" }
       : { reason: "NO_START_CLARIFY_OUTCOME", failureCode: null };
   const stateTransitionDiagnostics = {
-    traceId: input.traceId,
-    c09Outcomes: aggregation.value.unitOutcomes.map((outcome) => ({
+    traceId: args.input.traceId,
+    c09Outcomes: aggregation.unitOutcomes.map((outcome) => ({
       unitId: outcome.unitId,
       purpose: outcome.unit.purpose,
       capability: outcome.unit.capability,
@@ -378,22 +227,28 @@ async function executeNewCoreManualTurn({ input, state, property, resolver, prov
       canonicalItemPresent: outcome.canonicalItem !== null,
       failureCode: outcome.failure && outcome.failure.failureCode || null
     })),
-    taskCreations: adapterOutput.taskCreations,
-    taskCreationCount: adapterOutput.taskCreations.length,
-    reducerTaskCreationInputCount: adapterOutput.taskCreations.length,
-    lifecycleOperationCount: adapterOutput.lifecycleOperations.length,
-    reducerInputTaskCount: state.tasks.length,
-    reducerOutputTaskCount: nextState.tasks.length,
+    taskCreations: adapted.taskCreations,
+    taskCreationCount: adapted.taskCreations.length,
+    reducerTaskCreationInputCount: adapted.taskCreations.length,
+    lifecycleOperationCount: adapted.lifecycleOperations.length,
+    reducerInputTaskCount: previousState.tasks.length,
+    reducerOutputTaskCount: coreResult.state.tasks.length,
     zeroCreationReason
   };
-  const provider = understanding[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC] || {};
-  const failure = outcomes.find((x) => x.failure) && outcomes.find((x) => x.failure).failure || understanding.failedUnits[0] && { layer: understanding.failedUnits[0].boundary || "C03-C05", failureCode: understanding.failedUnits[0].failureCode } || null;
-  const contextCandidates = understanding.validatedContextLinks.map((link) => {
-    const unit = understanding.validatedUnits.find((candidate) => candidate.unitId === link.unitId);
-    const relation = unit ? contextRelationEvidenceForValidatedLink(link, unit) : null;
-    return { ...link, resolvedTargetRequestCycleId: relation && relation.resolvedTargetRequestCycleId };
-  });
-  return { state: nextState, understanding: { summary: understanding.validatedUnits.map((x) => `${x.purpose}/${x.capability}/${x.subject.kind}`).join("；"), units: understanding.validatedUnits.map((x) => ({ purpose: x.purpose, capability: x.capability, subject: x.subject, temporal: x.temporalCandidate, guestCount: x.slotCandidates.find((slot) => slot.slot === "guest_count")?.value || null })) }, lifecycle: successful.map((x) => x.lifecycleDecision.action), routing: dispositions, resolver: { name: "existing canonical Resolver", foundOfficialData: executionOutcomes.some((x) => x.outcome === "answered"), status: executionOutcomes.map((x) => x.outcome).join(",") || "NOT_APPLICABLE" }, finalDecision, finalResponse, earliestFailure: failure, failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }), c08Diagnostics: outcomes.filter((x) => x.c08Diagnostic).map((x) => ({ unitId: x.unit.unitId, ...x.c08Diagnostic })), contextRelationDiagnostics: { traceId: input.traceId, candidates: contextCandidates, referenceableCycles: c01.referenceableCycles }, stateTransitionDiagnostics, requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL, resolvedModel: provider.resolvedModel || "" };
+  return {
+    ...coreResult,
+    failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }),
+    c08Diagnostics: outcomes.filter((outcome) => outcome.c08ExecutionResult).map((outcome) => ({
+      unitId: outcome.unit.unitId,
+      ...c08ExecutionDiagnosticFor(outcome.c08ExecutionResult)
+    })),
+    contextRelationDiagnostics: {
+      traceId: args.input.traceId,
+      candidates: contextCandidates,
+      referenceableCycles: artifacts.c01.referenceableCycles
+    },
+    stateTransitionDiagnostics
+  };
 }
 
 function createNewCoreManualTestService({ persistence, providers, service, factsProviders = providers, factsService = service, apiKey, publicBaseUrl = "", now = () => new Date(), executeTurn = executeNewCoreManualTurn } = {}) {

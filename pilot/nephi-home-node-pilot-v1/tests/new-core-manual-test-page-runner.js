@@ -8,11 +8,13 @@ const path = require("node:path");
 const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const manualTestService = require("../lib/new-core/manual-test-service");
+const sharedApplicationService = require("../lib/new-core/application-service");
 const { bindRecentConversationToCycles, buildManualTestFailureDiagnostics, noExecutionDecision, normalizeManualTestFailureRefs, turnStateSnapshot } = manualTestService;
 const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property-catalog");
 const { resolveEntity } = require("../lib/conversation-engine-v2/entity-resolver");
 const { aggregateUnitOutcomes } = require("../lib/new-core/unit-aggregator");
 const { publicAvailabilityUrlForProperty } = require("../lib/public-property-routing");
+const { createConversationStateV3 } = require("../lib/conversation-contracts/conversation-state-v3");
 
 const root = path.resolve(__dirname, "..");
 const now = () => new Date("2026-08-29T12:00:00.000Z");
@@ -88,6 +90,16 @@ async function json(url, method = "GET", body, sentCookie = "") {
 }
 
 (async () => {
+  assert.equal(typeof sharedApplicationService.executeNewCoreTurn, "function",
+    "manual-test must delegate the production new-core turn to the shared application service");
+  assert.equal(typeof manualTestService.executeNewCoreManualTurn, "function",
+    "manual-test must expose its thin diagnostic wrapper around the shared executor");
+  assert.equal(noExecutionDecision, sharedApplicationService.noExecutionDecision,
+    "failed-unit handoff and formal NO_REPLY must share one FinalDecision boundary");
+  assert.equal(turnStateSnapshot, sharedApplicationService.turnStateSnapshot,
+    "C01 state projection must be owned by the shared application service");
+  assert.equal(bindRecentConversationToCycles, sharedApplicationService.bindRecentConversationToCycles,
+    "history-to-cycle binding must be owned by the shared application service");
   assert.equal(typeof noExecutionDecision, "function", "the no-execution FinalDecision boundary must be contract-testable");
   const failedUnitRefs = Object.freeze([Object.freeze({ unitId: "unit-failed", failureCode: "UNIT_MEANING_UNSUPPORTED" })]);
   assert.equal(noExecutionDecision([], ["NO_REPLY"], [], failedUnitRefs).action, "no_reply",
@@ -100,6 +112,31 @@ async function json(url, method = "GET", body, sentCookie = "") {
     "an ANSWER disposition without execution cannot fabricate an answer");
   assert.equal(noExecutionDecision([], ["CLARIFY"], ["stay.checkIn"], []).action, "clarification");
   assert.equal(noExecutionDecision([], ["HANDOFF"], [], []).action, "handoff");
+  const sharedScope = { propertyId: "shared-property", channel: "shared-channel", userId: "shared-user" };
+  const sharedState = createConversationStateV3({
+    ...sharedScope, tasks: [], createdAt: now().toISOString(), updatedAt: now().toISOString(), expiresAt: now().toISOString()
+  });
+  let sharedResolverCalls = 0;
+  const sharedFailedTurn = await sharedApplicationService.executeNewCoreTurn({
+    input: { turnId: "shared-turn", traceId: "shared-trace", message: "無法理解的正式問題", recentConversation: [] },
+    state: sharedState,
+    property: { propertyId: sharedScope.propertyId, displayName: "Shared Property", timezone: "Asia/Taipei", rooms: [], propertyFacts: [], commonAnswers: {}, businessProfile: {} },
+    resolver: {
+      availability: () => { sharedResolverCalls += 1; throw new Error("unexpected availability query"); },
+      availableDates: () => { sharedResolverCalls += 1; throw new Error("unexpected available-dates query"); },
+      priceOverrides: () => [], dateClassifications: () => [], customReplies: () => []
+    },
+    providerConfig: { apiKey: "test-key" }, publicBaseUrl: "https://test.example", now: now().toISOString(),
+    understandingProvider: async () => ({
+      validatedUnits: [], validatedContextLinks: [],
+      failedUnits: [{ unitId: "shared-failed-unit", failureCode: "UNIT_MEANING_UNSUPPORTED", boundary: "C03" }]
+    })
+  });
+  assert.equal(sharedFailedTurn.finalDecision.action, "handoff");
+  assert.equal(sharedFailedTurn.finalDecision.reasonCode, "UNIT_MEANING_UNSUPPORTED");
+  assert.equal(sharedFailedTurn.finalResponse.action, "handoff");
+  assert.equal(sharedResolverCalls, 0, "failed understanding must not execute a Resolver");
+  assert.deepEqual(sharedFailedTurn.state.tasks, [], "failed understanding must not create conversation tasks");
   assert.equal(typeof manualTestService.buildManualTestPublicCatalog, "function",
     "manual-test C01 must expose its formal public catalog projection for contract verification");
   assert.equal(typeof manualTestService.buildManualTestCanonicalizerCatalog, "function",
@@ -309,7 +346,12 @@ async function json(url, method = "GET", body, sentCookie = "") {
     const providerFailure = await json(`${running.url}/api/admin/new-core-test/sessions/${id}/turns`, "POST", { input: "provider failure" }); assert.equal(providerFailure.status, 201); assert.equal(providerFailure.body.data.diagnostic.failureCode, "UNDERSTANDING_PROVIDER_FAILURE"); assert.equal(providerFailure.body.data.diagnostic.finalResponse.action, "handoff");
     const sideEffect = await json(`${running.url}/api/admin/new-core-test/sessions/${id}/turns`, "POST", { input: "side effect" }); assert.equal(sideEffect.status, 201); assert.equal(sideEffect.body.data.diagnostic.failureCode, "TEST_LINE_SEND_FORBIDDEN"); assert.equal(sideEffect.body.data.diagnostic.sideEffectCounters.LINE_SEND, 1);
     assert.equal(calls, 3);
-    const source = fs.readFileSync(path.join(root, "lib/new-core/manual-test-service.js"), "utf8"); assert.match(source, /callOpenAIUnderstandingV1/); assert.match(source, /reduceConversationStateV3/); assert.match(source, /executeCanonicalQueryPlans/); assert.match(source, /buildFinalDecision/); assert.match(source, /buildFinalResponse/); assert.doesNotMatch(source, /gpt-4\.1-mini|process\.env\.OPENAI_MODEL|messagingApi|appendMessageLog|setConversationState/);
+    const source = fs.readFileSync(path.join(root, "lib/new-core/manual-test-service.js"), "utf8");
+    const sharedSource = fs.readFileSync(path.join(root, "lib/new-core/application-service.js"), "utf8");
+    assert.match(source, /executeNewCoreTurn/);
+    assert.doesNotMatch(source, /function noExecutionDecision|function turnStateSnapshot|function bindRecentConversationToCycles|callOpenAIUnderstandingV1|reduceConversationStateV3|executeCanonicalQueryPlans/);
+    assert.match(sharedSource, /callOpenAIUnderstandingV1/); assert.match(sharedSource, /reduceConversationStateV3/); assert.match(sharedSource, /executeCanonicalQueryPlans/); assert.match(sharedSource, /buildFinalDecision/); assert.match(sharedSource, /buildFinalResponse/);
+    assert.doesNotMatch(source, /gpt-4\.1-mini|process\.env\.OPENAI_MODEL|messagingApi|appendMessageLog|setConversationState/);
     const serverSource = fs.readFileSync(path.join(root, "server.js"), "utf8");
     assert.match(serverSource, /NEW_CORE_MANUAL_TEST_FACTS_DATABASE_URL/);
     assert.match(serverSource, /NEW_CORE_MANUAL_TEST_FACTS_AUTHORITY_REQUIRED/);
