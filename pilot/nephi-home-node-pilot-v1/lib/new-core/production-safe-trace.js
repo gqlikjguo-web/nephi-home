@@ -19,6 +19,13 @@ function hash(value) {
   return `h:${crypto.createHash("sha256").update(text).digest("hex")}`;
 }
 
+function diagnosticText(value, limit = 500) {
+  return String(value === undefined || value === null ? "" : value).slice(0, limit)
+    .replace(/\bBearer\s+\S+/giu, "[REDACTED]")
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/gu, "[REDACTED]")
+    .replace(/\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/gu, "[REDACTED]");
+}
+
 function list(value, mapper, limit = 40) {
   return (Array.isArray(value) ? value : []).slice(0, limit).map(mapper).filter(Boolean);
 }
@@ -132,6 +139,35 @@ function resolverRequest(value) {
   };
 }
 
+function rejectedEvidence(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    fieldPath: token(value.fieldPath),
+    validationReason: token(value.validationReason),
+    rejectedUnitIndex: Number.isInteger(value.rejectedUnitIndex) ? value.rejectedUnitIndex : null,
+    semantic: value.semantic ? {
+      purpose: token(value.semantic.purpose), capability: token(value.semantic.capability),
+      subject: subject(value.semantic.subject), confidenceBand: token(value.semantic.confidenceBand)
+    } : null,
+    temporalCandidate: value.temporalCandidate ? {
+      rawText: diagnosticText(value.temporalCandidate.rawText), kind: token(value.temporalCandidate.kind),
+      checkInCandidate: token(value.temporalCandidate.checkInCandidate),
+      checkOutCandidate: token(value.temporalCandidate.checkOutCandidate),
+      nightsCandidate: Number.isInteger(value.temporalCandidate.nightsCandidate) ? value.temporalCandidate.nightsCandidate : null
+    } : null,
+    evidenceRefs: list(value.evidenceRefs, (reference) => ({
+      eventRef: hash(reference && reference.eventId), messageRef: hash(reference && reference.messageRef),
+      startOffset: Number.isInteger(reference && reference.startOffset) ? reference.startOffset : null,
+      endOffset: Number.isInteger(reference && reference.endOffset) ? reference.endOffset : null,
+      quote: diagnosticText(reference && reference.quote),
+      sourceExcerpt: diagnosticText(reference && reference.sourceExcerpt),
+      quoteMatchesSource: Boolean(reference && reference.quoteMatchesSource)
+    }), 20),
+    rawTextInSource: Boolean(value.rawTextInSource),
+    rawTextInEvidenceQuote: Boolean(value.rawTextInEvidenceQuote)
+  };
+}
+
 function formatNewCoreProductionTrace(details = {}) {
   const stage = token(details.stage);
   if (!STAGES.has(stage)) return null;
@@ -177,7 +213,7 @@ function formatNewCoreProductionTrace(details = {}) {
     earliestFailure: failure(details.earliestFailure),
     finalDecision: details.finalDecision ? { action: token(details.finalDecision.action), reasonCode: token(details.finalDecision.reasonCode), taskIds: list(details.finalDecision.taskIds, hash, 20), missingFields: list(details.finalDecision.missingFields, token), reviewRequired: Boolean(details.finalDecision.reviewRequired) } : null,
     finalResponse: details.finalResponse ? { action: token(details.finalResponse.action), shouldReply: Boolean(details.finalResponse.shouldReply), replyLength: String(details.finalResponse.replyText || "").length, replySha256: hash(details.finalResponse.replyText) } : null };
-  if (stage === "new_core_failure") return { ...base, failureCode: token(details.failureCode), validationErrors: list(details.validationErrors, token, 40), schemaViolation: details.schemaViolation ? { validationErrorCode: token(details.schemaViolation.validationErrorCode), fieldPath: token(details.schemaViolation.fieldPath), expected: token(details.schemaViolation.expected), actual: token(details.schemaViolation.actual) } : null, valueOriginFunction: token(details.valueOriginFunction) };
+  if (stage === "new_core_failure") return { ...base, failureCode: token(details.failureCode), validationErrors: list(details.validationErrors, token, 40), schemaViolation: details.schemaViolation ? { validationErrorCode: token(details.schemaViolation.validationErrorCode), fieldPath: token(details.schemaViolation.fieldPath), expected: token(details.schemaViolation.expected), actual: token(details.schemaViolation.actual) } : null, rejectedEvidence: rejectedEvidence(details.rejectedEvidence), valueOriginFunction: token(details.valueOriginFunction) };
   return null;
 }
 

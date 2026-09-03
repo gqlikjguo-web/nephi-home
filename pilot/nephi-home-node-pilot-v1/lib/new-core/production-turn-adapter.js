@@ -298,6 +298,7 @@ function createNewCoreProductionTurnAdapter({
         emitDiagnostic(onDiagnostic, { traceId, stage: "new_core_failure",
           failureCode: safeFailureCode(error), validationErrors: uniqueText(error && error.validationErrors),
           schemaViolation: error && error.schemaViolation || null,
+          rejectedEvidence: error && error.rejectedEvidence || null,
           valueOriginFunction: text(error && error.valueOriginFunction) });
         const failed = runtimeFailureResult(error, previous, traceId);
         emitDiagnostic(onDiagnostic, { traceId, stage: "new_core_final", finalDecision: failed.finalDecision, finalResponse: failed.finalResponse, earliestFailure: failed.earliestFailure });

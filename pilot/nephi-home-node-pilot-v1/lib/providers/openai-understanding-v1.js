@@ -601,11 +601,12 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
   }
 }
 
-function understandingError(code, providerAttempts, schemaViolation = null) {
+function understandingError(code, providerAttempts, schemaViolation = null, rejectedEvidence = null) {
   const error = new Error(code);
   error.code = code;
   error.provider = PROVIDER_NAME;
   if (schemaViolation) error.schemaViolation = deepFreeze(detach(schemaViolation));
+  if (rejectedEvidence) error.rejectedEvidence = deepFreeze(detach(rejectedEvidence));
   if (providerAttempts) {
     Object.defineProperty(error, OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC, {
       enumerable: false,
@@ -753,6 +754,53 @@ function envelopeWireFailure(value, understandingTurnInput) {
   return null;
 }
 
+function rejectedEvidenceForWireFailure(value, understandingTurnInput, wireFailure) {
+  const fieldPath = String(wireFailure && wireFailure.violation && wireFailure.violation.fieldPath || "");
+  const matchedIndex = fieldPath.match(/^understandingOutput\.units\.(\d+)\./u);
+  const rejectedUnitIndex = matchedIndex ? Number(matchedIndex[1]) : null;
+  const units = value && value.understandingOutput && Array.isArray(value.understandingOutput.units)
+    ? value.understandingOutput.units : [];
+  const unit = Number.isInteger(rejectedUnitIndex) ? units[rejectedUnitIndex] : null;
+  const sourceEvents = Array.isArray(understandingTurnInput && understandingTurnInput.sourceEvents)
+    ? understandingTurnInput.sourceEvents : [];
+  const rawText = unit && unit.temporalCandidate && typeof unit.temporalCandidate.rawText === "string"
+    ? unit.temporalCandidate.rawText : "";
+  const evidenceRefs = (unit && Array.isArray(unit.evidenceRefs) ? unit.evidenceRefs : []).slice(0, MAX_EVIDENCE_REFS).map((reference) => {
+    const source = sourceEvents.find((event) => event.eventId === reference.eventId
+      && event.messageRef === reference.messageRef);
+    const sourceText = source && typeof source.messageText === "string" ? source.messageText : "";
+    const offsetsValid = Number.isInteger(reference.startOffset) && Number.isInteger(reference.endOffset)
+      && reference.startOffset >= 0 && reference.endOffset >= reference.startOffset;
+    const sourceExcerpt = offsetsValid ? sourceText.slice(reference.startOffset, reference.endOffset) : "";
+    return {
+      eventId: reference.eventId,
+      messageRef: reference.messageRef,
+      startOffset: reference.startOffset,
+      endOffset: reference.endOffset,
+      quote: reference.quote,
+      sourceExcerpt,
+      quoteMatchesSource: Boolean(source && offsetsValid && sourceExcerpt === reference.quote)
+    };
+  });
+  return {
+    fieldPath,
+    validationReason: String(wireFailure && wireFailure.violation && wireFailure.violation.actual || ""),
+    rejectedUnitIndex,
+    semantic: unit ? {
+      purpose: unit.purpose,
+      capability: unit.capability,
+      subject: unit.subject,
+      confidenceBand: unit.confidenceBand
+    } : null,
+    temporalCandidate: unit && unit.temporalCandidate || null,
+    evidenceRefs,
+    rawTextInSource: Boolean(rawText && sourceEvents.some((event) =>
+      typeof event.messageText === "string" && event.messageText.includes(rawText))),
+    rawTextInEvidenceQuote: Boolean(rawText && evidenceRefs.some((reference) =>
+      typeof reference.quote === "string" && reference.quote.includes(rawText)))
+  };
+}
+
 function normalizeUnitEvidence(unit, linkCandidates, sourceEvents) {
   const unitEvidence = validateAndNormalizeSourceEvidence(unit.evidenceRefs, sourceEvents);
   if (!unitEvidence.ok) return unitEvidence;
@@ -860,7 +908,8 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
       boundary: "C02", unitIds: [], outputUnitIds: [], status: "FAILURE",
       code: wireFailure.code, marker: "C02_WIRE_SCHEMA_REJECTED", nowMs
     });
-    throw understandingError(wireFailure.code, attempts, wireFailure.violation);
+    throw understandingError(wireFailure.code, attempts, wireFailure.violation,
+      rejectedEvidenceForWireFailure(providerValue, understandingTurnInput, wireFailure));
   }
 
   const rawOutput = providerValue.understandingOutput;

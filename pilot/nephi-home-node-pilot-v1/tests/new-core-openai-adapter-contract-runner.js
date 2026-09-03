@@ -509,6 +509,35 @@ async function main() {
     expected: "exact substring of understandingOutput.units.0.evidenceRefs[].quote",
     actual: "string:not_grounded"
   }, "schema rejection diagnostics must identify the exact safe field without persisting source text");
+  assert.deepEqual(inconsistentTemporalError.rejectedEvidence, {
+    fieldPath: "understandingOutput.units.0.temporalCandidate.rawText",
+    validationReason: "string:not_grounded",
+    rejectedUnitIndex: 0,
+    semantic: {
+      purpose: "lodging_question",
+      capability: "availability",
+      subject: { kind: "property", catalogIdentity: null },
+      confidenceBand: "high"
+    },
+    temporalCandidate: {
+      rawText: "明天",
+      kind: "relative_date",
+      checkInCandidate: null,
+      checkOutCandidate: null,
+      nightsCandidate: null
+    },
+    evidenceRefs: [{
+      eventId: "event-a",
+      messageRef: "message-a",
+      startOffset: 0,
+      endOffset: 7,
+      quote: "9/16有房嗎",
+      sourceExcerpt: "9/16有房嗎",
+      quoteMatchesSource: true
+    }],
+    rawTextInSource: false,
+    rawTextInEvidenceQuote: false
+  }, "wire rejection must retain the bounded raw evidence needed for root-cause diagnosis");
 
   // Luna cites history evidence only. C05 resolves that evidence against the
   // formal cycle binding and rejects an identity-incompatible target.

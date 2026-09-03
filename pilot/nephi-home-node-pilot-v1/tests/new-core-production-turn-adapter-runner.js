@@ -30,7 +30,7 @@ function result(action, nextState) {
   };
 }
 
-function fixture({ executeTurn, providerConfig = { apiKey: "test-provider-key" } } = {}) {
+function fixture({ executeTurn, providerConfig = { apiKey: "test-provider-key" }, diagnosticSink } = {}) {
   const stored = new Map();
   const writes = [];
   const historyCalls = [];
@@ -74,7 +74,7 @@ function fixture({ executeTurn, providerConfig = { apiKey: "test-provider-key" }
     publicBaseUrl: "https://example.invalid",
     now: () => new Date(NOW),
     executeTurn
-    , onDiagnostic: (entry) => diagnostics.push(entry)
+    , onDiagnostic: diagnosticSink || ((entry) => diagnostics.push(entry))
   });
   return { adapter, stored, writes, historyCalls, resolverCalls, diagnostics };
 }
@@ -103,6 +103,28 @@ function input(overrides = {}) {
   const serializedSafeC01 = JSON.stringify(safeC01);
   for (const forbidden of ["guest private text", "Private room name", "private-channel", "private-user", "private-event", "private-message", "Bearer ", "apiKey"]) {
     assert.equal(serializedSafeC01.includes(forbidden), false, `production trace leaked ${forbidden}`);
+  }
+
+  const safeRejection = formatNewCoreProductionTrace({
+    traceId: "trace-safe", stage: "new_core_failure", failureCode: "UNDERSTANDING_SCHEMA_INVALID",
+    schemaViolation: { validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID", fieldPath: "understandingOutput.units.0.temporalCandidate.rawText", expected: "exact substring", actual: "string:not_grounded" },
+    rejectedEvidence: {
+      fieldPath: "understandingOutput.units.0.temporalCandidate.rawText", validationReason: "string:not_grounded", rejectedUnitIndex: 0,
+      semantic: { purpose: "lodging_question", capability: "availability", subject: { kind: "room", catalogIdentity: "room401" }, confidenceBand: "high" },
+      temporalCandidate: { rawText: "2026-09-23 Bearer must-not-leak", kind: "date_range", checkInCandidate: "2026-09-23", checkOutCandidate: "2026-09-25", nightsCandidate: 2 },
+      evidenceRefs: [{ eventId: "private-event", messageRef: "private-message", startOffset: 5, endOffset: 15, quote: "2026/09/23 sk-must-not-leak", sourceExcerpt: "2026/09/23 sk-must-not-leak", quoteMatchesSource: true }],
+      rawTextInSource: false, rawTextInEvidenceQuote: false
+    }
+  });
+  assert.equal(safeRejection.rejectedEvidence.temporalCandidate.rawText.includes("2026-09-23"), true);
+  assert.equal(safeRejection.rejectedEvidence.evidenceRefs[0].quote.includes("2026/09/23"), true);
+  assert.deepEqual(safeRejection.rejectedEvidence.evidenceRefs[0], {
+    eventRef: "h:cfbf5b0f7ca2c200808eaa80ac0575371f0da30ed268f91e5880a46f7813be67",
+    messageRef: "h:02008a5273e2edf50966b15323284e4cb081497b17e707dced8db5ae58d811fb",
+    startOffset: 5, endOffset: 15, quote: "2026/09/23 [REDACTED]", sourceExcerpt: "2026/09/23 [REDACTED]", quoteMatchesSource: true
+  });
+  for (const forbidden of ["must-not-leak", "private-event", "private-message", "Bearer ", "sk-"]) {
+    assert.equal(JSON.stringify(safeRejection).includes(forbidden), false, `rejection trace leaked ${forbidden}`);
   }
 
   assert.doesNotThrow(() => fixture({
@@ -149,7 +171,12 @@ function input(overrides = {}) {
     assert.equal(current.writes.length, 1);
   }
 
-  const failed = fixture({ executeTurn: async () => { const error = new Error("provider exploded"); error.code = "UNDERSTANDING_PROVIDER_FAILURE"; throw error; } });
+  const failed = fixture({ executeTurn: async () => {
+    const error = new Error("provider exploded");
+    error.code = "UNDERSTANDING_PROVIDER_FAILURE";
+    error.rejectedEvidence = safeRejection.rejectedEvidence;
+    throw error;
+  } });
   const safe = await failed.adapter.process(input());
   assert.equal(safe.finalDecision.action, "handoff");
   assert.equal(safe.finalDecision.reviewRequired, true);
@@ -157,7 +184,16 @@ function input(overrides = {}) {
   assert.equal(safe.finalResponse.shouldReply, true);
   assert.equal(failed.writes.length, 0, "runtime failure must not overwrite the prior state");
   assert.ok(failed.diagnostics.some((entry) => entry.stage === "new_core_failure"
-    && entry.failureCode === "UNDERSTANDING_PROVIDER_FAILURE"));
+    && entry.failureCode === "UNDERSTANDING_PROVIDER_FAILURE"
+    && entry.rejectedEvidence.rawTextInEvidenceQuote === false));
+
+  const traceFailure = fixture({
+    diagnosticSink: () => { throw new Error("trace sink unavailable"); },
+    executeTurn: async (args) => result("reply", state(args.scope, args.state.revision + 1))
+  });
+  const traceFailureResult = await traceFailure.adapter.process(input());
+  assert.equal(traceFailureResult.finalDecision.action, "reply", "trace failure must not alter business decision");
+  assert.equal(traceFailureResult.finalResponse.replyText, "reply response", "trace failure must not alter business response");
 
   const isolated = fixture({ executeTurn: async (args) => {
     assert.equal(args.scope.propertyId, "property_b");
