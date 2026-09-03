@@ -15,6 +15,7 @@ const { resolveEntity } = require("../lib/conversation-engine-v2/entity-resolver
 const { aggregateUnitOutcomes } = require("../lib/new-core/unit-aggregator");
 const { publicAvailabilityUrlForProperty } = require("../lib/public-property-routing");
 const { createConversationStateV3 } = require("../lib/conversation-contracts/conversation-state-v3");
+const { buildUnderstandingTurnInput } = require("../lib/new-core/turn-input-adapter");
 
 const root = path.resolve(__dirname, "..");
 const now = () => new Date("2026-08-29T12:00:00.000Z");
@@ -221,6 +222,35 @@ async function json(url, method = "GET", body, sentCookie = "") {
   const answeredLocationSnapshot = turnStateSnapshot(answeredLocationState, answeredLocationState.scope, "2026-08-29T12:00:00.000Z");
   assert.equal(answeredLocationSnapshot.referenceableCycles[0].subject.kind, "external_place",
     "an answered location task must project the formal C01 external_place subject kind on the next turn");
+
+  const longSessionState = {
+    scope: pendingState.scope,
+    tasks: Array.from({ length: 21 }, (_, index) => ({
+      taskId: `answered-availability-${index + 1}`, taskType: "availability", productType: "any", productId: null,
+      roomTypeId: null, bundleId: null, checkIn: "2026-09-20", checkOut: "2026-09-21", guestCount: null,
+      searchFrom: null, searchTo: null, entityId: null, entityCategory: null, detailIntent: "general",
+      knownFields: ["checkIn", "checkOut"], missingFields: [], status: "answered",
+      createdAt: new Date(Date.parse("2026-08-29T10:00:00.000Z") + index * 1000).toISOString(),
+      updatedAt: new Date(Date.parse("2026-08-29T10:00:00.000Z") + index * 1000).toISOString(),
+      expiresAt: "2026-08-30T12:00:00.000Z"
+    }))
+  };
+  const longSessionSnapshot = turnStateSnapshot(longSessionState, longSessionState.scope, "2026-08-29T12:00:00.000Z");
+  assert.doesNotThrow(() => buildUnderstandingTurnInput({
+    coreVersion: "new-core-v1", traceId: "long-session-trace", turnId: "long-session-turn",
+    verifiedPropertyBinding: { propertyId: "nephi_home", channel: "new-core-manual-test" },
+    verifiedConversationScope: { channel: "new-core-manual-test", userId: "manual-test:test" },
+    sourceEvents: [{ eventId: "long-session-turn", messageRef: "long-session-turn", role: "guest", timestamp: "2026-08-29T12:00:00.000Z", messageKind: "text", messageText: "9/20有房嗎" }],
+    recentConversation: [], stateV3Snapshot: longSessionSnapshot,
+    publicCatalog: { propertyId: "nephi_home", timezone: "Asia/Taipei", capabilityCatalog: ["availability"], publicSubjectCatalog: [] }
+  }), "a long valid session must not fail C01 with TURN_INPUT_INVALID");
+  assert.deepEqual(longSessionSnapshot.referenceableCycles.map((cycle) => cycle.requestCycleId), [
+    "answered-availability-17", "answered-availability-18", "answered-availability-19",
+    "answered-availability-20", "answered-availability-21"
+  ], "C01 must retain the five most recent valid referenceable cycles in existing Context order");
+  const fullLongHistory = longSessionState.tasks.map((task) => ({ turnId: `history-${task.taskId}`, timestamp: task.updatedAt, input: task.taskId }));
+  assert.equal(bindRecentConversationToCycles(fullLongHistory, longSessionState, longSessionSnapshot.referenceableCycles).length, 21,
+    "limiting the C01 cycle projection must not delete complete conversation history");
   const boundHistory = bindRecentConversationToCycles([{ turnId: "prior-turn", timestamp: "2026-08-29T11:59:00.000Z", input: "想了解包棟價格" }], pendingState, pendingSnapshot.referenceableCycles);
   assert.deepEqual(boundHistory[0].referenceableCycleIds, ["pending-price-bundle"]);
 

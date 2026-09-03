@@ -50,7 +50,7 @@ function buildPublicCatalog(property, catalog) {
 function turnStateSnapshot(state, scope, now) {
   const context = buildContextSnapshotV3(state, { ...scope, now });
   const tasks = new Map((state.tasks || []).map((task) => [task.taskId, task]));
-  return { scope, referenceableCycles: context.cycles.map((cycle) => {
+  return { scope, referenceableCycles: context.cycles.slice(-5).map((cycle) => {
     const task = tasks.get(cycle.requestCycleId);
     const topic = cycle.confirmedInputs.topic;
     const inventory = cycle.confirmedInputs.inventory;
