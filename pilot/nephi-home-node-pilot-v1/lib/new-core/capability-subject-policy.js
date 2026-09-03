@@ -27,8 +27,8 @@ const UNDERSTANDING_DESCRIPTIONS = Object.freeze({
 const EXECUTION_POLICY = Object.freeze({
   availability: { routeKind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"], temporalRequirementClass: "stay", safetyShape: "none" },
   available_dates: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "search_range", safetyShape: "none" },
-  price: { routeKind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"], temporalRequirementClass: "stay", safetyShape: "none" },
-  total_price: { routeKind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"], temporalRequirementClass: "stay", safetyShape: "none" },
+  price: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "none", safetyShape: "none" },
+  total_price: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "none", safetyShape: "none" },
   capacity: { routeKind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut", "stay.guests"], temporalRequirementClass: "stay", safetyShape: "none" },
   property_fact: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "none", safetyShape: "none" },
   amenity: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "none", safetyShape: "none" },

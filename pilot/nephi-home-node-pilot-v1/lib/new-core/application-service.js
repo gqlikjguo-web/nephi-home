@@ -214,7 +214,11 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   const publicAvailabilityUrl = publicAvailabilityUrlForProperty(publicBaseUrl, property);
   const responsePlan = buildResponsePlan({ propertyId: scope.propertyId, taskResults, inputTaskIds: [...canonicalItems.map((item) => item.canonicalRequest.taskId), ...routedClarifications.map((item) => item.taskId)], canonicalRequests: canonicalItems.map((item) => item.canonicalRequest), reviewActions: [], publicAvailabilityUrl });
   const replyText = composeControlledReply(responsePlan);
-  const claimValidation = validateClaims(replyText, responsePlan, canonicalItems.map((item) => item.canonicalRequest.taskId));
+  const claimValidation = validateClaims(
+    replyText,
+    responsePlan,
+    [...canonicalItems.map((item) => item.canonicalRequest.taskId), ...routedClarifications.map((item) => item.taskId)]
+  );
   const dispositions = successful.map((item) => item.routingDecision.disposition);
   const missingFields = successful.flatMap((item) => item.routingDecision.missingGuestFields);
   const finalDecision = executionOutcomes.length ? buildFinalDecision({ executionOutcomes, claimValidation }) : noExecutionDecision(executionOutcomes, dispositions, missingFields, failedUnits);

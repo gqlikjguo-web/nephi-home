@@ -194,6 +194,29 @@ for (const spec of [
   });
 }
 
+// A price request without a supplied stay date is still a valid lodging need.
+// The controlled application layer will expose only the property-scoped public
+// booking reference; C07 must not turn it into a temporal clarification.
+const noDatePrice = validated({
+  unit: candidate({
+    messageText: "雙人房多少錢",
+    capability: "price",
+    subject: { kind: "room", catalogIdentity: "room-a" },
+    stayDependent: true,
+    temporalCandidate: null
+  }),
+  messageText: "雙人房多少錢"
+});
+assert.deepEqual(route(noDatePrice).value, {
+  unitId: "unit-routing",
+  disposition: "ANSWER",
+  reasonClass: "executable_lodging_need",
+  requiresCanonicalExecution: true,
+  missingGuestFields: [],
+  operatorActionClass: null,
+  riskClass: null
+});
+
 // A validated relative-day expression is complete enough to enter the sole
 // canonical temporal authority even when OpenAI correctly leaves executable
 // dates null. Removing that admission would prematurely clarify before C08.

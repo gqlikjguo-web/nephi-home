@@ -16,6 +16,7 @@ const { aggregateUnitOutcomes } = require("../lib/new-core/unit-aggregator");
 const { publicAvailabilityUrlForProperty } = require("../lib/public-property-routing");
 const { createConversationStateV3 } = require("../lib/conversation-contracts/conversation-state-v3");
 const { buildUnderstandingTurnInput } = require("../lib/new-core/turn-input-adapter");
+const { callOpenAIUnderstandingV1 } = require("../lib/providers/openai-understanding-v1");
 
 const root = path.resolve(__dirname, "..");
 const now = () => new Date("2026-08-29T12:00:00.000Z");
@@ -138,6 +139,96 @@ async function json(url, method = "GET", body, sentCookie = "") {
   assert.equal(sharedFailedTurn.finalResponse.action, "handoff");
   assert.equal(sharedResolverCalls, 0, "failed understanding must not execute a Resolver");
   assert.deepEqual(sharedFailedTurn.state.tasks, [], "failed understanding must not create conversation tasks");
+  const priceScope = { propertyId: "property-price-link", channel: "line-price", userId: "guest-price" };
+  const priceState = createConversationStateV3({
+    ...priceScope, tasks: [], createdAt: now().toISOString(), updatedAt: now().toISOString(), expiresAt: now().toISOString()
+  });
+  const priceProperty = {
+    propertyId: priceScope.propertyId, displayName: "Price Property", timezone: "Asia/Taipei", currency: "TWD",
+    rooms: [
+      { id: "double-a", name: "Double A", type: "雙人房", capacity: 2, aliases: ["雙人房"], enabled: true },
+      { id: "double-b", name: "Double B", type: "雙人房", capacity: 2, aliases: ["雙人房"], enabled: true }
+    ],
+    propertyFacts: [], commonAnswers: {}, businessProfile: { publicSlug: "price-property" }
+  };
+  let noDatePriceResolverCalls = 0;
+  const noDatePriceTurn = await sharedApplicationService.executeNewCoreTurn({
+    input: { turnId: "price-link-turn", traceId: "price-link-trace", message: "雙人房多少錢", recentConversation: [] },
+    state: priceState,
+    property: priceProperty,
+    resolver: {
+      availability: () => { noDatePriceResolverCalls += 1; throw new Error("unexpected availability query"); },
+      availableDates: () => { noDatePriceResolverCalls += 1; throw new Error("unexpected available-dates query"); },
+      priceOverrides: () => [], dateClassifications: () => [], customReplies: () => []
+    },
+    providerConfig: { apiKey: "test-key" }, publicBaseUrl: "https://test.example", now: now().toISOString(), scope: priceScope,
+    understandingProvider: async (c01) => {
+      const message = c01.sourceEvents[0].messageText;
+      const subject = c01.publicSubjectCatalog.find((item) => item.kind === "matched_room_set");
+      const reference = { eventId: c01.sourceEvents[0].eventId, messageRef: c01.sourceEvents[0].messageRef, startOffset: 0, endOffset: message.length, quote: message };
+      const value = {
+        understandingOutput: { schemaVersion: 1, turnId: c01.turnId, units: [{
+          unitId: "price-link-unit", evidenceRefs: [reference], purpose: "lodging_question", capability: "price",
+          subject: { kind: subject.kind, catalogIdentity: subject.catalogIdentity }, stayDependent: true,
+          temporalCandidate: null, contextLinkCandidateId: "price-link-context", safetyCandidate: null,
+          slotCandidates: [], confidenceBand: "high"
+        }] },
+        contextLinkCandidates: [{
+          contextLinkCandidateId: "price-link-context", unitId: "price-link-unit", relationKind: "NEW_REQUEST",
+          currentSourceEvidenceRefs: [reference], referencedHistoryEventRefs: []
+        }]
+      };
+      return callOpenAIUnderstandingV1(c01, {
+        apiKey: "test-key", retryDelayMs: 0, waitImpl: async () => undefined,
+        fetchImpl: async () => ({
+          ok: true, status: 200, headers: { get: () => "req-price-link" },
+          text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(value) }] }] })
+        })
+      });
+    }
+  });
+  assert.deepEqual(noDatePriceTurn.routing, ["ANSWER"], "C07 must not clarify a no-date price request");
+  assert.equal(noDatePriceResolverCalls, 0, "no-date price fallback must not query or invent a formal price");
+  assert.equal(noDatePriceTurn.finalDecision.action, "clarification", "the existing not-ready formal request remains fail-closed internally");
+  assert.equal(noDatePriceTurn.finalResponse.replyText, "查房連結：https://test.example/priceproperty");
+  assert.doesNotMatch(noDatePriceTurn.finalResponse.replyText, /請提供|補充|業者確認/);
+  const clarificationControl = await sharedApplicationService.executeNewCoreTurn({
+    input: { turnId: "clarify-control-turn", traceId: "clarify-control-trace", message: "有房嗎", recentConversation: [] },
+    state: priceState,
+    property: priceProperty,
+    resolver: {
+      availability: () => { throw new Error("unexpected availability query"); },
+      availableDates: () => { throw new Error("unexpected available-dates query"); },
+      priceOverrides: () => [], dateClassifications: () => [], customReplies: () => []
+    },
+    providerConfig: { apiKey: "test-key" }, publicBaseUrl: "https://test.example", now: now().toISOString(), scope: priceScope,
+    understandingProvider: async (c01) => {
+      const message = c01.sourceEvents[0].messageText;
+      const reference = { eventId: c01.sourceEvents[0].eventId, messageRef: c01.sourceEvents[0].messageRef, startOffset: 0, endOffset: message.length, quote: message };
+      const value = {
+        understandingOutput: { schemaVersion: 1, turnId: c01.turnId, units: [{
+          unitId: "clarify-control-unit", evidenceRefs: [reference], purpose: "lodging_question", capability: "availability",
+          subject: { kind: "property", catalogIdentity: null }, stayDependent: true,
+          temporalCandidate: null, contextLinkCandidateId: "clarify-control-context", safetyCandidate: null,
+          slotCandidates: [], confidenceBand: "high"
+        }] },
+        contextLinkCandidates: [{
+          contextLinkCandidateId: "clarify-control-context", unitId: "clarify-control-unit", relationKind: "NEW_REQUEST",
+          currentSourceEvidenceRefs: [reference], referencedHistoryEventRefs: []
+        }]
+      };
+      return callOpenAIUnderstandingV1(c01, {
+        apiKey: "test-key", retryDelayMs: 0, waitImpl: async () => undefined,
+        fetchImpl: async () => ({
+          ok: true, status: 200, headers: { get: () => "req-clarify-control" },
+          text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(value) }] }] })
+        })
+      });
+    }
+  });
+  assert.equal(clarificationControl.routing[0], "CLARIFY");
+  assert.equal(clarificationControl.finalDecision.action, "clarification", "a legitimate routed clarification must not be escalated by claim coverage");
+  assert.notEqual(clarificationControl.finalDecision.reasonCode, "claim_validation_failed");
   assert.equal(typeof manualTestService.buildManualTestPublicCatalog, "function",
     "manual-test C01 must expose its formal public catalog projection for contract verification");
   assert.equal(typeof manualTestService.buildManualTestCanonicalizerCatalog, "function",
