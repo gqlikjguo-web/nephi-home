@@ -192,6 +192,44 @@ async function json(url, method = "GET", body, sentCookie = "") {
   assert.equal(noDatePriceTurn.finalDecision.action, "clarification", "the existing not-ready formal request remains fail-closed internally");
   assert.equal(noDatePriceTurn.finalResponse.replyText, "查房連結：https://test.example/priceproperty");
   assert.doesNotMatch(noDatePriceTurn.finalResponse.replyText, /請提供|補充|業者確認/);
+  const genericPriceTurn = await sharedApplicationService.executeNewCoreTurn({
+    input: { turnId: "generic-price-link-turn", traceId: "generic-price-link-trace", message: "房價多少", recentConversation: [] },
+    state: priceState,
+    property: priceProperty,
+    resolver: {
+      availability: () => { noDatePriceResolverCalls += 1; throw new Error("unexpected availability query"); },
+      availableDates: () => { noDatePriceResolverCalls += 1; throw new Error("unexpected available-dates query"); },
+      priceOverrides: () => [], dateClassifications: () => [], customReplies: () => []
+    },
+    providerConfig: { apiKey: "test-key" }, publicBaseUrl: "https://test.example", now: now().toISOString(), scope: priceScope,
+    understandingProvider: async (c01) => {
+      const message = c01.sourceEvents[0].messageText;
+      const reference = { eventId: c01.sourceEvents[0].eventId, messageRef: c01.sourceEvents[0].messageRef, startOffset: 0, endOffset: message.length, quote: message };
+      const value = {
+        understandingOutput: { schemaVersion: 1, turnId: c01.turnId, units: [{
+          unitId: "generic-price-link-unit", evidenceRefs: [reference], purpose: "lodging_question", capability: "price",
+          subject: { kind: "property", catalogIdentity: null }, stayDependent: true,
+          temporalCandidate: null, contextLinkCandidateId: "generic-price-link-context", safetyCandidate: null,
+          slotCandidates: [], confidenceBand: "high"
+        }] },
+        contextLinkCandidates: [{
+          contextLinkCandidateId: "generic-price-link-context", unitId: "generic-price-link-unit", relationKind: "NEW_REQUEST",
+          currentSourceEvidenceRefs: [reference], referencedHistoryEventRefs: []
+        }]
+      };
+      return callOpenAIUnderstandingV1(c01, {
+        apiKey: "test-key", retryDelayMs: 0, waitImpl: async () => undefined,
+        fetchImpl: async () => ({
+          ok: true, status: 200, headers: { get: () => "req-generic-price-link" },
+          text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(value) }] }] })
+        })
+      });
+    }
+  });
+  assert.deepEqual(genericPriceTurn.routing, ["ANSWER"], "generic property price must use the shared price route");
+  assert.equal(noDatePriceResolverCalls, 0, "generic no-date price must not query or invent a formal price");
+  assert.equal(genericPriceTurn.finalResponse.replyText, "查房連結：https://test.example/priceproperty");
+  assert.doesNotMatch(genericPriceTurn.finalResponse.replyText, /請提供|補充|業者確認|\d+[,.]?\d*\s*元/);
   const clarificationControl = await sharedApplicationService.executeNewCoreTurn({
     input: { turnId: "clarify-control-turn", traceId: "clarify-control-trace", message: "有房嗎", recentConversation: [] },
     state: priceState,

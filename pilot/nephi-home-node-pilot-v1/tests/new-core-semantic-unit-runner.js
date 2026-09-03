@@ -156,6 +156,20 @@ assert.equal(
   "generic property-wide available_dates must be admitted"
 );
 assert.equal(availableDatesPolicy.subjectKinds.includes("property"), true);
+
+// A generic property-level price question has no room or bundle catalog
+// identity. The shared declarative contract must still represent it so the
+// controlled response path can provide the property's public pricing URL.
+for (const capability of ["price", "total_price"]) {
+  const policy = capabilityPolicyFor(projectCapabilityRegistry(CAPABILITY_REGISTRY), capability);
+  assert.equal(policy.subjectKinds.includes("property"), true, `${capability} must admit a property subject`);
+  const genericPrice = validate(unit({
+    capability,
+    subject: { kind: "property", catalogIdentity: null },
+    temporalCandidate: null
+  }));
+  assert.equal(genericPrice.ok, true, `${capability}/property must be a legal semantic representation`);
+}
 assert.deepEqual(availableDatesPolicy.requiredGuestFields, []);
 assert.equal(availableDatesPolicy.temporalRequirementClass, "search_range");
 const fixedAvailabilityPolicy = capabilityPolicyFor(capabilityRegistryProjection, "availability");

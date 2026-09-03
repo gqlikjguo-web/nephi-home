@@ -332,7 +332,7 @@ const discriminatedInput = c01({
   publicCatalog: {
     propertyId: "property-a",
     timezone: "Asia/Taipei",
-    capabilityCatalog: ["availability", "amenity", "property_fact"],
+      capabilityCatalog: ["availability", "amenity", "property_fact", "price", "total_price"],
     publicSubjectCatalog: [
       { catalogIdentity: "property-a", kind: "property", propertyId: "property-a", publicName: "Property A" },
       { catalogIdentity: "room-a", kind: "room", propertyId: "property-a", publicName: "Room A" },
@@ -357,6 +357,8 @@ for (const valid of [
   availabilityUnit({ subject: { kind: "property", catalogIdentity: null } }),
   availabilityUnit({ subject: { kind: "room", catalogIdentity: "room-a" } }),
   availabilityUnit({ subject: { kind: "bundle", catalogIdentity: "bundle-a" } }),
+  availabilityUnit({ capability: "price", subject: { kind: "property", catalogIdentity: null }, temporalCandidate: null }),
+  availabilityUnit({ capability: "total_price", subject: { kind: "property", catalogIdentity: null }, temporalCandidate: null }),
   availabilityUnit({ capability: "amenity", subject: { kind: "amenity", catalogIdentity: "parking" }, stayDependent: false })
 ]) assert.equal(schemaAccepts(semanticUnitProviderSchema, valid), true);
 
@@ -453,6 +455,16 @@ async function main() {
   const amenityListBranch = unitBranches.find((branch) => branch.properties.capability.enum.includes("amenity_list"));
   assert.ok(amenityListBranch, "provider schema must derive amenity_list from the shared capability policy");
   assert.match(amenityListBranch.properties.capability.description, /collection.*amenit|amenit.*collection/i);
+  for (const capability of ["price", "total_price"]) {
+    const priceBranch = unitBranches.find((branch) => branch.properties.capability.enum.includes(capability));
+    assert.ok(priceBranch, `${capability} must be derived from the shared capability policy`);
+    assert.ok(priceBranch.properties.subject.anyOf.some((subjectBranch) =>
+      subjectBranch.properties.kind.enum.includes("property")
+        && subjectBranch.properties.catalogIdentity.enum.length === 1
+        && subjectBranch.properties.catalogIdentity.enum[0] === null
+    ), `${capability} must expose a catalog-independent property subject`);
+    assert.match(priceBranch.properties.capability.description, /property subject.*no catalog identity/i);
+  }
   const operatorBranch = unitBranches.find((branch) => branch.properties.capability.enum.includes("booking_operator_request"));
   assert.ok(operatorBranch.properties.subject.anyOf.some((subjectBranch) =>
     subjectBranch.properties.kind.enum.includes("other_verified")
