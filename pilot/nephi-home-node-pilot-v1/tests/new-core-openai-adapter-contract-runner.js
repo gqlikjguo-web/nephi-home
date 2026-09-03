@@ -312,6 +312,21 @@ assert.match(
   /occupancy.*guest_count.*must not.*matched_room_set.*explicitly names.*lodging product type/i,
   "provider guidance must keep occupancy count separate from an explicitly named room-group product"
 );
+const temporalObjectBranches = availabilityCapability.properties.temporalCandidate.anyOf
+  .filter((branch) => branch.type === "object");
+assert.ok(temporalObjectBranches.length > 0);
+for (const branch of temporalObjectBranches) {
+  assert.match(
+    branch.properties.rawText.description || "",
+    /complete exact substring of one evidenceRefs.*quote/i,
+    "temporal rawText schema guidance must expose the existing single-evidence grounding contract"
+  );
+}
+assert.match(
+  instructions(),
+  /temporalCandidate\.rawText.*complete exact substring of one evidenceRefs.*quote.*date range.*single evidence span/is,
+  "provider guidance must require one source evidence span to cover a complete date-range rawText"
+);
 
 const discriminatedInput = c01({
   publicCatalog: {

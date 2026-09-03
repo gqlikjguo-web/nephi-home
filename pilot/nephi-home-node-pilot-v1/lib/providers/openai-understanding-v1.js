@@ -179,7 +179,8 @@ function evidenceArraySchema() {
 
 function temporalCandidateSchema() {
   const temporalFields = (kind, checkInCandidate, checkOutCandidate) => ({
-    rawText: stringSchema(MAX_QUOTE_LENGTH),
+    rawText: stringSchema(MAX_QUOTE_LENGTH,
+      "A complete exact substring of one evidenceRefs[].quote for this unit; never combine text across separate evidence spans."),
     kind,
     checkInCandidate,
     checkOutCandidate,
@@ -354,7 +355,7 @@ function instructions() {
     "A supplied specific stay date or date range with a question about whether lodging, a room, a room set, or a bundle is available then is availability. A search asking which dates are available, the nearest available date, or upcoming bookable dates is available_dates. Never use available_dates merely because a fixed-date availability question mentions a date.",
     "A request about the property's own address, map, or navigation, or any relationship between the property and any named or unnamed external place, is location with subject kind external_place and null catalog identity. This includes proximity, nearby existence, distance, duration, directions, and navigation meaning. Only identify the relationship; never invent an external-place fact, name, distance, duration, or recommendation.",
     "Set safetyCandidate only for operator_request/booking_operator_request or sensitive_request/high_risk. Exactly one of operatorActionClass and riskClass must be non-null; otherwise safetyCandidate is null.",
-    "Temporal candidates preserve source meaning only. Do not invent an implicit year, canonical date, availability, price, policy truth, amenity truth, location fact, or any other formal fact.",
+    "Temporal candidates preserve source meaning only. temporalCandidate.rawText must be a complete exact substring of one evidenceRefs[].quote for the same unit. When a date range spans multiple lines or labels, cite one single evidence span whose exact source quote fully contains that complete rawText; never combine rawText across separate evidence spans. Do not invent an implicit year, canonical date, availability, price, policy truth, amenity truth, location fact, or any other formal fact.",
     "Do not emit resolver IDs, query plans, state mutations, final reply text, message-level routing, task indexes, credentials, private data, or fields outside the schema.",
     "When meaning or reference is uncertain, preserve that uncertainty in the declared candidate fields; never invent a catalog identity or Context target.",
     "Before returning, verify that every unit and context link has unique matching IDs and exact source evidence, and that no independently meaningful source request was omitted or merged."
