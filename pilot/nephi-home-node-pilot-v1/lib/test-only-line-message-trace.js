@@ -24,6 +24,9 @@ const TRACE_STAGES = new Set([
   "temporal",
   "context_execution",
   "executor",
+  "response_plan",
+  "composer",
+  "claim_validator",
   "final_decision",
   "final_response",
   "line_transport"
@@ -92,6 +95,71 @@ function safePlannerMissingInformation(value) {
     const text = boundedString(item).slice(0, 200);
     return /^formal_subject:/i.test(text) ? "formal_subject_coverage_required" : text;
   });
+}
+
+function safeDiagnosticCodes(value) {
+  return [...new Set((Array.isArray(value) ? value : [])
+    .map((item) => String(item || ""))
+    .filter((item) => /^[a-z0-9_.-]{1,100}$/i.test(item)))].slice(0, MAX_ARRAY_ITEMS);
+}
+
+function safeTaskIds(value) {
+  return [...new Set((Array.isArray(value) ? value : [])
+    .map((item) => String(item || ""))
+    .filter((item) => /^[a-z0-9_.:-]{1,200}$/i.test(item)))].slice(0, MAX_ARRAY_ITEMS);
+}
+
+function safeDigest(value) {
+  const digest = String(value || "").toLowerCase();
+  return TARGET_HASH_PATTERN.test(digest) ? digest : "";
+}
+
+function safeCoverage(value) {
+  const coverage = value && typeof value === "object" ? value : {};
+  return {
+    ok: Boolean(coverage.ok),
+    coveredTaskIds: safeTaskIds(coverage.coveredTaskIds),
+    missingTaskIds: safeTaskIds(coverage.missingTaskIds),
+    unexpectedTaskIds: safeTaskIds(coverage.unexpectedTaskIds)
+  };
+}
+
+function responsePlanProjection(entry) {
+  return {
+    sectionCount: Math.max(0, Math.min(Number(entry && entry.sectionCount) || 0, MAX_ARRAY_ITEMS)),
+    reviewCount: Math.max(0, Math.min(Number(entry && entry.reviewCount) || 0, MAX_ARRAY_ITEMS)),
+    sections: (Array.isArray(entry && entry.safeSections) ? entry.safeSections : []).slice(0, MAX_ARRAY_ITEMS).map((section) => ({
+      taskId: safeTaskIds([section && section.taskId])[0] || "",
+      status: safeDiagnosticCodes([section && section.status])[0] || "",
+      source: safeDiagnosticCodes([section && section.source])[0] || "",
+      answerLength: Math.max(0, Math.min(Number(section && section.answerLength) || 0, 1000000)),
+      answerSha256: safeDigest(section && section.answerSha256)
+    })),
+    coverage: safeCoverage(entry && entry.coverage)
+  };
+}
+
+function composerProjection(entry) {
+  return {
+    outputLength: Math.max(0, Math.min(Number(entry && entry.outputLength) || 0, 1000000)),
+    outputSha256: safeDigest(entry && entry.outputSha256),
+    coveredTaskIds: safeTaskIds(entry && entry.coveredTaskIds),
+    missingTaskIds: safeTaskIds(entry && entry.missingTaskIds),
+    unexpectedTaskIds: safeTaskIds(entry && entry.unexpectedTaskIds),
+    composerSource: safeDiagnosticCodes([entry && entry.composerSource])[0] || "",
+    validationResult: safeDiagnosticCodes([entry && entry.validationResult])[0] || "",
+    rejectionReasonCodes: safeDiagnosticCodes(entry && entry.rejectionReasonCodes),
+    fallbackOccurred: Boolean(entry && entry.fallbackOccurred)
+  };
+}
+
+function claimValidatorProjection(entry) {
+  return {
+    errors: safeDiagnosticCodes(entry && entry.errors),
+    coveredTaskIds: safeTaskIds(entry && entry.coveredTaskIds),
+    missingTaskIds: safeTaskIds(entry && entry.missingTaskIds),
+    unexpectedTaskIds: safeTaskIds(entry && entry.unexpectedTaskIds)
+  };
 }
 
 function safeRepairProvenance(value) {
@@ -201,6 +269,9 @@ function diagnosticProjection(stage, entry) {
   if (stage === "temporal") return select(entry, ["contextAction", "items"]);
   if (stage === "context_execution") return { items: safeValue(entry.items || [], "items") };
   if (stage === "executor") return select(entry, ["results", "resolverCalls"]);
+  if (stage === "response_plan") return responsePlanProjection(entry);
+  if (stage === "composer") return composerProjection(entry);
+  if (stage === "claim_validator") return claimValidatorProjection(entry);
   return {};
 }
 

@@ -25,6 +25,8 @@ const { createGithubActionsOidcVerifier } = require("./lib/test-only-acceptance-
 const { readOperationalAcceptanceDataIntegrity, syncTestOnlyAcceptanceData } = require("./lib/providers/test-only-acceptance-data");
 const { runWithTestOnlyAcceptanceRawUnderstanding } = require("./lib/test-only-raw-understanding-diagnostic");
 const { isDateKey, isPriceType, resolveDatePrice } = require("./lib/date-price-authority");
+const { createNewCoreManualTestService } = require("./lib/new-core/manual-test-service");
+const { createNewCoreProductionTurnAdapter } = require("./lib/new-core/production-turn-adapter");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -40,6 +42,13 @@ const SAFE_PLANNER_ATTEMPT_ERROR_CATEGORIES = new Set(["", "timeout", "network",
 const SAFE_COVERAGE_CRITIC_RESULT_STATUSES = new Set(["budget_exhausted", "provider_failure", "invalid_output", "missing_detected", "complete"]);
 const SAFE_COVERAGE_CRITIC_FAILURE_CODES = new Set(["", "invalid_missing_requests_shape", "invalid_source_identity", "invalid_evidence", "invalid_source_overlap", "duplicate_or_overlap_conflict", "invalid_subject_identity", "other"]);
 const SAFE_CONTEXT_RELATION_KINDS = new Set(["new_request", "supplement_existing", "modify_existing", "end_existing", "relation_uncertain"]);
+const SAFE_CLAIM_VALIDATOR_ERROR_CODES = new Set([
+  "empty_reply", "meaningless_reply", "length", "internal_content", "forbidden_claim",
+  "unknown_fact_reference", "incomplete_task_coverage", "missing_fact_source",
+  "empty_task_reply", "meaningless_section_text", "handoff_deterministic_boundary",
+  "allowed_fact_missing", "response_mode_semantic_mismatch", "ungrounded_section_text",
+  "incomplete_task_execution"
+]);
 const SAFE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_REPAIR_KINDS = new Set(["coverage_repair", "task_collection_repair", "semantic_repair"]);
 const TEST_ONLY_NATIVE_LINE_MESSAGE_TYPES = new Set(["sticker", "image", "video", "file"]);
@@ -488,7 +497,19 @@ function formatSafeTestOnlyConversationTrace(details = {}) {
   if (details.stage === "pending_request") return { ...base, action: String(details.action || ""), reasonCode: String(details.reasonCode || ""), capability: String(details.capability || ""), missingFields: (details.missingFields || []).map(String) };
   if (details.stage === "fallback") return { ...base, reasonCode: String(details.reasonCode || ""), branch: String(details.branch || "") };
   if (details.stage === "final_decision" || details.stage === "line_transport") return { ...base, decision: String(details.decision || ""), reasonCode: String(details.reasonCode || ""), attempted: Boolean(details.attempted), delivered: Boolean(details.delivered) };
-  if (["response_plan", "composer", "claim_validator", "line_ready"].includes(details.stage)) return { ...base, sectionCount: details.sectionCount, coveredTaskIds: details.coveredTaskIds || [], missingTaskIds: details.missingTaskIds || [], replyLength: details.replyLength, composerSource: details.composerSource || "", validationResult: details.validationResult || "" };
+  if (["response_plan", "composer", "claim_validator", "line_ready"].includes(details.stage)) return {
+    ...base,
+    sectionCount: details.sectionCount,
+    coveredTaskIds: details.coveredTaskIds || [],
+    missingTaskIds: details.missingTaskIds || [],
+    replyLength: details.replyLength,
+    composerSource: details.composerSource || "",
+    validationResult: details.validationResult || "",
+    ...(details.stage === "claim_validator" ? {
+      errors: [...new Set((Array.isArray(details.errors) ? details.errors : [])
+        .filter((error) => typeof error === "string" && SAFE_CLAIM_VALIDATOR_ERROR_CODES.has(error)))]
+    } : {})
+  };
   return null;
 }
 
@@ -776,6 +797,7 @@ function createRequestHandler(service, options = {}) {
   const testOnlyAcceptanceDataInitializer = options.testOnlyAcceptanceDataInitializer;
   const testOnlyAcceptanceOidcVerifier = options.testOnlyAcceptanceOidcVerifier;
   const testOnlyLineMessageTrace = options.testOnlyLineMessageTrace;
+  const newCoreManualTest = options.newCoreManualTest;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
   const publicBrand = options.publicBrand || createPublicBrand();
   const testOnlyEnvironment = options.testOnlyEnvironment === true;
@@ -793,6 +815,20 @@ function createRequestHandler(service, options = {}) {
     if (!verified) throw new AppError(403, "ACCEPTANCE_OIDC_REJECTED", "GitHub Actions acceptance identity was rejected");
     return { kind: "github_actions_oidc" };
   }
+  async function authorizeNewCoreManualTest(request) {
+    if (testOnlyEnvironment) return Object.freeze({
+      userId: "test-only-public-new-core-test",
+      propertyId: "nephi_home",
+      username: "test-only-public",
+      properties: Object.freeze([{ propertyId: "nephi_home" }])
+    });
+    const token = cookieValue(request, "nephi_admin_session");
+    const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+    if (!session) throw new AppError(401, "LOGIN_REQUIRED", "請先登入");
+    const accessible = session.propertyId === "nephi_home" || Array.isArray(session.properties) && session.properties.some((item) => item.propertyId === "nephi_home");
+    if (!accessible) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權存取尼腓的家");
+    return session;
+  }
   return async function handleRequest(request, response) {
     const url = new URL(request.url, "http://127.0.0.1");
     const pathname = url.pathname;
@@ -802,6 +838,27 @@ function createRequestHandler(service, options = {}) {
         return sendData(response, { status: "ready", testOnly: testOnlyEnvironment, commit: deploymentCommit, deployment: deploymentIdentity });
       }
       if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
+      if (pathname === "/admin/new-core-test" && request.method === "GET") {
+        if (!newCoreManualTest) throw new AppError(503, "NEW_CORE_MANUAL_TEST_FACTS_AUTHORITY_REQUIRED", "新核心人工測試缺少正式唯讀資料來源");
+        await authorizeNewCoreManualTest(request);
+        return sendStatic(response, "admin-new-core-test.html", publicBrand);
+      }
+      if (pathname.startsWith("/api/admin/new-core-test")) {
+        if (!newCoreManualTest) throw new AppError(503, "NEW_CORE_MANUAL_TEST_FACTS_AUTHORITY_REQUIRED", "新核心人工測試缺少正式唯讀資料來源");
+        const session = await authorizeNewCoreManualTest(request);
+        if (request.method === "POST" && pathname === "/api/admin/new-core-test/sessions") return sendData(response, await newCoreManualTest.createSession(session, (await readJsonBody(request)).propertyId), 201);
+        if (request.method === "GET" && pathname === "/api/admin/new-core-test/records") return sendData(response, { items: await newCoreManualTest.records(session, url.searchParams.get("filter") || "all") });
+        const turnMatch = /^\/api\/admin\/new-core-test\/sessions\/([^/]+)\/turns$/.exec(pathname);
+        if (turnMatch && request.method === "POST") return sendData(response, await newCoreManualTest.runTurn(turnMatch[1], session, await readJsonBody(request)), 201);
+        if (turnMatch && request.method === "GET") return sendData(response, { items: await newCoreManualTest.listTurns(turnMatch[1], session) });
+        const resetMatch = /^\/api\/admin\/new-core-test\/sessions\/([^/]+)\/new-conversation$/.exec(pathname);
+        if (resetMatch && request.method === "POST") return sendData(response, await newCoreManualTest.newConversation(resetMatch[1], session, await readJsonBody(request)));
+        const reviewMatch = /^\/api\/admin\/new-core-test\/turns\/([^/]+)\/review$/.exec(pathname);
+        if (reviewMatch && request.method === "PATCH") return sendData(response, await newCoreManualTest.review(reviewMatch[1], session, await readJsonBody(request)));
+        const traceMatch = /^\/api\/admin\/new-core-test\/records\/([^/]+)$/.exec(pathname);
+        if (traceMatch && request.method === "GET") { const record = await newCoreManualTest.trace(traceMatch[1], session); if (!record) throw new AppError(404, "TEST_RECORD_NOT_FOUND", "找不到測試紀錄"); return sendData(response, record); }
+        throw new AppError(404, "NOT_FOUND", "Not found");
+      }
       if (request.method === "POST" && pathname === "/api/admin/test-only/conversation-acceptance") {
         if (typeof testOnlyAcceptanceHandler !== "function") return sendJson(response, 404, { ok: false, error: { code: "NOT_FOUND", message: "Not found" } });
         const identity = await authorizeTestOnlyAcceptance(request);
@@ -1351,7 +1408,31 @@ function createApp(options = {}) {
   };
   const acceptanceTraces = new Map();
   const captureSafeTrace = (entry) => { testOnlyLineMessageTrace.diagnostic(entry); const safe = formatSafeTestOnlyConversationTrace(entry); logSafeTestOnlyConversationTrace(entry); if (safe && safe.traceId) { const list = acceptanceTraces.get(safe.traceId) || []; list.push(safe); acceptanceTraces.set(safe.traceId, list.slice(-40)); } };
-  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: testOnlyLineMessageTrace.active, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null });
+  const newCoreLineEnabled = options.enableProductionLineEngine === true
+    || (testOnlyEnvironment && String(runtimeEnv.NEW_CORE_LINE_CANDIDATE_ENABLED || "").trim().toLowerCase() === "true");
+  const newCoreLineEngine = newCoreLineEnabled
+    ? createNewCoreProductionTurnAdapter({
+      persistence: providers.persistence,
+      customerSettings: providers.customerSettings,
+      service,
+      customReplies: providers.customReplies || { list: () => [] },
+      providerConfig: { apiKey: String(runtimeEnv.OPENAI_API_KEY || runtimeEnv.OPENAI_TEST_API_KEY || "") },
+      publicBaseUrl: publicBrand.publicBaseUrl,
+      now,
+      ...(typeof options.newCoreProductionExecuteTurn === "function" ? { executeTurn: options.newCoreProductionExecuteTurn } : {})
+    })
+    : null;
+  const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: testOnlyLineMessageTrace.active, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null, lineEngine: newCoreLineEngine });
+  const manualTestFactsDatabaseUrl = String(runtimeEnv.NEW_CORE_MANUAL_TEST_FACTS_DATABASE_URL || "").trim();
+  const ownedNewCoreManualTestFactsProviders = !options.newCoreManualTestFactsProviders && testOnlyEnvironment && manualTestFactsDatabaseUrl
+    ? createProviders({ databaseUrl: manualTestFactsDatabaseUrl }) : null;
+  const newCoreManualTestFactsProviders = options.newCoreManualTestFactsProviders || ownedNewCoreManualTestFactsProviders || (!testOnlyEnvironment ? providers : null);
+  const newCoreManualTestFactsService = newCoreManualTestFactsProviders
+    ? options.newCoreManualTestFactsService || (newCoreManualTestFactsProviders === providers ? service : createMvpService(newCoreManualTestFactsProviders, { now, safeTraceFormatter: formatSafeTestOnlyConversationTrace }))
+    : null;
+  const newCoreManualTest = newCoreManualTestFactsProviders
+    ? createNewCoreManualTestService({ persistence: providers.kind === "postgres" ? providers.persistence : null, providers, service, factsProviders: newCoreManualTestFactsProviders, factsService: newCoreManualTestFactsService, apiKey: String(runtimeEnv.OPENAI_API_KEY || ""), publicBaseUrl: publicBrand.publicBaseUrl, now, ...(typeof options.newCoreManualTestExecuteTurn === "function" ? { executeTurn: options.newCoreManualTestExecuteTurn } : {}) })
+    : null;
   const customReplyTestHandler = async (body = {}) => {
     const propertyId = String(body.propertyId || body.customerId || "").trim();
     const ruleId = String(body.ruleId || "").trim();
@@ -1494,7 +1575,7 @@ function createApp(options = {}) {
         const decision = String(result.finalDecision && result.finalDecision.action || result.finalResponse && result.finalResponse.action || "no_reply");
         testOnlyLineMessageTrace.finalResponse({ traceId: result.traceId, eventId: input.eventId, propertyId: id, finalDecision: result.finalDecision, finalResponse: result.finalResponse });
         const traceTransport = (details) => { const { replyText: _replyText, ...diagnostic } = details; emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
-        const persistedDecision = await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired), safeTrace });
+        const persistedDecision = await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired), safeTrace, ...(Array.isArray(result.requestCycleRefs) ? { requestCycleRefs: result.requestCycleRefs } : {}) });
         if (persistedDecision) acceptanceTraces.delete(result.traceId);
         if (finalResponseShouldReply === false) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "final_response_should_reply_false", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
         if (!finalResponseReplyText.trim()) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_empty_reply", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); }
@@ -1513,12 +1594,12 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
-  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof providers.close === "function") await providers.close(); } };
+  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
+  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof ownedNewCoreManualTestFactsProviders?.close === "function") await ownedNewCoreManualTestFactsProviders.close(); if (typeof providers.close === "function") await providers.close(); } };
 }
 
 if (require.main === module) {
-  const app = createApp();
+  const app = createApp({ enableProductionLineEngine: true });
   app.start().then(({ url }) => {
     console.log(`Nephi Home Node Pilot v1: ${url}`);
   }).catch((error) => {

@@ -24,18 +24,20 @@ async function request(url, options = {}) {
 }
 
 function intakePayload(name, suffix) {
+  const roomKey = `${suffix.toLowerCase()}_room`;
   return {
     propertyName: name,
+    aiName: `${suffix} AI`,
     contactName: `測試聯絡人 ${suffix}`,
     phone: `09000000${suffix === "Alpha" ? "01" : "02"}`,
     email: `${suffix.toLowerCase()}@example.test`,
     address: `測試地址 ${suffix}`,
-    googleMapsUrl: "",
+    googleMapsUrl: `https://maps.app.goo.gl/${suffix}OnboardingMap`,
     checkInTime: "15:00",
     checkOutTime: "11:00",
     line: { hasOfficialAccount: false, contactLink: "" },
     rooms: [{
-      key: `${suffix.toLowerCase()}_room`,
+      key: roomKey,
       displayName: `${suffix} 雙人房`,
       type: "雙人房",
       capacity: 2,
@@ -46,7 +48,43 @@ function intakePayload(name, suffix) {
       sundayPrice: 1100,
       enabled: true
     }],
-    bundles: [],
+    bundles: [{
+      key: `${suffix.toLowerCase()}_bundle`,
+      name: `${suffix} 包棟方案`,
+      memberRoomKeys: [roomKey],
+      capacity: 8,
+      mondayThursdayPrice: 8000,
+      fridayPrice: 9000,
+      saturdayHolidayPrice: 10000,
+      sundayPrice: 8500,
+      enabled: true,
+      entertainmentAmenities: [{
+        key: "board_games",
+        displayName: "桌遊",
+        provided: true,
+        statusSource: "operator",
+        note: `${suffix} 正式桌遊說明`,
+        source: "preset",
+        position: 0
+      }]
+    }],
+    propertyFacts: [{
+      canonicalId: "parking",
+      category: "amenity",
+      status: "allowed",
+      appliesTo: "whole_property",
+      publicText: `${suffix} 正式停車說明`,
+      fees: [],
+      advanceNoticeRequired: false,
+      reservationRequired: false,
+      conditions: [],
+      restrictions: [],
+      operatingHours: [],
+      availablePeriods: [],
+      notes: "",
+      source: "operator_form",
+      updatedAt: "2026-08-23T00:00:00.000Z"
+    }],
     knowledge: [
       { key: "parking", label: "停車方式", status: "fixed", answer: `${suffix} 專用測試停車說明` },
       { key: "bbq", label: "烤肉規則", status: "unavailable", answer: "" }
@@ -113,6 +151,12 @@ function intakePayload(name, suffix) {
     });
   }
 
+  async function getDraft(entry) {
+    return request(`${running.url}/api/public/onboarding/drafts/${entry.applicationId}`, {
+      headers: { "x-onboarding-draft-token": entry.draftToken }
+    });
+  }
+
   try {
     let result = await request(`${running.url}/api/public/onboarding/drafts`, { method: "POST" });
     check("沒有邀請不得建立草稿", result.response.status === 401 && result.body.error.code === "ONBOARDING_INVITE_REQUIRED");
@@ -139,6 +183,14 @@ function intakePayload(name, suffix) {
     result = await resolveInvite(alphaInvite.invite);
     check("有效邀請可開啟表單", result.response.status === 200 && result.body.data.applicationId === alphaInvite.applicationId);
     const alpha = result.body.data;
+    result = await getDraft(alpha);
+    check("Alpha 新邀請從空白正式 draft 開始", result.response.status === 200
+      && !result.body.data.propertyName
+      && !result.body.data.aiName
+      && result.body.data.rooms.length === 0
+      && result.body.data.bundles.length === 0
+      && result.body.data.knowledge.length === 0
+      && !Array.isArray(result.body.data.propertyFacts));
 
     result = await saveDraft(alpha, {
       propertyName: "friendly_property_alpha",
@@ -158,16 +210,55 @@ function intakePayload(name, suffix) {
 
     const alphaPayload = intakePayload("friendly_property_alpha", "Alpha");
     result = await saveDraft(alpha, alphaPayload);
+    assert.equal(result.response.status, 200, JSON.stringify(result.body));
     check("Alpha 草稿保存成功", result.response.status === 200 && result.body.data.propertyName === "friendly_property_alpha");
     result = await request(`${running.url}/api/public/onboarding/drafts/${alpha.applicationId}`, {
       headers: { "x-onboarding-draft-token": alpha.draftToken }
     });
-    check("重新開啟可 read-back", result.response.status === 200 && result.body.data.rooms[0].displayName === "Alpha 雙人房");
+    assert.equal(result.response.status, 200, JSON.stringify(result.body));
+    const readBackAlpha = result.body.data;
+    check("重新開啟可 read-back 基本資料與 AI 名稱", readBackAlpha.aiName === "Alpha AI"
+      && readBackAlpha.propertyName === "friendly_property_alpha");
+    check("重新開啟可 read-back 房型與四類價格", readBackAlpha.rooms[0].displayName === "Alpha 雙人房"
+      && readBackAlpha.rooms[0].mondayThursdayPrice === 1000
+      && readBackAlpha.rooms[0].fridayPrice === 1200
+      && readBackAlpha.rooms[0].saturdayHolidayPrice === 1500
+      && readBackAlpha.rooms[0].sundayPrice === 1100);
+    check("重新開啟可 read-back 包棟與娛樂", readBackAlpha.bundles[0].memberRoomKeys[0] === "alpha_room"
+      && readBackAlpha.bundles[0].entertainmentAmenities.some((item) => item.key === "board_games"
+        && item.provided === true
+        && item.note === "Alpha 正式桌遊說明"));
+    check("重新開啟可 read-back 正式設備與 knowledge", readBackAlpha.propertyFacts[0].publicText === "Alpha 正式停車說明"
+      && readBackAlpha.knowledge[0].answer === "Alpha 專用測試停車說明");
 
     const betaInvite = await createInvite(cookie);
     result = await resolveInvite(betaInvite.invite);
     const beta = result.body.data;
+    result = await getDraft(beta);
+    check("Beta 新邀請仍為獨立空白 draft", result.response.status === 200
+      && !result.body.data.propertyName
+      && !result.body.data.aiName
+      && result.body.data.rooms.length === 0
+      && result.body.data.bundles.length === 0
+      && result.body.data.knowledge.length === 0
+      && !Array.isArray(result.body.data.propertyFacts));
     const betaPayload = intakePayload("friendly_property_beta", "Beta");
+    result = await saveDraft(beta, { ...betaPayload, googleMapsUrl: "" });
+    assert.equal(result.response.status, 200, JSON.stringify(result.body));
+    result = await request(`${running.url}/api/public/onboarding/drafts/${beta.applicationId}/submit`, {
+      method: "POST",
+      headers: { "x-onboarding-draft-token": beta.draftToken }
+    });
+    check("缺少 Google Maps 網址不得完成 onboarding", result.response.status === 400
+      && result.body.error.code === "APPLICATION_INCOMPLETE");
+    result = await saveDraft(beta, { ...betaPayload, googleMapsUrl: "https://example.com/not-google-maps" });
+    assert.equal(result.response.status, 200, JSON.stringify(result.body));
+    result = await request(`${running.url}/api/public/onboarding/drafts/${beta.applicationId}/submit`, {
+      method: "POST",
+      headers: { "x-onboarding-draft-token": beta.draftToken }
+    });
+    check("無效 Google Maps 網址不得完成 onboarding", result.response.status === 400
+      && result.body.error.code === "APPLICATION_INCOMPLETE");
     result = await saveDraft(beta, betaPayload);
     check("Beta 草稿保存成功", result.response.status === 200 && result.body.data.propertyName === "friendly_property_beta");
 
@@ -177,6 +268,12 @@ function intakePayload(name, suffix) {
     check("業者 B 不能讀取業者 A", result.response.status === 401 && result.body.error.code === "INVALID_DRAFT_TOKEN");
     result = await saveDraft({ ...alpha, draftToken: beta.draftToken }, betaPayload);
     check("業者 B 不能修改業者 A", result.response.status === 401 && result.body.error.code === "INVALID_DRAFT_TOKEN");
+    result = await request(`${running.url}/api/public/onboarding/drafts/${beta.applicationId}`, {
+      headers: { "x-onboarding-draft-token": alpha.draftToken }
+    });
+    check("業者 A 不能讀取業者 B", result.response.status === 401 && result.body.error.code === "INVALID_DRAFT_TOKEN");
+    result = await saveDraft({ ...beta, draftToken: alpha.draftToken }, alphaPayload);
+    check("業者 A 不能修改業者 B", result.response.status === 401 && result.body.error.code === "INVALID_DRAFT_TOKEN");
 
     result = await saveDraft(alpha, { ...alphaPayload, email: "not-an-email" });
     check("非法欄位回 400", result.response.status === 400 && result.body.error.code === "INVALID_EMAIL");
@@ -241,10 +338,51 @@ function intakePayload(name, suffix) {
     check("未核准 submission 不進正式 property facts", !formalProperties.includes("friendly_property_alpha") && !formalProperties.includes("friendly_property_beta"));
     check("示範既有資料完全未改變", JSON.stringify(providers.customerSettings.getProperty("demo_fixture_property")) === demoBefore);
 
+    result = await request(`${running.url}/api/admin/onboarding/applications/${alpha.applicationId}/approve`, {
+      method: "POST",
+      headers: { cookie, ...jsonHeaders },
+      body: JSON.stringify({ mode: "new", propertyId: "friendly_property_alpha" })
+    });
+    check("approve(new) 只建立 Alpha 的新 property", result.response.status === 200
+      && result.body.data.propertyId === "friendly_property_alpha"
+      && !providers.customerSettings.getProperty("friendly_property_beta"));
+    const approvedAlpha = providers.customerSettings.getProperty("friendly_property_alpha");
+    const approvedRoom = approvedAlpha.rooms.find((room) => room.id === "room_alpha_room");
+    const approvedBundle = approvedAlpha.rooms.find((room) => room.id === "bundle_alpha_bundle");
+    check("核准後基本資料與 AI 名稱 round-trip", approvedAlpha.displayName === "friendly_property_alpha"
+      && approvedAlpha.businessProfile.aiName === "Alpha AI"
+      && approvedAlpha.businessProfile.contactName === "測試聯絡人 Alpha"
+      && approvedAlpha.businessProfile.email === "alpha@example.test");
+    check("核准後房型與四類價格 round-trip", approvedRoom
+      && approvedRoom.name === "Alpha 雙人房"
+      && approvedRoom.mondayThursdayPrice === 1000
+      && approvedRoom.fridayPrice === 1200
+      && approvedRoom.saturdayHolidayPrice === 1500
+      && approvedRoom.sundayPrice === 1100);
+    check("核准後包棟、成員、娛樂與四類價格 round-trip", approvedBundle
+      && approvedBundle.name === "Alpha 包棟方案"
+      && approvedBundle.memberRoomIds.length === 1
+      && approvedBundle.memberRoomIds[0] === approvedRoom.id
+      && approvedBundle.capacity === 8
+      && approvedBundle.mondayThursdayPrice === 8000
+      && approvedBundle.fridayPrice === 9000
+      && approvedBundle.saturdayHolidayPrice === 10000
+      && approvedBundle.sundayPrice === 8500
+      && approvedBundle.entertainmentAmenities.some((item) => item.key === "board_games"
+        && item.provided === true
+        && item.note === "Alpha 正式桌遊說明"));
+    check("核准後 propertyFacts 與 knowledge round-trip", approvedAlpha.propertyFacts[0].canonicalId === "parking"
+      && approvedAlpha.propertyFacts[0].publicText === "Alpha 正式停車說明"
+      && approvedAlpha.faqs.some((item) => item.knowledgeKey === "parking" && item.answer === "Alpha 專用測試停車說明"));
+    check("核准 Alpha 不改變 Beta draft", (await getDraft(beta)).body.data.propertyName === "friendly_property_beta");
+
     result = await request(`${running.url}/api/public/onboarding/invite?token=invalid-test-token`);
     check("無效 token 被拒絕", result.response.status === 401 && result.body.error.code === "INVALID_ONBOARDING_INVITE");
 
     const onboardingSource = fs.readFileSync(path.join(__dirname, "../public/assets/onboarding.js"), "utf8");
+    const entryClearIndex = onboardingSource.indexOf('if(invite||resume){localStorage.removeItem("onboardingDraft")');
+    const savedDraftIndex = onboardingSource.indexOf('const saved=JSON.parse(localStorage.getItem("onboardingDraft")');
+    check("新邀請先清除舊 localStorage 再解析目前 token", entryClearIndex >= 0 && savedDraftIndex > entryClearIndex);
     check("前端網路或伺服器錯誤保留內容", onboardingSource.includes("已保留目前填寫內容") && !onboardingSource.includes("form.reset("));
     check("前端顯示草稿已儲存", onboardingSource.includes("草稿已儲存"));
   } finally {

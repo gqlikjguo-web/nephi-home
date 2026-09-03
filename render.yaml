@@ -6,6 +6,12 @@ databases:
     plan: basic-256mb
     diskSizeGB: 1
     ipAllowList: []
+  - name: nephi-home-node-pilot-test-only-db
+    databaseName: nephi_home_node_pilot_test_only
+    user: nephi_home_node_pilot_test_only
+    region: singapore
+    plan: free
+    ipAllowList: []
 
 services:
   - type: web
@@ -20,7 +26,7 @@ services:
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: nephi-home-node-pilot-db
+          name: nephi-home-node-pilot-test-only-db
           property: connectionString
       - key: NEPHI_PILOT_HOST
         value: 0.0.0.0
@@ -35,7 +41,7 @@ services:
       - key: NEPHI_PILOT_CLASSIFIER_TIMEOUT_MS
         value: "15000"
       - key: PUBLIC_BASE_URL
-        value: https://nephi-home-node-pilot-test-only-btye.onrender.com
+        value: https://test.junzanai.com
       - key: ONBOARDING_EMAIL_FROM
         value: JunZan AI <noreply@junzanai.com>
       - key: RESEND_API_KEY

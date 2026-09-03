@@ -11,6 +11,11 @@ const {
   getCapabilityDefinition
 } = require("./capability-registry");
 const { resolveEntity } = require("./entity-resolver");
+const {
+  isStateV3LifecycleOperationsFor,
+  isStateV3TaskCreationsFor,
+  isStateV3CanonicalTaskBindingsFor
+} = require("../new-core/state-v3-lifecycle-adapter");
 
 const PENDING_STATUSES = new Set(["pending", "needs_clarification"]);
 const CONTEXT_EXCLUDED_STATUSES = new Set(["expired", "cancelled"]);
@@ -281,7 +286,7 @@ function isSlotOnlyLodgingTurn(task) {
   };
 }
 
-function automaticPendingRelation(state, plannerTasks, relations, now) {
+function automaticPendingRelation(state, plannerTasks, relations, now, catalog) {
   const plannerTaskCount = Array.isArray(plannerTasks) ? plannerTasks.length : 0;
   const result = (reasonCode, relation = null, details = {}) => ({
     relation,
@@ -330,8 +335,12 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
       return false;
     }
     if (PENDING_STATUSES.has(candidate.status)) {
-      return candidate.missingFields.some((field) => supplied.has(field))
-        || supplied.has("productId");
+      const suppliesMissingField = candidate.missingFields.some(
+        (field) => supplied.has(field)
+      );
+      return candidate.status === "needs_clarification"
+        ? suppliesMissingField || supplied.has("productId")
+        : suppliesMissingField;
     }
     return candidate.status === "answered";
   };
@@ -350,6 +359,17 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
   let candidates = clarificationCandidates.length === 1
     ? clarificationCandidates
     : compatibleCandidates;
+  const currentProduct = supplied.has("productId")
+    ? approvedProductForTask(task, catalog)
+    : null;
+  if (currentProduct && currentProduct.productType === "any") {
+    return result("no_unique_compatible_candidate", null, {
+      slotOnlyLodgingTurn: true,
+      clarificationCandidateCount: clarificationCandidates.length,
+      compatibleCandidateCount: candidates.length,
+      slotPredicateDiagnostic: slotPredicate.diagnostic
+    });
+  }
   if (
     clarificationCandidates.length === 0
     && candidates.length > 1
@@ -367,12 +387,18 @@ function automaticPendingRelation(state, plannerTasks, relations, now) {
       : candidate.productType === "room_type"
         ? `room_type:${candidate.roomTypeId || candidate.productId || ""}`
         : null;
+    const productOnlyAnsweredContinuation = slotPredicate.diagnostic.hasProduct
+      && slotPredicate.diagnostic.suppliedSlotKindCount === 1
+      && currentProduct
+      && currentProduct.productType !== "any"
+      && candidates.every((candidate) => candidate.taskType === taskType);
     if (
-      productScope
-      && candidates.every((candidate) => (
-        candidate.taskType === taskType
-        && candidateScope(candidate) === productScope
-      ))
+      productOnlyAnsweredContinuation
+      || productScope
+        && candidates.every((candidate) => (
+          candidate.taskType === taskType
+          && candidateScope(candidate) === productScope
+        ))
     ) {
       const latestTimestamp = Math.max(...candidates.map(
         (candidate) => Date.parse(candidate.updatedAt)
@@ -424,7 +450,8 @@ function decideContextExecutionV3({
     state,
     plannerTasks,
     effectiveRelations,
-    now
+    now,
+    catalog
   );
   const automaticRelation = automaticPending.relation;
   if (automaticRelation) {
@@ -620,6 +647,93 @@ function statusForOutcome(outcome, readiness, clarificationSelected = false) {
   return "needs_human";
 }
 
+function statusAfterLifecycleOperation(prior, readiness) {
+  if (readiness.status === "invalid" || readiness.status === "unsupported") {
+    return "needs_human";
+  }
+  if (readiness.status === "missing") {
+    return prior.status === "needs_clarification" ? "needs_clarification" : "pending";
+  }
+  if (["pending", "needs_clarification"].includes(prior.status)) return "ready";
+  return prior.status;
+}
+
+function applyLifecycleOperations(byTaskId, lifecycleOperations, now) {
+  for (const lifecycleOperation of lifecycleOperations) {
+    const prior = byTaskId.get(lifecycleOperation.targetTaskId);
+    if (!currentTask(prior, now)) {
+      throw new TypeError("state_v3_lifecycle_target_unavailable");
+    }
+    if (lifecycleOperation.action === "END") {
+      byTaskId.set(prior.taskId, createConversationTaskV3({
+        ...prior,
+        status: "cancelled",
+        updatedAt: now
+      }));
+      continue;
+    }
+    const patch = lifecycleOperation.field === "guestCount"
+      ? { guestCount: lifecycleOperation.operation === "CLEAR" ? null : lifecycleOperation.value }
+      : lifecycleOperation.field === "lodgingProduct"
+        ? lifecycleOperation.value
+        : null;
+    if (!patch) throw new TypeError("state_v3_lifecycle_operation_invalid");
+    const candidate = { ...prior, ...patch, updatedAt: now };
+    const readiness = evaluateTaskReadiness(candidate);
+    byTaskId.set(prior.taskId, createConversationTaskV3({
+      ...candidate,
+      knownFields: readiness.knownFields,
+      missingFields: readiness.missingFields,
+      status: statusAfterLifecycleOperation(prior, readiness)
+    }));
+  }
+}
+
+function applyTaskCreations(byTaskId, taskCreations, now, revision) {
+  for (const creation of taskCreations) {
+    let taskId = creation.taskIdCandidate;
+    if (byTaskId.has(taskId)) {
+      taskId = `${creation.taskIdCandidate}#${revision}`;
+      let collision = 1;
+      while (byTaskId.has(taskId)) {
+        taskId = `${creation.taskIdCandidate}#${revision}-${collision}`;
+        collision += 1;
+      }
+    }
+    const taskType = contractTaskType(creation.capability);
+    const candidate = {
+      taskType,
+      productType: creation.productType,
+      productId: creation.productId,
+      roomTypeId: creation.roomTypeId,
+      bundleId: creation.bundleId,
+      checkIn: creation.checkIn,
+      checkOut: creation.checkOut,
+      guestCount: creation.guestCount,
+      searchFrom: creation.searchFrom,
+      searchTo: creation.searchTo
+    };
+    const readiness = evaluateTaskReadiness(candidate);
+    if (readiness.status !== "missing"
+      || JSON.stringify(readiness.missingFields) !== JSON.stringify(creation.missingFields)) {
+      throw new TypeError("state_v3_start_task_readiness_mismatch");
+    }
+    byTaskId.set(taskId, createConversationTaskV3({
+      taskId,
+      ...candidate,
+      entityId: creation.entityId,
+      entityCategory: creation.entityCategory,
+      detailIntent: creation.detailIntent,
+      knownFields: readiness.knownFields,
+      missingFields: readiness.missingFields,
+      status: "needs_clarification",
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: new Date(Date.parse(now) + 24 * 60 * 60 * 1000).toISOString()
+    }));
+  }
+}
+
 function reduceConversationStateV3({
   previous,
   canonicalItems = [],
@@ -627,9 +741,31 @@ function reduceConversationStateV3({
   executionOutcomes = [],
   endedTaskIds = [],
   clarificationTaskIds = [],
+  lifecycleOperations = [],
+  taskCreations = [],
+  canonicalTaskBindings = [],
   scope = {}
 }) {
   const now = String(scope.now || new Date().toISOString());
+  if (!isStateV3LifecycleOperationsFor(lifecycleOperations, {
+    previous,
+    scope: runtimeScope(scope)
+  })) {
+    throw new TypeError("state_v3_lifecycle_operations_invalid");
+  }
+  if (!isStateV3TaskCreationsFor(taskCreations, {
+    previous,
+    scope: runtimeScope(scope)
+  })) {
+    throw new TypeError("state_v3_task_creations_invalid");
+  }
+  if (!isStateV3CanonicalTaskBindingsFor(canonicalTaskBindings, {
+    previous,
+    scope: runtimeScope(scope),
+    canonicalItems
+  })) {
+    throw new TypeError("state_v3_canonical_task_bindings_invalid");
+  }
   const byTaskId = new Map(
     (previous && previous.tasks || []).map((task) => [
       task.taskId,
@@ -637,6 +773,13 @@ function reduceConversationStateV3({
         ? createConversationTaskV3({ ...task, status: "pending" })
         : task
     ])
+  );
+  applyLifecycleOperations(byTaskId, lifecycleOperations, now);
+  applyTaskCreations(
+    byTaskId,
+    taskCreations,
+    now,
+    Number.isInteger(previous && previous.revision) ? previous.revision + 1 : 1
   );
   const clarificationIds = new Set(clarificationTaskIds.map(String));
   for (const taskId of new Set(endedTaskIds)) {
@@ -653,6 +796,9 @@ function reduceConversationStateV3({
   );
   const outcomeByTaskId = new Map(
     executionOutcomes.map((outcome) => [outcome.taskId, outcome])
+  );
+  const canonicalTaskBindingByUnitId = new Map(
+    canonicalTaskBindings.map((binding) => [binding.unitId, binding])
   );
   for (const item of canonicalItems) {
     const request = item.canonicalRequest;
@@ -671,7 +817,14 @@ function reduceConversationStateV3({
         ? "missing"
         : formal.readiness.status
     };
-    const stateTaskId = item.requestCycleId || request.taskId;
+    const canonicalTaskBinding = canonicalTaskBindingByUnitId.get(item.unitId);
+    if (canonicalTaskBinding
+      && !currentTask(byTaskId.get(canonicalTaskBinding.requestCycleId), now)) {
+      throw new TypeError("state_v3_canonical_target_unavailable");
+    }
+    const stateTaskId = canonicalTaskBinding && canonicalTaskBinding.requestCycleId
+      || item.requestCycleId
+      || request.taskId;
     const prior = byTaskId.get(stateTaskId);
     byTaskId.set(stateTaskId, createConversationTaskV3({
       taskId: stateTaskId,

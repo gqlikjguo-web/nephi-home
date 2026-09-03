@@ -45,6 +45,21 @@ assert.deepEqual(
 assert.deepEqual(
   availabilityRequestFromResolverTask({
     ...base,
+    roomTypeSet: ["alpha-double-a", "alpha-double-b"]
+  }),
+  {
+    customerId: "property-alpha",
+    checkIn: "2026-07-30",
+    checkOut: "2026-07-31",
+    guests: 2,
+    roomType: "all",
+    roomTypeSet: ["alpha-double-a", "alpha-double-b"],
+    queryMode: "any"
+  }
+);
+assert.deepEqual(
+  availabilityRequestFromResolverTask({
+    ...base,
     productType: "bundle",
     productId: "alpha-whole-house"
   }),

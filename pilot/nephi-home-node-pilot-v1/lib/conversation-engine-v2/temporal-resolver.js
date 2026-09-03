@@ -138,6 +138,23 @@ function monthWeekdayConstraint(raw) {
   return { unresolvedReason: "temporal_expression_ambiguous", expressionType: "month_weekday_constraint" };
 }
 
+function monthOnlySearchRange(raw, base) {
+  const match = raw.match(/^(\d{1,2})月份?$/u);
+  if (!match) return null;
+  const month = Number(match[1]);
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    return { unresolvedReason: "temporal_range_invalid", expressionType: "month_search_range" };
+  }
+  const baseYear = Number(base.slice(0, 4));
+  const baseMonth = Number(base.slice(5, 7));
+  const year = month < baseMonth ? baseYear + 1 : baseYear;
+  const from = `${year}-${String(month).padStart(2, "0")}-01`;
+  const to = month === 12
+    ? `${year + 1}-01-01`
+    : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+  return { searchRange: { from, to }, expressionType: "month_search_range" };
+}
+
 function explicitNights(raw) {
   const match = raw.match(/(?:(?:入住|住)((?<!\d)\d+|(?<![一二兩三四五六七八九十])[一二兩三四五六七八九十]+)(?:個)?(?:晚上|晚|天)|((?<!\d)\d+|(?<![一二兩三四五六七八九十])[一二兩三四五六七八九十]+)(?:個)?(?:晚上|晚))/u);
   if (!match) return null;
@@ -310,6 +327,8 @@ function parseRange(raw, base, baseWeekday) {
 }
 
 function parseTemporalGrammarAtBase(raw, baseParts) {
+  const monthRange = monthOnlySearchRange(raw, baseParts.key);
+  if (monthRange) return monthRange;
   const constrainedWeekday = monthWeekdayConstraint(raw);
   if (constrainedWeekday) return constrainedWeekday;
   const range = parseRange(raw, baseParts.key, baseParts.weekday);
@@ -778,6 +797,28 @@ function resolveCanonicalTemporal({
       ambiguity: parsed.unresolvedReason,
       originalExpression: rawText
     }, { sourceEvidenceRefs: evidence });
+  }
+
+  if (parsed.searchRange) {
+    return withFieldMetadata({
+      rawText,
+      expressionType: parsed.expressionType,
+      checkIn: null,
+      checkOut: null,
+      nights: null,
+      searchRange: parsed.searchRange,
+      timezone,
+      resolutionStatus: "resolved",
+      resolutionSource: "canonical_temporal_grammar",
+      repairReasonCode: recoveredPlannerSpan ? "planner_temporal_span_recovered" : "",
+      applicableTaskIds: taskIds,
+      ambiguity: null,
+      originalExpression: rawText
+    }, {
+      provenance: { searchRange: "explicit" },
+      ruleRefs: { searchRange: CANONICAL_TEMPORAL_RULE_REF },
+      sourceEvidenceRefs: evidence
+    });
   }
 
   const parsedNights = Number.isInteger(parsed.nights)

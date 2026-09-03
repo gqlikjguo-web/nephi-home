@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createPublicBrand } = require("../config/public-brand");
 
-const EXPECTED_BASE_URL = "https://nephi-home-node-pilot-test-only-btye.onrender.com";
+const EXPECTED_BASE_URL = "https://test.junzanai.com";
 const renderYamlPath = path.resolve(__dirname, "../../../render.yaml");
 const renderYaml = fs.readFileSync(renderYamlPath, "utf8");
 const serviceMatch = renderYaml.match(

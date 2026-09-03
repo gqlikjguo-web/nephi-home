@@ -16,12 +16,16 @@ function resolverTaskProduct(resolverTask) {
 
 function availabilityRequestFromResolverTask(resolverTask = {}) {
   const product = resolverTaskProduct(resolverTask);
+  const roomTypeSet = Array.isArray(resolverTask.roomTypeSet)
+    ? [...new Set(resolverTask.roomTypeSet.map((item) => String(item || "").trim()).filter(Boolean))]
+    : [];
   return {
     customerId: resolverTask.propertyId,
     checkIn: resolverTask.checkIn || null,
     checkOut: resolverTask.checkOut || null,
     guests: resolverTask.guestCount || null,
     roomType: product.productId || "all",
+    ...(roomTypeSet.length ? { roomTypeSet } : {}),
     queryMode: product.productType === "bundle"
       ? "bundle_only"
       : product.productType === "room_type"
@@ -32,6 +36,9 @@ function availabilityRequestFromResolverTask(resolverTask = {}) {
 
 function availableDatesRequestFromResolverTask(resolverTask = {}) {
   const product = resolverTaskProduct(resolverTask);
+  const roomTypeSet = Array.isArray(resolverTask.roomTypeSet)
+    ? [...new Set(resolverTask.roomTypeSet.map((item) => String(item || "").trim()).filter(Boolean))]
+    : [];
   return {
     customerId: resolverTask.propertyId,
     dateFrom: resolverTask.searchFrom || null,
@@ -39,6 +46,7 @@ function availableDatesRequestFromResolverTask(resolverTask = {}) {
     nights: Number.isInteger(resolverTask.nights) ? resolverTask.nights : 1,
     guests: resolverTask.guestCount || null,
     roomType: product.productId || "all",
+    ...(roomTypeSet.length ? { roomTypeSet } : {}),
     queryMode: product.productType === "bundle"
       ? "bundle_only"
       : product.productType === "room_type"

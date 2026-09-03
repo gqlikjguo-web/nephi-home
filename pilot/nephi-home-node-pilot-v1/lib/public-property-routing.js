@@ -14,6 +14,12 @@ function publicSlugForProperty(property) {
   return configured || normalizePublicSlug(property.propertyId);
 }
 
+function publicAvailabilityUrlForProperty(publicBaseUrl, property) {
+  const base = String(publicBaseUrl || "").replace(/\/+$/, "");
+  const slug = publicSlugForProperty(property);
+  return base && slug ? `${base}/${encodeURIComponent(slug)}` : "";
+}
+
 function resolvePublicProperty(properties, slug) {
   const requested = normalizePublicSlug(slug);
   if (!requested) return null;
@@ -21,4 +27,4 @@ function resolvePublicProperty(properties, slug) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-module.exports = { normalizePublicSlug, publicSlugForProperty, resolvePublicProperty };
+module.exports = { normalizePublicSlug, publicAvailabilityUrlForProperty, publicSlugForProperty, resolvePublicProperty };

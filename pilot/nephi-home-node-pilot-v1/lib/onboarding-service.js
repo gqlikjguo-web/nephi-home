@@ -24,8 +24,8 @@ function cleanOnboardingInput(input={},draft=false){
 }
 function cleanInput(input={}){return cleanOnboardingInput(input,false);}
 function cleanDraftInput(input={}){return cleanOnboardingInput(input,true);}
-const LABELS={propertyName:"民宿正式名稱",contactName:"聯絡人姓名",phone:"聯絡電話",email:"Email",address:"地址",checkInTime:"入住時間",checkOutTime:"退房時間",rooms:"至少一個房型"};
-function completeness(app){const required=["propertyName","contactName","phone","email","address","checkInTime","checkOutTime"],missing=required.filter(k=>!app[k]);if(!app.rooms||!app.rooms.length)missing.push("rooms");return{percent:Math.round((required.length+1-missing.length)/(required.length+1)*100),missing,missingLabels:missing.map(x=>LABELS[x]||x),contradictions:[]};}
+const LABELS={propertyName:"民宿正式名稱",contactName:"聯絡人姓名",phone:"聯絡電話",email:"Email",address:"地址",googleMapsUrl:"Google Maps 網址",checkInTime:"入住時間",checkOutTime:"退房時間",rooms:"至少一個房型"};
+function completeness(app){const required=["propertyName","contactName","phone","email","address","googleMapsUrl","checkInTime","checkOutTime"],missing=required.filter(k=>!app[k]);if(!app.rooms||!app.rooms.length)missing.push("rooms");return{percent:Math.round((required.length+1-missing.length)/(required.length+1)*100),missing,missingLabels:missing.map(x=>LABELS[x]||x),contradictions:[]};}
 function authorizedPropertyIds(session){
  const ids=[];
  for(const property of Array.isArray(session&&session.properties)?session.properties:[]){

@@ -36,8 +36,16 @@ const PROPERTY_B = "demo_homestay_b";
   });
   const app = createApp({
     providers,
+    enableProductionLineEngine: true,
     lineBindingEnv: bindingA.lineBindingEnv,
     conversationDebounceMs: 1,
+    newCoreProductionExecuteTurn: async ({ state }) => ({
+      state,
+      finalDecision: { action: "reply", reasonCode: "identity_guard_reply", taskIds: [], missingFields: [], reviewRequired: false },
+      finalResponse: { action: "reply", shouldReply: true, replyText: "identity guard reply" },
+      taskResults: [],
+      artifacts: { canonicalItems: [], executionOutcomes: [], adapted: { taskCreations: [], canonicalTaskBindings: [] } }
+    }),
     lineReplyClientFactory: () => ({
       replyMessageWithHttpInfo: async () => {
         const error = new Error("test reply rejection");

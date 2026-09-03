@@ -262,7 +262,7 @@
 
 **原始標題（verbatim）：** `2026-07-29 — Test-only onboarding URLs are deployment-scoped`
 
-**Decision:** The `nephi-home-node-pilot-test-only` service starts with migrations only and uses its explicit `onrender.com` host as `PUBLIC_BASE_URL`. Test-only deploys never run a seed automatically and never generate operator invitation, resume, or admin-setup URLs on `app.junzanai.com`.
+**Decision:** The `nephi-home-node-pilot-test-only` service starts with migrations only and uses the dedicated `https://test.junzanai.com` host as `PUBLIC_BASE_URL`. Test-only deploys never run a seed automatically and never generate operator invitation, resume, or admin-setup URLs on `app.junzanai.com`.
 
 **Reason:** The repository Blueprint still contained an obsolete seed command and production-looking public base URL even after the running test-only service had been corrected manually. That mismatch could be restored by the next Blueprint deploy and sent fake staging traffic to a different test-only service.
 

@@ -193,6 +193,51 @@ function recordsOf(persistence) {
     results: [{ taskId: "availability-1", status: "answered", facts: { availableRoomIds: ["room401"] } }],
     resolverCalls: [{ request: { customerId: "nephi_home", checkIn: "2026-08-06", checkOut: "2026-08-07", guests: 2, roomType: "all", roomTypeSet: [], queryMode: "room_only" }, response: { customerId: "nephi_home", availabilityReliable: true, rooms: [{ id: "room401", name: "401雙人房" }] } }]
   });
+  const privateFormalAnswer = "PRIVATE_PROPERTY_CATALOG_ANSWER";
+  const privateDeterministicReply = "PRIVATE_DETERMINISTIC_REPLY";
+  assert.equal(trace.diagnostic({
+    traceId: "trace-a",
+    eventId: "event-a",
+    propertyId: "nephi_home",
+    stage: "response_plan",
+    sectionCount: 1,
+    reviewCount: 0,
+    sections: [{ taskId: "availability-1", status: "answered", facts: { answer: privateFormalAnswer } }],
+    safeSections: [{
+      taskId: "availability-1",
+      status: "answered",
+      source: "property_catalog",
+      answerLength: privateFormalAnswer.length,
+      answerSha256: sha256(privateFormalAnswer)
+    }],
+    coverage: { ok: true, coveredTaskIds: ["availability-1"], missingTaskIds: [], unexpectedTaskIds: [] }
+  }), true);
+  assert.equal(trace.diagnostic({
+    traceId: "trace-a",
+    eventId: "event-a",
+    propertyId: "nephi_home",
+    stage: "composer",
+    outputLength: privateDeterministicReply.length,
+    outputSha256: sha256(privateDeterministicReply),
+    coveredTaskIds: ["availability-1"],
+    missingTaskIds: [],
+    unexpectedTaskIds: [],
+    composerSource: "deterministic",
+    validationResult: "accepted",
+    rejectionReasonCodes: [],
+    fallbackOccurred: false,
+    finalOutput: privateDeterministicReply
+  }), true);
+  assert.equal(trace.diagnostic({
+    traceId: "trace-a",
+    eventId: "event-a",
+    propertyId: "nephi_home",
+    stage: "claim_validator",
+    errors: ["forbidden_claim"],
+    coveredTaskIds: ["availability-1"],
+    missingTaskIds: [],
+    unexpectedTaskIds: ["unexpected-task"]
+  }), true);
   trace.finalResponse({
     traceId: "trace-a",
     eventId: "event-a",
@@ -256,13 +301,42 @@ function recordsOf(persistence) {
   assert.equal(record.stages.canonical_request.items[0].temporalState.timezone, "Asia/Taipei");
   assert.equal(record.stages.temporal.items[0].resolutionSource, "current_turn");
   assert.deepEqual(record.stages.executor.resolverCalls[0].response.rooms, [{ id: "room401", name: "401雙人房" }]);
+  assert.deepEqual(record.stages.response_plan, {
+    sectionCount: 1,
+    reviewCount: 0,
+    sections: [{
+      taskId: "availability-1",
+      status: "answered",
+      source: "property_catalog",
+      answerLength: privateFormalAnswer.length,
+      answerSha256: sha256(privateFormalAnswer)
+    }],
+    coverage: { ok: true, coveredTaskIds: ["availability-1"], missingTaskIds: [], unexpectedTaskIds: [] }
+  });
+  assert.deepEqual(record.stages.composer, {
+    outputLength: privateDeterministicReply.length,
+    outputSha256: sha256(privateDeterministicReply),
+    coveredTaskIds: ["availability-1"],
+    missingTaskIds: [],
+    unexpectedTaskIds: [],
+    composerSource: "deterministic",
+    validationResult: "accepted",
+    rejectionReasonCodes: [],
+    fallbackOccurred: false
+  });
+  assert.deepEqual(record.stages.claim_validator, {
+    errors: ["forbidden_claim"],
+    coveredTaskIds: ["availability-1"],
+    missingTaskIds: [],
+    unexpectedTaskIds: ["unexpected-task"]
+  });
   assert.equal(record.stages.final_decision.action, "reply");
   assert.equal(record.stages.final_response.shouldReply, true);
   assert.equal(record.stages.line_transport.replyText, "2026-08-06 入住可選：401雙人房。");
   assert.deepEqual(stateBefore, originalState, "tracing must not mutate conversation state");
 
   const serialized = JSON.stringify(record);
-  for (const forbidden of ["Ualice", "test-only-channel", TARGET_MESSAGE, "secret-value", "Bearer must-not-survive", "guest@example.com"]) {
+  for (const forbidden of ["Ualice", "test-only-channel", TARGET_MESSAGE, "secret-value", "Bearer must-not-survive", "guest@example.com", privateFormalAnswer, privateDeterministicReply]) {
     assert.equal(serialized.includes(forbidden), false, `trace leaked forbidden input: ${forbidden}`);
   }
 }

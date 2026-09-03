@@ -5,9 +5,9 @@ const { ConversationEngineV2 } = require("./conversation-engine-v2/engine");
 const { ConversationEngineV2Coordinator } = require("./conversation-engine-v2/coordinator");
 const { createPublicBrand } = require("../config/public-brand");
 
-function createV2CompositionRoot({ providers, service, env = process.env, now = () => new Date(), debounceMs = 2000, planner, composer, onDiagnostic, diagnosticDetail = false, testOnlyOverrides = null } = {}) {
+function createV2CompositionRoot({ providers, service, env = process.env, now = () => new Date(), debounceMs = 2000, planner, composer, onDiagnostic, diagnosticDetail = false, testOnlyOverrides = null, lineEngine = null } = {}) {
   const overrides = testOnlyOverrides || {};
-  const engine = new ConversationEngineV2({
+  const legacyEngine = new ConversationEngineV2({
     planner: overrides.planner || planner || createTestOnlyOpenAiConversationPlannerFromEnv({ env, onDiagnostic: overrides.onDiagnostic || onDiagnostic }),
     composer: overrides.composer || composer || null,
     persistence: overrides.persistence || providers.persistence,
@@ -24,7 +24,8 @@ function createV2CompositionRoot({ providers, service, env = process.env, now = 
     diagnosticDetail,
     diagnosticMetadata: { providerType: providers.kind || "unknown" }
   });
-  return { engine, coordinator: new ConversationEngineV2Coordinator({ engine, debounceMs, externalReplyToken: true }) };
+  const engine = lineEngine || legacyEngine;
+  return { engine: legacyEngine, coordinator: new ConversationEngineV2Coordinator({ engine, debounceMs, externalReplyToken: true }) };
 }
 
 module.exports = { createV2CompositionRoot };
