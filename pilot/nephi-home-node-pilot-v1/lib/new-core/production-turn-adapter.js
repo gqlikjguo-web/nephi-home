@@ -13,6 +13,96 @@ function text(value) {
   return String(value || "").trim();
 }
 
+function hash(value) {
+  return `h:${crypto.createHash("sha256").update(String(value || "")).digest("hex")}`;
+}
+
+function emitDiagnostic(sink, entry) {
+  if (typeof sink !== "function") return;
+  try { sink(entry); } catch { /* diagnostics must never affect the turn */ }
+}
+
+function stateDiagnostic(state) {
+  return {
+    revision: Number(state && state.revision || 0),
+    tasks: (state && Array.isArray(state.tasks) ? state.tasks : []).slice(0, 20).map((task) => ({
+      taskId: hash(task && task.taskId),
+      type: text(task && task.type),
+      status: text(task && task.status),
+      missingFields: uniqueText(task && task.missingFields),
+      knownFields: uniqueText(task && task.knownFields),
+      subject: task && task.subject ? {
+        kind: text(task.subject.kind),
+        catalogIdentity: text(task.subject.catalogIdentity)
+      } : null
+    }))
+  };
+}
+
+function evidenceDiagnostic(values) {
+  return (Array.isArray(values) ? values : []).slice(0, 20).map((ref) => ({
+    eventRef: hash(ref && ref.eventId),
+    messageRef: hash(ref && ref.messageRef)
+  }));
+}
+
+function unitDiagnostic(unit) {
+  return {
+    unitId: hash(unit && unit.unitId),
+    purpose: text(unit && unit.purpose),
+    capability: text(unit && unit.capability),
+    subject: unit && unit.subject ? {
+      kind: text(unit.subject.kind),
+      catalogIdentity: text(unit.subject.catalogIdentity)
+    } : null,
+    temporalCandidate: unit && unit.temporalCandidate || null,
+    slotCandidates: (unit && Array.isArray(unit.slotCandidates) ? unit.slotCandidates : []).map((slot) => ({
+      slot: text(slot.slot), value: slot.value, evidenceRefs: evidenceDiagnostic(slot.evidenceRefs)
+    })),
+    safetyCandidate: unit && unit.safetyCandidate || null,
+    evidenceRefs: evidenceDiagnostic(unit && unit.evidenceRefs),
+    confidenceBand: text(unit && unit.confidenceBand)
+  };
+}
+
+function emitResultDiagnostics(sink, traceId, result) {
+  const artifacts = result && result.artifacts || {};
+  const understanding = artifacts.understanding || {};
+  emitDiagnostic(sink, { traceId, stage: "new_core_c01", input: artifacts.c01 || null });
+  emitDiagnostic(sink, { traceId, stage: "new_core_understanding",
+    rawUnits: (understanding.understandingOutput && understanding.understandingOutput.units || []).map(unitDiagnostic),
+    rawContextLinks: (understanding.contextLinkCandidates || []).map((link) => ({
+      unitId: hash(link.unitId), relationKind: text(link.relationKind),
+      currentSourceEvidenceRefs: evidenceDiagnostic(link.currentSourceEvidenceRefs),
+      referencedHistoryEventRefs: evidenceDiagnostic(link.referencedHistoryEventRefs)
+    })),
+    validatedUnits: (understanding.validatedUnits || []).map(unitDiagnostic),
+    failedUnits: understanding.failedUnits || [],
+    contextLinks: (understanding.validatedContextLinks || []).map((link) => ({
+      unitId: hash(link.unitId), relationKind: text(link.relationKind),
+      currentSourceEvidenceRefs: evidenceDiagnostic(link.currentSourceEvidenceRefs),
+      referencedHistoryEventRefs: evidenceDiagnostic(link.referencedHistoryEventRefs)
+    })) });
+  emitDiagnostic(sink, { traceId, stage: "new_core_context", candidates: artifacts.contextCandidates || [], adapted: artifacts.adapted || null });
+  emitDiagnostic(sink, { traceId, stage: "new_core_c07", outcomes: (artifacts.outcomes || []).map((item) => ({
+    unitId: hash(item && item.unit && item.unit.unitId),
+    lifecycle: item && item.lifecycleDecision || null,
+    readiness: item && item.readiness || null,
+    routing: item && item.routingDecision || null,
+    failure: item && item.failure || null
+  })) });
+  emitDiagnostic(sink, { traceId, stage: "new_core_c08", items: (artifacts.outcomes || []).map((item) => ({
+    unitId: hash(item && item.unit && item.unit.unitId),
+    input: item && item.c08Input || null,
+    result: item && item.c08ExecutionResult || null,
+    failure: item && item.failure || null
+  })) });
+  emitDiagnostic(sink, { traceId, stage: "new_core_canonical_request", items: artifacts.canonicalItems || [], formalRequests: artifacts.formalRequests || [] });
+  emitDiagnostic(sink, { traceId, stage: "new_core_resolver", requests: artifacts.queryPlans || [], formalRequests: artifacts.formalRequests || [], results: artifacts.executionOutcomes || [] });
+  emitDiagnostic(sink, { traceId, stage: "new_core_final", finalDecision: result.finalDecision, finalResponse: result.finalResponse, earliestFailure: result.earliestFailure || null });
+  emitDiagnostic(sink, { traceId, stage: "state_after", state: stateDiagnostic(result.state) });
+}
+
 function uniqueText(values) {
   return [...new Set((Array.isArray(values) ? values : []).map(text).filter(Boolean))];
 }
@@ -123,6 +213,7 @@ function createNewCoreProductionTurnAdapter({
   publicBaseUrl = "",
   now = () => new Date(),
   executeTurn,
+  onDiagnostic,
   recentMessageLimit = 10
 } = {}) {
   const getConversationState = requiredFunction(persistence, "getConversationState");
@@ -156,10 +247,13 @@ function createNewCoreProductionTurnAdapter({
       const timestamp = now().toISOString();
       const scope = { propertyId, channel, userId };
       const traceId = crypto.randomUUID();
+      emitDiagnostic(onDiagnostic, { traceId, stage: "line_inbound", propertyId,
+        channelHash: hash(channel), userHash: hash(userId), eventHash: hash(eventId) });
       let previous = null;
       try {
         previous = readConversationStateV3(getConversationState(propertyId, channel, userId), scope, timestamp);
         const snapshot = turnStateSnapshot(previous, scope, timestamp);
+        emitDiagnostic(onDiagnostic, { traceId, stage: "state_before", state: stateDiagnostic(previous), snapshot });
         let recentConversation = [];
         if (typeof persistence.listRecentMessages === "function") {
           const since = new Date(Date.parse(timestamp) - 24 * 60 * 60 * 1000).toISOString();
@@ -190,15 +284,25 @@ function createNewCoreProductionTurnAdapter({
           now: timestamp,
           scope,
           lifecycleDecisionIdPrefix: "line"
+          , onDiagnostic
         });
+        emitResultDiagnostics(onDiagnostic, traceId, result);
         setConversationState(propertyId, channel, userId, result.state);
         return {
           ...result,
+          traceId,
           taskResults: coordinatorTaskResults(result),
           requestCycleRefs: requestCycleRefsForResult(result)
         };
       } catch (error) {
-        return runtimeFailureResult(error, previous, traceId);
+        emitDiagnostic(onDiagnostic, { traceId, stage: "new_core_failure",
+          failureCode: safeFailureCode(error), validationErrors: uniqueText(error && error.validationErrors),
+          schemaViolation: error && error.schemaViolation || null,
+          valueOriginFunction: text(error && error.valueOriginFunction) });
+        const failed = runtimeFailureResult(error, previous, traceId);
+        emitDiagnostic(onDiagnostic, { traceId, stage: "new_core_final", finalDecision: failed.finalDecision, finalResponse: failed.finalResponse, earliestFailure: failed.earliestFailure });
+        emitDiagnostic(onDiagnostic, { traceId, stage: "state_after", state: stateDiagnostic(previous) });
+        return failed;
       }
     }
   });

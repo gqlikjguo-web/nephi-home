@@ -137,6 +137,37 @@ function coreResult(args, action) {
     assert.equal(record("exception-event").humanHandoff, true);
     assert.equal(record("exception-event").processingStatus, "reply_succeeded");
 
+    for (const eventId of ["answer-event", "clarify-event", "handoff-event", "no-reply-event", "exception-event"]) {
+      const persisted = record(eventId);
+      assert.ok(Array.isArray(persisted.safeTrace) && persisted.safeTrace.length > 0,
+        `${eventId} must persist a production-safe new-core trace`);
+      const traceIds = new Set(persisted.safeTrace.map((entry) => entry.traceId).filter(Boolean));
+      assert.equal(traceIds.size, 1, `${eventId} must use one traceId for every persisted stage`);
+      assert.ok(persisted.safeTrace.some((entry) => entry.stage === "line_inbound"));
+      assert.ok(persisted.safeTrace.some((entry) => entry.stage === "state_before"));
+      assert.ok(persisted.safeTrace.some((entry) => entry.stage === "new_core_final"
+        || entry.stage === "new_core_failure"));
+      assert.ok(persisted.safeTrace.some((entry) => entry.stage === "line_transport"));
+      assert.equal(JSON.stringify(persisted.safeTrace).includes("line-user-a"), false);
+      assert.equal(JSON.stringify(persisted.safeTrace).includes("Bearer "), false);
+    }
+    assert.equal(record("answer-event").replyText, "candidate reply",
+      "the exact FinalResponse text must use the existing message-log replyText field");
+    assert.equal(record("no-reply-event").replyText, "",
+      "a genuine NO_REPLY must persist an empty FinalResponse body");
+
+    const updateMessageEvent = providers.persistence.updateMessageEvent.bind(providers.persistence);
+    providers.persistence.updateMessageEvent = (...args) => {
+      if (args[3] && Object.hasOwn(args[3], "safeTrace")) throw Object.assign(new Error("trace write failed"), { code: "TRACE_WRITE_FAILED" });
+      return updateMessageEvent(...args);
+    };
+    const sendsBeforeTraceFailure = sends.length;
+    await send("trace-failure-event", "answer");
+    assert.equal(sends.length, sendsBeforeTraceFailure + 1,
+      "trace persistence failure must not prevent the formal LINE reply");
+    assert.equal(record("trace-failure-event").processingStatus, "reply_succeeded");
+    providers.persistence.updateMessageEvent = updateMessageEvent;
+
     const duplicatePayload = JSON.stringify({ events: [{
       type: "message", webhookEventId: "answer-event", replyToken: "duplicate-token",
       timestamp: Date.now(), source: { type: "user", userId: "line-user-a" },

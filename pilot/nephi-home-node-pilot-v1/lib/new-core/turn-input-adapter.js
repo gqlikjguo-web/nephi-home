@@ -19,10 +19,11 @@ function deepFreeze(value) {
   return Object.freeze(value);
 }
 
-function failure(code, errors) {
+function failure(code, errors, valueOriginFunction = "turn-input-adapter") {
   const error = new TypeError(`${code}:${errors.join(",")}`);
   error.code = code;
   error.validationErrors = errors;
+  error.valueOriginFunction = valueOriginFunction;
   throw error;
 }
 
@@ -93,7 +94,7 @@ function projectEvent(event, includeCycleIds) {
 
 function projectCycles(snapshot, propertyId) {
   if (!snapshot || typeof snapshot !== "object") {
-    failure("TURN_INPUT_INVALID", ["stateV3Snapshot"]);
+    failure("TURN_INPUT_INVALID", ["stateV3Snapshot"], "projectCycles");
   }
   const scope = snapshot.scope;
   if (!scope || scope.propertyId !== propertyId) {
@@ -101,7 +102,7 @@ function projectCycles(snapshot, propertyId) {
   }
   if (!Array.isArray(snapshot.referenceableCycles)
     || snapshot.referenceableCycles.length > MAX_REFERENCEABLE_CYCLES) {
-    failure("TURN_INPUT_INVALID", ["stateV3Snapshot.referenceableCycles"]);
+    failure("TURN_INPUT_INVALID", ["stateV3Snapshot.referenceableCycles"], "projectCycles");
   }
   return snapshot.referenceableCycles.map((cycle, index) => {
     assertPropertyClaim(propertyId, cycle && cycle.propertyId, `referenceableCycles.${index}.propertyId`);
@@ -134,7 +135,7 @@ function projectCatalog(catalog, propertyId) {
   }
   if (!Array.isArray(catalog.capabilityCatalog)
     || !Array.isArray(catalog.publicSubjectCatalog)) {
-    failure("TURN_INPUT_INVALID", ["publicCatalog"]);
+    failure("TURN_INPUT_INVALID", ["publicCatalog"], "projectCatalog");
   }
   return {
     propertyTimezone: catalog.timezone,
@@ -228,13 +229,13 @@ function isPublicCatalogIdentityProjectionFor(understandingTurnInput, value) {
 
 function buildUnderstandingTurnInput(args) {
   if (!args || typeof args !== "object" || Array.isArray(args)) {
-    failure("TURN_INPUT_INVALID", ["args"]);
+    failure("TURN_INPUT_INVALID", ["args"], "buildUnderstandingTurnInput");
   }
   const propertyScope = propertyScopeFrom(args);
   assertNoForgedProperty(args, propertyScope.propertyId);
   if (!Array.isArray(args.sourceEvents) || args.sourceEvents.length < 1
     || args.sourceEvents.length > MAX_SOURCE_EVENTS) {
-    failure("TURN_INPUT_INVALID", ["sourceEvents"]);
+    failure("TURN_INPUT_INVALID", ["sourceEvents"], "buildUnderstandingTurnInput");
   }
   if (!Array.isArray(args.recentConversation)
     || args.recentConversation.length > MAX_RECENT_CONVERSATION) {
@@ -253,7 +254,7 @@ function buildUnderstandingTurnInput(args) {
     ...catalog
   };
   const validation = validateUnderstandingTurnInput(input);
-  if (!validation.ok) failure(validation.code, validation.errors);
+  if (!validation.ok) failure(validation.code, validation.errors, "validateUnderstandingTurnInput");
   const frozenInput = deepFreeze(input);
   const catalogProjection = deepFreeze(frozenInput.publicSubjectCatalog.map((subject) => [
     subject.catalogIdentity,

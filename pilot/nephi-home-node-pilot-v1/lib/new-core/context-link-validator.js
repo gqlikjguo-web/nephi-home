@@ -9,6 +9,7 @@ const VALIDATED_CONTEXT_LINKS = new WeakSet();
 const INPUT_BY_VALIDATED_CONTEXT_LINK = new WeakMap();
 const UNIT_BY_VALIDATED_CONTEXT_LINK = new WeakMap();
 const RELATION_EVIDENCE_BY_VALIDATED_CONTEXT_LINK = new WeakMap();
+const FILTER_DIAGNOSTIC_BY_RESULT = new WeakMap();
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -22,8 +23,10 @@ function detach(value) {
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, detach(item)]));
 }
 
-function failure(code, errors = []) {
-  return { ok: false, code, errors };
+function failure(code, errors = [], diagnostic = null) {
+  const result = { ok: false, code, errors };
+  if (diagnostic) FILTER_DIAGNOSTIC_BY_RESULT.set(result, deepFreeze(detach(diagnostic)));
+  return result;
 }
 
 function evidenceKey(reference) {
@@ -127,6 +130,13 @@ function validateContextLink({
   }
   const boundCycleIds = new Set(historyEvents.flatMap((event) => event.referenceableCycleIds));
   const statuses = allowedStatuses(linkCandidate.relationKind);
+  const targetFilterResult = understandingTurnInput.referenceableCycles.map((cycle) => ({
+    requestCycleId: cycle.requestCycleId,
+    historyBound: boundCycleIds.has(cycle.requestCycleId),
+    statusAllowed: statuses.has(cycle.status),
+    notExpired: Number.isFinite(Date.parse(cycle.expiresAt)) && Date.parse(cycle.expiresAt) > Date.parse(now),
+    identityCompatible: cycleIdentityCompatible(unit, cycle)
+  })).map((item) => ({ ...item, selected: item.historyBound && item.statusAllowed && item.notExpired && item.identityCompatible }));
   const resolvedTargets = understandingTurnInput.referenceableCycles.filter((cycle) => (
     boundCycleIds.has(cycle.requestCycleId)
     && statuses.has(cycle.status)
@@ -135,10 +145,10 @@ function validateContextLink({
     && cycleIdentityCompatible(unit, cycle)
   ));
   if (relationTargets && resolvedTargets.length === 0) {
-    return failure("CONTEXT_TARGET_UNAVAILABLE", ["referencedHistoryEventRefs.target"]);
+    return failure("CONTEXT_TARGET_UNAVAILABLE", ["referencedHistoryEventRefs.target"], { targetFilterResult });
   }
   if (relationTargets && resolvedTargets.length > 1) {
-    return failure("CONTEXT_TARGET_AMBIGUOUS", ["referencedHistoryEventRefs.target"]);
+    return failure("CONTEXT_TARGET_AMBIGUOUS", ["referencedHistoryEventRefs.target"], { targetFilterResult });
   }
   const resolvedTargetRequestCycleId = relationTargets ? resolvedTargets[0].requestCycleId : null;
 
@@ -162,7 +172,13 @@ function validateContextLink({
     compatibleExistingTargetIds,
     compatiblePendingTargetIds
   }));
-  return { ok: true, code: null, errors: [], value };
+  const result = { ok: true, code: null, errors: [], value };
+  FILTER_DIAGNOSTIC_BY_RESULT.set(result, deepFreeze(detach({ targetFilterResult })));
+  return result;
+}
+
+function contextLinkFilterDiagnosticFor(result) {
+  return result && FILTER_DIAGNOSTIC_BY_RESULT.get(result) || null;
 }
 
 function isValidatedContextLink(value) {
@@ -190,5 +206,6 @@ module.exports = {
   isValidatedContextLink,
   isValidatedContextLinkFor,
   contextRelationEvidenceForValidatedLink,
+  contextLinkFilterDiagnosticFor,
   understandingInputForValidatedContextLink
 };

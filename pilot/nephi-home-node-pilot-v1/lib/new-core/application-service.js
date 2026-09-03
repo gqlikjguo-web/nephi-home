@@ -129,7 +129,7 @@ function noExecutionDecision(outcomes, dispositions, missingFields, failedUnits 
   return buildFinalDecision({ executionOutcomes: outcomes });
 }
 
-async function executeNewCoreTurn({ input, state, property, resolver, providerConfig, publicBaseUrl, now, scope = state && state.scope, understandingProvider = callOpenAIUnderstandingV1, lifecycleDecisionIdPrefix = "new-core" }) {
+async function executeNewCoreTurn({ input, state, property, resolver, providerConfig, publicBaseUrl, now, scope = state && state.scope, understandingProvider = callOpenAIUnderstandingV1, lifecycleDecisionIdPrefix = "new-core", onDiagnostic = null }) {
   if (!scope || !property || property.propertyId !== scope.propertyId) {
     const error = new Error("property_scope_invalid"); error.code = "PROPERTY_SCOPE_INVALID"; throw error;
   }
@@ -143,7 +143,18 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     stateV3Snapshot: turnStateSnapshot(state, scope, now),
     publicCatalog: buildPublicCatalog(property, catalog)
   });
-  const understanding = await understandingProvider(c01, { apiKey: providerConfig.apiKey });
+  const providerOperationalDiagnostics = [];
+  const understanding = await understandingProvider(c01, {
+    apiKey: providerConfig.apiKey,
+    onDiagnostic,
+    onOperationalDiagnostic: (entry) => { providerOperationalDiagnostics.push(entry); }
+  });
+  if (typeof onDiagnostic === "function") {
+    for (const stage of ["new_core_c03", "new_core_context_filter"]) {
+      try { onDiagnostic({ traceId: input.traceId, stage, items: providerOperationalDiagnostics.filter((entry) => entry.stage === stage) }); }
+      catch { /* diagnostics must never affect execution */ }
+    }
+  }
   const registry = createUnitReplyRoutingRegistry(projectCapabilityRegistry(CAPABILITY_REGISTRY));
   const c08Catalog = buildC01TrustedCanonicalizerCatalog(c01, catalog);
   const projection = buildPublicCatalogIdentityProjection(c01);
@@ -164,6 +175,7 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   const canonicalItems = [];
   const successful = outcomes.filter((item) => item.routingDecision);
   for (const outcome of successful.filter((item) => item.canonicalItem)) {
+    outcome.c08Input = outcome.canonicalItem;
     const result = executeCanonicalizerInputItem({ canonicalizerInputItem: outcome.canonicalItem, catalog: c08Catalog, publicCatalogIdentityProjection: projection, contextSnapshot });
     outcome.c08ExecutionResult = result;
     if (!result.ok) { outcome.canonicalItem = null; outcome.failure = { layer: "C08", failureCode: result.code }; continue; }
@@ -212,7 +224,7 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     finalDecision, finalResponse, earliestFailure,
     requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL,
     resolvedModel: provider.resolvedModel || "",
-    artifacts: { understanding, outcomes, successful, c01, aggregation: aggregation.value, adapted: adapted.value, previousState: state, canonicalItems, formalRequests, executionOutcomes, contextCandidates }
+    artifacts: { understanding, outcomes, successful, c01, aggregation: aggregation.value, adapted: adapted.value, previousState: state, canonicalItems, formalRequests, queryPlans, executionOutcomes, contextCandidates }
   };
 }
 

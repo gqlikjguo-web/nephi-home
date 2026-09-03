@@ -6,6 +6,7 @@ const {
   createNewCoreProductionTurnAdapter,
   bindProductionHistoryToCycles
 } = require("../lib/new-core/production-turn-adapter");
+const { formatNewCoreProductionTrace } = require("../lib/new-core/production-safe-trace");
 
 const NOW = "2026-09-03T03:00:00.000Z";
 const PROPERTY_A = Object.freeze({ propertyId: "property_a", timezone: "Asia/Taipei", rooms: [], propertyFacts: [], commonAnswers: {}, businessProfile: {} });
@@ -34,6 +35,7 @@ function fixture({ executeTurn, providerConfig = { apiKey: "test-provider-key" }
   const writes = [];
   const historyCalls = [];
   const resolverCalls = [];
+  const diagnostics = [];
   const persistence = {
     getConversationState(propertyId, channelId, lineUserId) {
       return stored.get(`${propertyId}:${channelId}:${lineUserId}`) || null;
@@ -72,8 +74,9 @@ function fixture({ executeTurn, providerConfig = { apiKey: "test-provider-key" }
     publicBaseUrl: "https://example.invalid",
     now: () => new Date(NOW),
     executeTurn
+    , onDiagnostic: (entry) => diagnostics.push(entry)
   });
-  return { adapter, stored, writes, historyCalls, resolverCalls };
+  return { adapter, stored, writes, historyCalls, resolverCalls, diagnostics };
 }
 
 function input(overrides = {}) {
@@ -89,6 +92,19 @@ function input(overrides = {}) {
 }
 
 (async () => {
+  const safeC01 = formatNewCoreProductionTrace({
+    traceId: "trace-safe", stage: "new_core_c01", input: {
+      propertyScope: { propertyId: "property_a", channel: "private-channel", userId: "private-user" },
+      capabilityCatalog: ["availability"], publicSubjectCatalog: [{ catalogIdentity: "room301", kind: "room", publicName: "Private room name" }],
+      sourceEvents: [{ eventId: "private-event", messageRef: "private-message", timestamp: NOW, messageKind: "text", messageText: "guest private text" }],
+      recentConversation: [], referenceableCycles: []
+    }
+  });
+  const serializedSafeC01 = JSON.stringify(safeC01);
+  for (const forbidden of ["guest private text", "Private room name", "private-channel", "private-user", "private-event", "private-message", "Bearer ", "apiKey"]) {
+    assert.equal(serializedSafeC01.includes(forbidden), false, `production trace leaked ${forbidden}`);
+  }
+
   assert.doesNotThrow(() => fixture({
     providerConfig: {},
     executeTurn: async (args) => result("reply", state(args.scope, args.state.revision + 1))
@@ -119,6 +135,11 @@ function input(overrides = {}) {
   assert.equal(seen[0].input.recentConversation[0].eventId, "prior-event");
   assert.equal(fx.writes.length, 1, "next ConversationStateV3 must be persisted once");
   assert.deepEqual(fx.resolverCalls.map((item) => item.propertyId), ["property_a", "property_a", "property_a", "property_a"]);
+  assert.ok(fx.diagnostics.some((entry) => entry.stage === "line_inbound"));
+  assert.ok(fx.diagnostics.some((entry) => entry.stage === "state_before"));
+  assert.ok(fx.diagnostics.some((entry) => entry.stage === "new_core_final"));
+  assert.equal(new Set(fx.diagnostics.map((entry) => entry.traceId)).size, 1,
+    "one production turn must use one traceId across inbound, state, and result boundaries");
 
   for (const action of ["clarification", "handoff", "no_reply"]) {
     const current = fixture({ executeTurn: async (args) => result(action, state(args.scope, args.state.revision + 1)) });
@@ -135,6 +156,8 @@ function input(overrides = {}) {
   assert.equal(safe.finalResponse.action, "handoff");
   assert.equal(safe.finalResponse.shouldReply, true);
   assert.equal(failed.writes.length, 0, "runtime failure must not overwrite the prior state");
+  assert.ok(failed.diagnostics.some((entry) => entry.stage === "new_core_failure"
+    && entry.failureCode === "UNDERSTANDING_PROVIDER_FAILURE"));
 
   const isolated = fixture({ executeTurn: async (args) => {
     assert.equal(args.scope.propertyId, "property_b");

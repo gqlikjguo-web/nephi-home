@@ -27,6 +27,7 @@ const { runWithTestOnlyAcceptanceRawUnderstanding } = require("./lib/test-only-r
 const { isDateKey, isPriceType, resolveDatePrice } = require("./lib/date-price-authority");
 const { createNewCoreManualTestService } = require("./lib/new-core/manual-test-service");
 const { createNewCoreProductionTurnAdapter } = require("./lib/new-core/production-turn-adapter");
+const { formatNewCoreProductionTrace } = require("./lib/new-core/production-safe-trace");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -279,6 +280,8 @@ function safePlannerAttempts(value) {
 }
 
 function formatSafeTestOnlyConversationTrace(details = {}) {
+  const newCoreTrace = formatNewCoreProductionTrace(details);
+  if (newCoreTrace) return newCoreTrace;
   const base = { scope: "conversation-engine-v2", traceId: String(details.traceId || ""), propertyId: String(details.propertyId || ""), stage: String(details.stage || "") };
   if (details.stage === "recent_conversation_load" || details.stage === "planner_provider_input") return {
     ...base,
@@ -1407,7 +1410,7 @@ function createApp(options = {}) {
     }
   };
   const acceptanceTraces = new Map();
-  const captureSafeTrace = (entry) => { testOnlyLineMessageTrace.diagnostic(entry); const safe = formatSafeTestOnlyConversationTrace(entry); logSafeTestOnlyConversationTrace(entry); if (safe && safe.traceId) { const list = acceptanceTraces.get(safe.traceId) || []; list.push(safe); acceptanceTraces.set(safe.traceId, list.slice(-40)); } };
+  const captureSafeTrace = (entry) => { try { testOnlyLineMessageTrace.diagnostic(entry); const safe = formatSafeTestOnlyConversationTrace(entry); logSafeTestOnlyConversationTrace(entry); if (safe && safe.traceId) { const list = acceptanceTraces.get(safe.traceId) || []; list.push(safe); acceptanceTraces.set(safe.traceId, list.slice(-40)); } } catch { /* diagnostics must never affect production behavior */ } };
   const newCoreLineEnabled = options.enableProductionLineEngine === true
     || (testOnlyEnvironment && String(runtimeEnv.NEW_CORE_LINE_CANDIDATE_ENABLED || "").trim().toLowerCase() === "true");
   const newCoreLineEngine = newCoreLineEnabled
@@ -1419,6 +1422,7 @@ function createApp(options = {}) {
       providerConfig: { apiKey: String(runtimeEnv.OPENAI_API_KEY || runtimeEnv.OPENAI_TEST_API_KEY || "") },
       publicBaseUrl: publicBrand.publicBaseUrl,
       now,
+      onDiagnostic: captureSafeTrace,
       ...(typeof options.newCoreProductionExecuteTurn === "function" ? { executeTurn: options.newCoreProductionExecuteTurn } : {})
     })
     : null;
@@ -1570,25 +1574,30 @@ function createApp(options = {}) {
       testOnlyLineMessageTrace.begin({ propertyId: id, ...input });
       void root.coordinator.enqueue(input).then(async (result) => {
         const finalResponseShouldReply = result.finalResponse && result.finalResponse.shouldReply;
-        const safeTrace = (acceptanceTraces.get(result.traceId) || []).slice(-40);
         const finalResponseReplyText = String(result.finalResponse && result.finalResponse.replyText || "");
         const decision = String(result.finalDecision && result.finalDecision.action || result.finalResponse && result.finalResponse.action || "no_reply");
         testOnlyLineMessageTrace.finalResponse({ traceId: result.traceId, eventId: input.eventId, propertyId: id, finalDecision: result.finalDecision, finalResponse: result.finalResponse });
-        const traceTransport = (details) => { const { replyText: _replyText, ...diagnostic } = details; emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
-        const persistedDecision = await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired), safeTrace, ...(Array.isArray(result.requestCycleRefs) ? { requestCycleRefs: result.requestCycleRefs } : {}) });
-        if (persistedDecision) acceptanceTraces.delete(result.traceId);
-        if (finalResponseShouldReply === false) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "final_response_should_reply_false", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); }
-        if (!finalResponseReplyText.trim()) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_empty_reply", attempted: false, delivered: false, replyText: "" }); return updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); }
+        const traceTransport = (details) => { const { replyText: _replyText, ...diagnostic } = details; captureSafeTrace(diagnostic); emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
+        const persistTrace = async () => {
+          try { await updateEventStatus(id, input.channelId, input.eventId, { safeTrace: (acceptanceTraces.get(result.traceId) || []).slice(-40) }); }
+          catch (error) { console.error(JSON.stringify({ scope: "new-core-production-trace", traceId: result.traceId, stage: "persistence_failed", errorCode: String(error && error.code || "TRACE_PERSISTENCE_FAILURE") })); }
+        };
+        await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, replyText: finalResponseReplyText, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired), ...(Array.isArray(result.requestCycleRefs) ? { requestCycleRefs: result.requestCycleRefs } : {}) });
+        await persistTrace();
+        if (finalResponseShouldReply === false) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "final_response_should_reply_false", attempted: false, delivered: false, replyText: "" }); const updated = await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); await persistTrace(); acceptanceTraces.delete(result.traceId); return updated; }
+        if (!finalResponseReplyText.trim()) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_empty_reply", attempted: false, delivered: false, replyText: "" }); const updated = await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); await persistTrace(); acceptanceTraces.delete(result.traceId); return updated; }
         const lineReplyText = `${aiIdentityPrefix(providers.customerSettings.getProperty(id))}${finalResponseReplyText}`;
         try {
           traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_attempt", attempted: true, delivered: false, replyText: lineReplyText });
           await (replyClient ? replyClient({ channelAccessToken: binding.channelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: binding.channelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: lineReplyText }] });
           traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_succeeded", attempted: true, delivered: true, replyText: lineReplyText });
           await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" });
+          await persistTrace(); acceptanceTraces.delete(result.traceId);
         } catch (error) {
           const status = Number(error && (error.status || error.statusCode));
           traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_failed", attempted: true, delivered: false, replyText: lineReplyText, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
           await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
+          await persistTrace(); acceptanceTraces.delete(result.traceId);
         }
       }).catch(async () => updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
     }

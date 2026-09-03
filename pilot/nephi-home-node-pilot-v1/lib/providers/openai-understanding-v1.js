@@ -45,7 +45,7 @@ const {
   capabilityPolicyFor,
   catalogIdentityRuleFor
 } = require("../new-core/capability-subject-policy");
-const { validateContextLink } = require("../new-core/context-link-validator");
+const { validateContextLink, contextRelationEvidenceForValidatedLink, contextLinkFilterDiagnosticFor } = require("../new-core/context-link-validator");
 const { createDiagnosticTraceEmitter } = require("../new-core/diagnostic-boundary");
 const {
   NEW_CORE_OPENAI_MODEL,
@@ -648,6 +648,11 @@ function emit(traceEmitter, input, details) {
   traceEmitter.emit(diagnosticInput(input, details));
 }
 
+function emitOperational(options, entry) {
+  if (typeof options.onOperationalDiagnostic !== "function") return;
+  try { options.onOperationalDiagnostic(entry); } catch { /* observability is behavior-neutral */ }
+}
+
 function valueType(value) {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
@@ -939,6 +944,8 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
       capabilityRegistryProjection
     });
     if (!semantic.ok) {
+      emitOperational(options, { traceId: understandingTurnInput.traceId, stage: "new_core_c03",
+        unit: normalized.unit, status: "FAILURE", failureCode: semantic.code, validationErrors: semantic.errors || [], valueOriginFunction: "validateSemanticUnit" });
       recordFailure(rawUnit.unitId, semantic.code, "C03");
       emit(traceEmitter, understandingTurnInput, {
         boundary: "C03", unitIds: [rawUnit.unitId], outputUnitIds: [], status: "FAILURE",
@@ -946,6 +953,8 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
       });
       continue;
     }
+    emitOperational(options, { traceId: understandingTurnInput.traceId, stage: "new_core_c03",
+      unit: semantic.value, status: "SUCCESS", failureCode: "", validationErrors: [], valueOriginFunction: "validateSemanticUnit" });
     semanticByUnitId.set(rawUnit.unitId, semantic.value);
     emit(traceEmitter, understandingTurnInput, {
       boundary: "C03", unitIds: [rawUnit.unitId], marker: "C03_SEMANTIC_UNIT_VALIDATED", nowMs
@@ -975,6 +984,11 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
       validatedEvidenceRefs: normalized.validatedEvidenceRefs,
       now: timestamp(nowMs)
     });
+    emitOperational(options, { traceId: understandingTurnInput.traceId, stage: "new_core_context_filter",
+      unit: semanticUnit, linkCandidate: matchingLinks[0], referenceableCycles: understandingTurnInput.referenceableCycles,
+      status: contextLink.ok ? "SUCCESS" : "FAILURE", failureCode: contextLink.code || "", validationErrors: contextLink.errors || [],
+      result: contextLink.ok ? contextRelationEvidenceForValidatedLink(contextLink.value, semanticUnit) : null,
+      filterDiagnostic: contextLinkFilterDiagnosticFor(contextLink), valueOriginFunction: "validateContextLink" });
     if (!contextLink.ok) {
       recordFailure(rawUnit.unitId, contextLink.code, "C05");
       emit(traceEmitter, understandingTurnInput, {
