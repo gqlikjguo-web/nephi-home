@@ -61,6 +61,14 @@ function withinLimit(parts, responsePlan) {
   return unique(parts).join("\n").slice(0, responsePlan && responsePlan.maxLength || 1200);
 }
 
+function sectionAvailabilityLinks(responsePlan, responseMode) {
+  return unique((responsePlan && Array.isArray(responsePlan.sections) ? responsePlan.sections : [])
+    .filter((section) => section && section.responseMode === responseMode)
+    .map((section) => String(section.publicAvailabilityUrl || "").trim())
+    .filter(Boolean)
+    .map((url) => `查房連結：${url}`));
+}
+
 function buildFinalResponse({
   finalDecision,
   responsePlan,
@@ -83,10 +91,11 @@ function buildFinalResponse({
       && responsePlan.sections.some((section) => section
         && section.responseMode === "answer"
         && ["availability", "bundle_availability"].includes(section.type)));
-    const availabilityLink = hasAvailabilityAnswer && replyText && String(publicAvailabilityUrl || "").trim()
-      ? `查房連結：${String(publicAvailabilityUrl).trim()}`
-      : "";
-    return { action, replyText: withinLimit([replyText, availabilityLink], responsePlan), shouldReply: true };
+    const scopedLinks = sectionAvailabilityLinks(responsePlan, "answer");
+    const legacyLink = !scopedLinks.length && hasAvailabilityAnswer && replyText && String(publicAvailabilityUrl || "").trim()
+      ? [`查房連結：${String(publicAvailabilityUrl).trim()}`]
+      : [];
+    return { action, replyText: withinLimit([replyText, ...scopedLinks, ...legacyLink], responsePlan), shouldReply: true };
   }
   const answered = verifiedSectionsFor(
     responsePlan,
@@ -102,18 +111,24 @@ function buildFinalResponse({
         shouldReply: true
       };
     }
-    const questions = clarificationQuestions(finalDecision.missingFields);
     const missingFields = Array.isArray(finalDecision.missingFields) ? finalDecision.missingFields : [];
+    const linkedSections = (responsePlan && Array.isArray(responsePlan.sections) ? responsePlan.sections : [])
+      .filter((section) => section && section.responseMode === "clarification" && String(section.publicAvailabilityUrl || "").trim());
+    const linkedMissingFields = new Set(linkedSections.flatMap((section) => section.missingInputs || []));
+    const remainingMissingFields = missingFields.filter((field) => !linkedMissingFields.has(field));
+    const questions = clarificationQuestions(remainingMissingFields);
+    const scopedLinks = sectionAvailabilityLinks(responsePlan, "clarification");
     const needsCheckIn = missingFields.includes("checkIn") || missingFields.includes("stay.checkIn");
-    const availabilityLink = needsCheckIn && String(publicAvailabilityUrl || "").trim()
-      ? `查房連結：${String(publicAvailabilityUrl).trim()}`
-      : "";
+    const legacyLink = !scopedLinks.length && needsCheckIn && String(publicAvailabilityUrl || "").trim()
+      ? [`查房連結：${String(publicAvailabilityUrl).trim()}`]
+      : [];
     return {
       action,
       replyText: withinLimit([
         ...answered,
-        ...(questions.length ? questions : [SAFE_CLARIFICATION_TEXT]),
-        availabilityLink
+        ...(questions.length ? questions : scopedLinks.length ? [] : [SAFE_CLARIFICATION_TEXT]),
+        ...scopedLinks,
+        ...legacyLink
       ], responsePlan),
       shouldReply: true
     };

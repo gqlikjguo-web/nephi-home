@@ -83,6 +83,23 @@ assert.deepEqual(availabilityReply, {
   shouldReply: true
 });
 
+const sectionScopedDatedPrice = buildFinalResponse({
+  finalDecision: decision("reply"),
+  responsePlan: plan([{
+    ...answeredSection,
+    taskId: "dated-price",
+    type: "price",
+    publicAvailabilityUrl: "https://example.test/demo/availability"
+  }]),
+  validatedReplyText: "2026-09-28 雙人房共 1,700 元。",
+  claimValidation: { ok: true, errors: [] }
+});
+assert.deepEqual(sectionScopedDatedPrice, {
+  action: "reply",
+  replyText: "2026-09-28 雙人房共 1,700 元。\n查房連結：https://example.test/demo/availability",
+  shouldReply: true
+});
+
 const noAvailabilityReply = buildFinalResponse({
   finalDecision: decision("reply"),
   responsePlan: plan([{
@@ -129,6 +146,33 @@ assert.deepEqual(availabilityClarification, {
   shouldReply: true
 });
 cases.push(availabilityClarification);
+
+const mixedLodgingAndAmenity = buildFinalResponse({
+  finalDecision: decision("clarification", { missingFields: ["searchFrom", "searchTo"] }),
+  responsePlan: plan([
+    {
+      ...clarificationSection,
+      taskId: "open-date-bundle",
+      type: "bundle_availability",
+      missingInputs: ["searchFrom", "searchTo"],
+      publicAvailabilityUrl: "https://example.test/demo/availability"
+    },
+    {
+      ...answeredSection,
+      taskId: "pool",
+      type: "amenity",
+      facts: { subject: "戲水池", answer: "有提供戲水池。" },
+      allowedFacts: ["戲水池", "有提供戲水池。"]
+    }
+  ]),
+  validatedReplyText: "請補充查詢日期。\n有提供戲水池。",
+  claimValidation: { ok: true, errors: [] }
+});
+assert.deepEqual(mixedLodgingAndAmenity, {
+  action: "clarification",
+  replyText: "有提供戲水池。\n查房連結：https://example.test/demo/availability",
+  shouldReply: true
+});
 
 const answeredAndClarification = buildFinalResponse({
   finalDecision: decision("clarification", { missingFields: ["stay.checkIn"] }),

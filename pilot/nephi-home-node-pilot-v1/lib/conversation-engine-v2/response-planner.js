@@ -12,6 +12,9 @@ const TASK_PRIORITY = Object.freeze({
   human_help: 70, high_risk: 70,
   unknown: 80
 });
+const PUBLIC_AVAILABILITY_REFERENCE_TYPES = new Set([
+  "availability", "available_dates", "bundle_availability", "booking_request", "price", "total_price"
+]);
 
 function taskPriority(type) { return TASK_PRIORITY[type] || TASK_PRIORITY.unknown; }
 function responseMode(status) { return status === "answered" ? "answer" : status === "needs_clarification" ? "clarification" : "handoff"; }
@@ -24,12 +27,12 @@ function collectAllowedFacts(value, key = "") {
   return [];
 }
 
-function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalRequests = [], reviewActions = [] }) {
+function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalRequests = [], reviewActions = [], publicAvailabilityUrl = "" }) {
   const canonicalByTaskId = new Map((canonicalRequests || []).map((request) => [request.taskId, request]));
   const rawSections = (taskResults || []).map((result, inputOrder) => {
     const canonicalRequest = canonicalByTaskId.get(result.taskId) || null;
     const type = canonicalRequest ? canonicalRequest.capability : result.type;
-    return {
+    const section = {
       taskId: result.taskId,
       coveredTaskIds: [result.taskId],
       type,
@@ -45,6 +48,10 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
       missingInputs: result.missingInputs || [],
       needsReview: Boolean(result.review)
     };
+    if (PUBLIC_AVAILABILITY_REFERENCE_TYPES.has(type) && String(publicAvailabilityUrl || "").trim()) {
+      section.publicAvailabilityUrl = String(publicAvailabilityUrl).trim();
+    }
+    return section;
   });
   const sections = [];
   for (const section of rawSections) {
@@ -86,4 +93,4 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
   return { schemaVersion: 1, propertyId, sections, coverage: finalCoverage, coverageValidation: assertTaskCoverage(expected, finalCoverage), reviewActions, allowedFacts: [...new Set(sections.flatMap((section) => section.allowedFacts || []))], forbiddenClaims: ["已替你保留", "已完成訂房", "一定有房", "免費加人", "可以折扣", "一定退款", "業者已同意", "真人已看過", "已通知業者"], maxLength: 1200 };
 }
 
-module.exports = { TASK_PRIORITY, taskPriority, buildResponsePlan };
+module.exports = { PUBLIC_AVAILABILITY_REFERENCE_TYPES, TASK_PRIORITY, taskPriority, buildResponsePlan };

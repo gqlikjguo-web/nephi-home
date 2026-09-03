@@ -195,19 +195,30 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     return buildCanonicalFormalRequest({ property, canonicalRequest: item.canonicalRequest, requestCycleId: outcome.lifecycleDecision.targetRequestCycleId || outcome.unit.unitId, confirmedInputs: executionConditionsV3(state, item) });
   });
   const queryPlans = formalRequests.map(buildCanonicalQueryPlan).filter(Boolean);
+  const routedClarifications = successful
+    .filter((item) => item.routingDecision.disposition === "CLARIFY")
+    .map((item) => ({
+      taskId: item.unit.unitId,
+      type: item.unit.capability,
+      outcome: "not_ready",
+      readinessStatus: "missing_information",
+      missingFields: item.routingDecision.missingGuestFields
+    }));
   const rawExecutionOutcomes = [
+    ...routedClarifications,
     ...formalRequests.filter((item) => item.readiness.status !== "ready").map(resultForNotReady),
     ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: resolver.availability, availableDatesResolver: resolver.availableDates, priceOverrides: resolver.priceOverrides(), datePriceClassifications: resolver.dateClassifications() })
   ];
   const executionOutcomes = applyControlledReplyRules({ rules: resolver.customReplies(), property, canonicalItems, executionOutcomes: rawExecutionOutcomes, now });
   const taskResults = executionOutcomes.map(taskResultForExecution);
-  const responsePlan = buildResponsePlan({ propertyId: scope.propertyId, taskResults, inputTaskIds: canonicalItems.map((item) => item.canonicalRequest.taskId), canonicalRequests: canonicalItems.map((item) => item.canonicalRequest), reviewActions: [] });
+  const publicAvailabilityUrl = publicAvailabilityUrlForProperty(publicBaseUrl, property);
+  const responsePlan = buildResponsePlan({ propertyId: scope.propertyId, taskResults, inputTaskIds: [...canonicalItems.map((item) => item.canonicalRequest.taskId), ...routedClarifications.map((item) => item.taskId)], canonicalRequests: canonicalItems.map((item) => item.canonicalRequest), reviewActions: [], publicAvailabilityUrl });
   const replyText = composeControlledReply(responsePlan);
   const claimValidation = validateClaims(replyText, responsePlan, canonicalItems.map((item) => item.canonicalRequest.taskId));
   const dispositions = successful.map((item) => item.routingDecision.disposition);
   const missingFields = successful.flatMap((item) => item.routingDecision.missingGuestFields);
   const finalDecision = executionOutcomes.length ? buildFinalDecision({ executionOutcomes, claimValidation }) : noExecutionDecision(executionOutcomes, dispositions, missingFields, failedUnits);
-  const finalResponse = buildFinalResponse({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation, publicAvailabilityUrl: publicAvailabilityUrlForProperty(publicBaseUrl, property) });
+  const finalResponse = buildFinalResponse({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation, publicAvailabilityUrl });
   const nextState = reduceConversationStateV3({ previous: state, canonicalItems, formalRequests, executionOutcomes, clarificationTaskIds: finalDecision.action === "clarification" ? finalDecision.executionSummary.notReadyTaskIds : [], lifecycleOperations: adapted.value.lifecycleOperations, taskCreations: adapted.value.taskCreations, canonicalTaskBindings: adapted.value.canonicalTaskBindings, scope: { ...scope, now } });
   const provider = understanding[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC] || {};
   const earliestFailure = outcomes.find((item) => item.failure)?.failure || understanding.failedUnits[0] && { layer: understanding.failedUnits[0].boundary || "C03-C05", failureCode: understanding.failedUnits[0].failureCode } || null;
