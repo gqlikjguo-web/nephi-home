@@ -167,6 +167,15 @@ for (const subject of [
   { kind: "bundle", catalogIdentity: "bundle-a" }
 ]) assert.equal(validate(unit({ subject })).ok, true, `fixed-date availability must retain ${subject.kind} admission`);
 
+const amenityListPolicy = capabilityPolicyFor(capabilityRegistryProjection, "amenity_list");
+assert.ok(amenityListPolicy, "amenity_list must have one shared declarative policy");
+assert.deepEqual(amenityListPolicy.subjectKinds, ["property", "room", "bundle"]);
+assert.equal(validate(unit({
+  capability: "amenity_list",
+  subject: { kind: "bundle", catalogIdentity: "bundle-a" },
+  stayDependent: false
+})).ok, true, "a catalog-grounded bundle amenity collection must be admitted");
+
 // AC-AVL-005 / AC-PRI-001..005 / AC-RDY-001..010: inventory families retain
 // their independently declared subject and required stay dependency.
 for (const candidate of [

@@ -54,6 +54,7 @@ const CAPABILITIES = new Set([
   "capacity",
   "property_fact",
   "amenity",
+  "amenity_list",
   "policy",
   "location",
   "booking_operator_request",

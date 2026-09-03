@@ -43,10 +43,14 @@ function scopedCatalogEntity(entity, inventoryMode = "any") {
   return { ...entity, status: "confirmed_no", answer: "", applicableBundles: [] };
 }
 
-function catalogAmenityNames(catalog, inventoryMode = "any") {
+function catalogAmenityNames(catalog, inventory = {}) {
+  const inventoryMode = inventory.mode || "any";
+  const entityId = inventory.entityId || null;
   return (catalog.amenities || [])
     .filter((item) => item.status === "confirmed_yes")
     .filter((item) => inventoryMode !== "room_only" || item.appliesTo !== "bundle_only")
+    .filter((item) => item.appliesTo !== "bundle_only" || inventoryMode !== "bundle_only" || !entityId
+      || (item.applicableBundles || []).some((bundle) => bundle.id === entityId))
     .map((item) => item.appliesTo === "bundle_only" && inventoryMode === "any"
       ? `${item.publicName}\uff08\u50c5\u5305\u68df\u5ba2\u9069\u7528\uff09`
       : item.publicName);
@@ -93,7 +97,7 @@ function executeTasks({ property, catalog, tasks, request, availabilityResolver,
     const resolved = task._resolvedEntity || (task.entity && task.entity.rawText && !genericAvailabilityEntity ? resolveEntity(catalog, task.entity) : null);
     if (resolved && resolved.status === "ambiguous") return { taskId: task.taskId, type: task.type, status: "needs_clarification", question: "想確認您指的是哪一個？", candidates: resolved.candidates, facts: {}, missingInputs: ["entity.canonicalId"] };
     if (["amenity", "policy", "property_fact"].includes(task.type)) return executePropertyFactTask({ property, catalog, task, resolved, request });
-    if (task.type === "amenity_list") return { taskId: task.taskId, type: task.type, status: "answered", facts: { amenities: catalogAmenityNames(catalog, request.inventory && request.inventory.mode), source: "property_catalog", propertyId: property.propertyId } };
+    if (task.type === "amenity_list") return { taskId: task.taskId, type: task.type, status: "answered", facts: { amenities: catalogAmenityNames(catalog, request.inventory), source: "property_catalog", propertyId: property.propertyId } };
     if (task.type === "available_dates") {
       const range = request.stay.searchRange;
       if (!range || !range.from || !range.to) return { taskId: task.taskId, type: task.type, status: "needs_clarification", question: "想查哪一段日期呢？", facts: {}, missingInputs: ["stay.searchRange"] };
@@ -163,7 +167,7 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
   );
   try {
     if (resolverId === "property_catalog" && queryPlan.capability === "amenity_list") {
-      return queryOutcome(queryPlan, "answered", { facts: { amenities: catalogAmenityNames(catalog, request.inventory && request.inventory.mode), source: "property_catalog", propertyId: property.propertyId }, resolverAttempted: false });
+      return queryOutcome(queryPlan, "answered", { facts: { amenities: catalogAmenityNames(catalog, request.inventory), source: "property_catalog", propertyId: property.propertyId }, resolverAttempted: false });
     }
     if (resolverId === "property_catalog") {
       const entity = scopedCatalogEntity(resolved && resolved.status === "resolved" && resolved.entity, request.inventory && request.inventory.mode);

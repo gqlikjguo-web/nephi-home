@@ -435,6 +435,9 @@ async function main() {
   for (const requiredCapability of ["availability"]) assert.ok(
     unitBranches.some((branch) => branch.properties.capability.enum.includes(requiredCapability))
   );
+  const amenityListBranch = unitBranches.find((branch) => branch.properties.capability.enum.includes("amenity_list"));
+  assert.ok(amenityListBranch, "provider schema must derive amenity_list from the shared capability policy");
+  assert.match(amenityListBranch.properties.capability.description, /collection.*amenit|amenit.*collection/i);
   const operatorBranch = unitBranches.find((branch) => branch.properties.capability.enum.includes("booking_operator_request"));
   assert.ok(operatorBranch.properties.subject.anyOf.some((subjectBranch) =>
     subjectBranch.properties.kind.enum.includes("other_verified")

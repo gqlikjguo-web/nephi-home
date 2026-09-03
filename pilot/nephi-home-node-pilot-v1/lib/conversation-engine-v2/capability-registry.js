@@ -204,7 +204,7 @@ const REGISTRY_BLUEPRINT = {
   amenity_list: {
     capability: "amenity_list",
     acceptedCandidateTypes: ["amenity_list"],
-    acceptedEntityCategories: ["amenity", "other"],
+    acceptedEntityCategories: ["room", "bundle", "other"],
     stayDependency: false,
     requiredFields: [],
     resolverId: "property_catalog",

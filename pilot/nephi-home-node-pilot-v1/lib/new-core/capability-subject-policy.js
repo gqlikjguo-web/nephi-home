@@ -19,6 +19,7 @@ const POLICY_FIELDS = Object.freeze([
 const UNDERSTANDING_DESCRIPTIONS = Object.freeze({
   availability: "Use availability for a specific supplied stay date or date range when the guest asks whether lodging, a room, a room set, or a bundle is available then. This is a language-derived capability candidate only; never answer facts.",
   available_dates: "Use available_dates only to search for which stay dates are available when the guest asks which, nearest, or upcoming dates can be booked rather than asking about a specific supplied stay date. This is a language-derived capability candidate only; never answer facts.",
+  amenity_list: "Use amenity_list for a request for the collection of amenities or facilities applicable to a property, room, or bundle. Use amenity for one specific catalog amenity. This is a language-derived capability candidate only; never answer facts.",
   policy: "Use policy only to ask an approved lodging policy fact, including check-in or check-out times. A request for an operator to change a reservation or its stay dates is not a policy question.",
   booking_operator_request: "Use booking_operator_request when the guest asks an operator to create, change, cancel, refund, or otherwise act on a reservation. A requested reservation date change is operator action, not a question about the property's check-in or check-out time policy."
 });
@@ -31,6 +32,7 @@ const EXECUTION_POLICY = Object.freeze({
   capacity: { routeKind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut", "stay.guests"], temporalRequirementClass: "stay", safetyShape: "none" },
   property_fact: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "none", safetyShape: "none" },
   amenity: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "none", safetyShape: "none" },
+  amenity_list: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "none", safetyShape: "none" },
   policy: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "none", safetyShape: "none" },
   location: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "none", safetyShape: "none" },
   booking_operator_request: { routeKind: "HANDOFF", requiredGuestFields: [], temporalRequirementClass: "none", safetyShape: "operator_action" },
@@ -46,6 +48,7 @@ const POLICY_BLUEPRINT = Object.freeze({
   capacity: { registryCapabilities: ["capacity"], subjectKinds: ["room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
   property_fact: { registryCapabilities: ["property_fact"], subjectKinds: ["property", "room", "amenity", "policy", "other_verified"], stayDependent: false, allowsOtherSupported: true, purposes: ["lodging_question"] },
   amenity: { registryCapabilities: ["amenity"], subjectKinds: ["amenity"], stayDependent: false, allowsOtherSupported: false, purposes: ["lodging_question"] },
+  amenity_list: { registryCapabilities: ["amenity_list"], subjectKinds: ["property", "room", "bundle"], stayDependent: false, allowsOtherSupported: false, purposes: ["lodging_question"] },
   policy: { registryCapabilities: ["policy"], subjectKinds: ["policy", "amenity"], stayDependent: false, allowsOtherSupported: false, purposes: ["lodging_question"] },
   location: { registryCapabilities: ["location"], subjectKinds: ["property", "external_place"], stayDependent: false, allowsOtherSupported: false, purposes: ["lodging_question"] },
   booking_operator_request: { registryCapabilities: ["booking_request"], subjectKinds: ["room", "bundle", "other_verified"], stayDependent: false, allowsOtherSupported: true, purposes: ["operator_request", "cancellation"] },

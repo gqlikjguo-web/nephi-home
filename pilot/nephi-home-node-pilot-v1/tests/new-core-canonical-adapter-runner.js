@@ -518,6 +518,28 @@ for (const [capability, subject, expectedCapability, expectedCategory] of [
   assert.equal(canonical.value.stateInput.confirmedFields.inventory, null);
 }
 
+const bundleAmenityList = pipeline({
+  messageText: "Whole House facilities",
+  unitOverrides: {
+    unitId: "unit-bundle-amenity-list",
+    capability: "amenity_list",
+    subject: { kind: "bundle", catalogIdentity: "bundle-a" },
+    stayDependent: false,
+    temporalCandidate: null
+  },
+  turnSuffix: "bundle-amenity-list"
+});
+const bundleAmenityListC08 = createC08(bundleAmenityList);
+assert.equal(bundleAmenityListC08.ok, true, bundleAmenityListC08.code);
+const canonicalBundleAmenityList = execute(bundleAmenityListC08.value);
+assert.equal(canonicalBundleAmenityList.ok, true, canonicalBundleAmenityList.code);
+assert.equal(canonicalBundleAmenityList.value.canonicalRequest.capability, "amenity_list");
+assert.equal(canonicalBundleAmenityList.value.canonicalRequest.resolverId, "property_catalog");
+assert.equal(canonicalBundleAmenityList.value.canonicalRequest.lodgingProduct.bundleId, "bundle-a");
+assert.deepEqual(canonicalBundleAmenityList.value.stateInput.confirmedFields.inventory, {
+  mode: "bundle_only", entityId: "bundle-a"
+});
+
 // AC-CAN-007 / AC-AVL-005: a catalog-validated matched room set is passed as
 // a set candidate and the unchanged entity resolver retains the complete set.
 const matchedRooms = pipeline({
