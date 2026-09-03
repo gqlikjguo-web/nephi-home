@@ -49,8 +49,8 @@ function catalogAmenityNames(catalog, inventory = {}) {
   return (catalog.amenities || [])
     .filter((item) => item.status === "confirmed_yes")
     .filter((item) => inventoryMode !== "room_only" || item.appliesTo !== "bundle_only")
-    .filter((item) => item.appliesTo !== "bundle_only" || inventoryMode !== "bundle_only" || !entityId
-      || (item.applicableBundles || []).some((bundle) => bundle.id === entityId))
+    .filter((item) => inventoryMode !== "bundle_only" || item.appliesTo === "bundle_only"
+      && Boolean(entityId) && (item.applicableBundles || []).some((bundle) => bundle.id === entityId))
     .map((item) => item.appliesTo === "bundle_only" && inventoryMode === "any"
       ? `${item.publicName}\uff08\u50c5\u5305\u68df\u5ba2\u9069\u7528\uff09`
       : item.publicName);

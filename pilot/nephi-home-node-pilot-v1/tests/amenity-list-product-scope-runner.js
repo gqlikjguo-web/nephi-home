@@ -43,8 +43,8 @@ function execute(entityId, propertyId) {
   });
 }
 
-assert.deepEqual(execute("first-bundle").facts.amenities, ["Shared", "First only"]);
-assert.deepEqual(execute("second-bundle").facts.amenities, ["Shared", "Second only"]);
+assert.deepEqual(execute("first-bundle").facts.amenities, ["First only"]);
+assert.deepEqual(execute("second-bundle").facts.amenities, ["Second only"]);
 assert.equal(execute("first-bundle", "property-b").outcome, "invalid_query_plan");
 
 console.log("amenity list product scope: PASS");
