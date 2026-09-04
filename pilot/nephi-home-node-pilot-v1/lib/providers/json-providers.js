@@ -9,6 +9,7 @@ function toProperty(homestay) {
   if (!homestay) return null;
   return {
     propertyId: homestay.customerId,
+    availabilityAutoReplyEnabled: homestay.availabilityAutoReplyEnabled !== false,
     displayName: homestay.name,
     rooms: (homestay.rooms || []).map(normalizeRoomRecord),
     commonAnswers: homestay.safeFacts || {},
@@ -46,7 +47,8 @@ class JsonCustomerSettingsProvider extends CustomerSettingsProvider {
       rooms: current.rooms || [],
       safeFacts: input.commonAnswers,
       businessProfile: input.businessProfile,
-      lineUrl: input.contactLink
+      lineUrl: input.contactLink,
+      availabilityAutoReplyEnabled: input.availabilityAutoReplyEnabled !== false
     });
     return toProperty(updated);
   }

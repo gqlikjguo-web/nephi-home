@@ -267,6 +267,35 @@ async function json(url, method = "GET", body, sentCookie = "") {
   assert.equal(clarificationControl.routing[0], "CLARIFY");
   assert.equal(clarificationControl.finalDecision.action, "clarification", "a legitimate routed clarification must not be escalated by claim coverage");
   assert.notEqual(clarificationControl.finalDecision.reasonCode, "claim_validation_failed");
+  const availabilityOffTurn = await sharedApplicationService.executeNewCoreTurn({
+    input: { turnId: "availability-off-turn", traceId: "availability-off-trace", message: "今天有房嗎", recentConversation: [] },
+    state: priceState,
+    property: { ...priceProperty, availabilityAutoReplyEnabled: false },
+    resolver: {
+      availability: () => { throw new Error("availability must be suppressed before Resolver"); },
+      availableDates: () => { throw new Error("available dates must be suppressed before Resolver"); },
+      priceOverrides: () => [], dateClassifications: () => [], customReplies: () => []
+    },
+    providerConfig: { apiKey: "test-key" }, publicBaseUrl: "https://test.example", now: now().toISOString(), scope: priceScope,
+    understandingProvider: async (c01) => {
+      const message = c01.sourceEvents[0].messageText;
+      const reference = { eventId: c01.sourceEvents[0].eventId, messageRef: c01.sourceEvents[0].messageRef, startOffset: 0, endOffset: message.length, quote: message };
+      const value = {
+        understandingOutput: { schemaVersion: 1, turnId: c01.turnId, units: [{
+          unitId: "availability-off-unit", evidenceRefs: [reference], purpose: "lodging_question", capability: "availability",
+          subject: { kind: "property", catalogIdentity: null }, stayDependent: true,
+          temporalCandidate: null, contextLinkCandidateId: "availability-off-context", safetyCandidate: null,
+          slotCandidates: [], confidenceBand: "high"
+        }] },
+        contextLinkCandidates: [{ contextLinkCandidateId: "availability-off-context", unitId: "availability-off-unit", relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: [reference], referencedHistoryEventRefs: [] }]
+      };
+      return callOpenAIUnderstandingV1(c01, { apiKey: "test-key", retryDelayMs: 0, waitImpl: async () => undefined,
+        fetchImpl: async () => ({ ok: true, status: 200, headers: { get: () => "req-availability-off" }, text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(value) }] }] }) }) });
+    }
+  });
+  assert.deepEqual(availabilityOffTurn.routing, ["NO_REPLY"], "OFF must suppress the availability item after C07");
+  assert.equal(availabilityOffTurn.finalDecision.action, "no_reply", "suppressed availability must use the existing FinalDecision authority");
+  assert.equal(availabilityOffTurn.finalResponse.shouldReply, false);
   assert.equal(typeof manualTestService.buildManualTestPublicCatalog, "function",
     "manual-test C01 must expose its formal public catalog projection for contract verification");
   assert.equal(typeof manualTestService.buildManualTestCanonicalizerCatalog, "function",

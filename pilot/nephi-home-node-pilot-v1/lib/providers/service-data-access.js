@@ -4,6 +4,7 @@ function toLegacyProperty(property) {
   if (!property) return null;
   return {
     customerId: property.propertyId,
+    availabilityAutoReplyEnabled: property.availabilityAutoReplyEnabled !== false,
     name: property.displayName,
     rooms: property.rooms || [],
     safeFacts: property.commonAnswers || {},

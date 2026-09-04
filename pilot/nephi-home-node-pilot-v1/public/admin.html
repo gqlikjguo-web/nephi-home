@@ -20,8 +20,9 @@
       </nav>
       <label id="adminMobileNavigation" class="admin-mobile-navigation">&#21151;&#33021;&#36984;&#21934;<select id="adminTabSelect"><option value="availability">&#25151;&#27841;&#31649;&#29702;</option><option value="pricing">&#25151;&#22411;&#33287;&#20729;&#26684;</option><option value="bundles">&#21253;&#26847;&#26041;&#26696;</option><option value="custom-replies">&#33258;&#35330;&#22238;&#35206;</option><option value="other">&#20854;&#20182;&#35373;&#23450;</option></select></label>
 	    <section class="card availability-card" data-admin-panel="availability">
-      <section id="monthlyInventoryControls" class="monthly-inventory-controls" aria-label="monthly inventory controls"></section>
       <div class="toolbar availability-toolbar"><div><p class="eyebrow" id="propertyLabel"></p><h2>房況管理</h2></div><div class="availability-range-actions"><label>顯示日期<select id="availabilityRange" aria-label="房況顯示日期"><option value="rolling">今天起 30 天</option></select></label><button id="availabilityToday" type="button" class="secondary">回到今天</button><input id="month" type="month" hidden></div></div>
+      <section id="availabilityAutoReply" class="availability-bulk" aria-label="房況自動回覆"><h3>房況自動回覆</h3><p class="hint">關閉後，客人詢問房況、空房、指定日期是否可預訂等問題時，AI 不自動回覆；其他民宿問題仍正常自動回答。</p><div class="actions"><button id="availabilityAutoReplyOn" type="button">開啟</button><button id="availabilityAutoReplyOff" type="button" class="secondary">關閉</button></div><p id="availabilityAutoReplyStatus" class="message" role="status" aria-live="polite"></p></section>
+      <section id="monthlyInventoryControls" class="monthly-inventory-controls" aria-label="monthly inventory controls"></section>
       <p class="hint">切換開關即可更新可售狀態；點格子內的當日實際價格可調整單日房價，內部備註只供業者查看。</p>
       <p id="status" class="message" role="status" aria-live="polite"></p>
       <div id="availabilityLoading" class="availability-loading" hidden>正在載入房況…</div>

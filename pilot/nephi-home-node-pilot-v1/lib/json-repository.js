@@ -216,6 +216,7 @@ class JsonFileRepository {
       if (Object.hasOwn(input, "propertyFacts")) homestay.propertyFacts = JSON.parse(JSON.stringify(input.propertyFacts || []));
       if (input.businessProfile) homestay.businessProfile = { ...input.businessProfile };
       if (Object.hasOwn(input, "lineUrl")) homestay.lineUrl = input.lineUrl;
+      if (Object.hasOwn(input, "availabilityAutoReplyEnabled")) homestay.availabilityAutoReplyEnabled = input.availabilityAutoReplyEnabled !== false;
       backfillEnabledInventoryRows(state, homestay);
       homestay.updatedAt = this.now().toISOString();
       return JSON.parse(JSON.stringify(homestay));

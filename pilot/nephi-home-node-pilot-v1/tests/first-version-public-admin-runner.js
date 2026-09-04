@@ -194,11 +194,12 @@ function seedDate(offsetDays) {
     assert.equal((await json(`${running.url}/api/room-pricing?customerId=other_home`)).body.data.rooms[0].displayName, "另一間房", "room writes must remain property-scoped");
 
     const initialProfile = await json(`${running.url}/api/property-profile?propertyId=nephi_home`);
+    assert.equal(initialProfile.body.data.availabilityAutoReplyEnabled, true, "missing availability auto-reply setting must default ON");
     assert.equal(initialProfile.body.data.earlyCheckInPolicy, "Alpha 提前入住規則", "the profile API must load the property's existing optional early check-in policy");
     assert.equal(initialProfile.body.data.latestArrivalTime, "21:30", "the profile API must load the property's existing optional latest-arrival time");
     const latestArrivalText = "最晚22:00，超過請提前聯絡";
     const earlyCheckInText = "如需提前入住，請事先詢問，是否可以提前需依當天房況確認。";
-    const profileResponse = await fetch(`${running.url}/api/property-profile`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", propertyName: "更新後旅宿", googleMapsUrl: "https://maps.app.goo.gl/nephi", lineUrl: "https://lin.ee/nephiOfficial", contactInfo: "0900-000-000", checkInTime: "15:00", earlyCheckInPolicy: earlyCheckInText, latestArrivalTime: latestArrivalText, checkOutTime: "11:00" }) });
+    const profileResponse = await fetch(`${running.url}/api/property-profile`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", propertyName: "更新後旅宿", googleMapsUrl: "https://maps.app.goo.gl/nephi", lineUrl: "https://lin.ee/nephiOfficial", contactInfo: "0900-000-000", checkInTime: "15:00", earlyCheckInPolicy: earlyCheckInText, latestArrivalTime: latestArrivalText, checkOutTime: "11:00", availabilityAutoReplyEnabled: false }) });
     const profile = await profileResponse.json();
     assert.equal(profileResponse.status, 200, "the minimal profile must update property-scoped data");
     assert.equal(profile.data.propertyName, "更新後旅宿");
@@ -206,6 +207,9 @@ function seedDate(offsetDays) {
     assert.equal(profile.data.earlyCheckInPolicy, earlyCheckInText);
     assert.equal(profile.data.latestArrivalTime, latestArrivalText);
     assert.equal(profile.data.checkOutTime, "11:00");
+    assert.equal(profile.data.availabilityAutoReplyEnabled, false, "the availability auto-reply setting must be saved");
+    assert.equal((await json(`${running.url}/api/property-profile?propertyId=nephi_home`)).body.data.availabilityAutoReplyEnabled, false, "the saved setting must survive reload");
+    assert.equal((await json(`${running.url}/api/property-profile?propertyId=other_home`)).body.data.availabilityAutoReplyEnabled, true, "changing one property must not affect another property");
     assert.equal(app.providers.customerSettings.getProperty("nephi_home").commonAnswers.earlyCheckInPolicy, earlyCheckInText, "the JSON provider must round-trip the early check-in policy");
     assert.equal(app.providers.customerSettings.getProperty("other_home").commonAnswers.earlyCheckInPolicy, "Beta 提前入住規則", "updating one property must not change another property's early check-in policy");
     assert.equal(app.providers.customerSettings.getProperty("nephi_home").commonAnswers.latestArrivalTime, latestArrivalText, "the JSON provider must round-trip the complete operator text");
@@ -217,6 +221,7 @@ function seedDate(offsetDays) {
     const clearedProfile = await clearLatestArrival.json();
     assert.equal(clearLatestArrival.status, 200);
     assert.equal(clearedProfile.data.latestArrivalTime, "");
+    assert.equal(clearedProfile.data.availabilityAutoReplyEnabled, false, "unrelated profile updates must preserve the setting");
     assert.equal(Object.hasOwn(app.providers.customerSettings.getProperty("nephi_home").commonAnswers, "latestArrivalTime"), false, "clearing the optional value must delete its JSON key");
     assert.equal(Object.hasOwn(app.providers.customerSettings.getProperty("nephi_home").commonAnswers, "earlyCheckInPolicy"), false, "omitting the optional early check-in value must clear its JSON key");
     assert.equal(app.providers.customerSettings.getProperty("nephi_home").commonAnswers.checkInTime, "15:00");

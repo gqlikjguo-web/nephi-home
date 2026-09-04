@@ -398,6 +398,7 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     const property = requireCustomerId(customerId);
     return {
       propertyName: property.name,
+      availabilityAutoReplyEnabled: property.availabilityAutoReplyEnabled !== false,
       aiName: String(property.businessProfile && property.businessProfile.aiName || ""),
       address: String(property.businessProfile && property.businessProfile.address || ""),
       googleMapsUrl: normalizeGoogleMapsUrl(property.businessProfile && property.businessProfile.googleMapsUrl),
@@ -422,6 +423,9 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     const latestArrivalTime = cleanText(input.latestArrivalTime, 500);
     const checkOutTime = cleanText(input.checkOutTime, 5);
     const lineUrl = cleanText(input.lineUrl, 500);
+    const availabilityAutoReplyEnabled = input.availabilityAutoReplyEnabled === undefined
+      ? property.availabilityAutoReplyEnabled !== false
+      : input.availabilityAutoReplyEnabled !== false;
     if (!propertyName || !TIME_PATTERN.test(checkInTime) || !TIME_PATTERN.test(checkOutTime)) throw new AppError(400, "INVALID_PROFILE", "請填寫民宿名稱與有效的入住、退房時間");
     if (input.googleMapsUrl && !googleMapsUrl) throw new AppError(400, "INVALID_GOOGLE_MAPS_URL", "Google Maps 網址格式不正確");
     if (lineUrl) {
@@ -438,10 +442,12 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       displayName: propertyName,
       businessProfile: { ...(property.businessProfile || {}), aiName, address, googleMapsUrl, contactInfo },
       contactLink: lineUrl,
+      availabilityAutoReplyEnabled,
       commonAnswers
     });
     return {
       propertyName: updated.displayName,
+      availabilityAutoReplyEnabled: updated.availabilityAutoReplyEnabled !== false,
       aiName: String(updated.businessProfile && updated.businessProfile.aiName || ""),
       address: String(updated.businessProfile && updated.businessProfile.address || ""),
       googleMapsUrl: normalizeGoogleMapsUrl(updated.businessProfile && updated.businessProfile.googleMapsUrl),

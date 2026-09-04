@@ -21,7 +21,7 @@ const {
 const { contextRelationEvidenceForValidatedLink } = require("./context-link-validator");
 const { projectCapabilityRegistry } = require("./semantic-unit-validator");
 const { createLifecycleDecision } = require("./lifecycle-manager");
-const { createUnitReplyRoutingRegistry, createUnitReadiness, createTrustedOperatorSafetyPolicy, createUnitRoutingDecision } = require("./unit-reply-router");
+const { createUnitReplyRoutingRegistry, createUnitReadiness, createTrustedOperatorSafetyPolicy, createUnitRoutingDecision, createPropertySuppressedNoReplyDecision } = require("./unit-reply-router");
 const { createCanonicalizerInputItem, executeCanonicalizerInputItem } = require("./canonical-execution-adapter");
 const { aggregateUnitOutcomes } = require("./unit-aggregator");
 const { adaptLifecycleDecisionsToStateV3 } = require("./state-v3-lifecycle-adapter");
@@ -30,6 +30,25 @@ const { NEW_CORE_OPENAI_MODEL } = require("./openai-model-authority");
 const { publicAvailabilityUrlForProperty } = require("../public-property-routing");
 
 const HANDOFF_CAPABILITIES = new Set(["booking_operator_request", "high_risk"]);
+const AVAILABILITY_AUTO_REPLY_POLICY_KEYS = Object.freeze(["availability", "available_dates"]);
+
+function isAvailabilityAutoReplyCapability(capability) {
+  const registry = projectCapabilityRegistry(CAPABILITY_REGISTRY);
+  return AVAILABILITY_AUTO_REPLY_POLICY_KEYS.some((key) => key === capability
+    || registry[key].registryCapabilities.includes(capability));
+}
+
+function availabilityAutoReplySuppressed(unit, property) {
+  return property.availabilityAutoReplyEnabled === false && isAvailabilityAutoReplyCapability(unit && unit.capability);
+}
+
+function applyAvailabilityAutoReplyGate(unit, lifecycleDecision, routingDecision, property) {
+  if (!routingDecision || property.availabilityAutoReplyEnabled !== false
+    || !isAvailabilityAutoReplyCapability(unit && unit.capability)) return routingDecision;
+  const suppressed = createPropertySuppressedNoReplyDecision({ unit, lifecycleDecision, routingDecision });
+  if (!suppressed.ok) { const error = new Error(suppressed.code); error.code = suppressed.code; throw error; }
+  return suppressed.value;
+}
 
 function normalizeFailureRefs(values = []) {
   const refs = values
@@ -168,9 +187,10 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     const safety = HANDOFF_CAPABILITIES.has(unit.capability) ? createTrustedOperatorSafetyPolicy({ unit, lifecycleDecision: lifecycle.value, routingRegistry: registry }) : null;
     const routing = createUnitRoutingDecision({ unit, lifecycleDecision: lifecycle.value, routingRegistry: registry, readiness: readiness.value, operatorSafetyPolicy: safety && safety.ok ? safety.value : null });
     if (!routing.ok) { outcomes.push({ unit, lifecycleDecision: lifecycle.value, readiness: readiness.value, failure: { layer: "C07", failureCode: routing.code } }); continue; }
-    const c08 = routing.value.disposition === "ANSWER" ? createCanonicalizerInputItem({ unit, lifecycleDecision: lifecycle.value, routingDecision: routing.value, understandingTurnInput: c01, canonicalizerCatalog: c08Catalog, publicCatalogIdentityProjection: projection }) : { ok: true, value: null };
-    outcomes.push({ unit, lifecycleDecision: lifecycle.value, readiness: readiness.value, routingDecision: routing.value,
-      c08CreationResult: routing.value.disposition === "ANSWER" ? c08 : null,
+    const gatedRouting = applyAvailabilityAutoReplyGate(unit, lifecycle.value, routing.value, property);
+    const c08 = gatedRouting.disposition === "ANSWER" ? createCanonicalizerInputItem({ unit, lifecycleDecision: lifecycle.value, routingDecision: gatedRouting, understandingTurnInput: c01, canonicalizerCatalog: c08Catalog, publicCatalogIdentityProjection: projection }) : { ok: true, value: null };
+    outcomes.push({ unit, lifecycleDecision: lifecycle.value, readiness: readiness.value, routingDecision: gatedRouting,
+      c08CreationResult: gatedRouting.disposition === "ANSWER" ? c08 : null,
       canonicalItem: c08.ok ? c08.value : null,
       failure: c08.ok ? null : { layer: "C08", failureCode: c08.code, errors: c08.errors || [] } });
   }
@@ -247,6 +267,8 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
 }
 
 module.exports = {
+  applyAvailabilityAutoReplyGate,
+  availabilityAutoReplySuppressed,
   bindRecentConversationToCycles,
   buildPublicCatalog,
   executeNewCoreTurn,

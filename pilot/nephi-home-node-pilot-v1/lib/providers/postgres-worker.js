@@ -144,7 +144,7 @@ async function operation(name, args) {
       FROM properties p LEFT JOIN property_settings s ON s.property_id=p.property_id ${filter} ORDER BY p.property_id`, name === "getProperty" ? [args[0]] : []);
     const mapped = result.rows.map((row) => {
       const settings = typeof row.settings === "string" ? JSON.parse(row.settings) : (row.settings || {});
-      return { propertyId: row.property_id, displayName: row.display_name, currency:settings.currency||"TWD", rooms: row.rooms || [], commonAnswers: settings.commonAnswers || {}, propertyFacts: settings.propertyFacts || [], pricing: settings.pricing || {}, faqs: row.faqs || [], humanHandoffSituations: settings.humanHandoffSituations || [], businessProfile:settings.businessProfile||{}, contactLink: settings.contactLink || settings.businessProfile&&settings.businessProfile.line&&settings.businessProfile.line.contactLink || "", onboarding: settings.onboarding || { isReady: true } };
+      return { propertyId: row.property_id, displayName: row.display_name, availabilityAutoReplyEnabled: settings.availabilityAutoReplyEnabled !== false, currency:settings.currency||"TWD", rooms: row.rooms || [], commonAnswers: settings.commonAnswers || {}, propertyFacts: settings.propertyFacts || [], pricing: settings.pricing || {}, faqs: row.faqs || [], humanHandoffSituations: settings.humanHandoffSituations || [], businessProfile:settings.businessProfile||{}, contactLink: settings.contactLink || settings.businessProfile&&settings.businessProfile.line&&settings.businessProfile.line.contactLink || "", onboarding: settings.onboarding || { isReady: true } };
     });
     for (const item of mapped) {
       const bundles = await operation("listBundles", [item.propertyId]);
@@ -251,7 +251,7 @@ async function operation(name, args) {
     const stored=await client.query("SELECT settings FROM property_settings WHERE property_id=$1",[propertyId]);
     const existingSettings=stored.rows[0]?(typeof stored.rows[0].settings==="string"?JSON.parse(stored.rows[0].settings):stored.rows[0].settings||{}):{};
     await client.query("BEGIN");
-    try { await client.query("UPDATE properties SET display_name=$2,updated_at=now() WHERE property_id=$1",[propertyId,input.displayName]);const settings={...existingSettings,commonAnswers:input.commonAnswers||current.commonAnswers||{},businessProfile:input.businessProfile||current.businessProfile||{},contactLink:input.contactLink||""};await client.query("UPDATE property_settings SET settings=$2::jsonb WHERE property_id=$1",[propertyId,JSON.stringify(settings)]);await client.query("COMMIT"); } catch(error) { await client.query("ROLLBACK");throw error; }
+    try { await client.query("UPDATE properties SET display_name=$2,updated_at=now() WHERE property_id=$1",[propertyId,input.displayName]);const settings={...existingSettings,availabilityAutoReplyEnabled:input.availabilityAutoReplyEnabled!==false,commonAnswers:input.commonAnswers||current.commonAnswers||{},businessProfile:input.businessProfile||current.businessProfile||{},contactLink:input.contactLink||""};await client.query("UPDATE property_settings SET settings=$2::jsonb WHERE property_id=$1",[propertyId,JSON.stringify(settings)]);await client.query("COMMIT"); } catch(error) { await client.query("ROLLBACK");throw error; }
     return operation("getProperty",[propertyId]);
   }
   if (name === "updatePropertyFacts") {

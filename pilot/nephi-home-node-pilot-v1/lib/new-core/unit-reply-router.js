@@ -246,6 +246,18 @@ function createUnitRoutingDecision({ unit, lifecycleDecision, routingRegistry, r
   return { ok: true, code: null, errors: [], value };
 }
 
+function createPropertySuppressedNoReplyDecision({ unit, lifecycleDecision, routingDecision } = {}) {
+  const understandingTurnInput = understandingInputForValidatedLifecycleDecision(lifecycleDecision);
+  if (!isTrustedUnitRoutingDecisionFor(routingDecision, { unit, lifecycleDecision, understandingTurnInput })) {
+    return failure("ROUTING_INPUT_INVALID", ["routingDecision"]);
+  }
+  const value = deepFreeze({ unitId: unit.unitId, disposition: "NO_REPLY", reasonClass: "no_executable_need",
+    requiresCanonicalExecution: false, missingGuestFields: [], operatorActionClass: null, riskClass: null });
+  C07_AUTHORITY_MARKER.add(value);
+  PROVENANCE_BY_C07_DECISION.set(value, { unit, lifecycleDecision, understandingTurnInput });
+  return { ok: true, code: null, errors: [], value };
+}
+
 function isTrustedUnitRoutingDecision(value) {
   return Boolean(value) && typeof value === "object"
     && C07_AUTHORITY_MARKER.has(value)
@@ -271,6 +283,7 @@ module.exports = {
   createUnitReadiness,
   createTrustedOperatorSafetyPolicy,
   createUnitRoutingDecision,
+  createPropertySuppressedNoReplyDecision,
   isTrustedUnitRoutingDecision,
   isTrustedUnitRoutingDecisionFor
 };
