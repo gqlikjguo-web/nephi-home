@@ -45,7 +45,12 @@ const {
   capabilityPolicyFor,
   catalogIdentityRuleFor
 } = require("../new-core/capability-subject-policy");
-const { validateContextLink, contextRelationEvidenceForValidatedLink, contextLinkFilterDiagnosticFor } = require("../new-core/context-link-validator");
+const {
+  cycleIdentityCompatible,
+  validateContextLink,
+  contextRelationEvidenceForValidatedLink,
+  contextLinkFilterDiagnosticFor
+} = require("../new-core/context-link-validator");
 const { createDiagnosticTraceEmitter } = require("../new-core/diagnostic-boundary");
 const {
   NEW_CORE_OPENAI_MODEL,
@@ -741,6 +746,83 @@ function envelopeWireFailure(value, understandingTurnInput) {
   if (links.some((candidate) => !unitKeys.has(JSON.stringify([candidate.unitId, candidate.contextLinkCandidateId]))
     && linkIdCounts.get(candidate.contextLinkCandidateId) === 1)) {
     return { code: "UNDERSTANDING_SCHEMA_INVALID", violation: { validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID", fieldPath: "contextLinkCandidates", expected: "every link bound to an emitted unit", actual: "pair:orphan" } };
+  }
+  const canonicalizableTemporalKinds = new Set([
+    "absolute_date", "month_day", "date_range", "relative_date",
+    "relative_range", "weekday", "month_weekday"
+  ]);
+  const normalizedGuestField = (field) => ({
+    checkIn: "stay.checkIn", checkOut: "stay.checkOut", guestCount: "stay.guests",
+    searchFrom: "searchFrom", searchTo: "searchTo"
+  })[field] || field;
+  const unitSuppliesField = (unit, field) => {
+    const normalized = normalizedGuestField(field);
+    if (["stay.checkIn", "stay.checkOut", "searchFrom", "searchTo"].includes(normalized)) {
+      const temporal = unit.temporalCandidate;
+      const candidateField = ["stay.checkIn", "searchFrom"].includes(normalized)
+        ? "checkInCandidate" : "checkOutCandidate";
+      return Boolean(temporal && (temporal[candidateField]
+        || canonicalizableTemporalKinds.has(temporal.kind)));
+    }
+    if (normalized === "stay.guests") return unit.slotCandidates.some((slot) => (
+      slot.slot === "guest_count" && slot.operation === "SET"
+        && Number.isInteger(slot.value) && slot.value > 0
+    ));
+    return false;
+  };
+  const standaloneComplete = (unit) => {
+    const policy = capabilityPolicyFor(CAPABILITY_REGISTRY_PROJECTION, unit.capability);
+    return Boolean(policy) && policy.requiredGuestFields.every((field) => unitSuppliesField(unit, field));
+  };
+  const targetedRelations = new Set(["SUPPLEMENT", "MODIFICATION", "TERMINATION"]);
+  for (const [index, candidate] of links.entries()) {
+    if (!targetedRelations.has(candidate.relationKind)) continue;
+    const unit = units.find((item) => item.unitId === candidate.unitId
+      && item.contextLinkCandidateId === candidate.contextLinkCandidateId);
+    if (!unit) continue;
+    const citedKeys = new Set(candidate.referencedHistoryEventRefs.map((reference) =>
+      JSON.stringify([reference.eventId, reference.messageRef])));
+    const boundCycleIds = new Set(understandingTurnInput.recentConversation
+      .filter((event) => citedKeys.has(JSON.stringify([event.eventId, event.messageRef])))
+      .flatMap((event) => event.referenceableCycleIds));
+    const boundCycles = understandingTurnInput.referenceableCycles
+      .filter((cycle) => boundCycleIds.has(cycle.requestCycleId));
+    const compatibleCycles = boundCycles.filter((cycle) => cycleIdentityCompatible(unit, cycle));
+    if (boundCycles.length > 0 && compatibleCycles.length === 0) {
+      return { code: "UNDERSTANDING_SCHEMA_INVALID", violation: {
+        validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID",
+        fieldPath: `contextLinkCandidates.${index}.referencedHistoryEventRefs`,
+        expected: "target bound to capability/subject-compatible referenceable cycle",
+        actual: "relation_target:identity_incompatible"
+      } };
+    }
+    if (candidate.relationKind === "SUPPLEMENT" && compatibleCycles.length > 0) {
+      const pendingTargets = compatibleCycles.filter((cycle) => cycle.status === "pending");
+      if (pendingTargets.every((cycle) => !Array.isArray(cycle.missingFields) || cycle.missingFields.length === 0)) {
+        return { code: "UNDERSTANDING_SCHEMA_INVALID", violation: {
+          validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID",
+          fieldPath: `contextLinkCandidates.${index}.relationKind`,
+          expected: "SUPPLEMENT target with missingFields",
+          actual: "relation_target:no_missing_fields"
+        } };
+      }
+      if (!pendingTargets.some((cycle) => cycle.missingFields.some((field) => unitSuppliesField(unit, field)))) {
+        return { code: "UNDERSTANDING_SCHEMA_INVALID", violation: {
+          validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID",
+          fieldPath: `contextLinkCandidates.${index}.relationKind`,
+          expected: "SUPPLEMENT supplying at least one target missingField",
+          actual: "relation_target:missing_field_not_filled"
+        } };
+      }
+      if (standaloneComplete(unit)) {
+        return { code: "UNDERSTANDING_SCHEMA_INVALID", violation: {
+          validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID",
+          fieldPath: `contextLinkCandidates.${index}.relationKind`,
+          expected: "SUPPLEMENT that is not independently complete",
+          actual: "relation_target:standalone_request_complete"
+        } };
+      }
+    }
   }
   const ungroundedTemporalIndex = units.findIndex((unit) => unit.temporalCandidate !== null
     && !unit.evidenceRefs.some((reference) => reference.quote.includes(unit.temporalCandidate.rawText)));

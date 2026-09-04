@@ -566,21 +566,167 @@ async function main() {
     rawTextInEvidenceQuote: false
   }, "wire rejection must retain the bounded raw evidence needed for root-cause diagnosis");
 
-  // Luna cites history evidence only. C05 resolves that evidence against the
-  // formal cycle binding and rejects an identity-incompatible target.
+  // A targeted relation is part of the provider wire contract: the cited
+  // history event must bind to a cycle whose capability and subject identity
+  // match the semantic unit. C05 remains the second, authoritative guard.
   let incompatibleRelationCalls = 0;
   const incompatibleRelationDiagnostics = [];
-  const incompatibleRelationResult = await callOpenAIUnderstandingV1(
+  const incompatibleRelationError = await captureError(() => callOpenAIUnderstandingV1(
     contextRelationVarianceInput(),
     options(async () => {
       incompatibleRelationCalls += 1;
       return successfulResponse(incompatibleContextRelationOutput());
     }, { onDiagnostic: (event) => incompatibleRelationDiagnostics.push(event) })
+  ));
+  assert.equal(incompatibleRelationCalls, 1, "identity-incompatible targeted relation must not be admitted");
+  assert.equal(incompatibleRelationError.code, "UNDERSTANDING_SCHEMA_INVALID");
+  assert.deepEqual(incompatibleRelationError.schemaViolation, {
+    validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID",
+    fieldPath: "contextLinkCandidates.0.referencedHistoryEventRefs",
+    expected: "target bound to capability/subject-compatible referenceable cycle",
+    actual: "relation_target:identity_incompatible"
+  });
+  assert.deepEqual(incompatibleRelationDiagnostics.map((event) => event.targetMarker), ["C02_WIRE_SCHEMA_REJECTED"]);
+
+  const missingFieldNotFilledInput = c01({
+    sourceEvents: [{
+      eventId: "event-a", messageRef: "message-a", role: "guest", timestamp: NOW,
+      messageKind: "text", messageText: "有房嗎"
+    }],
+    stateV3Snapshot: {
+      scope: { propertyId: "property-a", channel: "line-a", userId: "guest-a" },
+      referenceableCycles: [{
+        requestCycleId: "cycle-a", requestKind: "availability", capability: "availability",
+        status: "pending", expiresAt: "2026-08-30T08:00:00.000Z",
+        subject: { kind: "room", catalogIdentity: "room-a" }, missingFields: ["checkIn"],
+        confirmedValues: { checkIn: null, checkOut: null, guestCount: null, searchFrom: null, searchTo: null },
+        slotRefs: []
+      }]
+    }
+  });
+  const missingFieldNotFilledError = await captureError(() => callOpenAIUnderstandingV1(
+    missingFieldNotFilledInput,
+    options(async () => successfulResponse(providerOutput({
+      understandingOutput: {
+        ...providerOutput().understandingOutput,
+        units: [availabilityUnit({
+          unitId: "unit-a", contextLinkCandidateId: "link-a",
+          evidenceRefs: [evidence({ endOffset: 3, quote: "有房嗎" })]
+        })]
+      },
+      contextLinkCandidates: [link({
+        relationKind: "SUPPLEMENT",
+        currentSourceEvidenceRefs: [evidence({ endOffset: 3, quote: "有房嗎" })],
+        referencedHistoryEventRefs: [{ eventId: "history-a", messageRef: "history-message-a" }]
+      })]
+    })))
+  ));
+  assert.equal(missingFieldNotFilledError.code, "UNDERSTANDING_SCHEMA_INVALID");
+  assert.equal(missingFieldNotFilledError.schemaViolation.actual, "relation_target:missing_field_not_filled",
+    "SUPPLEMENT must supply at least one field missing from its compatible target");
+
+  const standaloneSupplementError = await captureError(() => callOpenAIUnderstandingV1(
+    c01({
+      sourceEvents: [{
+        eventId: "event-a", messageRef: "message-a", role: "guest", timestamp: NOW,
+        messageKind: "text", messageText: "9/16有房嗎"
+      }],
+      stateV3Snapshot: {
+        scope: { propertyId: "property-a", channel: "line-a", userId: "guest-a" },
+        referenceableCycles: [{
+          requestCycleId: "cycle-a", requestKind: "availability", capability: "availability",
+          status: "pending", expiresAt: "2026-08-30T08:00:00.000Z",
+          subject: { kind: "room", catalogIdentity: "room-a" }, missingFields: ["checkIn", "checkOut"],
+          confirmedValues: { checkIn: null, checkOut: null, guestCount: null, searchFrom: null, searchTo: null },
+          slotRefs: []
+        }]
+      }
+    }),
+    options(async () => successfulResponse(providerOutput({
+      understandingOutput: {
+        ...providerOutput().understandingOutput,
+        units: [availabilityUnit({
+          unitId: "unit-a", contextLinkCandidateId: "link-a",
+          evidenceRefs: [evidence({ endOffset: 7, quote: "9/16有房嗎" })],
+          temporalCandidate: {
+            rawText: "9/16", kind: "month_day",
+            checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null
+          }
+        })]
+      },
+      contextLinkCandidates: [link({
+        relationKind: "SUPPLEMENT",
+        currentSourceEvidenceRefs: [evidence({ endOffset: 7, quote: "9/16有房嗎" })],
+        referencedHistoryEventRefs: [{ eventId: "history-a", messageRef: "history-message-a" }]
+      })]
+    })))
+  ));
+  assert.equal(standaloneSupplementError.code, "UNDERSTANDING_SCHEMA_INVALID");
+  assert.equal(standaloneSupplementError.schemaViolation.actual, "relation_target:standalone_request_complete",
+    "a semantic unit that is independently ready must not be admitted as SUPPLEMENT");
+
+  const compatibleSupplementInput = c01({
+    sourceEvents: [{
+      eventId: "event-a", messageRef: "message-a", role: "guest", timestamp: NOW,
+      messageKind: "text", messageText: "4個人"
+    }],
+    stateV3Snapshot: {
+      scope: { propertyId: "property-a", channel: "line-a", userId: "guest-a" },
+      referenceableCycles: [{
+        requestCycleId: "cycle-a", requestKind: "capacity", capability: "capacity",
+        status: "pending", expiresAt: "2026-08-30T08:00:00.000Z",
+        subject: { kind: "room", catalogIdentity: "room-a" }, missingFields: ["guestCount"],
+        confirmedValues: { checkIn: null, checkOut: null, guestCount: null, searchFrom: null, searchTo: null },
+        slotRefs: []
+      }]
+    },
+    publicCatalog: {
+      propertyId: "property-a", timezone: "Asia/Taipei",
+      capabilityCatalog: ["availability", "capacity", "property_fact"],
+      publicSubjectCatalog: [
+        { catalogIdentity: "property-a", kind: "property", propertyId: "property-a", publicName: "Property A" },
+        { catalogIdentity: "room-a", kind: "room", propertyId: "property-a", publicName: "Room A" }
+      ]
+    }
+  });
+  const compatibleSupplementResult = await callOpenAIUnderstandingV1(
+    compatibleSupplementInput,
+    options(async () => successfulResponse(providerOutput({
+      understandingOutput: {
+        ...providerOutput().understandingOutput,
+        units: [unit({
+          purpose: "lodging_question", capability: "capacity",
+          subject: { kind: "room", catalogIdentity: "room-a" }, stayDependent: true,
+          evidenceRefs: [evidence({ endOffset: 3, quote: "4個人" })],
+          slotCandidates: [{
+            slotCandidateId: "slot-guest-count", slot: "guest_count", operation: "SET", value: 4,
+            evidenceRefs: [evidence({ endOffset: 3, quote: "4個人" })]
+          }]
+        })]
+      },
+      contextLinkCandidates: [link({
+        relationKind: "SUPPLEMENT",
+        currentSourceEvidenceRefs: [evidence({ endOffset: 3, quote: "4個人" })],
+        referencedHistoryEventRefs: [{ eventId: "history-a", messageRef: "history-message-a" }]
+      })]
+    })))
   );
-  assert.equal(incompatibleRelationCalls, 1, "semantic relation inconsistency must never resample");
-  assert.deepEqual(incompatibleRelationResult.failedUnits.map((failure) => failure.failureCode), ["CONTEXT_TARGET_UNAVAILABLE"]);
-  assert.equal(incompatibleRelationResult.validatedContextLinks.length, 0);
-  assert.ok(incompatibleRelationDiagnostics.some((event) => event.targetMarker === "C05_CONTEXT_LINK_REJECTED"));
+  assert.equal(compatibleSupplementResult.validatedContextLinks[0].relationKind, "SUPPLEMENT",
+    "identity-compatible SUPPLEMENT that fills a missing field but remains incomplete must be admitted");
+
+  const standaloneResult = await callOpenAIUnderstandingV1(
+    contextRelationVarianceInput(),
+    options(async () => successfulResponse(providerOutput({
+      understandingOutput: incompatibleContextRelationOutput().understandingOutput,
+      contextLinkCandidates: [link({
+        relationKind: "NEW_REQUEST",
+        currentSourceEvidenceRefs: [evidence({ endOffset: 7, quote: "9/16有房嗎" })],
+        referencedHistoryEventRefs: []
+      })]
+    })))
+  );
+  assert.equal(standaloneResult.validatedContextLinks[0].relationKind, "NEW_REQUEST",
+    "standalone NEW_REQUEST must remain admitted when incompatible history exists");
 
   const unboundTargetResult = await callOpenAIUnderstandingV1(
     contextRelationVarianceInput({ recentConversation: [] }),

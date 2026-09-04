@@ -202,6 +202,7 @@ function contextRelationEvidenceForValidatedLink(value, unit) {
 }
 
 module.exports = {
+  cycleIdentityCompatible,
   validateContextLink,
   isValidatedContextLink,
   isValidatedContextLinkFor,
