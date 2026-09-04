@@ -139,6 +139,36 @@ async function json(url, method = "GET", body, sentCookie = "") {
   assert.equal(sharedFailedTurn.finalResponse.action, "handoff");
   assert.equal(sharedResolverCalls, 0, "failed understanding must not execute a Resolver");
   assert.deepEqual(sharedFailedTurn.state.tasks, [], "failed understanding must not create conversation tasks");
+  const statementMessage = "我們剛到而已";
+  const statementTurn = await sharedApplicationService.executeNewCoreTurn({
+    input: { turnId: "statement-turn", traceId: "statement-trace", message: statementMessage, recentConversation: [] },
+    state: sharedState,
+    property: { propertyId: sharedScope.propertyId, displayName: "Shared Property", timezone: "Asia/Taipei", rooms: [], propertyFacts: [], commonAnswers: {}, businessProfile: {} },
+    resolver: {
+      availability: () => { throw new Error("non-actionable statement must not query availability"); },
+      availableDates: () => { throw new Error("non-actionable statement must not query available dates"); },
+      priceOverrides: () => [], dateClassifications: () => [], customReplies: () => []
+    },
+    providerConfig: { apiKey: "test-key" }, publicBaseUrl: "https://test.example", now: now().toISOString(), scope: sharedScope,
+    understandingProvider: async (c01) => {
+      const reference = { eventId: c01.sourceEvents[0].eventId, messageRef: c01.sourceEvents[0].messageRef, startOffset: 0, endOffset: statementMessage.length, quote: statementMessage };
+      const value = {
+        understandingOutput: { schemaVersion: 1, turnId: c01.turnId, units: [{
+          unitId: "statement-unit", evidenceRefs: [reference], purpose: "conversational_statement", capability: null,
+          subject: { kind: null, catalogIdentity: null }, stayDependent: false, temporalCandidate: null,
+          contextLinkCandidateId: "statement-context", safetyCandidate: null, slotCandidates: [], confidenceBand: "high"
+        }] },
+        contextLinkCandidates: [{ contextLinkCandidateId: "statement-context", unitId: "statement-unit", relationKind: "NONE", currentSourceEvidenceRefs: [reference], referencedHistoryEventRefs: [] }]
+      };
+      return callOpenAIUnderstandingV1(c01, { apiKey: "test-key", retryDelayMs: 0, waitImpl: async () => undefined,
+        fetchImpl: async () => ({ ok: true, status: 200, headers: { get: () => "req-statement" }, text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(value) }] }] }) }) });
+    }
+  });
+  assert.deepEqual(statementTurn.lifecycle, ["NONE"]);
+  assert.deepEqual(statementTurn.routing, ["NO_REPLY"]);
+  assert.equal(statementTurn.finalDecision.action, "no_reply");
+  assert.equal(statementTurn.finalResponse.shouldReply, false);
+  assert.deepEqual(statementTurn.state.tasks, [], "non-actionable statements must not create conversation tasks");
   const priceScope = { propertyId: "property-price-link", channel: "line-price", userId: "guest-price" };
   const priceState = createConversationStateV3({
     ...priceScope, tasks: [], createdAt: now().toISOString(), updatedAt: now().toISOString(), expiresAt: now().toISOString()

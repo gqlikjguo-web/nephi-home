@@ -238,6 +238,18 @@ for (const candidate of [
   assert.equal(validate(candidate).ok, true);
 }
 
+// A pure conversational statement is a formal, non-actionable meaning. This
+// catches regressions that force statements into context_update/unsupported.
+assert.equal(validate(unit({
+  purpose: "conversational_statement",
+  capability: null,
+  subject: { kind: null, catalogIdentity: null },
+  stayDependent: false,
+  temporalCandidate: null,
+  safetyCandidate: null,
+  slotCandidates: []
+})).ok, true);
+
 // AC-SEM-004..010 / AC-AVL-009: malformed C03, catalog misses, catalog kind
 // conflicts, capability/subject conflicts, and stay conflicts fail closed.
 assertFailure(validate(unit({ evidenceRefs: [] })), "SEMANTIC_UNIT_INVALID");

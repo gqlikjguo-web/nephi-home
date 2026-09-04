@@ -436,6 +436,7 @@ assert.equal(route({ ...cancellationOperator, operatorSafetyPolicy: cancellation
 // unit even when lifecycle is START, MODIFY, or NONE.
 for (const [purpose, reasonClass, action, target] of [
   ["acknowledgement", "acknowledgement", "NONE", null],
+  ["conversational_statement", "no_executable_need", "NONE", null],
   ["social", "social", "START", null],
   ["off_topic", "off_topic", "NONE", null],
   ["context_update", "context_only", "MODIFY", "cycle-routing"],

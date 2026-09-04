@@ -123,6 +123,8 @@ const cases = [
     actual: runBoundary({ id: "continue", text: "9/20到9/21", cycles: [cycle("cycle-a")], relationKind: "SUPPLEMENT", targetRequestCycleIdCandidate: "history-evidence", unit: { ...actionable("price", "bundle", "bundle-a", true), temporalCandidate: { rawText: "9/20到9/21", kind: "partial", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null } } }) },
   { id: "acknowledgement_none", expected: { ok: true, action: "NONE", targetRequestCycleId: null },
     actual: runBoundary({ id: "ack", text: "好的，謝謝您", unit: { purpose: "acknowledgement", capability: null, subject: { kind: null, catalogIdentity: null }, stayDependent: false } }) },
+  { id: "conversational_statement_none", expected: { ok: true, action: "NONE", targetRequestCycleId: null },
+    actual: runBoundary({ id: "statement", text: "我們剛到而已", unit: { purpose: "conversational_statement", capability: null, subject: { kind: null, catalogIdentity: null }, stayDependent: false } }) },
   { id: "explicit_modify", expected: { ok: true, action: "MODIFY", targetRequestCycleId: "cycle-a" },
     actual: runBoundary({ id: "modify", text: "改成9/21", cycles: [cycle("cycle-a")], relationKind: "MODIFICATION", targetRequestCycleIdCandidate: "cycle-a", unit: { purpose: "correction", capability: null, subject: { kind: null, catalogIdentity: null }, stayDependent: false } }) },
   { id: "explicit_end", expected: { ok: true, action: "END", targetRequestCycleId: "cycle-a" },

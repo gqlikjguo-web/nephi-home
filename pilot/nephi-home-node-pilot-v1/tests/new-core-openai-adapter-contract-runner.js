@@ -354,6 +354,7 @@ assert.equal(schemaAccepts(semanticUnitProviderSchema, unit({
   stayDependent: false
 })), false, "provider schema must not admit cancellation through the unsupported branch when null capability owns END");
 for (const valid of [
+  unit({ purpose: "conversational_statement" }),
   availabilityUnit({ subject: { kind: "property", catalogIdentity: null } }),
   availabilityUnit({ subject: { kind: "room", catalogIdentity: "room-a" } }),
   availabilityUnit({ subject: { kind: "bundle", catalogIdentity: "bundle-a" } }),

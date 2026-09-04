@@ -229,7 +229,7 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
     if (targetIds.length > 1) return failure("CONTEXT_TARGET_AMBIGUOUS", ["referenceableCycles"]);
     return failure("CONTEXT_TARGET_UNAVAILABLE", ["referenceableCycles"]);
   };
-  const nonActionable = new Set(["acknowledgement", "social", "off_topic"]);
+  const nonActionable = new Set(["acknowledgement", "conversational_statement", "social", "off_topic"]);
   let action;
   let target = null;
   if (nonActionable.has(unit.purpose)) {

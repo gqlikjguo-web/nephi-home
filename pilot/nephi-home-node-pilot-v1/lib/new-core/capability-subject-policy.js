@@ -55,7 +55,7 @@ const POLICY_BLUEPRINT = Object.freeze({
   location: { registryCapabilities: ["location"], subjectKinds: ["property", "external_place"], stayDependent: false, allowsOtherSupported: false, purposes: ["lodging_question"] },
   booking_operator_request: { registryCapabilities: ["booking_request"], subjectKinds: ["room", "bundle", "other_verified"], stayDependent: false, allowsOtherSupported: true, purposes: ["operator_request", "cancellation"] },
   high_risk: { registryCapabilities: ["high_risk"], subjectKinds: ["other_verified"], stayDependent: false, allowsOtherSupported: true, purposes: ["sensitive_request", "cancellation"] },
-  null: { registryCapabilities: [], subjectKinds: [null], stayDependent: false, allowsOtherSupported: false, purposes: ["acknowledgement", "correction", "supplement", "cancellation", "context_update", "social", "off_topic"] }
+  null: { registryCapabilities: [], subjectKinds: [null], stayDependent: false, allowsOtherSupported: false, purposes: ["acknowledgement", "conversational_statement", "correction", "supplement", "cancellation", "context_update", "social", "off_topic"] }
 });
 
 function deepFreeze(value) {

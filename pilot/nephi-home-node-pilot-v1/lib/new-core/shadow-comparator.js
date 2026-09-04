@@ -9,7 +9,7 @@ const MAX_CODES = 100;
 const HASH_PATTERN = /^h:[a-f0-9]{64}$/;
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
 const PURPOSES = new Set([
-  "lodging_question", "operator_request", "sensitive_request", "acknowledgement",
+  "lodging_question", "operator_request", "sensitive_request", "acknowledgement", "conversational_statement",
   "correction", "supplement", "cancellation", "context_update", "social",
   "off_topic", "unknown"
 ]);

@@ -38,6 +38,7 @@ const PURPOSES = new Set([
   "operator_request",
   "sensitive_request",
   "acknowledgement",
+  "conversational_statement",
   "correction",
   "supplement",
   "cancellation",
