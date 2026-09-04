@@ -22,7 +22,7 @@ const UNDERSTANDING_DESCRIPTIONS = Object.freeze({
   price: "Use price for a lodging price or rate question. Use the property subject with no catalog identity when no specific room, room set, or bundle is requested. This is a language-derived capability candidate only; never answer price facts.",
   total_price: "Use total_price for a lodging total-cost question. Use the property subject with no catalog identity when no specific room, room set, or bundle is requested. This is a language-derived capability candidate only; never answer price facts.",
   amenity_list: "Use amenity_list for a request for the collection of amenities or facilities applicable to a property, room, or bundle. Use amenity for one specific catalog amenity. This is a language-derived capability candidate only; never answer facts.",
-  policy: "Use policy only to ask an approved lodging policy fact, including check-in or check-out times. A request for an operator to change a reservation or its stay dates is not a policy question.",
+  policy: "Use policy only to ask an approved lodging policy fact. Use the public catalog identity self_check_in_out_instructions for self-check-in or self-check-out procedures, unmanned reception, access handoff, or how guests arrive and leave. Keep check-in time, check-out time, and early-arrival policy on their distinct public catalog identities. A request for an operator to change a reservation or its stay dates is not a policy question.",
   booking_operator_request: "Use booking_operator_request when the guest asks an operator to create, change, cancel, refund, or otherwise act on a reservation. A requested reservation date change is operator action, not a question about the property's check-in or check-out time policy."
 });
 

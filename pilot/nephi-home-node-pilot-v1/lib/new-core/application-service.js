@@ -230,7 +230,7 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   const rawExecutionOutcomes = [
     ...routedClarifications,
     ...formalRequests.filter((item) => item.readiness.status !== "ready").map(resultForNotReady),
-    ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: resolver.availability, availableDatesResolver: resolver.availableDates, priceOverrides: resolver.priceOverrides(), datePriceClassifications: resolver.dateClassifications() })
+    ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: resolver.availability, availableDatesResolver: resolver.availableDates, priceOverrides: resolver.priceOverrides(), datePriceClassifications: resolver.dateClassifications(), now })
   ];
   const executionOutcomes = applyControlledReplyRules({ rules: resolver.customReplies(), property, canonicalItems, executionOutcomes: rawExecutionOutcomes, now });
   const taskResults = executionOutcomes.map(taskResultForExecution);

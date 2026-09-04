@@ -4,6 +4,7 @@ const { createServiceDataAccess } = require("./providers/service-data-access");
 const { roomMatchesType } = require("./conversation-coordinator");
 const { normalizeGoogleMapsUrl } = require("./google-maps-url");
 const { normalizePropertyFacts } = require("./property-facts");
+const { normalizeSelfCheckInOutInstructions } = require("./self-check-in-out-instructions");
 
 const ALLOWED_STATUSES = new Set(["available", "closed"]);
 const ALLOWED_ACTIONS = new Set(["correct", "needs_fix", "should_handoff"]);
@@ -399,6 +400,7 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     return {
       propertyName: property.name,
       availabilityAutoReplyEnabled: property.availabilityAutoReplyEnabled !== false,
+      selfCheckInOutInstructions: property.selfCheckInOutInstructions || { applicableMonth: null, validUntil: null, content: "", enabled: false },
       aiName: String(property.businessProfile && property.businessProfile.aiName || ""),
       address: String(property.businessProfile && property.businessProfile.address || ""),
       googleMapsUrl: normalizeGoogleMapsUrl(property.businessProfile && property.businessProfile.googleMapsUrl),
@@ -426,6 +428,12 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     const availabilityAutoReplyEnabled = input.availabilityAutoReplyEnabled === undefined
       ? property.availabilityAutoReplyEnabled !== false
       : input.availabilityAutoReplyEnabled !== false;
+    let selfCheckInOutInstructions;
+    try {
+      selfCheckInOutInstructions = normalizeSelfCheckInOutInstructions(input.selfCheckInOutInstructions === undefined ? property.selfCheckInOutInstructions : input.selfCheckInOutInstructions);
+    } catch {
+      throw new AppError(400, "INVALID_SELF_CHECK_IN_OUT_INSTRUCTIONS", "自助入住／退房說明格式不正確");
+    }
     if (!propertyName || !TIME_PATTERN.test(checkInTime) || !TIME_PATTERN.test(checkOutTime)) throw new AppError(400, "INVALID_PROFILE", "請填寫民宿名稱與有效的入住、退房時間");
     if (input.googleMapsUrl && !googleMapsUrl) throw new AppError(400, "INVALID_GOOGLE_MAPS_URL", "Google Maps 網址格式不正確");
     if (lineUrl) {
@@ -443,11 +451,13 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       businessProfile: { ...(property.businessProfile || {}), aiName, address, googleMapsUrl, contactInfo },
       contactLink: lineUrl,
       availabilityAutoReplyEnabled,
+      selfCheckInOutInstructions,
       commonAnswers
     });
     return {
       propertyName: updated.displayName,
       availabilityAutoReplyEnabled: updated.availabilityAutoReplyEnabled !== false,
+      selfCheckInOutInstructions: updated.selfCheckInOutInstructions || { applicableMonth: null, validUntil: null, content: "", enabled: false },
       aiName: String(updated.businessProfile && updated.businessProfile.aiName || ""),
       address: String(updated.businessProfile && updated.businessProfile.address || ""),
       googleMapsUrl: normalizeGoogleMapsUrl(updated.businessProfile && updated.businessProfile.googleMapsUrl),

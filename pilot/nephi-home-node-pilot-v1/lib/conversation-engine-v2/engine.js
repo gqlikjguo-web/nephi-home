@@ -795,7 +795,7 @@ class ConversationEngineV2 {
     const tracedAvailableDatesResolver = (request) => { const result = this.availableDatesResolver(request); resolverCalls.push(availabilityTraceSummary(request, result)); return result; };
     let executionOutcomes = [
       ...formalRequests.filter((request) => request.readiness.status !== "ready").map(resultForNotReady),
-      ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId), datePriceClassifications: this.listDatePriceClassifications(input.customerId) })
+      ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: tracedAvailabilityResolver, availableDatesResolver: tracedAvailableDatesResolver, priceOverrides: this.listPriceOverrides(input.customerId), datePriceClassifications: this.listDatePriceClassifications(input.customerId), now: this.now() })
     ];
     executionOutcomes = applyControlledReplyRules({
       rules: this.listCustomReplies(input.customerId),

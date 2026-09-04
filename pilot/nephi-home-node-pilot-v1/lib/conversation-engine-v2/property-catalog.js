@@ -4,6 +4,7 @@ const { normalizeGoogleMapsUrl } = require("../google-maps-url");
 const { PRESET_AMENITIES, normalizeEntertainmentAmenities } = require("../bundle-entertainment");
 const { equipmentByCanonicalId } = require("../../public/assets/high-frequency-equipment");
 const { normalizeMultilineText } = require("../multiline-text");
+const { normalizeSelfCheckInOutInstructions } = require("../self-check-in-out-instructions");
 
 function clean(value, limit = 120) { return String(value || "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, limit); }
 // Canonical IDs describe shared hospitality capabilities, never a property's
@@ -34,6 +35,19 @@ function propertySettingFacts(property, answers) {
       status: answer ? "confirmed_yes" : "unknown",
       answer: clean(answer, 800) };
   });
+}
+
+function selfCheckInOutFact(property) {
+  const setting = normalizeSelfCheckInOutInstructions(property.selfCheckInOutInstructions);
+  return {
+    canonicalId: "self_check_in_out_instructions",
+    category: "policy",
+    publicName: "自助入住／退房說明",
+    aliases: [],
+    status: setting.enabled && setting.content ? "confirmed_yes" : "unknown",
+    answer: normalizeMultilineText(setting.content, 2000),
+    applicability: { applicableMonth: setting.applicableMonth, validUntil: setting.validUntil }
+  };
 }
 
 function structuredPropertyFacts(property) {
@@ -132,6 +146,7 @@ function buildPropertyCatalog(property) {
   const policies = [
     ...structuredFacts.filter((fact) => fact.category !== "amenity"),
     ...propertySettingFacts(property, answers).filter((fact) => !structuredIds.has(fact.canonicalId)),
+    selfCheckInOutFact(property),
     ...(structuredLocation ? [] : [{ canonicalId: "location", category: "transport", publicName: "位置與導航", aliases: [...LOCATION_ALIASES], status: mapUrl ? "confirmed_yes" : "unknown", answer: mapUrl }])
   ];
   if (!structuredLocation) {

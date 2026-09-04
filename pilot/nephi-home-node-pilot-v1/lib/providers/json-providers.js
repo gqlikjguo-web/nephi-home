@@ -4,12 +4,14 @@ const { JsonFileRepository } = require("../json-repository");
 const { CustomerSettingsProvider, AvailabilityProvider, PersistenceProvider } = require("./contracts");
 const { normalizeRoomRecord } = require("../room-data");
 const { isDateKey, isPriceType } = require("../date-price-authority");
+const { normalizeSelfCheckInOutInstructions } = require("../self-check-in-out-instructions");
 
 function toProperty(homestay) {
   if (!homestay) return null;
   return {
     propertyId: homestay.customerId,
     availabilityAutoReplyEnabled: homestay.availabilityAutoReplyEnabled !== false,
+    selfCheckInOutInstructions: normalizeSelfCheckInOutInstructions(homestay.selfCheckInOutInstructions),
     displayName: homestay.name,
     rooms: (homestay.rooms || []).map(normalizeRoomRecord),
     commonAnswers: homestay.safeFacts || {},
@@ -48,7 +50,8 @@ class JsonCustomerSettingsProvider extends CustomerSettingsProvider {
       safeFacts: input.commonAnswers,
       businessProfile: input.businessProfile,
       lineUrl: input.contactLink,
-      availabilityAutoReplyEnabled: input.availabilityAutoReplyEnabled !== false
+      availabilityAutoReplyEnabled: input.availabilityAutoReplyEnabled !== false,
+      selfCheckInOutInstructions: normalizeSelfCheckInOutInstructions(input.selfCheckInOutInstructions)
     });
     return toProperty(updated);
   }

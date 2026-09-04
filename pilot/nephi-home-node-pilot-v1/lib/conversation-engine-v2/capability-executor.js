@@ -7,6 +7,20 @@ const { resolveAvailability, resolveAvailableDates } = require("./resolver-adapt
 const { detailFactCandidates, includeBaseAnswer, normalizeDetailIntent } = require("./detail-intent");
 const { PRICE_KEYS, resolveDatePrice, weekdayPriceType } = require("../date-price-authority");
 
+function localDateKey(now, timeZone) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: timeZone || "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now instanceof Date ? now : new Date(now)).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function catalogEntityApplicable(entity, stay, now, timeZone) {
+  if (!entity || !entity.applicability) return true;
+  const applicableMonth = entity.applicability.applicableMonth;
+  const checkIn = stay && stay.checkIn || null;
+  if (applicableMonth !== null && (!checkIn || Number(checkIn.slice(5, 7)) !== applicableMonth)) return false;
+  const referenceDate = checkIn || localDateKey(now || new Date(), timeZone);
+  return !entity.applicability.validUntil || referenceDate <= entity.applicability.validUntil;
+}
+
 function stayDates(checkIn, checkOut) { const dates = []; for (let d = checkIn; d && checkOut && d < checkOut && dates.length < 60; d = addDays(d, 1)) dates.push(d); return dates; }
 function publicInventory(item) { return { canonicalId: item.id, publicName: String(item.publicDisplayName || item.displayName || item.publicName || item.name || "房型").slice(0, 100), capacity: Number(item.capacity) || null, category: item.inventoryType === "bundle" ? "bundle" : "room" }; }
 function selected(property, request, entities) {
@@ -153,7 +167,7 @@ function queryResolvedEntity(queryPlan, catalog) {
       || { canonicalId: entity.canonicalId, category: entity.category }
   };
 }
-function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, availableDatesResolver, priceOverrides = [], datePriceClassifications = [] }) {
+function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, availableDatesResolver, priceOverrides = [], datePriceClassifications = [], now }) {
   if (!queryPlan || queryPlan.propertyId !== property.propertyId) return queryOutcome(queryPlan || {}, "invalid_query_plan", { reason: "property_scope_mismatch" });
   const request = queryPlan.conditions || {};
   const stay = request.stay || {};
@@ -172,6 +186,7 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
     if (resolverId === "property_catalog") {
       const entity = scopedCatalogEntity(resolved && resolved.status === "resolved" && resolved.entity, request.inventory && request.inventory.mode);
       if (!entity || entity.status === "unknown") return queryOutcome(queryPlan, "unknown", { reason: "property_fact_unknown", facts: { subject: queryPlan.entity && queryPlan.entity.rawText || "question" } });
+      if (!catalogEntityApplicable(entity, stay, now, property.timezone)) return queryOutcome(queryPlan, "unknown", { reason: "property_fact_not_applicable", facts: { subject: entity.publicName } });
       if (queryPlan.capability === "lodging_product_capacity") {
         const capacity = Number(entity.capacity);
         if (!["room", "bundle"].includes(entity.category) || !Number.isInteger(capacity) || capacity < 1) {
