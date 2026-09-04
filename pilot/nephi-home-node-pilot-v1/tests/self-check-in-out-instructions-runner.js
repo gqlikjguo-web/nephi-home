@@ -43,5 +43,11 @@ assert.match(js, /selfCheckInOutForm[\s\S]*selfCheckInOutApplicableMonth[\s\S]*s
 assert.doesNotMatch(html, /self-check-in-out[^\n]*style=/i, "feature must not introduce bespoke inline styling");
 assert.match(js, /selfCheckInOutInstructions/);
 assert.match(js, /selfCheckInOutForm/);
+assert.doesNotMatch(js, /profile\.after\(section\)/, "RED: self check-in/out must not remain a standalone section above formal facts");
+assert.match(js, /dataset\.groupKey=group\.key/, "RED: policy groups need a stable UI placement identity");
+assert.match(js, /special_policy[\s\S]*appendSelfCheckInOutCard/, "RED: self check-in/out must be appended to the existing policy/special-service grid");
+assert.match(js, /function selfCheckInOutCard\(\)\{const row=element\("article","equipment-fact-row"\)/, "the new card must reuse the existing policy-card class");
+assert.doesNotMatch(js, /function selfCheckInOutCard\(\)[^\n]*document\.createElement\("form"\)/, "the policy grid must not contain a nested form");
+assert.doesNotMatch(js, /function selfCheckInOutCard\(\)[^\n]*element\("button"/, "the card must use the existing formal-data save action");
 
 console.log("self check-in/out instructions: PASS");
