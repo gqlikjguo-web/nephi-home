@@ -39,14 +39,18 @@ function propertySettingFacts(property, answers) {
 
 function selfCheckInOutFact(property) {
   const setting = normalizeSelfCheckInOutInstructions(property.selfCheckInOutInstructions);
+  const status = setting.status === "unknown"
+    ? "unknown"
+    : setting.status === "not_allowed"
+      ? "confirmed_no"
+      : "confirmed_yes";
   return {
     canonicalId: "self_check_in_out_instructions",
     category: "policy",
     publicName: "自助入住／退房說明",
     aliases: [],
-    status: setting.enabled && setting.content ? "confirmed_yes" : "unknown",
-    answer: normalizeMultilineText(setting.content, 2000),
-    applicability: { applicableMonth: setting.applicableMonth, validUntil: setting.validUntil }
+    status: !setting.publicText ? "unknown" : status,
+    answer: normalizeMultilineText(setting.publicText, 1000)
   };
 }
 

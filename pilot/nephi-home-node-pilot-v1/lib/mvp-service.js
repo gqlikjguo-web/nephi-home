@@ -400,7 +400,7 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     return {
       propertyName: property.name,
       availabilityAutoReplyEnabled: property.availabilityAutoReplyEnabled !== false,
-      selfCheckInOutInstructions: property.selfCheckInOutInstructions || { applicableMonth: null, validUntil: null, content: "", enabled: false },
+      selfCheckInOutInstructions: normalizeSelfCheckInOutInstructions(property.selfCheckInOutInstructions),
       aiName: String(property.businessProfile && property.businessProfile.aiName || ""),
       address: String(property.businessProfile && property.businessProfile.address || ""),
       googleMapsUrl: normalizeGoogleMapsUrl(property.businessProfile && property.businessProfile.googleMapsUrl),
@@ -457,7 +457,7 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     return {
       propertyName: updated.displayName,
       availabilityAutoReplyEnabled: updated.availabilityAutoReplyEnabled !== false,
-      selfCheckInOutInstructions: updated.selfCheckInOutInstructions || { applicableMonth: null, validUntil: null, content: "", enabled: false },
+      selfCheckInOutInstructions: normalizeSelfCheckInOutInstructions(updated.selfCheckInOutInstructions),
       aiName: String(updated.businessProfile && updated.businessProfile.aiName || ""),
       address: String(updated.businessProfile && updated.businessProfile.address || ""),
       googleMapsUrl: normalizeGoogleMapsUrl(updated.businessProfile && updated.businessProfile.googleMapsUrl),

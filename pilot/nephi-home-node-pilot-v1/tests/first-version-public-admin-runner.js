@@ -98,10 +98,9 @@ function seedDate(offsetDays) {
   assert.match(adminHtml, /<textarea id="profileLatestArrivalTime"[^>]*maxlength="500"/, "latest arrival must use a free-text operator input");
   assert.match(adminScript, /profileEarlyCheckInPolicy/, "the admin profile client must load and save earlyCheckInPolicy");
   assert.match(adminScript, /selfCheckInOutForm/);
-  assert.match(adminScript, /selfCheckInOutApplicableMonth/);
-  assert.match(adminScript, /selfCheckInOutValidUntil/);
-  assert.match(adminScript, /selfCheckInOutContent/);
-  assert.match(adminScript, /selfCheckInOutEnabled/);
+  assert.doesNotMatch(adminScript, /selfCheckInOutApplicableMonth|selfCheckInOutValidUntil|selfCheckInOutEnabled/);
+  assert.match(adminScript, /selfCheckInOutCard\(\)[^\n]*propertyFactCardRow/);
+  assert.match(adminScript, /selfCheckInOutPayload\(\)[^\n]*status[^\n]*publicText[^\n]*notes/);
   assert.match(adminScript, /profileLatestArrivalTime/, "the admin profile client must load and save latestArrivalTime");
   assert.match(guestCss, /max-width: 390px/, "guest mobile layout must include a narrow-screen rule");
   assert.match(adminCss, /status-toggle/, "the admin toggle must have an explicit mobile-safe presentation");
@@ -204,7 +203,7 @@ function seedDate(offsetDays) {
     assert.equal(initialProfile.body.data.latestArrivalTime, "21:30", "the profile API must load the property's existing optional latest-arrival time");
     const latestArrivalText = "最晚22:00，超過請提前聯絡";
     const earlyCheckInText = "如需提前入住，請事先詢問，是否可以提前需依當天房況確認。";
-    const selfCheckInOutInstructions = { applicableMonth: 9, validUntil: "2026-12-31", content: "本館採自助入住，入住當天提供相關說明。", enabled: true };
+    const selfCheckInOutInstructions = { status: "allowed", publicText: "本館採自助入住，入住當天提供相關說明。", notes: "門鎖由業者管理" };
     const profileResponse = await fetch(`${running.url}/api/property-profile`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", propertyName: "更新後旅宿", googleMapsUrl: "https://maps.app.goo.gl/nephi", lineUrl: "https://lin.ee/nephiOfficial", contactInfo: "0900-000-000", checkInTime: "15:00", earlyCheckInPolicy: earlyCheckInText, latestArrivalTime: latestArrivalText, checkOutTime: "11:00", availabilityAutoReplyEnabled: false, selfCheckInOutInstructions }) });
     const profile = await profileResponse.json();
     assert.equal(profileResponse.status, 200, "the minimal profile must update property-scoped data");
@@ -216,7 +215,7 @@ function seedDate(offsetDays) {
     assert.equal(profile.data.availabilityAutoReplyEnabled, false, "the availability auto-reply setting must be saved");
     assert.deepEqual(profile.data.selfCheckInOutInstructions, selfCheckInOutInstructions);
     assert.deepEqual((await json(`${running.url}/api/property-profile?propertyId=nephi_home`)).body.data.selfCheckInOutInstructions, selfCheckInOutInstructions, "the formal instructions must survive reload");
-    assert.deepEqual((await json(`${running.url}/api/property-profile?propertyId=other_home`)).body.data.selfCheckInOutInstructions, { applicableMonth: null, validUntil: null, content: "", enabled: false }, "one property's instructions must not leak to another property");
+    assert.deepEqual((await json(`${running.url}/api/property-profile?propertyId=other_home`)).body.data.selfCheckInOutInstructions, { status: "unknown", publicText: "", notes: "" }, "one property's instructions must not leak to another property");
     assert.equal((await json(`${running.url}/api/property-profile?propertyId=nephi_home`)).body.data.availabilityAutoReplyEnabled, false, "the saved setting must survive reload");
     assert.equal((await json(`${running.url}/api/property-profile?propertyId=other_home`)).body.data.availabilityAutoReplyEnabled, true, "changing one property must not affect another property");
     assert.equal(app.providers.customerSettings.getProperty("nephi_home").commonAnswers.earlyCheckInPolicy, earlyCheckInText, "the JSON provider must round-trip the early check-in policy");
