@@ -127,6 +127,53 @@ function input(overrides = {}) {
     assert.equal(JSON.stringify(safeRejection).includes(forbidden), false, `rejection trace leaked ${forbidden}`);
   }
 
+  const safeC08ConstructionFailure = formatNewCoreProductionTrace({
+    traceId: "trace-c08", stage: "new_core_c08", items: [{
+      unitId: "private-unit-id",
+      sourceItem: {
+        capability: "availability",
+        subject: { kind: "matched_room_set", catalogIdentity: "matched-room-set-safe" },
+        temporalCandidate: { kind: "date_range", checkInCandidate: "2026-10-04", checkOutCandidate: "2026-10-05", nightsCandidate: 1 },
+        verifiedSlotInputs: [],
+        canonicalSet: []
+      },
+      creationResult: { ok: false, code: "CANONICAL_INPUT_INCOMPLETE", errors: ["semanticFields"],
+        diagnostic: { semanticValidationErrors: ["stayDependent"], slotValidationErrors: [] } },
+      input: null,
+      result: null,
+      failure: { layer: "C08", failureCode: "CANONICAL_INPUT_INCOMPLETE", errors: ["semanticFields"] }
+    }]
+  });
+  assert.deepEqual(safeC08ConstructionFailure.items[0].sourceItem, {
+    capability: "availability",
+    subject: { kind: "matched_room_set", catalogIdentity: "matched-room-set-safe" },
+    temporal: { kind: "date_range", resolutionStatus: "", checkIn: "2026-10-04", checkOut: "2026-10-05", searchFrom: "", searchTo: "", nights: 1, timezone: "" },
+    canonicalSet: [],
+    verifiedSlotInputs: []
+  });
+  assert.deepEqual(safeC08ConstructionFailure.items[0].validation, {
+    semanticFields: false,
+    verifiedSlotInputs: true,
+    provenance: true,
+    catalogProvenance: true,
+    validationErrors: ["semanticFields"],
+    failedPredicate: "semanticFields",
+    fieldPath: "stayDependent",
+    semanticValidationErrors: ["stayDependent"],
+    slotValidationErrors: [],
+    failureCode: "CANONICAL_INPUT_INCOMPLETE"
+  });
+  const safeC08Secret = formatNewCoreProductionTrace({
+    traceId: "trace-c08-secret", stage: "new_core_c08", items: [{
+      unitId: "private-unit-id",
+      sourceItem: { capability: "availability", subject: null, temporalCandidate: null,
+        canonicalSet: [], verifiedSlotInputs: [{ slot: "product", operation: "SET", value: "sk-c08-must-not-leak" }] },
+      creationResult: { ok: false, code: "CANONICAL_INPUT_INCOMPLETE", errors: ["verifiedSlotInputs"] }
+    }]
+  });
+  assert.match(safeC08Secret.items[0].sourceItem.verifiedSlotInputs[0].value, /^h:[a-f0-9]{64}$/u);
+  assert.equal(JSON.stringify(safeC08Secret).includes("sk-c08-must-not-leak"), false);
+
   assert.doesNotThrow(() => fixture({
     providerConfig: {},
     executeTurn: async (args) => result("reply", state(args.scope, args.state.revision + 1))

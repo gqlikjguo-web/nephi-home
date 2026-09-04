@@ -93,6 +93,14 @@ function emitResultDiagnostics(sink, traceId, result) {
   })) });
   emitDiagnostic(sink, { traceId, stage: "new_core_c08", items: (artifacts.outcomes || []).map((item) => ({
     unitId: hash(item && item.unit && item.unit.unitId),
+    sourceItem: item && item.unit ? {
+      capability: item.unit.capability,
+      subject: item.unit.subject,
+      temporalCandidate: item.unit.temporalCandidate,
+      verifiedSlotInputs: item.lifecycleDecision && item.lifecycleDecision.verifiedSlotOperations,
+      canonicalSet: []
+    } : null,
+    creationResult: item && item.c08CreationResult || null,
     input: item && item.c08Input || null,
     result: item && item.c08ExecutionResult || null,
     failure: item && item.failure || null

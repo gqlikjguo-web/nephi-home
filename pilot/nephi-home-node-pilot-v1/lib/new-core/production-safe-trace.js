@@ -119,6 +119,38 @@ function canonical(value) {
   } : null;
 }
 
+function c08SourceItem(value) {
+  return value && typeof value === "object" ? {
+    capability: token(value.capability),
+    subject: subject(value.subject),
+    temporal: temporal(value.temporalCandidate),
+    canonicalSet: list(value.canonicalSet, token),
+    verifiedSlotInputs: list(value.verifiedSlotInputs, (slot) => ({
+      slot: token(slot && slot.slot), operation: token(slot && slot.operation),
+      value: Number.isInteger(slot && slot.value) ? slot.value : hash(slot && slot.value)
+    }), 20)
+  } : null;
+}
+
+function c08Validation(value) {
+  const errors = list(value && value.errors, (error) => token(error), 40);
+  const failedPredicate = errors[0] || "";
+  const semanticValidationErrors = list(value && value.diagnostic && value.diagnostic.semanticValidationErrors, (error) => token(error), 40);
+  const slotValidationErrors = list(value && value.diagnostic && value.diagnostic.slotValidationErrors, (error) => token(error), 40);
+  return value && typeof value === "object" ? {
+    semanticFields: !errors.includes("semanticFields"),
+    verifiedSlotInputs: !errors.includes("verifiedSlotInputs"),
+    provenance: !errors.includes("provenance"),
+    catalogProvenance: !errors.includes("catalogProvenance"),
+    validationErrors: errors,
+    failedPredicate,
+    fieldPath: semanticValidationErrors[0] || slotValidationErrors[0] || failedPredicate,
+    semanticValidationErrors,
+    slotValidationErrors,
+    failureCode: token(value.code || value.failureCode)
+  } : null;
+}
+
 function outcome(value) {
   return {
     taskId: hash(value && value.taskId), type: token(value && value.type),
@@ -206,7 +238,12 @@ function formatNewCoreProductionTrace(details = {}) {
     taskCreations: list(details.adapted && details.adapted.taskCreations, (item) => ({ taskId: hash(item && item.taskIdCandidate), action: token(item && item.action) }), 20),
     lifecycleOperations: list(details.adapted && details.adapted.lifecycleOperations, (item) => ({ requestCycleId: hash(item && item.requestCycleId), operation: token(item && item.operation) }), 20) };
   if (stage === "new_core_c07") return { ...base, outcomes: list(details.outcomes, (item) => ({ unitId: hash(item && item.unitId), lifecycleAction: token(item && item.lifecycle && item.lifecycle.action), targetRequestCycleId: hash(item && item.lifecycle && item.lifecycle.targetRequestCycleId), readinessStatus: token(item && item.readiness && item.readiness.status), missingGuestFields: list(item && item.readiness && item.readiness.missingGuestFields, token), disposition: token(item && item.routing && item.routing.disposition), failure: failure(item && item.failure) }), 20) };
-  if (stage === "new_core_c08") return { ...base, items: list(details.items, (item) => ({ unitId: hash(item && item.unitId), input: canonical(item && item.input), output: canonical(item && item.result && item.result.value), failure: failure(item && item.failure ? item.failure : item && item.result && !item.result.ok ? item.result : null) }), 20) };
+  if (stage === "new_core_c08") return { ...base, items: list(details.items, (item) => ({
+    unitId: hash(item && item.unitId), sourceItem: c08SourceItem(item && item.sourceItem),
+    validation: c08Validation(item && item.creationResult), input: canonical(item && item.input),
+    output: canonical(item && item.result && item.result.value),
+    failure: failure(item && item.failure ? item.failure : item && item.result && !item.result.ok ? item.result : null)
+  }), 20) };
   if (stage === "new_core_canonical_request") return { ...base, canonicalRequests: list(details.items, canonical, 20), formalRequests: list(details.formalRequests, canonical, 20) };
   if (stage === "new_core_resolver") return { ...base, requests: list(details.requests, resolverRequest, 20), formalRequests: list(details.formalRequests, canonical, 20), results: list(details.results, outcome, 20) };
   if (stage === "new_core_final") return { ...base,

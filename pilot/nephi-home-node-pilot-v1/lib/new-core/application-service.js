@@ -169,7 +169,10 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     const routing = createUnitRoutingDecision({ unit, lifecycleDecision: lifecycle.value, routingRegistry: registry, readiness: readiness.value, operatorSafetyPolicy: safety && safety.ok ? safety.value : null });
     if (!routing.ok) { outcomes.push({ unit, lifecycleDecision: lifecycle.value, readiness: readiness.value, failure: { layer: "C07", failureCode: routing.code } }); continue; }
     const c08 = routing.value.disposition === "ANSWER" ? createCanonicalizerInputItem({ unit, lifecycleDecision: lifecycle.value, routingDecision: routing.value, understandingTurnInput: c01, canonicalizerCatalog: c08Catalog, publicCatalogIdentityProjection: projection }) : { ok: true, value: null };
-    outcomes.push({ unit, lifecycleDecision: lifecycle.value, readiness: readiness.value, routingDecision: routing.value, canonicalItem: c08.ok ? c08.value : null, failure: c08.ok ? null : { layer: "C08", failureCode: c08.code } });
+    outcomes.push({ unit, lifecycleDecision: lifecycle.value, readiness: readiness.value, routingDecision: routing.value,
+      c08CreationResult: routing.value.disposition === "ANSWER" ? c08 : null,
+      canonicalItem: c08.ok ? c08.value : null,
+      failure: c08.ok ? null : { layer: "C08", failureCode: c08.code, errors: c08.errors || [] } });
   }
   const contextSnapshot = buildContextSnapshotV3(state, { ...scope, now });
   const canonicalItems = [];

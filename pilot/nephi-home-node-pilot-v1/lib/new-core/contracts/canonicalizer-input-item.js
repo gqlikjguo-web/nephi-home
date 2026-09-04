@@ -71,7 +71,10 @@ function validateCanonicalizerInputItem(value) {
   if (!slotShape.ok) errors.push("verifiedSlotInputs");
 
   return errors.length
-    ? { ok: false, code: "CANONICAL_INPUT_INCOMPLETE", errors: [...new Set(errors)] }
+    ? { ok: false, code: "CANONICAL_INPUT_INCOMPLETE", errors: [...new Set(errors)], diagnostic: {
+      semanticValidationErrors: semanticShape.errors || [],
+      slotValidationErrors: slotShape.errors || []
+    } }
     : { ok: true, code: null, errors: [], value };
 }
 
