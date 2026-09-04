@@ -2,7 +2,7 @@
 
 const { composeSection } = require("./controlled-composer");
 
-const SAFE_HANDOFF_TEXT = "這個問題我先幫您交由業者確認，請稍候，業者會盡快回覆您。";
+const SAFE_HANDOFF_TEXT = "請稍候，將盡快回覆您。";
 const SAFE_CLARIFICATION_TEXT = "目前提供的資訊無法安全確認。";
 const SAFE_PAST_DATE_TEXT = "您提供的住宿日期已過，請改提供今天之後的入住日期。";
 const MISSING_FIELD_QUESTIONS = Object.freeze({

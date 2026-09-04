@@ -5,7 +5,7 @@ const {
   buildFinalResponse
 } = require("../lib/conversation-engine-v2/final-response-renderer");
 
-const SAFE_HANDOFF_TEXT = "這個問題我先幫您交由業者確認，請稍候，業者會盡快回覆您。";
+const SAFE_HANDOFF_TEXT = "請稍候，將盡快回覆您。";
 
 const answeredSection = {
   taskId: "parking",

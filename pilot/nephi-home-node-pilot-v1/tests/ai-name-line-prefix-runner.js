@@ -7,6 +7,7 @@ const path = require("node:path");
 const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const { cleanInput } = require("../lib/onboarding-service");
+const { SAFE_HANDOFF_TEXT } = require("../lib/conversation-engine-v2/final-response-renderer");
 const { attachPropertyScopedLineBinding } = require("./helpers/property-scoped-line-webhook");
 
 const encryptionKey = Buffer.alloc(32, 7).toString("base64");
@@ -53,7 +54,7 @@ async function send(binding, url, propertyId, text, eventId) {
     return {
       traceId: input.eventId,
       finalDecision: { action, reasonCode: silent ? "no_reply" : "answered", reviewRequired: action === "handoff" },
-      finalResponse: { action, shouldReply: !silent, replyText: silent ? "" : "正式回答" }
+      finalResponse: { action, shouldReply: !silent, replyText: silent ? "" : action === "handoff" ? SAFE_HANDOFF_TEXT : "正式回答" }
     };
   };
   const running = await app.start(0, "127.0.0.1");
@@ -66,7 +67,7 @@ async function send(binding, url, propertyId, text, eventId) {
     app.service.updatePropertyProfile({ customerId: alphaId, propertyName: "山嵐示範民宿", aiName: "新名字", address: "", googleMapsUrl: "", lineUrl: "", contactInfo: "", checkInTime: "15:00", latestArrivalTime: "", checkOutTime: "11:00" });
     assert.equal(app.service.getPropertyProfile(alphaId).aiName, "新名字");
     await send(alpha, running.url, alphaId, "second", "alpha-second");
-    assert.deepEqual(calls.map((call) => call.body.messages[0].text), ["【AI小比】正式回答", "【AI】正式回答", "【AI小比】正式回答", "【AI小比】正式回答", "【AI新名字】正式回答"]);
+    assert.deepEqual(calls.map((call) => call.body.messages[0].text), ["【AI小比】正式回答", "【AI】正式回答", "【AI小比】正式回答", "【AI小比】請稍候，將盡快回覆您。", "【AI新名字】正式回答"]);
     assert.equal(calls.every((call) => (call.body.messages[0].text.match(/【AI[^】]*】/g) || []).length === 1), true);
   } finally {
     await app.stop();
