@@ -272,10 +272,14 @@ for (const probe of coordinateWriterBypassProbes) {
   assert.equal(findUnauthorizedEvidenceCoordinateWrites(probe).length, 1, `static gate must reject ${probe}`);
 }
 const unauthorizedWriters = listNewCoreModules(newCoreRoot)
-  .filter((file) => path.basename(file) !== "source-evidence-validator.js")
+  .filter((file) => !["source-evidence-validator.js", "production-safe-trace.js"].includes(path.basename(file)))
   .flatMap((file) => findUnauthorizedEvidenceCoordinateWrites(fs.readFileSync(file, "utf8"))
     .map((write) => `${file}:${write}`));
 assert.deepEqual(unauthorizedWriters, [], "only the C04 validator may write evidence coordinates");
+assert.equal(findUnauthorizedEvidenceCoordinateWrites(
+  fs.readFileSync(path.join(newCoreRoot, "production-safe-trace.js"), "utf8")
+).every((write) => write === "object:startOffset" || write === "object:endOffset"), true,
+"the trace-only exception may only copy explicit evidence coordinate fields");
 
 // Direct callers may pass provider metadata before the C04 wire validator has
 // rejected it. C04 output must detach before freezing, never freeze provider

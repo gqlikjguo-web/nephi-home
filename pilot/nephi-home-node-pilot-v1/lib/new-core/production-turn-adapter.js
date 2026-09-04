@@ -6,6 +6,7 @@ const { readConversationStateV3 } = require("../conversation-contracts/conversat
 const { buildFinalDecision } = require("../conversation-engine-v2/final-decision");
 const { buildFinalResponse } = require("../conversation-engine-v2/final-response-renderer");
 const { executeNewCoreTurn, turnStateSnapshot } = require("./application-service");
+const { c08ExecutionDiagnosticFor } = require("./canonical-execution-adapter");
 
 const HISTORY_LIMIT = 20;
 
@@ -31,6 +32,13 @@ function stateDiagnostic(state) {
       status: text(task && task.status),
       missingFields: uniqueText(task && task.missingFields),
       knownFields: uniqueText(task && task.knownFields),
+      values: {
+        productType: text(task && task.productType), productId: text(task && task.productId),
+        roomTypeId: text(task && task.roomTypeId), bundleId: text(task && task.bundleId),
+        checkIn: text(task && task.checkIn), checkOut: text(task && task.checkOut),
+        guestCount: Number.isInteger(task && task.guestCount) ? task.guestCount : null,
+        searchFrom: text(task && task.searchFrom), searchTo: text(task && task.searchTo)
+      },
       subject: task && task.subject ? {
         kind: text(task.subject.kind),
         catalogIdentity: text(task.subject.catalogIdentity)
@@ -40,10 +48,7 @@ function stateDiagnostic(state) {
 }
 
 function evidenceDiagnostic(values) {
-  return (Array.isArray(values) ? values : []).slice(0, 20).map((ref) => ({
-    eventRef: hash(ref && ref.eventId),
-    messageRef: hash(ref && ref.messageRef)
-  }));
+  return (Array.isArray(values) ? values : []).slice(0, 20);
 }
 
 function unitDiagnostic(unit) {
@@ -103,6 +108,8 @@ function emitResultDiagnostics(sink, traceId, result) {
     creationResult: item && item.c08CreationResult || null,
     input: item && item.c08Input || null,
     result: item && item.c08ExecutionResult || null,
+    executionDiagnostic: item && item.c08ExecutionResult
+      ? c08ExecutionDiagnosticFor(item.c08ExecutionResult) : null,
     failure: item && item.failure || null
   })) });
   emitDiagnostic(sink, { traceId, stage: "new_core_canonical_request", items: artifacts.canonicalItems || [], formalRequests: artifacts.formalRequests || [] });
@@ -256,7 +263,8 @@ function createNewCoreProductionTurnAdapter({
       const scope = { propertyId, channel, userId };
       const traceId = crypto.randomUUID();
       emitDiagnostic(onDiagnostic, { traceId, stage: "line_inbound", propertyId,
-        channelHash: hash(channel), userHash: hash(userId), eventHash: hash(eventId) });
+        channelHash: hash(channel), userHash: hash(userId), eventHash: hash(eventId),
+        guestMessage: String(input.messageText || "") });
       let previous = null;
       try {
         previous = readConversationStateV3(getConversationState(propertyId, channel, userId), scope, timestamp);

@@ -1577,7 +1577,7 @@ function createApp(options = {}) {
         const finalResponseReplyText = String(result.finalResponse && result.finalResponse.replyText || "");
         const decision = String(result.finalDecision && result.finalDecision.action || result.finalResponse && result.finalResponse.action || "no_reply");
         testOnlyLineMessageTrace.finalResponse({ traceId: result.traceId, eventId: input.eventId, propertyId: id, finalDecision: result.finalDecision, finalResponse: result.finalResponse });
-        const traceTransport = (details) => { const { replyText: _replyText, ...diagnostic } = details; captureSafeTrace(diagnostic); emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
+        const traceTransport = (details) => { const { replyText: _replyText, ...diagnostic } = details; captureSafeTrace(details); emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
         const persistTrace = async () => {
           try { await updateEventStatus(id, input.channelId, input.eventId, { safeTrace: (acceptanceTraces.get(result.traceId) || []).slice(-40) }); }
           catch (error) { console.error(JSON.stringify({ scope: "new-core-production-trace", traceId: result.traceId, stage: "persistence_failed", errorCode: String(error && error.code || "TRACE_PERSISTENCE_FAILURE") })); }

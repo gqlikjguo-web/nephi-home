@@ -101,7 +101,9 @@ function input(overrides = {}) {
     }
   });
   const serializedSafeC01 = JSON.stringify(safeC01);
-  for (const forbidden of ["guest private text", "Private room name", "private-channel", "private-user", "private-event", "private-message", "Bearer ", "apiKey"]) {
+  assert.equal(safeC01.sourceEvents[0].messageExcerpt, "guest private text",
+    "the approved production trace policy must retain the complete bounded guest text");
+  for (const forbidden of ["Private room name", "private-channel", "private-user", "private-event", "private-message", "Bearer ", "apiKey"]) {
     assert.equal(serializedSafeC01.includes(forbidden), false, `production trace leaked ${forbidden}`);
   }
 
@@ -173,6 +175,89 @@ function input(overrides = {}) {
   });
   assert.match(safeC08Secret.items[0].sourceItem.verifiedSlotInputs[0].value, /^h:[a-f0-9]{64}$/u);
   assert.equal(JSON.stringify(safeC08Secret).includes("sk-c08-must-not-leak"), false);
+
+  const safeCoverage = formatNewCoreProductionTrace({
+    traceId: "trace-coverage", stage: "new_core_c08", items: [{
+      unitId: "unit-coverage",
+      sourceItem: {
+        capability: "availability",
+        subject: { kind: "matched_room_set", catalogIdentity: "matched-room-set-safe" },
+        temporalCandidate: { kind: "date_range", checkInCandidate: "2026-10-04", checkOutCandidate: "2026-10-05" },
+        verifiedSlotInputs: [], canonicalSet: []
+      },
+      executionDiagnostic: {
+        compatibilityMapping: {
+          entity: { category: "room", canonicalCandidate: null },
+          approvedProduct: { productType: "any", productId: null },
+          temporal: { eventTimestamp: NOW, stayCandidate: { checkInCandidate: "2026-10-04", checkOutCandidate: "2026-10-05" } }
+        },
+        canonicalizerCalled: true,
+        canonicalizerResult: { canonicalRequest: { taskId: "task-coverage", capability: "availability", canonicalEntity: { status: "matched_set", category: "room", canonicalSet: ["room-a", "room-b"] } } },
+        canonicalSubject: { status: "matched_set", category: "room", canonicalSet: ["room-a", "room-b"] },
+        canonicalSet: ["room-a", "room-b"], requiredFields: ["stay.checkIn"], missingFields: [],
+        errors: [], failureCode: null, exactCondition: "SUCCESS"
+      },
+      result: { ok: true, value: { unitId: "unit-coverage", canonicalRequest: { taskId: "task-coverage", capability: "availability", canonicalEntity: { status: "matched_set", category: "room", canonicalSet: ["room-a", "room-b"] } } } }
+    }]
+  });
+  assert.deepEqual(safeCoverage.items[0].execution.compatibilityMapping.approvedProduct,
+    { productType: "any", productId: "", roomTypeId: "", bundleId: "" });
+  assert.deepEqual(safeCoverage.items[0].execution.canonicalSet, ["room-a", "room-b"]);
+  assert.equal(safeCoverage.items[0].execution.exactCondition, "SUCCESS");
+
+  const safeUnsupported = formatNewCoreProductionTrace({
+    traceId: "trace-unsupported", stage: "new_core_understanding", rawUnits: [{
+      unitId: "unit-unsupported", purpose: "unknown", capability: "unsupported", subject: { kind: "property", catalogIdentity: "" },
+      evidenceRefs: [{ eventId: "event-private", messageRef: "message-private", startOffset: 0, endOffset: 17,
+        quote: "訂金規則 sk-secret-value", sourceExcerpt: "訂金規則 sk-secret-value" }]
+    }], rawContextLinks: [], validatedUnits: [], failedUnits: [{ boundary: "C03", failureCode: "UNIT_MEANING_UNSUPPORTED" }], contextLinks: []
+  });
+  assert.equal(safeUnsupported.rawUnits[0].evidenceRefs[0].quote, "訂金規則 [REDACTED]");
+  assert.equal(JSON.stringify(safeUnsupported).includes("sk-secret-value"), false);
+
+  const safeResolver = formatNewCoreProductionTrace({
+    traceId: "trace-resolver", stage: "new_core_resolver", requests: [{
+      formalRequestId: "formal-a", taskId: "task-a", capability: "availability", operation: "availability_resolver", propertyId: "property_a",
+      resolverTask: { propertyId: "property_a", taskType: "availability", productType: "room_type", productId: "room-a", checkIn: "2026-10-04", checkOut: "2026-10-05", guestCount: 2, roomTypeSet: ["room-a"] },
+      conditions: { stay: { checkIn: "2026-10-04", checkOut: "2026-10-05", nights: 1 }, inventory: { mode: "room_only", entityId: "room-a", entityIds: ["room-a"] } },
+      entity: { status: "resolved", category: "room", canonicalId: "room-a" }
+    }], results: [{ taskId: "task-a", type: "availability", outcome: "answered", resolverAttempted: true,
+      facts: { source: "availability_provider", propertyId: "property_a", checkIn: "2026-10-04", checkOut: "2026-10-05", availableRoomIds: ["room-a"] } }]
+  });
+  assert.deepEqual(safeResolver.requests[0].resolverTask, { propertyId: "property_a", taskType: "availability", productType: "room_type", productId: "room-a", checkIn: "2026-10-04", checkOut: "2026-10-05", guestCount: 2, searchFrom: "", searchTo: "", nights: null, roomTypeSet: ["room-a"] });
+  assert.deepEqual(safeResolver.requests[0].inventory, { mode: "room_only", entityId: "room-a", entityIds: ["room-a"] });
+  assert.equal(safeResolver.results[0].resolverAttempted, true);
+  assert.deepEqual(safeResolver.results[0].facts.availableRoomIds, ["room-a"]);
+
+  const safeFinal = formatNewCoreProductionTrace({ traceId: "trace-final", stage: "new_core_final",
+    finalDecision: { action: "reply", reasonCode: "execution_answered", taskIds: ["task-a"], missingFields: [], reviewRequired: false },
+    finalResponse: { action: "reply", shouldReply: true, replyText: "正式回答 Bearer top-secret sk-final-secret" } });
+  assert.equal(safeFinal.finalResponse.replyText, "正式回答 [REDACTED] [REDACTED]");
+  assert.equal(JSON.stringify(safeFinal).includes("top-secret"), false);
+
+  const safeInbound = formatNewCoreProductionTrace({ traceId: "trace-inbound", stage: "line_inbound",
+    propertyId: "property_a", channelHash: "channel-a", userHash: "user-a", eventHash: "event-a",
+    guestMessage: "完整客人問題 test@example.com 0912-345-678 sk-inbound-secret" });
+  assert.equal(safeInbound.guestMessage, "完整客人問題 [REDACTED] [REDACTED] [REDACTED]");
+  const safeTransport = formatNewCoreProductionTrace({ traceId: "trace-line", stage: "line_transport",
+    propertyId: "property_a", decision: "reply", reasonCode: "reply_failed", attempted: true, delivered: false,
+    deliveryErrorCode: "line_reply_http_error_500", replyText: "【AI】回答 Bearer transport-secret" });
+  assert.equal(safeTransport.replyText, "【AI】回答 [REDACTED]");
+  assert.equal(safeTransport.deliveryErrorCode, "line_reply_http_error_500");
+
+  const longGuestMessage = "完整問題".repeat(600);
+  const longFinalResponse = "完整回覆".repeat(600);
+  assert.equal(formatNewCoreProductionTrace({ stage: "line_inbound", guestMessage: longGuestMessage }).guestMessage,
+    longGuestMessage, "bounded LINE-sized guest text must be retained in full");
+  assert.equal(formatNewCoreProductionTrace({ stage: "new_core_final",
+    finalResponse: { action: "reply", shouldReply: true, replyText: longFinalResponse } }).finalResponse.replyText,
+    longFinalResponse, "bounded LINE-sized FinalResponse text must be retained in full");
+
+  const safeState = formatNewCoreProductionTrace({ traceId: "trace-state", stage: "state_before", state: {
+    revision: 7, tasks: [{ taskId: "task-a", type: "availability", status: "pending", missingFields: ["stay.checkIn"], knownFields: ["subject"], subject: { kind: "room", catalogIdentity: "room-a" } }]
+  }, snapshot: { referenceableCycles: [{ requestCycleId: "cycle-a", requestKind: "availability", capability: "availability", status: "pending", subject: { kind: "room", catalogIdentity: "room-a" }, missingFields: ["stay.checkIn"], confirmedValues: { checkIn: "", checkOut: "", guestCount: null } }] } });
+  assert.deepEqual(safeState.state.tasks[0].missingFields, ["stay.checkIn"]);
+  assert.deepEqual(safeState.state.tasks[0].knownFields, ["subject"]);
 
   assert.doesNotThrow(() => fixture({
     providerConfig: {},

@@ -153,6 +153,12 @@ function coreResult(args, action) {
     }
     assert.equal(record("answer-event").replyText, "candidate reply",
       "the exact FinalResponse text must use the existing message-log replyText field");
+    assert.ok(record("answer-event").safeTrace.some((entry) => entry.stage === "new_core_final"
+      && entry.finalResponse && entry.finalResponse.replyText === "candidate reply"),
+    "the bounded production trace must retain the redacted FinalResponse text");
+    assert.ok(record("answer-event").safeTrace.some((entry) => entry.stage === "line_transport"
+      && entry.replyText === "【AI】candidate reply" && entry.delivered === true),
+    "the same trace must retain the redacted text actually delivered to LINE");
     assert.equal(record("no-reply-event").replyText, "",
       "a genuine NO_REPLY must persist an empty FinalResponse body");
 
