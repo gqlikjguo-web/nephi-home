@@ -166,7 +166,12 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   const understanding = await understandingProvider(c01, {
     apiKey: providerConfig.apiKey,
     onDiagnostic,
-    onOperationalDiagnostic: (entry) => { providerOperationalDiagnostics.push(entry); }
+    onOperationalDiagnostic: (entry) => {
+      providerOperationalDiagnostics.push(entry);
+      if (entry.stage === "new_core_understanding_attempts") {
+        try { onDiagnostic?.(entry); } catch { /* trace isolation */ }
+      }
+    }
   });
   if (typeof onDiagnostic === "function") {
     for (const stage of ["new_core_c03", "new_core_context_filter"]) {
@@ -232,15 +237,23 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     ...formalRequests.filter((item) => item.readiness.status !== "ready").map(resultForNotReady),
     ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: resolver.availability, availableDatesResolver: resolver.availableDates, priceOverrides: resolver.priceOverrides(), datePriceClassifications: resolver.dateClassifications(), now })
   ];
+  rawExecutionOutcomes.push(
+    ...aggregation.value.unitOutcomes
+      .filter(item => item.routingDecision.disposition === "HANDOFF" && !failedUnits.some(failure => failure.unitId === item.unitId) && !rawExecutionOutcomes.some(outcome => outcome.taskId === item.unitId))
+      .map(item => ({ taskId: item.unitId, type: "human_help", outcome: "unknown", reason: "human_help" })),
+    ...failedUnits.filter(failure => !rawExecutionOutcomes.some(outcome => outcome.taskId === failure.unitId))
+      .map(failure => ({ taskId: failure.unitId, type: "human_help", outcome: "technical_error", reason: failure.failureCode }))
+  );
   const executionOutcomes = applyControlledReplyRules({ rules: resolver.customReplies(), property, canonicalItems, executionOutcomes: rawExecutionOutcomes, now });
   const taskResults = executionOutcomes.map(taskResultForExecution);
+  const replyTaskIds = [...new Set(executionOutcomes.map(item => item.taskId))];
   const publicAvailabilityUrl = publicAvailabilityUrlForProperty(publicBaseUrl, property);
-  const responsePlan = buildResponsePlan({ propertyId: scope.propertyId, taskResults, inputTaskIds: [...canonicalItems.map((item) => item.canonicalRequest.taskId), ...routedClarifications.map((item) => item.taskId)], canonicalRequests: canonicalItems.map((item) => item.canonicalRequest), reviewActions: [], publicAvailabilityUrl });
+  const responsePlan = buildResponsePlan({ propertyId: scope.propertyId, taskResults, inputTaskIds: replyTaskIds, canonicalRequests: canonicalItems.map((item) => item.canonicalRequest), reviewActions: [], publicAvailabilityUrl });
   const replyText = composeControlledReply(responsePlan);
   const claimValidation = validateClaims(
     replyText,
     responsePlan,
-    [...canonicalItems.map((item) => item.canonicalRequest.taskId), ...routedClarifications.map((item) => item.taskId)]
+    replyTaskIds
   );
   const dispositions = successful.map((item) => item.routingDecision.disposition);
   const missingFields = successful.flatMap((item) => item.routingDecision.missingGuestFields);

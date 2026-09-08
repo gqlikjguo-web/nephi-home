@@ -404,6 +404,15 @@ async function captureError(operation) {
   assert.fail("expected fail-closed OpenAI Understanding error");
 }
 
+// Legacy boundary assertions below concern the initial candidate. The correction
+// runner separately asserts both attempts, exact origin, admission and call cap.
+function initialAttemptEvents(events) {
+  let starts = 0;
+  return events.filter(event => {
+    if (event.boundary === "C02" && ["C02_UNDERSTANDING_RECEIVED", "C02_WIRE_SCHEMA_REJECTED", "C02_PROVIDER_TIMEOUT"].includes(event.targetMarker)) starts++;
+    return starts <= 1;
+  });
+}
 function options(fetchImpl, overrides = {}) {
   return {
     apiKey: "test-only-key",
@@ -505,7 +514,7 @@ async function main() {
   assert.equal(Object.isFrozen(result.understandingOutput), true);
   assert.equal(Object.isFrozen(result.validatedUnits[0]), true);
   assert.equal(isTrustedUnderstandingResult(result), true);
-  assert.deepEqual(diagnostics.map((event) => event.targetMarker), [
+  assert.deepEqual(initialAttemptEvents(diagnostics).map((event) => event.targetMarker), [
     "C02_UNDERSTANDING_RECEIVED",
     "C04_SOURCE_EVIDENCE_VALIDATED",
     "C03_SEMANTIC_UNIT_VALIDATED",
@@ -579,7 +588,7 @@ async function main() {
       return successfulResponse(incompatibleContextRelationOutput());
     }, { onDiagnostic: (event) => incompatibleRelationDiagnostics.push(event) })
   ));
-  assert.equal(incompatibleRelationCalls, 1, "identity-incompatible targeted relation must not be admitted");
+  assert.equal(incompatibleRelationCalls, 2, "identity-incompatible targeted relation must not be admitted");
   assert.equal(incompatibleRelationError.code, "UNDERSTANDING_SCHEMA_INVALID");
   assert.deepEqual(incompatibleRelationError.schemaViolation, {
     validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID",
@@ -587,7 +596,7 @@ async function main() {
     expected: "target bound to capability/subject-compatible referenceable cycle",
     actual: "relation_target:identity_incompatible"
   });
-  assert.deepEqual(incompatibleRelationDiagnostics.map((event) => event.targetMarker), ["C02_WIRE_SCHEMA_REJECTED"]);
+  assert.deepEqual(initialAttemptEvents(incompatibleRelationDiagnostics).map((event) => event.targetMarker), ["C02_WIRE_SCHEMA_REJECTED"]);
 
   const missingFieldNotFilledInput = c01({
     sourceEvents: [{
@@ -779,7 +788,7 @@ async function main() {
         validationCalls += 1;
         return successfulResponse(siblingOutput({ invalidBoundary, invalidFirst }));
       }, { onDiagnostic: (event) => siblingBoundaryDiagnostics.push(event) }));
-      assert.equal(validationCalls, 1, `${invalidBoundary}/${invalidFirst}: local validation must not resample`);
+      assert.equal(validationCalls, 2, `${invalidBoundary}/${invalidFirst}: local validation must not resample`);
       assert.deepEqual(
         siblingResult.validatedUnits.map((candidate) => candidate.unitId),
         ["unit-a"],
@@ -804,7 +813,7 @@ async function main() {
         `${invalidBoundary}/${invalidFirst}: owned rejection marker must be emitted`
       );
       assert.deepEqual(
-        siblingBoundaryDiagnostics.filter((event) => event.status === "SUCCESS").map((event) => event.targetMarker),
+        initialAttemptEvents(siblingBoundaryDiagnostics).filter((event) => event.status === "SUCCESS").map((event) => event.targetMarker),
         [
           "C02_UNDERSTANDING_RECEIVED",
           ...Array(invalidBoundary === "C04" ? 1 : 2).fill("C04_SOURCE_EVIDENCE_VALIDATED"),
@@ -831,9 +840,9 @@ async function main() {
     siblingCalls += 1;
     return successfulResponse(invalidSibling);
   }, { onDiagnostic: (event) => siblingDiagnostics.push(event) })));
-  assert.equal(siblingCalls, 1);
+  assert.equal(siblingCalls, 2);
   assert.equal(siblingError.code, "UNKNOWN_WIRE_FIELD");
-  assert.deepEqual(siblingDiagnostics.map((event) => event.targetMarker), ["C02_WIRE_SCHEMA_REJECTED"]);
+  assert.deepEqual(initialAttemptEvents(siblingDiagnostics).map((event) => event.targetMarker), ["C02_WIRE_SCHEMA_REJECTED"]);
 
   // A schema-valid but C03-invalid semantic choice is never retried, repaired,
   // classified again, or replaced with a deterministic raw-text decision.
@@ -854,14 +863,14 @@ async function main() {
       }
     }));
   }, { onDiagnostic: (event) => semanticDiagnostics.push(event) }));
-  assert.equal(semanticCalls, 1);
+  assert.equal(semanticCalls, 2);
   assert.deepEqual(semanticResult.validatedUnits, []);
   assert.deepEqual(semanticResult.failedUnits, [{
     unitId: "unit-a",
     failureCode: "CATALOG_IDENTITY_INVALID",
     boundary: "C03"
   }]);
-  assert.deepEqual(semanticDiagnostics.map((event) => event.targetMarker), [
+  assert.deepEqual(initialAttemptEvents(semanticDiagnostics).map((event) => event.targetMarker), [
     "C02_UNDERSTANDING_RECEIVED",
     "C04_SOURCE_EVIDENCE_VALIDATED",
     "C03_SEMANTIC_UNIT_REJECTED"
@@ -878,14 +887,14 @@ async function main() {
       contextLinkCandidates: [link(), link({ unitId: "unit-b" })]
     }));
   }, { onDiagnostic: (event) => duplicateLinkDiagnostics.push(event) }));
-  assert.equal(duplicateLinkCalls, 1);
+  assert.equal(duplicateLinkCalls, 2);
   assert.deepEqual(duplicateLinkResult.validatedUnits.map((candidate) => candidate.unitId), ["unit-a"]);
   assert.deepEqual(duplicateLinkResult.failedUnits, [{
     unitId: "unit-b",
     failureCode: "CONTEXT_LINK_DUPLICATE",
     boundary: "C05"
   }]);
-  assert.deepEqual(duplicateLinkDiagnostics.map((event) => event.targetMarker), [
+  assert.deepEqual(initialAttemptEvents(duplicateLinkDiagnostics).map((event) => event.targetMarker), [
     "C02_UNDERSTANDING_RECEIVED",
     "C04_SOURCE_EVIDENCE_VALIDATED",
     "C04_SOURCE_EVIDENCE_VALIDATED",
@@ -943,7 +952,7 @@ async function main() {
     failureCode: "EVIDENCE_QUOTE_MISMATCH",
     boundary: "C04"
   }]);
-  assert.deepEqual(foreignLinkDiagnostics.map((event) => event.targetMarker), [
+  assert.deepEqual(initialAttemptEvents(foreignLinkDiagnostics).map((event) => event.targetMarker), [
     "C02_UNDERSTANDING_RECEIVED",
     "C04_SOURCE_EVIDENCE_VALIDATED",
     "C04_SOURCE_EVIDENCE_REJECTED",
@@ -972,7 +981,7 @@ async function main() {
     failureCode: "EVIDENCE_QUOTE_MISMATCH",
     boundary: "C04"
   }]);
-  assert.deepEqual(evidenceDiagnostics.map((event) => event.targetMarker), [
+  assert.deepEqual(initialAttemptEvents(evidenceDiagnostics).map((event) => event.targetMarker), [
     "C02_UNDERSTANDING_RECEIVED",
     "C04_SOURCE_EVIDENCE_REJECTED"
   ]);
@@ -990,7 +999,7 @@ async function main() {
     failureCode: "CONTEXT_TARGET_UNAVAILABLE",
     boundary: "C05"
   }]);
-  assert.deepEqual(contextDiagnostics.map((event) => event.targetMarker), [
+  assert.deepEqual(initialAttemptEvents(contextDiagnostics).map((event) => event.targetMarker), [
     "C02_UNDERSTANDING_RECEIVED",
     "C04_SOURCE_EVIDENCE_VALIDATED",
     "C03_SEMANTIC_UNIT_VALIDATED",
@@ -1068,7 +1077,7 @@ async function main() {
       count += 1;
       return fetchImpl(...args);
     })));
-    assert.equal(count, 1, `${name} must not retry`);
+    assert.equal(count, ["turn-contract", "link-cardinality"].includes(name) ? 2 : 1, `${name} respects correction origin policy`);
     assert.equal(error.code, code);
   }
 
@@ -1076,20 +1085,20 @@ async function main() {
   // A successful second transport attempt is still one logical understanding
   // response and retains bounded, body-free attempt metadata.
   let transportCalls = 0;
-  const transportResult = await callOpenAIUnderstandingV1(input, options(async () => {
+  const transportResult = await captureError(() => callOpenAIUnderstandingV1(input, options(async () => {
     transportCalls += 1;
     if (transportCalls === 1) throw new TypeError("network unavailable");
     return successfulResponse();
-  }));
-  assert.equal(transportCalls, 2);
-  assert.equal(transportResult[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].providerAttemptCount, 2);
-  assert.equal(transportResult[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].retryPerformed, true);
+  })));
+  assert.equal(transportCalls, 1);
+  assert.equal(transportResult[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].providerAttemptCount, 1);
+  assert.equal(transportResult[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].retryPerformed, false);
   assert.equal(JSON.stringify(transportResult[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC]).includes("network unavailable"), false);
 
   // Node/network transports commonly attach system codes. Those codes do not
   // turn transport failure into an adapter-owned contract failure.
   let codedNetworkCalls = 0;
-  const codedNetworkResult = await callOpenAIUnderstandingV1(input, options(async () => {
+  const codedNetworkResult = await captureError(() => callOpenAIUnderstandingV1(input, options(async () => {
     codedNetworkCalls += 1;
     if (codedNetworkCalls === 1) {
       const error = new Error("socket reset");
@@ -1097,8 +1106,8 @@ async function main() {
       throw error;
     }
     return successfulResponse();
-  }));
-  assert.equal(codedNetworkCalls, 2);
+  })));
+  assert.equal(codedNetworkCalls, 1);
   assert.equal(codedNetworkResult[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].providerAttempts[0].errorCategory, "network");
 
   // The existing Responses adapter requires UUID-v4 client request IDs and
@@ -1126,10 +1135,10 @@ async function main() {
     roundTimeoutMs: 20,
     onDiagnostic: (event) => timeoutDiagnostics.push(event)
   })));
-  assert.equal(timeoutCalls, 2);
+  assert.equal(timeoutCalls, 1);
   assert.equal(timeoutError.code, "UNDERSTANDING_PROVIDER_TIMEOUT");
   assert.equal(JSON.stringify(timeoutError).includes("secret timeout detail"), false);
-  assert.deepEqual(timeoutDiagnostics.map((event) => event.targetMarker), ["C02_PROVIDER_TIMEOUT"]);
+  assert.deepEqual(initialAttemptEvents(timeoutDiagnostics).map((event) => event.targetMarker), ["C02_PROVIDER_TIMEOUT"]);
 
   // A forged or unbounded non-C01 object never reaches the provider.
   let invalidInputCalls = 0;
