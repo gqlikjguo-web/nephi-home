@@ -7,6 +7,15 @@ const MANDATORY_HANDOFF_TYPES = new Set(["booking_request", "human_help", "high_
 
 function unique(values) { return [...new Set(values.filter(Boolean))]; }
 
+function executionReplyDisposition(outcome, evidence) {
+  if (!evidence || evidence.activeRequest !== true) return "no_reply";
+  if (REPLY_OUTCOMES.has(outcome.outcome)) return "reply";
+  if (outcome.outcome === "not_ready") return "clarification";
+  if (evidence.humanActionRequired === true || evidence.humanJudgmentRequired === true
+    || evidence.resolverUnresolvedRequiresHuman === true || evidence.existingOperatorResponsibility === true) return "handoff";
+  return "reply_unknown";
+}
+
 function executionSummary(outcomes = []) {
   const result = {
     answeredTaskIds: [], noAvailabilityTaskIds: [], notReadyTaskIds: [], unknownTaskIds: [],
@@ -26,24 +35,30 @@ function executionSummary(outcomes = []) {
   return result;
 }
 
-function buildFinalDecision({ executionOutcomes = [], plannerFailure = "", claimValidation = null, noReplyReason = "" } = {}) {
-  const outcomes = Array.isArray(executionOutcomes) ? executionOutcomes : [];
+function buildFinalDecision({ executionOutcomes = [], plannerFailure = "", claimValidation = null, noReplyReason = "", requestEvidence = null } = {}) {
+  const scoped = Array.isArray(requestEvidence);
+  const disposition = outcome => executionReplyDisposition(outcome, requestEvidence?.find(item => item.taskId === outcome.taskId));
+  const outcomes = (Array.isArray(executionOutcomes) ? executionOutcomes : []).filter(item => !scoped || disposition(item) !== "no_reply");
   const summary = executionSummary(outcomes);
   const taskIds = unique(outcomes.map((item) => item && item.taskId));
   const missingFields = unique(outcomes.flatMap((item) => item && item.outcome === "not_ready" ? item.missingFields || [] : []));
   const clarificationCandidates = unique(outcomes.flatMap((item) => item && item.outcome === "not_ready" ? item.candidates || [] : []));
-  if (plannerFailure) return { action: "handoff", reasonCode: String(plannerFailure), taskIds, missingFields, reviewRequired: true, executionSummary: summary };
-  if (claimValidation && claimValidation.ok === false) return { action: "handoff", reasonCode: "claim_validation_failed", taskIds, missingFields, reviewRequired: true, executionSummary: summary };
+  if (plannerFailure && !scoped) return { action: "handoff", reasonCode: String(plannerFailure), taskIds, missingFields, reviewRequired: true, executionSummary: summary };
+  if (claimValidation && claimValidation.ok === false) {
+    const humanResponsibility = !scoped || outcomes.some(item => disposition(item) === "handoff");
+    return { action: humanResponsibility ? "handoff" : "no_reply", reasonCode: "claim_validation_failed",
+      taskIds, missingFields, reviewRequired: humanResponsibility, executionSummary: summary };
+  }
   if (!outcomes.length) return { action: "no_reply", reasonCode: noReplyReason || "no_actionable_requests", taskIds, missingFields, reviewRequired: false, executionSummary: summary };
-  const answered = outcomes.some((item) => item && REPLY_OUTCOMES.has(item.outcome));
+  const answered = outcomes.some((item) => item && (REPLY_OUTCOMES.has(item.outcome) || scoped && disposition(item) === "reply_unknown"));
   const detailNeedsConfirmation = outcomes.some((item) => item && item.outcome === "answered"
     && item.facts && item.facts.detailNeedsConfirmation === true);
-  const mandatoryHandoff = outcomes.find((item) => item && HANDOFF_OUTCOMES.has(item.outcome)
+  const mandatoryHandoff = outcomes.find((item) => item && (!scoped || disposition(item) === "handoff") && HANDOFF_OUTCOMES.has(item.outcome)
     && (MANDATORY_HANDOFF_TYPES.has(item.type) || MANDATORY_HANDOFF_TYPES.has(item.reason)));
   if (mandatoryHandoff) return { action: "handoff", reasonCode: mandatoryHandoff.reason || mandatoryHandoff.outcome, taskIds, missingFields, reviewRequired: true, executionSummary: summary };
-  const partialReply = outcomes.some((item) => item && PARTIAL_REPLY_OUTCOMES.has(item.outcome));
+  const partialReply = outcomes.some((item) => item && (!scoped || disposition(item) === "handoff") && PARTIAL_REPLY_OUTCOMES.has(item.outcome));
   if (answered && partialReply) return { action: "reply", reasonCode: "execution_answered", taskIds, missingFields, reviewRequired: true, executionSummary: summary };
-  const handoff = outcomes.find((item) => item && HANDOFF_OUTCOMES.has(item.outcome));
+  const handoff = outcomes.find((item) => item && (!scoped || disposition(item) === "handoff") && HANDOFF_OUTCOMES.has(item.outcome));
   if (handoff) return { action: "handoff", reasonCode: handoff.reason || handoff.outcome, taskIds, missingFields, reviewRequired: true, executionSummary: summary };
   const clarification = outcomes.find((item) => item && item.outcome === "not_ready");
   if (clarification) return { action: "clarification", reasonCode: clarification.readinessStatus || "not_ready", taskIds, missingFields, clarificationCandidates, reviewRequired: false, executionSummary: summary };
@@ -51,4 +66,4 @@ function buildFinalDecision({ executionOutcomes = [], plannerFailure = "", claim
   return { action: "handoff", reasonCode: "unsupported_execution_outcome", taskIds, missingFields, reviewRequired: true, executionSummary: summary };
 }
 
-module.exports = { buildFinalDecision, executionSummary };
+module.exports = { buildFinalDecision, executionSummary, executionReplyDisposition };

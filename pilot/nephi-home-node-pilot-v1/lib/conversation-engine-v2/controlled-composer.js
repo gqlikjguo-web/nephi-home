@@ -4,7 +4,12 @@ const { detailLabel } = require("./detail-intent");
 
 function money(value) { return new Intl.NumberFormat("zh-TW").format(value); }
 function composeSection(section) {
+  if (section.fulfillmentStatus === 'partial') {
+    const {fulfillmentStatus, ...rest} = section;
+    return '目前只確認符合需求的商品有 '+section.matchedCount+'/'+section.requestedQuantity+' 個，尚差 '+section.unresolvedRemainder+' 個。\n'+composeSection(rest);
+  }
   const facts = section.facts || {};
+  if (section.claimType === "EPISTEMIC_UNKNOWN") return "目前無法確認。";
   if (facts.customReply) {
     const officialFacts = { ...facts };
     delete officialFacts.customReply;

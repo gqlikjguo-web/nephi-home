@@ -17,7 +17,8 @@ const CANONICAL_REQUEST_FIELDS = Object.freeze([
   "resolverId",
   "riskLevel",
   "responseMode",
-  "evidenceRefs"
+  "evidenceRefs",
+  "quantityCandidate"
 ]);
 
 const TEMPORAL_STATUSES = new Set(["absent", "resolved", "unresolved"]);
@@ -130,10 +131,11 @@ function validateEvidenceRefs(evidenceRefs) {
 
 function validateCanonicalRequest(value) {
   const errors = [];
+  if (value && value.quantityCandidate !== undefined && !require('../new-core/contracts/request-quantity').validateRequestQuantity(value.quantityCandidate)) errors.push('quantityCandidate');
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, errors: ["request"] };
   }
-  if (!sameArray(Object.keys(value), CANONICAL_REQUEST_FIELDS)) errors.push("keys");
+  if (!sameArray(Object.keys(value), Object.hasOwn(value,"quantityCandidate") ? CANONICAL_REQUEST_FIELDS : CANONICAL_REQUEST_FIELDS.filter(k => k !== "quantityCandidate"))) errors.push("keys");
   if (typeof value.taskId !== "string" || !value.taskId) errors.push("taskId");
   const definition = getCapabilityDefinition(value.capability);
   if (!definition) errors.push("capability");

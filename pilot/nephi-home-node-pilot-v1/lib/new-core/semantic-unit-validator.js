@@ -82,6 +82,11 @@ function slotsHaveValidatedEvidence(slotCandidates, validatedEvidenceRefs) {
   return slotCandidates.every((slot) => evidenceOwned(slot.evidenceRefs, validatedEvidenceRefs));
 }
 
+function quantitySubjectAdmission(kind) {
+  const allowedKinds = ["room", "bundle", "matched_room_set"];
+  return { allowed: allowedKinds.includes(kind), rule: "quantitySubjectAdmission", actualKind: kind, allowedKinds };
+}
+
 function productSlotAdmission(slot, identitySet, understandingTurnInput) {
   if (slot.slot !== "product" || slot.operation === "CLEAR") return { allowed: true };
   const allowedKinds = ["room", "bundle", "matched_room_set"];
@@ -106,27 +111,60 @@ function firstSlotAdmissionFailure(slots, admit) {
 }
 
 function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnInput, publicCatalogIdentitySet, capabilityRegistryProjection } = {}) {
+  const fieldValidationState = [];
+  const complete = (field, gate) => {
+    const state = fieldValidationState.find(item => item.field === field);
+    if (state) { state.validationCompleted.push(gate); state.validationPending = state.validationPending.filter(item => item !== gate); }
+  };
+  const reject = (code, target) => ({...failure(code), fieldValidationState: deepFreeze(detach(fieldValidationState.map(state => ({
+    ...state, preservation: state.field === target ? "MUTABLE" : !state.validationPending.length && !state.dependsOn.length ? "PRESERVE" : "REVALIDATE"
+  }))))});
   const wire = validateSemanticUnitCandidate(unit);
-  if (!wire.ok) return failure("SEMANTIC_UNIT_INVALID");
+  if (!wire.ok) return reject("SEMANTIC_UNIT_INVALID");
   if (!evidenceOwned(unit.evidenceRefs, validatedEvidenceRefs)
     || !slotsHaveValidatedEvidence(unit.slotCandidates, validatedEvidenceRefs)) {
-    return failure("UNIT_EVIDENCE_MISSING");
+    return reject("UNIT_EVIDENCE_MISSING");
   }
+  if (unit.quantityCandidate && !evidenceOwned(unit.quantityCandidate.evidenceRefs, validatedEvidenceRefs)) return reject('UNIT_EVIDENCE_MISSING');
+  const add = (field, pending, dependsOn, extra = {}) => fieldValidationState.push({field,
+    validationCompleted:["structure", "evidenceOwnership"], validationPending:pending, dependsOn, ...extra});
+  for (const slot of unit.slotCandidates) {
+    const pending = slot.slot === "product" ? ["productSlotAdmission"] : slot.slot === "other_supported" ? ["otherSupportedSlotAdmission"] : [];
+    add(`slotCandidates.${slot.slotCandidateId}`, pending, slot.slot === "other_supported" ? ["capability"] : [], {slotCandidateId:slot.slotCandidateId});
+  }
+  if (unit.quantityCandidate) add("quantityCandidate", ["quantitySubjectAdmission"], ["subject.kind"]);
+  if (unit.temporalCandidate) add("temporalCandidate", ["temporalAdmission"], ["capability"]);
+  add("subject", ["catalogIdentity", "subjectPolicy"], ["capability"]);
+  add("capability", ["capabilityPolicy"], ["purpose"]);
   const policy = capabilityPolicyFor(capabilityRegistryProjection, unit.capability);
-  if (!policy) return failure("UNIT_MEANING_UNSUPPORTED");
+  if (!policy) return reject("UNIT_MEANING_UNSUPPORTED", "capability");
+  complete("capability", "capabilityPolicy");
   if (!catalogIdentityValid(unit, publicCatalogIdentitySet, understandingTurnInput, capabilityRegistryProjection)) {
-    return failure("CATALOG_IDENTITY_INVALID");
+    return reject("CATALOG_IDENTITY_INVALID", "subject");
   }
-  if (!policy.purposes.includes(unit.purpose)) return failure("UNIT_MEANING_UNSUPPORTED");
-  if (!policy.subjectKinds.includes(unit.subject.kind)) return failure("CAPABILITY_SUBJECT_CONFLICT");
-  if (unit.stayDependent !== policy.stayDependent) return failure("STAY_DEPENDENCY_CONFLICT");
+  complete("subject", "catalogIdentity");
+  if (!policy.purposes.includes(unit.purpose)) return reject("UNIT_MEANING_UNSUPPORTED");
+  if (!policy.subjectKinds.includes(unit.subject.kind)) return reject("CAPABILITY_SUBJECT_CONFLICT");
+  complete("subject", "subjectPolicy");
+  if (unit.stayDependent !== policy.stayDependent) return reject("STAY_DEPENDENCY_CONFLICT");
   if (!safetyCandidateMatchesPolicy(capabilityRegistryProjection, unit.capability, unit.purpose, unit.safetyCandidate)) {
-    return failure("UNIT_MEANING_UNSUPPORTED");
+    return reject("UNIT_MEANING_UNSUPPORTED");
   }
-  const diagnostics = firstSlotAdmissionFailure(unit.slotCandidates, slot => productSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput))
-    || firstSlotAdmissionFailure(unit.slotCandidates, slot => otherSupportedSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput, policy));
+  if (unit.quantityCandidate) {
+    const admission = quantitySubjectAdmission(unit.subject.kind);
+    if (!admission.allowed) return { ...reject("CAPABILITY_SUBJECT_CONFLICT", "quantityCandidate"), diagnostics: {
+      field: "subject.kind", rule: admission.rule, actualKind: admission.actualKind, allowedKinds: admission.allowedKinds
+    } };
+  }
+  if (unit.quantityCandidate) complete("quantityCandidate", "quantitySubjectAdmission");
+  const observeAdmission = (slot, result) => {
+    if (result.allowed && result.rule) complete(`slotCandidates.${slot.slotCandidateId}`, result.rule);
+    return result;
+  };
+  const diagnostics = firstSlotAdmissionFailure(unit.slotCandidates, slot => observeAdmission(slot, productSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput)))
+    || firstSlotAdmissionFailure(unit.slotCandidates, slot => observeAdmission(slot, otherSupportedSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput, policy)));
   if (diagnostics) {
-    return { ...failure("UNIT_MEANING_UNSUPPORTED"), diagnostics };
+    return { ...reject("UNIT_MEANING_UNSUPPORTED", unit.slotCandidates.map((slot, index) => ({field:`slotCandidates[${index}].value`,target:`slotCandidates.${slot.slotCandidateId}`})).find(item => item.field === diagnostics.field)?.target), diagnostics };
   }
   const value = deepFreeze(detach(unit));
   INPUT_BY_VALIDATED_SEMANTIC_UNIT.set(value, understandingTurnInput);
@@ -139,6 +177,8 @@ function isValidatedSemanticUnitFor(understandingTurnInput, unit) {
 }
 
 module.exports = {
+  quantitySubjectAdmission,
+  productSlotAdmission,
   buildPublicCatalogIdentitySet,
   projectCapabilityRegistry,
   isValidatedSemanticUnitFor,

@@ -1,6 +1,7 @@
 "use strict";
 
 const { coverageByStatus, assertTaskCoverage } = require("./task-coverage");
+const { claimTypeForSection } = require("./claim-validator");
 
 const TASK_PRIORITY = Object.freeze({
   availability: 10, available_dates: 10, room_options: 10, bundle_availability: 10, booking_request: 10,
@@ -37,6 +38,7 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
       coveredTaskIds: [result.taskId],
       type,
       status: result.status,
+      claimType: claimTypeForSection(result),
       responseMode: responseMode(result.status),
       canonicalResponseMode: canonicalRequest && canonicalRequest.responseMode || "",
       resolverId: canonicalRequest && canonicalRequest.resolverId || "",
@@ -44,10 +46,12 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
       priority: taskPriority(type),
       inputOrder,
       facts: result.facts || {},
+      ...(result.requestedQuantity !== undefined ? {requestedQuantity:result.requestedQuantity,distinctRequirement:result.distinctRequirement,matchedUniqueIdentities:result.matchedUniqueIdentities,matchedCount:result.matchedCount,unresolvedRemainder:result.unresolvedRemainder,fulfillmentStatus:result.fulfillmentStatus} : {}),
       question: result.question || "",
       missingInputs: result.missingInputs || [],
       needsReview: Boolean(result.review)
     };
+    if (section.claimType === "EPISTEMIC_UNKNOWN") section.unknownProvenance = result.unknownProvenance || null;
     if (PUBLIC_AVAILABILITY_REFERENCE_TYPES.has(type) && String(publicAvailabilityUrl || "").trim()) {
       section.publicAvailabilityUrl = String(publicAvailabilityUrl).trim();
     }
@@ -63,7 +67,7 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
       && canonicalRequest.canonicalEntity.status === "resolved"
       && canonicalRequest.canonicalEntity.canonicalId
       && !["room", "bundle"].includes(canonicalRequest.canonicalEntity.category)
-      && section.status === "answered"
+      && section.status === "answered" && section.claimType === "FACTUAL_ANSWER"
       ? sections.find((candidate) => {
         const request = canonicalByTaskId.get(candidate.taskId);
         return request
@@ -73,6 +77,7 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
           && request.canonicalEntity.status === "resolved"
           && request.canonicalEntity.canonicalId === canonicalRequest.canonicalEntity.canonicalId
           && candidate.status === "answered"
+          && candidate.claimType === "FACTUAL_ANSWER"
           && candidate.facts === section.facts;
       })
       : null;

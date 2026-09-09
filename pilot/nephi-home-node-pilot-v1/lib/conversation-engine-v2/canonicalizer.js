@@ -194,10 +194,14 @@ function canonicalizeExecutionItem({
     resolverId: definition.resolverId,
     riskLevel: definition.riskLevel,
     responseMode: definition.responseMode,
-    evidenceRefs
+    evidenceRefs,
+    ...(item.quantityCandidate ? {quantityCandidate:item.quantityCandidate} : {})
   });
   return {
-    ...item,
+    candidateIndex: item.candidateIndex,
+    requestCycleId: item.requestCycleId,
+    task: item.task,
+    transition: item.transition,
     canonicalRequest,
     stateInput: {
       confirmedFields: {

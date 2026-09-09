@@ -326,6 +326,8 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     const checkIn = parseDateKey(query.checkIn, "checkIn");
     const checkOut = parseDateKey(query.checkOut, "checkOut");
     const dates = stayDates(checkIn, checkOut);
+    const quantity = require("./conversation-contracts/resolver-quantity").resolverQuantityFields(query);
+    const collection = quantity.requestedQuantity > 1 && quantity.distinctRequirement === "distinct_entities";
     const requestedGuests = Number(query.guests);
     const guests = Number.isFinite(requestedGuests) && requestedGuests > 0 ? requestedGuests : null;
     const roomType = String(query.roomType || "all");
@@ -342,10 +344,10 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       if (queryMode === "bundle_only" && room.inventoryType !== "bundle") return false;
       if (queryMode === "room_only" && room.inventoryType === "bundle") return false;
       if (roomTypeSet.length ? !roomTypeSet.includes(room.id) : roomType !== "all" && !roomMatchesType(room, roomType)) return false;
-      return guests === null || Number(room.capacity || 0) >= guests;
+      return collection || guests === null || Number(room.capacity || 0) >= guests;
     });
 
-    const rooms = availabilityReliable ? candidateRooms.filter((room) => dates.every((date) => {
+    let rooms = availabilityReliable ? candidateRooms.filter((room) => dates.every((date) => {
       const row = byDate[date];
       if (!row) return false;
       if (room.inventoryType === "bundle") {
@@ -353,6 +355,21 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       }
       return row[room.id] === "available";
     })) : [];
+
+    if (collection) {
+      // Count identities once. Keep every candidate that can participate in a
+      // feasible set; never choose one arbitrary ordering of a feasible set.
+      rooms = rooms.filter((room, index, all) => all.findIndex(other => other.id === room.id) === index);
+      if (guests !== null && rooms.length >= quantity.requestedQuantity) {
+        rooms = rooms.filter(room => {
+          const peers = rooms.filter(other => other.id !== room.id)
+            .map(other => Number(other.capacity || 0)).sort((a,b) => b-a)
+            .slice(0, quantity.requestedQuantity - 1);
+          return Number(room.capacity || 0) + peers.reduce((sum, capacity) => sum + capacity, 0) >= guests;
+        });
+      }
+      // A short available set remains partial input for the existing fulfillment authority.
+    }
 
     return {
       customerId: homestay.customerId,
@@ -497,7 +514,7 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     for (let checkIn = from; checkIn < to; checkIn = addDays(checkIn, 1)) {
       const checkOut = addDays(checkIn, nights);
       if (checkOut > to) break;
-      const result = searchAvailability({ customerId: query.customerId, checkIn, checkOut, guests: query.guests, roomType: query.roomType || "all", roomTypeSet: query.roomTypeSet, queryMode: query.queryMode || "any" });
+      const result = searchAvailability({ ...require("./conversation-contracts/resolver-quantity").resolverQuantityFields(query), customerId: query.customerId, checkIn, checkOut, guests: query.guests, roomType: query.roomType || "all", roomTypeSet: query.roomTypeSet, queryMode: query.queryMode || "any" });
       if (!result.availabilityReliable) return { status: "unreliable", dates: [], source: "property_resolver" };
       dates.push({ checkIn, checkOut, available: result.rooms.length > 0, roomTypes: result.rooms.map((room) => ({ roomTypeId: room.id, roomTypeName: publicRoomName(room) })) });
     }

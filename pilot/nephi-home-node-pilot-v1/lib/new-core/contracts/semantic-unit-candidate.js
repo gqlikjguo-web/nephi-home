@@ -2,6 +2,7 @@
 
 const { MAX_EVIDENCE_REFS, validateSourceEvidence } = require("./source-evidence");
 
+const { validateRequestQuantity } = require('./request-quantity');
 const MAX_ID_LENGTH = 160;
 const MAX_SLOT_CANDIDATES = 20;
 const UNIT_FIELDS = Object.freeze([
@@ -208,9 +209,11 @@ function validateSafetyCandidate(value, errors) {
 function validateSemanticUnitCandidate(value) {
   const errors = [];
   let unknownWireField = false;
-  if (!exactKeys(value, UNIT_FIELDS)) {
+  const fields = value && Object.hasOwn(value, 'quantityCandidate') ? [...UNIT_FIELDS, 'quantityCandidate'] : UNIT_FIELDS;
+  if (value && value.quantityCandidate != null && !validateRequestQuantity(value.quantityCandidate)) errors.push('quantityCandidate');
+  if (!exactKeys(value, fields)) {
     errors.push("keys");
-    unknownWireField ||= hasUnknownFields(value, UNIT_FIELDS);
+    unknownWireField ||= hasUnknownFields(value, fields);
   }
   if (!boundedText(value && value.unitId)) errors.push("unitId");
   const evidence = validateSourceEvidence(value && value.evidenceRefs);

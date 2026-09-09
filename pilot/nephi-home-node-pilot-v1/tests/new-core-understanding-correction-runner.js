@@ -163,7 +163,7 @@ test('trace failure cannot change reply admission',async()=>{const x=await run(p
 const {executeNewCoreTurn}=require('../lib/new-core/application-service');
 const {formatNewCoreProductionTrace}=require('../lib/new-core/production-safe-trace');
 for(const scenario of [
- {id:'unknown',message:'有停車嗎？',purpose:'lodging_question',capability:'amenity',subject:{kind:'amenity',catalogIdentity:'parking'},action:'handoff'},
+ {id:'unknown',message:'有停車嗎？',purpose:'lodging_question',capability:'amenity',subject:{kind:'amenity',catalogIdentity:'parking'},action:'reply'},
  {id:'no_reply',message:'我們已經到家了',purpose:'conversational_statement',capability:null,subject:{kind:null,catalogIdentity:null},action:'no_reply'},
  {id:'operator',message:'我要訂房',purpose:'operator_request',capability:'booking_operator_request',subject:{kind:'other_verified',catalogIdentity:null},safetyCandidate:{operatorActionClass:'booking_mutation',riskClass:null},action:'handoff'}
 ])test('application '+scenario.id+' uses one call and existing FinalDecision',async()=>{

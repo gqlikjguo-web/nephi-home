@@ -134,9 +134,9 @@ async function json(url, method = "GET", body, sentCookie = "") {
       failedUnits: [{ unitId: "shared-failed-unit", failureCode: "UNIT_MEANING_UNSUPPORTED", boundary: "C03" }]
     })
   });
-  assert.equal(sharedFailedTurn.finalDecision.action, "handoff");
-  assert.equal(sharedFailedTurn.finalDecision.reasonCode, "UNIT_MEANING_UNSUPPORTED");
-  assert.equal(sharedFailedTurn.finalResponse.action, "handoff");
+  assert.equal(sharedFailedTurn.finalDecision.action, "no_reply");
+  assert.equal(sharedFailedTurn.finalDecision.reasonCode, "new_core_no_reply");
+  assert.equal(sharedFailedTurn.finalResponse.action, "no_reply");
   assert.equal(sharedResolverCalls, 0, "failed understanding must not execute a Resolver");
   assert.deepEqual(sharedFailedTurn.state.tasks, [], "failed understanding must not create conversation tasks");
   const statementMessage = "我們剛到而已";

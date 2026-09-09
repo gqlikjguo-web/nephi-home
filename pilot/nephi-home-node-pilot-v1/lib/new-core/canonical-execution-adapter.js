@@ -184,6 +184,7 @@ function createCanonicalizerInputItem({
   const value = deepFreeze(detach({
     unitId: unit.unitId,
     capabilityCandidate: unit.capability,
+    ...(unit.quantityCandidate ? {quantityCandidate:unit.quantityCandidate} : {}),
     subjectCandidate: unit.subject,
     stayDependent: unit.stayDependent,
     temporalCandidate: unit.temporalCandidate,
@@ -446,7 +447,8 @@ function canonicalResultIsStructurallyConsistent(canonicalRequest, provenance, a
   )
     && sameData(canonicalRequest.lodgingProduct,
       expectedProduct(approvedProduct, canonicalRequest.canonicalEntity))
-    && sameData(canonicalRequest.evidenceRefs, provenance.unit.evidenceRefs);
+    && sameData(canonicalRequest.evidenceRefs, provenance.unit.evidenceRefs)
+    && sameData(canonicalRequest.quantityCandidate || null, provenance.unit.quantityCandidate || null);
 }
 
 function stateInputMatchesC08(stateInput, canonicalRequest, task, provenance) {
@@ -572,7 +574,7 @@ function executeCanonicalizerInputItem({
   try {
     diagnostic.canonicalizerCalled = true;
     canonicalized = OFFICIAL_CANONICALIZE_EXECUTION_ITEM({
-      item: compatibilityItem,
+      item: { ...compatibilityItem, ...(provenance.unit.quantityCandidate ? {quantityCandidate:provenance.unit.quantityCandidate} : {}) },
       relation,
       contextSnapshot,
       catalog: provenance.canonicalizerCatalogSnapshot,

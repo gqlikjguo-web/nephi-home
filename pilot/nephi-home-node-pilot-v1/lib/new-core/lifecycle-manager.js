@@ -232,7 +232,10 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
   const nonActionable = new Set(["acknowledgement", "conversational_statement", "social", "off_topic"]);
   let action;
   let target = null;
-  if (nonActionable.has(unit.purpose)) {
+  if (nonActionable.has(unit.purpose)
+    || (unit.capability === null && relation.relationKind === "NONE"
+      && relation.compatiblePendingTargetIds.length === 0
+      && ["supplement", "context_update"].includes(unit.purpose))) {
     action = "NONE";
   } else if (relation.relationKind === "NEW_REQUEST") {
     action = unit.capability !== null || unit.purpose === "context_update" ? "START" : "NONE";
@@ -265,11 +268,11 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
   } else {
     action = "NONE";
   }
-  if (["END", "NONE"].includes(action) && unit.slotCandidates.length) {
+  if (action === "END" && unit.slotCandidates.length) {
     return failure("LIFECYCLE_SLOT_UNVERIFIED", ["verifiedSlotOperations"]);
   }
   const input = understandingInputForValidatedContextLink(validatedContextLink);
-  const operations = unit.slotCandidates.map((item) => verifiedOperation(item, input));
+  const operations = action === "NONE" ? [] : unit.slotCandidates.map((item) => verifiedOperation(item, input));
   const decision = {
     lifecycleDecisionId,
     unitId: unit.unitId,

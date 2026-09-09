@@ -7,8 +7,8 @@ const { buildCanonicalFormalRequest, buildCanonicalQueryPlan, resultForNotReady 
 const { executeCanonicalQueryPlans } = require("../conversation-engine-v2/capability-executor");
 const { buildResponsePlan } = require("../conversation-engine-v2/response-planner");
 const { composeControlledReply } = require("../conversation-engine-v2/controlled-composer");
-const { validateClaims } = require("../conversation-engine-v2/claim-validator");
-const { buildFinalDecision } = require("../conversation-engine-v2/final-decision");
+const { validateClaims, unknownProvenanceFor } = require("../conversation-engine-v2/claim-validator");
+const { buildFinalDecision, executionReplyDisposition } = require("../conversation-engine-v2/final-decision");
 const { buildFinalResponse } = require("../conversation-engine-v2/final-response-renderer");
 const { applyControlledReplyRules } = require("../custom-reply-rules");
 const {
@@ -124,8 +124,13 @@ function bindRecentConversationToCycles(history, state, referenceableCycles) {
   }));
 }
 
-function taskResultForExecution(execution) {
-  const base = { taskId: execution.taskId, type: execution.type, facts: execution.facts || {} };
+function taskResultForExecution(execution, evidence) {
+  const base = { taskId: execution.taskId, type: execution.type, facts: execution.facts || {},
+    ...(execution.requestedQuantity !== undefined ? {requestedQuantity:execution.requestedQuantity,distinctRequirement:execution.distinctRequirement,matchedUniqueIdentities:execution.matchedUniqueIdentities,matchedCount:execution.matchedCount,unresolvedRemainder:execution.unresolvedRemainder,fulfillmentStatus:execution.fulfillmentStatus} : {}) };
+  if (evidence && executionReplyDisposition(execution, evidence) === "reply_unknown") {
+    return { ...base, status: "answered", claimType: "EPISTEMIC_UNKNOWN",
+      unknownProvenance: unknownProvenanceFor(execution), facts: { subject: base.facts.subject } };
+  }
   if (["answered", "no_availability"].includes(execution.outcome)) return { ...base, status: "answered" };
   if (execution.outcome === "not_ready") return { ...base, status: "needs_clarification", missingInputs: execution.missingFields || [] };
   return { ...base, status: "needs_human", reason: execution.reason || execution.outcome, review: true };
@@ -223,6 +228,18 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     return buildCanonicalFormalRequest({ property, canonicalRequest: item.canonicalRequest, requestCycleId: outcome.lifecycleDecision.targetRequestCycleId || outcome.unit.unitId, confirmedInputs: executionConditionsV3(state, item) });
   });
   const queryPlans = formalRequests.map(buildCanonicalQueryPlan).filter(Boolean);
+  const requestEvidence = outcomes.map(item => {
+    const link = understanding.validatedContextLinks.find(link => link.unitId === item.unit.unitId);
+    const relation = link && contextRelationEvidenceForValidatedLink(link, item.unit);
+    const route = item.routingDecision;
+    const activeRequest = route ? route.disposition !== "NO_REPLY"
+      : Boolean(item.unit.capability !== null && relation
+        && (relation.relationKind === "NEW_REQUEST" || relation.resolvedTargetRequestCycleId !== null));
+    return { taskId: item.canonicalItem?.canonicalRequest.taskId || item.unit.unitId, activeRequest,
+      humanActionRequired: Boolean(route?.disposition === "HANDOFF" && route.operatorActionClass),
+      humanJudgmentRequired: Boolean(route?.disposition === "HANDOFF" && route.riskClass),
+      resolverUnresolvedRequiresHuman: false, existingOperatorResponsibility: false };
+  });
   const routedClarifications = successful
     .filter((item) => item.routingDecision.disposition === "CLARIFY")
     .map((item) => ({
@@ -241,11 +258,13 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     ...aggregation.value.unitOutcomes
       .filter(item => item.routingDecision.disposition === "HANDOFF" && !failedUnits.some(failure => failure.unitId === item.unitId) && !rawExecutionOutcomes.some(outcome => outcome.taskId === item.unitId))
       .map(item => ({ taskId: item.unitId, type: "human_help", outcome: "unknown", reason: "human_help" })),
-    ...failedUnits.filter(failure => !rawExecutionOutcomes.some(outcome => outcome.taskId === failure.unitId))
-      .map(failure => ({ taskId: failure.unitId, type: "human_help", outcome: "technical_error", reason: failure.failureCode }))
+    ...failedUnits.filter(failure => requestEvidence.some(item => item.taskId === failure.unitId && item.activeRequest)
+      && !rawExecutionOutcomes.some(outcome => outcome.taskId === failure.unitId))
+      .map(failure => ({ taskId: failure.unitId, type: outcomes.find(item => item.unit.unitId === failure.unitId).unit.capability,
+        outcome: "technical_error", reason: failure.failureCode }))
   );
   const executionOutcomes = applyControlledReplyRules({ rules: resolver.customReplies(), property, canonicalItems, executionOutcomes: rawExecutionOutcomes, now });
-  const taskResults = executionOutcomes.map(taskResultForExecution);
+  const taskResults = executionOutcomes.map(item => taskResultForExecution(item, requestEvidence.find(evidence => evidence.taskId === item.taskId)));
   const replyTaskIds = [...new Set(executionOutcomes.map(item => item.taskId))];
   const publicAvailabilityUrl = publicAvailabilityUrlForProperty(publicBaseUrl, property);
   const responsePlan = buildResponsePlan({ propertyId: scope.propertyId, taskResults, inputTaskIds: replyTaskIds, canonicalRequests: canonicalItems.map((item) => item.canonicalRequest), reviewActions: [], publicAvailabilityUrl });
@@ -257,7 +276,7 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   );
   const dispositions = successful.map((item) => item.routingDecision.disposition);
   const missingFields = successful.flatMap((item) => item.routingDecision.missingGuestFields);
-  const finalDecision = executionOutcomes.length ? buildFinalDecision({ executionOutcomes, claimValidation }) : noExecutionDecision(executionOutcomes, dispositions, missingFields, failedUnits);
+  const finalDecision = buildFinalDecision({ executionOutcomes, claimValidation, requestEvidence, noReplyReason: "new_core_no_reply" });
   const finalResponse = buildFinalResponse({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation, publicAvailabilityUrl });
   const nextState = reduceConversationStateV3({ previous: state, canonicalItems, formalRequests, executionOutcomes, clarificationTaskIds: finalDecision.action === "clarification" ? finalDecision.executionSummary.notReadyTaskIds : [], lifecycleOperations: adapted.value.lifecycleOperations, taskCreations: adapted.value.taskCreations, canonicalTaskBindings: adapted.value.canonicalTaskBindings, scope: { ...scope, now } });
   const provider = understanding[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC] || {};
@@ -275,7 +294,7 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     finalDecision, finalResponse, earliestFailure,
     requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL,
     resolvedModel: provider.resolvedModel || "",
-    artifacts: { understanding, outcomes, successful, c01, aggregation: aggregation.value, adapted: adapted.value, previousState: state, canonicalItems, formalRequests, queryPlans, executionOutcomes, contextCandidates }
+    artifacts: { understanding, outcomes, successful, c01, aggregation: aggregation.value, adapted: adapted.value, previousState: state, canonicalItems, formalRequests, queryPlans, executionOutcomes, requestEvidence, contextCandidates }
   };
 }
 

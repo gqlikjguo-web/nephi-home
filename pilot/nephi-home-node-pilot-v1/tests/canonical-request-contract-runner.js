@@ -93,7 +93,8 @@ function run() {
     "resolverId",
     "riskLevel",
     "responseMode",
-    "evidenceRefs"
+    "evidenceRefs",
+    "quantityCandidate"
   ]);
 
   const registryValidation = validateCapabilityRegistry(CAPABILITY_REGISTRY);

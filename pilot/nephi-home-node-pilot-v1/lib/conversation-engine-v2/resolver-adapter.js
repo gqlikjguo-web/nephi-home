@@ -24,6 +24,7 @@ function availabilityRequestFromResolverTask(resolverTask = {}) {
     checkIn: resolverTask.checkIn || null,
     checkOut: resolverTask.checkOut || null,
     guests: resolverTask.guestCount || null,
+    ...require("../conversation-contracts/resolver-quantity").resolverQuantityFields(resolverTask),
     roomType: product.productId || "all",
     ...(roomTypeSet.length ? { roomTypeSet } : {}),
     queryMode: product.productType === "bundle"
@@ -45,6 +46,7 @@ function availableDatesRequestFromResolverTask(resolverTask = {}) {
     dateTo: resolverTask.searchTo || null,
     nights: Number.isInteger(resolverTask.nights) ? resolverTask.nights : 1,
     guests: resolverTask.guestCount || null,
+    ...require("../conversation-contracts/resolver-quantity").resolverQuantityFields(resolverTask),
     roomType: product.productId || "all",
     ...(roomTypeSet.length ? { roomTypeSet } : {}),
     queryMode: product.productType === "bundle"

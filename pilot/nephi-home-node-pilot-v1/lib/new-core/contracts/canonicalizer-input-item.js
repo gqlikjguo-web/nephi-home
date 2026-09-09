@@ -31,7 +31,7 @@ function boundedText(value) {
 
 function validateCanonicalizerInputItem(value) {
   const errors = [];
-  if (!exactKeys(value, CANONICALIZER_INPUT_ITEM_FIELDS)) errors.push("keys");
+  if (!exactKeys(value, value && Object.hasOwn(value,'quantityCandidate') ? [...CANONICALIZER_INPUT_ITEM_FIELDS,'quantityCandidate'] : CANONICALIZER_INPUT_ITEM_FIELDS)) errors.push("keys");
   if (!boundedText(value && value.unitId)) errors.push("unitId");
   if (!exactKeys(value && value.propertyScope, PROPERTY_SCOPE_FIELDS)) {
     errors.push("propertyScope.keys");
@@ -52,6 +52,7 @@ function validateCanonicalizerInputItem(value) {
     contextLinkCandidateId: "canonical-adapter-contract",
     safetyCandidate: null,
     slotCandidates: [],
+    ...(value && value.quantityCandidate ? {quantityCandidate:value.quantityCandidate} : {}),
     confidenceBand: "high"
   });
   if (!semanticShape.ok

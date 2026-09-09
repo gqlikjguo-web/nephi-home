@@ -47,12 +47,16 @@ function normalizedDatePair(startValue, endValue, code) {
 }
 
 function localDateKey(date, timeZone = "Asia/Taipei") {
+  const instant = typeof date === "string" ? new Date(date) : date;
+  if (instant instanceof Date && !Number.isFinite(instant.getTime())) {
+    throw new RangeError("Invalid time value");
+  }
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit"
-  }).formatToParts(date).reduce((result, item) => ({ ...result, [item.type]: item.value }), {});
+  }).formatToParts(instant).reduce((result, item) => ({ ...result, [item.type]: item.value }), {});
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 

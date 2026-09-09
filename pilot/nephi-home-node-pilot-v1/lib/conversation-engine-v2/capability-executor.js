@@ -6,6 +6,20 @@ const { assertCanonicalRequest } = require("./canonical-request");
 const { resolveAvailability, resolveAvailableDates } = require("./resolver-adapter");
 const { detailFactCandidates, includeBaseAnswer, normalizeDetailIntent } = require("./detail-intent");
 const { PRICE_KEYS, resolveDatePrice, weekdayPriceType } = require("../date-price-authority");
+const EXECUTION_PROVENANCE = new WeakMap();
+const EXECUTION_PROVENANCE_INSTANCES = new WeakSet();
+
+function evaluateProductFulfillment(requirement, result) {
+  if (!Number.isSafeInteger(requirement.requestedQuantity) || requirement.requestedQuantity < 1) throw new TypeError('invalid_requested_quantity');
+  if (!['none','distinct_entities'].includes(requirement.distinctRequirement)) throw new TypeError('invalid_distinct_requirement');
+  if (!['known','unknown'].includes(result.status) || !Array.isArray(result.matchedIdentities) || result.matchedIdentities.some(id=>typeof id!=='string'||!id)) throw new TypeError('invalid_fulfillment_evidence');
+  const matchedUniqueIdentities=[...new Set(result.matchedIdentities)];
+  const unknown=result.status==='unknown';
+  const matchedCount=unknown?null:matchedUniqueIdentities.length;
+  return {requestedQuantity:requirement.requestedQuantity, distinctRequirement:requirement.distinctRequirement,matchedUniqueIdentities,matchedCount,unresolvedRemainder:unknown?null:Math.max(requirement.requestedQuantity-matchedCount,0),fulfillmentStatus:unknown?'unknown':matchedCount>=requirement.requestedQuantity?'fulfilled':matchedCount>0?'partial':'none'};
+}
+function canonicalExecutionProvenanceFor(outcome) { return EXECUTION_PROVENANCE.get(outcome) || null; }
+function isCanonicalExecutionProvenance(value) { return EXECUTION_PROVENANCE_INSTANCES.has(value); }
 
 function localDateKey(now, timeZone) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: timeZone || "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now instanceof Date ? now : new Date(now)).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
@@ -267,10 +281,31 @@ function executeCanonicalQueryPlans(input) {
       facts: result.facts
     });
   }
-  return (input.queryPlans || []).map((queryPlan) => outcomeByTaskId.get(queryPlan.taskId));
+  return (input.queryPlans || []).map((queryPlan) => {
+    const outcome = outcomeByTaskId.get(queryPlan.taskId);
+    const requirement = queryPlan.canonicalRequest.quantityCandidate;
+    if (requirement) {
+      const facts = outcome.facts || {};
+      const products = facts.availableInventory || (facts.prices && facts.prices.map(p=>p.inventory));
+      const known = outcome.outcome === 'no_availability' || outcome.outcome === 'answered' && Array.isArray(products);
+      const ids = (products || []).map(p=>p.canonicalId);
+      Object.assign(outcome, evaluateProductFulfillment(requirement, {status:known?'known':'unknown',matchedIdentities:ids}));
+      const uniqueByIdentity = (items, idFor) => items.filter((item,index)=>items.findIndex(other=>idFor(other)===idFor(item))===index);
+      outcome.facts={...facts, ...(facts.availableInventory?{availableInventory:uniqueByIdentity(facts.availableInventory,x=>x.canonicalId)}:{}), ...(facts.prices?{prices:uniqueByIdentity(facts.prices,x=>x.inventory.canonicalId)}:{})};
+    }
+    const provenance = Object.freeze({ taskId: queryPlan.taskId, formalRequestId: queryPlan.formalRequestId,
+      sourceOutcomeStatus: outcome.outcome, sourceReasonCode: outcome.reason || "",
+      resolverId: queryPlan.resolverId, propertyId: queryPlan.propertyId });
+    EXECUTION_PROVENANCE.set(outcome, provenance);
+    EXECUTION_PROVENANCE_INSTANCES.add(provenance);
+    return outcome;
+  });
 }
 
 module.exports = {
+  evaluateProductFulfillment,
+  canonicalExecutionProvenanceFor,
+  isCanonicalExecutionProvenance,
   executeTasks,
   executeQueryPlan,
   executeQueryPlans,
