@@ -310,9 +310,24 @@ function input(overrides = {}) {
     throw error;
   } });
   const safe = await failed.adapter.process(input());
-  assert.equal(safe.finalDecision.action, "handoff");
-  assert.equal(safe.finalDecision.reviewRequired, true);
-  assert.equal(safe.finalResponse.action, "handoff");
+  // Approved terminal semantics: a thrown provider failure does not prove human responsibility.
+  const terminalClaim = require("../lib/conversation-engine-v2/claim-validator");
+  const terminalFailure = require("../lib/new-core/terminal-failure");
+  assert.equal(safe.artifacts.requestEvidence[0].requestPresence, "UNDETERMINED");
+  assert.equal(safe.artifacts.requestEvidence[0].activeRequest, false);
+  const failureSection = safe.responsePlan.sections[0];
+  assert.equal(failureSection.claimType, "PROCESSING_STATUS");
+  assert.equal(terminalFailure.isTerminalFailure(failureSection.terminalFailure,
+    { propertyId: "property_a", turnId: "event-current", scopeRef: failureSection.taskId }), true);
+  assert.equal(failureSection.terminalFailure.code, "UNDERSTANDING_PROVIDER_FAILURE");
+  assert.equal(terminalClaim.isClaimValidationResult(safe.claimValidation), true);
+  assert.equal(safe.claimValidation.ok, true);
+  assert.equal(safe.claimValidation.validatedText, safe.finalResponse.replyText);
+  assert.equal(terminalClaim.isValidatedFinalResponse(safe.finalResponse), true);
+  assert.equal(failed.resolverCalls.length, 0, "failed understanding must not execute a request");
+  assert.equal(safe.finalDecision.action, "reply");
+  assert.equal(safe.finalDecision.reviewRequired, false);
+  assert.equal(safe.finalResponse.action, "reply");
   assert.equal(safe.finalResponse.shouldReply, true);
   assert.equal(failed.writes.length, 0, "runtime failure must not overwrite the prior state");
   assert.ok(failed.diagnostics.some((entry) => entry.stage === "new_core_failure"

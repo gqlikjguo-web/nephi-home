@@ -1,0 +1,1174 @@
+{
+  "classification": "RECORDED_MODEL_OUTPUT_REPLAY_NOT_REAL_E2E",
+  "sourceSha": "29ae612c833d350b5a024855894655b2b54a3344",
+  "sourceEvidence": "/tmp/junzan-production-quantity-NzdHzS/evidence.jsonl",
+  "property": {
+    "propertyId": "nephi_home",
+    "rooms": [
+      {
+        "id": "room301",
+        "roomCode": "301",
+        "displayName": "301雙人房附衛浴",
+        "name": "301雙人房附衛浴",
+        "capacity": 2,
+        "highlights": [
+          "DYSON吹風機、按摩椅",
+          "若需扁的枕頭可事先告知"
+        ],
+        "type": "雙人房",
+        "description": "",
+        "mondayThursdayPrice": 1500,
+        "fridayPrice": 1500,
+        "saturdayHolidayPrice": 2300,
+        "sundayPrice": 1500,
+        "enabled": true
+      },
+      {
+        "id": "room302",
+        "roomCode": "302",
+        "displayName": "302四人房附衛浴",
+        "name": "302四人房附衛浴",
+        "capacity": 4,
+        "highlights": [
+          "DYSON吹風機、按摩椅",
+          "若需扁的枕頭可事先告知"
+        ],
+        "type": "四人房",
+        "description": "",
+        "mondayThursdayPrice": 2200,
+        "fridayPrice": 2200,
+        "saturdayHolidayPrice": 3300,
+        "sundayPrice": 2200,
+        "enabled": true
+      },
+      {
+        "id": "room401",
+        "roomCode": "401",
+        "displayName": "401雙人房有浴缸",
+        "name": "401雙人房有浴缸",
+        "capacity": 2,
+        "highlights": [
+          "DYSON吹風機、按摩椅",
+          "若需扁的枕頭可事先告知"
+        ],
+        "type": "雙人房",
+        "description": "",
+        "mondayThursdayPrice": 1700,
+        "fridayPrice": 1700,
+        "saturdayHolidayPrice": 2600,
+        "sundayPrice": 1700,
+        "enabled": true
+      },
+      {
+        "id": "room402",
+        "roomCode": "402",
+        "displayName": "402四人房有浴缸",
+        "name": "402四人房有浴缸",
+        "capacity": 4,
+        "highlights": [
+          "DYSON吹風機、按摩椅",
+          "若需扁的枕頭可事先告知",
+          "有12歲以下小孩沒開放預訂"
+        ],
+        "type": "四人房",
+        "description": "",
+        "mondayThursdayPrice": 2600,
+        "fridayPrice": 2600,
+        "saturdayHolidayPrice": 3700,
+        "sundayPrice": 2600,
+        "enabled": true
+      },
+      {
+        "id": "bundle_four_room_whole_house",
+        "name": "包棟",
+        "capacity": 12,
+        "type": "包棟",
+        "description": "組合型可售方案",
+        "memberRoomIds": [
+          "room301",
+          "room302",
+          "room401",
+          "room402"
+        ],
+        "entertainmentAmenities": [
+          {
+            "key": "singing",
+            "displayName": "KTV／歡唱設備",
+            "provided": true,
+            "statusSource": "operator",
+            "note": "唱歌時間08:00-22:00",
+            "source": "preset",
+            "position": 0
+          },
+          {
+            "key": "electric_mahjong",
+            "displayName": "電動麻將桌",
+            "provided": true,
+            "statusSource": "operator",
+            "note": "",
+            "source": "preset",
+            "position": 1
+          },
+          {
+            "key": "mahjong",
+            "displayName": "一般麻將",
+            "provided": true,
+            "statusSource": "operator",
+            "note": "",
+            "source": "preset",
+            "position": 2
+          },
+          {
+            "key": "board_games",
+            "displayName": "桌遊",
+            "provided": true,
+            "statusSource": "operator",
+            "note": "",
+            "source": "preset",
+            "position": 3
+          },
+          {
+            "key": "game_console",
+            "displayName": "Switch／遊戲主機",
+            "provided": true,
+            "statusSource": "operator",
+            "note": "",
+            "source": "preset",
+            "position": 4
+          },
+          {
+            "key": "projector",
+            "displayName": "投影機／大螢幕",
+            "provided": false,
+            "statusSource": "operator",
+            "note": "",
+            "source": "preset",
+            "position": 5
+          },
+          {
+            "key": "billiards",
+            "displayName": "撞球桌",
+            "provided": false,
+            "statusSource": "operator",
+            "note": "",
+            "source": "preset",
+            "position": 6
+          },
+          {
+            "key": "darts",
+            "displayName": "飛鏢",
+            "provided": false,
+            "statusSource": "operator",
+            "note": "",
+            "source": "preset",
+            "position": 7
+          },
+          {
+            "key": "table_football",
+            "displayName": "桌上足球",
+            "provided": false,
+            "statusSource": "operator",
+            "note": "",
+            "source": "preset",
+            "position": 8
+          },
+          {
+            "key": "bbq",
+            "displayName": "烤肉區／烤肉設備",
+            "provided": true,
+            "statusSource": "operator",
+            "note": "另外要多1000元場地提供費",
+            "source": "preset",
+            "position": 9
+          },
+          {
+            "key": "splash_pool",
+            "displayName": "戲水池",
+            "provided": true,
+            "statusSource": "operator",
+            "note": "戲水池只有冷水，費用另計300/天",
+            "source": "preset",
+            "position": 10
+          },
+          {
+            "key": "swimming_pool",
+            "displayName": "游泳池",
+            "provided": false,
+            "statusSource": "operator",
+            "note": "",
+            "source": "preset",
+            "position": 11
+          },
+          {
+            "key": "children_play_area",
+            "displayName": "兒童遊戲區",
+            "provided": false,
+            "statusSource": "operator",
+            "note": "",
+            "source": "preset",
+            "position": 12
+          },
+          {
+            "key": "slide",
+            "displayName": "溜滑梯",
+            "provided": true,
+            "statusSource": "operator",
+            "note": "庭院跟402四人房有提供",
+            "source": "preset",
+            "position": 13
+          },
+          {
+            "key": "sandpit",
+            "displayName": "沙坑",
+            "provided": false,
+            "statusSource": "operator",
+            "note": "",
+            "source": "preset",
+            "position": 14
+          },
+          {
+            "key": "outdoor_yard",
+            "displayName": "戶外庭院",
+            "provided": true,
+            "statusSource": "operator",
+            "note": "庭院空間可使用",
+            "source": "preset",
+            "position": 15
+          },
+          {
+            "key": "shared_living_room",
+            "displayName": "公共客廳",
+            "provided": true,
+            "statusSource": "operator",
+            "note": "",
+            "source": "preset",
+            "position": 16
+          },
+          {
+            "key": "kitchen",
+            "displayName": "廚房",
+            "provided": true,
+            "statusSource": "operator",
+            "note": "廚房煮東西只開放給包棟客人。",
+            "source": "preset",
+            "position": 17
+          },
+          {
+            "key": "hot_pot_equipment",
+            "displayName": "火鍋設備",
+            "provided": true,
+            "statusSource": "operator",
+            "note": "有鍋具可以使用，但只開放給包棟客人",
+            "source": "preset",
+            "position": 18
+          }
+        ],
+        "basePrice": 13000,
+        "mondayThursdayPrice": 13000,
+        "fridayPrice": 13000,
+        "saturdayHolidayPrice": 18000,
+        "sundayPrice": 13000,
+        "inventoryType": "bundle"
+      }
+    ],
+    "propertyFacts": [
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "停車",
+        "publicText": "有的，民宿旁邊有空地可以停車。\n車庫有 1 個車位，會優先保留給訂房日期當天最早完成匯款訂房的客人。\n若車庫已安排給最優先的客人後，後面訂房的客人可以停在民宿旁邊空地，或路邊白線位子，大馬路白線位子很多。",
+        "canonicalId": "parking",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "Wi-Fi",
+        "publicText": "民宿整棟都有提供無線網路，帳號密碼在房間裡電視櫃前有貼。",
+        "canonicalId": "wifi",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "電視",
+        "publicText": "房間都有提供電視，可以收看MOD跟Netflix。",
+        "canonicalId": "tv",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "冰箱",
+        "publicText": "冰箱在二樓廚房，若只訂房間客人共用這個冰箱。",
+        "canonicalId": "refrigerator",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "飲水機",
+        "publicText": "飲水機在客廳角落，可自行使用。",
+        "canonicalId": "water_dispenser",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "電梯",
+        "publicText": "民宿有電梯可使用。",
+        "canonicalId": "elevator",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "洗衣機",
+        "publicText": "民宿有提洗衣機，只訂房間客人使用請按照順序排隊使用。",
+        "canonicalId": "washing_machine",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "烘衣機",
+        "publicText": "民宿有提烘衣機，只訂房間客人使用請按照順序排隊使用。",
+        "canonicalId": "clothes_dryer",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "爐具",
+        "publicText": "民宿沒開始瓦斯爐，但有提供電磁爐，僅給包棟客人使用，只訂房間的客人無法煮東西。",
+        "canonicalId": "stove",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "鍋具",
+        "publicText": "民宿有提供鍋具，僅限包棟客人使用。",
+        "canonicalId": "cookware",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "餐具",
+        "publicText": "民宿有提供餐具，使用完需清洗乾淨。",
+        "canonicalId": "tableware",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "policy",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-22T08:57:34.558Z",
+        "conditions": [],
+        "publicName": "早餐",
+        "publicText": "民宿沒提供早餐，不好意思",
+        "canonicalId": "breakfast",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-22T13:47:59.061Z",
+        "conditions": [],
+        "publicName": "盥洗用品",
+        "publicText": "有提供毛巾、浴巾、洗髮乳、沐浴乳、潤髮乳\n需要一次性備品，也可以提供。",
+        "canonicalId": "toiletries",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "嬰兒床",
+        "publicText": "民宿有一張嬰兒床，只訂房間客人需要使用另外收費100元 如有需要請先提前告知，方便我們事先準備。",
+        "canonicalId": "baby_crib",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "嬰兒澡盆",
+        "publicText": "民宿有提供嬰兒澡盆，如有需要請先提前告知，方便我們事先準備。",
+        "canonicalId": "baby_bathtub",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "消毒鍋",
+        "publicText": "民宿有提供紫外線消毒鍋，如有需要請先提前告知，方便我們事先準備。",
+        "canonicalId": "baby_bottle_sterilizer",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "policy",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-22T08:57:34.558Z",
+        "conditions": [],
+        "publicName": "寵物規則",
+        "publicText": "寵物入住我們是沒有另外收費的😊 \n可以攜帶一隻小型寵物 \n不過需要麻煩您協助留意寵物狀況，避免隨地大小便或破壞設備。\n入住時會需要提供一份身分證件做登記，如有造成清潔上的困擾或設備損壞，會再酌收相關費用，還請見諒🙏 \n另外想先跟您確認一下，小狗平常會包尿布嗎？ 因為有些狗狗到陌生環境比較容易做記號，如果是在床邊或較難清潔的地方，處理上會比較困難，所以會先跟您確認一下，謝謝您的理解與配合",
+        "canonicalId": "pets",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "policy",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-22T09:21:49.863Z",
+        "conditions": [],
+        "publicName": "國旅補助",
+        "publicText": "有參加國旅補助\n補助注意事項：\n1.限本國國民個別旅客，每房每晚限用一次\n2.適用時間：限定週日～週四（不含國定假日與連續假期） \n3.國際平台訂房不適用\n4.如實際入住時補助經費已經提前用罄，就會無法取得折抵。\n（配合觀光署公告） 詳情請參考:https://taiwantravel.tad.gov.tw/web_page/index.jsp",
+        "canonicalId": "travel_subsidy",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "allowed",
+        "category": "policy",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-23T13:46:20.682Z",
+        "conditions": [],
+        "publicName": "加人／加床",
+        "publicText": "301無法加床\n302可以加一張床\n401可以加一張床\n402上舖可以加雙人床墊",
+        "canonicalId": "add_person_bed",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      },
+      {
+        "fees": [],
+        "notes": "",
+        "source": "operator_form",
+        "status": "not_allowed",
+        "category": "amenity",
+        "appliesTo": "whole_property",
+        "updatedAt": "2026-08-14T08:47:21.560Z",
+        "conditions": [],
+        "publicName": "奶瓶清潔設備",
+        "publicText": "民宿沒提供奶瓶清潔設備",
+        "canonicalId": "baby_bottle_cleaning_equipment",
+        "restrictions": [],
+        "operatingHours": [],
+        "availablePeriods": [],
+        "reservationRequired": null,
+        "advanceNoticeRequired": null
+      }
+    ],
+    "commonAnswers": {
+      "bbq": "烤肉只有包棟才有提供，另外酌收 1000 元場地提供費。只訂房間沒有辦法烤肉。",
+      "pool": "戲水池使用300/天，只限包棟客人",
+      "bbqRule": "烤肉只有包棟才有提供，另外酌收 1000 元場地提供費。只訂房間沒有辦法烤肉。",
+      "checkin": "自行入住，當天會提供密碼",
+      "deposit": "先匯款一半當訂金",
+      "parking": "有的，民宿旁邊有空地可以停車。另外車庫有 1 個車位，會優先保留給訂房日期當天最早完成匯款訂房的客人。若車庫已安排給其他客人，後面訂房的客人可以停在民宿旁邊空地。",
+      "payment": "這官方LINE帳號這邊預定，到時會給你帳號匯款",
+      "petRule": "尼腓的家可以攜帶一隻小型寵物，目前不另外收費。不過需要人工依入住日期、房型與現場狀況確認是否可入住。入住時需提供一份身分證件做登記，並請協助留意寵物狀況，避免隨地大小便或破壞設備；若造成清潔上的困擾或設備損壞，會再酌收相關費用。也會先確認寵物平常是否會包尿布。",
+      "smoking": "室內一律禁菸包含電子菸、加熱菸",
+      "children": "有提供嬰兒澡盆、小坐凳、嬰兒座椅、紫外線消毒鍋",
+      "visitors": "沒有開放訪客拜訪",
+      "equipment": "有提供毛巾、浴巾、洗髮乳、沐浴乳、潤髪乳\n需要一次性備品，主動告知也會提供",
+      "priceRule": "平日：七月平日房價：301 1500 元、302 2200 元、401 1700 元、402 2600 元；週五和週日也算平日；包棟平日 13000 元；假日：包棟週六 18000 元；四個單間房的週六／假日價格在現有已確認資料中未確認，需由真人客服確認",
+      "transport": "尼腓的家位在宜蘭五結，周邊交通與路線可以先參考 Google 地圖：\nhttps://maps.app.goo.gl/AYryvrMayA4gFzPJ9?g_st=ic",
+      "otherFacts": "提供自助入住，實際方式由業者確認。",
+      "reschedule": "沒有延期",
+      "checkInTime": "15:00",
+      "laundryRule": "可以，洗衣機與烘衣機單間房客人和包棟客人都可以使用。",
+      "parkingRule": "有的，民宿旁邊有空地可以停車。另外車庫有 1 個車位，會優先保留給訂房日期當天最早完成匯款訂房的客人。若車庫已安排給其他客人，後面訂房的客人可以停在民宿旁邊空地。",
+      "paymentRule": "付款、訂金、匯款、轉帳、刷卡、發票、收據或帳號相關問題，一律由真人客服確認。",
+      "quiet_hours": "晚上22:00-08:00需要降低音量",
+      "cancellation": "14天前可退款",
+      "checkOutTime": "11:00",
+      "elevatorRule": "民宿有電梯可以使用。",
+      "lodgingRules": "退款、退費、退訂、取消、改期、延期、天災或臨時狀況相關問題，一律由真人客服確認。",
+      "breakfastRule": "尼腓的家沒有提供早餐。",
+      "early_checkin": "11-15點打掃所以需要15:00後才能入住",
+      "late_checkout": "11點前需要退房",
+      "selfCheckInRule": "入住時間為 15:00 後，退房時間為 11:00 前。本民宿採自助入住，入住當天會提供大門及房門密碼。",
+      "babySuppliesRule": "有提供嬰兒澡盆與紫外線消毒鍋。",
+      "drinkingWaterRule": "有的，飲水機在客廳可以使用。",
+      "latestArrivalTime": "最晚入住時間沒有限定，只訂房間的客人15:00後可自行入住",
+      "earlyCheckInPolicy": "基本上是15:00才可入住，謝謝"
+    }
+  },
+  "c01": {
+    "schemaVersion": 1,
+    "coreVersion": "new-core-v1",
+    "traceId": "d702eaca-6803-4201-ae9b-4c8bf4943ef8",
+    "turnId": "engineering-0",
+    "propertyScope": {
+      "propertyId": "nephi_home",
+      "channel": "isolated-production-engineering-verification",
+      "userId": "engineering-verification-20260908"
+    },
+    "sourceEvents": [
+      {
+        "eventId": "engineering-0",
+        "messageRef": "engineering-0",
+        "role": "guest",
+        "timestamp": "2026-09-09T15:14:39.071Z",
+        "messageKind": "text",
+        "messageText": "9/29 四個大人要兩間雙人房"
+      }
+    ],
+    "recentConversation": [],
+    "referenceableCycles": [],
+    "propertyTimezone": "Asia/Taipei",
+    "capabilityCatalog": [
+      "availability",
+      "available_dates",
+      "amenity",
+      "policy",
+      "property_fact",
+      "location",
+      "parking",
+      "bbq",
+      "pool",
+      "booking_request",
+      "human_help",
+      "high_risk",
+      "room_options",
+      "bundle_availability",
+      "capacity",
+      "lodging_product_capacity",
+      "price",
+      "total_price",
+      "amenity_list",
+      "unknown"
+    ],
+    "publicSubjectCatalog": [
+      {
+        "catalogIdentity": "room301",
+        "kind": "room",
+        "publicName": "301雙人房附衛浴"
+      },
+      {
+        "catalogIdentity": "room302",
+        "kind": "room",
+        "publicName": "302四人房附衛浴"
+      },
+      {
+        "catalogIdentity": "room401",
+        "kind": "room",
+        "publicName": "401雙人房有浴缸"
+      },
+      {
+        "catalogIdentity": "room402",
+        "kind": "room",
+        "publicName": "402四人房有浴缸"
+      },
+      {
+        "catalogIdentity": "bundle_four_room_whole_house",
+        "kind": "bundle",
+        "publicName": "包棟"
+      },
+      {
+        "catalogIdentity": "parking",
+        "kind": "amenity",
+        "publicName": "停車"
+      },
+      {
+        "catalogIdentity": "wifi",
+        "kind": "amenity",
+        "publicName": "Wi-Fi"
+      },
+      {
+        "catalogIdentity": "tv",
+        "kind": "amenity",
+        "publicName": "電視"
+      },
+      {
+        "catalogIdentity": "refrigerator",
+        "kind": "amenity",
+        "publicName": "冰箱"
+      },
+      {
+        "catalogIdentity": "water_dispenser",
+        "kind": "amenity",
+        "publicName": "飲水機"
+      },
+      {
+        "catalogIdentity": "elevator",
+        "kind": "amenity",
+        "publicName": "電梯"
+      },
+      {
+        "catalogIdentity": "washing_machine",
+        "kind": "amenity",
+        "publicName": "洗衣機"
+      },
+      {
+        "catalogIdentity": "clothes_dryer",
+        "kind": "amenity",
+        "publicName": "烘衣機"
+      },
+      {
+        "catalogIdentity": "stove",
+        "kind": "amenity",
+        "publicName": "爐具"
+      },
+      {
+        "catalogIdentity": "cookware",
+        "kind": "amenity",
+        "publicName": "鍋具"
+      },
+      {
+        "catalogIdentity": "tableware",
+        "kind": "amenity",
+        "publicName": "餐具"
+      },
+      {
+        "catalogIdentity": "toiletries",
+        "kind": "amenity",
+        "publicName": "盥洗用品"
+      },
+      {
+        "catalogIdentity": "baby_crib",
+        "kind": "amenity",
+        "publicName": "嬰兒床"
+      },
+      {
+        "catalogIdentity": "baby_bathtub",
+        "kind": "amenity",
+        "publicName": "嬰兒澡盆"
+      },
+      {
+        "catalogIdentity": "baby_bottle_sterilizer",
+        "kind": "amenity",
+        "publicName": "消毒鍋"
+      },
+      {
+        "catalogIdentity": "baby_bottle_cleaning_equipment",
+        "kind": "amenity",
+        "publicName": "奶瓶清潔設備"
+      },
+      {
+        "catalogIdentity": "singing",
+        "kind": "amenity",
+        "publicName": "KTV／歡唱設備"
+      },
+      {
+        "catalogIdentity": "electric_mahjong",
+        "kind": "amenity",
+        "publicName": "電動麻將桌"
+      },
+      {
+        "catalogIdentity": "mahjong",
+        "kind": "amenity",
+        "publicName": "一般麻將"
+      },
+      {
+        "catalogIdentity": "board_games",
+        "kind": "amenity",
+        "publicName": "桌遊"
+      },
+      {
+        "catalogIdentity": "game_console",
+        "kind": "amenity",
+        "publicName": "Switch／遊戲主機"
+      },
+      {
+        "catalogIdentity": "bbq",
+        "kind": "amenity",
+        "publicName": "烤肉區／烤肉設備"
+      },
+      {
+        "catalogIdentity": "splash_pool",
+        "kind": "amenity",
+        "publicName": "戲水池"
+      },
+      {
+        "catalogIdentity": "slide",
+        "kind": "amenity",
+        "publicName": "溜滑梯"
+      },
+      {
+        "catalogIdentity": "outdoor_yard",
+        "kind": "amenity",
+        "publicName": "戶外庭院"
+      },
+      {
+        "catalogIdentity": "shared_living_room",
+        "kind": "amenity",
+        "publicName": "公共客廳"
+      },
+      {
+        "catalogIdentity": "kitchen",
+        "kind": "amenity",
+        "publicName": "廚房"
+      },
+      {
+        "catalogIdentity": "hot_pot_equipment",
+        "kind": "amenity",
+        "publicName": "火鍋設備"
+      },
+      {
+        "catalogIdentity": "projector",
+        "kind": "amenity",
+        "publicName": "投影機／大螢幕"
+      },
+      {
+        "catalogIdentity": "billiards",
+        "kind": "amenity",
+        "publicName": "撞球桌"
+      },
+      {
+        "catalogIdentity": "darts",
+        "kind": "amenity",
+        "publicName": "飛鏢"
+      },
+      {
+        "catalogIdentity": "table_football",
+        "kind": "amenity",
+        "publicName": "桌上足球"
+      },
+      {
+        "catalogIdentity": "swimming_pool",
+        "kind": "amenity",
+        "publicName": "游泳池"
+      },
+      {
+        "catalogIdentity": "children_play_area",
+        "kind": "amenity",
+        "publicName": "兒童遊戲區"
+      },
+      {
+        "catalogIdentity": "sandpit",
+        "kind": "amenity",
+        "publicName": "沙坑"
+      },
+      {
+        "catalogIdentity": "breakfast",
+        "kind": "policy",
+        "publicName": "早餐"
+      },
+      {
+        "catalogIdentity": "pets",
+        "kind": "policy",
+        "publicName": "寵物規則"
+      },
+      {
+        "catalogIdentity": "travel_subsidy",
+        "kind": "policy",
+        "publicName": "國旅補助"
+      },
+      {
+        "catalogIdentity": "add_person_bed",
+        "kind": "policy",
+        "publicName": "加人／加床"
+      },
+      {
+        "catalogIdentity": "check_in",
+        "kind": "policy",
+        "publicName": "入住"
+      },
+      {
+        "catalogIdentity": "check_in__early_arrival_policy",
+        "kind": "policy",
+        "publicName": "提前入住規則"
+      },
+      {
+        "catalogIdentity": "check_in__latest_arrival_policy",
+        "kind": "policy",
+        "publicName": "最晚入住時間"
+      },
+      {
+        "catalogIdentity": "check_out",
+        "kind": "policy",
+        "publicName": "退房"
+      },
+      {
+        "catalogIdentity": "self_check_in_out_instructions",
+        "kind": "policy",
+        "publicName": "自助入住／退房說明"
+      },
+      {
+        "catalogIdentity": "location",
+        "kind": "external_place",
+        "publicName": "位置與導航"
+      },
+      {
+        "catalogIdentity": "matched-room-set-0d256495c696dd1cc6c3b8e2",
+        "kind": "matched_room_set",
+        "publicName": "雙人房"
+      },
+      {
+        "catalogIdentity": "matched-room-set-ea74542666bfbad872475925",
+        "kind": "matched_room_set",
+        "publicName": "四人房"
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "understandingOutput": {
+        "schemaVersion": 1,
+        "turnId": "engineering-0",
+        "units": [
+          {
+            "unitId": "unit-0",
+            "evidenceRefs": [
+              {
+                "eventId": "engineering-0",
+                "messageRef": "engineering-0",
+                "startOffset": 0,
+                "endOffset": 15,
+                "quote": "9/29 四個大人要兩間雙人房"
+              }
+            ],
+            "purpose": "unknown",
+            "capability": "unsupported",
+            "subject": {
+              "kind": "matched_room_set",
+              "catalogIdentity": "matched-room-set-0d256495c696dd1cc6c3b8e2"
+            },
+            "stayDependent": true,
+            "temporalCandidate": {
+              "rawText": "9/29",
+              "kind": "month_day",
+              "checkInCandidate": null,
+              "checkOutCandidate": null,
+              "nightsCandidate": null
+            },
+            "contextLinkCandidateId": "context-link-0",
+            "safetyCandidate": {
+              "operatorActionClass": "booking_mutation",
+              "riskClass": null
+            },
+            "slotCandidates": [
+              {
+                "slotCandidateId": "slot-guest-count-0",
+                "slot": "guest_count",
+                "operation": "SET",
+                "value": 4,
+                "evidenceRefs": [
+                  {
+                    "eventId": "engineering-0",
+                    "messageRef": "engineering-0",
+                    "startOffset": 5,
+                    "endOffset": 9,
+                    "quote": "四個大人"
+                  }
+                ]
+              },
+              {
+                "slotCandidateId": "slot-product-0",
+                "slot": "product",
+                "operation": "SET",
+                "value": "matched-room-set-0d256495c696dd1cc6c3b8e2",
+                "evidenceRefs": [
+                  {
+                    "eventId": "engineering-0",
+                    "messageRef": "engineering-0",
+                    "startOffset": 10,
+                    "endOffset": 15,
+                    "quote": "兩間雙人房"
+                  }
+                ]
+              }
+            ],
+            "quantityCandidate": {
+              "requestedQuantity": 2,
+              "distinctRequirement": "distinct_entities",
+              "evidenceRefs": [
+                {
+                  "eventId": "engineering-0",
+                  "messageRef": "engineering-0",
+                  "startOffset": 10,
+                  "endOffset": 15,
+                  "quote": "兩間雙人房"
+                }
+              ]
+            },
+            "confidenceBand": "medium"
+          }
+        ]
+      },
+      "contextLinkCandidates": [
+        {
+          "contextLinkCandidateId": "context-link-0",
+          "unitId": "unit-0",
+          "relationKind": "NEW_REQUEST",
+          "currentSourceEvidenceRefs": [
+            {
+              "eventId": "engineering-0",
+              "messageRef": "engineering-0",
+              "startOffset": 0,
+              "endOffset": 15,
+              "quote": "9/29 四個大人要兩間雙人房"
+            }
+          ],
+          "referencedHistoryEventRefs": []
+        }
+      ]
+    },
+    {
+      "understandingOutput": {
+        "schemaVersion": 1,
+        "turnId": "engineering-0",
+        "units": [
+          {
+            "unitId": "unit-0",
+            "evidenceRefs": [
+              {
+                "eventId": "engineering-0",
+                "messageRef": "engineering-0",
+                "startOffset": 0,
+                "endOffset": 15,
+                "quote": "9/29 四個大人要兩間雙人房"
+              }
+            ],
+            "purpose": "operator_request",
+            "capability": "booking_operator_request",
+            "subject": {
+              "kind": "other_verified",
+              "catalogIdentity": null
+            },
+            "stayDependent": false,
+            "temporalCandidate": {
+              "rawText": "9/29",
+              "kind": "month_day",
+              "checkInCandidate": null,
+              "checkOutCandidate": null,
+              "nightsCandidate": null
+            },
+            "contextLinkCandidateId": "context-link-0",
+            "safetyCandidate": {
+              "operatorActionClass": "booking_mutation",
+              "riskClass": null
+            },
+            "slotCandidates": [
+              {
+                "slotCandidateId": "slot-guest-count-0",
+                "slot": "guest_count",
+                "operation": "SET",
+                "value": 4,
+                "evidenceRefs": [
+                  {
+                    "eventId": "engineering-0",
+                    "messageRef": "engineering-0",
+                    "startOffset": 5,
+                    "endOffset": 9,
+                    "quote": "四個大人"
+                  }
+                ]
+              },
+              {
+                "slotCandidateId": "slot-product-0",
+                "slot": "product",
+                "operation": "SET",
+                "value": "matched-room-set-0d256495c696dd1cc6c3b8e2",
+                "evidenceRefs": [
+                  {
+                    "eventId": "engineering-0",
+                    "messageRef": "engineering-0",
+                    "startOffset": 10,
+                    "endOffset": 15,
+                    "quote": "兩間雙人房"
+                  }
+                ]
+              }
+            ],
+            "quantityCandidate": null,
+            "confidenceBand": "medium"
+          }
+        ]
+      },
+      "contextLinkCandidates": [
+        {
+          "contextLinkCandidateId": "context-link-0",
+          "unitId": "unit-0",
+          "relationKind": "NEW_REQUEST",
+          "currentSourceEvidenceRefs": [
+            {
+              "eventId": "engineering-0",
+              "messageRef": "engineering-0",
+              "startOffset": 0,
+              "endOffset": 15,
+              "quote": "9/29 四個大人要兩間雙人房"
+            }
+          ],
+          "referencedHistoryEventRefs": []
+        }
+      ]
+    }
+  ]
+}

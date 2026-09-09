@@ -3,9 +3,8 @@
 const crypto = require("node:crypto");
 
 const { readConversationStateV3 } = require("../conversation-contracts/conversation-state-v3");
-const { buildFinalDecision } = require("../conversation-engine-v2/final-decision");
-const { buildFinalResponse } = require("../conversation-engine-v2/final-response-renderer");
-const { executeNewCoreTurn, turnStateSnapshot } = require("./application-service");
+const { createTerminalContext } = require("./terminal-failure");
+const { executeNewCoreTurn, turnStateSnapshot, finalizeTurnResponse } = require("./application-service");
 const { c08ExecutionDiagnosticFor } = require("./canonical-execution-adapter");
 
 const HISTORY_LIMIT = 20;
@@ -173,22 +172,15 @@ function safeFailureCode(error) {
   return /^[A-Z][A-Z0-9_]{0,159}$/.test(code) ? code : "NEW_CORE_RUNTIME_FAILURE";
 }
 
-function runtimeFailureResult(error, state, traceId) {
-  const finalDecision = buildFinalDecision({ plannerFailure: safeFailureCode(error) });
-  const finalResponse = buildFinalResponse({
-    finalDecision,
-    responsePlan: null,
-    validatedReplyText: "",
-    claimValidation: null
-  });
-  return {
-    state,
-    finalDecision,
-    finalResponse,
-    taskResults: [],
-    traceId,
-    earliestFailure: { layer: "APPLICATION_SERVICE", failureCode: finalDecision.reasonCode }
-  };
+function runtimeFailureResult(error, state, traceId, property, turnId, responsePrefix, completed = null) {
+  const terminalContext = createTerminalContext({ propertyId: property.propertyId, turnId });
+  terminalContext.fromException(error, "turn-failure");
+  const terminal = finalizeTurnResponse({ scope: { propertyId: property.propertyId }, turnId, property, terminalContext, responsePrefix,
+    requestEvidence: completed?.artifacts?.requestEvidence || [], executionOutcomes: completed?.artifacts?.executionOutcomes || [],
+    taskResults: completed?.artifacts?.responsePlan?.sections || [], canonicalItems: completed?.artifacts?.canonicalItems || [] });
+  return { state, ...terminal, taskResults: [], traceId,
+    artifacts: { terminalFailures: terminal.terminalFailures, requestEvidence: [{ taskId: "turn-failure", requestPresence: "UNDETERMINED", activeRequest: false }], executionOutcomes: [], canonicalItems: [] },
+    earliestFailure: { layer: "APPLICATION_SERVICE", failureCode: safeFailureCode(error) } };
 }
 
 function coordinatorTaskResults(result) {
@@ -229,6 +221,7 @@ function createNewCoreProductionTurnAdapter({
   now = () => new Date(),
   executeTurn,
   onDiagnostic,
+  responsePrefixForProperty = () => "",
   recentMessageLimit = 10
 } = {}) {
   const getConversationState = requiredFunction(persistence, "getConversationState");
@@ -266,6 +259,7 @@ function createNewCoreProductionTurnAdapter({
         channelHash: hash(channel), userHash: hash(userId), eventHash: hash(eventId),
         guestMessage: String(input.messageText || "") });
       let previous = null;
+      let completed = null;
       try {
         previous = readConversationStateV3(getConversationState(propertyId, channel, userId), scope, timestamp);
         const snapshot = turnStateSnapshot(previous, scope, timestamp);
@@ -296,12 +290,14 @@ function createNewCoreProductionTurnAdapter({
             customReplies: () => listCustomReplies(propertyId)
           },
           providerConfig,
+          responsePrefix: responsePrefixForProperty(property),
           publicBaseUrl,
           now: timestamp,
           scope,
           lifecycleDecisionIdPrefix: "line"
           , onDiagnostic
         });
+        completed = result;
         emitResultDiagnostics(onDiagnostic, traceId, result);
         setConversationState(propertyId, channel, userId, result.state);
         return {
@@ -316,7 +312,7 @@ function createNewCoreProductionTurnAdapter({
           schemaViolation: error && error.schemaViolation || null,
           rejectedEvidence: error && error.rejectedEvidence || null,
           valueOriginFunction: text(error && error.valueOriginFunction) });
-        const failed = runtimeFailureResult(error, previous, traceId);
+        const failed = runtimeFailureResult(error, previous, traceId, property, eventId, responsePrefixForProperty(property), completed);
         emitDiagnostic(onDiagnostic, { traceId, stage: "new_core_final", finalDecision: failed.finalDecision, finalResponse: failed.finalResponse, earliestFailure: failed.earliestFailure });
         emitDiagnostic(onDiagnostic, { traceId, stage: "state_after", state: stateDiagnostic(previous) });
         return failed;

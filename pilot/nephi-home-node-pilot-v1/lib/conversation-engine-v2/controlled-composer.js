@@ -4,6 +4,7 @@ const { detailLabel } = require("./detail-intent");
 
 function money(value) { return new Intl.NumberFormat("zh-TW").format(value); }
 function composeSection(section) {
+  if (section.claimType === "PROCESSING_STATUS") return require("../new-core/terminal-failure").processingStatusText(section.terminalFailure);
   if (section.fulfillmentStatus === 'partial') {
     const {fulfillmentStatus, ...rest} = section;
     return '目前只確認符合需求的商品有 '+section.matchedCount+'/'+section.requestedQuantity+' 個，尚差 '+section.unresolvedRemainder+' 個。\n'+composeSection(rest);

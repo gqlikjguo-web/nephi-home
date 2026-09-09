@@ -7,9 +7,9 @@ const { buildCanonicalFormalRequest, buildCanonicalQueryPlan, resultForNotReady 
 const { executeCanonicalQueryPlans } = require("../conversation-engine-v2/capability-executor");
 const { buildResponsePlan } = require("../conversation-engine-v2/response-planner");
 const { composeControlledReply } = require("../conversation-engine-v2/controlled-composer");
-const { validateClaims, unknownProvenanceFor } = require("../conversation-engine-v2/claim-validator");
+const { validateClaims, unknownProvenanceFor, isValidatedFinalResponse } = require("../conversation-engine-v2/claim-validator");
 const { buildFinalDecision, executionReplyDisposition } = require("../conversation-engine-v2/final-decision");
-const { buildFinalResponse } = require("../conversation-engine-v2/final-response-renderer");
+const { buildFinalResponse, assembleFinalResponse } = require("../conversation-engine-v2/final-response-renderer");
 const { applyControlledReplyRules } = require("../custom-reply-rules");
 const {
   buildC01PublicCatalog,
@@ -28,6 +28,8 @@ const { adaptLifecycleDecisionsToStateV3 } = require("./state-v3-lifecycle-adapt
 const { callOpenAIUnderstandingV1, OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC } = require("../providers/openai-understanding-v1");
 const { NEW_CORE_OPENAI_MODEL } = require("./openai-model-authority");
 const { publicAvailabilityUrlForProperty } = require("../public-property-routing");
+
+const { createTerminalContext } = require("./terminal-failure");
 
 const HANDOFF_CAPABILITIES = new Set(["booking_operator_request", "high_risk"]);
 const AVAILABILITY_AUTO_REPLY_POLICY_KEYS = Object.freeze(["availability", "available_dates"]);
@@ -153,7 +155,83 @@ function noExecutionDecision(outcomes, dispositions, missingFields, failedUnits 
   return buildFinalDecision({ executionOutcomes: outcomes });
 }
 
-async function executeNewCoreTurn({ input, state, property, resolver, providerConfig, publicBaseUrl, now, scope = state && state.scope, understandingProvider = callOpenAIUnderstandingV1, lifecycleDecisionIdPrefix = "new-core", onDiagnostic = null }) {
+function finalizeTurnResponse({ scope, turnId, property, terminalContext, requestEvidence = [], executionOutcomes = [], taskResults = [], canonicalItems = [], publicAvailabilityUrl = "", responsePrefix = "", maxLength = 1200 }) {
+  const context = terminalContext || createTerminalContext({ propertyId: scope.propertyId, turnId });
+  const permission = id => {
+    const evidence = requestEvidence.find(item => item.taskId === id);
+    return evidence?.replyPermission || (property.availabilityAutoReplyEnabled === false ? "UNDETERMINED" : "ALLOWED");
+  };
+  const allowed = id => permission(id) === "ALLOWED" && requestEvidence.find(item => item.taskId === id)?.requestPresence !== "ABSENT";
+  const statusTask = failure => ({ taskId: failure.scopeRef, type: "unknown", status: "answered", claimType: "PROCESSING_STATUS", facts: {}, terminalFailure: failure });
+  const applicableFailures = context.failures.filter(failure => allowed(failure.scopeRef));
+  const replacements = new Map(applicableFailures.map(failure => [failure.scopeRef, statusTask(failure)]));
+  const tasks = taskResults.filter(task => allowed(task.taskId)).map(task => {
+    const evidence = requestEvidence.find(item => item.taskId === task.taskId);
+    const execution = executionOutcomes.find(item => item.taskId === task.taskId);
+    // A processing notice never cancels an independently established human responsibility.
+    return replacements.has(task.taskId) && (!execution || executionReplyDisposition(execution, evidence) !== "handoff")
+      ? replacements.get(task.taskId) : task;
+  });
+  for (const [id, task] of replacements) if (!tasks.some(item => item.taskId === id)) tasks.push(task);
+  let responsePlan = buildResponsePlan({ propertyId: scope.propertyId, turnId, taskResults: tasks, inputTaskIds: tasks.map(item => item.taskId), canonicalRequests: canonicalItems.map(item => item.canonicalRequest), reviewActions: [], publicAvailabilityUrl });
+  responsePlan.maxLength = maxLength;
+  let rebuildCount = 0, initialClaimValidation = null, claimValidation = null, finalDecision, finalResponse;
+  // Exactly one deterministic rebuild; no model or business execution occurs here.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const text = composeControlledReply(responsePlan);
+    claimValidation = validateClaims(text, responsePlan, responsePlan.sections.flatMap(section => section.coveredTaskIds || [section.taskId]));
+    const processing = responsePlan.sections.filter(section => section.claimType === "PROCESSING_STATUS");
+    finalDecision = buildFinalDecision({ executionOutcomes, requestEvidence, terminalResults: processing, noReplyReason: "new_core_no_reply" });
+    if (finalDecision.action === "no_reply") {
+      finalResponse = buildFinalResponse({ finalDecision, responsePlan, validatedReplyText: "", claimValidation });
+      break;
+    }
+    if (claimValidation.ok) {
+      const options = { finalDecision, responsePlan, validatedReplyText: text, claimValidation, publicAvailabilityUrl, responsePrefix };
+      const draft = assembleFinalResponse(options);
+      claimValidation = validateClaims(draft.replyText, responsePlan, responsePlan.sections.flatMap(section => section.coveredTaskIds || [section.taskId]), null, options);
+      if (claimValidation.ok) {
+        finalResponse = buildFinalResponse({ ...options, preparedResponse: draft, finalValidation: claimValidation });
+        if (isValidatedFinalResponse(finalResponse)) break;
+      }
+    }
+    if (!initialClaimValidation) initialClaimValidation = claimValidation;
+    if (attempt === 1) {
+      finalDecision = buildFinalDecision({ executionOutcomes, requestEvidence, terminalResults: processing, safetyBlocked: true });
+      finalResponse = buildFinalResponse({ finalDecision, responsePlan, validatedReplyText: "", claimValidation });
+      break;
+    }
+    rebuildCount = 1;
+    const global = claimValidation.globalErrors.length > 0;
+    const failed = new Set(claimValidation.sectionResults.filter(item => !item.ok).flatMap(item => item.scopeRefs));
+    // Shared coverage and declared dependencies cannot be treated as independent sections.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const section of responsePlan.sections) {
+        const ids = section.coveredTaskIds || [section.taskId];
+        if ([...ids, ...(section.dependsOnScopeRefs || [])].some(id => failed.has(id))) {
+          for (const id of ids) if (!failed.has(id)) { failed.add(id); changed = true; }
+        }
+      }
+    }
+    const safe = global ? [] : responsePlan.sections.filter(section => !(section.coveredTaskIds || [section.taskId]).some(id => failed.has(id)));
+    const rejectedIds = global ? ["turn-failure"] : [...failed];
+    const replacementSections = rejectedIds.filter(allowed).map(id => {
+      // Dependencies may be invalidated by another rejected scope. Global validation records
+      // cover the whole turn; local records only mint for their actually rejected scope.
+      const sourceId = claimValidation.sectionResults.some(item => !item.ok && item.scopeRefs.includes(id)) ? id
+        : claimValidation.sectionResults.find(item => !item.ok)?.scopeRefs[0];
+      if (!global && sourceId !== id) return null;
+      const failure = context.fromClaimValidation(claimValidation, id);
+      return { ...statusTask(failure), responseMode: "answer", coveredTaskIds: [id], allowedFacts: [] };
+    }).filter(Boolean);
+    responsePlan = { ...responsePlan, sections: [...safe, ...replacementSections] };
+  }
+  return { finalDecision, finalResponse, responsePlan, claimValidation, initialClaimValidation, rebuildCount, terminalFailures: context.failures };
+}
+
+async function executeNewCoreTurn({ input, state, property, resolver, providerConfig, publicBaseUrl, now, scope = state && state.scope, understandingProvider = callOpenAIUnderstandingV1, lifecycleDecisionIdPrefix = "new-core", onDiagnostic = null, responsePrefix = "" }) {
   if (!scope || !property || property.propertyId !== scope.propertyId) {
     const error = new Error("property_scope_invalid"); error.code = "PROPERTY_SCOPE_INVALID"; throw error;
   }
@@ -167,8 +245,10 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     stateV3Snapshot: turnStateSnapshot(state, scope, now),
     publicCatalog: buildPublicCatalog(property, catalog)
   });
+  const terminalContext = createTerminalContext({ propertyId: scope.propertyId, turnId: input.turnId });
   const providerOperationalDiagnostics = [];
-  const understanding = await understandingProvider(c01, {
+  let understanding;
+  try { understanding = await understandingProvider(c01, {
     apiKey: providerConfig.apiKey,
     onDiagnostic,
     onOperationalDiagnostic: (entry) => {
@@ -178,6 +258,12 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
       }
     }
   });
+  } catch (error) {
+    terminalContext.fromException(error, "turn-failure", "UNDERSTANDING");
+    const terminal = finalizeTurnResponse({ scope, turnId: input.turnId, property, terminalContext, responsePrefix });
+    return { state, ...terminal, artifacts: { terminalFailures: terminal.terminalFailures, requestEvidence: [{ taskId: "turn-failure", requestPresence: "UNDETERMINED", activeRequest: false }], executionOutcomes: [], canonicalItems: [] }, earliestFailure: { layer: "UNDERSTANDING", failureCode: error.code || "UNDERSTANDING_FAILURE" } };
+  }
+  if (understanding.failedUnits.length && require("../providers/openai-understanding-v1").isTrustedUnderstandingResult(understanding)) terminalContext.fromUnderstanding(understanding);
   if (typeof onDiagnostic === "function") {
     for (const stage of ["new_core_c03", "new_core_context_filter"]) {
       try { onDiagnostic({ traceId: input.traceId, stage, items: providerOperationalDiagnostics.filter((entry) => entry.stage === stage) }); }
@@ -231,15 +317,20 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   const requestEvidence = outcomes.map(item => {
     const link = understanding.validatedContextLinks.find(link => link.unitId === item.unit.unitId);
     const relation = link && contextRelationEvidenceForValidatedLink(link, item.unit);
+    const activeRequest = Boolean(item.unit.capability !== null && relation
+      && (relation.relationKind === "NEW_REQUEST" || relation.resolvedTargetRequestCycleId !== null));
+    const absent = item.unit.capability === null && relation?.relationKind === "NONE";
     const route = item.routingDecision;
-    const activeRequest = route ? route.disposition !== "NO_REPLY"
-      : Boolean(item.unit.capability !== null && relation
-        && (relation.relationKind === "NEW_REQUEST" || relation.resolvedTargetRequestCycleId !== null));
-    return { taskId: item.canonicalItem?.canonicalRequest.taskId || item.unit.unitId, activeRequest,
+    return { taskId: item.canonicalItem?.canonicalRequest.taskId || item.unit.unitId,
+      requestPresence: activeRequest ? "PRESENT" : absent ? "ABSENT" : "UNDETERMINED", activeRequest,
+      replyPermission: availabilityAutoReplySuppressed(item.unit, property) ? "SUPPRESSED" : "ALLOWED",
       humanActionRequired: Boolean(route?.disposition === "HANDOFF" && route.operatorActionClass),
       humanJudgmentRequired: Boolean(route?.disposition === "HANDOFF" && route.riskClass),
       resolverUnresolvedRequiresHuman: false, existingOperatorResponsibility: false };
   });
+  for (const failure of understanding.failedUnits) if (!requestEvidence.some(item => item.taskId === failure.unitId)) requestEvidence.push({ taskId: failure.unitId, requestPresence: "UNDETERMINED", activeRequest: false,
+    replyPermission: property.availabilityAutoReplyEnabled === false ? "UNDETERMINED" : "ALLOWED" });
+  for (const outcome of outcomes.filter(item => item.failure)) terminalContext.fromValidationFailure(outcome, c01);
   const routedClarifications = successful
     .filter((item) => item.routingDecision.disposition === "CLARIFY")
     .map((item) => ({
@@ -257,27 +348,15 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   rawExecutionOutcomes.push(
     ...aggregation.value.unitOutcomes
       .filter(item => item.routingDecision.disposition === "HANDOFF" && !failedUnits.some(failure => failure.unitId === item.unitId) && !rawExecutionOutcomes.some(outcome => outcome.taskId === item.unitId))
-      .map(item => ({ taskId: item.unitId, type: "human_help", outcome: "unknown", reason: "human_help" })),
-    ...failedUnits.filter(failure => requestEvidence.some(item => item.taskId === failure.unitId && item.activeRequest)
-      && !rawExecutionOutcomes.some(outcome => outcome.taskId === failure.unitId))
-      .map(failure => ({ taskId: failure.unitId, type: outcomes.find(item => item.unit.unitId === failure.unitId).unit.capability,
-        outcome: "technical_error", reason: failure.failureCode }))
+      .map(item => ({ taskId: item.unitId, type: "human_help", outcome: "unknown", reason: "human_help" }))
   );
+  for (const execution of rawExecutionOutcomes) if (["technical_error", "invalid_query_plan", "property_data_missing"].includes(execution.outcome)) terminalContext.fromExecution(execution);
   const executionOutcomes = applyControlledReplyRules({ rules: resolver.customReplies(), property, canonicalItems, executionOutcomes: rawExecutionOutcomes, now });
   const taskResults = executionOutcomes.map(item => taskResultForExecution(item, requestEvidence.find(evidence => evidence.taskId === item.taskId)));
-  const replyTaskIds = [...new Set(executionOutcomes.map(item => item.taskId))];
   const publicAvailabilityUrl = publicAvailabilityUrlForProperty(publicBaseUrl, property);
-  const responsePlan = buildResponsePlan({ propertyId: scope.propertyId, taskResults, inputTaskIds: replyTaskIds, canonicalRequests: canonicalItems.map((item) => item.canonicalRequest), reviewActions: [], publicAvailabilityUrl });
-  const replyText = composeControlledReply(responsePlan);
-  const claimValidation = validateClaims(
-    replyText,
-    responsePlan,
-    replyTaskIds
-  );
-  const dispositions = successful.map((item) => item.routingDecision.disposition);
-  const missingFields = successful.flatMap((item) => item.routingDecision.missingGuestFields);
-  const finalDecision = buildFinalDecision({ executionOutcomes, claimValidation, requestEvidence, noReplyReason: "new_core_no_reply" });
-  const finalResponse = buildFinalResponse({ finalDecision, responsePlan, validatedReplyText: replyText, claimValidation, publicAvailabilityUrl });
+  const terminal = finalizeTurnResponse({ scope, turnId: input.turnId, property, terminalContext, requestEvidence, executionOutcomes, taskResults, canonicalItems, publicAvailabilityUrl, responsePrefix });
+  const { finalDecision, finalResponse } = terminal;
+  const dispositions = successful.map(item => item.routingDecision.disposition);
   const nextState = reduceConversationStateV3({ previous: state, canonicalItems, formalRequests, executionOutcomes, clarificationTaskIds: finalDecision.action === "clarification" ? finalDecision.executionSummary.notReadyTaskIds : [], lifecycleOperations: adapted.value.lifecycleOperations, taskCreations: adapted.value.taskCreations, canonicalTaskBindings: adapted.value.canonicalTaskBindings, scope: { ...scope, now } });
   const provider = understanding[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC] || {};
   const earliestFailure = outcomes.find((item) => item.failure)?.failure || understanding.failedUnits[0] && { layer: understanding.failedUnits[0].boundary || "C03-C05", failureCode: understanding.failedUnits[0].failureCode } || null;
@@ -294,7 +373,7 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     finalDecision, finalResponse, earliestFailure,
     requestedModel: provider.requestedModel || NEW_CORE_OPENAI_MODEL,
     resolvedModel: provider.resolvedModel || "",
-    artifacts: { understanding, outcomes, successful, c01, aggregation: aggregation.value, adapted: adapted.value, previousState: state, canonicalItems, formalRequests, queryPlans, executionOutcomes, requestEvidence, contextCandidates }
+    artifacts: { understanding, outcomes, successful, c01, aggregation: aggregation.value, adapted: adapted.value, previousState: state, canonicalItems, formalRequests, queryPlans, executionOutcomes, requestEvidence, contextCandidates, terminalFailures: terminal.terminalFailures, responsePlan: terminal.responsePlan, claimValidation: terminal.claimValidation, initialClaimValidation: terminal.initialClaimValidation, rebuildCount: terminal.rebuildCount }
   };
 }
 
@@ -304,6 +383,7 @@ module.exports = {
   bindRecentConversationToCycles,
   buildPublicCatalog,
   executeNewCoreTurn,
+  finalizeTurnResponse,
   noExecutionDecision,
   normalizeFailureRefs,
   turnStateSnapshot

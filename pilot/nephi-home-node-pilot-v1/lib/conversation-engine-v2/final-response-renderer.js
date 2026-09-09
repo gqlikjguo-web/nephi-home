@@ -69,12 +69,13 @@ function sectionAvailabilityLinks(responsePlan, responseMode) {
     .map((url) => `查房連結：${url}`));
 }
 
-function buildFinalResponse({
+function assembleBody({
   finalDecision,
   responsePlan,
   validatedReplyText,
   claimValidation,
-  publicAvailabilityUrl = ""
+  publicAvailabilityUrl = "",
+  responsePrefix = ""
 } = {}) {
   const action = finalDecision && finalDecision.action;
   if (!["reply", "clarification", "handoff", "no_reply"].includes(action)) {
@@ -149,7 +150,21 @@ function buildFinalResponse({
   };
 }
 
-module.exports = {
-  SAFE_HANDOFF_TEXT,
-  buildFinalResponse
-};
+function assembleFinalResponse(options) {
+  const body = assembleBody(options);
+  return body.shouldReply ? { ...body, replyText: String(options.responsePrefix || "") + body.replyText } : body;
+}
+function buildFinalResponse(options = {}) {
+  if (options.preparedResponse) {
+    return require("./claim-validator").sealFinalResponse(options.preparedResponse, options.finalValidation);
+  }
+  const response = assembleFinalResponse(options);
+  if (!options.responsePlan?.turnId || !response.shouldReply) return response;
+  const { validateClaims, sealFinalResponse } = require("./claim-validator");
+  const validation = validateClaims(response.replyText, options.responsePlan,
+    options.responsePlan.sections.flatMap(section => section.coveredTaskIds || [section.taskId]), null, options);
+  if (!validation.ok) return Object.freeze({ action: response.action, shouldReply: false, replyText: "" });
+  return sealFinalResponse(response, validation);
+}
+
+module.exports = { SAFE_HANDOFF_TEXT, assembleFinalResponse, buildFinalResponse };

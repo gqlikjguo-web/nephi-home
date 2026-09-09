@@ -8,12 +8,13 @@ const MANDATORY_HANDOFF_TYPES = new Set(["booking_request", "human_help", "high_
 function unique(values) { return [...new Set(values.filter(Boolean))]; }
 
 function executionReplyDisposition(outcome, evidence) {
-  if (!evidence || evidence.activeRequest !== true) return "no_reply";
+  if (!evidence || evidence.replyPermission === "SUPPRESSED" || evidence.replyPermission === "UNDETERMINED"
+    || evidence.requestPresence === "ABSENT" || evidence.activeRequest !== true) return "no_reply";
   if (REPLY_OUTCOMES.has(outcome.outcome)) return "reply";
   if (outcome.outcome === "not_ready") return "clarification";
   if (evidence.humanActionRequired === true || evidence.humanJudgmentRequired === true
     || evidence.resolverUnresolvedRequiresHuman === true || evidence.existingOperatorResponsibility === true) return "handoff";
-  return "reply_unknown";
+  return outcome.outcome === "unknown" ? "reply_unknown" : "processing_status";
 }
 
 function executionSummary(outcomes = []) {
@@ -35,7 +36,7 @@ function executionSummary(outcomes = []) {
   return result;
 }
 
-function buildFinalDecision({ executionOutcomes = [], plannerFailure = "", claimValidation = null, noReplyReason = "", requestEvidence = null } = {}) {
+function buildFinalDecision({ executionOutcomes = [], plannerFailure = "", claimValidation = null, noReplyReason = "", requestEvidence = null, terminalResults = [], safetyBlocked = false } = {}) {
   const scoped = Array.isArray(requestEvidence);
   const disposition = outcome => executionReplyDisposition(outcome, requestEvidence?.find(item => item.taskId === outcome.taskId));
   const outcomes = (Array.isArray(executionOutcomes) ? executionOutcomes : []).filter(item => !scoped || disposition(item) !== "no_reply");
@@ -43,14 +44,17 @@ function buildFinalDecision({ executionOutcomes = [], plannerFailure = "", claim
   const taskIds = unique(outcomes.map((item) => item && item.taskId));
   const missingFields = unique(outcomes.flatMap((item) => item && item.outcome === "not_ready" ? item.missingFields || [] : []));
   const clarificationCandidates = unique(outcomes.flatMap((item) => item && item.outcome === "not_ready" ? item.candidates || [] : []));
+  const processing = terminalResults.filter(item => item.claimType === "PROCESSING_STATUS");
+  if (safetyBlocked) return { action: "no_reply", reasonCode: "terminal_safety_blocked", taskIds, missingFields,
+    reviewRequired: outcomes.some(item => disposition(item) === "handoff"), executionSummary: summary };
   if (plannerFailure && !scoped) return { action: "handoff", reasonCode: String(plannerFailure), taskIds, missingFields, reviewRequired: true, executionSummary: summary };
   if (claimValidation && claimValidation.ok === false) {
     const humanResponsibility = !scoped || outcomes.some(item => disposition(item) === "handoff");
     return { action: humanResponsibility ? "handoff" : "no_reply", reasonCode: "claim_validation_failed",
       taskIds, missingFields, reviewRequired: humanResponsibility, executionSummary: summary };
   }
-  if (!outcomes.length) return { action: "no_reply", reasonCode: noReplyReason || "no_actionable_requests", taskIds, missingFields, reviewRequired: false, executionSummary: summary };
-  const answered = outcomes.some((item) => item && (REPLY_OUTCOMES.has(item.outcome) || scoped && disposition(item) === "reply_unknown"));
+  if (!outcomes.length && !processing.length) return { action: "no_reply", reasonCode: noReplyReason || "no_actionable_requests", taskIds, missingFields, reviewRequired: false, executionSummary: summary };
+  const answered = processing.length > 0 || outcomes.some((item) => item && (REPLY_OUTCOMES.has(item.outcome) || scoped && disposition(item) === "reply_unknown"));
   const detailNeedsConfirmation = outcomes.some((item) => item && item.outcome === "answered"
     && item.facts && item.facts.detailNeedsConfirmation === true);
   const mandatoryHandoff = outcomes.find((item) => item && (!scoped || disposition(item) === "handoff") && HANDOFF_OUTCOMES.has(item.outcome)
@@ -62,7 +66,7 @@ function buildFinalDecision({ executionOutcomes = [], plannerFailure = "", claim
   if (handoff) return { action: "handoff", reasonCode: handoff.reason || handoff.outcome, taskIds, missingFields, reviewRequired: true, executionSummary: summary };
   const clarification = outcomes.find((item) => item && item.outcome === "not_ready");
   if (clarification) return { action: "clarification", reasonCode: clarification.readinessStatus || "not_ready", taskIds, missingFields, clarificationCandidates, reviewRequired: false, executionSummary: summary };
-  if (answered) return { action: "reply", reasonCode: "execution_answered", taskIds, missingFields, reviewRequired: detailNeedsConfirmation, executionSummary: summary };
+  if (answered) return { action: "reply", reasonCode: processing.length && !outcomes.some(item => REPLY_OUTCOMES.has(item.outcome)) ? "terminal_processing_status" : "execution_answered", taskIds, missingFields, reviewRequired: detailNeedsConfirmation, executionSummary: summary };
   return { action: "handoff", reasonCode: "unsupported_execution_outcome", taskIds, missingFields, reviewRequired: true, executionSummary: summary };
 }
 

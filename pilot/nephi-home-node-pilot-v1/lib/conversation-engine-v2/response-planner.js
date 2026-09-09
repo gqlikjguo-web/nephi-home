@@ -28,7 +28,7 @@ function collectAllowedFacts(value, key = "") {
   return [];
 }
 
-function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalRequests = [], reviewActions = [], publicAvailabilityUrl = "" }) {
+function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalRequests = [], reviewActions = [], publicAvailabilityUrl = "", turnId = null }) {
   const canonicalByTaskId = new Map((canonicalRequests || []).map((request) => [request.taskId, request]));
   const rawSections = (taskResults || []).map((result, inputOrder) => {
     const canonicalRequest = canonicalByTaskId.get(result.taskId) || null;
@@ -51,6 +51,8 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
       missingInputs: result.missingInputs || [],
       needsReview: Boolean(result.review)
     };
+    if (result.terminalFailure) section.terminalFailure = result.terminalFailure;
+    if (result.dependsOnScopeRefs) section.dependsOnScopeRefs = result.dependsOnScopeRefs;
     if (section.claimType === "EPISTEMIC_UNKNOWN") section.unknownProvenance = result.unknownProvenance || null;
     if (PUBLIC_AVAILABILITY_REFERENCE_TYPES.has(type) && String(publicAvailabilityUrl || "").trim()) {
       section.publicAvailabilityUrl = String(publicAvailabilityUrl).trim();
@@ -95,7 +97,7 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
   }
   sections.sort((a, b) => (a.inputOrder ?? Number.MAX_SAFE_INTEGER) - (b.inputOrder ?? Number.MAX_SAFE_INTEGER));
   const finalCoverage = coverageByStatus(sections);
-  return { schemaVersion: 1, propertyId, sections, coverage: finalCoverage, coverageValidation: assertTaskCoverage(expected, finalCoverage), reviewActions, allowedFacts: [...new Set(sections.flatMap((section) => section.allowedFacts || []))], forbiddenClaims: ["已替你保留", "已完成訂房", "一定有房", "免費加人", "可以折扣", "一定退款", "業者已同意", "真人已看過", "已通知業者"], maxLength: 1200 };
+  return { schemaVersion: 1, propertyId, ...(turnId ? { turnId } : {}), sections, coverage: finalCoverage, coverageValidation: assertTaskCoverage(expected, finalCoverage), reviewActions, allowedFacts: [...new Set(sections.flatMap((section) => section.allowedFacts || []))], forbiddenClaims: ["已替你保留", "已完成訂房", "一定有房", "免費加人", "可以折扣", "一定退款", "業者已同意", "真人已看過", "已通知業者"], maxLength: 1200 };
 }
 
 module.exports = { PUBLIC_AVAILABILITY_REFERENCE_TYPES, TASK_PRIORITY, taskPriority, buildResponsePlan };

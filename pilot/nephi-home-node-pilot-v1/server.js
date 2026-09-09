@@ -1421,6 +1421,7 @@ function createApp(options = {}) {
       customReplies: providers.customReplies || { list: () => [] },
       providerConfig: { apiKey: String(runtimeEnv.OPENAI_API_KEY || runtimeEnv.OPENAI_TEST_API_KEY || "") },
       publicBaseUrl: publicBrand.publicBaseUrl,
+      responsePrefixForProperty: aiIdentityPrefix,
       now,
       onDiagnostic: captureSafeTrace,
       ...(typeof options.newCoreProductionExecuteTurn === "function" ? { executeTurn: options.newCoreProductionExecuteTurn } : {})
@@ -1586,7 +1587,12 @@ function createApp(options = {}) {
         await persistTrace();
         if (finalResponseShouldReply === false) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "final_response_should_reply_false", attempted: false, delivered: false, replyText: "" }); const updated = await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); await persistTrace(); acceptanceTraces.delete(result.traceId); return updated; }
         if (!finalResponseReplyText.trim()) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_empty_reply", attempted: false, delivered: false, replyText: "" }); const updated = await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); await persistTrace(); acceptanceTraces.delete(result.traceId); return updated; }
-        const lineReplyText = `${aiIdentityPrefix(providers.customerSettings.getProperty(id))}${finalResponseReplyText}`;
+        if (newCoreLineEnabled && !require("./lib/conversation-engine-v2/claim-validator").isValidatedFinalResponse(result.finalResponse, { propertyId: id, turnId: input.eventId, eventId: event.webhookEventId || input.eventId })) {
+          traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_validation_mismatch", attempted: false, delivered: false });
+          await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", replyDelivered: false, deliveryErrorCode: "final_response_validation_mismatch" });
+          await persistTrace(); acceptanceTraces.delete(result.traceId); return;
+        }
+        const lineReplyText = newCoreLineEnabled ? finalResponseReplyText : `${aiIdentityPrefix(providers.customerSettings.getProperty(id))}${finalResponseReplyText}`;
         try {
           traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_attempt", attempted: true, delivered: false, replyText: lineReplyText });
           await (replyClient ? replyClient({ channelAccessToken: binding.channelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: binding.channelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: lineReplyText }] });

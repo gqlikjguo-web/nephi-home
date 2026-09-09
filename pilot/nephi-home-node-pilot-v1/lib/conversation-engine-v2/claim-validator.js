@@ -17,7 +17,7 @@ function unknownProvenanceFor(outcome) {
 
 const INTERNAL = /(?:review queue|resolver|conversation state|內部備註|Bearer\s+|sk-[A-Za-z0-9_-]+)/i;
 const UNAUTHORIZED_PROMISE = /(?:已(?:經)?(?:替|幫)你保留|已完成訂房|一定(?:有房|可以提早入住|可以延後退房|退款)|免費加人|可以折扣|業者已同意|真人已看過|已通知業者)/u;
-function validateClaims(reply, plan, claimedTaskIds, composedSections = null) {
+function validateClaimSet(reply, plan, claimedTaskIds, composedSections = null) {
   const text = String(reply || "");
   const errors = [];
   if (!text.trim()) errors.push("empty_reply");
@@ -40,9 +40,16 @@ function validateClaims(reply, plan, claimedTaskIds, composedSections = null) {
   if (missingFactSource) errors.push("missing_fact_source");
   for (const section of plan.sections || []) {
     const type = claimTypeForSection(section);
-    const expected = section.status === "answered" ? ["FACTUAL_ANSWER", "EPISTEMIC_UNKNOWN"]
+    const expected = section.status === "answered" ? ["FACTUAL_ANSWER", "EPISTEMIC_UNKNOWN", "PROCESSING_STATUS"]
       : section.status === "needs_clarification" ? ["CLARIFY"] : ["HANDOFF"];
     if (!expected.includes(type)) errors.push("invalid_claim_type");
+    if (type === "PROCESSING_STATUS") {
+      const { isTerminalFailure } = require("../new-core/terminal-failure");
+      if (!isTerminalFailure(section.terminalFailure, { propertyId: plan.propertyId, turnId: plan.turnId, scopeRef: section.taskId })
+        || (section.coveredTaskIds || [section.taskId]).some(id => id !== section.taskId)) errors.push("invalid_terminal_provenance");
+      if (Object.keys(section.facts || {}).length || section.unknownProvenance) errors.push("invalid_terminal_payload");
+      if (text !== composeControlledReply(plan)) errors.push("ungrounded_section_text");
+    }
     if (type !== "EPISTEMIC_UNKNOWN") continue;
     const provenance = section.unknownProvenance;
     if (!isCanonicalExecutionProvenance(provenance) || provenance.sourceOutcomeStatus !== "unknown"
@@ -69,4 +76,61 @@ function validateClaims(reply, plan, claimedTaskIds, composedSections = null) {
   return { ok: errors.length === 0, errors: [...new Set(errors)], coveredTaskIds: claimCoverage.coveredTaskIds, missingTaskIds: claimCoverage.missingTaskIds, unexpectedTaskIds: claimCoverage.unexpectedTaskIds };
 }
 
-module.exports = { validateClaims, claimTypeForSection, unknownProvenanceFor };
+const VALIDATIONS = new WeakSet();
+const FINAL_RESPONSES = new WeakMap();
+function isClaimValidationResult(value) { return Boolean(value && VALIDATIONS.has(value)); }
+function validateClaims(reply, plan, claimedTaskIds, composedSections = null, finalAssembly = null) {
+  // One validator owns section and whole-message applicability, including delivery text.
+  const sectionResults = (plan.sections || []).map(section => {
+    const scopeRefs = section.coveredTaskIds || [section.taskId];
+    const single = { ...plan, sections: [section] };
+    const result = validateClaimSet(composeControlledReply(single), single, scopeRefs);
+    return { scopeRefs, ok: result.ok, errors: result.errors };
+  });
+  let dependencyChanged = true;
+  while (dependencyChanged) {
+    dependencyChanged = false;
+    const failed = new Set(sectionResults.filter(item => !item.ok).flatMap(item => item.scopeRefs));
+    for (const [index, section] of (plan.sections || []).entries()) {
+      if (sectionResults[index].ok && [...(section.dependsOnScopeRefs || []), ...(section.coveredTaskIds || [section.taskId])].some(id => failed.has(id))) {
+        sectionResults[index].ok = false; sectionResults[index].errors.push("claim_dependency_failed"); dependencyChanged = true;
+      }
+    }
+  }
+  const base = validateClaimSet(finalAssembly ? composeControlledReply(plan) : reply, plan, claimedTaskIds, composedSections);
+  const localErrors = new Set(sectionResults.flatMap(item => item.errors));
+  const globalErrors = base.errors.filter(error => !localErrors.has(error));
+  if (finalAssembly) {
+    const { assembleFinalResponse } = require("./final-response-renderer");
+    const expected = assembleFinalResponse({ ...finalAssembly, responsePlan: plan,
+      validatedReplyText: composeControlledReply(plan), claimValidation: { ok: true } });
+    const text = String(reply || "");
+    if (text !== expected.replyText) globalErrors.push("final_text_mismatch");
+    if (text.length > (plan.maxLength || 1200)) globalErrors.push("length");
+    if (INTERNAL.test(text)) globalErrors.push("internal_content");
+    if (UNAUTHORIZED_PROMISE.test(text)) globalErrors.push("forbidden_claim");
+    if (!text.trim()) globalErrors.push("empty_reply");
+    for (const section of plan.sections || []) {
+      if (section.responseMode === "answer" && !text.includes(require("./controlled-composer").composeSection(section))) globalErrors.push("final_section_missing");
+    }
+  }
+  const errors = [...new Set([...base.errors, ...sectionResults.flatMap(item => item.errors), ...globalErrors])];
+  for (const item of sectionResults) { Object.freeze(item.scopeRefs); Object.freeze(item.errors); Object.freeze(item); }
+  const result = Object.freeze({ ...base, ok: !errors.length, errors: Object.freeze(errors), sectionResults: Object.freeze(sectionResults),
+    globalErrors: Object.freeze([...new Set(globalErrors)]), propertyId: plan.propertyId, turnId: plan.turnId,
+    ...(finalAssembly ? { validatedText: String(reply || ""), validatedAction: finalAssembly.finalDecision.action } : {}) });
+  VALIDATIONS.add(result); return result;
+}
+function sealFinalResponse(response, validation) {
+  if (!isClaimValidationResult(validation) || !validation.ok || validation.validatedText !== response.replyText
+    || validation.validatedAction !== response.action) throw new TypeError("final_response_not_validated");
+  const frozen = Object.freeze(response); FINAL_RESPONSES.set(frozen, validation); return frozen;
+}
+function isValidatedFinalResponse(response, deliveryScope = null) {
+  const validation = response && FINAL_RESPONSES.get(response);
+  if (deliveryScope && (!deliveryScope.propertyId || !deliveryScope.turnId || !deliveryScope.eventId
+    || deliveryScope.turnId !== deliveryScope.eventId
+    || !validation || validation.propertyId !== deliveryScope.propertyId || validation.turnId !== deliveryScope.turnId)) return false;
+  return Boolean(validation && validation.ok && validation.validatedText === response.replyText && validation.validatedAction === response.action && response.shouldReply === true);
+}
+module.exports = { validateClaims, claimTypeForSection, unknownProvenanceFor, isClaimValidationResult, sealFinalResponse, isValidatedFinalResponse };

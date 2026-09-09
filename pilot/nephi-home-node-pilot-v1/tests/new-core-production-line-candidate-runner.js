@@ -10,7 +10,7 @@ const { createApp } = require("../server");
 const { createJsonProviders } = require("../lib/providers/json-providers");
 const { attachPropertyScopedLineBinding, waitFor } = require("./helpers/property-scoped-line-webhook");
 
-function coreResult(args, action) {
+function unvalidatedCoreResult(args, action) {
   return {
     state: args.state,
     finalDecision: {
@@ -33,6 +33,36 @@ function coreResult(args, action) {
       executionOutcomes: []
     }
   };
+}
+
+const { finalizeTurnResponse } = require("../lib/new-core/application-service");
+const { isValidatedFinalResponse } = require("../lib/conversation-engine-v2/claim-validator");
+const generated = new Map();
+function coreResult(args, action) {
+  const taskId = `task-${args.input.turnId}`;
+  const evidence = { taskId, requestPresence: action === "no_reply" ? "ABSENT" : "PRESENT",
+    activeRequest: action !== "no_reply", replyPermission: "ALLOWED",
+    humanActionRequired: action === "handoff", humanJudgmentRequired: false,
+    resolverUnresolvedRequiresHuman: false, existingOperatorResponsibility: false };
+  const task = { taskId, type: action === "handoff" ? "human_help" : "amenity",
+    status: action === "handoff" ? "needs_human" : action === "clarification" ? "needs_clarification" : "answered",
+    facts: action === "reply" ? { answer: "candidate reply", source: "property_catalog" } : {},
+    ...(action === "clarification" ? { missingInputs: ["checkIn"] } : {}) };
+  const execution = { taskId, type: task.type, facts: task.facts,
+    outcome: action === "handoff" ? "unknown" : action === "clarification" ? "not_ready" : "answered",
+    ...(action === "handoff" ? { reason: "human_help" } : {}),
+    ...(action === "clarification" ? { missingFields: ["checkIn"] } : {}) };
+  const executionOutcomes = action === "no_reply" ? [] : [execution];
+  const result = finalizeTurnResponse({ scope: args.scope, turnId: args.input.turnId,
+    property: args.property, responsePrefix: args.responsePrefix,
+    requestEvidence: [evidence], executionOutcomes,
+    taskResults: action === "no_reply" ? [] : [task] });
+  generated.set(args.input.turnId, result);
+  return { state: args.state, finalDecision: result.finalDecision, finalResponse: result.finalResponse,
+    traceId: `trace-${args.input.turnId}`, artifacts: {
+      ...result, requestEvidence: [evidence],
+      canonicalItems: [{ requestCycleId: `cycle-${args.input.turnId}` }],
+      adapted: { taskCreations: [], canonicalTaskBindings: [] }, executionOutcomes } };
 }
 
 (async () => {
@@ -93,7 +123,19 @@ function coreResult(args, action) {
       const action = args.input.message === "thanks" ? "no_reply"
         : args.input.message === "clarify" ? "clarification"
           : args.input.message === "handoff" ? "handoff" : "reply";
-      return coreResult(args, action);
+      if (args.input.message === "unvalidated") return unvalidatedCoreResult(args, action);
+      const result = coreResult(args, action);
+      if (args.input.message === "changed-after-validation") {
+        return { ...result, finalResponse: { ...result.finalResponse, replyText: result.finalResponse.replyText + " changed" } };
+      }
+      if (args.input.message === "reuse-other-event") {
+        return { ...result, finalResponse: generated.get("answer-event").finalResponse };
+      }
+      if (args.input.message === "reuse-other-property") {
+        const foreign = coreResult({ ...args, scope: { ...args.scope, propertyId: "property_b" } }, action);
+        return { ...result, finalResponse: foreign.finalResponse };
+      }
+      return result;
     },
     lineReplyClientFactory: () => ({
       replyMessageWithHttpInfo: async (body) => { sends.push(body); return { httpResponse: { status: 200 } }; }
@@ -116,6 +158,11 @@ function coreResult(args, action) {
   try {
     await send("answer-event", "answer");
     assert.equal(sends.length, 1);
+    const answer = generated.get("answer-event");
+    assert.equal(isValidatedFinalResponse(answer.finalResponse), true);
+    assert.equal(answer.claimValidation.ok, true);
+    assert.equal(sends[0].messages[0].text, answer.claimValidation.validatedText);
+    assert.equal(record("answer-event").replyText, answer.claimValidation.validatedText);
     assert.equal(calls.length, 1, "one LINE event must invoke one new-core turn");
     assert.equal(calls[0].scope.propertyId, "property_a");
     assert.equal(calls[0].scope.channel.startsWith("line-binding:"), true);
@@ -133,8 +180,8 @@ function coreResult(args, action) {
     assert.equal(record("no-reply-event").processingStatus, "no_reply");
 
     await send("exception-event", "explode");
-    assert.equal(record("exception-event").needsReview, true);
-    assert.equal(record("exception-event").humanHandoff, true);
+    assert.equal(record("exception-event").needsReview, false);
+    assert.equal(record("exception-event").humanHandoff, false);
     assert.equal(record("exception-event").processingStatus, "reply_succeeded");
 
     for (const eventId of ["answer-event", "clarify-event", "handoff-event", "no-reply-event", "exception-event"]) {
@@ -151,10 +198,10 @@ function coreResult(args, action) {
       assert.equal(JSON.stringify(persisted.safeTrace).includes("line-user-a"), false);
       assert.equal(JSON.stringify(persisted.safeTrace).includes("Bearer "), false);
     }
-    assert.equal(record("answer-event").replyText, "candidate reply",
+    assert.equal(record("answer-event").replyText, "【AI】candidate reply",
       "the exact FinalResponse text must use the existing message-log replyText field");
     assert.ok(record("answer-event").safeTrace.some((entry) => entry.stage === "new_core_final"
-      && entry.finalResponse && entry.finalResponse.replyText === "candidate reply"),
+      && entry.finalResponse && entry.finalResponse.replyText === "【AI】candidate reply"),
     "the bounded production trace must retain the redacted FinalResponse text");
     assert.ok(record("answer-event").safeTrace.some((entry) => entry.stage === "line_transport"
       && entry.replyText === "【AI】candidate reply" && entry.delivered === true),
@@ -185,7 +232,23 @@ function coreResult(args, action) {
     assert.equal(sends.length, beforeDuplicate, "a claimed LINE event must never send twice");
 
     assert.ok(providers.persistence.getConversationState("property_a", calls[0].scope.channel, "line-user-a"));
-    process.stdout.write("new-core production LINE candidate: 20/20 PASS\n");
+    // These responses deliberately violate the delivery Contract; the real validator is never mocked.
+    for (const [eventId, message] of [
+      ["unvalidated-event", "unvalidated"],
+      ["changed-event", "changed-after-validation"],
+      ["cross-property", "reuse-other-property"],
+      ["cross-event", "reuse-other-event"]
+    ]) {
+      const before = sends.length;
+      await send(eventId, message);
+      const proof = { eventId, deliveredCount: sends.length - before,
+        persisted: record(eventId), validatedOriginTurn: generated.get("answer-event").claimValidation.turnId,
+        sentTexts: sends.slice(before).map(body => body.messages[0].text) };
+      console.log("DELIVERY_NEGATIVE_EVIDENCE " + JSON.stringify(proof));
+      assert.equal(sends.length, before, `${eventId}: invalid delivery must send zero messages`);
+      assert.equal(record(eventId).processingStatus, "final_response_contract_failed");
+    }
+    process.stdout.write("new-core production LINE candidate: original controls and delivery Contract controls PASS\n");
   } finally {
     await app.stop();
     fs.rmSync(temp, { recursive: true, force: true });
