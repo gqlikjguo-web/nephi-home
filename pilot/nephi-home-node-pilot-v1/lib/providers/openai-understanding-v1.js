@@ -11,6 +11,8 @@ const {
 } = require("../new-core/contracts/understanding-output-v1");
 const {
   MAX_SLOT_CANDIDATES,
+  UNIT_FIELDS,
+  validateSemanticUnitCandidate,
   PURPOSES,
   CAPABILITIES,
   SUBJECT_KINDS,
@@ -39,6 +41,7 @@ const {
   buildPublicCatalogIdentitySet,
   projectCapabilityRegistry,
   validateSemanticUnit,
+  semanticObligationsPreserved,
   quantitySubjectAdmission,
   productSlotAdmission
 } = require("../new-core/semantic-unit-validator");
@@ -202,6 +205,13 @@ function temporalCandidateSchema() {
         isoDateCandidate,
         { type: "null" }
       ), "A complete source date. checkInCandidate must be a valid YYYY-MM-DD candidate; a date range uses date_range instead."),
+      objectSchema({
+        ...temporalFields(enumSchema(["relative_date"]), {type:"null"}, {type:"null"}),
+        relativeSemantics: objectSchema({
+          dayOffset: {type:"integer",minimum:-require("../conversation-contracts/relative-temporal-semantics").MAX_DAY_OFFSET,maximum:require("../conversation-contracts/relative-temporal-semantics").MAX_DAY_OFFSET},
+          dayPeriod: enumSchema(require("../conversation-contracts/relative-temporal-semantics").DAY_PERIODS)
+        }, "Explicit relative meaning anchored to this source event; never an inferred calendar date.")
+      }, "Use for day-relative source meaning, including a time-of-day qualifier. Date candidates remain null; JunZan computes the calendar date."),
       objectSchema(temporalFields(
         enumSchema([...TEMPORAL_KINDS].filter((kind) => kind !== "absolute_date")),
         nullableStringSchema(80),
@@ -391,6 +401,7 @@ function instructions() {
     "A request about the property's own address, map, or navigation, or any relationship between the property and any named or unnamed external place, is location with subject kind external_place and null catalog identity. This includes proximity, nearby existence, distance, duration, directions, and navigation meaning. Only identify the relationship; never invent an external-place fact, name, distance, duration, or recommendation.",
     "Set safetyCandidate only for operator_request/booking_operator_request or sensitive_request/high_risk. Exactly one of operatorActionClass and riskClass must be non-null; otherwise safetyCandidate is null.",
     "Product quantity is separate from guest_count. Use quantityCandidate only for an explicitly requested count of countable products; preserve its exact source evidence. Otherwise output null. Use distinct_entities when the guest requests multiple separate countable products, including multiple products of the same category; none does not mean same category. distinct_entities means separate product identities, never repeated identities. Never infer quantity from people or inventory and never output matched facts.",
+    "For an explicit day-relative meaning, supply relativeSemantics.dayOffset and dayPeriod from the source meaning; preserve the exact source rawText. Do not resolve a calendar date or invent an unstated relative offset.",
     "Temporal candidates preserve source meaning only. temporalCandidate.rawText must be a complete exact substring of one evidenceRefs[].quote for the same unit. When a date range spans multiple lines or labels, cite one single evidence span whose exact source quote fully contains that complete rawText; never combine rawText across separate evidence spans. Do not invent an implicit year, canonical date, availability, price, policy truth, amenity truth, location fact, or any other formal fact.",
     "Do not emit resolver IDs, query plans, state mutations, final reply text, message-level routing, task indexes, credentials, private data, or fields outside the schema.",
     "When meaning or reference is uncertain, preserve that uncertainty in the declared candidate fields; never invent a catalog identity or Context target.",
@@ -954,6 +965,26 @@ function normalizeUnitEvidence(unit, linkCandidates, sourceEvents) {
 }
 
 const CORRECTION_FAILURES = new WeakMap();
+// An envelope/link rejection does not revoke independently validated meaning.
+// This projection is used only for correction obligations, never execution.
+// The original envelope remains rejected and the replacement must pass every
+// normal admission gate. Unknown keys cannot acquire semantic authority.
+function correctionPreservationForUnit(rawUnit, input) {
+  if (!rawUnit || typeof rawUnit !== "object") return [];
+  const fields = [...UNIT_FIELDS, "quantityCandidate"];
+  const unit = Object.fromEntries(fields.filter(field => Object.hasOwn(rawUnit, field))
+    .map(field => [field, rawUnit[field]]));
+  if (!validateSemanticUnitCandidate(unit).ok) return [];
+  const normalized = normalizeUnitEvidence(unit, [], input.sourceEvents);
+  if (!normalized.ok) return [];
+  const semantic = validateSemanticUnit({
+    unit: normalized.value.unit, validatedEvidenceRefs: normalized.value.validatedEvidenceRefs,
+    understandingTurnInput: input,
+    publicCatalogIdentitySet: buildPublicCatalogIdentitySet(input),
+    capabilityRegistryProjection: projectCapabilityRegistry(CAPABILITY_REGISTRY)
+  });
+  return semantic.fieldValidationState || [];
+}
 const MODEL_UNIT_FAILURES = new Set(["SEMANTIC_UNIT_INVALID", "CATALOG_IDENTITY_INVALID", "CAPABILITY_SUBJECT_CONFLICT", "STAY_DEPENDENCY_CONFLICT", "UNIT_MEANING_UNSUPPORTED", "UNIT_EVIDENCE_MISSING"]);
 const MODEL_EVIDENCE_FAILURES = new Set(["EVIDENCE_QUOTE_MISMATCH", "EVIDENCE_RANGE_INVALID", "EVIDENCE_MATCH_AMBIGUOUS", "EVIDENCE_SOURCE_UNKNOWN", "EVIDENCE_SCOPE_CONFLICT"]);
 function correctionUnitFailure(failure, output, input, operational) {
@@ -968,7 +999,8 @@ function correctionUnitFailure(failure, output, input, operational) {
       || failure.failureCode === "CONTEXT_TARGET_UNAVAILABLE" && (unknownRef || incompatible);
   }
   return { boundary: failure.boundary, code: failure.failureCode, unitId: failure.unitId,
-    ...(failure.boundary === "C03" && detail?.fieldValidationState ? {fieldValidationState:detail.fieldValidationState} : {}),
+    fieldValidationState: failure.boundary === "C03" ? detail?.fieldValidationState || []
+      : correctionPreservationForUnit(output.understandingOutput.units.find(unit => unit.unitId === failure.unitId), input),
     origin: correctable ? "model_output" : "not_proven_model_output", reason: detail?.validationErrors?.length ? detail.validationErrors : [failure.failureCode],
     ...(failure.boundary === "C03" && detail?.admissionDiagnostics ? {
       field: detail.admissionDiagnostics.field, rule: detail.admissionDiagnostics.rule,
@@ -1044,7 +1076,7 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     }
     const report = { attemptNumber: number, attemptType: number === 1 ? "initial" : "correction",
       triggerFailure: correction?.failures || null,
-      validationResult: { ok: Boolean(value && !value.failedUnits.length), failures: failureReport.failures,
+      validationResult: { ...(value ? { ok: value.failedUnits.length === 0 } : failureReport.failures.length ? { ok: false } : {}), failures: failureReport.failures,
         terminalCode: caught?.code || null, category: caught?.errorCategory || null } };
     reports.push(report);
     if (number === 1) {
@@ -1056,19 +1088,21 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
       const candidate = value?.validatedUnits.find(other => other.unitId === unit.unitId);
       const link = firstResult.validatedContextLinks.find(other => other.unitId === unit.unitId);
       const candidateLink = value?.validatedContextLinks.find(other => other.unitId === unit.unitId);
-      return require("node:util").isDeepStrictEqual(unit, candidate) && require("node:util").isDeepStrictEqual(link, candidateLink);
+      const relation = link && contextRelationEvidenceForValidatedLink(link, unit);
+      const candidateRelation = candidateLink && contextRelationEvidenceForValidatedLink(candidateLink, candidate);
+      return semanticObligationsPreserved(unit, candidate, correctionPreservationForUnit(unit, understandingTurnInput), understandingTurnInput)
+        && Boolean(relation && candidateRelation)
+        && relation.relationKind === candidateRelation.relationKind
+        && relation.resolvedTargetRequestCycleId === candidateRelation.resolvedTargetRequestCycleId;
     });
-    const retained = !firstOutput || !firstResult || firstOutput.understandingOutput.units.every(unit => value?.understandingOutput.units.some(other => other.unitId === unit.unitId));
+    const priorUnits = Array.isArray(firstOutput?.understandingOutput?.units) ? firstOutput.understandingOutput.units : [];
+    const retained = priorUnits.filter(unit => typeof unit?.unitId === "string" && unit.unitId.length > 0 && unit.unitId.length <= MAX_ID_LENGTH)
+      .every(unit => value?.understandingOutput.units.some(other => other.unitId === unit.unitId));
     const fieldsPreserved = !correction || correction.failures.every(failure => {
       const previous = firstOutput?.understandingOutput.units.find(unit => unit.unitId === failure.unitId);
       const next = value?.understandingOutput.units.find(unit => unit.unitId === failure.unitId);
-      return (failure.fieldValidationState || []).every(state => {
-        if (state.preservation === "MUTABLE") return true;
-        const read = unit => state.slotCandidateId ? unit?.slotCandidates.find(slot => slot.slotCandidateId === state.slotCandidateId) : unit?.[state.field];
-        const oldValue = read(previous), newValue = read(next);
-        if (oldValue != null && newValue == null) return false;
-        return state.preservation !== "PRESERVE" || require("node:util").isDeepStrictEqual(oldValue, newValue);
-      });
+      return !(failure.fieldValidationState || []).length
+        || semanticObligationsPreserved(previous, next, failure.fieldValidationState, understandingTurnInput);
     });
     if (!fieldsPreserved) report.validationResult = {...report.validationResult, ok:false, adoptionFailure:"CORRECTION_FIELD_NOT_PRESERVED"};
     if (value && !value.failedUnits.length && preserves && retained && fieldsPreserved) return finish(value, null, 2);
@@ -1086,7 +1120,12 @@ function admitUnderstandingValue(providerValue, understandingTurnInput, options,
     });
     const error = understandingError(wireFailure.code, attempts, wireFailure.violation,
       rejectedEvidenceForWireFailure(providerValue, understandingTurnInput, wireFailure));
-    CORRECTION_FAILURES.set(error, { output: providerValue, failures: [{ boundary: "C02", code: wireFailure.code, origin: "model_output", reason: wireFailure.violation, field: wireFailure.violation.fieldPath }] });
+    const units = Array.isArray(providerValue?.understandingOutput?.units) ? providerValue.understandingOutput.units : [];
+    const unitFailures = units.map(unit => ({ boundary: "C02", code: wireFailure.code,
+      origin: "model_output", reason: wireFailure.violation, field: wireFailure.violation.fieldPath,
+      unitId: unit?.unitId, fieldValidationState: correctionPreservationForUnit(unit, understandingTurnInput) }));
+    CORRECTION_FAILURES.set(error, { output: providerValue, failures: unitFailures.length ? unitFailures
+      : [{ boundary: "C02", code: wireFailure.code, origin: "model_output", reason: wireFailure.violation, field: wireFailure.violation.fieldPath }] });
     throw error;
   }
 

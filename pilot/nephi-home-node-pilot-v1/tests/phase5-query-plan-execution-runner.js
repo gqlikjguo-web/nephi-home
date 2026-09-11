@@ -69,15 +69,15 @@ assert.deepEqual(twoFacts.map((result) => [result.taskId, result.requestCycleId,
 
 const pricingProperty = { propertyId: "pricing-property", currency: "TWD", rooms: [{ id: "room-price", publicDisplayName: "Price room", capacity: 2, enabled: true, mondayThursdayPrice: 1000, fridayPrice: 1200, saturdayHolidayPrice: 1500, sundayPrice: 1100 }] };
 const pricingPlan = { ...plan, formalRequestId: "cycle-price:price", taskId: "price", candidateIndex: 3, requestCycleId: "cycle-price", propertyId: "pricing-property", capability: "price", operation: "price", resolverTask: { propertyId: "pricing-property", taskType: "pricing", productType: "room_type", productId: "room-price", checkIn: "2026-08-06", checkOut: "2026-08-08", guestCount: 2 }, entity: { status: "resolved", category: "room", canonicalId: "room-price", canonicalSet: [] }, conditions: { ...plan.conditions, stay: { ...plan.conditions.stay, checkOut: "2026-08-08", nights: 2 } } };
-const priced = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: pricingPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }), priceOverrides: [{ roomId: "room-price", date: "2026-08-07", price: 1300 }] });
+const priced = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: pricingPlan, availabilityResolver: () => ({ customerId: "pricing-property", checkIn: "2026-08-06", checkOut: "2026-08-08", availabilityReliable: true, rooms: pricingProperty.rooms }), priceOverrides: [{ roomId: "room-price", date: "2026-08-07", price: 1300 }] });
 assert.equal(priced.outcome, "answered");
 assert.deepEqual(priced.facts.prices[0].daily.map((item) => [item.date, item.price, item.source]), [["2026-08-06", 1000, "room_pricing"], ["2026-08-07", 1300, "price_override"]]);
 assert.equal(priced.facts.prices[0].total, 2300);
 
-const noPrice = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...pricingPlan, capability: "total_price", operation: "total_price" }, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: [] }) });
+const noPrice = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...pricingPlan, capability: "total_price", operation: "total_price" }, availabilityResolver: () => ({ customerId: "pricing-property", checkIn: "2026-08-06", checkOut: "2026-08-08", availabilityReliable: true, rooms: [] }) });
 assert.equal(noPrice.outcome, "no_availability");
 assert.deepEqual(noPrice.facts.prices, []);
-const totalPriceAvailable = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...pricingPlan, capability: "total_price", operation: "total_price" }, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
+const totalPriceAvailable = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...pricingPlan, capability: "total_price", operation: "total_price" }, availabilityResolver: () => ({ customerId: "pricing-property", checkIn: "2026-08-06", checkOut: "2026-08-08", availabilityReliable: true, rooms: pricingProperty.rooms }) });
 assert.equal(totalPriceAvailable.outcome, "answered");
 assert.deepEqual(totalPriceAvailable.facts.prices[0].daily, [
   { date: "2026-08-06", price: 1000, source: "room_pricing" },
@@ -93,12 +93,12 @@ const roomAvailabilityPlan = {
   operation: "availability",
   resolverTask: { ...pricingPlan.resolverTask, taskType: "availability" }
 };
-const roomAvailability = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: roomAvailabilityPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
+const roomAvailability = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: roomAvailabilityPlan, availabilityResolver: () => ({ customerId: "pricing-property", checkIn: "2026-08-06", checkOut: "2026-08-08", availabilityReliable: true, rooms: pricingProperty.rooms }) });
 assert.equal(roomAvailability.outcome, "answered");
 assert.equal(roomAvailability.facts.availableInventory[0].canonicalId, "room-price");
 assert.equal(Array.isArray(roomAvailability.facts.prices), true);
 assert.equal(roomAvailability.facts.prices[0].total, 2200);
-assert.match(composeSection({ status: "answered", facts: roomAvailability.facts }), /可預訂.*2,200 TWD/u);
+assert.match(composeSection({ status: "answered", facts: roomAvailability.facts }), /2026-08-06 入住\n目前可預訂。\nPrice room共 2,200 元。/u);
 
 const bundlePricingProperty = { propertyId: "bundle-pricing-property", currency: "TWD", rooms: [{ id: "bundle-price", publicDisplayName: "Whole property", inventoryType: "bundle", capacity: 8, enabled: true, mondayThursdayPrice: 8000, fridayPrice: 9000, saturdayHolidayPrice: 10000, sundayPrice: 8500 }] };
 const bundleAvailabilityPlan = {
@@ -113,13 +113,13 @@ const bundleAvailabilityPlan = {
   entity: { status: "resolved", category: "bundle", canonicalId: "bundle-price", canonicalSet: [] },
   conditions: { ...roomAvailabilityPlan.conditions, stay: { ...roomAvailabilityPlan.conditions.stay, checkOut: "2026-08-07", nights: 1 }, inventory: { mode: "bundle_only", entityId: "bundle-price", entityIds: [], features: [] } }
 };
-const bundleAvailability = executeQueryPlan({ property: bundlePricingProperty, catalog, queryPlan: bundleAvailabilityPlan, availabilityResolver: () => ({ customerId: "bundle-pricing-property", availabilityReliable: true, rooms: bundlePricingProperty.rooms }) });
+const bundleAvailability = executeQueryPlan({ property: bundlePricingProperty, catalog, queryPlan: bundleAvailabilityPlan, availabilityResolver: () => ({ customerId: "bundle-pricing-property", checkIn: "2026-08-06", checkOut: "2026-08-08", availabilityReliable: true, rooms: bundlePricingProperty.rooms }) });
 assert.equal(bundleAvailability.outcome, "answered");
 assert.equal(bundleAvailability.facts.availableInventory[0].canonicalId, "bundle-price");
 assert.equal(bundleAvailability.facts.prices[0].inventory.category, "bundle");
 assert.equal(bundleAvailability.facts.prices[0].total, 8000);
 
-const bundleWithoutPrice = executeQueryPlan({ property: { ...bundlePricingProperty, rooms: [{ ...bundlePricingProperty.rooms[0], mondayThursdayPrice: 0 }] }, catalog, queryPlan: bundleAvailabilityPlan, availabilityResolver: () => ({ customerId: "bundle-pricing-property", availabilityReliable: true, rooms: bundlePricingProperty.rooms }) });
+const bundleWithoutPrice = executeQueryPlan({ property: { ...bundlePricingProperty, rooms: [{ ...bundlePricingProperty.rooms[0], mondayThursdayPrice: 0 }] }, catalog, queryPlan: bundleAvailabilityPlan, availabilityResolver: () => ({ customerId: "bundle-pricing-property", checkIn: "2026-08-06", checkOut: "2026-08-08", availabilityReliable: true, rooms: bundlePricingProperty.rooms }) });
 assert.equal(bundleWithoutPrice.outcome, "answered");
 assert.equal(bundleWithoutPrice.facts.availableInventory[0].canonicalId, "bundle-price");
 assert.equal(Object.hasOwn(bundleWithoutPrice.facts, "prices"), false);
@@ -138,10 +138,10 @@ const genericAvailabilityPlan = {
   entity: { status: "not_found", category: "other", canonicalId: null, canonicalSet: [] },
   conditions: { ...roomAvailabilityPlan.conditions, inventory: { mode: "any", entityId: null, entityIds: [], features: [] } }
 };
-const genericAvailability = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: genericAvailabilityPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
+const genericAvailability = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: genericAvailabilityPlan, availabilityResolver: () => ({ customerId: "pricing-property", checkIn: "2026-08-06", checkOut: "2026-08-08", availabilityReliable: true, rooms: pricingProperty.rooms }) });
 assert.equal(genericAvailability.outcome, "answered");
 assert.deepEqual(genericAvailability.facts.prices.map((item) => [item.inventory.canonicalId, item.total]), [["room-price", 2200]]);
-assert.match(composeSection({ status: "answered", facts: genericAvailability.facts }), /Price room.*2,200 TWD/u);
+assert.match(composeSection({ status: "answered", facts: genericAvailability.facts }), /Price room.*2,200 元/u);
 
 const allInventoryProperty = {
   ...pricingProperty,
@@ -150,21 +150,21 @@ const allInventoryProperty = {
     { id: "bundle-all", publicDisplayName: "Whole property", inventoryType: "bundle", capacity: 8, enabled: true, mondayThursdayPrice: 8000, fridayPrice: 9000, saturdayHolidayPrice: 10000, sundayPrice: 8500 }
   ]
 };
-const allInventoryAvailability = executeQueryPlan({ property: allInventoryProperty, catalog, queryPlan: genericAvailabilityPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: allInventoryProperty.rooms }) });
+const allInventoryAvailability = executeQueryPlan({ property: allInventoryProperty, catalog, queryPlan: genericAvailabilityPlan, availabilityResolver: () => ({ customerId: "pricing-property", checkIn: "2026-08-06", checkOut: "2026-08-08", availabilityReliable: true, rooms: allInventoryProperty.rooms }) });
 assert.deepEqual(allInventoryAvailability.facts.prices.map((item) => [item.inventory.canonicalId, item.total]), [["room-price", 2200], ["bundle-all", 17000]]);
-assert.match(composeSection({ status: "answered", facts: allInventoryAvailability.facts }), /Price room.*2,200 TWD.*Whole property.*17,000 TWD/u);
+assert.match(composeSection({ status: "answered", facts: allInventoryAvailability.facts }), /Price room.*2,200 元.*Whole property.*17,000 元/su);
 
 const genericWithoutPrice = executeQueryPlan({
   property: { ...pricingProperty, rooms: [{ ...pricingProperty.rooms[0], fridayPrice: 0 }] },
   catalog,
   queryPlan: genericAvailabilityPlan,
-  availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms })
+  availabilityResolver: () => ({ customerId: "pricing-property", checkIn: "2026-08-06", checkOut: "2026-08-08", availabilityReliable: true, rooms: pricingProperty.rooms })
 });
 assert.equal(genericWithoutPrice.outcome, "answered");
 assert.equal(Object.hasOwn(genericWithoutPrice.facts, "prices"), false);
 
 for (const capability of ["room_options", "capacity"]) {
-  const nonEnriched = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...roomAvailabilityPlan, formalRequestId: `cycle-price:${capability}`, taskId: capability, capability, operation: capability }, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
+  const nonEnriched = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...roomAvailabilityPlan, formalRequestId: `cycle-price:${capability}`, taskId: capability, capability, operation: capability }, availabilityResolver: () => ({ customerId: "pricing-property", checkIn: "2026-08-06", checkOut: "2026-08-08", availabilityReliable: true, rooms: pricingProperty.rooms }) });
   assert.equal(nonEnriched.outcome, "answered");
   assert.equal(Object.hasOwn(nonEnriched.facts, "prices"), false);
 }
@@ -174,15 +174,15 @@ assert.equal(amenityList.outcome, "answered");
 assert.deepEqual(amenityList.facts.amenities, ["BBQ"]);
 
 for (const [date, checkOut, expected] of [["2026-08-06", "2026-08-07", 1000], ["2026-08-07", "2026-08-08", 1200], ["2026-08-08", "2026-08-09", 1500], ["2026-08-09", "2026-08-10", 1100]]) {
-  const weekday = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...pricingPlan, resolverTask: { ...pricingPlan.resolverTask, checkIn: date, checkOut }, conditions: { ...pricingPlan.conditions, stay: { ...pricingPlan.conditions.stay, checkIn: date, checkOut } } }, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
+  const weekday = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: { ...pricingPlan, resolverTask: { ...pricingPlan.resolverTask, checkIn: date, checkOut }, conditions: { ...pricingPlan.conditions, stay: { ...pricingPlan.conditions.stay, checkIn: date, checkOut } } }, availabilityResolver: () => ({ customerId: "pricing-property", checkIn: "2026-08-06", checkOut: "2026-08-08", availabilityReliable: true, rooms: pricingProperty.rooms }) });
   assert.deepEqual(weekday.facts.prices[0].daily, [{ date, price: expected, source: "room_pricing" }]);
   assert.equal(weekday.facts.prices[0].total, expected);
 }
-const missingPrice = executeQueryPlan({ property: { ...pricingProperty, rooms: [{ ...pricingProperty.rooms[0], fridayPrice: 0 }] }, catalog, queryPlan: pricingPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: true, rooms: pricingProperty.rooms }) });
+const missingPrice = executeQueryPlan({ property: { ...pricingProperty, rooms: [{ ...pricingProperty.rooms[0], fridayPrice: 0 }] }, catalog, queryPlan: pricingPlan, availabilityResolver: () => ({ customerId: "pricing-property", checkIn: "2026-08-06", checkOut: "2026-08-08", availabilityReliable: true, rooms: pricingProperty.rooms }) });
 assert.equal(missingPrice.outcome, "property_data_missing");
 assert.equal(missingPrice.facts.prices[0].daily[1].price, null);
 assert.equal(missingPrice.facts.prices[0].total, null);
-const unreliable = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: pricingPlan, availabilityResolver: () => ({ customerId: "pricing-property", availabilityReliable: false, rooms: [] }) });
+const unreliable = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: pricingPlan, availabilityResolver: () => ({ customerId: "pricing-property", checkIn: "2026-08-06", checkOut: "2026-08-08", availabilityReliable: false, rooms: [] }) });
 assert.equal(unreliable.outcome, "technical_error");
 assert.equal(unreliable.reason, "availability_unreliable");
 const exception = executeQueryPlan({ property: pricingProperty, catalog, queryPlan: pricingPlan, availabilityResolver: () => { throw new Error("down"); } });

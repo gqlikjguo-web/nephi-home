@@ -4,15 +4,24 @@ const assert = require("node:assert/strict");
 const {
   buildFinalResponse
 } = require("../lib/conversation-engine-v2/final-response-renderer");
+const {
+  buildResponsePlan
+} = require("../lib/conversation-engine-v2/response-planner");
 
-const SAFE_HANDOFF_TEXT = "請稍候，將盡快回覆您。";
+const propertyId = "phase7_property";
+const turnId = "phase7_turn";
 
 const answeredSection = {
   taskId: "parking",
   type: "amenity",
   status: "answered",
   responseMode: "answer",
-  facts: { subject: "停車", answer: "民宿旁空地可停車。" },
+  facts: {
+    subject: "停車",
+    answer: "民宿旁空地可停車。",
+    source: "property_catalog",
+    propertyId
+  },
   allowedFacts: ["停車", "民宿旁空地可停車。"]
 };
 const clarificationSection = {
@@ -34,8 +43,14 @@ const handoffSection = {
   needsReview: true
 };
 
-function plan(sections) {
-  return { schemaVersion: 1, sections, maxLength: 1200 };
+function plan(sections, { publicAvailabilityUrl = "" } = {}) {
+  return buildResponsePlan({
+    propertyId,
+    turnId,
+    taskResults: sections,
+    inputTaskIds: sections.map((section) => section.taskId),
+    publicAvailabilityUrl
+  });
 }
 
 function decision(action, extra = {}) {
@@ -71,8 +86,14 @@ const availabilityReply = buildFinalResponse({
     ...answeredSection,
     taskId: "dated-availability",
     type: "availability",
-    facts: { availability: "available", checkIn: "2026-09-05", availableInventory: [{ publicName: "雙人房" }] }
-  }]),
+    facts: {
+      availability: "available",
+      checkIn: "2026-09-05",
+      availableInventory: [{ publicName: "雙人房" }],
+      source: "availability_resolver",
+      propertyId
+    }
+  }], { publicAvailabilityUrl: "https://example.test/demo/availability" }),
   validatedReplyText: "2026-09-05 入住可選：雙人房。",
   claimValidation: { ok: true, errors: [] },
   publicAvailabilityUrl: "https://example.test/demo/availability"
@@ -89,14 +110,20 @@ const sectionScopedDatedPrice = buildFinalResponse({
     ...answeredSection,
     taskId: "dated-price",
     type: "price",
-    publicAvailabilityUrl: "https://example.test/demo/availability"
-  }]),
+    facts: {
+      availability: "available",
+      checkIn: "2026-09-28",
+      prices: [{ inventory: { publicName: "雙人房" }, total: 1700, currency: "TWD" }],
+      source: "availability_resolver",
+      propertyId
+    }
+  }], { publicAvailabilityUrl: "https://example.test/demo/availability" }),
   validatedReplyText: "2026-09-28 雙人房共 1,700 元。",
   claimValidation: { ok: true, errors: [] }
 });
 assert.deepEqual(sectionScopedDatedPrice, {
   action: "reply",
-  replyText: "2026-09-28 雙人房共 1,700 元。\n查房連結：https://example.test/demo/availability",
+  replyText: "2026-09-28 入住\n目前可預訂。\n雙人房共 1,700 元。\n查房連結：https://example.test/demo/availability",
   shouldReply: true
 });
 
@@ -106,8 +133,14 @@ const noAvailabilityReply = buildFinalResponse({
     ...answeredSection,
     taskId: "no-availability",
     type: "availability",
-    facts: { availability: "full", checkIn: "2026-09-05", availableInventory: [] }
-  }]),
+    facts: {
+      availability: "full",
+      checkIn: "2026-09-05",
+      availableInventory: [],
+      source: "availability_resolver",
+      propertyId
+    }
+  }], { publicAvailabilityUrl: "https://example.test/demo/availability" }),
   validatedReplyText: "2026-09-05 入住目前沒有符合條件的空房。",
   claimValidation: { ok: true, errors: [] },
   publicAvailabilityUrl: "https://example.test/demo/availability"
@@ -155,16 +188,20 @@ const mixedLodgingAndAmenity = buildFinalResponse({
       taskId: "open-date-bundle",
       type: "bundle_availability",
       missingInputs: ["searchFrom", "searchTo"],
-      publicAvailabilityUrl: "https://example.test/demo/availability"
     },
     {
       ...answeredSection,
       taskId: "pool",
       type: "amenity",
-      facts: { subject: "戲水池", answer: "有提供戲水池。" },
+      facts: {
+        subject: "戲水池",
+        answer: "有提供戲水池。",
+        source: "property_catalog",
+        propertyId
+      },
       allowedFacts: ["戲水池", "有提供戲水池。"]
     }
-  ]),
+  ], { publicAvailabilityUrl: "https://example.test/demo/availability" }),
   validatedReplyText: "請補充查詢日期。\n有提供戲水池。",
   claimValidation: { ok: true, errors: [] }
 });
@@ -192,7 +229,7 @@ const invalidClarification = buildFinalResponse({
     reasonCode: "invalid",
     missingFields: []
   }),
-  responsePlan: plan([clarificationSection]),
+  responsePlan: null,
   validatedReplyText: "請猜一個新的日期。",
   claimValidation: { ok: true, errors: [] }
 });
@@ -232,14 +269,14 @@ cases.push(answeredAndHandoff);
 
 const rejectedCandidate = "已通知業者，並保證可以入住。";
 const claimRejection = buildFinalResponse({
-  finalDecision: decision("handoff", { reasonCode: "claim_validation_failed" }),
+  finalDecision: decision("reply", { reasonCode: "execution_answered" }),
   responsePlan: plan([answeredSection]),
   validatedReplyText: rejectedCandidate,
   claimValidation: { ok: false, errors: ["forbidden_claim"] }
 });
 assert.deepEqual(claimRejection, {
-  action: "handoff",
-  replyText: SAFE_HANDOFF_TEXT,
+  action: "reply",
+  replyText: "民宿旁空地可停車。",
   shouldReply: true
 });
 assert.equal(claimRejection.replyText.includes(rejectedCandidate), false);
@@ -260,34 +297,26 @@ assert.deepEqual(noReply, {
 cases.push(noReply);
 
 const composerException = buildFinalResponse({
-  finalDecision: decision("handoff", { reasonCode: "claim_validation_failed" }),
+  finalDecision: decision("reply", { reasonCode: "execution_answered" }),
   responsePlan: plan([answeredSection]),
   validatedReplyText: "",
   claimValidation: { ok: false, errors: ["composer_exception"] }
 });
 assert.deepEqual(composerException, {
-  action: "handoff",
-  replyText: SAFE_HANDOFF_TEXT,
+  action: "reply",
+  replyText: "民宿旁空地可停車。",
   shouldReply: true
 });
 cases.push(composerException);
 
 const rejectedClaims = ["一定有房", "已完成訂房"];
-const rejectedSection = {
-  taskId: "unsafe-availability",
-  type: "availability",
-  status: "answered",
-  responseMode: "answer",
-  facts: { subject: "訂房", answer: rejectedClaims.join("，") },
-  allowedFacts: [...rejectedClaims]
-};
 for (const action of ["reply", "clarification", "handoff"]) {
   const rejectedOutput = buildFinalResponse({
     finalDecision: decision(action, {
       reasonCode: "claim_validation_failed",
       missingFields: action === "clarification" ? ["stay.checkIn"] : []
     }),
-    responsePlan: plan([rejectedSection]),
+    responsePlan: plan([answeredSection]),
     validatedReplyText: rejectedClaims.join("，"),
     claimValidation: { ok: false, errors: ["forbidden_claim"] }
   });
@@ -305,7 +334,7 @@ for (const output of cases) {
 }
 assert.deepEqual(
   cases.map((output) => output.action),
-  ["reply", "clarification", "clarification", "clarification", "clarification", "handoff", "handoff", "handoff", "no_reply", "handoff"],
+  ["reply", "clarification", "clarification", "clarification", "clarification", "handoff", "handoff", "reply", "no_reply", "reply"],
   "final response action must always remain the FinalDecision action"
 );
 

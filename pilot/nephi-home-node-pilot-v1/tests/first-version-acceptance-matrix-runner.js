@@ -61,6 +61,21 @@ const properties = [
   }
 ];
 
+// Current formal catalog authority: aliases live on rooms/facts, not semanticCatalog.
+for (const property of properties) {
+  for (const room of property.rooms) room.aliases = [...property.semanticCatalog.aliases[room.id]];
+  property.propertyFacts = [
+    ["parking", "amenity", property.commonAnswers.parkingRule],
+    ["bbq", "policy", property.commonAnswers.bbqRule],
+    ["cancellation", "policy", property.commonAnswers.cancellationRule],
+    ...(property.commonAnswers.selfCheckInRule ? [["self_checkin", "policy", property.commonAnswers.selfCheckInRule]] : []),
+    ...property.faqs.filter(faq => ["pool", "ktv", "children"].includes(faq.knowledgeKey))
+      .map(faq => [faq.knowledgeKey, "amenity", faq.answer])
+  ].map(([canonicalId, category, publicText]) => ({ canonicalId, category, publicText,
+    status: "provided", aliases: property.semanticCatalog.aliases[canonicalId] || [] }));
+  const kitchenText = property.faqs.find(faq => faq.knowledgeKey === "kitchen").answer;
+  property.rooms.find(room => room.inventoryType === "bundle").entertainmentAmenities[0].note = kitchenText;
+}
 const propertyById = new Map(properties.map((property) => [property.propertyId, property]));
 
 function availabilityTask(id, rawText, canonicalCandidate, queryMode = "any") {

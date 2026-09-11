@@ -118,6 +118,7 @@ function projectCycles(snapshot, propertyId) {
       },
       missingFields: cycle && cycle.missingFields,
       confirmedValues: cycle && cycle.confirmedValues && {
+        ...require("../conversation-contracts/resolver-quantity").projectQuantityFields(cycle.confirmedValues),
         checkIn: cycle.confirmedValues.checkIn,
         checkOut: cycle.confirmedValues.checkOut,
         guestCount: cycle.confirmedValues.guestCount,

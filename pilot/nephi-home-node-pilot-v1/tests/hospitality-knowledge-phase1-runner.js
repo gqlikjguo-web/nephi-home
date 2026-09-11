@@ -11,11 +11,13 @@ const { migrateFakePlannerOutput } = require("./helpers/fake-planner-semantic-le
 
 const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, "../fixtures/demo-test-property.json"), "utf8"));
 const property = validateFriendlyProperty(fixture);
-const roomsWithStructuredSinging = [...property.rooms, { id: "bundle_all", name: "包棟", inventoryType: "bundle", enabled: true, entertainmentAmenities: [{ key: "singing", provided: true, statusSource: "operator", source: "preset", note: "" }] }];
+const roomsWithStructuredSinging = [...property.rooms, { id: "bundle_all", name: "包棟", inventoryType: "bundle", enabled: true, entertainmentAmenities: [{ key: "singing", provided: true, statusSource: "operator", source: "preset", note: fixture.faqs.find(faq => faq.knowledgeKey === "singing").answer }] }];
+const propertyFacts = [{ canonicalId: "cancellation", category: "policy", status: "provided", publicText: fixture.cancellationPolicy }];
 const catalog = buildPropertyCatalog({
   propertyId: property.propertyId,
   displayName: property.name,
   rooms: roomsWithStructuredSinging,
+  propertyFacts,
   commonAnswers: property.safeFacts,
   faqs: property.faqs
 });
@@ -31,8 +33,7 @@ for (const utterance of ["有唱歌嗎？", "可以唱歌嗎？", "有卡拉 OK 
   assert.match(resolved.entity.answer, /09:00-21:00/);
 }
 
-// New imports expose the V2 canonical cancellation fact, while the catalog must
-// retain compatibility with already-materialized legacy lodgingRules records.
+// Imported legacy fields may persist, but only formal facts supply catalog answers.
 assert.equal(property.safeFacts.cancellationRule, fixture.cancellationPolicy);
 const importedCancellation = catalog.policies.find((fact) => fact.canonicalId === "cancellation");
 assert.equal(importedCancellation.status, "confirmed_yes");
@@ -45,14 +46,13 @@ const legacyCatalog = buildPropertyCatalog({
   faqs: []
 });
 const legacyCancellation = resolveEntity(legacyCatalog, { category: "policy", rawText: "退費", canonicalCandidate: "cancellation" });
-assert.equal(legacyCancellation.status, "resolved");
-assert.equal(legacyCancellation.entity.answer, "Legacy cancellation policy");
-assert.notEqual(legacyCancellation.entity.status, "confirmed_no");
+assert.equal(legacyCancellation.status, "not_found");
+assert.equal(legacyCatalog.policies.some(fact => fact.canonicalId === "cancellation"), false);
 
 const otherCatalog = buildPropertyCatalog({
   propertyId: "other_property",
   commonAnswers: {},
-  rooms: [{ id: "other_bundle", name: "Other bundle", inventoryType: "bundle", enabled: true, entertainmentAmenities: [{ key: "singing", provided: true, statusSource: "operator", source: "preset" }] }],
+  rooms: [{ id: "other_bundle", name: "Other bundle", inventoryType: "bundle", enabled: true, entertainmentAmenities: [{ key: "singing", provided: true, statusSource: "operator", source: "preset", note: "Other property policy" }] }],
   faqs: [{ knowledgeKey: "singing", question: "Can guests sing?", answer: "Other property policy" }]
 });
 assert.match(resolveEntity(otherCatalog, { category: "amenity", rawText: "KTV", canonicalCandidate: "singing" }).entity.answer, /Other property policy/);
@@ -83,7 +83,7 @@ const memory = new Map();
 const engine = new ConversationEngineV2({
   planner,
   persistence: { getConversationState: (p, c, u) => memory.get(`${p}:${c}:${u}`) || null, setConversationState: (p, c, u, state) => memory.set(`${p}:${c}:${u}`, state), appendMessageLog: () => ({ reviewId: "review" }) },
-  getProperty: () => ({ propertyId: property.propertyId, displayName: property.name, rooms: roomsWithStructuredSinging, commonAnswers: property.safeFacts, faqs: property.faqs }),
+  getProperty: () => ({ propertyId: property.propertyId, displayName: property.name, rooms: roomsWithStructuredSinging, propertyFacts, commonAnswers: property.safeFacts, faqs: property.faqs }),
   availabilityResolver: () => ({ availabilityReliable: true, rooms: [] }),
   listPriceOverrides: () => []
 });

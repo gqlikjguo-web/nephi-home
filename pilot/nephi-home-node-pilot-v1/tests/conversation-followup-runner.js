@@ -38,6 +38,13 @@ function withExplicitRelation(output, sourceEvents, contextSnapshot) {
 function property(propertyId, overrides = {}) {
   return {
     propertyId,
+    propertyFacts: [
+      { canonicalId: "parking", category: "amenity", status: "provided", publicText: "Parking is available." },
+      { canonicalId: "bbq", category: "policy", status: "provided", publicText: "BBQ is available for groups." },
+      { canonicalId: "pool", category: "amenity", status: "provided", publicText: "Pool is available." },
+      ...Object.entries(overrides).filter(([key, value]) => key.includes("__") && value)
+        .map(([canonicalId, publicText]) => ({ canonicalId, category: "policy", status: "provided", publicText }))
+    ],
     commonAnswers: {
       parkingRule: "Parking is available.",
       bbqRule: "BBQ is available for groups.",

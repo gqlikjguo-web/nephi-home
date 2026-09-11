@@ -12,6 +12,8 @@ const {
   isPublicCatalogIdentityProjectionFor
 } = require("./turn-input-adapter");
 
+const { validateSemanticPositions, bindSemanticObligations, semanticObligationsPreserved } = require("./contracts/semantic-position");
+
 const INPUT_BY_VALIDATED_SEMANTIC_UNIT = new WeakMap();
 
 function deepFreeze(value) {
@@ -23,13 +25,19 @@ function deepFreeze(value) {
 function detach(value, seen = new Map()) {
   if (!value || typeof value !== "object") return value;
   if (seen.has(value)) return seen.get(value);
-  const copy = Array.isArray(value) ? [] : Object.fromEntries([]);
+  const copy = Array.isArray(value) ? []
+    : Object.fromEntries(Object.keys(value).map(key => [key, undefined]));
   seen.set(value, copy);
   if (Array.isArray(value)) {
     value.forEach((item) => copy.push(detach(item, seen)));
     return copy;
   }
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, detach(item, seen)]));
+  // Seed own keys before assigning values, retaining ordinary data keys even
+  // when they shadow inherited setters. The memo and return share this clone.
+  Object.assign(copy, Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, detach(item, seen)])
+  ));
+  return copy;
 }
 
 function failure(code) {
@@ -116,9 +124,9 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnIn
     const state = fieldValidationState.find(item => item.field === field);
     if (state) { state.validationCompleted.push(gate); state.validationPending = state.validationPending.filter(item => item !== gate); }
   };
-  const reject = (code, target) => ({...failure(code), fieldValidationState: deepFreeze(detach(fieldValidationState.map(state => ({
+  const reject = (code, target) => ({...failure(code), fieldValidationState: deepFreeze(detach(bindSemanticObligations(fieldValidationState.map(state => ({
     ...state, preservation: state.field === target ? "MUTABLE" : !state.validationPending.length && !state.dependsOn.length ? "PRESERVE" : "REVALIDATE"
-  }))))});
+  })), unit, understandingTurnInput)))});
   const wire = validateSemanticUnitCandidate(unit);
   if (!wire.ok) return reject("SEMANTIC_UNIT_INVALID");
   if (!evidenceOwned(unit.evidenceRefs, validatedEvidenceRefs)
@@ -166,9 +174,40 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnIn
   if (diagnostics) {
     return { ...reject("UNIT_MEANING_UNSUPPORTED", unit.slotCandidates.map((slot, index) => ({field:`slotCandidates[${index}].value`,target:`slotCandidates.${slot.slotCandidateId}`})).find(item => item.field === diagnostics.field)?.target), diagnostics };
   }
+  // Successful admission exposes the same item ledger as partial admission.
+  // A collection is never one immutable value; each source-owned operation
+  // carries its own obligation at its declared semantic position.
+  for (const field of ["purpose", "stayDependent", "safetyCandidate"]) {
+    add(field, [], []);
+  }
+  add("evidenceRefs", [], [], { obligationKind: "sourceEvidence" });
+  const subjectState = fieldValidationState.find(state => state.field === "subject");
+  const subjectProduct = { slot: "product", operation: "SET", value: unit.subject.catalogIdentity };
+  if (unit.subject.catalogIdentity !== null
+    && productSlotAdmission(subjectProduct, publicCatalogIdentitySet, understandingTurnInput).allowed) {
+    subjectState.slotConstraint = subjectProduct;
+  }
+  const positions = validateSemanticPositions(unit.slotCandidates);
+  if (!positions.ok) {
+    const failed = new Set(positions.failures.map(item => item.slot));
+    const states = fieldValidationState.filter(state => !state.slotCandidateId
+      || !failed.has(unit.slotCandidates.find(item => item.slotCandidateId === state.slotCandidateId).slot))
+      .map(state => ({ ...state, preservation: "PRESERVE" }));
+    for (const failure of positions.failures) {
+      states.push({ field: "slotCandidates", semanticPosition: failure.slot, obligationKind: "positionRepair",
+        preservation: "REVALIDATE", validationCompleted: ["structure", "evidenceOwnership"],
+        validationPending: [failure.rule], dependsOn: [],
+        evidenceRefs: unit.slotCandidates.filter(item => item.slot === failure.slot).flatMap(item => item.evidenceRefs) });
+    }
+    return { ...failure("UNIT_MEANING_UNSUPPORTED"), diagnostics: positions.failures,
+      fieldValidationState: deepFreeze(detach(bindSemanticObligations(states, unit, understandingTurnInput))) };
+  }
+  const obligations = deepFreeze(detach(bindSemanticObligations(fieldValidationState.map(state => ({
+    ...state, preservation: "PRESERVE"
+  })), unit, understandingTurnInput)));
   const value = deepFreeze(detach(unit));
   INPUT_BY_VALIDATED_SEMANTIC_UNIT.set(value, understandingTurnInput);
-  return { ok: true, code: null, errors: [], value };
+  return { ok: true, code: null, errors: [], value, fieldValidationState: obligations };
 }
 
 function isValidatedSemanticUnitFor(understandingTurnInput, unit) {
@@ -182,5 +221,6 @@ module.exports = {
   buildPublicCatalogIdentitySet,
   projectCapabilityRegistry,
   isValidatedSemanticUnitFor,
+  semanticObligationsPreserved,
   validateSemanticUnit
 };

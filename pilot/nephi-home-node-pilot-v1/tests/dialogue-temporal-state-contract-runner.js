@@ -378,7 +378,7 @@ async function testMislabeledRelativeDateUsesCanonicalGrammar() {
     checkInCandidate: null
   }), "今天有哪些日期有房？", "today-mislabeled-range");
   assert.equal(availableDates.result.finalDecision.action, "clarification");
-  assert.deepEqual(availableDates.result.finalDecision.missingFields, ["checkOut"]);
+  assert.deepEqual(availableDates.result.finalDecision.missingFields, ["searchFrom", "searchTo"]);
   assert.equal(availableDates.availabilityCalls.length, 0);
   assert.equal(availableDates.availableDatesCalls.length, 0, "an unresolved date attempt must not receive the default available-dates range");
 }

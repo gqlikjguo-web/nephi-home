@@ -49,7 +49,7 @@ const CASES = Object.freeze([
   { id: "this-saturday-pool", message: "這星期六有雙人房嗎？有戲水池嗎？", availabilityText: "這星期六有雙人房嗎？", rawText: "這星期六", kind: "absolute", expectedCheckIn: "2026-08-01", expectedCheckOut: "2026-08-02", extras: ["pool"] },
   { id: "absolute-mixed", message: "8/6 有雙人房嗎？有車位嗎？可以烤肉嗎？", availabilityText: "8/6 有雙人房嗎？", rawText: "8/6", kind: "absolute", expectedCheckIn: "2026-08-06", expectedCheckOut: "2026-08-07", extras: ["parking", "bbq"] },
   { id: "planner-omits-day-after-tomorrow-span", message: "後天有房嗎？", availabilityText: "後天有房嗎？", rawText: "", kind: "none", expectedCheckIn: "2026-07-29", expectedCheckOut: "2026-07-30", extras: [] },
-  { id: "planner-misroutes-explicit-weekend", message: "下週末有房嗎？", availabilityText: "下週末有房嗎？", rawText: "下週末", kind: "weekend", expectedCheckIn: "2026-08-08", expectedCheckOut: "2026-08-09", extras: [], plannerTaskType: "available_dates" }
+  { id: "planner-explicit-weekend-availability", message: "下週末有房嗎？", availabilityText: "下週末有房嗎？", rawText: "下週末", kind: "weekend", expectedCheckIn: "2026-08-08", expectedCheckOut: "2026-08-09", extras: [], plannerTaskType: "availability" }
 ]);
 
 function clone(value) {
@@ -378,6 +378,18 @@ async function assertMonthWeekdayConstraintFailsClosed() {
 (async () => {
   await assertMonthWeekdayConstraintFailsClosed();
   const traces = [];
+  // Exact available_dates capability must not be rewritten into availability.
+  const rangeOnly = await runCase({ ...CASES[CASES.length - 1], id: "explicit-available-dates-weekend", plannerTaskType: "available_dates" });
+  assert.equal(rangeOnly.canonicalRequest.items.length, 1);
+  assert.equal(rangeOnly.canonicalRequest.items[0].capability, "available_dates");
+  assert.deepEqual(rangeOnly.canonicalRequest.items[0].requiredFields, ["stay.searchRange"]);
+  assert.equal(rangeOnly.canonicalRequest.items[0].temporalState.checkIn, "2026-08-08");
+  assert.equal(rangeOnly.canonicalRequest.items[0].temporalState.checkOut, "2026-08-09");
+  assert.deepEqual(rangeOnly.queryPlan.items, []);
+  assert.deepEqual(rangeOnly.queryDateRanges, []);
+  assert.equal(rangeOnly.finalDecision.action, "clarification");
+  assert.equal(rangeOnly.finalDecision.reasonCode, "missing_information");
+  assert.deepEqual(rangeOnly.finalDecision.missingFields, ["searchFrom", "searchTo"]);
   for (const testCase of CASES) traces.push(await runCase(testCase));
   console.log(JSON.stringify({
     suite: "relative-date-availability",

@@ -28,6 +28,7 @@ function validPlannerOutput() {
       guestCountCandidate: null
     },
     tasks: [],
+    semanticGroundings: [],
     contextRelationCandidates: [],
     ambiguities: [],
     missingInformation: [],

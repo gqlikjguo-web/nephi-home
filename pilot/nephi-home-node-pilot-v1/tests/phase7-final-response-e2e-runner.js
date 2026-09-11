@@ -20,7 +20,7 @@ const property = {
   timezone: "Asia/Taipei",
   currency: "TWD",
   rooms: [],
-  commonAnswers: { parkingRule: "民宿旁空地可停車。" },
+  propertyFacts: [{ canonicalId: "parking", category: "amenity", status: "provided", publicText: "民宿旁空地可停車。", aliases: ["parking"] }],
   semanticCatalog: { aliases: { parking: ["parking"] }, amenities: [] }
 };
 
@@ -81,7 +81,7 @@ function plannerFor(kind) {
           discourse: { relation: "acknowledgement", confidence: 0.99 },
           shouldIgnore: true,
           tasks: [task],
-          contextRelationCandidates: [relation(0)]
+          contextRelationCandidates: [{ ...relation(0), kind: "relation_uncertain" }]
         });
       }
       if (kind === "clarification") {
@@ -270,7 +270,7 @@ async function run(kind) {
     } else {
       assert.equal(result.shouldReply, true);
       assert.equal(calls.length, 1);
-      assert.equal(calls[0].messages[0].text, result.finalResponse.replyText);
+      assert.equal(calls[0].messages[0].text, `【AI】${result.finalResponse.replyText}`);
     }
     if (kind === "clarification") {
       assert.match(result.replyText, /^請提供入住日期。\n查房連結：https:\/\/app\.junzanai\.com\//);

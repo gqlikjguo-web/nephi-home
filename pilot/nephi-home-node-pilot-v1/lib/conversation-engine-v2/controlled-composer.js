@@ -2,6 +2,12 @@
 
 const { detailLabel } = require("./detail-intent");
 
+const OPERATOR_REQUEST_LABELS = Object.freeze({
+  booking_mutation: "訂房處理需求", reservation_cancellation: "取消訂房需求",
+  refund_approval: "退款需求", date_change: "更改日期需求", special_arrangement: "特殊安排需求"
+});
+const RISK_REQUEST_LABELS = Object.freeze({ access_credential: "門禁資訊", payment_claim: "付款確認", sensitive_request: "這項需求" });
+
 function money(value) { return new Intl.NumberFormat("zh-TW").format(value); }
 function composeSection(section) {
   if (section.claimType === "PROCESSING_STATUS") return require("../new-core/terminal-failure").processingStatusText(section.terminalFailure);
@@ -24,7 +30,14 @@ function composeSection(section) {
     return `${known}${detailLabel(facts.detailIntent)}目前沒有正式資料，需由業者依當日狀況確認。`;
   }
   if (section.status === "needs_clarification") return section.question || "可以再補充一下嗎？";
+  if (section.status === "needs_human") {
+    const label = OPERATOR_REQUEST_LABELS[section.operatorActionClass] || RISK_REQUEST_LABELS[section.riskClass];
+    if (label) return `${label}需要請業者確認。`;
+  }
   if (["needs_human", "property_data_missing", "failed"].includes(section.status)) return facts.subject ? `${facts.subject}這部分需要請業者確認。` : "這部分需要請業者確認。";
+  if (facts.feasibility?.inventoryStatus === "available" && facts.feasibility.capacityStatus === "insufficient") {
+    return `${facts.checkIn} 仍有空房，但目前可用房源無法在指定房數內容納這次入住人數，請調整房數或入住人數。`;
+  }
   if (facts.prices) {
     if (facts.availability === "full") return `${facts.checkIn} 入住目前已滿房。`;
     const prices = facts.prices.map((item) => item.total === null ? `${item.inventory.publicName}價格需要請業者確認。` : `${item.inventory.publicName}共 ${money(item.total)} ${item.currency === "TWD" ? "元" : item.currency}。`).join("\n");

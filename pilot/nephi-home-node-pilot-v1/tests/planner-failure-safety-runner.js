@@ -265,6 +265,15 @@ function successfulProviderResponse(providerRequestId = "") {
     endOffset: 2,
     quote: "入住"
   }];
+  output.tasks[0].groundingId = "retry-check-in";
+  output.semanticGroundings = [{
+    groundingId: "retry-check-in",
+    subject: { scope: "property_owned", catalogIdentity: "check_in" },
+    relation: "property_fact",
+    requestedOutput: "answer",
+    provenanceRelationCandidateIndexes: [0],
+    evidenceRefs: output.contextRelationCandidates[0].evidenceRefs.map(ref => ({ ...ref }))
+  }];
   return providerResponse(200, JSON.stringify({
     output_text: JSON.stringify(output)
   }), providerRequestId);
@@ -343,10 +352,13 @@ async function plannerContractFailureDoesNotRetry() {
   });
   assert.equal(fetchCount, 1, "an unusable parsed Planner output must not retry the provider request");
   assert.equal(result.finalDecision.action, "handoff");
-  assert.equal(result.finalDecision.reasonCode, "planner_output_unusable");
+  assert.equal(result.finalDecision.reasonCode, "planner_parse_failed");
   const plannerDiagnostic = diagnostics.find((entry) => entry.stage === "planner");
-  assert.equal(plannerDiagnostic.parserSucceeded, true, "provider transport/parser success remains distinct from Engine contract rejection");
-  assert.equal(diagnostics.some((entry) => entry.stage === "planner_error"), false, "Engine final-schema rejection is not a provider error");
+  assert.equal(plannerDiagnostic.parserSucceeded, false, "the provider adapter rejects missing semantic grounding before returning to Engine");
+  const providerError = diagnostics.find((entry) => entry.stage === "planner_error");
+  assert.equal(providerError.errorCode, "planner_local_contract_failure");
+  assert.equal(providerError.errorCategory, "local_contract_failure");
+  assert.equal(providerError.parsedOutputPresent, true, "JSON parsing succeeded before semantic contract rejection");
 }
 
 async function main() {
@@ -519,7 +531,7 @@ async function main() {
   const firstSuccessOutput = await openAiPlanner(async () => {
     firstSuccessAttemptCount += 1;
     return successfulProviderResponse();
-  }).classify({ currentMessage: "入住", sourceEvents: [{ eventId: "test-event", messageRef: "", messageText: "入住" }], catalog: {}, contextSnapshot: { scope: {}, cycles: [] } });
+  }).classify({ currentMessage: "入住", sourceEvents: [{ eventId: "test-event", messageRef: "", messageText: "入住" }], catalog: require("../lib/conversation-engine-v2/property-catalog").buildPropertyCatalog(property), contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(firstSuccessAttemptCount, 1, "a successful first attempt must not issue a second request");
   assert.equal(firstSuccessOutput.schemaVersion, 2);
   assert.equal(openAiPlanner(async () => successfulProviderResponse(), { retryDelayMs: 999999 }).retryDelayMs, 1000, "retry delay must be bounded");
@@ -842,7 +854,7 @@ async function main() {
     assert.equal(replies.length, 3);
     replies.forEach((body) => assert.ok(body.messages[0].text.length > 0, "contract failure must be delivered as a non-empty safe reply"));
     assert.ok(replies.every((body) => !body.messages[0].text.includes("SECRET_UNAUTHORIZED_FACT")), "unapproved facts must not enter the reply");
-    assert.equal(replies[2].messages[0].text, SAFE_HANDOFF_TEXT, "Planner exception must retain the existing LINE fallback");
+    assert.equal(replies[2].messages[0].text, `【AI】${SAFE_HANDOFF_TEXT}`, "Planner exception must retain the existing LINE identity prefix and fallback");
     const plannerFailureDecision = diagnostics.find((item) => item.stage === "final_decision" && item.reasonCode === "planner_parse_failed");
     assert.ok(plannerFailureDecision);
     assert.equal(plannerFailureDecision.decision, "handoff");

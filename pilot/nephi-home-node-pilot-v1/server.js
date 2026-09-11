@@ -1451,7 +1451,7 @@ function createApp(options = {}) {
     const eventId = `custom-reply-test:${nonce}`;
     let result;
     try {
-      result = await root.engine.process({
+      result = await (newCoreLineEngine || root.engine).process({
         customerId: propertyId,
         channelId,
         lineUserId,
@@ -1512,7 +1512,7 @@ function createApp(options = {}) {
       }
       const claimed = await providers.persistence.claimMessageEvent(customerId, channelId, eventId, { lineUserId, eventTimestamp: now().toISOString(), guestMessage: messageText, replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
       if (!claimed.claimed) return { duplicate: true, eventId };
-      const processAcceptanceMessage = () => root.engine.process({ customerId, channelId, lineUserId, eventId, eventTimestamp: now().toISOString(), messageText });
+      const processAcceptanceMessage = () => (newCoreLineEngine || root.engine).process({ customerId, channelId, lineUserId, eventId, eventTimestamp: now().toISOString(), messageText });
       const execution = customerId === testOnlyAcceptancePropertyId
         ? await runWithTestOnlyAcceptanceRawUnderstanding({ propertyId: customerId }, processAcceptanceMessage)
         : { value: await processAcceptanceMessage(), rawUnderstandingSnapshots: [] };
@@ -1528,7 +1528,8 @@ function createApp(options = {}) {
         eventId,
         finalDecision: safeAcceptanceFinalDecision(result.finalDecision),
         reviewPersistence: acceptanceReviewPersistence(providers.persistence, customerId, channelId, eventId, result.finalDecision.reviewRequired),
-        claimValidation: safeAcceptanceClaimValidation(result.claimValidation),
+        executionAuthority: newCoreLineEngine ? "new-core-v1" : "legacy-v2",
+        claimValidation: safeAcceptanceClaimValidation(newCoreLineEngine ? result.artifacts?.claimValidation : result.claimValidation),
         finalResponse: {
           action: result.finalResponse.action,
           shouldReply: result.finalResponse.shouldReply,
@@ -1574,6 +1575,16 @@ function createApp(options = {}) {
       if (!(await claimEvent(input)).claimed) continue;
       testOnlyLineMessageTrace.begin({ propertyId: id, ...input });
       void root.coordinator.enqueue(input).then(async (result) => {
+        if (require("./lib/conversation-engine-v2/coordinator").isMergedTransportResult(result,input)) {
+          const transport = {traceId:result.traceId,eventId:input.eventId,propertyId:id,stage:"line_transport",
+            disposition:"MERGED",targetEventId:result.transportDisposition.targetEventId,
+            reasonCode:"merged_into_turn",attempted:false,delivered:false};
+          emitTransportDiagnostic(transport);
+          testOnlyLineMessageTrace.transport(transport);
+          return updateEventStatus(id,input.channelId,input.eventId,{processingStatus:"no_reply",shouldReply:false,noReply:true,
+            replyDelivered:false,replyText:"",replyType:"merged_v2",route:"transport_merged",decisionReason:"merged_into_turn",
+            humanHandoff:false,needsReview:false,requestCycleRefs:result.requestCycleRefs,safeTrace:[transport]});
+        }
         const finalResponseShouldReply = result.finalResponse && result.finalResponse.shouldReply;
         const finalResponseReplyText = String(result.finalResponse && result.finalResponse.replyText || "");
         const decision = String(result.finalDecision && result.finalDecision.action || result.finalResponse && result.finalResponse.action || "no_reply");

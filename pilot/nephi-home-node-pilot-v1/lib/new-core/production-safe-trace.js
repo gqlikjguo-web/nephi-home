@@ -3,7 +3,7 @@
 const crypto = require("node:crypto");
 
 const STAGES = new Set([
-  "line_inbound", "state_before", "new_core_c01", "new_core_understanding",
+  "line_inbound", "state_before", "new_core_c01", "new_core_understanding", "new_core_understanding_attempts",
   "new_core_c03", "new_core_context_filter", "new_core_context", "new_core_c07", "new_core_c08", "new_core_canonical_request",
   "new_core_resolver", "new_core_final", "state_after", "new_core_failure", "line_transport"
 ]);
@@ -309,10 +309,40 @@ function rejectedEvidence(value) {
   };
 }
 
+// A missing validator verdict is not a failed verdict. Project only explicit evidence.
+function attemptValidationEvidence(value) {
+  if (!value || typeof value !== "object") return {};
+  const result = {
+    ...(typeof value.ok === "boolean" ? { ok: value.ok } : {}),
+    ...(value.notApplicable === true ? { notApplicable: true } : {}),
+    ...(token(value.terminalCode) ? { terminalCode: token(value.terminalCode) } : {}),
+    ...(token(value.category) ? { category: token(value.category) } : {}),
+    ...(token(value.adoptionFailure) ? { adoptionFailure: token(value.adoptionFailure) } : {}),
+    ...(Array.isArray(value.failures) ? { failures: list(value.failures, item => ({
+      ...failure(item), unitId: item?.unitId ? hash(item.unitId) : null
+    }), 20) } : {})
+  };
+  return Object.keys(result).length ? { validationResult: result } : {};
+}
+
 function formatNewCoreProductionTrace(details = {}) {
   const stage = token(details.stage);
   if (!STAGES.has(stage)) return null;
   const base = { scope: "new-core-production", traceId: token(details.traceId), stage };
+  if (stage === "new_core_understanding_attempts") return {
+    ...base,
+    totalUnderstandingCalls: [0, 1, 2].includes(details.totalUnderstandingCalls) ? details.totalUnderstandingCalls : null,
+    finalAcceptedAttempt: [1, 2].includes(details.finalAcceptedAttempt) ? details.finalAcceptedAttempt : null,
+    // Only bounded control metadata is public; provider payloads and failure text are not.
+    attempts: list(details.attempts, (attempt) => ({
+      attemptNumber: [1, 2].includes(attempt?.attemptNumber) ? attempt.attemptNumber : null,
+      attemptType: ["initial", "correction"].includes(attempt?.attemptType) ? attempt.attemptType : "",
+      accepted: attempt?.accepted === true,
+      rejected: attempt?.rejected === true,
+      ...(Array.isArray(attempt?.triggerFailure) ? { triggerFailure: list(attempt.triggerFailure, failure, 20) } : {}),
+      ...attemptValidationEvidence(attempt?.validationResult)
+    }), 2)
+  };
   if (stage === "line_inbound") return { ...base, propertyId: token(details.propertyId), channelHash: hash(details.channelHash), userHash: hash(details.userHash), eventHash: hash(details.eventHash), guestMessage: diagnosticText(details.guestMessage, 5000) };
   if (stage === "state_before") return { ...base, state: state(details.state), referenceableCycles: list(details.snapshot && details.snapshot.referenceableCycles, cycle, 20) };
   if (stage === "state_after") return { ...base, state: state(details.state) };

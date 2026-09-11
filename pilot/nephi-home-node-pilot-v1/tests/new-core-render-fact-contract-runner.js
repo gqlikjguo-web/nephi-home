@@ -1,0 +1,20 @@
+'use strict';
+// Synthetic two-result input; runs actual current production finalizer, no provider calls.
+const assert=require('node:assert/strict');
+const root=require('node:path').resolve(__dirname,'..');
+const {finalizeTurnResponse}=require(root+'/lib/new-core/application-service');
+const {isValidatedFinalResponse}=require(root+'/lib/conversation-engine-v2/claim-validator');
+const prices=[{inventory:{canonicalId:'room-a',publicName:'測試雙人房',capacity:2,category:'room'},daily:[{date:'2026-09-28',price:2000,source:'room_price'}],total:2000,currency:'TWD'}];
+const executionOutcomes=['availability','price'].map((type,index)=>({taskId:'task-'+index,type,outcome:'answered',facts:{propertyId:'fixture-property',source:type==='availability'?'availability_resolver':'pricing_provider',checkIn:'2026-09-28',checkOut:'2026-09-29',availability:'available',prices}}));
+const requestEvidence=executionOutcomes.map(x=>({taskId:x.taskId,activeRequest:true,requestPresence:'PRESENT',replyPermission:'ALLOWED'}));
+const result=finalizeTurnResponse({scope:{propertyId:'fixture-property'},turnId:'fixture-event',property:{propertyId:'fixture-property'},requestEvidence,executionOutcomes,taskResults:executionOutcomes.map(x=>({...x,status:'answered'})),publicAvailabilityUrl:'https://example.invalid/fixture-property'});
+const duplicate='測試雙人房共 2,000 元。';
+assert.equal(result.finalResponse.replyText.split(duplicate).length-1,1);
+assert.equal(result.responsePlan.sections.length,1);
+assert.equal(result.claimValidation.ok,true);
+assert.equal(isValidatedFinalResponse(result.finalResponse,{propertyId:'fixture-property',turnId:'fixture-event',eventId:'fixture-event'}),true);
+assert.deepEqual(result.responsePlan.sections[0].coveredTaskIds,['task-0','task-1']);
+const foreign=finalizeTurnResponse({scope:{propertyId:'p'},turnId:'e',property:{propertyId:'p'},requestEvidence:[{taskId:'a',requestPresence:'PRESENT',activeRequest:true,replyPermission:'ALLOWED'}],executionOutcomes:[{taskId:'a',type:'policy',outcome:'answered'}],taskResults:[{taskId:'a',type:'policy',status:'answered',facts:{source:'property_catalog',propertyId:'foreign',answer:'Foreign fact'}}]});
+assert.equal(foreign.finalResponse.replyText.includes('Foreign fact'),false);
+assert.ok(foreign.initialClaimValidation.errors.includes('fact_property_scope_mismatch'));
+console.log('RUNTIME_COMPONENT_TEST typed duplicate-render and fact-scope controls PASS');

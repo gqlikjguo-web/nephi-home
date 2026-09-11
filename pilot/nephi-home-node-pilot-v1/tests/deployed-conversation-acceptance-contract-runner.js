@@ -1005,7 +1005,7 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   );
 
   const render = fs.readFileSync(path.join(root, "render.yaml"), "utf8");
-  const testService = render.split("  - type: web").find((block) => block.includes("name: nephi-home-node-pilot-test-only"));
+  const testService = render.split("  - type: web").find((block) => /^\s*name: nephi-home-node-pilot-test-only\s*$/m.test(block));
   const gatewayService = render.split("  - type: web").find((block) => block.includes("name: nephi-home-junzan-line-gateway-test"));
   assert.match(testService, /TEST_ONLY_ACCEPTANCE_ENABLED\s*\r?\n\s*value: "true"/);
   assert.doesNotMatch(gatewayService, /TEST_ONLY_ACCEPTANCE_ENABLED/);

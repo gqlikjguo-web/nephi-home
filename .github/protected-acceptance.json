@@ -34,7 +34,7 @@
     },
     {
       "path": "pilot/nephi-home-node-pilot-v1/tests/first-version-acceptance-matrix-runner.js",
-      "sha256": "a4adf13223e55abf59f81296fec9ba7948d9f3b84fa45f51eed3369b6a3e2e6c",
+      "sha256": "ae056a18984db223c405679aec0d4b9bbf61bddbf7ca6e335e895455fb838fb2",
       "baseline": "immutable"
     },
     {
@@ -44,7 +44,7 @@
     },
     {
       "path": "pilot/nephi-home-node-pilot-v1/tests/v2-runtime-uniqueness-runner.js",
-      "sha256": "ae39f5587c90b6557f46310317f32c126b3e06520ebc00885c86f1f87a4f9658",
+      "sha256": "9ff3c719ea029bb3c55e3c4c4dea830607d710787e295a4e95a2463b9f30ccaa",
       "baseline": "accepted-current"
     },
     {

@@ -1,5 +1,7 @@
 "use strict";
 
+const { validateSemanticPositions } = require("./contracts/semantic-position");
+
 const { validateSourceEvidence } = require("./contracts/source-evidence");
 const {
   isValidatedContextLinkFor,
@@ -170,6 +172,8 @@ function validateLifecycleDecision(value, { unitIds = null } = {}) {
   if (!Array.isArray(value && value.verifiedSlotOperations)) {
     errors.push("verifiedSlotOperations");
   } else {
+    const positions = validateSemanticPositions(value.verifiedSlotOperations);
+    if (!positions.ok) errors.push(...positions.failures.map(item => `verifiedSlotOperations.${item.rule}`));
     const slotIds = new Set();
     value.verifiedSlotOperations.forEach((operation, index) => {
       validateVerifiedSlotOperation(operation, errors, `verifiedSlotOperations.${index}`);

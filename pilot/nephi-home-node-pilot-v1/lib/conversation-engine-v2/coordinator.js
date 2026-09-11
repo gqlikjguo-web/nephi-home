@@ -1,8 +1,20 @@
 "use strict";
 
+const MERGED_RESULTS = new WeakMap();
+function mergedTransportResult(input, target, result) {
+  const scope = Object.freeze({customerId:input.customerId,channelId:input.channelId,lineUserId:input.lineUserId,eventId:input.eventId});
+  const value = Object.freeze({shouldReply:false,noReply:true,merged:true,replyToken:"",traceId:result.traceId,
+    requestCycleRefs:Object.freeze([...(result.eventRequestCycleRefs?.[input.eventId] || [])]),
+    transportDisposition:Object.freeze({kind:"MERGED",eventId:input.eventId,targetEventId:target.eventId})});
+  MERGED_RESULTS.set(value,scope);return value;
+}
+function isMergedTransportResult(result,scope) {
+  const issued=MERGED_RESULTS.get(result);
+  return Boolean(issued && result.traceId && scope && Object.keys(issued).every(key=>issued[key]===scope[key]));
+}
 class ConversationEngineV2Coordinator {
-  constructor({ engine, debounceMs = 2000, externalReplyToken = false, schedule, cancel }) { this.engine = engine; this.debounceMs = debounceMs; this.externalReplyToken = externalReplyToken; this.schedule = schedule || setTimeout; this.cancel = cancel || clearTimeout; this.pending = new Map(); this.seenEvents = new Set(); }
-  key(input) { return `${input.customerId}:${input.channelId}:${input.lineUserId}`; }
+  constructor({ engine, debounceMs = 2000, externalReplyToken = false, schedule, cancel }) { this.engine = engine; this.debounceMs = debounceMs; this.externalReplyToken = externalReplyToken; this.schedule = schedule || setTimeout; this.cancel = cancel || clearTimeout; this.pending = new Map(); this.seenEvents = new Set(); this.inFlight = new Map(); }
+  key(input) { return JSON.stringify([input.customerId, input.channelId, input.lineUserId]); }
   enqueue(input) {
     const eventKey = `${input.customerId}:${input.eventId}`;
     if (this.seenEvents.has(eventKey)) return Promise.resolve({ shouldReply: false, noReply: true, duplicate: true, replyToken: "" });
@@ -15,13 +27,19 @@ class ConversationEngineV2Coordinator {
   async flush(key) {
     const burst = this.pending.get(key); if (!burst) return; this.pending.delete(key);
     const last = burst.messages[burst.messages.length - 1];
+    // Reserve the execution slot before yielding. Debouncing a later burst must
+    // not let it read State until the preceding turn has persisted its result.
+    const previous = this.inFlight.get(key) || Promise.resolve();
+    const execution = previous.catch(() => {}).then(() => this.engine.process({ ...last, messageText: burst.messages.map((x) => x.messageText).join("\n"), currentMessages: burst.messages.map((x) => x.messageText), eventIds: burst.messages.map((x) => x.eventId), sourceEvents: burst.messages.map((x) => ({ eventId: x.eventId, messageRef: x.messageRef || "", messageText: x.messageText, eventTimestamp: x.eventTimestamp, timestamp: x.timestamp })) }));
+    this.inFlight.set(key, execution);
     try {
-      const result = await this.engine.process({ ...last, messageText: burst.messages.map((x) => x.messageText).join("\n"), currentMessages: burst.messages.map((x) => x.messageText), eventIds: burst.messages.map((x) => x.eventId), sourceEvents: burst.messages.map((x) => ({ eventId: x.eventId, messageRef: x.messageRef || "", messageText: x.messageText })) });
+      const result = await execution;
       burst.messages.forEach((x) => this.seenEvents.add(`${x.customerId}:${x.eventId}`));
       const engineShouldReply = Boolean(result.finalResponse && result.finalResponse.shouldReply);
-      burst.waiters.forEach(({ resolve }, index) => { const trailing = index === burst.waiters.length - 1; resolve(trailing ? { ...result, replyToken: this.externalReplyToken ? "" : String(last.replyToken || ""), shouldReply: Boolean(engineShouldReply && (this.externalReplyToken || last.replyToken)), noReply: !engineShouldReply } : { shouldReply: false, noReply: true, merged: true, replyToken: "" }); });
+      burst.waiters.forEach(({ resolve }, index) => { const trailing = index === burst.waiters.length - 1; resolve(trailing ? { ...result, replyToken: this.externalReplyToken ? "" : String(last.replyToken || ""), shouldReply: Boolean(engineShouldReply && (this.externalReplyToken || last.replyToken)), noReply: !engineShouldReply } : mergedTransportResult(burst.messages[index],last,result)); });
     } catch (error) { burst.waiters.forEach(({ reject }) => reject(error)); }
+    finally { if (this.inFlight.get(key) === execution) this.inFlight.delete(key); }
   }
 }
 
-module.exports = { ConversationEngineV2Coordinator };
+module.exports = { ConversationEngineV2Coordinator, isMergedTransportResult };

@@ -43,6 +43,14 @@ function validateClaimSet(reply, plan, claimedTaskIds, composedSections = null) 
     const expected = section.status === "answered" ? ["FACTUAL_ANSWER", "EPISTEMIC_UNKNOWN", "PROCESSING_STATUS"]
       : section.status === "needs_clarification" ? ["CLARIFY"] : ["HANDOFF"];
     if (!expected.includes(type)) errors.push("invalid_claim_type");
+    for (const origin of section.factOrigins || []) {
+      if (!(section.coveredTaskIds || [section.taskId]).includes(origin.taskId)
+        || !origin.facts?.source || origin.facts.propertyId !== plan.propertyId) errors.push("fact_origin_scope_mismatch");
+    }
+    if (type === "FACTUAL_ANSWER" && section.facts?.propertyId
+      && plan.propertyId && section.facts.propertyId !== plan.propertyId) errors.push("fact_property_scope_mismatch");
+    if (type === "EPISTEMIC_UNKNOWN" && section.unknownProvenance?.propertyId
+      && plan.propertyId && section.unknownProvenance.propertyId !== plan.propertyId) errors.push("unknown_property_scope_mismatch");
     if (type === "PROCESSING_STATUS") {
       const { isTerminalFailure } = require("../new-core/terminal-failure");
       if (!isTerminalFailure(section.terminalFailure, { propertyId: plan.propertyId, turnId: plan.turnId, scopeRef: section.taskId })
@@ -101,18 +109,14 @@ function validateClaims(reply, plan, claimedTaskIds, composedSections = null, fi
   const localErrors = new Set(sectionResults.flatMap(item => item.errors));
   const globalErrors = base.errors.filter(error => !localErrors.has(error));
   if (finalAssembly) {
-    const { assembleFinalResponse } = require("./final-response-renderer");
-    const expected = assembleFinalResponse({ ...finalAssembly, responsePlan: plan,
-      validatedReplyText: composeControlledReply(plan), claimValidation: { ok: true } });
     const text = String(reply || "");
-    if (text !== expected.replyText) globalErrors.push("final_text_mismatch");
+    const coverage = require("./render-obligation").validateVisibleCoverage(text, plan, finalAssembly);
+    globalErrors.push(...coverage.errors);
     if (text.length > (plan.maxLength || 1200)) globalErrors.push("length");
     if (INTERNAL.test(text)) globalErrors.push("internal_content");
     if (UNAUTHORIZED_PROMISE.test(text)) globalErrors.push("forbidden_claim");
     if (!text.trim()) globalErrors.push("empty_reply");
-    for (const section of plan.sections || []) {
-      if (section.responseMode === "answer" && !text.includes(require("./controlled-composer").composeSection(section))) globalErrors.push("final_section_missing");
-    }
+
   }
   const errors = [...new Set([...base.errors, ...sectionResults.flatMap(item => item.errors), ...globalErrors])];
   for (const item of sectionResults) { Object.freeze(item.scopeRefs); Object.freeze(item.errors); Object.freeze(item); }

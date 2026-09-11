@@ -232,7 +232,7 @@ function buildCanonicalFormalRequest({
     checkIn: stay.checkIn,
     checkOut: stay.checkOut,
     guestCount: stay.guests,
-    ...require("../conversation-contracts/resolver-quantity").resolverQuantityFields(request.quantityCandidate || {}),
+    ...require("../conversation-contracts/resolver-quantity").resolverQuantityFields(request.quantityCandidate || confirmedInputs),
     ...(request.capability === "available_dates" ? {
       searchFrom: stay.searchRange && stay.searchRange.from || null,
       searchTo: stay.searchRange && stay.searchRange.to || null,
@@ -268,6 +268,7 @@ function buildCanonicalFormalRequest({
       detailIntent: request.detailIntent
     },
     evidence: {
+      ...(request.quantityCandidate ? {quantityEvidenceRefs:request.quantityCandidate.evidenceRefs} : confirmedInputs.quantityEvidenceRefs ? {quantityEvidenceRefs:confirmedInputs.quantityEvidenceRefs} : {}),
       sourceEvidenceRefs: request.evidenceRefs,
       temporalFieldRefs: request.temporalState.fields || {}
     },

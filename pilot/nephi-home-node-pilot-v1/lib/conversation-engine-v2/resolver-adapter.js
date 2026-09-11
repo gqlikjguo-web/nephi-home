@@ -76,7 +76,8 @@ function availabilityFacts(result, propertyId) {
     checkIn: result.checkIn,
     checkOut: result.checkOut,
     availableInventory: (result.rooms || []).map((room) => ({ canonicalId: room.id, publicName: room.publicDisplayName || room.displayName || room.publicName || room.name, capacity: Number(room.capacity) || null, category: room.inventoryType === "bundle" ? "bundle" : "room" })),
-    availability: (result.rooms || []).length ? "available" : "full",
+    availability: result.feasibility ? result.feasibility.inventoryStatus === "available" ? "available" : result.feasibility.inventoryStatus === "closed" ? "full" : "unknown" : (result.rooms || []).length ? "available" : "full",
+    ...(result.feasibility ? {feasibility:{...result.feasibility}} : {}),
     source: "availability_resolver",
     propertyId
   };

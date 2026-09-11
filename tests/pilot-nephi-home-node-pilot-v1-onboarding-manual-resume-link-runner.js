@@ -8,7 +8,7 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "../pilot/nephi-home-node-pilot-v1");
 const { migratePostgres } = require(path.join(root, "lib/providers/postgres-migrate"));
-const { seedNephiPostgres } = require(path.join(root, "tests/helpers/nephi-postgres-seed"));
+const { seedDemoPostgres } = require(path.join(root, "tests/helpers/demo-postgres-seed"));
 const { openPostgres } = require(path.join(root, "lib/providers/postgres-client"));
 const { createPostgresProviders } = require(path.join(root, "lib/providers/postgres-providers"));
 const { upsertAdminUser, sessionTokenHash } = require(path.join(root, "lib/admin-auth"));
@@ -16,7 +16,7 @@ const { createApp } = require(path.join(root, "server"));
 
 const payload = {
   propertyName: "補件連結測試旅宿", contactName: "測試業者", phone: "0911222333",
-  email: "owner@example.com", address: "測試地址", checkInTime: "15:00", checkOutTime: "11:00",
+  email: "owner@example.com", address: "測試地址", googleMapsUrl: "https://maps.app.goo.gl/FixtureResumeMap", checkInTime: "15:00", checkOutTime: "11:00",
   line: { hasOfficialAccount: false, channelId: "", contactLink: "" },
   rooms: [{ key: "room1", name: "雙人房", type: "double", capacity: 2, mondayThursdayPrice: 1800, fridayPrice: 2000, saturdayHolidayPrice: 2400, sundayPrice: 1900, enabled: true }],
   bundles: [], knowledge: []
@@ -37,7 +37,7 @@ async function createSubmitted(base, providers) {
     applicationId,
     sessionTokenHash(draftToken),
     new Date(Date.now() + 86400000).toISOString(),
-    "nephi_home",
+    "demo_fixture_property",
     "platform"
   );
   const headers = { "content-type": "application/json", "x-onboarding-draft-token": draftToken };
@@ -50,10 +50,10 @@ async function createSubmitted(base, providers) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-manual-resume-"));
   const connection = { kind: "pglite", dataDir: temp };
   await migratePostgres(connection);
-  await seedNephiPostgres(connection);
-  await upsertAdminUser(connection, { propertyId: "nephi_home", username: "platform", password: "platform-password-123" });
+  await seedDemoPostgres(connection);
+  await upsertAdminUser(connection, { propertyId: "demo_fixture_property", username: "platform", password: "platform-password-123" });
   let db = await openPostgres(connection);
-  await db.query("INSERT INTO platform_admin_grants(property_id,username) VALUES($1,$2)", ["nephi_home", "platform"]);
+  await db.query("INSERT INTO platform_admin_grants(property_id,username) VALUES($1,$2)", ["demo_fixture_property", "platform"]);
   await db.close();
   let providers, app, base;
   async function startRuntime() {
@@ -72,7 +72,7 @@ async function createSubmitted(base, providers) {
     const second = await createSubmitted(base, providers);
     const rejected = await createSubmitted(base, providers);
     const rollbackRejected = await createSubmitted(base, providers);
-    let result = await request(`${base}/api/admin/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "nephi_home", username: "platform", password: "platform-password-123" }) });
+    let result = await request(`${base}/api/admin/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ propertyId: "demo_fixture_property", username: "platform", password: "platform-password-123" }) });
     const cookie = result.response.headers.get("set-cookie").split(";")[0];
 
     result = await request(`${base}/api/admin/onboarding/applications/${rejected.applicationId}/reject`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ reason: "先前誤判為不通過" }) });
@@ -96,7 +96,7 @@ async function createSubmitted(base, providers) {
     assert.equal(result.body.error.code, "MISSING_REOPEN_REASON");
     result = await request(`${base}/api/public/onboarding/drafts/${rejected.applicationId}/submit`, { method: "POST", headers: { "x-onboarding-draft-token": rejected.draftToken } });
     assert.equal(result.response.status, 409, "rejected 不得由業者直接重新送審");
-    result = await request(`${base}/api/admin/onboarding/applications/${rejected.applicationId}/approve`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ mode: "existing", propertyId: "nephi_home" }) });
+    result = await request(`${base}/api/admin/onboarding/applications/${rejected.applicationId}/approve`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ mode: "existing", propertyId: "demo_fixture_property" }) });
     assert.equal(result.response.status, 409, "rejected 不得直接核准舊快照");
     result = await request(`${base}/api/admin/onboarding/applications/${rejected.applicationId}/reopen-for-changes`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reason: "請重新確認後送審" }) });
     assert.equal(result.response.status, 401, "未登入不可重新開放補件");
@@ -135,7 +135,7 @@ async function createSubmitted(base, providers) {
     assert.equal(reopenedTokens.rows.length, 1, "只保留一個最新補件 token");
     assert.notEqual(reopenedTokens.rows[0].token_hash, reopenedToken, "資料庫只保存 token hash");
     const reopenedAuditRow = reopenAudit.rows.find((row) => row.action === "reopened_changes_requested");
-    assert.deepEqual(reopenedAuditRow, { action: "reopened_changes_requested", note: "請重新確認資料後送審", reviewer_property_id: "nephi_home", reviewer_username: "platform" }, JSON.stringify(reopenAudit.rows));
+    assert.deepEqual(reopenedAuditRow, { action: "reopened_changes_requested", note: "請重新確認資料後送審", reviewer_property_id: "demo_fixture_property", reviewer_username: "platform" }, JSON.stringify(reopenAudit.rows));
     await startRuntime();
     result = await request(`${base}/api/admin/onboarding/applications/${rejected.applicationId}/reopen-for-changes`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ reason: "不得重複重新開放" }) });
     assert.equal(result.response.status, 409, "只有 rejected 可以重新開放補件");

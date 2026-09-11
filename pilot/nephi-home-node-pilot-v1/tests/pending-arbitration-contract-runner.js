@@ -96,6 +96,7 @@ function plan(tasks, options = {}) {
   }
   return {
     _contextRequestCycleRefs: options.contextRequestCycleRefs || [],
+    _contextRelationOverrides: options.contextRelationOverrides || {},
     schemaVersion: 2,
     discourse: { relation: options.relation || "new_request", confidence: 0.99 },
     stateOperations,
@@ -118,12 +119,15 @@ function plan(tasks, options = {}) {
 function bindPlanToSource(output, sourceEvents) {
   const source = sourceEvents[0];
   const contextRequestCycleRefs = output._contextRequestCycleRefs || [];
+  const contextRelationOverrides = output._contextRelationOverrides || {};
   delete output._contextRequestCycleRefs;
+  delete output._contextRelationOverrides;
   output.tasks = output.tasks.map((item, index) => ({ ...item, candidateIndex: index, stayCandidate: item.dependsOnStayContext ? { ...output.stay } : null }));
   output.contextRelationCandidates = output.tasks.map((item) => ({
     candidateIndex: item.candidateIndex,
     kind: item.type === "unknown" ? "relation_uncertain" : output.discourse.relation === "modify" ? "modify_existing" : ["continue", "answer_clarification"].includes(output.discourse.relation) ? "supplement_existing" : output.discourse.relation === "acknowledgement" ? "relation_uncertain" : "new_request",
     candidateRequestCycleRefs: contextRequestCycleRefs,
+    ...contextRelationOverrides[item.candidateIndex],
     evidenceRefs: [{ eventId: source.eventId, messageRef: source.messageRef || "", startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
   }));
   return migrateFakePlannerOutput(output);
@@ -380,7 +384,7 @@ async function testStaleOrdinaryPendingDoesNotPoisonLatestAnsweredProductSwitch(
 async function testProductionFailureShape() {
   const runtime = engineFor([
     plan([task("availability", "original-availability")], { missingInformation: ["stay.checkIn"] }),
-    plan([task("available_dates", "planner-date-candidate")], {
+    plan([task("available_dates", "planner-date-candidate", { sourceText: "7/24" })], {
       relation: "new_request",
       dateText: "7/24",
       dateKind: "absolute",
@@ -498,7 +502,7 @@ async function testReplacementAndExplicitRange() {
   const rangePersistence = memory();
   rangePersistence.setConversationState(property.propertyId, "line-binding:test", "same-user", pendingState(availabilityPending(["stay.checkIn"])));
   const rangeRuntime = engineFor([
-    plan([task("available_dates", "explicit-range", { sourceText: "7/25-7/28" })], {
+    plan([task("availability", "explicit-range", { sourceText: "7/25-7/28" })], {
       relation: "new_request",
       dateText: "7/25-7/28",
       dateKind: "range",
@@ -547,10 +551,11 @@ async function testSupplementWithIndependentTaskAndNoSupplement() {
   mixedPersistence.setConversationState(property.propertyId, "line-binding:test", "same-user", pendingState(availabilityPending(["stay.checkIn"])));
   const mixedRuntime = engineFor([
     plan([
-      task("available_dates", "mixed-date-candidate"),
+      task("available_dates", "mixed-date-candidate", { sourceText: "7/24 for one night" }),
       task("amenity", "mixed-parking", { rawText: "parking", canonicalCandidate: "parking" })
     ], {
       relation: "new_request",
+      contextRelationOverrides: { 0: { kind: "supplement_existing", candidateRequestCycleRefs: ["original-availability"] } },
       dateText: "7/24",
       dateKind: "absolute",
       checkInCandidate: "2026-07-24",
@@ -561,6 +566,7 @@ async function testSupplementWithIndependentTaskAndNoSupplement() {
   assert.deepEqual(mixed.taskResults.map((result) => result.type), ["availability", "parking"]);
   assert.equal(mixedRuntime.calls.availability.length, 1);
   assert.equal(mixedRuntime.calls.availableDates.length, 0);
+  assert.equal(mixed.state.tasks.find(item => item.taskId === "original-availability").status, "answered");
   assert.match(mixed.replyText, /Parking is available/);
 
   const emptyPersistence = memory();

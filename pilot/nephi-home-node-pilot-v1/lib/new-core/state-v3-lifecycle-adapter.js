@@ -1,5 +1,7 @@
 "use strict";
 
+const { singleSlotOperation } = require("./contracts/semantic-position");
+
 const {
   isValidatedLifecycleDecision,
   understandingInputForValidatedLifecycleDecision
@@ -73,7 +75,7 @@ function taskProduct(unit, decision) {
   const operations = decision.verifiedSlotOperations.filter((item) => (
     item.persistedField === "lodgingProduct"
   ));
-  if (operations.length > 1) return null;
+  if (singleSlotOperation(decision.verifiedSlotOperations, "product") === undefined) return null;
   const operation = operations[0];
   if (operation && operation.operation === "SET"
     && ["bundle", "room"].includes(unit.subject.kind)
@@ -99,7 +101,7 @@ function taskCreationFor(outcome) {
   const guestOperations = decision.verifiedSlotOperations.filter((item) => (
     item.persistedField === "guestCount"
   ));
-  if (guestOperations.length > 1) return null;
+  if (singleSlotOperation(decision.verifiedSlotOperations, "guest_count") === undefined) return null;
   const guestOperation = guestOperations[0];
   const missingFields = route.missingGuestFields.map((field) => {
     if (availableDates && field === "stay.checkIn") return "searchFrom";
@@ -114,6 +116,7 @@ function taskCreationFor(outcome) {
     unitId: unit.unitId,
     taskIdCandidate: unit.unitId,
     capability: unit.capability,
+    ...(unit.quantityCandidate ? {...require("../conversation-contracts/resolver-quantity").resolverQuantityFields(unit.quantityCandidate), quantityEvidenceRefs:unit.quantityCandidate.evidenceRefs.map(ref => ({...ref}))} : {}),
     productType: product.productType,
     productId: product.productId,
     roomTypeId: product.roomTypeId,
@@ -145,6 +148,9 @@ function adaptLifecycleDecisionsToStateV3({ decisions, aggregationResult = null,
     || inputScopes.some((inputScope) => !sameScope(inputScope, previousScope))) {
     return failure("LIFECYCLE_TRANSITION_INVALID", ["scope"]);
   }
+  if (aggregationResult !== null && !isTrustedUnitAggregationResult(aggregationResult)) {
+    return failure("LIFECYCLE_TRANSITION_INVALID", ["aggregationResult"]);
+  }
   const lifecycleOperations = [];
   const turnContextOperations = [];
   const persistedTargets = new Set();
@@ -160,6 +166,17 @@ function adaptLifecycleDecisionsToStateV3({ decisions, aggregationResult = null,
         value: null
       });
       continue;
+    }
+    const outcome = aggregationResult?.unitOutcomes.find(item => item.lifecycleDecision === decision);
+    const quantity = outcome?.unit.quantityCandidate;
+    if (quantity && ["CONTINUE", "MODIFY"].includes(decision.action)) {
+      const targetKey = `${decision.targetRequestCycleId}:quantity`;
+      if (persistedTargets.has(targetKey)) return failure("LIFECYCLE_TRANSITION_INVALID", ["persistedSlotConflict"]);
+      persistedTargets.add(targetKey);
+      lifecycleOperations.push({lifecycleDecisionId:decision.lifecycleDecisionId, unitId:decision.unitId,
+        action:decision.action, targetTaskId:decision.targetRequestCycleId, field:"quantity", operation:"SET",
+        value:{...require("../conversation-contracts/resolver-quantity").resolverQuantityFields(quantity),
+          quantityEvidenceRefs:quantity.evidenceRefs.map(ref => ({...ref}))}});
     }
     for (const slotOperation of decision.verifiedSlotOperations) {
       if (slotOperation.persistedField === null) {
@@ -204,18 +221,38 @@ function adaptLifecycleDecisionsToStateV3({ decisions, aggregationResult = null,
   if (taskCreations === null || taskCreations.some((creation) => creation === null)) {
     return failure("LIFECYCLE_TRANSITION_INVALID", ["aggregationResult"]);
   }
+  // A model's unit ID belongs to one turn. Only this State adapter allocates
+  // durable START identities; bound continuations retain the validated target.
+  const reservedIds = new Set((previous.tasks || []).map((task) => task.taskId));
+  const revision = Number.isInteger(previous.revision) ? previous.revision + 1 : 1;
+  const reserveStartId = (candidate) => {
+    let id = candidate;
+    if (reservedIds.has(id)) {
+      id = `${candidate}#${revision}`;
+      let collision = 1;
+      while (reservedIds.has(id)) id = `${candidate}#${revision}-${collision++}`;
+    }
+    reservedIds.add(id);
+    return id;
+  };
+  for (const creation of taskCreations) {
+    creation.taskIdCandidate = reserveStartId(creation.taskIdCandidate);
+  }
   const canonicalTaskBindings = aggregationResult === null
     ? []
     : aggregationResult.unitOutcomes
       .filter((outcome) => (
         outcome.canonicalItem !== null
-        && ["CONTINUE", "MODIFY"].includes(outcome.lifecycleDecision.action)
-        && outcome.lifecycleDecision.targetRequestCycleId !== null
+        && (outcome.lifecycleDecision.action === "START"
+          || (["CONTINUE", "MODIFY"].includes(outcome.lifecycleDecision.action)
+            && outcome.lifecycleDecision.targetRequestCycleId !== null))
       ))
       .map((outcome) => ({
         unitId: outcome.unitId,
         action: outcome.lifecycleDecision.action,
-        requestCycleId: outcome.lifecycleDecision.targetRequestCycleId
+        requestCycleId: outcome.lifecycleDecision.action === "START"
+          ? reserveStartId(outcome.unitId)
+          : outcome.lifecycleDecision.targetRequestCycleId
       }));
   deepFreeze(lifecycleOperations);
   deepFreeze(taskCreations);
@@ -274,8 +311,9 @@ function isStateV3CanonicalTaskBindingsFor(value, { previous, scope, canonicalIt
   const boundOutcomes = binding && binding.aggregationResult
     ? binding.aggregationResult.unitOutcomes.filter((outcome) => (
       outcome.canonicalItem !== null
-      && ["CONTINUE", "MODIFY"].includes(outcome.lifecycleDecision.action)
-      && outcome.lifecycleDecision.targetRequestCycleId !== null
+      && (outcome.lifecycleDecision.action === "START"
+        || (["CONTINUE", "MODIFY"].includes(outcome.lifecycleDecision.action)
+          && outcome.lifecycleDecision.targetRequestCycleId !== null))
     ))
     : [];
   return Boolean(binding)

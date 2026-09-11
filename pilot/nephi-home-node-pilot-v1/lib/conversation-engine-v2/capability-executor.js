@@ -47,6 +47,9 @@ function selected(property, request, entities) {
 }
 function priceKey(date) { return PRICE_KEYS[weekdayPriceType(date)] || null; }
 function buildPricingFacts({ property, availableInventory, checkIn, checkOut, priceOverrides = [], datePriceClassifications = [] }) {
+  // Fetch pricing dependencies inside the existing per-query error boundary.
+  priceOverrides = typeof priceOverrides === "function" ? priceOverrides() : priceOverrides;
+  datePriceClassifications = typeof datePriceClassifications === "function" ? datePriceClassifications() : datePriceClassifications;
   const availableIds = new Set((availableInventory || []).map((item) => item.canonicalId));
   const dates = stayDates(checkIn, checkOut);
   const prices = (property.rooms || []).filter((room) => availableIds.has(room.id)).map((room) => {
@@ -234,9 +237,9 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
         if (!pricing.missing && pricing.prices.length === adapted.facts.availableInventory.length) adapted.facts = { ...adapted.facts, prices: pricing.prices };
       }
       if (["availability", "bundle_availability", "room_options", "capacity"].includes(queryPlan.capability)) return queryOutcome(queryPlan, adapted.facts.availableInventory.length ? "answered" : "no_availability", { facts: adapted.facts, resolverAttempted: true });
-      if (!adapted.facts.availableInventory.length) return queryOutcome(queryPlan, "no_availability", { facts: { availability: "full", checkIn: stay.checkIn, checkOut: stay.checkOut, prices: [], source: "availability_provider", propertyId: property.propertyId }, resolverAttempted: true });
+      if (!adapted.facts.availableInventory.length) return queryOutcome(queryPlan, "no_availability", { facts: { ...adapted.facts, availability: adapted.facts.availability, checkIn: stay.checkIn, checkOut: stay.checkOut, prices: [], source: "availability_provider", propertyId: property.propertyId }, resolverAttempted: true });
       const pricing = buildPricingFacts({ property, availableInventory: adapted.facts.availableInventory, checkIn: stay.checkIn, checkOut: stay.checkOut, priceOverrides, datePriceClassifications });
-      return queryOutcome(queryPlan, pricing.missing ? "property_data_missing" : "answered", { facts: { availability: "available", checkIn: stay.checkIn, checkOut: stay.checkOut, prices: pricing.prices, source: "pricing_provider", propertyId: property.propertyId }, resolverAttempted: true });
+      return queryOutcome(queryPlan, pricing.missing ? "property_data_missing" : "answered", { facts: { ...adapted.facts, availability: adapted.facts.availability, checkIn: stay.checkIn, checkOut: stay.checkOut, prices: pricing.prices, source: "pricing_provider", propertyId: property.propertyId }, resolverAttempted: true });
     }
     if (resolverId === "human_handoff") {
       return queryOutcome(queryPlan, "unknown", { reason: queryPlan.capability });
@@ -302,7 +305,30 @@ function executeCanonicalQueryPlans(input) {
   });
 }
 
+// Controlled rule evaluation is the only supported execution-outcome transform.
+// It runs here before deriving a new provenance record; callers cannot supply
+// an arbitrary replacement outcome or copy a token onto different semantics.
+function applyCanonicalReplyRules({ property, canonicalItems, executionOutcomes, rules, now }) {
+  const apply = require("../custom-reply-rules").applyControlledReplyRules;
+  return executionOutcomes.map(original => {
+    const provenance = canonicalExecutionProvenanceFor(original);
+    const item = canonicalItems.find(item => item.canonicalRequest.taskId === original.taskId);
+    if (!provenance || !item || provenance.propertyId !== property.propertyId
+      || provenance.taskId !== original.taskId || provenance.sourceOutcomeStatus !== original.outcome
+      || provenance.sourceReasonCode !== (original.reason || "")) throw new TypeError("execution_transform_provenance_required");
+    assertCanonicalRequest(item.canonicalRequest);
+    const transformed = apply({ property, canonicalItems: [item], executionOutcomes: [original], rules, now })[0];
+    if (transformed === original) return original;
+    const derived = Object.freeze({ ...provenance, sourceOutcomeStatus: transformed.outcome,
+      sourceReasonCode: transformed.reason || "" });
+    EXECUTION_PROVENANCE.set(transformed, derived);
+    EXECUTION_PROVENANCE_INSTANCES.add(derived);
+    return transformed;
+  });
+}
+
 module.exports = {
+  applyCanonicalReplyRules,
   evaluateProductFulfillment,
   canonicalExecutionProvenanceFor,
   isCanonicalExecutionProvenance,

@@ -49,7 +49,7 @@ async function main() {
     subject: { kind: "room", catalogIdentity: catalog.find(item => item.kind === "room").catalogIdentity },
     stayDependent: false, temporalCandidate: null, contextLinkCandidateId: "link",
     safetyCandidate: { operatorActionClass: "special_arrangement", riskClass: null },
-    slotCandidates: [], confidenceBand: "high"
+    slotCandidates: [], quantityCandidate: null, confidenceBand: "high"
   };
   const normalized = validateAndNormalizeSourceEvidence([evidence], input.sourceEvents);
   assert.equal(normalized.ok, true, "fixture evidence must pass C04");

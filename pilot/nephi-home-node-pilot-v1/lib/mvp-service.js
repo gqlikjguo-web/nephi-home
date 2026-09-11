@@ -344,10 +344,10 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       if (queryMode === "bundle_only" && room.inventoryType !== "bundle") return false;
       if (queryMode === "room_only" && room.inventoryType === "bundle") return false;
       if (roomTypeSet.length ? !roomTypeSet.includes(room.id) : roomType !== "all" && !roomMatchesType(room, roomType)) return false;
-      return collection || guests === null || Number(room.capacity || 0) >= guests;
+      return true;
     });
 
-    let rooms = availabilityReliable ? candidateRooms.filter((room) => dates.every((date) => {
+    const availableRooms = availabilityReliable ? candidateRooms.filter((room) => dates.every((date) => {
       const row = byDate[date];
       if (!row) return false;
       if (room.inventoryType === "bundle") {
@@ -355,6 +355,18 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       }
       return row[room.id] === "available";
     })) : [];
+
+    // Availability rows establish inventory state independently of request feasibility.
+    let rooms = availableRooms.filter(room => collection || guests === null || Number(room.capacity || 0) >= guests);
+    const capacityLimit = collection ? quantity.requestedQuantity : 1;
+    const capacities = availableRooms.map(room => Number(room.capacity));
+    const capacityKnown = capacities.every(capacity => Number.isInteger(capacity) && capacity > 0);
+    const maxCapacity = [...capacities].sort((a,b) => b-a).slice(0,capacityLimit).reduce((sum,capacity) => sum+capacity,0);
+    const feasibility = {
+      inventoryStatus: !availabilityReliable ? "unknown" : availableRooms.length ? "available" : "closed",
+      capacityStatus: guests === null ? "not_requested" : !availabilityReliable || !capacityKnown ? "unknown"
+        : maxCapacity >= guests ? "sufficient" : "insufficient"
+    };
 
     if (collection) {
       // Count identities once. Keep every candidate that can participate in a
@@ -382,6 +394,8 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       roomTypeSet,
       queryMode,
       availabilityReliable,
+      availableRooms,
+      feasibility,
       rooms,
       lineUrl: homestay.lineUrl || ""
     };

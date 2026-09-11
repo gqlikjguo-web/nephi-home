@@ -102,8 +102,8 @@ async function waitFor(predicate, timeoutMs = 1000) {
     seedDays: 5,
     messageLogs: { property_a: [], property_b: [] },
     homestays: [
-      { customerId: "property_a", name: "Property A", safeFacts: { parkingRule: "Parking A" }, rooms: [{ id: "a-room", name: "A Room", type: "double", capacity: 2 }] },
-      { customerId: "property_b", name: "Property B", safeFacts: { parkingRule: "Parking B" }, rooms: [{ id: "b-room", name: "B Room", type: "double", capacity: 2 }] }
+      { customerId: "property_a", name: "Property A", propertyFacts: [{ canonicalId: "parking", category: "amenity", status: "provided", publicText: "Parking A", aliases: ["parking"] }], rooms: [{ id: "a-room", name: "A Room", type: "double", capacity: 2 }] },
+      { customerId: "property_b", name: "Property B", propertyFacts: [{ canonicalId: "parking", category: "amenity", status: "provided", publicText: "Parking B", aliases: ["parking"] }], rooms: [{ id: "b-room", name: "B Room", type: "double", capacity: 2 }] }
     ]
   }));
 
@@ -197,7 +197,7 @@ async function waitFor(predicate, timeoutMs = 1000) {
     assert.equal(scenarioResults.get(normalEventId).finalResponse.shouldReply, true);
     assert.notEqual(scenarioResults.get(normalEventId).finalResponse.replyText.trim(), "");
     assert.equal(replies.length, repliesBeforeTransportMatrix + 1);
-    assert.equal(replies.at(-1).body.messages[0].text, scenarioResults.get(normalEventId).finalResponse.replyText);
+    assert.equal(replies.at(-1).body.messages[0].text, `【AI】${scenarioResults.get(normalEventId).finalResponse.replyText}`);
     assert.equal(findTransportRecord(normalEventId).replyDelivered, true);
 
     const noReplyEventId = "property-transport-no-reply";

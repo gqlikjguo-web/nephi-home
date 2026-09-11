@@ -13,6 +13,7 @@ const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property
   fs.mkdirSync(runtimeRoot, { recursive: true });
   const temp = fs.mkdtempSync(path.join(runtimeRoot, "phase1-knowledge-"));
   const connection = { kind: "pglite", dataDir: path.join(temp, "database") };
+  let providers;
   try {
     await migratePostgres(connection);
     await seedDemoPostgres(connection);
@@ -21,27 +22,38 @@ const { buildPropertyCatalog } = require("../lib/conversation-engine-v2/property
     const mapUrl = "https://maps.app.goo.gl/PostgresLocation";
     await client.query("UPDATE property_settings SET settings=settings || jsonb_build_object('commonAnswers',COALESCE(settings->'commonAnswers','{}'::jsonb)||jsonb_build_object('transport',$2::text)) WHERE property_id=$1", ["demo_fixture_property", `導航與周邊位置請開啟 Google 地圖：\n${mapUrl}`]);
     await client.close();
-    const providers = createProviders({ databaseUrl: "pglite:phase1", postgresConnection: connection });
+    providers = createProviders({ databaseUrl: "pglite:phase1", postgresConnection: connection });
     const property = providers.customerSettings.getProperty("demo_fixture_property");
     assert.equal(property.commonAnswers.cancellationRule, "退款、退費、退訂、取消、改期、延期、天災或臨時狀況相關問題，一律由真人客服確認。");
     const singing = property.faqs.find((item) => item.knowledgeKey === "singing");
     assert.ok(singing);
     assert.ok(singing.knowledgeId, "provider must preserve stable materialized knowledge ID");
-    const catalog = buildPropertyCatalog(property);
+    const legacyCatalog = buildPropertyCatalog(property);
+    assert.equal(legacyCatalog.policies.some(fact => fact.canonicalId === "cancellation"), false, "legacy commonAnswers cannot supply cancellation authority");
+    providers.customerSettings.updatePropertyFacts(property.propertyId, [{ canonicalId: "cancellation", category: "policy", status: "provided", publicText: property.commonAnswers.cancellationRule }]);
+    providers.customerSettings.updatePropertyProfile(property.propertyId, {
+      displayName: property.displayName, commonAnswers: property.commonAnswers,
+      businessProfile: { ...property.businessProfile, googleMapsUrl: mapUrl },
+      contactLink: property.contactLink
+    });
+    const catalog = buildPropertyCatalog(providers.customerSettings.getProperty(property.propertyId));
     assert.equal(catalog.faqs.some((item) => item.canonicalId === "singing"), false, "FAQ alone must not materialize equipment existence");
     assert.equal(catalog.amenities.some((item) => item.canonicalId === "singing"), false, "legacy FAQ must not backfill structured equipment state");
     assert.equal(catalog.policies.find((item) => item.canonicalId === "cancellation").answer, property.commonAnswers.cancellationRule);
+    const mapCatalog = buildPropertyCatalog(providers.customerSettings.getProperty("demo_fixture_property"));
+    assert.equal(mapCatalog.policies.find((item) => item.canonicalId === "location").mapUrl, mapUrl, "formal Google Maps settings must remain property-scoped");
+    await providers.close();
+    providers = null;
     const rematerializeClient = await rawClient.openPostgres(connection);
     await rematerializeClient.query("UPDATE knowledge_items SET knowledge_key=NULL WHERE property_id=$1 AND question=$2", ["demo_fixture_property", singing.question]);
     await rematerializeClient.close();
-    const mapCatalog = buildPropertyCatalog(providers.customerSettings.getProperty("demo_fixture_property"));
-    assert.equal(mapCatalog.policies.find((item) => item.canonicalId === "location").answer, mapUrl, "a legacy PostgreSQL transport map URL must materialize as the property-scoped Google Maps fact");
     await seedDemoPostgres(connection);
+    providers = createProviders({ databaseUrl: "pglite:phase1", postgresConnection: connection });
     const rematerialized = providers.customerSettings.getProperty("demo_fixture_property").faqs.find((item) => item.question === singing.question);
     assert.equal(rematerialized.knowledgeKey, "singing", "existing property facts must receive their property-provided canonical key");
-    providers.close();
     console.log("hospitality knowledge Phase 1 PostgreSQL: PASS");
   } finally {
+    if (providers) await providers.close();
     fs.rmSync(temp, { recursive: true, force: true });
   }
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });

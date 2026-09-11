@@ -13,6 +13,13 @@ const output = {
   contextRelationCandidates: [{ candidateIndex: 0, kind: "new_request", candidateHistoryTurnRefs: [], evidenceRefs: [{ eventId: "event", messageRef: "message", startOffset: 0, endOffset: messageText.length, quote: messageText }] }],
   ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "understood"
 };
+output.tasks[0].groundingId = "availability-grounding";
+output.tasks[0].entity = { category: "room", rawText: "", canonicalCandidate: "fixture-room", confidence: 1 };
+output.semanticGroundings = [{ groundingId: "availability-grounding",
+  subject: { scope: "property_owned", catalogIdentity: "fixture-room" },
+  relation: "inventory_availability", requestedOutput: "answer",
+  provenanceRelationCandidateIndexes: [0], evidenceRefs: output.contextRelationCandidates[0].evidenceRefs
+}];
 
 (async () => {
   let providerCalls = 0;
@@ -27,7 +34,7 @@ const output = {
       return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ output_text: JSON.stringify(output) }) };
     }
   });
-  const result = await planner.classify({ currentMessage: messageText, currentMessages: [messageText], sourceEvents: [{ eventId: "event", messageRef: "message", messageText }], catalog: { propertyId: "p", rooms: [], amenities: [], policies: [], faqs: [], propertyFacts: [], transportFacts: [] }, contextSnapshot: { scope: {}, cycles: [] } });
+  const result = await planner.classify({ currentMessage: messageText, currentMessages: [messageText], sourceEvents: [{ eventId: "event", messageRef: "message", messageText }], catalog: { propertyId: "p", rooms: [{ canonicalId: "fixture-room", category: "room", publicName: "Fixture room" }], amenities: [], policies: [], faqs: [], propertyFacts: [], transportFacts: [] }, contextSnapshot: { scope: {}, cycles: [] } });
   assert.equal(providerCalls, 1, "one understood plan uses one provider call");
   assert.equal(criticCalls, 0, "coverage critic is not part of the active Planner path");
   assert.equal(Object.hasOwn(result, "semanticCandidates"), false);

@@ -262,13 +262,15 @@ function compatibilityRequestedOutputs(capability) {
   if (capability === "location") return ["map_url"];
   if (["price", "total_price"].includes(capability)) return ["price"];
   if (["availability", "available_dates"].includes(capability)) return ["availability"];
+  if (capability === "lodging_product_capacity") return ["capacity"];
   return ["answer"];
 }
 
-function uniqueSlotOperation(operations, slotName) {
-  const matches = operations.filter((operation) => operation.slot === slotName);
-  return matches.length <= 1 ? (matches[0] || null) : undefined;
+function compatibilityDetailIntent(capability) {
+  return capability === "lodging_product_capacity" ? "quantity" : "general";
 }
+
+const { singleSlotOperation: uniqueSlotOperation } = require("./contracts/semantic-position");
 
 function productFromIdentity(identity, kind) {
   if (kind === "bundle") {
@@ -353,6 +355,7 @@ function compatibilityTemporal(unit, sources) {
       dateExpression: {
         rawText: temporal.rawText,
         kind: TEMPORAL_KIND_COMPATIBILITY[temporal.kind],
+        ...(temporal.relativeSemantics ? {relativeSemantics:detach(temporal.relativeSemantics)} : {}),
         anchor: "message_time"
       },
       checkInCandidate: temporal.checkInCandidate,
@@ -467,6 +470,48 @@ function stateInputMatchesC08(stateInput, canonicalRequest, task, provenance) {
     && sameData(stateInput.sourceEvidenceRefs, provenance.unit.evidenceRefs);
 }
 
+function buildCompatibilityInvocation({
+  provenance,
+  canonicalizerInputItem,
+  context,
+  entity,
+  approvedProduct,
+  temporal,
+  guestOperation
+}) {
+  const guestCountCandidate = guestOperation && guestOperation.operation === "SET"
+    ? guestOperation.value : null;
+  const sourceText = canonicalizerInputItem.evidenceRefs.map((reference) => reference.quote).join("\n");
+  // This compatibility index has no semantic meaning. It is created only for
+  // the unchanged legacy call, then the complete legacy wrapper is discarded.
+  const candidateIndex = 0;
+  const task = {
+    candidateIndex,
+    taskId: provenance.unit.unitId,
+    type: compatibilityTaskType(provenance.unit.capability),
+    sourceText,
+    detailIntent: compatibilityDetailIntent(provenance.unit.capability),
+    requestedOutputs: compatibilityRequestedOutputs(provenance.unit.capability),
+    dependsOnStayContext: provenance.unit.stayDependent,
+    entity,
+    stayCandidate: { ...temporal.stayCandidate, guestCountCandidate },
+    confidence: 1
+  };
+  const relation = relationFor(candidateIndex, provenance.lifecycleDecision, canonicalizerInputItem.evidenceRefs);
+  const compatibilityItem = {
+    candidateIndex,
+    requestCycleId: provenance.lifecycleDecision.targetRequestCycleId || provenance.unit.unitId,
+    task,
+    transition: {
+      reasonCode: "new_core_c08_compatibility",
+      contextTask: contextTaskFor(context.cycle),
+      approvedProduct,
+      slotSources: {}
+    }
+  };
+  return { candidateIndex, task, relation, compatibilityItem, sourceText };
+}
+
 function executeCanonicalizerInputItem({
   canonicalizerInputItem,
   catalog,
@@ -536,40 +581,9 @@ function executeCanonicalizerInputItem({
       exactCondition: `compatibilityMapping:${missing.join(",")}`
     });
   }
-  const guestCountCandidate = guestOperation && guestOperation.operation === "SET"
-    ? guestOperation.value : null;
-  const sourceText = canonicalizerInputItem.evidenceRefs.map((reference) => reference.quote).join("\n");
-
-  // This compatibility index has no semantic meaning. It is created only for
-  // the unchanged legacy call, then the complete legacy wrapper is discarded.
-  const candidateIndex = 0;
-  const task = {
-    candidateIndex,
-    taskId: provenance.unit.unitId,
-    type: compatibilityTaskType(provenance.unit.capability),
-    sourceText,
-    detailIntent: "general",
-    requestedOutputs: compatibilityRequestedOutputs(provenance.unit.capability),
-    dependsOnStayContext: provenance.unit.stayDependent,
-    entity,
-    stayCandidate: {
-      ...temporal.stayCandidate,
-      guestCountCandidate
-    },
-    confidence: 1
-  };
-  const relation = relationFor(candidateIndex, provenance.lifecycleDecision, canonicalizerInputItem.evidenceRefs);
-  const compatibilityItem = {
-    candidateIndex,
-    requestCycleId: provenance.lifecycleDecision.targetRequestCycleId || provenance.unit.unitId,
-    task,
-    transition: {
-      reasonCode: "new_core_c08_compatibility",
-      contextTask: contextTaskFor(context.cycle),
-      approvedProduct,
-      slotSources: {}
-    }
-  };
+  const { candidateIndex, task, relation, compatibilityItem, sourceText } = buildCompatibilityInvocation({
+    provenance, canonicalizerInputItem, context, entity, approvedProduct, temporal, guestOperation
+  });
   let canonicalized;
   try {
     diagnostic.canonicalizerCalled = true;

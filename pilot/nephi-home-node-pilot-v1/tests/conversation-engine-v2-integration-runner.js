@@ -45,7 +45,7 @@ function explicitPlanner(basePlanner) {
     }
   };
 }
-const property = { propertyId: "p1", displayName: "測試旅宿", timezone: "Asia/Taipei", currency: "TWD", rooms: [{ id: "r1", name: "湖景雙人房", type: "雙人房", capacity: 2, enabled: true, mondayThursdayPrice: 2000, fridayPrice: 2200, saturdayHolidayPrice: 2600, sundayPrice: 2100 }], commonAnswers: { parkingRule: "有一個停車位" }, semanticCatalog: { aliases: { r1: ["兩人房"], parking: ["車位"] }, amenities: [] } };
+const property = { propertyId: "p1", displayName: "測試旅宿", timezone: "Asia/Taipei", currency: "TWD", rooms: [{ id: "r1", name: "湖景雙人房", type: "雙人房", capacity: 2, enabled: true, mondayThursdayPrice: 2000, fridayPrice: 2200, saturdayHolidayPrice: 2600, sundayPrice: 2100 }], propertyFacts: [{ canonicalId: "parking", category: "amenity", status: "provided", publicText: "有一個停車位", aliases: ["車位"] }], semanticCatalog: { aliases: { r1: ["兩人房"], parking: ["車位"] }, amenities: [] } };
 const availabilityResolver = ({ customerId, checkIn, checkOut, guests, roomType, queryMode }) => ({ customerId, checkIn, checkOut, guests, roomType, queryMode, availabilityReliable: true, rooms: property.rooms.filter((room) => room.id === roomType || roomType === "all"), lineUrl: "" });
 const planner = { classify: async () => ({
   schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 },
@@ -617,7 +617,7 @@ function latestConditions(result) {
     tasks: [{ taskId: "parking", type: "amenity", sourceText: "有車位嗎？", requestedOutputs: ["answer"], dependsOnStayContext: false, entity: { category: "amenity", rawText: "車位", canonicalCandidate: "parking", confidence: 0.99 }, stayCandidate: null, confidence: 0.99 }],
     ambiguities: [], missingInformation: [], needsHuman: false, shouldIgnore: false, reason: "parking_unknown"
   }) };
-  const propertyWithoutParkingFact = { ...property, commonAnswers: {}, semanticCatalog: { aliases: { parking: ["車位"] }, amenities: [] } };
+  const propertyWithoutParkingFact = { ...property, propertyFacts: [], commonAnswers: {}, semanticCatalog: { aliases: { parking: ["車位"] }, amenities: [] } };
   let parkingUnknownAvailabilityCalls = 0;
   const parkingUnknownEngine = new ConversationEngineV2({
     planner: explicitPlanner(parkingUnknownPlanner), persistence, getProperty: () => propertyWithoutParkingFact,
@@ -711,7 +711,7 @@ function latestConditions(result) {
     { id: "r1", name: "A 雙人房", type: "雙人房", capacity: 2, enabled: true },
     { id: "r2", name: "B 雙人房", type: "雙人房", capacity: 2, enabled: true },
     { id: "r3", name: "C 四人房", type: "四人房", capacity: 4, enabled: true }
-  ], commonAnswers: { parkingRule: "有停車位", bbqRule: "可依規則烤肉" }, semanticCatalog: { aliases: { parking: ["車位"], bbq: ["烤肉"] }, amenities: [] } };
+  ], propertyFacts: [{ canonicalId: "parking", category: "amenity", status: "provided", publicText: "有停車位", aliases: ["車位"] }, { canonicalId: "bbq", category: "policy", status: "provided", publicText: "可依規則烤肉", aliases: ["烤肉"] }], semanticCatalog: { aliases: { parking: ["車位"], bbq: ["烤肉"] }, amenities: [] } };
   const multiTaskPlanner = { classify: async () => ({
     schemaVersion: 2, discourse: { relation: "new_request", confidence: 0.99 }, stateOperations: [],
     stay: { dateExpression: { rawText: "8/6", kind: "absolute", anchor: "message_time" }, checkInCandidate: null, checkOutCandidate: null, nightsCandidate: 1, guestCountCandidate: null },
@@ -838,7 +838,7 @@ function latestConditions(result) {
     ...(nightsCandidate ? [{ field: "stay.nightsCandidate", operation: "set", value: nightsCandidate, sourceText: rawText }] : []),
     ...(guestCountCandidate ? [{ field: "stay.guestCountCandidate", operation: "set", value: guestCountCandidate, sourceText: rawText }] : [])
   ];
-  const temporalProperty = { ...property, commonAnswers: { parkingRule: "有停車位。", bbqRule: "可依規則烤肉。" }, semanticCatalog: { aliases: { r1: ["雙人房"], parking: ["車位"], bbq: ["烤肉"] }, amenities: [] } };
+  const temporalProperty = { ...property, propertyFacts: [{ canonicalId: "parking", category: "amenity", status: "provided", publicText: "有停車位。", aliases: ["車位"] }, { canonicalId: "bbq", category: "policy", status: "provided", publicText: "可依規則烤肉。", aliases: ["烤肉"] }], semanticCatalog: { aliases: { r1: ["雙人房"], parking: ["車位"], bbq: ["烤肉"] }, amenities: [] } };
   const temporalAvailabilityResolver = (query) => ({ ...query, availabilityReliable: true, rooms: temporalProperty.rooms.filter((room) => query.roomType === "all" || room.id === query.roomType), lineUrl: "" });
   async function runTemporal(message, plannerOutput, userId, eventTimestamp = Date.parse("2026-07-17T10:00:00+08:00"), resolver = temporalAvailabilityResolver) {
     const temporalEngine = new ConversationEngineV2({ planner: explicitPlanner(plannerOutput), persistence, getProperty: () => temporalProperty, availabilityResolver: resolver, listPriceOverrides: () => [], now: () => new Date(eventTimestamp) });

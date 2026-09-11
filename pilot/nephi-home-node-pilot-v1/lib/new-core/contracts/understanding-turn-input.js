@@ -214,7 +214,7 @@ function validateUnderstandingTurnInput(value) {
       if (!uniqueBoundedStrings(cycle && cycle.missingFields, MAX_REFERENCEABLE_CYCLES)) {
         errors.push(`referenceableCycles.${index}.missingFields`);
       }
-      if (!exactKeys(cycle && cycle.confirmedValues, CONFIRMED_VALUE_FIELDS)
+      if (!exactKeys(cycle && cycle.confirmedValues, cycle?.confirmedValues && Object.hasOwn(cycle.confirmedValues, "requestedQuantity") ? [...CONFIRMED_VALUE_FIELDS, "requestedQuantity", "distinctRequirement"] : CONFIRMED_VALUE_FIELDS)
         || !nullableDate(cycle && cycle.confirmedValues && cycle.confirmedValues.checkIn)
         || !nullableDate(cycle && cycle.confirmedValues && cycle.confirmedValues.checkOut)
         || !nullableDate(cycle && cycle.confirmedValues && cycle.confirmedValues.searchFrom)
@@ -223,6 +223,9 @@ function validateUnderstandingTurnInput(value) {
           || Number.isInteger(cycle && cycle.confirmedValues && cycle.confirmedValues.guestCount)
             && cycle.confirmedValues.guestCount > 0)) {
         errors.push(`referenceableCycles.${index}.confirmedValues`);
+      }
+      if (!require("../../conversation-contracts/resolver-quantity").validateQuantityFields(cycle?.confirmedValues || {}).ok) {
+        errors.push(`referenceableCycles.${index}.confirmedValues.quantity`);
       }
       if (!uniqueBoundedStrings(cycle && cycle.slotRefs, MAX_REFERENCEABLE_CYCLES)) {
         errors.push(`referenceableCycles.${index}.slotRefs`);

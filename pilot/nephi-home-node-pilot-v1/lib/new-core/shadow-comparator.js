@@ -14,7 +14,7 @@ const PURPOSES = new Set([
   "off_topic", "unknown"
 ]);
 const CAPABILITIES = new Set([
-  "availability", "available_dates", "price", "total_price", "capacity",
+  "availability", "available_dates", "price", "total_price", "capacity", "lodging_product_capacity",
   "property_fact", "amenity", "policy", "location", "booking_operator_request",
   "high_risk", "unsupported", null
 ]);

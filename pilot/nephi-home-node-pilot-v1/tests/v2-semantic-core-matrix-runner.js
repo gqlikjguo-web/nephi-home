@@ -18,6 +18,14 @@ const properties = [
   { propertyId: "matrix_alpha", displayName: "Alpha Lodge", timezone: "Asia/Taipei", rooms: [{ id: "a_double_1", name: "A1", type: "Double", capacity: 2, enabled: true }, { id: "a_double_2", name: "A2", type: "Double", capacity: 2, enabled: true }, { id: "a_quad", name: "A4", type: "Quad", capacity: 4, enabled: true }, { id: "a_house", name: "A House", type: "House", inventoryType: "bundle", capacity: 10, enabled: true }], commonAnswers: { parkingRule: "Alpha parking.", bbqRule: "Alpha barbecue.", checkInTime: "Alpha check-in.", selfCheckInRule: "Alpha self check-in." }, faqs: [{ knowledgeKey: "pool", question: "Pool", answer: "Alpha pool." }], semanticCatalog: { aliases: { parking: ["parking"], bbq: ["bbq"], check_in: ["checkin"], self_checkin: ["password"], pool: ["pool"] } } },
   { propertyId: "matrix_beta", displayName: "Beta Lodge", timezone: "Asia/Taipei", rooms: [{ id: "b_couple", name: "B Couple", type: "Couple", capacity: 2, enabled: true }, { id: "b_family", name: "B Family", type: "Family", capacity: 5, enabled: true }], commonAnswers: { parkingRule: "Beta parking." }, faqs: [{ knowledgeKey: "pool", question: "Pool", answer: "Beta pool." }], semanticCatalog: { aliases: { parking: ["parking"], pool: ["pool"] } } }
 ];
+properties[0].propertyFacts = [
+  { canonicalId: "parking", category: "amenity", status: "provided", publicText: "Alpha parking.", aliases: ["parking"] },
+  { canonicalId: "bbq", category: "policy", status: "provided", publicText: "Alpha barbecue.", aliases: ["bbq"] }
+];
+properties[1].propertyFacts = [
+  { canonicalId: "parking", category: "amenity", status: "provided", publicText: "Beta parking.", aliases: ["parking"] },
+  { canonicalId: "pool", category: "amenity", status: "provided", publicText: "Beta pool.", aliases: ["pool"] }
+];
 const rows = {
   matrix_alpha: { "2026-07-18": { date: "2026-07-18", a_double_1: "available", a_double_2: "available", a_quad: "available", a_house: "available" }, "2026-07-19": { date: "2026-07-19", a_double_1: "closed", a_double_2: "available", a_quad: "closed", a_house: "closed" }, "2026-08-06": { date: "2026-08-06", a_double_1: "available", a_double_2: "available", a_quad: "closed", a_house: "closed" } },
   matrix_beta: { "2026-07-18": { date: "2026-07-18", b_couple: "available", b_family: "available" } }

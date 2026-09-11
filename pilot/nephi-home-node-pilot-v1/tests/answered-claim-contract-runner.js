@@ -40,12 +40,10 @@ const property = {
   rooms: [
     { id: "double", name: "雙人房", type: "雙人房", capacity: 2, enabled: true }
   ],
-  commonAnswers: {
-    parkingRule: "民宿旁有正式停車空間。",
-    bbqRule: "可在業者指定區域烤肉。"
-  },
-  faqs: [
-    { knowledgeKey: "pool", question: "有戲水池嗎？", answer: "有季節性戲水池。" }
+  propertyFacts: [
+    { canonicalId: "parking", category: "amenity", status: "provided", publicText: "民宿旁有正式停車空間。", aliases: ["車位"] },
+    { canonicalId: "bbq", category: "policy", status: "provided", publicText: "可在業者指定區域烤肉。", aliases: ["烤肉"] },
+    { canonicalId: "pool", category: "amenity", status: "provided", publicText: "有季節性戲水池。", aliases: ["戲水池"] }
   ],
   semanticCatalog: {
     aliases: {

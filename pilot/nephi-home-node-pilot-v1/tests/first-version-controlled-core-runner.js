@@ -19,7 +19,7 @@ const property = {
   timezone: "Asia/Taipei",
   rooms: [
     { id: "room_double", name: "301 雙人房", type: "雙人房", capacity: 2, enabled: true },
-    { id: "room_quad", name: "302 四人房", type: "四人房", capacity: 4, enabled: true },
+    { id: "room_quad", name: "302 四人房", type: "四人房", capacity: 4, enabled: true, aliases: ["302"] },
     { id: "bundle_all", name: "包棟", inventoryType: "bundle", capacity: 6, enabled: true, memberRoomIds: ["room_double", "room_quad"], entertainmentAmenities: [
       { key: "singing", provided: true, statusSource: "operator", source: "preset" },
       { key: "splash_pool", provided: true, statusSource: "operator", source: "preset" }
@@ -29,6 +29,7 @@ const property = {
     parkingRule: "提供停車位。",
     bbqRule: "可以依規定烤肉。"
   },
+  propertyFacts: [{ canonicalId: "parking", category: "amenity", status: "provided", publicText: "提供停車位。", aliases: ["車位"] }],
   faqs: [
     { knowledgeKey: "singing", question: "唱歌設備", answer: "提供唱歌設備。" },
     { knowledgeKey: "splash_pool", question: "戲水池", answer: "提供戲水池。" }
@@ -92,7 +93,7 @@ function withExplicitRelations(output, sourceEvents) {
     ...output,
     contextRelationCandidates: output.tasks.map((item) => ({
       candidateIndex: item.candidateIndex,
-      kind: "new_request",
+      kind: item.type === "unknown" && output.discourse.relation === "acknowledgement" ? "relation_uncertain" : "new_request",
       candidateRequestCycleRefs: [],
       evidenceRefs: [{ eventId: source.eventId, messageRef: source.messageRef || "", startOffset: 0, endOffset: source.messageText.length, quote: source.messageText }]
     }))

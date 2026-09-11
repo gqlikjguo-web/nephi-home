@@ -84,6 +84,7 @@ const semanticLedgerDiagnosticProvider = new TestOnlyOpenAiConversationPlanner({
       stay: stay(),
       tasks: [{
         taskId: "policy",
+        groundingId: "diagnostic-policy",
         candidateIndex: 0,
         type: "policy",
         sourceText: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE,
@@ -91,7 +92,7 @@ const semanticLedgerDiagnosticProvider = new TestOnlyOpenAiConversationPlanner({
         requestedOutputs: ["answer"],
         eligibilityEvidence: { kind: "none", sourceText: "" },
         dependsOnStayContext: false,
-        entity: { category: "policy", rawText: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE, canonicalCandidate: null, confidence: 1 },
+        entity: { category: "policy", rawText: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE, canonicalCandidate: "check_in", confidence: 1 },
         stayCandidate: null,
         confidence: 1,
         semanticCandidateIds: [SEMANTIC_LEDGER_DIAGNOSTIC_CANDIDATE_ID],
@@ -101,6 +102,11 @@ const semanticLedgerDiagnosticProvider = new TestOnlyOpenAiConversationPlanner({
         candidateIndex: 0,
         kind: "new_request",
         candidateHistoryTurnRefs: [],
+        evidenceRefs: [{ eventId: "semantic-ledger-event", messageRef: "semantic-ledger-message", startOffset: 0, endOffset: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE.length, quote: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE }]
+      }],
+      semanticGroundings: [{
+        groundingId: "diagnostic-policy", subject: { scope: "property_owned", catalogIdentity: "check_in" },
+        relation: "property_fact", requestedOutput: "answer", provenanceRelationCandidateIndexes: [0],
         evidenceRefs: [{ eventId: "semantic-ledger-event", messageRef: "semantic-ledger-message", startOffset: 0, endOffset: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE.length, quote: SEMANTIC_LEDGER_DIAGNOSTIC_MESSAGE }]
       }],
       semanticCandidates: [{
@@ -136,6 +142,7 @@ const rawUnderstandingDiagnosticProvider = new TestOnlyOpenAiConversationPlanner
       tasks: [{
         candidateIndex: 0,
         taskId: "raw-room-availability",
+        groundingId: "diagnostic-availability",
         type: "availability",
         sourceText: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE,
         detailIntent: "general",
@@ -153,6 +160,11 @@ const rawUnderstandingDiagnosticProvider = new TestOnlyOpenAiConversationPlanner
         candidateRequestCycleRefs: [],
         evidenceRefs: [{ eventId: "raw-understanding-event", messageRef: "raw-understanding-message", startOffset: 0, endOffset: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE.length, quote: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE }],
         ...RAW_UNDERSTANDING_SECRETS
+      }],
+      semanticGroundings: [{
+        groundingId: "diagnostic-availability", subject: { scope: "property_owned", catalogIdentity: "demo_a_room_1" },
+        relation: "inventory_availability", requestedOutput: "answer", provenanceRelationCandidateIndexes: [0],
+        evidenceRefs: [{ eventId: "raw-understanding-event", messageRef: "raw-understanding-message", startOffset: 0, endOffset: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE.length, quote: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE }]
       }],
       semanticCandidates: [{
         semanticKind: "catalog_subject",
@@ -208,6 +220,10 @@ async function integrityRequest(url, body, authorization = "") {
   assert.equal(runtimeConfig({ TEST_ONLY_ACCEPTANCE_ENABLED: "true" }).testOnlyAcceptanceEnabled, true, "runtime config must parse the deployed acceptance flag");
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-acceptance-api-"));
   const providers = createJsonProviders({ dataFile: path.join(temp, "store.json"), seedFile: path.resolve(__dirname, "../fixtures/seed.json"), now });
+  // Current property-catalog authority reads formal facts, not legacy commonAnswers.
+  providers.customerSettings.updatePropertyFacts(propertyId, [
+    { canonicalId: "parking", publicName: "停車", category: "amenity", status: "provided", publicText: "提供停車位", aliases: ["車位"] }
+  ]);
   const sessions = new Map([[sessionTokenHash(adminToken), { propertyId, username: "platform", userId: "platform-user" }]]);
   providers.persistence.getAdminSession = (tokenHash) => sessions.get(tokenHash) || null;
   providers.onboarding = { isPlatformAdmin: (_propertyId, username, userId) => username === "platform" && userId === "platform-user" };
@@ -333,7 +349,7 @@ async function integrityRequest(url, body, authorization = "") {
       currentMessages: [RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE],
       sourceEvents: [{ eventId: "raw-understanding-event", messageRef: "raw-understanding-message", messageText: RAW_UNDERSTANDING_DIAGNOSTIC_MESSAGE }],
       eventTimestamp: now().toISOString(),
-      catalog: { propertyId, rooms: [] },
+      catalog: require("../lib/conversation-engine-v2/property-catalog").buildPropertyCatalog(providers.customerSettings.getProperty(propertyId)),
       contextSnapshot: { scope: {}, cycles: [] }
     });
     assert.equal(Object.hasOwn(unscopedProviderResult[Symbol.for("junzan.plannerProviderDiagnostic")], "rawUnderstandingSnapshots"), false, "the raw snapshot must not exist outside an explicitly protected test-only acceptance request");

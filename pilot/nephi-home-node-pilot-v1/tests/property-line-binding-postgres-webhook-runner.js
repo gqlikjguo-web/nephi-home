@@ -78,7 +78,7 @@ async function waitFor(predicate, timeoutMs = 1500) {
     assert.equal(migration.files.includes("016_property_line_binding_webhook_status.sql"), false, "the removed duplicate migration number must not return");
     const setup = await openPostgres(connection);
     await setup.query("INSERT INTO properties(property_id,display_name) VALUES($1,$2),($3,$4)", ["pg_property_a", "Postgres Property A", "pg_property_b", "Postgres Property B"]);
-    await setup.query("INSERT INTO property_settings(property_id,settings) VALUES($1,$2::jsonb),($3,$4::jsonb)", ["pg_property_a", JSON.stringify({ commonAnswers: { parkingRule: "Postgres Parking A" } }), "pg_property_b", JSON.stringify({ commonAnswers: { parkingRule: "Postgres Parking B" } })]);
+    await setup.query("INSERT INTO property_settings(property_id,settings) VALUES($1,$2::jsonb),($3,$4::jsonb)", ["pg_property_a", JSON.stringify({ propertyFacts: [{ canonicalId: "parking", category: "amenity", status: "provided", publicText: "Postgres Parking A", aliases: ["parking"] }] }), "pg_property_b", JSON.stringify({ propertyFacts: [{ canonicalId: "parking", category: "amenity", status: "provided", publicText: "Postgres Parking B", aliases: ["parking"] }] })]);
     await setup.close();
 
     const providers = createProviders({ databaseUrl: "pglite:test", postgresConnection: connection });

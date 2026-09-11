@@ -162,6 +162,40 @@ test('correction cannot remove valid sibling; keep first partial',async()=>{cons
 test('trace failure cannot change reply admission',async()=>{const x=await run(providerOutput(),providerOutput(),{onDiagnostic:()=>{throw Error('trace failed')}});assert.equal(x.calls,1);assert.equal(x.result.validatedUnits.length,1)});
 const {executeNewCoreTurn}=require('../lib/new-core/application-service');
 const {formatNewCoreProductionTrace}=require('../lib/new-core/production-safe-trace');
+test('attempt trace projects bounded control metadata and excludes sensitive payloads', () => {
+  const secret = 'sk-privatecredential123456';
+  const input = {
+    stage: 'new_core_understanding_attempts', traceId: 'trace-attempts',
+    totalUnderstandingCalls: 2, finalAcceptedAttempt: 2,
+    apiKey: secret, understandingEvidence: { raw: secret },
+    attempts: [
+      { attemptNumber: 1, attemptType: 'initial', accepted: false, rejected: true,
+        triggerFailure: secret, validationResult: { raw: secret } },
+      { attemptNumber: 2, attemptType: 'correction', accepted: true, rejected: false,
+        rawResponse: secret }
+    ]
+  };
+  const trace = formatNewCoreProductionTrace(input);
+  assert.deepEqual(trace, {
+    scope: 'new-core-production', traceId: 'trace-attempts', stage: input.stage,
+    totalUnderstandingCalls: 2, finalAcceptedAttempt: 2,
+    attempts: [
+      { attemptNumber: 1, attemptType: 'initial', accepted: false, rejected: true },
+      { attemptNumber: 2, attemptType: 'correction', accepted: true, rejected: false }
+    ]
+  });
+  assert.deepEqual(formatNewCoreProductionTrace(trace), trace);
+  const malformed = formatNewCoreProductionTrace({ ...input,
+    totalUnderstandingCalls: secret, finalAcceptedAttempt: secret,
+    attempts: Array(5).fill({ attemptNumber: secret, attemptType: secret,
+      accepted: secret, rejected: secret, raw: secret })
+  });
+  assert.equal(malformed.totalUnderstandingCalls, null);
+  assert.equal(malformed.finalAcceptedAttempt, null);
+  assert.equal(malformed.attempts.length, 2);
+  assert.ok(!JSON.stringify(malformed).includes(secret));
+  assert.equal(malformed.attempts[0].accepted, false);
+});
 for(const scenario of [
  {id:'unknown',message:'有停車嗎？',purpose:'lodging_question',capability:'amenity',subject:{kind:'amenity',catalogIdentity:'parking'},action:'reply'},
  {id:'no_reply',message:'我們已經到家了',purpose:'conversational_statement',capability:null,subject:{kind:null,catalogIdentity:null},action:'no_reply'},

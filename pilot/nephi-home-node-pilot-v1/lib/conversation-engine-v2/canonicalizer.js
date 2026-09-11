@@ -29,7 +29,8 @@ function normalizedTaskStay(task) {
     dateExpression: {
       rawText: stay.dateExpression && stay.dateExpression.rawText || "",
       kind: stay.dateExpression && stay.dateExpression.kind || "none",
-      anchor: stay.dateExpression && stay.dateExpression.anchor || "none"
+      anchor: stay.dateExpression && stay.dateExpression.anchor || "none",
+      ...(stay.dateExpression && Object.hasOwn(stay.dateExpression,"relativeSemantics") ? {relativeSemantics:stay.dateExpression.relativeSemantics} : {})
     },
     checkInCandidate: stay.checkInCandidate || null,
     checkOutCandidate: stay.checkOutCandidate || null,

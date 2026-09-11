@@ -1,5 +1,7 @@
 "use strict";
 
+const { samePricedAnswer, issueRenderObligations } = require("./render-obligation");
+const { composeSection } = require("./controlled-composer");
 const { coverageByStatus, assertTaskCoverage } = require("./task-coverage");
 const { claimTypeForSection } = require("./claim-validator");
 
@@ -28,9 +30,10 @@ function collectAllowedFacts(value, key = "") {
   return [];
 }
 
-function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalRequests = [], reviewActions = [], publicAvailabilityUrl = "", turnId = null }) {
+
+function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalRequests = [], reviewActions = [], publicAvailabilityUrl = "", turnId = null, executionOutcomes = [], requestEvidence = [] }) {
   const canonicalByTaskId = new Map((canonicalRequests || []).map((request) => [request.taskId, request]));
-  const rawSections = (taskResults || []).map((result, inputOrder) => {
+  const taskOutcomes = (taskResults || []).map((result, inputOrder) => {
     const canonicalRequest = canonicalByTaskId.get(result.taskId) || null;
     const type = canonicalRequest ? canonicalRequest.capability : result.type;
     const section = {
@@ -47,6 +50,8 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
       inputOrder,
       facts: result.facts || {},
       ...(result.requestedQuantity !== undefined ? {requestedQuantity:result.requestedQuantity,distinctRequirement:result.distinctRequirement,matchedUniqueIdentities:result.matchedUniqueIdentities,matchedCount:result.matchedCount,unresolvedRemainder:result.unresolvedRemainder,fulfillmentStatus:result.fulfillmentStatus} : {}),
+      outcomeStatus: result.outcomeStatus || null, readinessStatus: result.readinessStatus || null, outcomeReason: result.outcomeReason || null, executionProvenance: result.executionProvenance || null,
+      operatorActionClass: result.operatorActionClass || null, riskClass: result.riskClass || null,
       question: result.question || "",
       missingInputs: result.missingInputs || [],
       needsReview: Boolean(result.review)
@@ -59,10 +64,13 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
     }
     return section;
   });
+  const renderObligations = issueRenderObligations({propertyId, turnId, taskResults: taskOutcomes, executionOutcomes, requestEvidence});
   const sections = [];
-  for (const section of rawSections) {
+  for (const outcome of taskOutcomes) {
+    const section = { ...outcome, coveredTaskIds: [outcome.taskId] };
     const canonicalRequest = canonicalByTaskId.get(section.taskId);
-    const existing = canonicalRequest
+    const equivalentPrice = sections.find(candidate => samePricedAnswer(candidate, section));
+    const existing = equivalentPrice || (canonicalRequest
       && canonicalRequest.resolverId === "property_catalog"
       && canonicalRequest.riskLevel === "low"
       && canonicalRequest.responseMode === "answer"
@@ -82,8 +90,12 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
           && candidate.claimType === "FACTUAL_ANSWER"
           && candidate.facts === section.facts;
       })
-      : null;
-    if (existing) existing.coveredTaskIds.push(section.taskId);
+      : null);
+    if (existing) {
+      if (!existing.factOrigins) existing.factOrigins = [{ taskId: existing.taskId, facts: existing.facts }];
+      existing.factOrigins.push({ taskId: section.taskId, facts: section.facts });
+      existing.coveredTaskIds.push(section.taskId);
+    }
     else sections.push(section);
   }
   const expected = inputTaskIds || sections.flatMap((section) => section.coveredTaskIds);
@@ -97,7 +109,7 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
   }
   sections.sort((a, b) => (a.inputOrder ?? Number.MAX_SAFE_INTEGER) - (b.inputOrder ?? Number.MAX_SAFE_INTEGER));
   const finalCoverage = coverageByStatus(sections);
-  return { schemaVersion: 1, propertyId, ...(turnId ? { turnId } : {}), sections, coverage: finalCoverage, coverageValidation: assertTaskCoverage(expected, finalCoverage), reviewActions, allowedFacts: [...new Set(sections.flatMap((section) => section.allowedFacts || []))], forbiddenClaims: ["已替你保留", "已完成訂房", "一定有房", "免費加人", "可以折扣", "一定退款", "業者已同意", "真人已看過", "已通知業者"], maxLength: 1200 };
+  return { renderObligations, schemaVersion: 1, propertyId, ...(turnId ? { turnId } : {}), sections, coverage: finalCoverage, coverageValidation: assertTaskCoverage(expected, finalCoverage), reviewActions, allowedFacts: [...new Set(sections.flatMap((section) => section.allowedFacts || []))], forbiddenClaims: ["已替你保留", "已完成訂房", "一定有房", "免費加人", "可以折扣", "一定退款", "業者已同意", "真人已看過", "已通知業者"], maxLength: 1200 };
 }
 
 module.exports = { PUBLIC_AVAILABILITY_REFERENCE_TYPES, TASK_PRIORITY, taskPriority, buildResponsePlan };

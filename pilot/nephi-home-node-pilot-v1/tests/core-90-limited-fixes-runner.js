@@ -38,6 +38,7 @@ function property(propertyId, label) {
     propertyFacts: [
       {
         canonicalId: "pool",
+        aliases: ["戲水池", "游泳池", "pool"],
         category: "policy",
         status: "provided",
         publicText: `${label} pool fact.`

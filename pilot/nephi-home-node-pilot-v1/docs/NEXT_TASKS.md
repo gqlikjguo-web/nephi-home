@@ -1,5 +1,11 @@
 # JunZan AI 後續工作狀態
 
+## 2026-09-10 existing maintainability debt
+
+- `executeCanonicalizerInputItem` in `lib/new-core/canonical-execution-adapter.js` is 199 lines in both `29ae612` and `55e3d3a`; the inspector's 180-line limit reports `GOD_FUNCTION_FORBIDDEN`.
+- This remains a failing maintainability/deterministic acceptance check, not a PASS. It is absent from the protected manifest and is not invoked by the repository CI/deploy release chain reviewed for this recovery.
+- The user explicitly classified this existing failure as a non-blocking release debt for this recovery. Preserve C08 and the gate unchanged; this classification does not authorize a refactor or relax the gate.
+
 ## 目前狀態
 
 - 本次 Codex 執行完整性規則制定工作已完成。

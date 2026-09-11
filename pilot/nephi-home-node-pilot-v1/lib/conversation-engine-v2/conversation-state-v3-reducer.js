@@ -17,6 +17,8 @@ const {
   isStateV3CanonicalTaskBindingsFor
 } = require("../new-core/state-v3-lifecycle-adapter");
 
+const { resolverQuantityFields } = require("../conversation-contracts/resolver-quantity");
+
 const PENDING_STATUSES = new Set(["pending", "needs_clarification"]);
 const CONTEXT_EXCLUDED_STATUSES = new Set(["expired", "cancelled"]);
 const LODGING_PLANNER_TYPES = new Set([
@@ -115,6 +117,7 @@ function buildContextSnapshotV3(state, scope = {}) {
         requestKind: task.taskType,
         status: task.status,
         confirmedInputs: {
+          ...resolverQuantityFields(task),
           stay: {
             checkIn: task.checkIn,
             checkOut: task.checkOut,
@@ -577,17 +580,19 @@ function contractTaskType(capability) {
   return capability;
 }
 
-function executionConditionsV3(state, item) {
+function executionConditionsV3(state, item, requestCycleId = item.requestCycleId) {
   const request = item.canonicalRequest;
   const temporal = request.temporalState || {};
   const prior = (state && state.tasks || []).find(
-    (task) => task.taskId === item.requestCycleId
+    (task) => task.taskId === requestCycleId
   );
   const currentGuests = item.stateInput
     && item.stateInput.confirmedFields
     && item.stateInput.confirmedFields.guests;
   const product = request.lodgingProduct;
   return {
+    ...resolverQuantityFields(request.quantityCandidate || prior || {}),
+    ...(request.quantityCandidate ? {quantityEvidenceRefs:request.quantityCandidate.evidenceRefs} : prior?.quantityEvidenceRefs ? {quantityEvidenceRefs:prior.quantityEvidenceRefs} : {}),
     stay: {
       checkIn: temporal.checkIn || prior && prior.checkIn || null,
       checkOut: temporal.checkOut || prior && prior.checkOut || null,
@@ -674,7 +679,7 @@ function applyLifecycleOperations(byTaskId, lifecycleOperations, now) {
     }
     const patch = lifecycleOperation.field === "guestCount"
       ? { guestCount: lifecycleOperation.operation === "CLEAR" ? null : lifecycleOperation.value }
-      : lifecycleOperation.field === "lodgingProduct"
+      : ["lodgingProduct", "quantity"].includes(lifecycleOperation.field)
         ? lifecycleOperation.value
         : null;
     if (!patch) throw new TypeError("state_v3_lifecycle_operation_invalid");
@@ -703,6 +708,8 @@ function applyTaskCreations(byTaskId, taskCreations, now, revision) {
     const taskType = contractTaskType(creation.capability);
     const candidate = {
       taskType,
+      ...resolverQuantityFields(creation),
+      ...(creation.quantityEvidenceRefs ? {quantityEvidenceRefs:creation.quantityEvidenceRefs} : {}),
       productType: creation.productType,
       productId: creation.productId,
       roomTypeId: creation.roomTypeId,
@@ -818,7 +825,7 @@ function reduceConversationStateV3({
         : formal.readiness.status
     };
     const canonicalTaskBinding = canonicalTaskBindingByUnitId.get(item.unitId);
-    if (canonicalTaskBinding
+    if (canonicalTaskBinding && canonicalTaskBinding.action !== "START"
       && !currentTask(byTaskId.get(canonicalTaskBinding.requestCycleId), now)) {
       throw new TypeError("state_v3_canonical_target_unavailable");
     }
@@ -826,6 +833,9 @@ function reduceConversationStateV3({
       || item.requestCycleId
       || request.taskId;
     const prior = byTaskId.get(stateTaskId);
+    if (canonicalTaskBinding?.action === "START" && prior) {
+      throw new TypeError("state_v3_start_identity_collision");
+    }
     byTaskId.set(stateTaskId, createConversationTaskV3({
       taskId: stateTaskId,
       taskType,
@@ -833,6 +843,8 @@ function reduceConversationStateV3({
       checkIn: stay.checkIn || null,
       checkOut: stay.checkOut || null,
       guestCount: Number.isInteger(stay.guests) ? stay.guests : null,
+      ...resolverQuantityFields(formal.resolverTask || request.quantityCandidate || {}),
+      ...(formal.evidence?.quantityEvidenceRefs ? {quantityEvidenceRefs:formal.evidence.quantityEvidenceRefs} : request.quantityCandidate ? {quantityEvidenceRefs:request.quantityCandidate.evidenceRefs} : {}),
       searchFrom: stay.searchRange && stay.searchRange.from || null,
       searchTo: stay.searchRange && stay.searchRange.to || null,
       entityId: request.canonicalEntity.canonicalId,

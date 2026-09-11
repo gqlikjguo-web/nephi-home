@@ -14,7 +14,7 @@ const secret = "phase6-channel-secret";
 const propertyId = "demo_homestay_a";
 const channelId = "line";
 const lineUserId = "u";
-const property = { propertyId, displayName: "Test", timezone: "Asia/Taipei", currency: "TWD", rooms: [], commonAnswers: { parkingRule: "Parking is available." }, propertyFacts: [{ canonicalId: "bbq", category: "policy", status: "provided", publicText: "A separate fee may apply.", aliases: ["barbecue"] }], semanticCatalog: { aliases: { parking: ["parking"], bbq: ["barbecue"] }, amenities: [] } };
+const property = { propertyId, displayName: "Test", timezone: "Asia/Taipei", currency: "TWD", rooms: [], propertyFacts: [{ canonicalId: "parking", category: "amenity", status: "provided", publicText: "Parking is available.", aliases: ["parking"] }, { canonicalId: "bbq", category: "policy", status: "provided", publicText: "A separate fee may apply.", aliases: ["barbecue"] }], semanticCatalog: { aliases: { parking: ["parking"], bbq: ["barbecue"] }, amenities: [] } };
 
 function plannerFor(kind) {
   return { classify: async ({ sourceEvents }) => {
@@ -25,7 +25,7 @@ function plannerFor(kind) {
     if (kind === "handoff") throw new Error("planner failure");
     if (kind === "no_reply") {
       const task = { taskId: "ack", candidateIndex: 0, type: "unknown", sourceText: "acknowledgement", detailIntent: "general", requestedOutputs: ["answer"], eligibilityEvidence: { kind: "none", sourceText: "" }, dependsOnStayContext: false, stayCandidate: null, entity: { category: "other", rawText: "acknowledgement", canonicalCandidate: null, confidence: 0.99 }, confidence: 0.99 };
-      return finalize({ ...base, discourse: { relation: "acknowledgement", confidence: 0.99 }, shouldIgnore: true, tasks: [task], contextRelationCandidates: [relation(0)] });
+      return finalize({ ...base, discourse: { relation: "acknowledgement", confidence: 0.99 }, shouldIgnore: true, tasks: [task], contextRelationCandidates: [{ ...relation(0), kind: "relation_uncertain" }] });
     }
     if (kind === "clarification") {
       const task = { taskId: "availability", candidateIndex: 0, type: "availability", sourceText: "availability", requestedOutputs: ["availability"], dependsOnStayContext: true, stayCandidate: base.stay, entity: { category: "room", rawText: "", canonicalCandidate: null, confidence: 0.99 }, confidence: 0.99 };

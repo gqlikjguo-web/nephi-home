@@ -99,7 +99,7 @@ const property = {
   displayName: "Final Decision Lodge",
   timezone: "Asia/Taipei",
   rooms: [],
-  commonAnswers: { parkingRule: "提供停車位。" },
+  propertyFacts: [{ canonicalId: "parking", category: "amenity", status: "provided", publicText: "提供停車位。", aliases: ["停車"] }],
   semanticCatalog: { aliases: { parking: ["停車"] }, amenities: [] }
 };
 

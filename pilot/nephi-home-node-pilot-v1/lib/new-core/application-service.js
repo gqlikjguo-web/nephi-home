@@ -4,13 +4,12 @@ const { CAPABILITY_REGISTRY } = require("../conversation-engine-v2/capability-re
 const { buildPropertyCatalog } = require("../conversation-engine-v2/property-catalog");
 const { buildContextSnapshotV3, executionConditionsV3, reduceConversationStateV3 } = require("../conversation-engine-v2/conversation-state-v3-reducer");
 const { buildCanonicalFormalRequest, buildCanonicalQueryPlan, resultForNotReady } = require("../conversation-engine-v2/formal-request");
-const { executeCanonicalQueryPlans } = require("../conversation-engine-v2/capability-executor");
+const { executeCanonicalQueryPlans, applyCanonicalReplyRules } = require("../conversation-engine-v2/capability-executor");
 const { buildResponsePlan } = require("../conversation-engine-v2/response-planner");
 const { composeControlledReply } = require("../conversation-engine-v2/controlled-composer");
 const { validateClaims, unknownProvenanceFor, isValidatedFinalResponse } = require("../conversation-engine-v2/claim-validator");
 const { buildFinalDecision, executionReplyDisposition } = require("../conversation-engine-v2/final-decision");
 const { buildFinalResponse, assembleFinalResponse } = require("../conversation-engine-v2/final-response-renderer");
-const { applyControlledReplyRules } = require("../custom-reply-rules");
 const {
   buildC01PublicCatalog,
   buildC01TrustedCanonicalizerCatalog,
@@ -93,6 +92,7 @@ function turnStateSnapshot(state, scope, now) {
       subject: { kind: subjectKind, catalogIdentity: topic.canonicalId || inventory.entityId || null },
       missingFields: [...new Set(task && task.missingFields || [])],
       confirmedValues: {
+        ...require("../conversation-contracts/resolver-quantity").resolverQuantityFields(task || {}),
         checkIn: cycle.confirmedInputs.stay.checkIn,
         checkOut: cycle.confirmedInputs.stay.checkOut,
         guestCount: cycle.confirmedInputs.stay.guests,
@@ -128,6 +128,9 @@ function bindRecentConversationToCycles(history, state, referenceableCycles) {
 
 function taskResultForExecution(execution, evidence) {
   const base = { taskId: execution.taskId, type: execution.type, facts: execution.facts || {},
+    outcomeStatus: execution.outcome, readinessStatus: execution.readinessStatus || null, outcomeReason: execution.reason || null,
+    executionProvenance: require("../conversation-engine-v2/capability-executor").canonicalExecutionProvenanceFor(execution),
+    operatorActionClass: execution.operatorActionClass || null, riskClass: execution.riskClass || null,
     ...(execution.requestedQuantity !== undefined ? {requestedQuantity:execution.requestedQuantity,distinctRequirement:execution.distinctRequirement,matchedUniqueIdentities:execution.matchedUniqueIdentities,matchedCount:execution.matchedCount,unresolvedRemainder:execution.unresolvedRemainder,fulfillmentStatus:execution.fulfillmentStatus} : {}) };
   if (evidence && executionReplyDisposition(execution, evidence) === "reply_unknown") {
     return { ...base, status: "answered", claimType: "EPISTEMIC_UNKNOWN",
@@ -173,7 +176,7 @@ function finalizeTurnResponse({ scope, turnId, property, terminalContext, reques
       ? replacements.get(task.taskId) : task;
   });
   for (const [id, task] of replacements) if (!tasks.some(item => item.taskId === id)) tasks.push(task);
-  let responsePlan = buildResponsePlan({ propertyId: scope.propertyId, turnId, taskResults: tasks, inputTaskIds: tasks.map(item => item.taskId), canonicalRequests: canonicalItems.map(item => item.canonicalRequest), reviewActions: [], publicAvailabilityUrl });
+  let responsePlan = buildResponsePlan({ propertyId: scope.propertyId, turnId, taskResults: tasks, inputTaskIds: tasks.map(item => item.taskId), canonicalRequests: canonicalItems.map(item => item.canonicalRequest), reviewActions: [], publicAvailabilityUrl, executionOutcomes, requestEvidence });
   responsePlan.maxLength = maxLength;
   let rebuildCount = 0, initialClaimValidation = null, claimValidation = null, finalDecision, finalResponse;
   // Exactly one deterministic rebuild; no model or business execution occurs here.
@@ -215,7 +218,7 @@ function finalizeTurnResponse({ scope, turnId, property, terminalContext, reques
         }
       }
     }
-    const safe = global ? [] : responsePlan.sections.filter(section => !(section.coveredTaskIds || [section.taskId]).some(id => failed.has(id)));
+    const safe = global ? [] : tasks.filter(task => !failed.has(task.taskId));
     const rejectedIds = global ? ["turn-failure"] : [...failed];
     const replacementSections = rejectedIds.filter(allowed).map(id => {
       // Dependencies may be invalidated by another rejected scope. Global validation records
@@ -226,7 +229,8 @@ function finalizeTurnResponse({ scope, turnId, property, terminalContext, reques
       const failure = context.fromClaimValidation(claimValidation, id);
       return { ...statusTask(failure), responseMode: "answer", coveredTaskIds: [id], allowedFacts: [] };
     }).filter(Boolean);
-    responsePlan = { ...responsePlan, sections: [...safe, ...replacementSections] };
+    responsePlan = buildResponsePlan({propertyId:scope.propertyId,turnId,taskResults:[...safe,...replacementSections],inputTaskIds:[...safe,...replacementSections].map(task=>task.taskId),canonicalRequests:canonicalItems.map(item=>item.canonicalRequest),executionOutcomes,publicAvailabilityUrl});
+    responsePlan.maxLength = maxLength;
   }
   return { finalDecision, finalResponse, responsePlan, claimValidation, initialClaimValidation, rebuildCount, terminalFailures: context.failures };
 }
@@ -310,8 +314,8 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   const adapted = adaptLifecycleDecisionsToStateV3({ decisions: successful.map((item) => item.lifecycleDecision), aggregationResult: aggregation.value, previous: state });
   if (!adapted.ok) { const error = new Error(adapted.code); error.code = adapted.code; throw error; }
   const formalRequests = canonicalItems.map((item) => {
-    const outcome = successful.find((candidate) => candidate.unit.unitId === item.unitId);
-    return buildCanonicalFormalRequest({ property, canonicalRequest: item.canonicalRequest, requestCycleId: outcome.lifecycleDecision.targetRequestCycleId || outcome.unit.unitId, confirmedInputs: executionConditionsV3(state, item) });
+    const binding = adapted.value.canonicalTaskBindings.find((candidate) => candidate.unitId === item.unitId);
+    return buildCanonicalFormalRequest({ property, canonicalRequest: item.canonicalRequest, requestCycleId: binding.requestCycleId, confirmedInputs: executionConditionsV3(state, item, binding.requestCycleId) });
   });
   const queryPlans = formalRequests.map(buildCanonicalQueryPlan).filter(Boolean);
   const requestEvidence = outcomes.map(item => {
@@ -343,15 +347,30 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   const rawExecutionOutcomes = [
     ...routedClarifications,
     ...formalRequests.filter((item) => item.readiness.status !== "ready").map(resultForNotReady),
-    ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: resolver.availability, availableDatesResolver: resolver.availableDates, priceOverrides: resolver.priceOverrides(), datePriceClassifications: resolver.dateClassifications(), now })
+    ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: resolver.availability, availableDatesResolver: resolver.availableDates, priceOverrides: resolver.priceOverrides, datePriceClassifications: resolver.dateClassifications, now })
   ];
   rawExecutionOutcomes.push(
     ...aggregation.value.unitOutcomes
       .filter(item => item.routingDecision.disposition === "HANDOFF" && !failedUnits.some(failure => failure.unitId === item.unitId) && !rawExecutionOutcomes.some(outcome => outcome.taskId === item.unitId))
-      .map(item => ({ taskId: item.unitId, type: "human_help", outcome: "unknown", reason: "human_help" }))
+      .map(item => ({ taskId: item.unitId, type: "human_help", outcome: "unknown", reason: "human_help", operatorActionClass: item.routingDecision.operatorActionClass, riskClass: item.routingDecision.riskClass }))
   );
   for (const execution of rawExecutionOutcomes) if (["technical_error", "invalid_query_plan", "property_data_missing"].includes(execution.outcome)) terminalContext.fromExecution(execution);
-  const executionOutcomes = applyControlledReplyRules({ rules: resolver.customReplies(), property, canonicalItems, executionOutcomes: rawExecutionOutcomes, now });
+  const ruleTaskIds = new Set(canonicalItems.map(item => item.canonicalRequest.taskId));
+  let rulesLoaded = false, rules, ruleFailure;
+  const executionOutcomes = rawExecutionOutcomes.map(outcome => {
+    if (!ruleTaskIds.has(outcome.taskId)) return outcome;
+    try {
+      if (!rulesLoaded) {
+        rulesLoaded = true;
+        try { rules = resolver.customReplies(); } catch (error) { ruleFailure = error; }
+      }
+      if (ruleFailure) throw ruleFailure;
+      return applyCanonicalReplyRules({ rules, property, canonicalItems, executionOutcomes: [outcome], now })[0];
+    } catch (error) {
+      terminalContext.fromException(error, outcome.taskId, "CUSTOM_REPLY_RULES");
+      return { ...outcome, outcome: "technical_error", reason: "custom_reply_dependency_failure", facts: {} };
+    }
+  });
   const taskResults = executionOutcomes.map(item => taskResultForExecution(item, requestEvidence.find(evidence => evidence.taskId === item.taskId)));
   const publicAvailabilityUrl = publicAvailabilityUrlForProperty(publicBaseUrl, property);
   const terminal = finalizeTurnResponse({ scope, turnId: input.turnId, property, terminalContext, requestEvidence, executionOutcomes, taskResults, canonicalItems, publicAvailabilityUrl, responsePrefix });

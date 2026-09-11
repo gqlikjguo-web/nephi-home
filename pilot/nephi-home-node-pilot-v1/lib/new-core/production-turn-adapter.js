@@ -211,6 +211,23 @@ function requestCycleRefsForResult(result) {
   ]).slice(0, HISTORY_LIMIT);
 }
 
+function eventRequestCycleRefsForResult(result) {
+  const allowed = new Set(requestCycleRefsForResult(result));
+  const artifacts = result && result.artifacts || {};
+  const adapted = artifacts.adapted || {};
+  const bindings = [
+    ...(adapted.canonicalTaskBindings || []).map(item => ({unitId:item.unitId,cycleId:item.requestCycleId})),
+    ...(adapted.taskCreations || []).map(item => ({unitId:item.unitId,cycleId:item.taskIdCandidate})),
+    ...(adapted.lifecycleOperations || []).map(item => ({unitId:item.unitId,cycleId:item.targetTaskId}))
+  ];
+  return Object.fromEntries((artifacts.c01?.sourceEvents || []).map(event => {
+    const units = new Set((artifacts.successful || []).filter(item =>
+      (item.unit?.evidenceRefs || []).some(ref => ref.eventId === event.eventId)).map(item => item.unit.unitId));
+    return [event.eventId,uniqueText(bindings.filter(item => units.has(item.unitId)).map(item => item.cycleId)).filter(id => allowed.has(id))];
+  }));
+}
+
+
 function createNewCoreProductionTurnAdapter({
   persistence,
   customerSettings,
@@ -304,7 +321,8 @@ function createNewCoreProductionTurnAdapter({
           ...result,
           traceId,
           taskResults: coordinatorTaskResults(result),
-          requestCycleRefs: requestCycleRefsForResult(result)
+          requestCycleRefs: requestCycleRefsForResult(result),
+          eventRequestCycleRefs: eventRequestCycleRefsForResult(result)
         };
       } catch (error) {
         emitDiagnostic(onDiagnostic, { traceId, stage: "new_core_failure",

@@ -54,6 +54,7 @@ const CAPABILITIES = new Set([
   "price",
   "total_price",
   "capacity",
+  "lodging_product_capacity",
   "property_fact",
   "amenity",
   "amenity_list",
@@ -96,7 +97,8 @@ const TEMPORAL_KINDS = new Set([
   "partial",
   "unknown"
 ]);
-const SLOT_NAMES = new Set(["guest_count", "product", "transport", "other_supported"]);
+const { SLOT_POSITIONS } = require("./semantic-position");
+const SLOT_NAMES = new Set(Object.keys(SLOT_POSITIONS));
 const SLOT_OPERATIONS = new Set(["SET", "CLEAR"]);
 
 function isPlainObject(value) {
@@ -131,10 +133,14 @@ function fullIsoDate(value) {
 function validateTemporalCandidate(value, errors) {
   if (value === null) return false;
   let unknownWireField = false;
-  if (!exactKeys(value, TEMPORAL_CANDIDATE_FIELDS)) {
+  const fields = value && Object.hasOwn(value,"relativeSemantics") ? [...TEMPORAL_CANDIDATE_FIELDS,"relativeSemantics"] : TEMPORAL_CANDIDATE_FIELDS;
+  if (!exactKeys(value, fields)) {
     errors.push("temporalCandidate.keys");
-    unknownWireField ||= hasUnknownFields(value, TEMPORAL_CANDIDATE_FIELDS);
+    unknownWireField ||= hasUnknownFields(value, fields);
   }
+  if (value && Object.hasOwn(value,"relativeSemantics") && (value.kind !== "relative_date"
+    || value.checkInCandidate !== null || value.checkOutCandidate !== null
+    || !require("../../conversation-contracts/relative-temporal-semantics").isRelativeTemporalSemantics(value.relativeSemantics))) errors.push("temporalCandidate.relativeSemantics");
   if (!boundedText(value && value.rawText, 500)) errors.push("temporalCandidate.rawText");
   if (!TEMPORAL_KINDS.has(value && value.kind)) errors.push("temporalCandidate.kind");
   if (!nullableBoundedText(value && value.checkInCandidate, 80)) errors.push("temporalCandidate.checkInCandidate");
