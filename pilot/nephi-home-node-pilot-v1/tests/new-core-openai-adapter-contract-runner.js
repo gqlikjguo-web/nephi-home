@@ -87,6 +87,7 @@ function unit(overrides = {}) {
     contextLinkCandidateId: "link-a",
     safetyCandidate: null,
     slotCandidates: [],
+    quantityCandidate: null,
     confidenceBand: "high",
     ...overrides
   };
@@ -458,7 +459,14 @@ async function main() {
     ["schemaVersion", "turnId", "units"]
   );
   const unitBranches = body.text.format.schema.properties.understandingOutput.properties.units.items.anyOf;
-  assert.ok(unitBranches.length <= CAPABILITIES.size);
+  // One capability can have disjoint quantity-eligible/ineligible subject branches.
+  for (const capability of new Set(unitBranches.flatMap(branch => branch.properties.capability.enum))) {
+    assert.ok(CAPABILITIES.has(capability));
+    const branches = unitBranches.filter(branch => branch.properties.capability.enum.includes(capability));
+    assert.ok(branches.length >= 1 && branches.length <= 2);
+    const kinds = branches.flatMap(branch => branch.properties.subject.anyOf.flatMap(subject => subject.properties.kind.enum));
+    assert.equal(new Set(kinds).size, kinds.length, "subject partitions must not overlap");
+  }
   for (const requiredCapability of ["availability"]) assert.ok(
     unitBranches.some((branch) => branch.properties.capability.enum.includes(requiredCapability))
   );
@@ -468,7 +476,7 @@ async function main() {
   for (const capability of ["price", "total_price"]) {
     const priceBranch = unitBranches.find((branch) => branch.properties.capability.enum.includes(capability));
     assert.ok(priceBranch, `${capability} must be derived from the shared capability policy`);
-    assert.ok(priceBranch.properties.subject.anyOf.some((subjectBranch) =>
+    assert.ok(unitBranches.filter(branch => branch.properties.capability.enum.includes(capability)).flatMap(branch => branch.properties.subject.anyOf).some((subjectBranch) =>
       subjectBranch.properties.kind.enum.includes("property")
         && subjectBranch.properties.catalogIdentity.enum.length === 1
         && subjectBranch.properties.catalogIdentity.enum[0] === null
@@ -476,14 +484,14 @@ async function main() {
     assert.match(priceBranch.properties.capability.description, /property subject.*no catalog identity/i);
   }
   const operatorBranch = unitBranches.find((branch) => branch.properties.capability.enum.includes("booking_operator_request"));
-  assert.ok(operatorBranch.properties.subject.anyOf.some((subjectBranch) =>
+  assert.ok(unitBranches.filter(branch => branch.properties.capability.enum.includes("booking_operator_request")).flatMap(branch => branch.properties.subject.anyOf).some((subjectBranch) =>
     subjectBranch.properties.kind.enum.includes("other_verified")
       && subjectBranch.properties.catalogIdentity.enum.length === 1
       && subjectBranch.properties.catalogIdentity.enum[0] === null
   ), "booking operator requests must expose a catalog-independent generic subject");
   for (const branch of unitBranches) assert.deepEqual(
     branch.required.sort(),
-    ["capability", "confidenceBand", "contextLinkCandidateId", "evidenceRefs", "purpose", "safetyCandidate", "slotCandidates", "stayDependent", "subject", "temporalCandidate", "unitId"].sort()
+    ["capability", "confidenceBand", "contextLinkCandidateId", "evidenceRefs", "purpose", "quantityCandidate", "safetyCandidate", "slotCandidates", "stayDependent", "subject", "temporalCandidate", "unitId"].sort()
   );
   assert.deepEqual(
     body.text.format.schema.properties.contextLinkCandidates.items.required.sort(),

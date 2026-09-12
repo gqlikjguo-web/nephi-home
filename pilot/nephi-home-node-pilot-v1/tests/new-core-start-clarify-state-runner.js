@@ -34,7 +34,7 @@ const {
 
 const NOW = "2026-08-29T08:00:00.000Z";
 const FUTURE = "2026-08-30T08:00:00.000Z";
-const MESSAGE = "想了解包棟價格";
+const MESSAGE = "想了解包棟房況";
 const scope = {
   propertyId: "property-start-clarify",
   channel: "line-start-clarify",
@@ -82,7 +82,7 @@ const input = buildUnderstandingTurnInput({
   publicCatalog: {
     propertyId: scope.propertyId,
     timezone: "Asia/Taipei",
-    capabilityCatalog: ["price"],
+    capabilityCatalog: ["availability"],
     publicSubjectCatalog: [
       { catalogIdentity: "room-a", kind: "room", propertyId: scope.propertyId, publicName: "Room A" },
       { catalogIdentity: "bundle-all", kind: "bundle", propertyId: scope.propertyId, publicName: "包棟" }
@@ -95,7 +95,7 @@ const rawUnit = {
   unitId: "unit-start-clarify",
   evidenceRefs: [evidence()],
   purpose: "lodging_question",
-  capability: "price",
+  capability: "availability",
   subject: { kind: "bundle", catalogIdentity: "bundle-all" },
   stayDependent: true,
   temporalCandidate: null,
@@ -193,7 +193,7 @@ const next = reduceConversationStateV3({
 assert.equal(next.tasks.length, 1, "START + CLARIFY must persist one pending task");
 assert.deepEqual(next.tasks[0], {
   taskId: "unit-start-clarify",
-  taskType: "pricing",
+  taskType: "availability",
   productType: "bundle",
   productId: "bundle-all",
   roomTypeId: null,
@@ -246,54 +246,12 @@ const duplicateSlotSemantic = validateSemanticUnit({
   publicCatalogIdentitySet: buildPublicCatalogIdentitySet(input),
   capabilityRegistryProjection: projectCapabilityRegistry(CAPABILITY_REGISTRY)
 });
-assert.equal(duplicateSlotSemantic.ok, true, duplicateSlotSemantic.code);
-const duplicateSlotContext = validateContextLink({
-  unit: duplicateSlotSemantic.value,
-  linkCandidate: {
-    contextLinkCandidateId: duplicateSlotRawUnit.contextLinkCandidateId,
-    unitId: duplicateSlotRawUnit.unitId,
-    relationKind: "NEW_REQUEST",
-    currentSourceEvidenceRefs: [evidence()],
-    referencedHistoryEventRefs: []
-  },
-  understandingTurnInput: input,
-  validatedEvidenceRefs: normalizedEvidence.value,
-  now: NOW
-});
-assert.equal(duplicateSlotContext.ok, true, duplicateSlotContext.code);
-const duplicateSlotLifecycle = createLifecycleDecision({
-  lifecycleDecisionId: "lifecycle-start-clarify-duplicate-product",
-  unit: duplicateSlotSemantic.value,
-  validatedContextLink: duplicateSlotContext.value
-});
-assert.equal(duplicateSlotLifecycle.ok, true, duplicateSlotLifecycle.code);
-const duplicateSlotReadiness = createUnitReadiness({
-  unit: duplicateSlotSemantic.value,
-  lifecycleDecision: duplicateSlotLifecycle.value,
-  routingRegistry
-});
-assert.equal(duplicateSlotReadiness.ok, true, duplicateSlotReadiness.code);
-const duplicateSlotRoute = createUnitRoutingDecision({
-  unit: duplicateSlotSemantic.value,
-  lifecycleDecision: duplicateSlotLifecycle.value,
-  routingRegistry,
-  readiness: duplicateSlotReadiness.value
-});
-assert.equal(duplicateSlotRoute.ok, true, duplicateSlotRoute.code);
-const duplicateSlotAggregation = aggregateUnitOutcomes({
-  turnId: input.turnId,
-  validatedUnits: [duplicateSlotSemantic.value],
-  lifecycleDecisions: [duplicateSlotLifecycle.value],
-  routingDecisions: [duplicateSlotRoute.value],
-  canonicalItems: []
-});
-assert.equal(duplicateSlotAggregation.ok, true, duplicateSlotAggregation.code);
-const duplicateSlotAdapted = adaptLifecycleDecisionsToStateV3({
-  decisions: [duplicateSlotLifecycle.value],
-  aggregationResult: duplicateSlotAggregation.value,
-  previous
-});
-assert.equal(duplicateSlotAdapted.ok, false, "ambiguous persisted identity must fail closed");
+// C03 now owns single-position duplicate rejection before any State creation.
+assert.equal(duplicateSlotSemantic.ok, false);
+assert.equal(duplicateSlotSemantic.code, "UNIT_MEANING_UNSUPPORTED");
+assert.deepEqual(duplicateSlotSemantic.diagnostics, [{ slot: "product", rule: "singlePositionConflict" }]);
+assert.equal(Object.hasOwn(duplicateSlotSemantic, "value"), false);
+assert.equal(previous.tasks.length, 0, "rejected duplicate must not create State");
 
 const followUpMessage = "2026/09/20 到 09/21";
 const followUpEvidence = {
@@ -326,8 +284,8 @@ const followUpInput = buildUnderstandingTurnInput({
     scope,
     referenceableCycles: [{
       requestCycleId: next.tasks[0].taskId,
-      requestKind: "pricing",
-      capability: "price",
+      requestKind: "availability",
+      capability: "availability",
       status: "pending",
       expiresAt: next.tasks[0].expiresAt,
       subject: { kind: "bundle", catalogIdentity: "bundle-all" },
@@ -339,7 +297,7 @@ const followUpInput = buildUnderstandingTurnInput({
   publicCatalog: {
     propertyId: scope.propertyId,
     timezone: "Asia/Taipei",
-    capabilityCatalog: ["price"],
+    capabilityCatalog: ["availability"],
     publicSubjectCatalog: [
       { catalogIdentity: "room-a", kind: "room", propertyId: scope.propertyId, publicName: "Room A" },
       { catalogIdentity: "bundle-all", kind: "bundle", propertyId: scope.propertyId, publicName: "包棟" }
@@ -355,7 +313,7 @@ const followUpRawUnit = {
   unitId: "unit-start-clarify-follow-up",
   evidenceRefs: [followUpEvidence],
   purpose: "lodging_question",
-  capability: "price",
+  capability: "availability",
   subject: { kind: "bundle", catalogIdentity: "bundle-all" },
   stayDependent: true,
   temporalCandidate: {
@@ -429,12 +387,12 @@ const contextSnapshot = {
   generatedAt: NOW,
   cycles: [{
     requestCycleId: next.tasks[0].taskId,
-    requestKind: "pricing",
+    requestKind: "availability",
     status: "pending",
     confirmedInputs: {
       stay: { checkIn: null, checkOut: null, nights: null, guests: null, searchRange: null },
       inventory: { mode: "bundle_only", entityId: "bundle-all", features: [] },
-      topic: { capabilityType: "price", canonicalId: "bundle-all", category: "bundle", detailIntent: "general", detailFields: [] }
+      topic: { capabilityType: "availability", canonicalId: "bundle-all", category: "bundle", detailIntent: "general", detailFields: [] }
     },
     temporalResult: null,
     sourceEvidenceRefs: [],
@@ -449,7 +407,7 @@ const followUpCanonical = executeCanonicalizerInputItem({
   contextSnapshot
 });
 assert.equal(followUpCanonical.ok, true, followUpCanonical.code);
-assert.equal(followUpCanonical.value.canonicalRequest.capability, "price");
+assert.equal(followUpCanonical.value.canonicalRequest.capability, "bundle_availability");
 assert.equal(
   followUpLifecycle.value.targetRequestCycleId,
   next.tasks[0].taskId,
@@ -592,7 +550,11 @@ const independentAdapted = adaptLifecycleDecisionsToStateV3({
   aggregationResult: independentAggregation.value,
   previous: next
 });
-assert.deepEqual(independentAdapted.value.canonicalTaskBindings, [], "START + ANSWER keeps the existing C08 identity path");
+assert.deepEqual(independentAdapted.value.canonicalTaskBindings, [{
+  unitId: followUpSemantic.value.unitId,
+  action: "START",
+  requestCycleId: followUpSemantic.value.unitId
+}], "START + ANSWER receives a durable State-owned binding independently of CONTINUE");
 assert.deepEqual(independentAdapted.value.taskCreations, [], "START + ANSWER must not enter clarification creation");
 
 console.log("new-core START + CLARIFY state: PASS (pending creation + same-cycle CONTINUE)");

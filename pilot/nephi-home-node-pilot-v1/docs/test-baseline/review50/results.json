@@ -1,0 +1,535 @@
+{
+  "baselineCommit": "1d2829417bd99174f3a4c1614992be32cbac244a",
+  "reviewed": 50,
+  "counts": {
+    "COVERAGE_MISSING": 1,
+    "CURRENT_CORE_VALID": 26,
+    "STALE_OLD_CORE": 21,
+    "STALE_EXPECTATION": 2
+  },
+  "scopeUnchangedOutside50": 186,
+  "runnersBefore": 235,
+  "runnersAfter": 215,
+  "commands": [
+    {
+      "index": 0,
+      "command": "node tests/amenity-list-pipeline-control-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 1,
+      "command": "node tests/breakfast-category-grounding-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 2,
+      "command": "node tests/controlled-context-authority-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 3,
+      "command": "node tests/controlled-custom-reply-runtime-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 4,
+      "command": "node tests/conversation-contract-runtime-green-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 5,
+      "command": "node tests/conversation-engine-v2-integration-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 6,
+      "command": "node tests/conversation-followup-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 7,
+      "command": "node tests/conversation-planner-v2-adapter-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 8,
+      "command": "node tests/core-90-limited-fixes-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 9,
+      "command": "node tests/deployed-conversation-acceptance-contract-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 10,
+      "command": "node tests/dialogue-temporal-state-contract-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 11,
+      "command": "node tests/first-version-acceptance-matrix-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 12,
+      "command": "node tests/first-version-controlled-core-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 13,
+      "command": "node tests/first-version-data-mover-runner.js",
+      "exit": 1,
+      "baselineExit": 1
+    },
+    {
+      "index": 14,
+      "command": "node tests/location-google-maps-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 15,
+      "command": "node tests/location-readiness-regression-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 16,
+      "command": "node tests/lodging-price-supplement-semantic-ownership-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 17,
+      "command": "node tests/new-core-openai-adapter-contract-runner.js",
+      "exit": 0,
+      "baselineExit": 1
+    },
+    {
+      "index": 18,
+      "command": "node tests/new-core-start-clarify-state-runner.js",
+      "exit": 0,
+      "baselineExit": 1
+    },
+    {
+      "index": 19,
+      "command": "node tests/pending-request-contract-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 20,
+      "command": "node tests/planner-failure-safety-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 21,
+      "command": "node tests/planner-state-control-removal-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 22,
+      "command": "node tests/provider-shaped-conversation-fixture-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 23,
+      "command": "node tests/real-guest-deployed-acceptance-matrix-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 24,
+      "command": "node tests/relation-evidence-contract-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 25,
+      "command": "node tests/test-only-acceptance-data-integrity-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 26,
+      "command": "node tests/test-only-acceptance-oidc-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 27,
+      "command": "node tests/test-only-conversation-acceptance-api-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 28,
+      "command": "node tests/unique-core-convergence-red-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 29,
+      "command": "node tests/new-core-turn-input-contract-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 30,
+      "command": "node tests/new-core-wire-schema-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 31,
+      "command": "node tests/new-core-source-evidence-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 32,
+      "command": "node tests/new-core-semantic-unit-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 33,
+      "command": "node tests/new-core-unit-routing-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 34,
+      "command": "node tests/new-core-observability-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 35,
+      "command": "node tests/new-core-unit-aggregation-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 36,
+      "command": "node tests/new-core-canonical-adapter-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 37,
+      "command": "node tests/v2-live-availability-regression-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 38,
+      "command": "node tests/canonical-temporal-authority-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 39,
+      "command": "node tests/canonical-temporal-range-red-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 40,
+      "command": "node tests/property-fact-routing-regression-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 41,
+      "command": "node tests/new-core-context-lifecycle-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 42,
+      "command": "node tests/multi-cycle-context-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 43,
+      "command": "node tests/pending-arbitration-contract-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 44,
+      "command": "node tests/conversation-engine-v2-coverage-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 45,
+      "command": "node tests/phase6-final-decision-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 46,
+      "command": "node tests/canonical-request-contract-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 47,
+      "command": "node tests/phase7-final-response-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 48,
+      "command": "node tests/saas-line-reply-safety-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 49,
+      "command": "node tests/new-core-shadow-isolation-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 50,
+      "command": "node tests/new-core-maintainability-gates-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 51,
+      "command": "node tests/new-core-acceptance-manifest-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 52,
+      "command": "node tests/conversation-engine-v2-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 53,
+      "command": "npm run verify:protected-acceptance",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 54,
+      "command": "npm run verify:codex-integrity",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 55,
+      "command": "node tests/new-core-deterministic-acceptance-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 56,
+      "command": "node tests/new-core-production-turn-adapter-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 57,
+      "command": "node tests/new-core-production-line-candidate-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 58,
+      "command": "node tests/new-core-burst-webhook-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 59,
+      "command": "node tests/new-core-relative-temporal-contract-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 60,
+      "command": "node tests/new-core-durable-identity-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 61,
+      "command": "node tests/new-core-state-semantic-projection-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 62,
+      "command": "node tests/new-core-state-input-shape-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 63,
+      "command": "node tests/new-core-quantity-contract-red-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 64,
+      "command": "node tests/new-core-quantity-execution-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 65,
+      "command": "node tests/new-core-quantity-provider-alignment-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 66,
+      "command": "node tests/new-core-quantity-state-turn-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 67,
+      "command": "node tests/new-core-quantity-validation-authority-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 68,
+      "command": "node tests/new-core-understanding-correction-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 69,
+      "command": "node tests/new-core-correction-field-preservation-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 70,
+      "command": "node tests/new-core-semantic-position-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 71,
+      "command": "node tests/new-core-semantic-obligation-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 72,
+      "command": "node tests/new-core-typed-coverage-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 73,
+      "command": "node tests/new-core-obligation-presentation-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 74,
+      "command": "node tests/new-core-decision-only-response-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 75,
+      "command": "node tests/new-core-terminal-failure-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 76,
+      "command": "node tests/new-core-visible-outcomes-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 77,
+      "command": "node tests/new-core-render-fact-contract-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 78,
+      "command": "node tests/new-core-epistemic-claim-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 79,
+      "command": "node tests/conversation-state-v3-runtime-reducer-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 80,
+      "command": "node tests/conversation-state-v3-contract-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 81,
+      "command": "node tests/test-baseline-cleanup-runner.js",
+      "exit": 0,
+      "baselineExit": 0
+    },
+    {
+      "index": 82,
+      "command": "node tests/new-core-amenity-collection-entry-runner.js",
+      "exit": 1,
+      "baselineExit": null
+    }
+  ],
+  "commandPass": 81,
+  "commandFail": 2,
+  "newValidPassToFail": [],
+  "runtimeChanged": false,
+  "realProviderClaims": false,
+  "deterministicAcceptance": {
+    "runnerCount": 28,
+    "result": "PASS"
+  },
+  "extendedCurrentCoverage": {
+    "runner": "new-core-amenity-collection-entry-runner.js",
+    "cases": 2,
+    "pass": 0,
+    "fail": 2,
+    "result": "CORE_FAIL"
+  },
+  "temporalPermanentCases": 48,
+  "protected": "PASS",
+  "integrity": "PASS",
+  "testsBefore": 236,
+  "testsAfter": 216,
+  "countDefinition": "235 *runner.js + 1 gateway.test.js at baseline; 215 *runner.js + 1 gateway.test.js after; unchanged outside50 includes prior cleanup guard."
+}

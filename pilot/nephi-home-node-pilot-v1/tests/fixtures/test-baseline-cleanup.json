@@ -1,5 +1,5 @@
 {
-  "baselineCommit": "ddc7a7e7156165a2f5d9571f55f2678dc502e4da",
+  "baselineCommit": "1d2829417bd99174f3a4c1614992be32cbac244a",
   "originalLifecycleCommands": [
     "node tests/new-core-relative-temporal-contract-runner.js",
     "node tests/first-version-data-mover-runner.js",
@@ -38,8 +38,6 @@
     "node tests/pending-request-contract-runner.js",
     "node tests/controlled-context-authority-runner.js",
     "node tests/planner-state-control-removal-runner.js",
-    "node tests/planner-strict-schema-contract-runner.js",
-    "node tests/planner-normalizer-semantic-preservation-runner.js",
     "node tests/first-version-controlled-core-exit-code-runner.js",
     "node tests/relation-evidence-contract-runner.js",
     "node tests/multi-cycle-context-runner.js",
@@ -56,10 +54,7 @@
     "node tests/hospitality-knowledge-phase1-postgres-runner.js",
     "node tests/conversation-followup-runner.js",
     "node tests/location-google-maps-runner.js",
-    "node tests/coverage-critic-contract-runner.js",
-    "node tests/coverage-critic-planner-integration-runner.js",
     "node tests/planner-semantic-contract-runner.js",
-    "node tests/planner-timeout-observability-runner.js",
     "node tests/planner-failure-safety-runner.js",
     "node tests/conversation-engine-v2-runner.js",
     "node tests/v2-live-availability-regression-runner.js",
@@ -74,7 +69,6 @@
     "node tests/first-version-public-admin-runner.js",
     "node ../../tests/pilot-nephi-home-node-pilot-v1-onboarding-existing-property-apply-runner.js",
     "node ../../tests/pilot-nephi-home-node-pilot-v1-onboarding-manual-resume-link-runner.js",
-    "node tests/semantic-candidate-coverage-contract-runner.js",
     "node tests/test-only-acceptance-oidc-runner.js",
     "node tests/deployed-conversation-acceptance-contract-runner.js",
     "node tests/real-guest-deployed-acceptance-matrix-runner.js"
@@ -99,6 +93,174 @@
         "tests/new-core-unit-aggregation-runner.js",
         "tests/new-core-request-responsibility-runner.js"
       ]
+    },
+    {
+      "file": "tests/coverage-critic-contract-runner.js",
+      "replacements": [
+        "tests/new-core-typed-coverage-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 9
+    },
+    {
+      "file": "tests/coverage-critic-planner-integration-runner.js",
+      "replacements": [
+        "tests/new-core-understanding-correction-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 10
+    },
+    {
+      "file": "tests/planner-normalizer-semantic-preservation-runner.js",
+      "replacements": [
+        "tests/new-core-wire-schema-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 23
+    },
+    {
+      "file": "tests/planner-semantic-reviewer-red-runner.js",
+      "replacements": [
+        "tests/new-core-semantic-unit-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 24
+    },
+    {
+      "file": "tests/planner-strict-schema-contract-runner.js",
+      "replacements": [
+        "tests/new-core-openai-adapter-contract-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 26
+    },
+    {
+      "file": "tests/planner-timeout-observability-runner.js",
+      "replacements": [
+        "tests/new-core-attempt-trace-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 27
+    },
+    {
+      "file": "tests/semantic-candidate-coverage-contract-runner.js",
+      "replacements": [
+        "tests/new-core-semantic-obligation-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 31
+    },
+    {
+      "file": "tests/semantic-candidate-ledger-compiler-runner.js",
+      "replacements": [
+        "tests/new-core-semantic-position-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 32
+    },
+    {
+      "file": "tests/semantic-candidate-provenance-runner.js",
+      "replacements": [
+        "tests/new-core-source-evidence-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 33
+    },
+    {
+      "file": "../../tests/pilot-nephi-home-node-pilot-v1-ai-first-runner.js",
+      "replacements": [
+        "tests/new-core-production-turn-adapter-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 38
+    },
+    {
+      "file": "../../tests/pilot-nephi-home-node-pilot-v1-behavior-runner.js",
+      "replacements": [
+        "tests/new-core-burst-transport-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 39
+    },
+    {
+      "file": "../../tests/pilot-nephi-home-node-pilot-v1-event-lifecycle-runner.js",
+      "replacements": [
+        "tests/new-core-turn-serialization-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 40
+    },
+    {
+      "file": "../../tests/pilot-nephi-home-node-pilot-v1-nephi-faq-runtime-runner.js",
+      "replacements": [
+        "tests/property-fact-routing-regression-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 41
+    },
+    {
+      "file": "../../tests/pilot-nephi-home-node-pilot-v1-nephi-property-runner.js",
+      "replacements": [
+        "tests/formal-data-authority-roundtrip-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 42
+    },
+    {
+      "file": "../../tests/pilot-nephi-home-node-pilot-v1-openai-adapter-runner.js",
+      "replacements": [
+        "tests/new-core-openai-adapter-contract-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 43
+    },
+    {
+      "file": "../../tests/pilot-nephi-home-node-pilot-v1-precise-clarification-runner.js",
+      "replacements": [
+        "tests/new-core-start-clarify-state-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 44
+    },
+    {
+      "file": "../../tests/pilot-nephi-home-node-pilot-v1-query-mode-dedupe-runner.js",
+      "replacements": [
+        "tests/new-core-durable-identity-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 45
+    },
+    {
+      "file": "../../tests/pilot-nephi-home-node-pilot-v1-room-filter-state-runner.js",
+      "replacements": [
+        "tests/new-core-state-semantic-projection-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 46
+    },
+    {
+      "file": "../../tests/pilot-nephi-home-node-pilot-v1-single-date-default-runner.js",
+      "replacements": [
+        "tests/new-core-relative-temporal-contract-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 47
+    },
+    {
+      "file": "../../tests/pilot-nephi-home-node-pilot-v1-timeout-runner.js",
+      "replacements": [
+        "tests/new-core-terminal-failure-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 48
+    },
+    {
+      "file": "../../tests/pilot-nephi-home-node-pilot-v1-trailing-flush-runner.js",
+      "replacements": [
+        "tests/new-core-burst-webhook-runner.js"
+      ],
+      "classification": "STALE_OLD_CORE",
+      "evidenceIndex": 49
     }
   ],
   "retainedRunnerFiles": [
@@ -141,8 +303,6 @@
     "pilot/nephi-home-node-pilot-v1/tests/conversation-state-v3-runtime-reducer-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/core-90-limited-fixes-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/core-change-preflight-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/coverage-critic-contract-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/coverage-critic-planner-integration-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/cross-capability-context-red-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/current-property-authority-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/custom-reply-rules-postgres-runner.js",
@@ -256,14 +416,10 @@
     "pilot/nephi-home-node-pilot-v1/tests/phase7-final-response-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/planner-boundary-contract-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/planner-failure-safety-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/planner-normalizer-semantic-preservation-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/planner-semantic-contract-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/planner-semantic-grounding-contract-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/planner-semantic-recorded-replay-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/planner-semantic-reviewer-red-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/planner-state-control-removal-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/planner-strict-schema-contract-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/planner-timeout-observability-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/platform-admin-bootstrap-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/platform-admin-filter-navigation-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/platform-admin-page-runner.js",
@@ -284,9 +440,6 @@
     "pilot/nephi-home-node-pilot-v1/tests/room-data-postgres-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/saas-line-reply-safety-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/self-check-in-out-instructions-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/semantic-candidate-coverage-contract-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/semantic-candidate-ledger-compiler-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/semantic-candidate-provenance-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/task-preflight-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/task-readiness-contract-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/temporal-per-request-runner.js",
@@ -308,34 +461,24 @@
     "pilot/nephi-home-node-pilot-v1/tests/verify-protected-acceptance-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-admin-auth-availability-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-admin-email-guest-mobile-runner.js",
-    "tests/pilot-nephi-home-node-pilot-v1-ai-first-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-availability-import-runner.js",
-    "tests/pilot-nephi-home-node-pilot-v1-behavior-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-bundle-inventory-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-contract-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-daily-room-notes-runner.js",
-    "tests/pilot-nephi-home-node-pilot-v1-event-lifecycle-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-friendly-onboarding-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-guest-frontend-runner.js",
-    "tests/pilot-nephi-home-node-pilot-v1-nephi-faq-runtime-runner.js",
-    "tests/pilot-nephi-home-node-pilot-v1-nephi-property-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-onboarding-bundle-pricing-state-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-onboarding-existing-property-apply-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-onboarding-manual-resume-link-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-onboarding-return-email-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-onboarding-review-workflow-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-onboarding-runner.js",
-    "tests/pilot-nephi-home-node-pilot-v1-openai-adapter-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-optional-room-type-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-postgres-provider-runner.js",
-    "tests/pilot-nephi-home-node-pilot-v1-precise-clarification-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-public-brand-runner.js",
-    "tests/pilot-nephi-home-node-pilot-v1-query-mode-dedupe-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-render-blueprint-runner.js",
     "tests/pilot-nephi-home-node-pilot-v1-render-deployment-runner.js",
-    "tests/pilot-nephi-home-node-pilot-v1-room-filter-state-runner.js",
-    "tests/pilot-nephi-home-node-pilot-v1-single-date-default-runner.js",
-    "tests/pilot-nephi-home-node-pilot-v1-timeout-runner.js",
-    "tests/pilot-nephi-home-node-pilot-v1-trailing-flush-runner.js"
-  ]
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-amenity-collection-entry-runner.js"
+  ],
+  "reviewAuthority": "docs/test-baseline/review50/classification.json"
 }
