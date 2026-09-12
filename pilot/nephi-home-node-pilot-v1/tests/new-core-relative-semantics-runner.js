@@ -19,7 +19,20 @@ test('typed relative cannot contradict recognized source grammar',()=>assert.equ
 test('invalid typed relative offset rejected',()=>assert.equal(resolve('opaque',1.5).resolutionStatus,'unresolved'));
 test('absolute grammar remains supported',()=>assert.equal(resolveTemporalExpression({rawText:'2026/10/09',kind:'absolute',anchor:'message_time'},{eventTimestamp:'2026-09-11T00:00:00Z',timezone:'Asia/Taipei'}).checkIn,'2026-10-09'));
 test('typed day cannot erase a recognized date range',()=>assert.equal(resolve('2026/09/12-09/14',1).resolutionStatus,'unresolved'));
-test('typed day cannot relabel explicit absolute date',()=>assert.equal(resolve('2026/09/12',1).resolutionStatus,'unresolved'));
+test('typed relative and absolute representation agree on the complete interval',()=>{
+ const result=resolve('2026/09/12',1);
+ assert.equal(result.resolutionStatus,'resolved');
+ assert.equal(result.checkIn,'2026-09-12');
+ assert.equal(result.checkOut,'2026-09-13');
+ assert.equal(result.nights,1);
+});
+test('typed relative and absolute representation disagree on the interval',()=>{
+ const result=resolve('2026/09/12',2);
+ assert.equal(result.resolutionStatus,'unresolved');
+ assert.equal(result.repairReasonCode,'relative_semantics_conflict');
+ assert.equal(result.checkIn,null);
+ assert.equal(result.checkOut,null);
+});
 test('typed relative day preserves consistent explicit duration',()=>{
  const text='明天住兩晚';const p=pipeline({messageText:text,unitOverrides:{temporalCandidate:{...candidate(text,1,'unspecified'),nightsCandidate:2}}});
  const c=createC08(p);assert.equal(c.ok,true);const e=execute(c.value);assert.equal(e.ok,true);

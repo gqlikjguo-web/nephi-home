@@ -1,0 +1,1292 @@
+{
+  "baseline": "ddc7a7e7156165a2f5d9571f55f2678dc502e4da",
+  "runtimeChanged": false,
+  "officialContractChanged": false,
+  "protectedImplementationChanged": false,
+  "packageOnlyTestScriptsChanged": true,
+  "baselineCommands": 83,
+  "baselinePass": 79,
+  "candidateCommands": 83,
+  "candidatePass": 81,
+  "needsReviewFailures": [
+    {
+      "index": 49,
+      "command": "node tests/new-core-openai-adapter-contract-runner.js",
+      "exit": 1,
+      "baselineExit": 1
+    },
+    {
+      "index": 67,
+      "command": "node tests/new-core-start-clarify-state-runner.js",
+      "exit": 1,
+      "baselineExit": 1
+    }
+  ],
+  "newPassToFail": [],
+  "expectedTestOnlyChanges": [
+    "pilot/nephi-home-node-pilot-v1/package.json",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-epistemic-claim-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-relative-semantics-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/non-actionable-planner-instructions-contract-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/planner-amenity-list-instructions-contract-runner.js"
+  ],
+  "noDeployment": true,
+  "evidenceLevel": "LOCAL_STRUCTURED_CONTRACT_TEST_AND_FAKE_INTEGRATION; no REAL provider calls",
+  "runs": {
+    "baseline": [
+      {
+        "index": 0,
+        "command": "node tests/new-core-turn-input-contract-runner.js",
+        "exit": 0,
+        "logSha256": "132ac7f0d27d87cc82d6716233940e7b9ec0892940b1ccf8ad0fa5cb783496c9",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-0.log"
+      },
+      {
+        "index": 1,
+        "command": "node tests/new-core-wire-schema-runner.js",
+        "exit": 0,
+        "logSha256": "4f95920a558a486a58eb337257f973ec46b838127bb075ffea609dcaa0bcf539",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-1.log"
+      },
+      {
+        "index": 2,
+        "command": "node tests/new-core-source-evidence-runner.js",
+        "exit": 0,
+        "logSha256": "6fda114cddb5c96c0a70ccbd68a678f1be60193bd3c0bb94121f9690ad7ebc69",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-2.log"
+      },
+      {
+        "index": 3,
+        "command": "node tests/new-core-semantic-unit-runner.js",
+        "exit": 0,
+        "logSha256": "0cbb8515266db93edbbb9932b48ffbcb48ebe72b0e0658de03674cf8937bb216",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-3.log"
+      },
+      {
+        "index": 4,
+        "command": "node tests/new-core-unit-routing-runner.js",
+        "exit": 0,
+        "logSha256": "13d28ca5ce598fb15c84e00914f9651d760bfa245e7cf3f9b62e17bdcc75de9f",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-4.log"
+      },
+      {
+        "index": 5,
+        "command": "node tests/new-core-observability-runner.js",
+        "exit": 0,
+        "logSha256": "93799d38b3b91e94dc4d0642299430c6a19ea1336b8ae2add9d742d4a844a7bc",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-5.log"
+      },
+      {
+        "index": 6,
+        "command": "node tests/new-core-unit-aggregation-runner.js",
+        "exit": 0,
+        "logSha256": "68de63a3157d2735689ad48dd33353e27430ba9860e707cfcad96a7825a4e482",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-6.log"
+      },
+      {
+        "index": 7,
+        "command": "node tests/new-core-canonical-adapter-runner.js",
+        "exit": 0,
+        "logSha256": "82377c1cb6b8e3598e7906dd3951bd868b2dd6aab96df48523e91f3c3d2fe7da",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-7.log"
+      },
+      {
+        "index": 8,
+        "command": "node tests/v2-live-availability-regression-runner.js",
+        "exit": 0,
+        "logSha256": "16dbb16f8cba0be62e4105f6fdfde94d1e1f9fd377083665169cefe1c5eca5a0",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-8.log"
+      },
+      {
+        "index": 9,
+        "command": "node tests/lodging-price-supplement-semantic-ownership-runner.js",
+        "exit": 0,
+        "logSha256": "aaeacb1eac3d2ced41af53f0c9f9e2f4b36ca1e98ea0fd0ae6b8f763374e311d",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-9.log"
+      },
+      {
+        "index": 10,
+        "command": "node tests/canonical-temporal-authority-runner.js",
+        "exit": 0,
+        "logSha256": "3809636b4fb9bdd62705aa71a02f0fbc9d0765ce5141632a972e3d5bc521c238",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-10.log"
+      },
+      {
+        "index": 11,
+        "command": "node tests/canonical-temporal-range-red-runner.js",
+        "exit": 0,
+        "logSha256": "e3400b90a9939fb151d82dbbf38d4060100cff8abb8bb13972792ba821274a46",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-11.log"
+      },
+      {
+        "index": 12,
+        "command": "node tests/location-readiness-regression-runner.js",
+        "exit": 0,
+        "logSha256": "0b5a1a65a68f177a71c09ab4af70cac89e42d66a1cf4326f4059603b0874c432",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-12.log"
+      },
+      {
+        "index": 13,
+        "command": "node tests/property-fact-routing-regression-runner.js",
+        "exit": 0,
+        "logSha256": "2724099b08dfac9bba19d798d344739281990af739b09d89045e18e9aae0f2a8",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-13.log"
+      },
+      {
+        "index": 14,
+        "command": "node tests/new-core-context-lifecycle-runner.js",
+        "exit": 0,
+        "logSha256": "016783f22ddb20bbdefae2a8aaa12ed3b6c2ae493292d292069dfc6441294b8e",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-14.log"
+      },
+      {
+        "index": 15,
+        "command": "node tests/multi-cycle-context-runner.js",
+        "exit": 0,
+        "logSha256": "c5e88246d3e13e841240c839af70d7b6610cdec55453ea8a5b90a976bfe3bed5",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-15.log"
+      },
+      {
+        "index": 16,
+        "command": "node tests/dialogue-temporal-state-contract-runner.js",
+        "exit": 0,
+        "logSha256": "b6a7af2f408e9740d0fa0a7fbb91b4c55c8764fb2f8c88802e723b14a3455331",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-16.log"
+      },
+      {
+        "index": 17,
+        "command": "node tests/pending-arbitration-contract-runner.js",
+        "exit": 0,
+        "logSha256": "62d8a396d64f6e6664d56b8f3f7e113cc33607ff5ad861421e15a790cda76440",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-17.log"
+      },
+      {
+        "index": 18,
+        "command": "node tests/conversation-engine-v2-coverage-runner.js",
+        "exit": 0,
+        "logSha256": "df5a8af389e228b208ff37158c51ecc98d6d58887fce5cc0832e55d599c2337a",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-18.log"
+      },
+      {
+        "index": 19,
+        "command": "node tests/phase6-final-decision-runner.js",
+        "exit": 0,
+        "logSha256": "8aa08b5fa23f5ec1ad095c2515f7365c07f1e62c1fe767cf26d9b353b4e77cf1",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-19.log"
+      },
+      {
+        "index": 20,
+        "command": "node tests/canonical-request-contract-runner.js",
+        "exit": 0,
+        "logSha256": "8e60944658f1e8a1dd659821d9e201026b4b347b1e2f462aa49c7f1618ce332b",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-20.log"
+      },
+      {
+        "index": 21,
+        "command": "node tests/phase7-final-response-runner.js",
+        "exit": 0,
+        "logSha256": "336218735a51de9ef862cef781ef4f3982f67c6e86d4e2691502bbfb6ebcd554",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-21.log"
+      },
+      {
+        "index": 22,
+        "command": "node tests/saas-line-reply-safety-runner.js",
+        "exit": 0,
+        "logSha256": "c8de121107c9ef37007a3ba07c9a58b2329eada0c58d56a9b5a655e52276138a",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-22.log"
+      },
+      {
+        "index": 23,
+        "command": "node tests/new-core-shadow-isolation-runner.js",
+        "exit": 0,
+        "logSha256": "e97f06381d9efc1972cba0fcfaaab22baa08ab02453e47098241a3412c728294",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-23.log"
+      },
+      {
+        "index": 24,
+        "command": "node tests/new-core-maintainability-gates-runner.js",
+        "exit": 0,
+        "logSha256": "e2f19753bdb374e7efd60f97a24e7f6e1bd58ea0e3b098d73716c3be7aec88d9",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-24.log"
+      },
+      {
+        "index": 25,
+        "command": "node tests/new-core-acceptance-manifest-runner.js",
+        "exit": 0,
+        "logSha256": "3a47abb2dffc3a35dbc6d1ac280cf04aac22b006e66a7b357e718988860bc6fc",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-25.log"
+      },
+      {
+        "index": 26,
+        "command": "node tests/conversation-engine-v2-runner.js",
+        "exit": 0,
+        "logSha256": "a798d9b63c045e00c5bdecef175b8e58be6c1a253e6d056c5f020539dffc9d04",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-26.log"
+      },
+      {
+        "index": 27,
+        "command": "node tests/real-guest-deployed-acceptance-matrix-runner.js",
+        "exit": 0,
+        "logSha256": "a9b1ab97dd9c0cfb916bea54e7096635f71a46e0747a6d8a1daca75ed446f861",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-27.log"
+      },
+      {
+        "index": 28,
+        "command": "npm run verify:protected-acceptance",
+        "exit": 0,
+        "logSha256": "e033274319469da4c201589a400541197962aedc9c3c7fb47da85eedf97ef653",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-28.log"
+      },
+      {
+        "index": 29,
+        "command": "npm run verify:codex-integrity",
+        "exit": 0,
+        "logSha256": "a1894c3c142a037a3329369f061b9521a3907d22b66c59fad96c30cf489b9bdc",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-29.log"
+      },
+      {
+        "index": 30,
+        "command": "node tests/new-core-deterministic-acceptance-runner.js",
+        "exit": 0,
+        "logSha256": "ea26edcae3406191ed0281b57daa998ccd04f98099a2c8f03c0bb8150ee96103",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-30.log"
+      },
+      {
+        "index": 31,
+        "command": "node tests/new-core-acceptance-authority-runner.js",
+        "exit": 0,
+        "logSha256": "7558fe978731548d43c750f05c50169779fb901767b302bb99c218008c0188e2",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-31.log"
+      },
+      {
+        "index": 32,
+        "command": "node tests/new-core-attempt-trace-runner.js",
+        "exit": 0,
+        "logSha256": "25251f6c0905557ede26b64778604753f89942f65f6692137688b0e907827090",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-32.log"
+      },
+      {
+        "index": 33,
+        "command": "node tests/new-core-burst-transport-runner.js",
+        "exit": 0,
+        "logSha256": "5bdedf7c8a5179dd349afd749feb58c7a16f82d24846f9f2e4f6863c521c8ad9",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-33.log"
+      },
+      {
+        "index": 34,
+        "command": "node tests/new-core-burst-webhook-runner.js",
+        "exit": 0,
+        "logSha256": "6d0a073213b774ae42c8422f686f8c347e2b5e370c767065509e64054b60c05a",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-34.log"
+      },
+      {
+        "index": 35,
+        "command": "node tests/new-core-c03-correction-diagnostics-red-runner.js",
+        "exit": 0,
+        "logSha256": "8e445876e541cb200c9d87875f5b760ffabfed4663e0eea1ab411bad098242c6",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-35.log"
+      },
+      {
+        "index": 36,
+        "command": "node tests/new-core-collection-capacity-runner.js",
+        "exit": 0,
+        "logSha256": "71a26b7c36af062544e40d2b36afe91726fb7b88b53918b18c3c6938ef53da99",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-36.log"
+      },
+      {
+        "index": 37,
+        "command": "node tests/new-core-correction-field-preservation-runner.js",
+        "exit": 0,
+        "logSha256": "838f79d1fe312b4ad6c9632e4ed5696285325743c1f1ec340192438feda96f7f",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-37.log"
+      },
+      {
+        "index": 38,
+        "command": "node tests/new-core-cross-stage-preservation-runner.js",
+        "exit": 0,
+        "logSha256": "08c93a73007b26bfa8e4b0e94526690f05c1b40b23765b740bd647fd1ee8253f",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-38.log"
+      },
+      {
+        "index": 39,
+        "command": "node tests/new-core-decision-only-response-runner.js",
+        "exit": 0,
+        "logSha256": "81184ec487a32b6912c29080235dce52d26043c6effa78bac19e2b001350db4a",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-39.log"
+      },
+      {
+        "index": 40,
+        "command": "node tests/new-core-detached-ownership-runner.js",
+        "exit": 0,
+        "logSha256": "4314a5fb429699d236a46fe1159566fb1950b671d1429bd35343831adbad610e",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-40.log"
+      },
+      {
+        "index": 41,
+        "command": "node tests/new-core-deterministic-lifecycle-authority-red-runner.js",
+        "exit": 0,
+        "logSha256": "a99081dae76ad16f10003c80206cf3998c7a26fd33e0bc9dcb560b00f8ee7d3a",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-41.log"
+      },
+      {
+        "index": 42,
+        "command": "node tests/new-core-durable-identity-runner.js",
+        "exit": 0,
+        "logSha256": "0ce38302f5296b4d5a48f014b5aaf8264d07e98b90ecbbe26aba9f176ac5ffa1",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-42.log"
+      },
+      {
+        "index": 43,
+        "command": "node tests/new-core-epistemic-claim-runner.js",
+        "exit": 1,
+        "logSha256": "ae2c8067b97af0b622770000b95172bf99dc4c7cf89e108c1581c836fa3d1d14",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-43.log"
+      },
+      {
+        "index": 44,
+        "command": "node tests/new-core-feasibility-reason-runner.js",
+        "exit": 0,
+        "logSha256": "9dbc6055625067ed1ace99e865092aca7d5aac2f6811ad8df864d06f754cd95e",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-44.log"
+      },
+      {
+        "index": 45,
+        "command": "node tests/new-core-luna-model-authority-runner.js",
+        "exit": 0,
+        "logSha256": "40156e6beac5507e8692491450942d5f882eeccf8e1600543f19d3ade337abf2",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-45.log"
+      },
+      {
+        "index": 46,
+        "command": "node tests/new-core-manual-test-page-runner.js",
+        "exit": 0,
+        "logSha256": "79f2cfc10b45dd2c72abd712e724c07a7dc31700f83d986e71113b14d8221a5c",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-46.log"
+      },
+      {
+        "index": 47,
+        "command": "node tests/new-core-mixed-handoff-bridge-red-runner.js",
+        "exit": 0,
+        "logSha256": "e18e69a6dd8d87cd4f4c23893d25656418c06274d541eab2b723843b177f4f5d",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-47.log"
+      },
+      {
+        "index": 48,
+        "command": "node tests/new-core-obligation-presentation-runner.js",
+        "exit": 0,
+        "logSha256": "e808ddd1bf9dd65f9e48d6417dabffe7eadeecad0ac6ea05b7db108f6cdb5c7a",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-48.log"
+      },
+      {
+        "index": 49,
+        "command": "node tests/new-core-openai-adapter-contract-runner.js",
+        "exit": 1,
+        "logSha256": "e9eb6998a5de74b60635b9aae9fa044c15a05960dc5d2945ef14edd81fc0723f",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-49.log"
+      },
+      {
+        "index": 50,
+        "command": "node tests/new-core-openai-shadow-acceptance-contract-runner.js",
+        "exit": 0,
+        "logSha256": "bcb09d114e55f4b90a478d6508ccb8bceabaf145d06c27572ba29f8c8dff231e",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-50.log"
+      },
+      {
+        "index": 51,
+        "command": "node tests/new-core-operator-outcome-runner.js",
+        "exit": 0,
+        "logSha256": "c2e8eee4b7feb4dcd26efbf7d85b5c48ac0a494ec913f3fe3865cb953fa0b3b6",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-51.log"
+      },
+      {
+        "index": 52,
+        "command": "node tests/new-core-production-line-candidate-runner.js",
+        "exit": 0,
+        "logSha256": "63f6a3a0d50e6c2ae138671f1e1777c8f1ff02fda4b7726829c9ad162c700add",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-52.log"
+      },
+      {
+        "index": 53,
+        "command": "node tests/new-core-production-turn-adapter-runner.js",
+        "exit": 0,
+        "logSha256": "0cbc54c34b2fee9f1a406e0b383346227d4b60ecc0ead4fd0591f8a543b8c6f8",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-53.log"
+      },
+      {
+        "index": 54,
+        "command": "node tests/new-core-quantity-contract-red-runner.js",
+        "exit": 0,
+        "logSha256": "edacc1283fc120d4073feb528fa0d2945052eb2744eabf1af30b89a65d0c69ec",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-54.log"
+      },
+      {
+        "index": 55,
+        "command": "node tests/new-core-quantity-execution-runner.js",
+        "exit": 0,
+        "logSha256": "c7113732b95eda913ee3d3d89685d37330d4ad413402ae5f3cb3681bf913be8a",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-55.log"
+      },
+      {
+        "index": 56,
+        "command": "node tests/new-core-quantity-provider-alignment-runner.js",
+        "exit": 0,
+        "logSha256": "f4b1ba3b784d0e3f896beb8c36344d7e3d4b9876db202bee211ee6966031840f",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-56.log"
+      },
+      {
+        "index": 57,
+        "command": "node tests/new-core-quantity-state-turn-runner.js",
+        "exit": 0,
+        "logSha256": "7409e9182dc5e33cb9c3043d2cb93f30efbc7bd8203a84cf4ddd936385863484",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-57.log"
+      },
+      {
+        "index": 58,
+        "command": "node tests/new-core-quantity-validation-authority-runner.js",
+        "exit": 0,
+        "logSha256": "b91db1b7e9e8a3f9b015e5bc9e873549a7682ed8e773e74fe32a5dca17be838f",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-58.log"
+      },
+      {
+        "index": 59,
+        "command": "node tests/new-core-relative-semantics-runner.js",
+        "exit": 1,
+        "logSha256": "650cbfb530ad1ac34f3bd4a8fd45873a4962e6268b3b84c5f91dd1f20a6f843b",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-59.log"
+      },
+      {
+        "index": 60,
+        "command": "node tests/new-core-relative-temporal-contract-runner.js",
+        "exit": 0,
+        "logSha256": "2bbc932028fac361f1e74a16b4de5967c36bf3c563567ad1460604cff673bc5b",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-60.log"
+      },
+      {
+        "index": 61,
+        "command": "node tests/new-core-render-fact-contract-runner.js",
+        "exit": 0,
+        "logSha256": "e9afce2ca3d343b92dccd8de20a0b510c4f55bafe244375d24d71848b5cd8fed",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-61.log"
+      },
+      {
+        "index": 62,
+        "command": "node tests/new-core-request-responsibility-runner.js",
+        "exit": 0,
+        "logSha256": "fb5223fa0088f69c07db995104065fdb7cc764ca99113f4990a96e7d823c30f3",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-62.log"
+      },
+      {
+        "index": 63,
+        "command": "node tests/new-core-required-pricing-dependency-runner.js",
+        "exit": 0,
+        "logSha256": "1f2f80630f8bae0a7d46c8eea2c9f5d9ba8daa219c7d0ebb95a81becd2be1ea3",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-63.log"
+      },
+      {
+        "index": 64,
+        "command": "node tests/new-core-scoped-dependency-runner.js",
+        "exit": 0,
+        "logSha256": "d4d0f3ec27f12640d5a1780dc4feb483d7d8cef2be23c8aed7fbe81d794de13c",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-64.log"
+      },
+      {
+        "index": 65,
+        "command": "node tests/new-core-semantic-obligation-runner.js",
+        "exit": 0,
+        "logSha256": "6ace52a84783bf03243ca0fd95ea27634c4b456ca940e3d14fcbceb7c4471fb2",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-65.log"
+      },
+      {
+        "index": 66,
+        "command": "node tests/new-core-semantic-position-runner.js",
+        "exit": 0,
+        "logSha256": "a4754dfd8e3175040fd7ed58014d477ca5f1363e3fe82b5345b61a16fd6dce5b",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-66.log"
+      },
+      {
+        "index": 67,
+        "command": "node tests/new-core-start-clarify-state-runner.js",
+        "exit": 1,
+        "logSha256": "b6fe7511aac76043f96526823002e9a8952fcb161093ff186c6f20a95ff9fde5",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-67.log"
+      },
+      {
+        "index": 68,
+        "command": "node tests/new-core-state-input-shape-runner.js",
+        "exit": 0,
+        "logSha256": "ea139d0a5d0980760c0d00cbb0e85edd1dd300b15579f0c7219ed767ae440295",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-68.log"
+      },
+      {
+        "index": 69,
+        "command": "node tests/new-core-state-semantic-projection-runner.js",
+        "exit": 0,
+        "logSha256": "8772bf936b08832f889c089e2723e422719d015ebc30bd8b89da5d81279bec16",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-69.log"
+      },
+      {
+        "index": 70,
+        "command": "node tests/new-core-static-capacity-contract-runner.js",
+        "exit": 0,
+        "logSha256": "89b74ba37dc24fcbb8a771b606acd8b320b34f3caff35b0c5c57953eca5f48dd",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-70.log"
+      },
+      {
+        "index": 71,
+        "command": "node tests/new-core-terminal-failure-runner.js",
+        "exit": 0,
+        "logSha256": "0947c6661f3529f789d6cb0c6aea6ae6ad8829963b6710be561d7c79f0c9615f",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-71.log"
+      },
+      {
+        "index": 72,
+        "command": "node tests/new-core-turn-serialization-runner.js",
+        "exit": 0,
+        "logSha256": "cb24583a1eca9af8cf58ee65541046e7a1fedad360824f52b04e325ffa719a09",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-72.log"
+      },
+      {
+        "index": 73,
+        "command": "node tests/new-core-typed-coverage-runner.js",
+        "exit": 0,
+        "logSha256": "200c9bcea04f163438be63efb3a88ab4e4226b6e493fd4da6d5594c28c428950",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-73.log"
+      },
+      {
+        "index": 74,
+        "command": "node tests/new-core-understanding-correction-runner.js",
+        "exit": 0,
+        "logSha256": "7436b16844d86a74a639f4f72acb8aaa749ae1e8dc8ee1988fde5996ccef6827",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-74.log"
+      },
+      {
+        "index": 75,
+        "command": "node tests/new-core-verdict-trace-runner.js",
+        "exit": 0,
+        "logSha256": "02adc95c66c5a07696e43810f270249bf11d911cc1cac97fd94f6040b2f1a95f",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-75.log"
+      },
+      {
+        "index": 76,
+        "command": "node tests/new-core-visible-outcomes-runner.js",
+        "exit": 0,
+        "logSha256": "47445a30655fee5228d518970272d000b69045f8b39b576398cf3e8b642aaea7",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-76.log"
+      },
+      {
+        "index": 77,
+        "command": "node tests/conversation-state-v3-contract-runner.js",
+        "exit": 0,
+        "logSha256": "a9f04f0de2d6d790d6d6f1b19e8fe4ac0c78b27aec6c6db845bc39b2dc090625",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-77.log"
+      },
+      {
+        "index": 78,
+        "command": "node tests/conversation-state-v3-runtime-reducer-runner.js",
+        "exit": 0,
+        "logSha256": "e3402fe028f2a6a8fdfd895eb7957dfe941dcceba91bbb3533c53468baa91aab",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-78.log"
+      },
+      {
+        "index": 79,
+        "command": "node tests/phase7-final-response-e2e-runner.js",
+        "exit": 0,
+        "logSha256": "ac3918562f1875025ed1cc2f349f6e522169eaa90a42e9855aee277ed26cbc42",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-79.log"
+      },
+      {
+        "index": 80,
+        "command": "node tests/junzan-ai-constitution-contract-runner.js",
+        "exit": 0,
+        "logSha256": "b210e6088ca5847566476622b6679f8fceca361c82a9c1804b8b519b8a2b46ee",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-80.log"
+      },
+      {
+        "index": 81,
+        "command": "node tests/non-actionable-planner-instructions-contract-runner.js",
+        "exit": 0,
+        "logSha256": "c0766c2e5070742c9ece887313d4774999087784e831f88be6e62ede2f2a5a26",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-81.log"
+      },
+      {
+        "index": 82,
+        "command": "node tests/planner-amenity-list-instructions-contract-runner.js",
+        "exit": 0,
+        "logSha256": "d6e39fe955ba5dde3ffbf54b8cb097034395c6dfdc5f7d643487893f6c596396",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/baseline-82.log"
+      }
+    ],
+    "candidate": [
+      {
+        "index": 0,
+        "command": "node tests/new-core-turn-input-contract-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "132ac7f0d27d87cc82d6716233940e7b9ec0892940b1ccf8ad0fa5cb783496c9",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-0.log"
+      },
+      {
+        "index": 1,
+        "command": "node tests/new-core-wire-schema-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "4f95920a558a486a58eb337257f973ec46b838127bb075ffea609dcaa0bcf539",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-1.log"
+      },
+      {
+        "index": 2,
+        "command": "node tests/new-core-source-evidence-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "6fda114cddb5c96c0a70ccbd68a678f1be60193bd3c0bb94121f9690ad7ebc69",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-2.log"
+      },
+      {
+        "index": 3,
+        "command": "node tests/new-core-semantic-unit-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "0cbb8515266db93edbbb9932b48ffbcb48ebe72b0e0658de03674cf8937bb216",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-3.log"
+      },
+      {
+        "index": 4,
+        "command": "node tests/new-core-unit-routing-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "13d28ca5ce598fb15c84e00914f9651d760bfa245e7cf3f9b62e17bdcc75de9f",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-4.log"
+      },
+      {
+        "index": 5,
+        "command": "node tests/new-core-observability-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "93799d38b3b91e94dc4d0642299430c6a19ea1336b8ae2add9d742d4a844a7bc",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-5.log"
+      },
+      {
+        "index": 6,
+        "command": "node tests/new-core-unit-aggregation-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "68de63a3157d2735689ad48dd33353e27430ba9860e707cfcad96a7825a4e482",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-6.log"
+      },
+      {
+        "index": 7,
+        "command": "node tests/new-core-canonical-adapter-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "82377c1cb6b8e3598e7906dd3951bd868b2dd6aab96df48523e91f3c3d2fe7da",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-7.log"
+      },
+      {
+        "index": 8,
+        "command": "node tests/v2-live-availability-regression-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "16dbb16f8cba0be62e4105f6fdfde94d1e1f9fd377083665169cefe1c5eca5a0",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-8.log"
+      },
+      {
+        "index": 9,
+        "command": "node tests/lodging-price-supplement-semantic-ownership-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "aaeacb1eac3d2ced41af53f0c9f9e2f4b36ca1e98ea0fd0ae6b8f763374e311d",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-9.log"
+      },
+      {
+        "index": 10,
+        "command": "node tests/canonical-temporal-authority-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "3809636b4fb9bdd62705aa71a02f0fbc9d0765ce5141632a972e3d5bc521c238",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-10.log"
+      },
+      {
+        "index": 11,
+        "command": "node tests/canonical-temporal-range-red-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "e3400b90a9939fb151d82dbbf38d4060100cff8abb8bb13972792ba821274a46",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-11.log"
+      },
+      {
+        "index": 12,
+        "command": "node tests/location-readiness-regression-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "0b5a1a65a68f177a71c09ab4af70cac89e42d66a1cf4326f4059603b0874c432",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-12.log"
+      },
+      {
+        "index": 13,
+        "command": "node tests/property-fact-routing-regression-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "2724099b08dfac9bba19d798d344739281990af739b09d89045e18e9aae0f2a8",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-13.log"
+      },
+      {
+        "index": 14,
+        "command": "node tests/new-core-context-lifecycle-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "016783f22ddb20bbdefae2a8aaa12ed3b6c2ae493292d292069dfc6441294b8e",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-14.log"
+      },
+      {
+        "index": 15,
+        "command": "node tests/multi-cycle-context-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "c5e88246d3e13e841240c839af70d7b6610cdec55453ea8a5b90a976bfe3bed5",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-15.log"
+      },
+      {
+        "index": 16,
+        "command": "node tests/dialogue-temporal-state-contract-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "b6a7af2f408e9740d0fa0a7fbb91b4c55c8764fb2f8c88802e723b14a3455331",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-16.log"
+      },
+      {
+        "index": 17,
+        "command": "node tests/pending-arbitration-contract-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "62d8a396d64f6e6664d56b8f3f7e113cc33607ff5ad861421e15a790cda76440",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-17.log"
+      },
+      {
+        "index": 18,
+        "command": "node tests/conversation-engine-v2-coverage-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "df5a8af389e228b208ff37158c51ecc98d6d58887fce5cc0832e55d599c2337a",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-18.log"
+      },
+      {
+        "index": 19,
+        "command": "node tests/phase6-final-decision-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "8aa08b5fa23f5ec1ad095c2515f7365c07f1e62c1fe767cf26d9b353b4e77cf1",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-19.log"
+      },
+      {
+        "index": 20,
+        "command": "node tests/canonical-request-contract-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "8e60944658f1e8a1dd659821d9e201026b4b347b1e2f462aa49c7f1618ce332b",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-20.log"
+      },
+      {
+        "index": 21,
+        "command": "node tests/phase7-final-response-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "336218735a51de9ef862cef781ef4f3982f67c6e86d4e2691502bbfb6ebcd554",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-21.log"
+      },
+      {
+        "index": 22,
+        "command": "node tests/saas-line-reply-safety-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "c8de121107c9ef37007a3ba07c9a58b2329eada0c58d56a9b5a655e52276138a",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-22.log"
+      },
+      {
+        "index": 23,
+        "command": "node tests/new-core-shadow-isolation-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "e97f06381d9efc1972cba0fcfaaab22baa08ab02453e47098241a3412c728294",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-23.log"
+      },
+      {
+        "index": 24,
+        "command": "node tests/new-core-maintainability-gates-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "e2f19753bdb374e7efd60f97a24e7f6e1bd58ea0e3b098d73716c3be7aec88d9",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-24.log"
+      },
+      {
+        "index": 25,
+        "command": "node tests/new-core-acceptance-manifest-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "3a47abb2dffc3a35dbc6d1ac280cf04aac22b006e66a7b357e718988860bc6fc",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-25.log"
+      },
+      {
+        "index": 26,
+        "command": "node tests/conversation-engine-v2-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "a798d9b63c045e00c5bdecef175b8e58be6c1a253e6d056c5f020539dffc9d04",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-26.log"
+      },
+      {
+        "index": 27,
+        "command": "node tests/real-guest-deployed-acceptance-matrix-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "a9b1ab97dd9c0cfb916bea54e7096635f71a46e0747a6d8a1daca75ed446f861",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-27.log"
+      },
+      {
+        "index": 28,
+        "command": "npm run verify:protected-acceptance",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "e033274319469da4c201589a400541197962aedc9c3c7fb47da85eedf97ef653",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-28.log"
+      },
+      {
+        "index": 29,
+        "command": "npm run verify:codex-integrity",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "a1894c3c142a037a3329369f061b9521a3907d22b66c59fad96c30cf489b9bdc",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-29.log"
+      },
+      {
+        "index": 30,
+        "command": "node tests/new-core-deterministic-acceptance-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "ea26edcae3406191ed0281b57daa998ccd04f98099a2c8f03c0bb8150ee96103",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-30.log"
+      },
+      {
+        "index": 31,
+        "command": "node tests/new-core-acceptance-authority-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "6a20bed0bd23285f792246af07529f97239b5dee52fdaf8fd4a8db09ae45e5c6",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-31.log"
+      },
+      {
+        "index": 32,
+        "command": "node tests/new-core-attempt-trace-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "25251f6c0905557ede26b64778604753f89942f65f6692137688b0e907827090",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-32.log"
+      },
+      {
+        "index": 33,
+        "command": "node tests/new-core-burst-transport-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "2baaaf263c9296cc1104f0802fa395cde5f5aead3cc927c5cca3e10bbd2fecd8",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-33.log"
+      },
+      {
+        "index": 34,
+        "command": "node tests/new-core-burst-webhook-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "ec025b63c487cdc80e12846d214f4874798868da437e756f96d91fcc819a95d5",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-34.log"
+      },
+      {
+        "index": 35,
+        "command": "node tests/new-core-c03-correction-diagnostics-red-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "d1cfe6010e86511b8d4d702c4ce2667621d0764516b2e6d066929c1da20f4cf9",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-35.log"
+      },
+      {
+        "index": 36,
+        "command": "node tests/new-core-collection-capacity-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "a10ac67e86306d15331ba767169de8598873af0ddaa7f00d64284052a3e7fb6b",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-36.log"
+      },
+      {
+        "index": 37,
+        "command": "node tests/new-core-correction-field-preservation-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "61b0f037215b5ac440858a76de8401adb02a0917b4d588bbc1d8a887522db796",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-37.log"
+      },
+      {
+        "index": 38,
+        "command": "node tests/new-core-cross-stage-preservation-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "08c93a73007b26bfa8e4b0e94526690f05c1b40b23765b740bd647fd1ee8253f",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-38.log"
+      },
+      {
+        "index": 39,
+        "command": "node tests/new-core-decision-only-response-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "81033cbfa91f25056581561fade1ab61f071f00b1a3685c55e966481dda37336",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-39.log"
+      },
+      {
+        "index": 40,
+        "command": "node tests/new-core-detached-ownership-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "c91fd5839e36264faacc3dcdeb5a11b469540a4aa7dbe32a737d37f62cb5a620",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-40.log"
+      },
+      {
+        "index": 41,
+        "command": "node tests/new-core-deterministic-lifecycle-authority-red-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "a99081dae76ad16f10003c80206cf3998c7a26fd33e0bc9dcb560b00f8ee7d3a",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-41.log"
+      },
+      {
+        "index": 42,
+        "command": "node tests/new-core-durable-identity-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "0ce38302f5296b4d5a48f014b5aaf8264d07e98b90ecbbe26aba9f176ac5ffa1",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-42.log"
+      },
+      {
+        "index": 43,
+        "command": "node tests/new-core-epistemic-claim-runner.js",
+        "exit": 0,
+        "baselineExit": 1,
+        "logSha256": "3ae8f0f07345e658ea36e05f308e8e35b4cfa09b650b007d625959068ac47938",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-43.log"
+      },
+      {
+        "index": 44,
+        "command": "node tests/new-core-feasibility-reason-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "f62767171aabb573fd2f9e9f92d403ff03756e0f688b184297907be1925b08c7",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-44.log"
+      },
+      {
+        "index": 45,
+        "command": "node tests/new-core-luna-model-authority-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "40156e6beac5507e8692491450942d5f882eeccf8e1600543f19d3ade337abf2",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-45.log"
+      },
+      {
+        "index": 46,
+        "command": "node tests/new-core-manual-test-page-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "79f2cfc10b45dd2c72abd712e724c07a7dc31700f83d986e71113b14d8221a5c",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-46.log"
+      },
+      {
+        "index": 47,
+        "command": "node tests/new-core-mixed-handoff-bridge-red-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "70395160740e2a462b96be35653dd60a0294394aa97681328a6378b5dd8ea403",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-47.log"
+      },
+      {
+        "index": 48,
+        "command": "node tests/new-core-obligation-presentation-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "e9852a899ca512a1ef55c75db6611a4f39e8d32c98ed14483bc84e5fd5bd8888",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-48.log"
+      },
+      {
+        "index": 49,
+        "command": "node tests/new-core-openai-adapter-contract-runner.js",
+        "exit": 1,
+        "baselineExit": 1,
+        "logSha256": "e9eb6998a5de74b60635b9aae9fa044c15a05960dc5d2945ef14edd81fc0723f",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-49.log"
+      },
+      {
+        "index": 50,
+        "command": "node tests/new-core-openai-shadow-acceptance-contract-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "bcb09d114e55f4b90a478d6508ccb8bceabaf145d06c27572ba29f8c8dff231e",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-50.log"
+      },
+      {
+        "index": 51,
+        "command": "node tests/new-core-operator-outcome-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "c2e8eee4b7feb4dcd26efbf7d85b5c48ac0a494ec913f3fe3865cb953fa0b3b6",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-51.log"
+      },
+      {
+        "index": 52,
+        "command": "node tests/new-core-production-line-candidate-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "0ea5dab7c765d978104fd185c6ca7eaf6dd474bf3b7bdbb0a0ff8ea007ecd2e3",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-52.log"
+      },
+      {
+        "index": 53,
+        "command": "node tests/new-core-production-turn-adapter-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "0cbc54c34b2fee9f1a406e0b383346227d4b60ecc0ead4fd0591f8a543b8c6f8",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-53.log"
+      },
+      {
+        "index": 54,
+        "command": "node tests/new-core-quantity-contract-red-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "6992ebcfe5b91c3b9e122eec030b62f3eea707062d2c728387497198a1d3fbdd",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-54.log"
+      },
+      {
+        "index": 55,
+        "command": "node tests/new-core-quantity-execution-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "353c55e838c92c4c1dfb7dca35ab71c717d7bb81c2c579abfcff1fbb1d74c58d",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-55.log"
+      },
+      {
+        "index": 56,
+        "command": "node tests/new-core-quantity-provider-alignment-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "2ba2ed60dbfda915f60c343bcd87932d49884afa546420c0f14c1eaadf6b6797",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-56.log"
+      },
+      {
+        "index": 57,
+        "command": "node tests/new-core-quantity-state-turn-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "f20085e6e83418bdb2b61f362ea84c12ff07abd1178454fe9e9c2f9fb225a16f",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-57.log"
+      },
+      {
+        "index": 58,
+        "command": "node tests/new-core-quantity-validation-authority-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "d484306673c41dad7148fc2f962a25ca3725ca80a43e7fa717fd711ba6f7d24a",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-58.log"
+      },
+      {
+        "index": 59,
+        "command": "node tests/new-core-relative-semantics-runner.js",
+        "exit": 0,
+        "baselineExit": 1,
+        "logSha256": "35fe78aaa068b75973fd2f90080730d2543eb70ece499474f14edfc91e552fdb",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-59.log"
+      },
+      {
+        "index": 60,
+        "command": "node tests/new-core-relative-temporal-contract-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "2bbc932028fac361f1e74a16b4de5967c36bf3c563567ad1460604cff673bc5b",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-60.log"
+      },
+      {
+        "index": 61,
+        "command": "node tests/new-core-render-fact-contract-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "e9afce2ca3d343b92dccd8de20a0b510c4f55bafe244375d24d71848b5cd8fed",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-61.log"
+      },
+      {
+        "index": 62,
+        "command": "node tests/new-core-request-responsibility-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "a0f24e493aeaf7bcdc62040e3cd5058fffe9eb58805408d5076eec35b07c8766",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-62.log"
+      },
+      {
+        "index": 63,
+        "command": "node tests/new-core-required-pricing-dependency-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "1f2f80630f8bae0a7d46c8eea2c9f5d9ba8daa219c7d0ebb95a81becd2be1ea3",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-63.log"
+      },
+      {
+        "index": 64,
+        "command": "node tests/new-core-scoped-dependency-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "d4d0f3ec27f12640d5a1780dc4feb483d7d8cef2be23c8aed7fbe81d794de13c",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-64.log"
+      },
+      {
+        "index": 65,
+        "command": "node tests/new-core-semantic-obligation-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "6ace52a84783bf03243ca0fd95ea27634c4b456ca940e3d14fcbceb7c4471fb2",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-65.log"
+      },
+      {
+        "index": 66,
+        "command": "node tests/new-core-semantic-position-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "a4754dfd8e3175040fd7ed58014d477ca5f1363e3fe82b5345b61a16fd6dce5b",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-66.log"
+      },
+      {
+        "index": 67,
+        "command": "node tests/new-core-start-clarify-state-runner.js",
+        "exit": 1,
+        "baselineExit": 1,
+        "logSha256": "b6fe7511aac76043f96526823002e9a8952fcb161093ff186c6f20a95ff9fde5",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-67.log"
+      },
+      {
+        "index": 68,
+        "command": "node tests/new-core-state-input-shape-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "d320e8f273cc272f848512220509126ee4c667f9f48ffff01dd8349d7e16ba21",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-68.log"
+      },
+      {
+        "index": 69,
+        "command": "node tests/new-core-state-semantic-projection-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "695fedf373e61803b9012cbd38748028e6bf72b08160610898da1763a9b6aebc",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-69.log"
+      },
+      {
+        "index": 70,
+        "command": "node tests/new-core-static-capacity-contract-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "89b74ba37dc24fcbb8a771b606acd8b320b34f3caff35b0c5c57953eca5f48dd",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-70.log"
+      },
+      {
+        "index": 71,
+        "command": "node tests/new-core-terminal-failure-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "33e7cbc470dcee37d74a20ef8ba8dce26b16f759bfedda48c727bf9f52371366",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-71.log"
+      },
+      {
+        "index": 72,
+        "command": "node tests/new-core-turn-serialization-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "cb24583a1eca9af8cf58ee65541046e7a1fedad360824f52b04e325ffa719a09",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-72.log"
+      },
+      {
+        "index": 73,
+        "command": "node tests/new-core-typed-coverage-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "7deb0682f3fbb5a15dd3cebd02f79af6d0dc98874971d81e3b81e89a494dfd8b",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-73.log"
+      },
+      {
+        "index": 74,
+        "command": "node tests/new-core-understanding-correction-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "16ba1c28338e6be717a30f3e28e749524393eff3b7a23930f71c7adb6922dded",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-74.log"
+      },
+      {
+        "index": 75,
+        "command": "node tests/new-core-verdict-trace-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "12c715b24b10b046b956ad18988be0108350554df16b8df36321fe775fc74fc4",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-75.log"
+      },
+      {
+        "index": 76,
+        "command": "node tests/new-core-visible-outcomes-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "47445a30655fee5228d518970272d000b69045f8b39b576398cf3e8b642aaea7",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-76.log"
+      },
+      {
+        "index": 77,
+        "command": "node tests/conversation-state-v3-contract-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "a9f04f0de2d6d790d6d6f1b19e8fe4ac0c78b27aec6c6db845bc39b2dc090625",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-77.log"
+      },
+      {
+        "index": 78,
+        "command": "node tests/conversation-state-v3-runtime-reducer-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "e3402fe028f2a6a8fdfd895eb7957dfe941dcceba91bbb3533c53468baa91aab",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-78.log"
+      },
+      {
+        "index": 79,
+        "command": "node tests/phase7-final-response-e2e-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "e76ae6f3bc3a096ee85e2a50fa2f008909cd63c3587f92e6b734776d9d7a6715",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-79.log"
+      },
+      {
+        "index": 80,
+        "command": "node tests/junzan-ai-constitution-contract-runner.js",
+        "exit": 0,
+        "baselineExit": 0,
+        "logSha256": "b210e6088ca5847566476622b6679f8fceca361c82a9c1804b8b519b8a2b46ee",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-80.log"
+      },
+      {
+        "index": 83,
+        "command": "node tests/test-baseline-cleanup-runner.js",
+        "exit": 0,
+        "baselineExit": null,
+        "logSha256": "5ffe940481b31c7fb3eb7c1dcd2e8e19f0323585c5055447590d6d8ddbcbf69b",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-83.log"
+      },
+      {
+        "index": 84,
+        "command": "npm run test:baseline-replacements",
+        "exit": 0,
+        "baselineExit": null,
+        "logSha256": "9ee78cb8437ee1a0c5280a982fa3aed02d5b719f196bae8ed0ba478e0cc9e6c7",
+        "logPath": "/home/gqlik/junzan-test-baseline-20260912/candidate-84.log"
+      }
+    ]
+  },
+  "red": {
+    "command": "node tests/test-baseline-cleanup-runner.js",
+    "exit": 1,
+    "reason": "77 unique commands vs 120 lifecycle invocations; duplicated execution",
+    "logSha256": "9ea63926eb927ac2f629b00fa6dd5a274f7ac892256743507c7e3cb8ce4869a0"
+  }
+}

@@ -1,0 +1,303 @@
+[
+  {
+    "command": "node tests/first-version-data-mover-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/test-only-conversation-acceptance-api-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/property-line-binding-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/property-line-binding-postgres-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/property-line-binding-postgres-webhook-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/final-decision-contract-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/dialogue-temporal-state-contract-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/pending-arbitration-contract-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/pending-request-contract-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/controlled-context-authority-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/planner-state-control-removal-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/planner-normalizer-semantic-preservation-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/first-version-controlled-core-exit-code-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/relation-evidence-contract-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/multi-cycle-context-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/temporal-per-request-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/bundle-entertainment-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/first-version-controlled-core-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/first-version-room-data-chain-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/room-data-postgres-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/v2-runtime-uniqueness-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/junzan-ai-constitution-contract-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/v1-golden-acceptance-matrix-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/junzan-test-line-gateway-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/hospitality-knowledge-phase1-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/hospitality-knowledge-phase1-postgres-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/conversation-followup-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/location-google-maps-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/coverage-critic-contract-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/coverage-critic-planner-integration-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/planner-semantic-contract-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/planner-failure-safety-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/conversation-engine-v2-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/v2-live-availability-regression-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/v2-semantic-core-matrix-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/conversation-engine-v2-coverage-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/conversation-engine-v2-response-composition-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/conversation-engine-v2-integration-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/conversation-planner-v2-adapter-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/first-version-acceptance-matrix-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node tests/first-version-public-admin-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node ../../tests/pilot-nephi-home-node-pilot-v1-onboarding-existing-property-apply-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  },
+  {
+    "command": "node ../../tests/pilot-nephi-home-node-pilot-v1-onboarding-manual-resume-link-runner.js",
+    "removeFrom": "test",
+    "retainedIn": "pretest",
+    "reason": "Identical command/arguments and cwd, with earlier invocation required to succeed. npm lifecycle metadata differs by stage, but no test/lib source consumes npm_lifecycle_event, npm_lifecycle_script or npm_command; no distinct fixture or negative-probe parameters. The same assertion program remains explicitly invoked.",
+    "coverageGap": false
+  }
+]
