@@ -4,7 +4,11 @@ const { CAPABILITY_REGISTRY } = require("../conversation-engine-v2/capability-re
 const { buildPropertyCatalog } = require("../conversation-engine-v2/property-catalog");
 const { buildContextSnapshotV3, executionConditionsV3, reduceConversationStateV3 } = require("../conversation-engine-v2/conversation-state-v3-reducer");
 const { buildCanonicalFormalRequest, buildCanonicalQueryPlan, resultForNotReady } = require("../conversation-engine-v2/formal-request");
-const { executeCanonicalQueryPlans, applyCanonicalReplyRules } = require("../conversation-engine-v2/capability-executor");
+const {
+  executeCanonicalQueryPlans,
+  applyCanonicalReplyRules,
+  canonicalExecutionProvenanceFor
+} = require("../conversation-engine-v2/capability-executor");
 const { buildResponsePlan } = require("../conversation-engine-v2/response-planner");
 const { composeControlledReply } = require("../conversation-engine-v2/controlled-composer");
 const { validateClaims, unknownProvenanceFor, isValidatedFinalResponse } = require("../conversation-engine-v2/claim-validator");
@@ -359,6 +363,10 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   let rulesLoaded = false, rules, ruleFailure;
   const executionOutcomes = rawExecutionOutcomes.map(outcome => {
     if (!ruleTaskIds.has(outcome.taskId)) return outcome;
+    // Controlled custom replies transform official execution outcomes only.
+    // Formal not-ready and routed clarification results have no execution
+    // provenance and must retain their structured failure semantics.
+    if (!canonicalExecutionProvenanceFor(outcome)) return outcome;
     try {
       if (!rulesLoaded) {
         rulesLoaded = true;

@@ -3,6 +3,10 @@
 const { MAX_EVIDENCE_REFS, validateSourceEvidence } = require("./source-evidence");
 
 const { validateRequestQuantity } = require('./request-quantity');
+const {
+  RELATIVE_TEMPORAL_CANDIDATE_KIND,
+  isRelativeTemporalSemantics
+} = require("../../conversation-contracts/relative-temporal-semantics");
 const MAX_ID_LENGTH = 160;
 const MAX_SLOT_CANDIDATES = 20;
 const UNIT_FIELDS = Object.freeze([
@@ -138,9 +142,9 @@ function validateTemporalCandidate(value, errors) {
     errors.push("temporalCandidate.keys");
     unknownWireField ||= hasUnknownFields(value, fields);
   }
-  if (value && Object.hasOwn(value,"relativeSemantics") && (value.kind !== "relative_date"
+  if (value && Object.hasOwn(value,"relativeSemantics") && (value.kind !== RELATIVE_TEMPORAL_CANDIDATE_KIND
     || value.checkInCandidate !== null || value.checkOutCandidate !== null
-    || !require("../../conversation-contracts/relative-temporal-semantics").isRelativeTemporalSemantics(value.relativeSemantics))) errors.push("temporalCandidate.relativeSemantics");
+    || !isRelativeTemporalSemantics(value.relativeSemantics))) errors.push("temporalCandidate.relativeSemantics");
   if (!boundedText(value && value.rawText, 500)) errors.push("temporalCandidate.rawText");
   if (!TEMPORAL_KINDS.has(value && value.kind)) errors.push("temporalCandidate.kind");
   if (!nullableBoundedText(value && value.checkInCandidate, 80)) errors.push("temporalCandidate.checkInCandidate");

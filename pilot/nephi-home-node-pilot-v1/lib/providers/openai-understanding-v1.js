@@ -188,6 +188,7 @@ function evidenceArraySchema() {
 }
 
 function temporalCandidateSchema() {
+  const relativeTemporalContract = require("../conversation-contracts/relative-temporal-semantics");
   const temporalFields = (kind, checkInCandidate, checkOutCandidate) => ({
     rawText: stringSchema(MAX_QUOTE_LENGTH,
       "A complete exact substring of one evidenceRefs[].quote for this unit; never combine text across separate evidence spans."),
@@ -206,12 +207,12 @@ function temporalCandidateSchema() {
         { type: "null" }
       ), "A complete source date. checkInCandidate must be a valid YYYY-MM-DD candidate; a date range uses date_range instead."),
       objectSchema({
-        ...temporalFields(enumSchema(["relative_date"]), {type:"null"}, {type:"null"}),
+        ...temporalFields(enumSchema([relativeTemporalContract.RELATIVE_TEMPORAL_CANDIDATE_KIND]), {type:"null"}, {type:"null"}),
         relativeSemantics: objectSchema({
-          dayOffset: {type:"integer",minimum:-require("../conversation-contracts/relative-temporal-semantics").MAX_DAY_OFFSET,maximum:require("../conversation-contracts/relative-temporal-semantics").MAX_DAY_OFFSET},
-          dayPeriod: enumSchema(require("../conversation-contracts/relative-temporal-semantics").DAY_PERIODS)
+          dayOffset: {type:"integer",minimum:-relativeTemporalContract.MAX_DAY_OFFSET,maximum:relativeTemporalContract.MAX_DAY_OFFSET},
+          dayPeriod: enumSchema(relativeTemporalContract.DAY_PERIODS)
         }, "Explicit relative meaning anchored to this source event; never an inferred calendar date.")
-      }, "Use for day-relative source meaning, including a time-of-day qualifier. Date candidates remain null; JunZan computes the calendar date."),
+      }, relativeTemporalContract.RELATIVE_TEMPORAL_SEMANTICS_DESCRIPTION),
       objectSchema(temporalFields(
         enumSchema([...TEMPORAL_KINDS].filter((kind) => kind !== "absolute_date")),
         nullableStringSchema(80),

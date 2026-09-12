@@ -5,6 +5,11 @@ const TEMPORAL_PROVENANCE = new Set(["explicit", "context", "defaulted", "derive
 const TEMPORAL_VALUE_STATUSES = new Set(["missing", "uncertain", "confirmed"]);
 const CONTEXTUAL_TEMPORAL_RULE_REF = "temporal:contextual_expression";
 const CANONICAL_TEMPORAL_RULE_REF = "temporal:canonical_grammar";
+const {
+  CANONICAL_TEMPORAL_COMPARISON,
+  compareCanonicalTemporalSemantics,
+  isRelativeTemporalSemantics
+} = require("../conversation-contracts/relative-temporal-semantics");
 
 const RELATIVE_DAY_OFFSETS = new Map([
   ["今天", 0],
@@ -344,17 +349,32 @@ function parseTemporalGrammar(raw, eventTimestamp, timezone) {
   return parseTemporalGrammarAtBase(raw, partsAt(timestamp, timezone));
 }
 
-function parseRelativeSemantics(expression, rawText, eventTimestamp, timezone) {
-  if (!require("../conversation-contracts/relative-temporal-semantics").isRelativeTemporalSemantics(expression.relativeSemantics)
+function parseRelativeSemantics(expression, rawText, eventTimestamp, timezone, nightsCandidate) {
+  if (!isRelativeTemporalSemantics(expression.relativeSemantics)
     || expression.kind !== "relative" || expression.anchor !== "message_time") return {unresolvedReason:"relative_semantics_invalid"};
   const timestamp = Number(eventTimestamp) || Date.parse(eventTimestamp || "");
   if (!Number.isFinite(timestamp)) return {unresolvedReason:"temporal_clock_invalid"};
   const base = partsAt(timestamp,timezone).key;
   const checkIn = addDays(base,expression.relativeSemantics.dayOffset);
   const grammar = parseTemporalGrammar(rawText,eventTimestamp,timezone);
-  const relativeDuration = grammar.startExpressionType === "relative_day";
-  if (grammar.searchRange || (grammar.checkOut && !relativeDuration) || (grammar.checkIn && (grammar.checkIn !== checkIn || (grammar.expressionType !== "relative_day" && !relativeDuration)))) return {unresolvedReason:"relative_semantics_conflict"};
-  return {...(relativeDuration ? grammar : {}),checkIn,expressionType:relativeDuration ? grammar.expressionType : "relative_day",...(checkIn < base ? {unresolvedReason:"past_date"} : {})};
+  if (grammar.unresolvedReason && grammar.unresolvedReason !== "temporal_expression_unrecognized") return grammar;
+  // Source duration is independent evidence for both representations. A model
+  // duration remains an independent constraint and cannot borrow the grammar's
+  // end date to conceal a disagreement. Defaults are applied only downstream.
+  const sourceNights = explicitNights(rawText);
+  const modelNights = Number.isInteger(nightsCandidate) ? nightsCandidate : sourceNights;
+  const modelValue = { checkIn, ...(modelNights ? { nights: modelNights } : {}) };
+  const grammarValue = grammar.checkIn && !grammar.checkOut && modelNights
+    ? { ...grammar, nights: sourceNights || modelNights } : grammar;
+  const comparison = compareCanonicalTemporalSemantics(modelValue, grammarValue);
+  if (comparison === CANONICAL_TEMPORAL_COMPARISON.CONFLICT) return {unresolvedReason:"relative_semantics_conflict"};
+  const grammarEquivalent = comparison === CANONICAL_TEMPORAL_COMPARISON.EQUIVALENT;
+  return {
+    ...(grammarEquivalent ? grammar : {}),
+    checkIn,
+    expressionType: grammarEquivalent ? grammar.expressionType : "relative_day",
+    ...(checkIn < base ? {unresolvedReason:"past_date"} : {})
+  };
 }
 
 function inferTemporalSpanFromMessage(text, eventTimestamp, timezone, ownedRawText = "") {
@@ -785,7 +805,7 @@ function resolveCanonicalTemporal({
   }
 
   const parsed = Object.hasOwn(expression,"relativeSemantics")
-    ? parseRelativeSemantics(expression,rawText,eventTimestamp,timezone)
+    ? parseRelativeSemantics(expression,rawText,eventTimestamp,timezone,plannerCandidate.nightsCandidate)
     : parseTemporalGrammar(rawText, eventTimestamp, timezone);
   if (parsed.unresolvedReason) {
     const unresolvedNights = parsed.unresolvedReason === "past_date"

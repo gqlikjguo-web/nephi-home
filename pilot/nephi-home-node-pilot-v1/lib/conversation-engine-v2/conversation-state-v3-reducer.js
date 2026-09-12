@@ -649,6 +649,12 @@ function statusForOutcome(outcome, readiness, clarificationSelected = false) {
       : "needs_human";
   }
   if (outcome.outcome === "unknown") return "unknown";
+  if (["technical_error", "invalid_query_plan", "property_data_missing"].includes(outcome.outcome)) {
+    if (readiness.status === "ready") return "ready";
+    if (readiness.status === "missing") {
+      return clarificationSelected ? "needs_clarification" : "pending";
+    }
+  }
   return "needs_human";
 }
 
