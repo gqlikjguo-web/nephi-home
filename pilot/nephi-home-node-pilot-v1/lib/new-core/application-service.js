@@ -91,7 +91,9 @@ function turnStateSnapshot(state, scope, now) {
       requestCycleId: cycle.requestCycleId,
       requestKind,
       capability,
-      status: cycle.status === "needs_clarification" ? "pending" : cycle.status === "unknown" ? "active" : cycle.status,
+      // C01 describes Context lifecycle, not the State execution phase.
+      status: cycle.status === "needs_clarification" ? "pending"
+        : ["ready", "in_progress", "unknown"].includes(cycle.status) ? "active" : cycle.status,
       expiresAt: cycle.contextReuseExpiresAt,
       subject: { kind: subjectKind, catalogIdentity: topic.canonicalId || inventory.entityId || null },
       missingFields: [...new Set(task && task.missingFields || [])],
