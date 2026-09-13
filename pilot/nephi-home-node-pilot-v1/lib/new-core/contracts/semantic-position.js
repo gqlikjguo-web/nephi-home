@@ -1,12 +1,14 @@
 "use strict";
 
 const { isDeepStrictEqual: equal } = require("node:util");
+const { INFORMATION_NEED_SLOT } = require("./information-need");
 
 // Execution positions are scalar in C08/State; context-only positions are sets
 // of typed members. Quantity is a separate compound value, never slot count.
 const SLOT_POSITIONS = Object.freeze({
   guest_count: Object.freeze({ cardinality: "single" }),
   product: Object.freeze({ cardinality: "single" }),
+  [INFORMATION_NEED_SLOT]: Object.freeze({ cardinality: "single" }),
   transport: Object.freeze({ cardinality: "multi" }),
   other_supported: Object.freeze({ cardinality: "multi" })
 });

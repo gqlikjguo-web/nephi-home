@@ -70,7 +70,9 @@ function assertNoForgedProperty(args, propertyId) {
 }
 
 function catalogCategoryToSubjectKind(category) {
-  return category === "transport" ? "external_place" : category;
+  // C08 room-property facts retain a canonical category, not a new subject kind.
+  return category === "transport" ? "external_place"
+    : category === "room_feature" ? "room" : category;
 }
 
 function subjectKindToCatalogCategory(kind) {

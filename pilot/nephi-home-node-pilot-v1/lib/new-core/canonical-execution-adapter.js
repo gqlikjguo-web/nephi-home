@@ -271,6 +271,7 @@ function compatibilityDetailIntent(capability) {
 }
 
 const { singleSlotOperation: uniqueSlotOperation } = require("./contracts/semantic-position");
+const { INFORMATION_NEED_SLOT } = require("./contracts/information-need");
 
 function productFromIdentity(identity, kind) {
   if (kind === "bundle") {
@@ -481,6 +482,9 @@ function buildCompatibilityInvocation({
 }) {
   const guestCountCandidate = guestOperation && guestOperation.operation === "SET"
     ? guestOperation.value : null;
+  const informationNeed = uniqueSlotOperation(provenance.lifecycleDecision.verifiedSlotOperations, INFORMATION_NEED_SLOT);
+  const detailIntent = informationNeed?.operation === "SET" ? informationNeed.value
+    : compatibilityDetailIntent(provenance.unit.capability);
   const sourceText = canonicalizerInputItem.evidenceRefs.map((reference) => reference.quote).join("\n");
   // This compatibility index has no semantic meaning. It is created only for
   // the unchanged legacy call, then the complete legacy wrapper is discarded.
@@ -490,8 +494,9 @@ function buildCompatibilityInvocation({
     taskId: provenance.unit.unitId,
     type: compatibilityTaskType(provenance.unit.capability),
     sourceText,
-    detailIntent: compatibilityDetailIntent(provenance.unit.capability),
-    requestedOutputs: compatibilityRequestedOutputs(provenance.unit.capability),
+    detailIntent,
+    requestedOutputs: informationNeed?.operation === "SET" && detailIntent !== "general"
+      ? [detailIntent] : compatibilityRequestedOutputs(provenance.unit.capability),
     dependsOnStayContext: provenance.unit.stayDependent,
     entity,
     stayCandidate: { ...temporal.stayCandidate, guestCountCandidate },

@@ -59,6 +59,7 @@ const CAPABILITIES = new Set([
   "total_price",
   "capacity",
   "lodging_product_capacity",
+  "lodging_room_composition",
   "property_fact",
   "amenity",
   "amenity_list",

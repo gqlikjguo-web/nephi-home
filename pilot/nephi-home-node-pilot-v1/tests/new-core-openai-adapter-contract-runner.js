@@ -643,7 +643,7 @@ async function main() {
   assert.equal(missingFieldNotFilledError.schemaViolation.actual, "relation_target:missing_field_not_filled",
     "SUPPLEMENT must supply at least one field missing from its compatible target");
 
-  const standaloneSupplementError = await captureError(() => callOpenAIUnderstandingV1(
+  const completedSupplement = await callOpenAIUnderstandingV1(
     c01({
       sourceEvents: [{
         eventId: "event-a", messageRef: "message-a", role: "guest", timestamp: NOW,
@@ -678,10 +678,11 @@ async function main() {
         referencedHistoryEventRefs: [{ eventId: "history-a", messageRef: "history-message-a" }]
       })]
     })))
-  ));
-  assert.equal(standaloneSupplementError.code, "UNDERSTANDING_SCHEMA_INVALID");
-  assert.equal(standaloneSupplementError.schemaViolation.actual, "relation_target:standalone_request_complete",
-    "a semantic unit that is independently ready must not be admitted as SUPPLEMENT");
+  );
+  assert.equal(completedSupplement.contextLinkCandidates[0].relationKind, "SUPPLEMENT",
+    "completing a cited pending target is not evidence of an independent NEW_REQUEST");
+  assert.equal(completedSupplement[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].totalUnderstandingCalls, 1,
+    "a valid pending completion must not be corrected into a second task");
 
   const compatibleSupplementInput = c01({
     sourceEvents: [{

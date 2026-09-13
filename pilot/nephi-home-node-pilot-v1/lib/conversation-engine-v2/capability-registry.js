@@ -54,7 +54,7 @@ const REGISTRY_BLUEPRINT = {
   policy: {
     capability: "policy",
     acceptedCandidateTypes: ["policy"],
-    acceptedEntityCategories: ["policy", "payment", "cancellation", "check_in", "check_out", "amenity", "activity", "room_feature"],
+    acceptedEntityCategories: ["policy", "payment", "cancellation", "check_in", "check_out", "amenity", "activity", "room_feature", "other"],
     stayDependency: false,
     requiredFields: [],
     resolverId: "property_catalog",
@@ -168,6 +168,16 @@ const REGISTRY_BLUEPRINT = {
     stayDependency: "required",
     requiredFields: ["stay.checkIn", "stay.checkOut", "stay.guests"],
     resolverId: "availability_resolver",
+    riskLevel: "low",
+    responseMode: "answer"
+  },
+  lodging_room_composition: {
+    capability: "lodging_room_composition",
+    acceptedCandidateTypes: ["lodging_room_composition"],
+    acceptedEntityCategories: ["room", "bundle", "other"],
+    stayDependency: false,
+    requiredFields: [],
+    resolverId: "property_catalog",
     riskLevel: "low",
     responseMode: "answer"
   },

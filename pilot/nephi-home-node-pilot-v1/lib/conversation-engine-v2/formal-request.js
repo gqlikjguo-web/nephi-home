@@ -6,7 +6,7 @@ const {
 } = require("../conversation-contracts/task-readiness");
 
 const INVENTORY_CAPABILITIES = new Set(["availability", "bundle_availability", "room_options", "capacity", "price", "total_price"]);
-const SUPPORTED_CAPABILITIES = new Set([...INVENTORY_CAPABILITIES, "available_dates", "lodging_product_capacity", "amenity", "policy", "property_fact", "amenity_list", "booking_request", "human_help", "high_risk", "unknown"]);
+const SUPPORTED_CAPABILITIES = new Set([...INVENTORY_CAPABILITIES, "available_dates", "lodging_product_capacity", "lodging_room_composition", "amenity", "policy", "property_fact", "amenity_list", "booking_request", "human_help", "high_risk", "unknown"]);
 
 function stableFormalRequestId({ requestCycleId, task }) {
   return `${String(requestCycleId || "none")}:${String(task && task.taskId || "task")}`;

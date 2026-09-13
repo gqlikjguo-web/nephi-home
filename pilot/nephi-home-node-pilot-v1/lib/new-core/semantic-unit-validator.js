@@ -1,6 +1,7 @@
 "use strict";
 
 const { validateSemanticUnitCandidate } = require("./contracts/semantic-unit-candidate");
+const { INFORMATION_NEED_SLOT, informationNeedAdmission } = require("./contracts/information-need");
 const {
   capabilityPolicyFor,
   catalogIdentityRuleFor,
@@ -137,8 +138,8 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnIn
   const add = (field, pending, dependsOn, extra = {}) => fieldValidationState.push({field,
     validationCompleted:["structure", "evidenceOwnership"], validationPending:pending, dependsOn, ...extra});
   for (const slot of unit.slotCandidates) {
-    const pending = slot.slot === "product" ? ["productSlotAdmission"] : slot.slot === "other_supported" ? ["otherSupportedSlotAdmission"] : [];
-    add(`slotCandidates.${slot.slotCandidateId}`, pending, slot.slot === "other_supported" ? ["capability"] : [], {slotCandidateId:slot.slotCandidateId});
+    const pending = slot.slot === "product" ? ["productSlotAdmission"] : slot.slot === "other_supported" ? ["otherSupportedSlotAdmission"] : slot.slot === INFORMATION_NEED_SLOT ? ["informationNeedAdmission"] : [];
+    add(`slotCandidates.${slot.slotCandidateId}`, pending, ["other_supported", INFORMATION_NEED_SLOT].includes(slot.slot) ? ["capability"] : [], {slotCandidateId:slot.slotCandidateId});
   }
   if (unit.quantityCandidate) add("quantityCandidate", ["quantitySubjectAdmission"], ["subject.kind"]);
   if (unit.temporalCandidate) add("temporalCandidate", ["temporalAdmission"], ["capability"]);
@@ -170,7 +171,8 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnIn
     return result;
   };
   const diagnostics = firstSlotAdmissionFailure(unit.slotCandidates, slot => observeAdmission(slot, productSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput)))
-    || firstSlotAdmissionFailure(unit.slotCandidates, slot => observeAdmission(slot, otherSupportedSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput, policy)));
+    || firstSlotAdmissionFailure(unit.slotCandidates, slot => observeAdmission(slot, otherSupportedSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput, policy)))
+    || firstSlotAdmissionFailure(unit.slotCandidates, slot => observeAdmission(slot, informationNeedAdmission(slot, policy)));
   if (diagnostics) {
     return { ...reject("UNIT_MEANING_UNSUPPORTED", unit.slotCandidates.map((slot, index) => ({field:`slotCandidates[${index}].value`,target:`slotCandidates.${slot.slotCandidateId}`})).find(item => item.field === diagnostics.field)?.target), diagnostics };
   }
@@ -218,6 +220,7 @@ function isValidatedSemanticUnitFor(understandingTurnInput, unit) {
 module.exports = {
   quantitySubjectAdmission,
   productSlotAdmission,
+  otherSupportedSlotAdmission,
   buildPublicCatalogIdentitySet,
   projectCapabilityRegistry,
   isValidatedSemanticUnitFor,

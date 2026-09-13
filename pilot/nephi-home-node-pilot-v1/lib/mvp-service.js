@@ -7,6 +7,26 @@ const { normalizePropertyFacts } = require("./property-facts");
 const { normalizeSelfCheckInOutInstructions } = require("./self-check-in-out-instructions");
 
 const ALLOWED_STATUSES = new Set(["available", "closed"]);
+const AVAILABILITY_UNKNOWN_RESULTS = new WeakMap();
+function availabilityUnknownProvenanceFor(result, scope) {
+  const record = AVAILABILITY_UNKNOWN_RESULTS.get(result);
+  if (!record || !scope || record.provenance.readEvidence.propertyId !== scope.propertyId
+    || record.provenance.readEvidence.from !== scope.from || record.provenance.readEvidence.to !== scope.to
+    || !require("node:util").isDeepStrictEqual(result, record.snapshot)) return null;
+  return record.provenance;
+}
+
+function missingInventoryRecords(rows, dates, rooms) {
+  // Only an incomplete, well-formed formal read establishes missing facts.
+  // Invalid dates, duplicate rows or invalid statuses remain technical failure.
+  if (!rows.every(row => row && dates.includes(row.date)
+    && Object.keys(row).every(key => key === "date" || ALLOWED_STATUSES.has(row[key])))
+    || new Set(rows.map(row => row.date)).size !== rows.length) return false;
+  return dates.some(date => {
+    const row = rows.find(item => item.date === date);
+    return !row || rooms.some(room => !Object.hasOwn(row, room.id));
+  });
+}
 const ALLOWED_ACTIONS = new Set(["correct", "needs_fix", "should_handoff"]);
 const LINE_USER_ID_PATTERN = /^[A-Za-z0-9_-]{3,128}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -383,7 +403,7 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       // A short available set remains partial input for the existing fulfillment authority.
     }
 
-    return {
+    const result = {
       customerId: homestay.customerId,
       homestayName: homestay.name,
       checkIn,
@@ -399,6 +419,16 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       rooms,
       lineUrl: homestay.lineUrl || ""
     };
+    const readEvidence = require("./providers/postgres-providers").availabilityReadEvidenceFor(rows, {
+      propertyId: homestay.customerId, from: checkIn, to: checkOut
+    });
+    if (!availabilityReliable && readEvidence && missingInventoryRecords(rows, dates, homestay.rooms || [])) {
+      AVAILABILITY_UNKNOWN_RESULTS.set(result, {
+        snapshot: structuredClone(result),
+        provenance: Object.freeze({ status: "unknown", reason: "missing_inventory_records", readEvidence })
+      });
+    }
+    return result;
   }
 
   function getMonth(customerId, yearValue, monthValue) {
@@ -499,6 +529,21 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       latestArrivalTime: String(updated.commonAnswers && updated.commonAnswers.latestArrivalTime || ""),
       checkOutTime: String(updated.commonAnswers && updated.commonAnswers.checkOutTime || "")
     };
+  }
+
+  function compositionResult(result) {
+    if (!result.valid) throw new AppError(result.code === "UNKNOWN_CUSTOMER_ID" ? 404
+      : result.code === "ROOM_COMPOSITION_REVISION_CONFLICT" ? 409 : 400, result.code, "Room composition request rejected");
+    return { propertyId: result.propertyId, composition: result.composition };
+  }
+
+  function getRoomComposition(customerId) {
+    return compositionResult(providers.customerSettings.getRoomComposition(String(customerId || "").trim()));
+  }
+
+  function updateRoomComposition(input) {
+    const propertyId = String(input.customerId || input.propertyId || "").trim();
+    return compositionResult(providers.customerSettings.updateRoomComposition(propertyId, input.composition));
   }
 
   function getPropertyFacts(customerId) {
@@ -1131,6 +1176,8 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     getBootstrap,
     getPropertyProfile,
     updatePropertyProfile,
+    getRoomComposition,
+    updateRoomComposition,
     getPropertyFacts,
     updatePropertyFacts,
     updateSettings,
@@ -1156,4 +1203,4 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
   };
 }
 
-module.exports = { createMvpService, AppError, stayDates };
+module.exports = { createMvpService, AppError, stayDates, availabilityUnknownProvenanceFor };

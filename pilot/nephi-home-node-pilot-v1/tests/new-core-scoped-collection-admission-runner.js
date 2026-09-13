@@ -1,5 +1,6 @@
 "use strict";
-// FAKE_INTEGRATION: actual current Understanding admission/application/executor;
+// FAKE_INTEGRATION: scoped-null admission; existing catalog-entry regression remains unchanged.
+// actual current Understanding admission/application/executor;
 // injected provider payload, in-memory formal property data, no network or writes.
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -46,15 +47,16 @@ for (const [propertyId, names] of [["collection-a", ["Garden pavilion", "Reading
           model: "gpt-5.6-luna", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] }) };
       } }); }
     });
-    // The shared NULL_OR_PUBLIC_CATALOG contract permits the C01 property scope
-    // without minting a catalog item. Any supplied identity must still be public.
-    const admittedIdentity = admission.catalogSubjects[0]?.catalogIdentity ?? null;
-    assert.ok(admission.propertySubjects.some(subject =>
-      subject.properties.catalogIdentity.enum.includes(admittedIdentity)),
-      `CORE_FAIL: property amenity_list has no legal scoped/provider representation: ${JSON.stringify(admission)}`);
+    assert.ok(admission.propertySubjects.some(subject => subject.properties.catalogIdentity.enum?.includes(null)),
+      `Scoped property collection must be admitted without inventing a catalog entry: ${JSON.stringify(admission)}`);
+    assert.equal(admission.catalogSubjects.length, 0, "production projection need not add a property item");
     assert.equal(calls, 1);
     assert.equal(inventoryCalls, 0);
     assert.equal(result.earliestFailure, null);
+    const snapshot = require("../lib/new-core/application-service").turnStateSnapshot(result.state, scope, now);
+    assert.equal(result.state.tasks[0].taskType, "amenity_list");
+    assert.deepEqual(snapshot.referenceableCycles[0].subject, {kind:"property",catalogIdentity:null});
+    assert.equal(snapshot.referenceableCycles[0].status, "answered");
     const a = result.artifacts;
     assert.equal(a.canonicalItems.length, 1);
     assert.equal(a.canonicalItems[0].canonicalRequest.capability, "amenity_list");

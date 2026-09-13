@@ -17,18 +17,20 @@ const POLICY_FIELDS = Object.freeze([
 ]);
 
 const UNDERSTANDING_DESCRIPTIONS = Object.freeze({
-  availability: "Use availability for a specific supplied stay date or date range when the guest asks whether lodging, a room, a room set, or a bundle is available then. This is a language-derived capability candidate only; never answer facts.",
+  lodging_room_composition: "Use lodging_room_composition for the physical rooms making up a property, room type, bundle/package or identified room set, including the actual number of physical rooms. This is independent of stay dates, people capacity and requested booking quantity. Select the formal subject; property-wide scope has null catalog identity. Never infer members or counts and never provide facts.",
+  availability: "Use availability for a specific supplied stay date or date range when the guest asks whether lodging, a room, a room set, or a bundle is available then. Also use availability with lodging_question for preliminary intent to arrange lodging before the necessary stay conditions have been supplied. Preserve missing conditions as missing; this does not execute or promise a reservation. A search for which dates are available uses available_dates instead. This is a language-derived capability candidate only; never answer facts.",
   available_dates: "Use available_dates only to search for which stay dates are available when the guest asks which, nearest, or upcoming dates can be booked rather than asking about a specific supplied stay date. This is a language-derived capability candidate only; never answer facts.",
   price: "Use price for a lodging price or rate question. Use the property subject with no catalog identity when no specific room, room set, or bundle is requested. This is a language-derived capability candidate only; never answer price facts.",
   total_price: "Use total_price for a lodging total-cost question. Use the property subject with no catalog identity when no specific room, room set, or bundle is requested. This is a language-derived capability candidate only; never answer price facts.",
   capacity: "Use capacity only for date-and-guest-dependent lodging feasibility: whether the requested lodging arrangement can accommodate the supplied party for a stay. Do not use it for the fixed maximum occupancy of one explicitly identified room or bundle. This is a language-derived capability candidate only; never answer capacity or availability facts.",
   lodging_product_capacity: "Use lodging_product_capacity only for the fixed maximum occupancy of one explicitly identified room or bundle, independent of stay dates or the guest's proposed party. Do not use it for lodging selection, suitability, or date-and-guest-dependent feasibility. This is a language-derived capability candidate only; never answer the capacity number or any other fact.",
   amenity_list: "Use amenity_list for a request for the collection of amenities or facilities applicable to a property, room, or bundle. Use amenity for one specific catalog amenity. This is a language-derived capability candidate only; never answer facts.",
-  policy: "Use policy only to ask an approved lodging policy fact. Use the public catalog identity self_check_in_out_instructions for self-check-in or self-check-out procedures, unmanned reception, access handoff, or how guests arrive and leave. Keep check-in time, check-out time, and early-arrival policy on their distinct public catalog identities. A request for an operator to change a reservation or its stay dates is not a policy question.",
-  booking_operator_request: "Use booking_operator_request when the guest asks an operator to create, change, cancel, refund, or otherwise act on a reservation. A requested reservation date change is operator action, not a question about the property's check-in or check-out time policy."
+  policy: "Use policy for an operator policy or permission question. Select the matching policy identity when it is in the formal catalog. If the requested policy has no matching registered catalog subject, use subject kind property with null catalogIdentity so the formal Resolver can report unconfirmed policy; never invent an identity or infer permission. A question about whether a service is permitted is not itself a request for an operator to perform it. Use the public catalog identity self_check_in_out_instructions for self-check-in or self-check-out procedures, unmanned reception, access handoff, or how guests arrive and leave. Keep check-in time, check-out time, and early-arrival policy on their distinct public catalog identities. A request for an operator to change a reservation or its stay dates is not a policy question.",
+  booking_operator_request: "Use booking_operator_request when the guest asks an operator to execute a reservation transaction: explicitly commit a reservation, or change, cancel, refund, or otherwise act on a reservation. Preliminary interest in arranging lodging without a transaction execution request is an availability lodging_question even when necessary stay conditions are missing. A requested reservation date change is operator action, not a question about the property's check-in or check-out time policy."
 });
 
 const EXECUTION_POLICY = Object.freeze({
+  lodging_room_composition: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "none", safetyShape: "none" },
   availability: { routeKind: "ANSWER", requiredGuestFields: ["stay.checkIn", "stay.checkOut"], temporalRequirementClass: "stay", safetyShape: "none" },
   available_dates: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "search_range", safetyShape: "none" },
   price: { routeKind: "ANSWER", requiredGuestFields: [], temporalRequirementClass: "none", safetyShape: "none" },
@@ -46,6 +48,7 @@ const EXECUTION_POLICY = Object.freeze({
 });
 
 const POLICY_BLUEPRINT = Object.freeze({
+  lodging_room_composition: { registryCapabilities: ["lodging_room_composition"], subjectKinds: ["property", "room", "bundle", "matched_room_set"], stayDependent: false, allowsOtherSupported: false, purposes: ["lodging_question"] },
   availability: { registryCapabilities: ["availability", "bundle_availability"], subjectKinds: ["property", "room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
   available_dates: { registryCapabilities: ["available_dates"], subjectKinds: ["property", "room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
   price: { registryCapabilities: ["price"], subjectKinds: ["property", "room", "bundle", "matched_room_set"], stayDependent: true, allowsOtherSupported: false, purposes: ["lodging_question"] },
@@ -55,7 +58,7 @@ const POLICY_BLUEPRINT = Object.freeze({
   property_fact: { registryCapabilities: ["property_fact"], subjectKinds: ["property", "room", "amenity", "policy", "other_verified"], stayDependent: false, allowsOtherSupported: true, purposes: ["lodging_question"] },
   amenity: { registryCapabilities: ["amenity"], subjectKinds: ["amenity"], stayDependent: false, allowsOtherSupported: false, purposes: ["lodging_question"] },
   amenity_list: { registryCapabilities: ["amenity_list"], subjectKinds: ["property", "room", "bundle"], stayDependent: false, allowsOtherSupported: false, purposes: ["lodging_question"] },
-  policy: { registryCapabilities: ["policy"], subjectKinds: ["policy", "amenity"], stayDependent: false, allowsOtherSupported: false, purposes: ["lodging_question"] },
+  policy: { registryCapabilities: ["policy"], subjectKinds: ["policy", "amenity", "property"], stayDependent: false, allowsOtherSupported: false, purposes: ["lodging_question"] },
   location: { registryCapabilities: ["location"], subjectKinds: ["property", "external_place"], stayDependent: false, allowsOtherSupported: false, purposes: ["lodging_question"] },
   booking_operator_request: { registryCapabilities: ["booking_request"], subjectKinds: ["room", "bundle", "other_verified"], stayDependent: false, allowsOtherSupported: true, purposes: ["operator_request", "cancellation"] },
   high_risk: { registryCapabilities: ["high_risk"], subjectKinds: ["other_verified"], stayDependent: false, allowsOtherSupported: true, purposes: ["sensitive_request", "cancellation"] },
@@ -131,11 +134,12 @@ function capabilityPolicyFor(projection, capability) {
 function catalogIdentityRuleFor(projection, capability, subjectKind) {
   const policy = capabilityPolicyFor(projection, capability);
   if (!policy) return null;
-  if (capability === "booking_operator_request" && subjectKind === "other_verified") {
+  if (capability === "booking_operator_request" && subjectKind === "other_verified"
+    || capability === "amenity_list" && subjectKind === "property") {
     return "NULL_OR_PUBLIC_CATALOG";
   }
   return subjectKind === null || subjectKind === "external_place"
-    || ["availability", "available_dates", "price", "total_price"].includes(capability) && subjectKind === "property"
+    || ["availability", "available_dates", "price", "total_price", "lodging_room_composition", "policy"].includes(capability) && subjectKind === "property"
     ? "NULL"
     : "PUBLIC_CATALOG";
 }

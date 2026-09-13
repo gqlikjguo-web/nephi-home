@@ -6,6 +6,7 @@ const { normalizeEntertainmentAmenities } = require("../bundle-entertainment");
 const { isDateKey, isPriceType } = require("../date-price-authority");
 const { normalizePropertyFacts } = require("../property-facts");
 const { normalizeSelfCheckInOutInstructions } = require("../self-check-in-out-instructions");
+const { validateRoomComposition } = require("../room-composition");
 let client;
 const ADMIN_INVITATION_EMAIL_SQL = "COALESCE(NULLIF(trim(i.email),''),NULLIF(trim(s.settings #>> '{businessProfile,email}'),''))";
 
@@ -137,6 +138,40 @@ async function operation(name, args) {
     const r=await client.query("DELETE FROM property_custom_replies WHERE property_id=$1 AND rule_id=$2 RETURNING rule_id",args);
     return Boolean(r.rows.length);
   }
+  if (name === "getRoomComposition" || name === "updateRoomComposition") {
+    const [propertyId, candidate] = args;
+    const writing = name === "updateRoomComposition";
+    if (writing) await client.query("BEGIN");
+    try {
+      const row = await client.query("SELECT settings FROM property_settings WHERE property_id=$1" + (writing ? " FOR UPDATE" : ""), [propertyId]);
+      if (!row.rows.length) {
+        if (writing) await client.query("ROLLBACK");
+        return { valid: false, code: "UNKNOWN_CUSTOMER_ID" };
+      }
+      const settings = row.rows[0].settings || {};
+      const rooms = await client.query("SELECT room_id AS id FROM room_types WHERE property_id=$1", [propertyId]);
+      const inventory = { propertyId, roomTypes: rooms.rows, bundles: await operation("listBundles", [propertyId]) };
+      const stored = settings.roomCompositionV1;
+      if (!writing) return { valid: true, propertyId, composition: stored === undefined ? null : stored, inventory };
+      const validation = validateRoomComposition(candidate, inventory);
+      if (!validation.valid) {
+        await client.query("ROLLBACK");
+        return { valid: false, code: "INVALID_ROOM_COMPOSITION", errors: validation.errors };
+      }
+      const revision = stored === undefined ? 0 : stored.revision;
+      if (!Number.isSafeInteger(revision) || candidate.revision !== revision || revision >= Number.MAX_SAFE_INTEGER) {
+        await client.query("ROLLBACK");
+        return { valid: false, code: "ROOM_COMPOSITION_REVISION_CONFLICT" };
+      }
+      const composition = { ...candidate, revision: revision + 1 };
+      await client.query("UPDATE property_settings SET settings=jsonb_set(settings,'{roomCompositionV1}',$2::jsonb) WHERE property_id=$1", [propertyId, JSON.stringify(composition)]);
+      await client.query("COMMIT");
+      return { valid: true, propertyId, composition, inventory };
+    } catch (error) {
+      if (writing) await client.query("ROLLBACK");
+      throw error;
+    }
+  }
   if (name === "getProperty" || name === "listProperties") {
     const filter = name === "getProperty" ? "WHERE p.property_id=$1" : "";
     const result = await client.query(`SELECT p.property_id,p.display_name,s.settings,
@@ -145,9 +180,13 @@ async function operation(name, args) {
       FROM properties p LEFT JOIN property_settings s ON s.property_id=p.property_id ${filter} ORDER BY p.property_id`, name === "getProperty" ? [args[0]] : []);
     const mapped = result.rows.map((row) => {
       const settings = typeof row.settings === "string" ? JSON.parse(row.settings) : (row.settings || {});
-      return { propertyId: row.property_id, displayName: row.display_name, availabilityAutoReplyEnabled: settings.availabilityAutoReplyEnabled !== false, selfCheckInOutInstructions: normalizeSelfCheckInOutInstructions(settings.selfCheckInOutInstructions), currency:settings.currency||"TWD", rooms: row.rooms || [], commonAnswers: settings.commonAnswers || {}, propertyFacts: settings.propertyFacts || [], pricing: settings.pricing || {}, faqs: row.faqs || [], humanHandoffSituations: settings.humanHandoffSituations || [], businessProfile:settings.businessProfile||{}, contactLink: settings.contactLink || settings.businessProfile&&settings.businessProfile.line&&settings.businessProfile.line.contactLink || "", onboarding: settings.onboarding || { isReady: true } };
+      return { propertyId: row.property_id, displayName: row.display_name, availabilityAutoReplyEnabled: settings.availabilityAutoReplyEnabled !== false, selfCheckInOutInstructions: normalizeSelfCheckInOutInstructions(settings.selfCheckInOutInstructions), currency:settings.currency||"TWD", rooms: row.rooms || [], commonAnswers: settings.commonAnswers || {}, propertyFacts: settings.propertyFacts || [], ...(Object.hasOwn(settings,"roomCompositionV1") ? {roomCompositionV1:settings.roomCompositionV1} : {}), pricing: settings.pricing || {}, faqs: row.faqs || [], humanHandoffSituations: settings.humanHandoffSituations || [], businessProfile:settings.businessProfile||{}, contactLink: settings.contactLink || settings.businessProfile&&settings.businessProfile.line&&settings.businessProfile.line.contactLink || "", onboarding: settings.onboarding || { isReady: true } };
     });
     for (const item of mapped) {
+      if (Object.hasOwn(item, "roomCompositionV1")) {
+        const composition = await operation("getRoomComposition", [item.propertyId]);
+        item.roomCompositionInventory = composition.inventory;
+      }
       const bundles = await operation("listBundles", [item.propertyId]);
       item.rooms.push(...bundles.filter((bundle) => bundle.enabled).map((bundle) => ({ id:bundle.id,name:bundle.name,capacity:bundle.capacity,type:"包棟",description:"組合型可售方案",memberRoomIds:bundle.memberRoomIds,entertainmentAmenities:bundle.entertainmentAmenities,basePrice:bundle.basePrice,mondayThursdayPrice:bundle.mondayThursdayPrice,fridayPrice:bundle.fridayPrice,saturdayHolidayPrice:bundle.saturdayHolidayPrice,sundayPrice:bundle.sundayPrice,inventoryType:"bundle" })));
     }
@@ -228,7 +267,7 @@ async function operation(name, args) {
       for(let i=0;i<(input.rooms||[]).length;i+=1){const room=input.rooms[i],displayName=String(room.displayName||room.name||"").trim();await client.query("INSERT INTO room_types(property_id,room_id,name,room_code,display_name,capacity,highlights,type,description,position) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)",[propertyId,room.id,displayName,String(room.roomCode||"").trim(),displayName,room.capacity,JSON.stringify(Array.isArray(room.highlights)?room.highlights:[]),room.type||"custom",room.description||"",i]);}
       await backfillEnabledInventoryForManagedDates(propertyId);
       const settings={...(current.pricing?{pricing:current.pricing}:{}),commonAnswers:input.commonAnswers||{},humanHandoffSituations:current.humanHandoffSituations||[],businessProfile:current.businessProfile||{},contactLink:current.contactLink||"",onboarding:current.onboarding||{isReady:true}};
-      await client.query("UPDATE property_settings SET settings=$2::jsonb WHERE property_id=$1",[propertyId,JSON.stringify(settings)]);await client.query("COMMIT");
+      await client.query("UPDATE property_settings SET settings=CASE WHEN settings ? 'roomCompositionV1' THEN jsonb_set($2::jsonb,'{roomCompositionV1}',settings->'roomCompositionV1') ELSE $2::jsonb END WHERE property_id=$1",[propertyId,JSON.stringify(settings)]);await client.query("COMMIT");
     }catch(error){await client.query("ROLLBACK");throw error;}
     return operation("getProperty",[propertyId]);
   }
@@ -252,7 +291,7 @@ async function operation(name, args) {
     const stored=await client.query("SELECT settings FROM property_settings WHERE property_id=$1",[propertyId]);
     const existingSettings=stored.rows[0]?(typeof stored.rows[0].settings==="string"?JSON.parse(stored.rows[0].settings):stored.rows[0].settings||{}):{};
     await client.query("BEGIN");
-    try { await client.query("UPDATE properties SET display_name=$2,updated_at=now() WHERE property_id=$1",[propertyId,input.displayName]);const settings={...existingSettings,availabilityAutoReplyEnabled:input.availabilityAutoReplyEnabled!==false,selfCheckInOutInstructions:input.selfCheckInOutInstructions||current.selfCheckInOutInstructions||null,commonAnswers:input.commonAnswers||current.commonAnswers||{},businessProfile:input.businessProfile||current.businessProfile||{},contactLink:input.contactLink||""};await client.query("UPDATE property_settings SET settings=$2::jsonb WHERE property_id=$1",[propertyId,JSON.stringify(settings)]);await client.query("COMMIT"); } catch(error) { await client.query("ROLLBACK");throw error; }
+    try { await client.query("UPDATE properties SET display_name=$2,updated_at=now() WHERE property_id=$1",[propertyId,input.displayName]);const settings={...existingSettings,availabilityAutoReplyEnabled:input.availabilityAutoReplyEnabled!==false,selfCheckInOutInstructions:input.selfCheckInOutInstructions||current.selfCheckInOutInstructions||null,commonAnswers:input.commonAnswers||current.commonAnswers||{},businessProfile:input.businessProfile||current.businessProfile||{},contactLink:input.contactLink||""};await client.query("UPDATE property_settings SET settings=CASE WHEN settings ? 'roomCompositionV1' THEN jsonb_set($2::jsonb,'{roomCompositionV1}',settings->'roomCompositionV1') ELSE $2::jsonb END WHERE property_id=$1",[propertyId,JSON.stringify(settings)]);await client.query("COMMIT"); } catch(error) { await client.query("ROLLBACK");throw error; }
     return operation("getProperty",[propertyId]);
   }
   if (name === "updatePropertyFacts") {
@@ -262,7 +301,7 @@ async function operation(name, args) {
     const stored = await client.query("SELECT settings FROM property_settings WHERE property_id=$1", [propertyId]);
     const settings = stored.rows[0] ? (typeof stored.rows[0].settings === "string" ? JSON.parse(stored.rows[0].settings) : stored.rows[0].settings || {}) : {};
     await client.query(
-      "UPDATE property_settings SET settings=$2::jsonb WHERE property_id=$1",
+      "UPDATE property_settings SET settings=CASE WHEN settings ? 'roomCompositionV1' THEN jsonb_set($2::jsonb,'{roomCompositionV1}',settings->'roomCompositionV1') ELSE $2::jsonb END WHERE property_id=$1",
       [propertyId, JSON.stringify({ ...settings, propertyFacts })]
     );
     return operation("getProperty", [propertyId]);
@@ -387,7 +426,7 @@ async function operation(name, args) {
       const propertyFactsById=new Map((Array.isArray(settings.propertyFacts)?settings.propertyFacts:[]).map(fact=>[String(fact&&fact.canonicalId||""),fact]));
       for(const fact of normalizePropertyFacts(app.propertyFacts||[]))propertyFactsById.set(fact.canonicalId,fact);
       const propertyFacts=[...propertyFactsById.values()].filter(fact=>fact&&fact.canonicalId);
-      await client.query("UPDATE property_settings SET settings=$2::jsonb WHERE property_id=$1",[propertyId,JSON.stringify({...settings,businessProfile,commonAnswers,propertyFacts})]);
+      await client.query("UPDATE property_settings SET settings=CASE WHEN settings ? 'roomCompositionV1' THEN jsonb_set($2::jsonb,'{roomCompositionV1}',settings->'roomCompositionV1') ELSE $2::jsonb END WHERE property_id=$1",[propertyId,JSON.stringify({...settings,businessProfile,commonAnswers,propertyFacts})]);
       for(const room of submittedRooms){
         const roomId=roomMap.get(String(room.key)),current=existingRooms.rows.find(item=>item.room_id===roomId),displayName=present(room.displayName||room.name)||current.display_name||current.name,roomCode=Object.hasOwn(room,"roomCode")?present(room.roomCode):current.room_code,type=present(room.type)||current.type,capacity=Number.isInteger(Number(room.capacity))&&Number(room.capacity)>0?Number(room.capacity):current.capacity,highlights=Array.isArray(room.highlights)?room.highlights:current.highlights||[],enabled=typeof room.enabled==="boolean"?room.enabled:current.enabled;
         await client.query("UPDATE room_types SET name=$3,display_name=$3,room_code=$4,type=$5,capacity=$6,highlights=$7::jsonb,monday_thursday_price=$8,friday_price=$9,saturday_holiday_price=$10,sunday_price=$11,enabled=$12 WHERE property_id=$1 AND room_id=$2",[propertyId,roomId,displayName,roomCode,type,capacity,JSON.stringify(highlights),positive(room.mondayThursdayPrice)??current.monday_thursday_price,positive(room.fridayPrice)??current.friday_price,positive(room.saturdayHolidayPrice)??current.saturday_holiday_price,positive(room.sundayPrice)??current.sunday_price,enabled]);

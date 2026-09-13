@@ -10,6 +10,10 @@ const DETAIL_INTENTS = new Set([
   "weather_restrictions", "conditions", "missing_information"
 ]);
 
+// Explicit qualification of a general permission requires its own registered fact.
+// Named policy details retain their established answer/confirmation contracts.
+const QUALIFIED_DETAIL_INTENTS = new Set(["eligibility"]);
+
 const DETAIL_LABELS = Object.freeze({
   time: "時間", start_time: "開始時間", end_time: "結束時間", latest_arrival_policy: "最晚抵達安排",
   early_arrival_policy: "提前入住安排", late_departure_policy: "延後退房安排", fee: "費用",
@@ -36,4 +40,4 @@ function detailFactCandidates(canonicalTopic, detailIntent) {
 function includeBaseAnswer(detailIntent) { return normalizeDetailIntent(detailIntent) === "early_arrival_policy"; }
 function detailLabel(detailIntent) { return DETAIL_LABELS[normalizeDetailIntent(detailIntent)] || "相關資訊"; }
 
-module.exports = { DETAIL_INTENTS, normalizeDetailIntent, detailFactCandidates, includeBaseAnswer, detailLabel };
+module.exports = { QUALIFIED_DETAIL_INTENTS, DETAIL_INTENTS, normalizeDetailIntent, detailFactCandidates, includeBaseAnswer, detailLabel };

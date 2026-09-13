@@ -38,21 +38,25 @@ function issueRenderObligations({propertyId,turnId,taskResults=[],executionOutco
   return Object.freeze(records);
 }
 function questions(fields){const minimal=fields.filter(field=>!(field==="checkOut"&&fields.includes("checkIn"))&&!(field==="stay.checkOut"&&fields.includes("stay.checkIn")));return [...new Set(minimal.map(field=>QUESTIONS[field]||"請補充尚缺的資訊。"))];}
-function partsFor(record,publicAvailabilityUrl){
+function fragmentsFor(record,publicAvailabilityUrl){
   const p=record.payload;
+  const body=text=>({text,resource:null});
+  const reference=url=>({text:`查房連結：${url}`,resource:{kind:"availability_reference",propertyId:record.propertyId,turnId:record.turnId,url}});
   if(["ABSENT","SUPPRESSED","MISSING_OUTCOME"].includes(record.kind))return [];
-  if(record.kind==="TEMPORAL_REJECTION")return [TEMPORAL_REJECTIONS[p.readinessStatus].text];
+  if(record.kind==="TEMPORAL_REJECTION")return [body(TEMPORAL_REJECTIONS[p.readinessStatus].text)];
   if(record.kind==="CLARIFY"){
-    if(p.publicAvailabilityUrl)return [`查房連結：${p.publicAvailabilityUrl}`];
+    if(p.publicAvailabilityUrl)return [reference(p.publicAvailabilityUrl)];
     const text=questions(p.missingInputs);if(!text.length)text.push("目前提供的資訊無法安全確認。");
-    if(publicAvailabilityUrl&&p.missingInputs.some(field=>["checkIn","stay.checkIn"].includes(field)))text.push(`查房連結：${publicAvailabilityUrl}`);
-    return text;
+    const fragments=text.map(body);
+    if(publicAvailabilityUrl&&p.missingInputs.some(field=>["checkIn","stay.checkIn"].includes(field)))fragments.push(reference(publicAvailabilityUrl));
+    return fragments;
   }
-  const parts=[composeSection(p)];
+  const parts=[composeSection(p)].filter(Boolean).map(body);
   const url=p.publicAvailabilityUrl||(["availability","bundle_availability"].includes(p.type)?publicAvailabilityUrl:"");
-  if(url)parts.push(`查房連結：${url}`);
-  return parts.filter(Boolean);
+  if(url)parts.push(reference(url));
+  return parts;
 }
+function partsFor(record,publicAvailabilityUrl){return fragmentsFor(record,publicAvailabilityUrl).map(part=>part.text);}
 function obligationErrors(plan){
   const records=plan.renderObligations;
   if(!Array.isArray(records))return ["render_obligations_required"];
@@ -129,12 +133,22 @@ function coverageLayout(plan,{finalDecision,responsePrefix="",publicAvailability
   for(const record of ordered){
     const shared=groups.find(group=>canSharePresentation(group.record,record));
     if(shared){shared.taskIds.push(record.taskId);continue;}
-    groups.push({record,taskIds:[record.taskId],parts:partsFor(record,publicAvailabilityUrl)});
+    groups.push({record,taskIds:[record.taskId],parts:fragmentsFor(record,publicAvailabilityUrl)});
+  }
+  // Resource identity is typed and scope-bound. Sharing presentation does not
+  // create, merge or discard task obligations; content is never text-deduped.
+  const content=[],references=[];
+  for(const group of groups)for(const part of group.parts){
+    const fragment={...part,taskIds:[...group.taskIds],kind:group.record.kind};
+    if(!part.resource){content.push(fragment);continue;}
+    const shared=references.find(item=>equal(item.resource,part.resource));
+    if(shared)shared.taskIds.push(...fragment.taskIds);
+    else references.push(fragment);
   }
   let text=String(responsePrefix);const segments=[];
-  for(const group of groups)for(const part of group.parts){
-    if(segments.length)text+='\n';const start=Buffer.byteLength(text);text+=part;
-    segments.push({taskIds:group.taskIds,kind:group.record.kind,start,end:Buffer.byteLength(text)});
+  for(const part of [...content,...references]){
+    if(segments.length)text+='\n';const start=Buffer.byteLength(text);text+=part.text;
+    segments.push({taskIds:part.taskIds,kind:part.kind,start,end:Buffer.byteLength(text)});
   }
   return {text,segments,errors};
 }

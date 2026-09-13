@@ -197,6 +197,10 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
         : "availability_resolver"
   );
   try {
+    if (resolverId === "property_catalog" && queryPlan.capability === "lodging_room_composition") {
+      const result = require("../room-composition").resolveRoomComposition(property, queryPlan.entity);
+      return queryOutcome(queryPlan, result.outcome, { ...result, resolverAttempted: true });
+    }
     if (resolverId === "property_catalog" && queryPlan.capability === "amenity_list") {
       return queryOutcome(queryPlan, "answered", { facts: { amenities: catalogAmenityNames(catalog, request.inventory), source: "property_catalog", propertyId: property.propertyId }, resolverAttempted: false });
     }
@@ -213,6 +217,17 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
       }
       const detailIntent = normalizeDetailIntent(queryPlan.detailIntent);
       if (detailIntent === "general") return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", ...catalogFactMetadata(entity), ...(Array.isArray(entity.applicableBundles) ? { applicableBundles: entity.applicableBundles } : {}), source: "property_catalog", propertyId: property.propertyId, detailIntent }, resolverAttempted: false });
+      if (require("./detail-intent").QUALIFIED_DETAIL_INTENTS.has(detailIntent)) {
+        const detail = catalogFactByCanonicalId(catalog, detailFactCandidates(entity.canonicalId, detailIntent));
+        if (!detail) return queryOutcome(queryPlan, "unknown", {
+          reason: "property_applicability_unknown", facts: { subject: entity.publicName }, resolverAttempted: false
+        });
+        return queryOutcome(queryPlan, "answered", { facts: {
+          subject: entity.publicName, status: detail.status, answer: detail.answer || "",
+          source: "property_catalog", propertyId: property.propertyId, detailIntent,
+          detailProvided: true, detailNeedsConfirmation: false
+        }, resolverAttempted: false });
+      }
       if (Array.isArray(entity.applicableBundles) && entity.applicableBundles.some((bundle) => bundle.note)) return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", applicableBundles: entity.applicableBundles, source: "property_catalog", propertyId: property.propertyId, detailIntent, detailProvided: true }, resolverAttempted: false });
       const detail = catalogFactByCanonicalId(catalog, detailFactCandidates(entity.canonicalId, detailIntent));
       const baseDetailProvided = baseAnswerProvidesControlledDetail(entity, detailIntent);
@@ -229,6 +244,12 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
       if (!stay.checkIn || !stay.checkOut) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "missing_stay" });
       if (!queryPlan.resolverTask) return queryOutcome(queryPlan, "invalid_query_plan", { reason: "resolver_task_required" });
       const adapted = resolveAvailability({ availabilityResolver, resolverTask: queryPlan.resolverTask });
+      const resolverProvenance = require("../mvp-service").availabilityUnknownProvenanceFor(adapted.result, {
+        propertyId: queryPlan.propertyId, from: queryPlan.resolverTask.checkIn, to: queryPlan.resolverTask.checkOut
+      });
+      if (resolverProvenance) {
+        return queryOutcome(queryPlan, "unknown", { reason: resolverProvenance.reason, resolverProvenance, resolverAttempted: true });
+      }
       if (!adapted.result.availabilityReliable) return queryOutcome(queryPlan, "technical_error", { reason: "availability_unreliable", resolverAttempted: true });
       const availabilityWithInventory = ["availability", "bundle_availability"].includes(queryPlan.capability)
         && adapted.facts.availableInventory.length > 0;
@@ -237,7 +258,7 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
         if (!pricing.missing && pricing.prices.length === adapted.facts.availableInventory.length) adapted.facts = { ...adapted.facts, prices: pricing.prices };
       }
       if (["availability", "bundle_availability", "room_options", "capacity"].includes(queryPlan.capability)) return queryOutcome(queryPlan, adapted.facts.availableInventory.length ? "answered" : "no_availability", { facts: adapted.facts, resolverAttempted: true });
-      if (!adapted.facts.availableInventory.length) return queryOutcome(queryPlan, "no_availability", { facts: { ...adapted.facts, availability: adapted.facts.availability, checkIn: stay.checkIn, checkOut: stay.checkOut, prices: [], source: "availability_provider", propertyId: property.propertyId }, resolverAttempted: true });
+      if (!adapted.facts.availableInventory.length) return queryOutcome(queryPlan, "no_availability", { reason: "no_bookable_inventory", facts: { ...adapted.facts, availability: adapted.facts.availability, checkIn: stay.checkIn, checkOut: stay.checkOut, prices: [], source: "availability_provider", propertyId: property.propertyId }, resolverAttempted: true });
       const pricing = buildPricingFacts({ property, availableInventory: adapted.facts.availableInventory, checkIn: stay.checkIn, checkOut: stay.checkOut, priceOverrides, datePriceClassifications });
       return queryOutcome(queryPlan, pricing.missing ? "property_data_missing" : "answered", { facts: { ...adapted.facts, availability: adapted.facts.availability, checkIn: stay.checkIn, checkOut: stay.checkOut, prices: pricing.prices, source: "pricing_provider", propertyId: property.propertyId }, resolverAttempted: true });
     }
@@ -266,7 +287,7 @@ function executeCanonicalQueryPlans(input) {
       && entity.canonicalId
       && !["room", "bundle"].includes(entity.category)
       && !["price", "total_price", "availability", "bundle_availability"].includes(queryPlan.capability);
-    const key = groupable ? `${queryPlan.propertyId}:${entity.canonicalId}` : `task:${queryPlan.taskId}`;
+    const key = groupable ? JSON.stringify([queryPlan.propertyId, entity.canonicalId, normalizeDetailIntent(queryPlan.detailIntent)]) : `task:${queryPlan.taskId}`;
     const group = groups.get(key) || [];
     group.push(queryPlan);
     groups.set(key, group);
@@ -298,7 +319,8 @@ function executeCanonicalQueryPlans(input) {
     }
     const provenance = Object.freeze({ taskId: queryPlan.taskId, formalRequestId: queryPlan.formalRequestId,
       sourceOutcomeStatus: outcome.outcome, sourceReasonCode: outcome.reason || "",
-      resolverId: queryPlan.resolverId, propertyId: queryPlan.propertyId });
+      resolverId: queryPlan.resolverId, propertyId: queryPlan.propertyId,
+      ...(outcome.resolverProvenance ? { resolverProvenance: outcome.resolverProvenance } : {}) });
     EXECUTION_PROVENANCE.set(outcome, provenance);
     EXECUTION_PROVENANCE_INSTANCES.add(provenance);
     return outcome;

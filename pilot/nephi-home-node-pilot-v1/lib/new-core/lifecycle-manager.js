@@ -1,6 +1,7 @@
 "use strict";
 
-const { validateSemanticPositions } = require("./contracts/semantic-position");
+const { validateSemanticPositions, SLOT_POSITIONS } = require("./contracts/semantic-position");
+const { INFORMATION_NEED_SLOT, validInformationNeedOperation } = require("./contracts/information-need");
 
 const { validateSourceEvidence } = require("./contracts/source-evidence");
 const {
@@ -109,7 +110,7 @@ function verifiedOperation(slot, input) {
 function validateVerifiedSlotOperation(value, errors, prefix) {
   if (!exactKeys(value, VERIFIED_SLOT_OPERATION_FIELDS)) errors.push(`${prefix}.keys`);
   if (!boundedText(value && value.slotCandidateId)) errors.push(`${prefix}.slotCandidateId`);
-  if (!new Set(["guest_count", "product", "transport", "other_supported"]).has(value && value.slot)) {
+  if (!Object.hasOwn(SLOT_POSITIONS, value && value.slot)) {
     errors.push(`${prefix}.slot`);
   }
   if (!new Set(["SET", "CLEAR"]).has(value && value.operation)) errors.push(`${prefix}.operation`);
@@ -134,9 +135,12 @@ function validateVerifiedSlotOperation(value, errors, prefix) {
     )) {
     errors.push(`${prefix}.productMapping`);
   }
-  if (value && ["transport", "other_supported"].includes(value.slot)
+  if (value && ["transport", "other_supported", INFORMATION_NEED_SLOT].includes(value.slot)
     && (value.persistedField !== null || value.persistedProductType !== null)) {
     errors.push(`${prefix}.turnContextMapping`);
+  }
+  if (value && value.slot === INFORMATION_NEED_SLOT && !validInformationNeedOperation(value)) {
+    errors.push(`${prefix}.informationNeedValue`);
   }
   if (value && value.persistedField === "guestCount") {
     if (value.persistedProductType !== null || value.slot !== "guest_count") errors.push(`${prefix}.guestCountMapping`);

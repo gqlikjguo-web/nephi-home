@@ -12,6 +12,7 @@ const TASK_READINESS_REQUIREMENTS = Object.freeze({
   room_options: Object.freeze(["checkIn", "checkOut"]),
   capacity: Object.freeze(["checkIn", "checkOut", "guestCount"]),
   lodging_product_capacity: Object.freeze([]),
+  lodging_room_composition: Object.freeze([]),
   parking: Object.freeze([]),
   location: Object.freeze([]),
   bbq: Object.freeze([]),

@@ -2,7 +2,7 @@
 
 const RELATIONS = new Set(["new_request", "continue", "modify", "answer_clarification", "new_topic", "acknowledgement"]);
 const OPERATIONS = new Set(["set", "replace", "clear", "keep"]);
-const TASK_TYPES = new Set(["availability", "available_dates", "room_options", "bundle_availability", "capacity", "lodging_product_capacity", "price", "total_price", "amenity", "amenity_list", "policy", "property_fact", "booking_request", "human_help", "high_risk", "unknown"]);
+const TASK_TYPES = new Set(["availability", "available_dates", "room_options", "bundle_availability", "capacity", "lodging_product_capacity", "lodging_room_composition", "price", "total_price", "amenity", "amenity_list", "policy", "property_fact", "booking_request", "human_help", "high_risk", "unknown"]);
 const ENTITY_CATEGORIES = new Set(["room", "bundle", "room_feature", "amenity", "activity", "policy", "payment", "cancellation", "transport", "check_in", "check_out", "other"]);
 const DATE_KINDS = new Set(["absolute", "relative", "weekday", "weekend", "range", "contextual", "none"]);
 const ANCHORS = new Set(["message_time", "previous_check_in", "previous_check_out", "none"]);

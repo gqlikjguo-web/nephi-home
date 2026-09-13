@@ -536,7 +536,7 @@ function cookieValue(request, name) {
 }
 
 function isAdminDataRoute(pathname) {
-  return pathname === "/api/test-only/line-message-traces" || pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname === "/api/property-profile" || pathname === "/api/property-facts" || pathname.startsWith("/api/custom-replies") || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname === "/api/inventory-price-overrides" || pathname === "/api/date-price-classifications" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
+  return pathname === "/api/test-only/line-message-traces" || pathname === "/api/homestays" || pathname === "/api/bootstrap" || pathname === "/api/settings" || pathname === "/api/property-profile" || pathname === "/api/property-facts" || pathname === "/api/room-composition" || pathname.startsWith("/api/custom-replies") || pathname.startsWith("/api/availability/month") || pathname === "/api/availability/day" || pathname === "/api/availability/day-note" || pathname === "/api/availability/batch" || pathname.startsWith("/api/bundles") || pathname.startsWith("/api/room-pricing") || pathname === "/api/room-price-overrides" || pathname === "/api/inventory-price-overrides" || pathname === "/api/date-price-classifications" || pathname.startsWith("/api/guests") || pathname === "/api/messages" || pathname === "/api/dashboard" || pathname.startsWith("/api/reviews");
 }
 
 function sendData(response, data, status = 200) {
@@ -1128,6 +1128,8 @@ function createRequestHandler(service, options = {}) {
       }
       if (request.method === "GET" && pathname === "/api/property-profile") return sendData(response, service.getPropertyProfile(url.searchParams.get("propertyId") || url.searchParams.get("customerId")));
       if (request.method === "PUT" && pathname === "/api/property-profile") { const body = request.adminBody || await readJsonBody(request); return sendData(response, service.updatePropertyProfile({ ...body, customerId: body.propertyId || body.customerId })); }
+      if (request.method === "GET" && pathname === "/api/room-composition") return sendData(response, service.getRoomComposition(url.searchParams.get("propertyId") || url.searchParams.get("customerId")));
+      if (request.method === "PUT" && pathname === "/api/room-composition") { const body = request.adminBody || await readJsonBody(request); return sendData(response, service.updateRoomComposition({ ...body, customerId: body.propertyId || body.customerId })); }
       if (request.method === "GET" && pathname === "/api/property-facts") return sendData(response, service.getPropertyFacts(url.searchParams.get("propertyId") || url.searchParams.get("customerId")));
       if (request.method === "PUT" && pathname === "/api/property-facts") { const body = request.adminBody || await readJsonBody(request); return sendData(response, service.updatePropertyFacts({ ...body, customerId: body.propertyId || body.customerId })); }
       if (request.method === "GET" && pathname === "/api/custom-replies") {

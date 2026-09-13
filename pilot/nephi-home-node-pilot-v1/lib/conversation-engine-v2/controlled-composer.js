@@ -16,7 +16,8 @@ function composeSection(section) {
     return '目前只確認符合需求的商品有 '+section.matchedCount+'/'+section.requestedQuantity+' 個，尚差 '+section.unresolvedRemainder+' 個。\n'+composeSection(rest);
   }
   const facts = section.facts || {};
-  if (section.claimType === "EPISTEMIC_UNKNOWN") return "目前無法確認。";
+  if (section.claimType === "EPISTEMIC_UNKNOWN") return section.unknownProvenance?.sourceReasonCode === "property_applicability_unknown"
+    ? "無法確認該條件是否適用。" : "目前無法確認。";
   if (facts.customReply) {
     const officialFacts = { ...facts };
     delete officialFacts.customReply;
@@ -39,6 +40,10 @@ function composeSection(section) {
     return `${facts.checkIn} 仍有空房，但目前可用房源無法在指定房數內容納這次入住人數，請調整房數或入住人數。`;
   }
   if (facts.prices) {
+    if (["price", "total_price"].includes(section.type) && section.outcomeStatus === "no_availability"
+      && section.outcomeReason === "no_bookable_inventory") {
+      return `${facts.checkIn} 入住沒有可預訂房源，因此目前無可預訂的報價。`;
+    }
     if (facts.availability === "full") return `${facts.checkIn} 入住目前已滿房。`;
     const prices = facts.prices.map((item) => item.total === null ? `${item.inventory.publicName}價格需要請業者確認。` : `${item.inventory.publicName}共 ${money(item.total)} ${item.currency === "TWD" ? "元" : item.currency}。`).join("\n");
     return facts.availability === "available"
@@ -47,6 +52,10 @@ function composeSection(section) {
   }
   if (facts.availableInventory) return facts.availableInventory.length ? `${facts.checkIn} 入住可選：${facts.availableInventory.map((item) => item.publicName).join("、")}。` : `${facts.checkIn} 入住目前沒有符合條件的空房。`;
   if (facts.availableDates) return facts.availableDates.length ? `這段期間可查詢的日期有：${facts.availableDates.join("、")}。` : "這段期間目前沒有可售日期。";
+  if (Number.isInteger(facts.physicalRoomCount) && Array.isArray(facts.physicalRooms)) {
+    const names = facts.physicalRooms.map(room => room.publicName).join("、");
+    return `${facts.subject}正式登錄的房間組成共 ${facts.physicalRoomCount} 間${names ? `：${names}` : ""}。`;
+  }
   if (Number.isInteger(facts.maxGuests) && facts.maxGuests > 0 && facts.subject) return `${facts.subject} 最多可住 ${facts.maxGuests} 人。`;
   if (facts.amenities) return facts.amenities.length ? `目前確認的主要設備有：${facts.amenities.join("、")}。` : "設備資料需要請業者確認。";
   if (Array.isArray(facts.applicableBundles) && facts.applicableBundles.length) {
