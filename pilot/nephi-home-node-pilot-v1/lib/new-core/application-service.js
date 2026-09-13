@@ -91,7 +91,7 @@ function turnStateSnapshot(state, scope, now) {
       requestCycleId: cycle.requestCycleId,
       requestKind,
       capability,
-      status: cycle.status === "needs_clarification" ? "pending" : cycle.status,
+      status: cycle.status === "needs_clarification" ? "pending" : cycle.status === "unknown" ? "active" : cycle.status,
       expiresAt: cycle.contextReuseExpiresAt,
       subject: { kind: subjectKind, catalogIdentity: topic.canonicalId || inventory.entityId || null },
       missingFields: [...new Set(task && task.missingFields || [])],
