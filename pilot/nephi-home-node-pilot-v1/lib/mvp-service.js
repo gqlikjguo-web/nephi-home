@@ -469,6 +469,8 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       lineUrl: property.lineUrl || "",
       contactInfo: String(property.businessProfile && property.businessProfile.contactInfo || ""),
       checkInTime: String(property.safeFacts && property.safeFacts.checkInTime || ""),
+      checkInGuestText: String(property.safeFacts && property.safeFacts.checkInGuestText || ""),
+      checkOutGuestText: String(property.safeFacts && property.safeFacts.checkOutGuestText || ""),
       earlyCheckInPolicy: String(property.safeFacts && property.safeFacts.earlyCheckInPolicy || ""),
       latestArrivalTime: String(property.safeFacts && property.safeFacts.latestArrivalTime || ""),
       checkOutTime: String(property.safeFacts && property.safeFacts.checkOutTime || "")
@@ -504,6 +506,14 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       if (parsed.protocol !== "https:" || !LINE_URL_HOSTS.has(parsed.hostname.toLowerCase())) throw new AppError(400, "INVALID_LINE_URL", "LINE 官方帳號網址格式不正確");
     }
     const commonAnswers = { ...(property.safeFacts || {}), checkInTime, checkOutTime };
+    for (const key of ["checkInGuestText", "checkOutGuestText"]) {
+      if (input[key] === undefined) continue;
+      if (typeof input[key] !== "string" || input[key].length > 500) {
+        throw new AppError(400, "INVALID_PROFILE_GUEST_TEXT", "入住／退房對客說明須為500字以內的文字");
+      }
+      if (input[key].trim()) commonAnswers[key] = input[key];
+      else delete commonAnswers[key];
+    }
     if (earlyCheckInPolicy) commonAnswers.earlyCheckInPolicy = earlyCheckInPolicy;
     else delete commonAnswers.earlyCheckInPolicy;
     if (latestArrivalTime) commonAnswers.latestArrivalTime = latestArrivalTime;
@@ -526,6 +536,8 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       lineUrl: updated.contactLink || "",
       contactInfo: String(updated.businessProfile && updated.businessProfile.contactInfo || ""),
       checkInTime: String(updated.commonAnswers && updated.commonAnswers.checkInTime || ""),
+      checkInGuestText: String(updated.commonAnswers && updated.commonAnswers.checkInGuestText || ""),
+      checkOutGuestText: String(updated.commonAnswers && updated.commonAnswers.checkOutGuestText || ""),
       earlyCheckInPolicy: String(updated.commonAnswers && updated.commonAnswers.earlyCheckInPolicy || ""),
       latestArrivalTime: String(updated.commonAnswers && updated.commonAnswers.latestArrivalTime || ""),
       checkOutTime: String(updated.commonAnswers && updated.commonAnswers.checkOutTime || "")

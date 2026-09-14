@@ -1001,9 +1001,16 @@ function correctionUnitFailure(failure, output, input, operational) {
   if (failure.boundary === "C05") {
     const links = output.contextLinkCandidates.filter(link => link.unitId === failure.unitId);
     const unknownRef = links.some(link => link.referencedHistoryEventRefs.some(ref => !input.recentConversation.some(event => event.eventId === ref.eventId && event.messageRef === ref.messageRef)));
+    // C01 exposes conversation history separately from formal request bindings.
+    // A targeted relation citing only explicitly unbound events cannot identify
+    // a cycle. Correct the relation using the same snapshot; never infer a target.
+    const unboundTarget = links.some(link => ["SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(link.relationKind)
+      && link.referencedHistoryEventRefs.length > 0
+      && link.referencedHistoryEventRefs.every(ref => input.recentConversation.some(event =>
+        event.eventId === ref.eventId && event.messageRef === ref.messageRef && event.referenceableCycleIds.length === 0)));
     const incompatible = detail?.filterDiagnostic?.targetFilterResult?.some(target => target.historyBound && target.statusAllowed && target.notExpired && !target.identityCompatible);
     correctable = failure.failureCode === "CONTEXT_LINK_DUPLICATE" || failure.failureCode === "CONTEXT_LINK_EVIDENCE_INVALID"
-      || failure.failureCode === "CONTEXT_TARGET_UNAVAILABLE" && (unknownRef || incompatible);
+      || failure.failureCode === "CONTEXT_TARGET_UNAVAILABLE" && (unknownRef || unboundTarget || incompatible);
   }
   return { boundary: failure.boundary, code: failure.failureCode, unitId: failure.unitId,
     fieldValidationState: failure.boundary === "C03" ? detail?.fieldValidationState || []

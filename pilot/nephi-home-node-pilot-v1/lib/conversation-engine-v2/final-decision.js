@@ -68,6 +68,15 @@ function buildFinalDecision({ executionOutcomes = [], plannerFailure = "", claim
       }
       return Object.freeze({ taskId, action });
     }));
+    // Silent meanings have formal responsibility but no presentation section.
+    // Issue their scoped decision from request evidence, never from text or
+    // missing presentation. A permitted missing outcome remains invalid.
+    for (const evidence of requestEvidence) {
+      if ((evidence.requestPresence === "ABSENT" || ["SUPPRESSED", "UNDETERMINED"].includes(evidence.replyPermission))
+        && !publicReplies.some(item => item.taskId === evidence.taskId)) {
+        publicReplies.push(Object.freeze({ taskId: evidence.taskId, action: "no_reply" }));
+      }
+    }
     const has = action => publicReplies.some(item => item.action === action);
     const action = has("clarification") ? "clarification" : has("reply") ? "reply" : has("handoff") ? "handoff" : "no_reply";
     const decision = Object.freeze({ ...result, action, internalAction: result.action,

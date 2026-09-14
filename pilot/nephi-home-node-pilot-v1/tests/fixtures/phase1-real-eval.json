@@ -164,6 +164,30 @@
         "price",
         "source_bound_date"
       ]
+    },
+    {
+      "id": "subsidy-price",
+      "text": "我要使用國旅喔～請問這樣子價格是多少呢～",
+      "observedLiveStatus": "FAIL_BEFORE_C021_DEPLOY",
+      "eventRef": "d46fff125a57b18081f3db4b3d01f0a6",
+      "occurredAt": "2026-09-14T11:13:51.352Z",
+      "price": true
+    },
+    {
+      "id": "subsidy-payment",
+      "text": "訂房須知看過沒問題 那如果當天補助用完的話，當天再匯款2000嗎？",
+      "observedLiveStatus": "FAIL_BEFORE_C021_DEPLOY",
+      "eventRef": "50d2e9dd1837fe7def6d5958be2ce8de",
+      "occurredAt": "2026-09-14T11:29:52.731Z",
+      "knownSubsidy": true
+    },
+    {
+      "id": "payment-details",
+      "text": "可以給我匯款帳號囉",
+      "observedLiveStatus": "FAIL_BEFORE_C021_DEPLOY",
+      "eventRef": "424676ecc79e192446898624dee45f67",
+      "occurredAt": "2026-09-14T11:58:12.228Z",
+      "riskHandoff": true
     }
   ],
   "contextSessions": [

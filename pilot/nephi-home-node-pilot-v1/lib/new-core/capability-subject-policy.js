@@ -134,7 +134,7 @@ function capabilityPolicyFor(projection, capability) {
 function catalogIdentityRuleFor(projection, capability, subjectKind) {
   const policy = capabilityPolicyFor(projection, capability);
   if (!policy) return null;
-  if (capability === "booking_operator_request" && subjectKind === "other_verified"
+  if (policy.routeKind === "HANDOFF" && subjectKind === "other_verified"
     || capability === "amenity_list" && subjectKind === "property") {
     return "NULL_OR_PUBLIC_CATALOG";
   }

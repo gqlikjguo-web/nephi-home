@@ -202,7 +202,9 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
       return queryOutcome(queryPlan, result.outcome, { ...result, resolverAttempted: true });
     }
     if (resolverId === "property_catalog" && queryPlan.capability === "amenity_list") {
-      return queryOutcome(queryPlan, "answered", { facts: { amenities: catalogAmenityNames(catalog, request.inventory), source: "property_catalog", propertyId: property.propertyId }, resolverAttempted: false });
+      const amenities = catalogAmenityNames(catalog, request.inventory);
+      if (!amenities.length) return queryOutcome(queryPlan, "unknown", { reason: "property_fact_unknown", facts: { subject: queryPlan.entity?.rawText || "question" } });
+      return queryOutcome(queryPlan, "answered", { facts: { amenities, source: "property_catalog", propertyId: property.propertyId }, resolverAttempted: false });
     }
     if (resolverId === "property_catalog") {
       const entity = scopedCatalogEntity(resolved && resolved.status === "resolved" && resolved.entity, request.inventory && request.inventory.mode);
@@ -216,6 +218,12 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
         return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, maxGuests: capacity, source: "property_catalog", propertyId: property.propertyId }, resolverAttempted: false });
       }
       const detailIntent = normalizeDetailIntent(queryPlan.detailIntent);
+      // A catalog identity is only a subject. A general answer additionally
+      // needs text, an explicit yes/no fact, or registered bundle scope.
+      if (detailIntent === "general" && !entity.answer && !["confirmed_yes", "confirmed_no"].includes(entity.status)
+        && !(Array.isArray(entity.applicableBundles) && entity.applicableBundles.length)) {
+        return queryOutcome(queryPlan, "unknown", { reason: "property_fact_unknown", facts: { subject: entity.publicName } });
+      }
       if (detailIntent === "general") return queryOutcome(queryPlan, "answered", { facts: { subject: entity.publicName, status: entity.status, answer: entity.answer || "", ...catalogFactMetadata(entity), ...(Array.isArray(entity.applicableBundles) ? { applicableBundles: entity.applicableBundles } : {}), source: "property_catalog", propertyId: property.propertyId, detailIntent }, resolverAttempted: false });
       if (require("./detail-intent").QUALIFIED_DETAIL_INTENTS.has(detailIntent)) {
         const detail = catalogFactByCanonicalId(catalog, detailFactCandidates(entity.canonicalId, detailIntent));

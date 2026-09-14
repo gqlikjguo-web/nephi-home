@@ -1,0 +1,159 @@
+{
+  "classification": "RECORDED_PRODUCTION_EVIDENCE; not a new REAL execution",
+  "previousDeploymentFinishedAt": "2026-09-14T12:07:17.475055Z",
+  "cases": [
+    {
+      "eventRef": "d46fff125a57b18081f3db4b3d01f0a6",
+      "occurredAt": "2026-09-14T11:13:51.352Z",
+      "text": "我要使用國旅喔～請問這樣子價格是多少呢～",
+      "observedReply": "【AI小比】目前未能確認這則訊息需要處理的內容。",
+      "decisionReason": "terminal_processing_status",
+      "attempts": [
+        {
+          "accepted": false,
+          "rejected": true,
+          "attemptType": "initial",
+          "attemptNumber": 1,
+          "validationResult": {
+            "ok": false,
+            "failures": [
+              {
+                "layer": "C05",
+                "errors": [],
+                "unitId": "h:5eb04c8d1ebabd755486a8d431af119bf83872beee839b16398ae6d1f39bbc3a",
+                "failureCode": "CONTEXT_TARGET_UNAVAILABLE"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eventRef": "50d2e9dd1837fe7def6d5958be2ce8de",
+      "occurredAt": "2026-09-14T11:29:52.731Z",
+      "text": "訂房須知看過沒問題 那如果當天補助用完的話，當天再匯款2000嗎？",
+      "observedReply": "【AI小比】無法確認該條件是否適用。",
+      "decisionReason": "execution_answered",
+      "attempts": [
+        {
+          "accepted": true,
+          "rejected": false,
+          "attemptType": "initial",
+          "attemptNumber": 1,
+          "validationResult": {
+            "ok": true,
+            "failures": []
+          }
+        }
+      ]
+    },
+    {
+      "eventRef": "424676ecc79e192446898624dee45f67",
+      "occurredAt": "2026-09-14T11:58:12.228Z",
+      "text": "可以給我匯款帳號囉",
+      "observedReply": "【AI小比】目前未能完成這則訊息的理解。",
+      "decisionReason": "terminal_processing_status",
+      "attempts": [
+        {
+          "accepted": false,
+          "rejected": true,
+          "attemptType": "initial",
+          "attemptNumber": 1,
+          "validationResult": {
+            "ok": false,
+            "failures": [
+              {
+                "layer": "C03",
+                "errors": [],
+                "unitId": "h:33412f957a950d4a85761aadfbe81ca876c3bf763cfd06536330314494d9bcad",
+                "failureCode": "UNIT_MEANING_UNSUPPORTED"
+              }
+            ]
+          }
+        },
+        {
+          "accepted": false,
+          "rejected": true,
+          "attemptType": "correction",
+          "attemptNumber": 2,
+          "triggerFailure": [
+            {
+              "layer": "C03",
+              "errors": [],
+              "failureCode": "UNIT_MEANING_UNSUPPORTED"
+            }
+          ],
+          "validationResult": {
+            "ok": false,
+            "failures": [
+              {
+                "layer": "C03",
+                "errors": [],
+                "unitId": "h:33412f957a950d4a85761aadfbe81ca876c3bf763cfd06536330314494d9bcad",
+                "failureCode": "UNIT_MEANING_UNSUPPORTED"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "eventRef": "a5367f6b9d27d9531163a2a6fa42a3cb",
+      "occurredAt": "2026-09-14T12:37:16.084Z",
+      "text": "9/20有房嗎？價格多少？",
+      "observedReply": "",
+      "decisionReason": "terminal_processing_status",
+      "attempts": [
+        {
+          "accepted": false,
+          "rejected": true,
+          "attemptType": "initial",
+          "attemptNumber": 1,
+          "validationResult": {
+            "ok": false,
+            "failures": [
+              {
+                "layer": "C02",
+                "errors": [],
+                "unitId": "h:14875cecdb066e6f19d2b1a0bc482e1fb757a42bf15c3472f7d2095940a093e7",
+                "failureCode": "UNDERSTANDING_SCHEMA_INVALID"
+              },
+              {
+                "layer": "C02",
+                "errors": [],
+                "unitId": "h:67faecabc93d74158e2edce54a2c269ea3ac77549d8ca1cd6efbecd437d882fc",
+                "failureCode": "UNDERSTANDING_SCHEMA_INVALID"
+              }
+            ],
+            "terminalCode": "UNDERSTANDING_SCHEMA_INVALID"
+          }
+        },
+        {
+          "accepted": false,
+          "rejected": true,
+          "attemptType": "correction",
+          "attemptNumber": 2,
+          "triggerFailure": [
+            {
+              "layer": "C02",
+              "errors": [],
+              "failureCode": "UNDERSTANDING_SCHEMA_INVALID"
+            },
+            {
+              "layer": "C02",
+              "errors": [],
+              "failureCode": "UNDERSTANDING_SCHEMA_INVALID"
+            }
+          ],
+          "validationResult": {
+            "ok": false,
+            "category": "timeout",
+            "failures": [],
+            "terminalCode": "UNDERSTANDING_PROVIDER_TIMEOUT",
+            "adoptionFailure": "CORRECTION_SIBLING_NOT_PRESERVED"
+          }
+        }
+      ]
+    }
+  ]
+}

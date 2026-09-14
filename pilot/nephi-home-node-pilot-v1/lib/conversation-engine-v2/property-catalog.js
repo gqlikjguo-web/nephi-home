@@ -21,20 +21,21 @@ const LOCATION_ALIASES = Object.freeze(["location", "navigation", "directions", 
 // These are the only commonAnswers keys written by the current operator
 // profile form. All other property facts must come from propertyFacts.
 const PROPERTY_SETTING_CATALOG = Object.freeze([
-  ["checkInTime", "check_in", "入住", "policy"],
+  ["checkInTime", "check_in", "入住", "policy", "checkInGuestText"],
   ["earlyCheckInPolicy", "check_in__early_arrival_policy", "提前入住規則", "policy"],
   ["latestArrivalTime", "check_in__latest_arrival_policy", "最晚入住時間", "policy"],
-  ["checkOutTime", "check_out", "退房", "policy"]
+  ["checkOutTime", "check_out", "退房", "policy", "checkOutGuestText"]
 ]);
 
 function propertySettingFacts(property, answers) {
-  return PROPERTY_SETTING_CATALOG.map(([settingKey, canonicalId, publicName, category]) => {
-    const answer = answers[settingKey];
+  return PROPERTY_SETTING_CATALOG.map(([settingKey, canonicalId, publicName, category, guestTextKey]) => {
+    const guestText = guestTextKey && typeof answers[guestTextKey] === "string" && answers[guestTextKey].trim() ? answers[guestTextKey] : null;
+    const answer = guestText || answers[settingKey];
     return { canonicalId, category, publicName,
       aliases: mergedAliases(property, canonicalId),
       status: answer ? "confirmed_yes" : "unknown",
       answerEvidence: Object.freeze({ propertyId: property.propertyId, appliesTo: "whole_property" }),
-      answer: clean(answer, 800) };
+      answer: guestText || clean(answer, 800) };
   });
 }
 
@@ -106,7 +107,9 @@ function buildPropertyCatalog(property) {
     features: [room.publicShortFeature, room.shortFeature, room.description].map((x) => clean(x, 40)).filter(Boolean).slice(0, 1),
     aliases: Array.isArray(room.aliases) ? room.aliases.map((alias) => clean(alias, 80)).filter(Boolean) : [], memberRoomIds: room.inventoryType === "bundle" ? (room.memberRoomIds || []).map(String) : []
   }));
-  const structuredFacts = structuredPropertyFacts(property);
+  const customSettingIds = new Set(PROPERTY_SETTING_CATALOG.filter(([, , , , key]) =>
+    key && typeof property.commonAnswers?.[key] === "string" && property.commonAnswers[key].trim()).map(([, id]) => id));
+  const structuredFacts = structuredPropertyFacts(property).filter(fact => !customSettingIds.has(fact.canonicalId));
   const structuredIds = new Set(structuredFacts.map((fact) => fact.canonicalId));
   const presetMap = new Map(PRESET_AMENITIES.map((item) => [item.key, item]));
   const enabledBundles = (property.rooms || []).filter((item) => item.inventoryType === "bundle" && item.enabled !== false);
