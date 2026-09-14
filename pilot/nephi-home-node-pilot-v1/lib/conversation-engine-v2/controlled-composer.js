@@ -26,6 +26,7 @@ function composeSection(section) {
     const official = composeSection({ ...section, facts: officialFacts });
     return [facts.customReply, official].filter(Boolean).join("\n");
   }
+  if (facts.answerScope === "general_policy") return `一般政策：${facts.answer}`;
   if (facts.detailNeedsConfirmation) {
     const known = facts.answer ? `${facts.answer}\n` : "";
     return `${known}${detailLabel(facts.detailIntent)}目前沒有正式資料，需由業者依當日狀況確認。`;
@@ -37,9 +38,11 @@ function composeSection(section) {
   }
   if (["needs_human", "property_data_missing", "failed"].includes(section.status)) return facts.subject ? `${facts.subject}這部分需要請業者確認。` : "這部分需要請業者確認。";
   if (facts.feasibility?.inventoryStatus === "available" && facts.feasibility.capacityStatus === "insufficient") {
-    return `${facts.checkIn} 仍有空房，但目前可用房源無法在指定房數內容納這次入住人數，請調整房數或入住人數。`;
+    const feasibility = `${facts.checkIn} 仍有空房，但目前可用房源無法在指定房數內容納這次入住人數，請調整房數或入住人數。`;
+    return facts.priceBasis === "registered_rate" ? feasibility + "\n" + composeSection({ ...section, facts: { ...facts, feasibility: null } }) : feasibility;
   }
   if (facts.prices) {
+    if (facts.priceBasis === "registered_rate") return `${facts.checkIn} 登錄房價：\n${facts.prices.map(item => `${item.inventory.publicName}共 ${money(item.total)} ${item.currency === "TWD" ? "元" : item.currency}。`).join("\n")}`;
     if (["price", "total_price"].includes(section.type) && section.outcomeStatus === "no_availability"
       && section.outcomeReason === "no_bookable_inventory") {
       return `${facts.checkIn} 入住沒有可預訂房源，因此目前無可預訂的報價。`;

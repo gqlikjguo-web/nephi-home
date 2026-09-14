@@ -49,6 +49,17 @@ function validateClaimSet(reply, plan, claimedTaskIds, composedSections = null) 
     }
     if (type === "FACTUAL_ANSWER" && section.facts?.propertyId
       && plan.propertyId && section.facts.propertyId !== plan.propertyId) errors.push("fact_property_scope_mismatch");
+    if (type === "FACTUAL_ANSWER" && section.outcomeStatus === "unknown") {
+      if (!(section.coveredTaskIds || [section.taskId]).includes(section.taskId)) errors.push("invalid_partial_fact_provenance");
+      for (const taskId of section.coveredTaskIds || [section.taskId]) {
+        const origin = taskId === section.taskId ? section : plan.renderObligations?.find(item => item.taskId === taskId)?.payload;
+        const provenance = origin?.executionProvenance;
+        if (!isCanonicalExecutionProvenance(provenance) || provenance.sourceOutcomeStatus !== "unknown"
+          || provenance.taskId !== taskId || provenance.propertyId !== plan.propertyId || !provenance.turnId || provenance.turnId !== plan.turnId
+          || !provenance.knownFacts || !require("node:util").isDeepStrictEqual(provenance.knownFacts, origin.facts)
+          || provenance.knownFacts.answerScope !== "general_policy") errors.push("invalid_partial_fact_provenance");
+      }
+    }
     if (type === "EPISTEMIC_UNKNOWN" && section.unknownProvenance?.propertyId
       && plan.propertyId && section.unknownProvenance.propertyId !== plan.propertyId) errors.push("unknown_property_scope_mismatch");
     if (type === "PROCESSING_STATUS") {

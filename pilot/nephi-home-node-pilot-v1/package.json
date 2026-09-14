@@ -42,7 +42,7 @@
     "test:new-core-reliability-provenance": "node tests/new-core-inventory-unknown-outcome-runner.js && node tests/new-core-reliability-provenance-runner.js",
     "test:new-core-room-composition": "node tests/new-core-room-composition-persistence-runner.js && node tests/new-core-room-composition-query-runner.js",
     "test:new-core-operator-policy": "node tests/new-core-operator-policy-runner.js",
-    "test:new-core-phase1-boundaries": "node tests/new-core-preliminary-intent-runner.js && node tests/new-core-scoped-collection-admission-runner.js && node tests/new-core-price-resource-coverage-runner.js",
+    "test:new-core-phase1-boundaries": "node tests/new-core-preliminary-intent-runner.js && node tests/new-core-scoped-collection-admission-runner.js && node tests/new-core-price-resource-coverage-runner.js && node tests/new-core-required-clarification-runner.js && node tests/new-core-public-reply-contract-runner.js && node tests/new-core-independent-rate-runner.js",
     "test:unknown-lifecycle": "node tests/new-core-outcome-state-lifecycle-runner.js",
     "test:unknown-lifecycle-affected": "node tests/new-core-context-status-roundtrip-runner.js && node tests/new-core-context-lifecycle-runner.js && node tests/new-core-production-turn-adapter-runner.js && node tests/new-core-operator-policy-runner.js && node tests/new-core-reliability-provenance-runner.js && node tests/new-core-decision-only-response-runner.js && node tests/new-core-source-evidence-runner.js && node tests/new-core-quantity-state-turn-runner.js",
     "test:responsibility-routing": "node tests/new-core-policy-responsibility-runner.js"

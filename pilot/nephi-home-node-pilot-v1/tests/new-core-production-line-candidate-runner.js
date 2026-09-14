@@ -182,7 +182,8 @@ function coreResult(args, action) {
     await send("exception-event", "explode");
     assert.equal(record("exception-event").needsReview, false);
     assert.equal(record("exception-event").humanHandoff, false);
-    assert.equal(record("exception-event").processingStatus, "reply_succeeded");
+    assert.equal(record("exception-event").processingStatus, "no_reply");
+    assert.equal(sends.length, beforeNoReply, "technical failure without human responsibility must not invoke LINE");
 
     for (const eventId of ["answer-event", "clarify-event", "handoff-event", "no-reply-event", "exception-event"]) {
       const persisted = record(eventId);

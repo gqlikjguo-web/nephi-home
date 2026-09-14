@@ -90,7 +90,9 @@ async function run() {
       const loaded = providers.customerSettings.getProperty(id);
       assert.equal(loaded.propertyFacts[0].status, status);
       const answer = await query(loaded, [{ text: "正式登錄的服務政策是什麼？", capability: "policy", subject: { kind: "policy", catalogIdentity: "operator_access" } }]);
-      assert.equal(answer.result.earliestFailure, null); assert.equal(answer.validated, true);
+      assert.equal(answer.result.earliestFailure, null);
+      if (status === "unknown") { assert.equal(answer.result.finalDecision.internalAction, "reply"); assert.equal(answer.result.finalDecision.action, "no_reply"); assert.equal(answer.result.finalResponse.shouldReply, false); assert.equal(answer.result.finalResponse.replyText, ""); assert.equal(answer.result.artifacts.claimValidation.ok, true); }
+      else assert.equal(answer.validated, true);
       assert.equal(answer.result.artifacts.executionOutcomes[0].outcome, status === "unknown" ? "unknown" : "answered");
       assert.notEqual(answer.result.finalDecision.action, "handoff"); cases++;
     }

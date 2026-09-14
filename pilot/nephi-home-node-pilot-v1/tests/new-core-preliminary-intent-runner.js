@@ -38,7 +38,7 @@ async function run(propertyId, spec, previous = null) {
       sourceEvents: [{ eventId: id, messageRef: id, role: "guest", timestamp: NOW, messageKind: "text", messageText: text }] },
     resolver: { availability: query => { assert.ok(spec.temporal, "execution requires supplied dates"); return service.searchAvailability(query); },
       availableDates: () => { throw Error("unexpected date search"); }, priceOverrides: () => [], dateClassifications: () => [], customReplies: () => [] },
-    understandingProvider: (input, options) => callOpenAIUnderstandingV1(input, { ...options, fetchImpl: async () => {
+    understandingProvider: (input, options) => callOpenAIUnderstandingV1(input, { ...options, nowMs: () => Date.parse(NOW), fetchImpl: async () => {
       calls++;
       const payload = { understandingOutput: { schemaVersion: 1, turnId: id, units: [unit] }, contextLinkCandidates: [{
         unitId: id, contextLinkCandidateId: id, relationKind: spec.capability === null ? "NONE" : previous ? (spec.relation || "MODIFICATION") : "NEW_REQUEST",

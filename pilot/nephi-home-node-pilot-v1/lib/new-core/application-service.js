@@ -139,11 +139,14 @@ function taskResultForExecution(execution, evidence) {
     operatorActionClass: execution.operatorActionClass || null, riskClass: execution.riskClass || null,
     ...(execution.requestedQuantity !== undefined ? {requestedQuantity:execution.requestedQuantity,distinctRequirement:execution.distinctRequirement,matchedUniqueIdentities:execution.matchedUniqueIdentities,matchedCount:execution.matchedCount,unresolvedRemainder:execution.unresolvedRemainder,fulfillmentStatus:execution.fulfillmentStatus} : {}) };
   if (evidence && executionReplyDisposition(execution, evidence) === "reply_unknown") {
+    if (base.executionProvenance?.knownFacts) return { ...base, status: "answered", claimType: "FACTUAL_ANSWER",
+      facts: base.executionProvenance.knownFacts };
     return { ...base, status: "answered", claimType: "EPISTEMIC_UNKNOWN",
       unknownProvenance: unknownProvenanceFor(execution), facts: { subject: base.facts.subject } };
   }
   if (["answered", "no_availability"].includes(execution.outcome)) return { ...base, status: "answered" };
-  if (execution.outcome === "not_ready") return { ...base, status: "needs_clarification", missingInputs: execution.missingFields || [] };
+  if (execution.outcome === "not_ready") return { ...base, status: "needs_clarification", missingInputs: execution.missingFields || [],
+    ...(execution.clarificationRequired === true ? { clarificationRequired: true } : {}) };
   return { ...base, status: "needs_human", reason: execution.reason || execution.outcome, review: true };
 }
 
@@ -190,7 +193,8 @@ function finalizeTurnResponse({ scope, turnId, property, terminalContext, reques
     const text = composeControlledReply(responsePlan);
     claimValidation = validateClaims(text, responsePlan, responsePlan.sections.flatMap(section => section.coveredTaskIds || [section.taskId]));
     const processing = responsePlan.sections.filter(section => section.claimType === "PROCESSING_STATUS");
-    finalDecision = buildFinalDecision({ executionOutcomes, requestEvidence, terminalResults: processing, noReplyReason: "new_core_no_reply" });
+    finalDecision = buildFinalDecision({ executionOutcomes, requestEvidence, terminalResults: processing, noReplyReason: "new_core_no_reply",
+      responseValidation: claimValidation, responseSections: responsePlan.sections, propertyId: scope.propertyId, turnId });
     if (finalDecision.action === "no_reply") {
       finalResponse = buildFinalResponse({ finalDecision, responsePlan, validatedReplyText: "", claimValidation });
       break;
@@ -348,12 +352,13 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
       type: item.unit.capability,
       outcome: "not_ready",
       readinessStatus: "missing_information",
+      clarificationRequired: true,
       missingFields: item.routingDecision.missingGuestFields
     }));
   const rawExecutionOutcomes = [
     ...routedClarifications,
     ...formalRequests.filter((item) => item.readiness.status !== "ready").map(resultForNotReady),
-    ...executeCanonicalQueryPlans({ property, catalog, queryPlans, availabilityResolver: resolver.availability, availableDatesResolver: resolver.availableDates, priceOverrides: resolver.priceOverrides, datePriceClassifications: resolver.dateClassifications, now })
+    ...executeCanonicalQueryPlans({ property, catalog, queryPlans, turnId: c01.turnId, availabilityResolver: resolver.availability, availableDatesResolver: resolver.availableDates, priceOverrides: resolver.priceOverrides, datePriceClassifications: resolver.dateClassifications, now })
   ];
   rawExecutionOutcomes.push(
     ...aggregation.value.unitOutcomes

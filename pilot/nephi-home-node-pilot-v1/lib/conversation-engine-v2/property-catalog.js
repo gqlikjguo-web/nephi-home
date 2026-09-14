@@ -33,6 +33,7 @@ function propertySettingFacts(property, answers) {
     return { canonicalId, category, publicName,
       aliases: mergedAliases(property, canonicalId),
       status: answer ? "confirmed_yes" : "unknown",
+      answerEvidence: Object.freeze({ propertyId: property.propertyId, appliesTo: "whole_property" }),
       answer: clean(answer, 800) };
   });
 }
@@ -91,6 +92,7 @@ function structuredPropertyFacts(property) {
       answer,
       propertyFact: fact,
       appliesTo,
+      answerEvidence: Object.freeze({ propertyId: property.propertyId, appliesTo }),
     };
   }).filter((fact) => fact.canonicalId);
 }

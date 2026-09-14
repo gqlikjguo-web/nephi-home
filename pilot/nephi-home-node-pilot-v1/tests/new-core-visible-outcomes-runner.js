@@ -30,7 +30,7 @@ const specs=[{id:'A-A',units:['A','A']},{id:'A-C',units:['A','C']},{id:'A-U',uni
 (async()=>{const rows=[];for(const spec of specs){const r=await run(spec);let problem;
 try{assert.equal(r.error,undefined);assert.equal(r.validation?.ok,true);assert.equal(r.rebuildCount,0);
 if(spec.units.includes('C'))assert.ok(r.response.replyText.includes('查房連結：'),'visible clarification reference missing');
-if(spec.units.includes('H'))assert.equal(r.decision.action,'handoff');
+if(spec.units.includes('H')){assert.equal(r.decision.reviewRequired,true);assert.ok(r.response.replyText.includes('請稍後，將盡快回覆您。'));assert.equal(r.decision.action,spec.units.includes('C')?'clarification':spec.units.includes('A')?'reply':'handoff');}
 for(const o of r.outcomes.filter(x=>x.outcome==='unknown'&&x.reason!=='human_help'))assert.equal(o.hasProvenance,true);
 }catch(e){problem=e.message;}rows.push({...r,pass:!problem,problem});console.log((problem?'FAIL ':'PASS ')+spec.id+(problem?' '+problem:''));}
 if(process.env.JUNZAN_FIX_EVIDENCE)fs.writeFileSync(process.env.JUNZAN_FIX_EVIDENCE,JSON.stringify({classification:'FAKE_INTEGRATION',rows},null,2));process.exitCode=rows.some(x=>!x.pass)?1:0;})();

@@ -95,19 +95,21 @@ if (require.main === module) {
 for (const propertyId of ["inventory-a", "inventory-b"]) for (const kind of ["room", "bundle"]) {
   test(`formal unknown inventory remains epistemic: ${propertyId}/${kind}`, async () => {
     const r = await run({ propertyId, kind, capabilities: ["availability", "price"] });
-    assert.deepEqual(r.artifacts.executionOutcomes.map(o => o.outcome), ["unknown", "unknown"]);
-    for (const o of r.artifacts.executionOutcomes) {
+    assert.deepEqual(r.artifacts.executionOutcomes.map(o => o.outcome), ["unknown", "answered"]);
+    for (const o of r.artifacts.executionOutcomes.filter(o=>o.type === "availability")) {
       assert.equal(o.resolverAttempted, true);
       assert.ok(unknownProvenanceFor(o));
     }
     assert.notEqual(r.finalDecision.reasonCode, "terminal_processing_status");
     assert.equal(r.finalDecision.reviewRequired, false);
-    assert.ok(r.artifacts.responsePlan.sections.every(s => s.claimType === "EPISTEMIC_UNKNOWN"));
+    assert.equal(r.artifacts.responsePlan.sections[0].claimType,"EPISTEMIC_UNKNOWN");
+    const price=r.artifacts.executionOutcomes[1];assert.equal(price.facts.priceBasis,"registered_rate");assert.equal(price.facts.availability,"unknown");assert.equal(price.resolverProvenance.reason,"missing_inventory_records");
+    assert.equal(unknownProvenanceFor(price),null);assert.equal(price.facts.prices[0].total,1000);
   });
 }
 test("unknown inventory preserves an independent factual answer", async () => {
   const r = await run({ capabilities: ["availability", "price"], sibling: true });
-  assert.deepEqual(r.artifacts.executionOutcomes.map(o => o.outcome), ["unknown", "unknown", "answered"]);
+  assert.deepEqual(r.artifacts.executionOutcomes.map(o => o.outcome), ["unknown", "answered", "answered"]);
   assert.ok(r.finalResponse.replyText.includes("A reading lounge is provided."));
 });
 for (const [inventory, expected] of [["available", "answered"], ["closed", "no_availability"], ["exception", "technical_error"], ["untyped_unreliable", "technical_error"]]) {

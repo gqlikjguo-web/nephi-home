@@ -57,6 +57,7 @@ function buildResponsePlan({ propertyId, taskResults, inputTaskIds, canonicalReq
       needsReview: Boolean(result.review)
     };
     if (result.terminalFailure) section.terminalFailure = result.terminalFailure;
+    if (result.clarificationRequired === true) section.clarificationRequired = true;
     if (result.dependsOnScopeRefs) section.dependsOnScopeRefs = result.dependsOnScopeRefs;
     if (section.claimType === "EPISTEMIC_UNKNOWN") section.unknownProvenance = result.unknownProvenance || null;
     if (PUBLIC_AVAILABILITY_REFERENCE_TYPES.has(type) && String(publicAvailabilityUrl || "").trim()) {

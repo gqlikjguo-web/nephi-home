@@ -581,11 +581,11 @@ async function runStateFailureMatrix() {
     })
   });
   assert.equal(technical.availabilityCalls, 1);
-  assert.equal(technical.result.finalDecision.action, "reply");
+  assert.equal(technical.result.finalDecision.action, "no_reply");
   assert.equal(technical.result.finalDecision.reasonCode, "terminal_processing_status");
   assert.equal(technical.result.finalDecision.reviewRequired, false);
-  assert.equal(technical.result.finalResponse.shouldReply, true);
-  assert.ok(technical.result.finalResponse.replyText.length > 0);
+  assert.equal(technical.result.finalResponse.shouldReply, false);
+  assert.equal(technical.result.finalResponse.replyText, "");
   assert.equal(
     technical.result.state.tasks[0].status,
     "ready",

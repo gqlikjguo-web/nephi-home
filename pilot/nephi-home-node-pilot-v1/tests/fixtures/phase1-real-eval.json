@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "source": "User-confirmed REAL LINE observations; replay itself is not REAL LINE",
+  "frozenBaseline": "99684ec105310ec9e12eda11816930e198ced890",
+  "historicalSqlReconstructed": false,
+  "excluded": [
+    "11/27有401雙人房嗎？: exact REAL event unavailable; do not substitute 40天"
+  ],
+  "globalInvariants": [
+    "max_two_understanding_calls",
+    "internal_provenance_preserved",
+    "only_official_facts",
+    "no_public_internal_failure_wording",
+    "single_reply_authority",
+    "property_turn_scope"
+  ],
+  "cases": [
+    {
+      "id": "crib",
+      "text": "有嬰兒床嗎",
+      "observedLiveStatus": "PASS",
+      "requiredSemantics": [
+        "official_fact",
+        "baby_crib"
+      ]
+    },
+    {
+      "id": "baby-facilities",
+      "text": "有嬰兒澡盆嗎 有盥洗用品嗎？",
+      "observedLiveStatus": "PASS",
+      "requiredSemantics": [
+        "sibling_coverage",
+        "official_facts"
+      ]
+    },
+    {
+      "id": "undated-price",
+      "text": "價格多少",
+      "observedLiveStatus": "PASS",
+      "requiredSemantics": [
+        "official_reference",
+        "no_invented_date"
+      ]
+    },
+    {
+      "id": "package-pet-price",
+      "text": "10/20五人包棟加四隻狗可以嗎？多少錢",
+      "observedLiveStatus": "PASS",
+      "requiredSemantics": [
+        "package",
+        "guest_count",
+        "pets",
+        "price",
+        "source_bound_date"
+      ],
+      "summaryText": "10/20 五人包棟＋四隻狗＋價格",
+      "savedEvidence": "/home/gqlik/junzan-phase1-af-20260914/REAL_CONTROLS.stdout: candidate package-pet-price",
+      "sourceNote": "Exact saved prior REAL OpenAI replay text; user PASS report used a summary."
+    },
+    {
+      "id": "entertainment",
+      "text": "可以唱歌嗎 有麻將桌嗎？可以玩什麼娛樂設備",
+      "observedLiveStatus": "PASS",
+      "requiredSemantics": [
+        "amenity_siblings",
+        "collection",
+        "no_duplicate"
+      ]
+    },
+    {
+      "id": "general-conversation",
+      "text": "可以現場看完再決定嗎",
+      "observedLiveStatus": "FAIL",
+      "requiredSemantics": [
+        "no_reply",
+        "no_invented_operator_action"
+      ]
+    },
+    {
+      "id": "booking",
+      "text": "我想訂房",
+      "observedLiveStatus": "FAIL",
+      "requiredSemantics": [
+        "request",
+        "clarify",
+        "persisted_context_target"
+      ]
+    },
+    {
+      "id": "package",
+      "text": "想包棟可以嗎",
+      "observedLiveStatus": "FAIL",
+      "requiredSemantics": [
+        "request",
+        "clarify",
+        "persisted_context_target"
+      ]
+    },
+    {
+      "id": "composition",
+      "text": "民宿總共幾間房？",
+      "observedLiveStatus": "FAIL",
+      "requiredSemantics": [
+        "room_composition_not_capacity",
+        "official_facts_or_silence"
+      ]
+    },
+    {
+      "id": "dated-price",
+      "text": "12/25價格多少？",
+      "observedLiveStatus": "FAIL",
+      "requiredSemantics": [
+        "date",
+        "independent_price_facts",
+        "no_duplicate_reference"
+      ]
+    },
+    {
+      "id": "availability-price",
+      "text": "9/20有房嗎？價格多少？",
+      "observedLiveStatus": "FAIL",
+      "requiredSemantics": [
+        "availability_and_price",
+        "no_duplicate_answer"
+      ]
+    },
+    {
+      "id": "availability-completeness",
+      "text": "12/25有空房嗎 401雙人房",
+      "observedLiveStatus": "FAIL",
+      "requiredSemantics": [
+        "official_completeness",
+        "unknown_not_technical",
+        "scoped_entity"
+      ]
+    },
+    {
+      "id": "checkout",
+      "text": "1點直接退房離開就可以了嗎",
+      "observedLiveStatus": "FAIL",
+      "requiredSemantics": [
+        "known_checkout_policy",
+        "no_unregistered_permission"
+      ]
+    },
+    {
+      "id": "closure",
+      "text": "那我跟朋友討論一下，謝謝",
+      "observedLiveStatus": "PASS",
+      "requiredSemantics": [
+        "validated_absent",
+        "no_reply"
+      ]
+    },
+    {
+      "id": "compact-multi-request",
+      "text": "10/20 五人包棟＋四隻狗＋價格",
+      "observedLiveStatus": "NOT_A_USER_REAL_EVENT",
+      "observedCandidateReplay": "FAIL: model omitted independent applicability subject",
+      "requiredSemantics": [
+        "package",
+        "guest_count",
+        "pets",
+        "price",
+        "source_bound_date"
+      ]
+    }
+  ],
+  "contextSessions": [
+    {
+      "id": "booking-date",
+      "anchor": "2026-09-13T14:30:00.000Z",
+      "turns": [
+        "我想訂房",
+        "兩人，10/25入住一晚"
+      ],
+      "requiredSemantics": [
+        "clarify_before_date",
+        "verified_history_binding",
+        "same_task_date_supplement"
+      ]
+    },
+    {
+      "id": "relative-modification",
+      "anchor": "2026-09-13T14:30:00.000Z",
+      "turns": [
+        "下週末有房嗎",
+        "那下週三有房嗎"
+      ],
+      "requiredSemantics": [
+        "source_event_time_anchor",
+        "2026-09-19",
+        "2026-09-16",
+        "verified_modification",
+        "no_interval_conflict"
+      ]
+    }
+  ]
+}

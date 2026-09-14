@@ -414,6 +414,7 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       roomTypeSet,
       queryMode,
       availabilityReliable,
+      candidateRooms,
       availableRooms,
       feasibility,
       rooms,

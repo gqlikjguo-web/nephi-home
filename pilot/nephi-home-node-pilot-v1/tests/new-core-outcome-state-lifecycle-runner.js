@@ -15,14 +15,14 @@ const { formalProperty } = require("./new-core-room-composition-query-runner");
 const { policy } = require("./new-core-operator-policy-runner");
 const NOW = "2026-09-13T08:00:00.000Z", propertyId = "lifecycle-contract";
 const cases = [
-  { name: "Unknown single", kind: "unknown", single: true, outcome: "unknown", action: "reply" },
-  { name: "Unknown persist reload next", kind: "unknown", outcome: "unknown", action: "reply" },
+  { name: "Unknown single", kind: "unknown", single: true, outcome: "unknown", action: "no_reply" },
+  { name: "Unknown persist reload next", kind: "unknown", outcome: "unknown", action: "no_reply" },
   { name: "ANSWER multi turn", kind: "answer", outcome: "answered", action: "reply" },
   { name: "CLARIFY multi turn", kind: "clarify", outcome: "not_ready", action: "clarification" },
   { name: "HANDOFF multi turn", kind: "human", action: "handoff" },
-  { name: "technical failure multi turn", kind: "technical", outcome: "technical_error", action: "reply" },
+  { name: "technical failure multi turn", kind: "technical", outcome: "technical_error", action: "no_reply" },
   { name: "NO_REPLY control", kind: "closure", action: "no_reply" },
-  { name: "Unknown followed by closure", kind: "unknown", outcome: "unknown", action: "reply", next: "closure" }
+  { name: "Unknown followed by closure", kind: "unknown", outcome: "unknown", action: "no_reply", next: "closure" }
 ];
 async function run() {
   const connection = { kind: "pglite", dataDir: fs.mkdtempSync(path.join(os.tmpdir(), "outcome-state-")) };
@@ -62,6 +62,7 @@ async function run() {
         const first = await processTurn("first", c.kind === "technical" ? "Rate for 2026-12-25" : "This turn's formal request");
         row.first = { failure: first.earliestFailure, decision: first.finalDecision, outcomes: first.artifacts.executionOutcomes };
         assert.equal(first.earliestFailure, null); assert.equal(first.finalDecision.action, c.action);
+        if(c.action === "no_reply") { assert.equal(first.finalResponse.shouldReply,false); assert.equal(first.finalResponse.replyText,""); }
         if (c.outcome) assert.equal(first.artifacts.executionOutcomes[0].outcome, c.outcome);
         if (c.kind === "unknown") assert.ok(unknownProvenanceFor(first.artifacts.executionOutcomes[0]));
         if (c.kind === "technical") assert.equal(unknownProvenanceFor(first.artifacts.executionOutcomes[0]), null);

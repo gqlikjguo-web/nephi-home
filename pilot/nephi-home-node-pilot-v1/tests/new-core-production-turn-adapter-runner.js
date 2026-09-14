@@ -322,13 +322,13 @@ function input(overrides = {}) {
   assert.equal(failureSection.terminalFailure.code, "UNDERSTANDING_PROVIDER_FAILURE");
   assert.equal(terminalClaim.isClaimValidationResult(safe.claimValidation), true);
   assert.equal(safe.claimValidation.ok, true);
-  assert.equal(safe.claimValidation.validatedText, safe.finalResponse.replyText);
-  assert.equal(terminalClaim.isValidatedFinalResponse(safe.finalResponse), true);
+  assert.equal(safe.finalResponse.replyText, "");
+  assert.equal(terminalClaim.isValidatedFinalResponse(safe.finalResponse), false, "NO_REPLY must not receive a delivery attestation");
   assert.equal(failed.resolverCalls.length, 0, "failed understanding must not execute a request");
-  assert.equal(safe.finalDecision.action, "reply");
+  assert.equal(safe.finalDecision.action, "no_reply");
   assert.equal(safe.finalDecision.reviewRequired, false);
-  assert.equal(safe.finalResponse.action, "reply");
-  assert.equal(safe.finalResponse.shouldReply, true);
+  assert.equal(safe.finalResponse.action, "no_reply");
+  assert.equal(safe.finalResponse.shouldReply, false);
   assert.equal(failed.writes.length, 0, "runtime failure must not overwrite the prior state");
   assert.ok(failed.diagnostics.some((entry) => entry.stage === "new_core_failure"
     && entry.failureCode === "UNDERSTANDING_PROVIDER_FAILURE"

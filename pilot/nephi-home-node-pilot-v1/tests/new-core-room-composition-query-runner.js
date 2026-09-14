@@ -81,7 +81,8 @@ async function run() {
     if (state === "foreign_inventory") property.roomCompositionInventory.propertyId = "foreign";
     if (state === "invalid_document") property.roomCompositionV1.physicalRooms.push(property.roomCompositionV1.physicalRooms[0]);
     const { result, calls, validated } = await query(property, [{ text: "整個住宿的房間總數？", capability: "lodging_room_composition", subject: { kind: "property", catalogIdentity: null } }]);
-    assert.equal(result.earliestFailure, null); assert.equal(calls, 1); assert.equal(validated, true);
+    assert.equal(result.earliestFailure, null); assert.equal(calls, 1); assert.equal(validated, false);
+    assert.equal(result.finalResponse.shouldReply, false); assert.equal(result.finalResponse.replyText, "");
     const outcome = result.artifacts.executionOutcomes[0];
     if (["foreign_inventory", "invalid_document"].includes(state)) {
       assert.equal(outcome.outcome, "technical_error", "invalid formal data is not epistemic Unknown");

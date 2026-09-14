@@ -220,7 +220,10 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
       if (require("./detail-intent").QUALIFIED_DETAIL_INTENTS.has(detailIntent)) {
         const detail = catalogFactByCanonicalId(catalog, detailFactCandidates(entity.canonicalId, detailIntent));
         if (!detail) return queryOutcome(queryPlan, "unknown", {
-          reason: "property_applicability_unknown", facts: { subject: entity.publicName }, resolverAttempted: false
+          reason: "property_applicability_unknown", facts: { subject: entity.publicName }, resolverAttempted: false,
+          ...(entity.answer && entity.answerEvidence?.propertyId === property.propertyId
+            && entity.answerEvidence.appliesTo === "whole_property" ? { knownFacts: Object.freeze({ subject: entity.publicName, answer: entity.answer,
+            answerScope: "general_policy", source: "property_catalog", propertyId: property.propertyId }) } : {})
         });
         return queryOutcome(queryPlan, "answered", { facts: {
           subject: entity.publicName, status: detail.status, answer: detail.answer || "",
@@ -247,10 +250,22 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
       const resolverProvenance = require("../mvp-service").availabilityUnknownProvenanceFor(adapted.result, {
         propertyId: queryPlan.propertyId, from: queryPlan.resolverTask.checkIn, to: queryPlan.resolverTask.checkOut
       });
+      if (!resolverProvenance && !adapted.result.availabilityReliable) return queryOutcome(queryPlan, "technical_error", { reason: "availability_unreliable", resolverAttempted: true });
+      // Registered rates do not assert that the requested stay is bookable.
+      // Product selection remains the existing Resolver's responsibility.
+      if (["price", "total_price"].includes(queryPlan.capability) && !adapted.facts.availableInventory.length
+        && Array.isArray(adapted.result.candidateRooms) && adapted.result.candidateRooms.length) {
+        const pricing = buildPricingFacts({ property, availableInventory: adapted.result.candidateRooms.map(publicInventory),
+          checkIn: stay.checkIn, checkOut: stay.checkOut, priceOverrides, datePriceClassifications });
+        if (!pricing.missing && pricing.prices.length === adapted.result.candidateRooms.length) {
+          return queryOutcome(queryPlan, "answered", { facts: { ...adapted.facts, prices: pricing.prices,
+            priceBasis: "registered_rate", source: "pricing_provider", availability: resolverProvenance ? "unknown" : adapted.facts.availability },
+            ...(resolverProvenance ? { resolverProvenance } : {}), resolverAttempted: true });
+        }
+      }
       if (resolverProvenance) {
         return queryOutcome(queryPlan, "unknown", { reason: resolverProvenance.reason, resolverProvenance, resolverAttempted: true });
       }
-      if (!adapted.result.availabilityReliable) return queryOutcome(queryPlan, "technical_error", { reason: "availability_unreliable", resolverAttempted: true });
       const availabilityWithInventory = ["availability", "bundle_availability"].includes(queryPlan.capability)
         && adapted.facts.availableInventory.length > 0;
       if (availabilityWithInventory) {
@@ -307,11 +322,18 @@ function executeCanonicalQueryPlans(input) {
   }
   return (input.queryPlans || []).map((queryPlan) => {
     const outcome = outcomeByTaskId.get(queryPlan.taskId);
+    // An independently answered general request already owns this base fact.
+    // The qualified request remains Unknown; it does not issue a second answer.
+    if (outcome.knownFacts && (input.queryPlans || []).some(other => other.taskId !== queryPlan.taskId
+      && other.propertyId === queryPlan.propertyId && other.resolverId === "property_catalog"
+      && normalizeDetailIntent(other.detailIntent) === "general"
+      && other.entity?.canonicalId === queryPlan.entity?.canonicalId
+      && outcomeByTaskId.get(other.taskId)?.outcome === "answered")) delete outcome.knownFacts;
     const requirement = queryPlan.canonicalRequest.quantityCandidate;
     if (requirement) {
       const facts = outcome.facts || {};
       const products = facts.availableInventory || (facts.prices && facts.prices.map(p=>p.inventory));
-      const known = outcome.outcome === 'no_availability' || outcome.outcome === 'answered' && Array.isArray(products);
+      const known = outcome.outcome === 'no_availability' || outcome.outcome === 'answered' && !outcome.resolverProvenance && Array.isArray(products);
       const ids = (products || []).map(p=>p.canonicalId);
       Object.assign(outcome, evaluateProductFulfillment(requirement, {status:known?'known':'unknown',matchedIdentities:ids}));
       const uniqueByIdentity = (items, idFor) => items.filter((item,index)=>items.findIndex(other=>idFor(other)===idFor(item))===index);
@@ -320,6 +342,7 @@ function executeCanonicalQueryPlans(input) {
     const provenance = Object.freeze({ taskId: queryPlan.taskId, formalRequestId: queryPlan.formalRequestId,
       sourceOutcomeStatus: outcome.outcome, sourceReasonCode: outcome.reason || "",
       resolverId: queryPlan.resolverId, propertyId: queryPlan.propertyId,
+      ...(outcome.knownFacts ? { knownFacts: Object.freeze({ ...outcome.knownFacts }), turnId: input.turnId } : {}),
       ...(outcome.resolverProvenance ? { resolverProvenance: outcome.resolverProvenance } : {}) });
     EXECUTION_PROVENANCE.set(outcome, provenance);
     EXECUTION_PROVENANCE_INSTANCES.add(provenance);

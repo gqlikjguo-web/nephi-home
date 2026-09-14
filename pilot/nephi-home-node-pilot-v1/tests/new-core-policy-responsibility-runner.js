@@ -32,7 +32,7 @@ async function query(propertyId, specs, { detailRegistered = false, configure = 
       const envelope = { understandingOutput: { schemaVersion: 1, turnId: input.turnId, units }, contextLinkCandidates: units.map(u => ({ unitId: u.unitId, contextLinkCandidateId: u.contextLinkCandidateId, relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: u.evidenceRefs, referencedHistoryEventRefs: [] })) };
       return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(envelope) }] }] }) };
     } }) });
-  return { result, calls, valid: isValidatedFinalResponse(result.finalResponse, { propertyId, eventId: "turn", turnId: "turn" }) };
+  return { result, calls, valid: result.finalResponse.shouldReply ? isValidatedFinalResponse(result.finalResponse, { propertyId, eventId: "turn", turnId: "turn" }) : result.finalDecision.action === "no_reply" && result.finalResponse.replyText === "" && result.artifacts.claimValidation.ok };
 }
 
 
@@ -52,7 +52,8 @@ for (const propertyId of ["responsibility-alpha", "responsibility-beta"]) {
     const out=x.result.artifacts.executionOutcomes[0];
     assert.equal(out.outcome,"unknown");assert.equal(unknownProvenanceFor(out).propertyId,propertyId);
     assert.equal(out.facts.answer,undefined);assert.equal(x.result.finalDecision.action,"reply");
-    assert.ok(x.result.finalResponse.replyText.includes("無法確認該條件是否適用"));
+    assert.equal(out.knownFacts.answerScope,"general_policy");
+    assert.equal(x.result.finalResponse.replyText, "一般政策：Pets are welcome under the published general policy.");
   });
   test(`${propertyId}: registered restriction is the answer, never an inferred approval`, async () => {
     const answer="The registered limit is two pets; larger groups are not permitted.";
@@ -75,8 +76,7 @@ test("a general answer and additional-condition sibling keep separate responsibi
  assert.equal(x.result.earliestFailure,null);assert.equal(x.valid,true);
  assert.deepEqual(x.result.artifacts.executionOutcomes.map(o=>o.outcome),["answered","unknown"]);
  assert.equal(x.result.artifacts.responsePlan.renderObligations.length,2);
- assert.ok(x.result.finalResponse.replyText.includes("The general service is available."));
- assert.ok(x.result.finalResponse.replyText.includes("無法確認該條件是否適用"));
+ assert.equal(x.result.finalResponse.replyText,"The general service is available.");
 });
 test("an unrelated bundle note is not eligibility evidence",async()=>{
  const x=await query("bundle-note",[{text:"Does our arrangement qualify?",capability:"amenity",subject:{kind:"amenity",catalogIdentity:"singing"},intents:["eligibility"]}],{configure:p=>{p.rooms[2].entertainmentAmenities=[{key:"singing",provided:true,statusSource:"operator",source:"preset",note:"Available in the lounge."}];}});
@@ -84,3 +84,32 @@ test("an unrelated bundle note is not eligibility evidence",async()=>{
  assert.equal(x.result.artifacts.executionOutcomes[0].outcome,"unknown");
  assert.ok(!x.result.finalResponse.replyText.includes("Available in the lounge."));
 });
+
+for (const propertyId of ["known-policy-alpha", "known-policy-beta"]) {
+  test(`partial registered policy survives unregistered qualification: ${propertyId}`, async () => {
+    const answer = "11:00";
+    const x = await query(propertyId, [{ text: "May we leave at thirteen without further steps?", subject: { kind: "policy", catalogIdentity: "check_out" }, intents: ["eligibility"] }], {
+      configure: property => { property.commonAnswers.checkOutTime = answer; }
+    });
+    const out = x.result.artifacts.executionOutcomes[0];
+    assert.equal(out.outcome, "unknown", "the exceptional permission is still unknown");
+    assert.ok(unknownProvenanceFor(out));
+    assert.equal(out.facts.answer, undefined, "unknown conditions must not acquire an invented answer");
+    assert.equal(out.knownFacts?.answer, answer, "retain separately registered general policy");
+    assert.equal(x.result.finalResponse.replyText, "一般政策：" + answer);
+    assert.equal(x.result.finalDecision.reviewRequired, false);
+    assert.equal(x.valid, true);
+    assert.equal(x.result.state.tasks[0].status, "unknown");
+    const { validateClaims } = require("../lib/conversation-engine-v2/claim-validator");
+    const { composeControlledReply } = require("../lib/conversation-engine-v2/controlled-composer");
+    for (const mode of ["facts", "property", "turn", "task", "provenance"]) {
+      const plan = { ...x.result.artifacts.responsePlan, sections: x.result.artifacts.responsePlan.sections.map(s => ({ ...s, facts: { ...s.facts } })) };
+      if (mode === "facts") plan.sections[0].facts.answer = "13:00 authorized";
+      if (mode === "property") plan.propertyId = "foreign";
+      if (mode === "turn") plan.turnId = "another-turn";
+      if (mode === "task") plan.sections[0].taskId = "another-task";
+      if (mode === "provenance") plan.sections[0].executionProvenance = { ...plan.sections[0].executionProvenance };
+      assert.equal(validateClaims(composeControlledReply(plan), plan).ok, false, mode);
+    }
+  });
+}

@@ -10,8 +10,9 @@ for(const propertyId of ["inventory-a","inventory-b"])for(const kind of ["room",
  test(`closed inventory retains explicit price responsibility ${propertyId}/${kind}`,async()=>{
   const r=await run({propertyId,kind,inventory:"closed",capabilities:["availability","price"]});
   const price=r.artifacts.executionOutcomes.find(o=>o.type==="price");
-  assert.equal(price.outcome,"no_availability");assert.equal(price.reason,"no_bookable_inventory");
-  assert.deepEqual(price.facts.prices,[]);assert.equal(price.facts.source,"availability_provider");
+  assert.equal(price.outcome,"answered");assert.equal(price.facts.priceBasis,"registered_rate");
+  assert.equal(price.facts.prices[0].total,1000);assert.equal(price.facts.source,"pricing_provider");
+  assert.equal(price.facts.availability,"full");assert.ok(!r.finalResponse.replyText.includes("目前可預訂"));
   const p=r.artifacts.responsePlan,options={finalDecision:r.finalDecision},l=coverageLayout(p,options);
   assert.equal(p.renderObligations.length,2);assert.equal(l.segments.length,3,"two distinct outcome bodies and one shared resource");
   assert.equal(l.segments.filter(s=>s.taskIds.length===2).length,1);

@@ -12,7 +12,7 @@ async function turn(id, state, specs, history = []) {
   const result = await executeNewCoreTurn({ scope, property, state, now: NOW, publicBaseUrl: "https://example.invalid", providerConfig: { apiKey: "isolated-provider-double" },
     input: { turnId: id, traceId: id, message, recentConversation: history, sourceEvents: [{ eventId: id, messageRef: id, role: "guest", timestamp: NOW, messageKind: "text", messageText: message }] },
     resolver: { availability: () => { throw new Error("isolated_dependency_failure"); }, availableDates: () => { throw new Error("isolated_dependency_failure"); }, priceOverrides: () => [], dateClassifications: () => [], customReplies: () => [] },
-    understandingProvider: (input, options) => callOpenAIUnderstandingV1(input, { ...options, fetchImpl: async () => {
+    understandingProvider: (input, options) => callOpenAIUnderstandingV1(input, { ...options, nowMs: () => Date.parse(NOW), fetchImpl: async () => {
       calls++;
       const units = specs.map((s, index) => {
         const startOffset = message.indexOf(s.text), evidenceRefs = [{ eventId: id, messageRef: id, startOffset, endOffset: startOffset + s.text.length, quote: s.text }];

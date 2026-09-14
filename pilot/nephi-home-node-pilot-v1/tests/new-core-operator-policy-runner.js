@@ -21,10 +21,10 @@ async function run() {
         : status === "not_allowed" ? "此項服務依正式規則不提供。" : "此項服務只於公告時段提供。";
       property.propertyFacts = normalizePropertyFacts([policy(status, answer)]);
       const { result, calls, validated } = await query(property, [{ text: "這項接待服務是否開放？", capability: "policy", subject: { kind: "policy", catalogIdentity: "operator_access" } }]);
-      assert.equal(result.earliestFailure, null); assert.equal(calls, 1); assert.equal(validated, true);
+      assert.equal(result.earliestFailure, null); assert.equal(calls, 1); assert.equal(validated, status !== "unknown");
       const outcome = result.artifacts.executionOutcomes[0];
       assert.equal(outcome.outcome, status === "unknown" ? "unknown" : "answered");
-      if (status === "unknown") assert.equal(unknownProvenanceFor(outcome).propertyId, scope);
+      if (status === "unknown") { assert.equal(unknownProvenanceFor(outcome).propertyId, scope); assert.equal(result.finalResponse.replyText, ""); assert.equal(result.finalResponse.shouldReply,false); }
       else { assert.equal(outcome.facts.propertyId, scope); if (status === "not_allowed") { assert.equal(outcome.facts.status, "confirmed_no"); assert.equal(result.finalResponse.replyText, "Operator access policy目前沒有提供。"); } else assert.ok(result.finalResponse.replyText.includes(answer)); }
       assert.notEqual(result.finalDecision.action, "handoff"); cases++;
     }
@@ -32,7 +32,7 @@ async function run() {
       const property = formalProperty(scope);
       const { result, calls, validated } = await query(property, [{ text, capability: "policy", subject: { kind: "property", catalogIdentity: null } }]);
       assert.equal(result.earliestFailure, null, JSON.stringify(result.earliestFailure));
-      assert.equal(calls, 1); assert.equal(validated, true);
+      assert.equal(calls, 1); assert.equal(validated, false); assert.equal(result.finalResponse.shouldReply, false); assert.equal(result.finalResponse.replyText, "");
       const outcome = result.artifacts.executionOutcomes[0];
       assert.equal(outcome.outcome, "unknown"); assert.equal(unknownProvenanceFor(outcome).propertyId, scope);
       assert.notEqual(result.finalDecision.action, "handoff"); cases++;
@@ -54,8 +54,8 @@ async function run() {
   assert.equal(unknownProvenanceFor(human), null, "human responsibility is not a Resolver unknown fact");
   const obligation = mixed.result.artifacts.responsePlan.renderObligations.find(item => item.taskId === human.taskId);
   assert.equal(obligation.kind, "HANDOFF"); assert.equal(obligation.payload.status, "needs_human");
-  assert.ok(mixed.result.finalResponse.replyText.includes("特殊安排需求需要請業者確認。"));
-  assert.equal(mixed.result.finalDecision.action, "handoff");
+  assert.ok(mixed.result.finalResponse.replyText.includes("請稍後，將盡快回覆您。"));
+  assert.equal(mixed.result.finalDecision.action, "reply"); assert.equal(mixed.result.finalDecision.reviewRequired, true);
   assert.ok(mixed.result.finalResponse.replyText.includes("East suite")); cases++;
   console.log(`operator policy: ${cases}/${cases} PASS (FAKE_INTEGRATION)`);
 }

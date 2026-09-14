@@ -38,25 +38,30 @@ function issueRenderObligations({propertyId,turnId,taskResults=[],executionOutco
   return Object.freeze(records);
 }
 function questions(fields){const minimal=fields.filter(field=>!(field==="checkOut"&&fields.includes("checkIn"))&&!(field==="stay.checkOut"&&fields.includes("stay.checkIn")));return [...new Set(minimal.map(field=>QUESTIONS[field]||"請補充尚缺的資訊。"))];}
-function fragmentsFor(record,publicAvailabilityUrl){
+function publicAction(record,finalDecision){return require("./final-decision").publicReplyAction(finalDecision,record);}
+function fragmentsFor(record,publicAvailabilityUrl,finalDecision){
   const p=record.payload;
   const body=text=>({text,resource:null});
   const reference=url=>({text:`查房連結：${url}`,resource:{kind:"availability_reference",propertyId:record.propertyId,turnId:record.turnId,url}});
+  const action=publicAction(record,finalDecision);
+  if(action==="no_reply"||action===undefined)return [];
+  if(action==="handoff")return [body("請稍後，將盡快回覆您。")];
   if(["ABSENT","SUPPRESSED","MISSING_OUTCOME"].includes(record.kind))return [];
   if(record.kind==="TEMPORAL_REJECTION")return [body(TEMPORAL_REJECTIONS[p.readinessStatus].text)];
   if(record.kind==="CLARIFY"){
-    if(p.publicAvailabilityUrl)return [reference(p.publicAvailabilityUrl)];
+    if(p.publicAvailabilityUrl && p.clarificationRequired !== true)return [reference(p.publicAvailabilityUrl)];
     const text=questions(p.missingInputs);if(!text.length)text.push("目前提供的資訊無法安全確認。");
     const fragments=text.map(body);
-    if(publicAvailabilityUrl&&p.missingInputs.some(field=>["checkIn","stay.checkIn"].includes(field)))fragments.push(reference(publicAvailabilityUrl));
+    const url=p.publicAvailabilityUrl||publicAvailabilityUrl;
+    if(url&&p.missingInputs.some(field=>["checkIn","stay.checkIn"].includes(field)))fragments.push(reference(url));
     return fragments;
   }
-  const parts=[composeSection(p)].filter(Boolean).map(body);
+  const parts=[action==="reply"&&p.facts?.detailNeedsConfirmation ? p.facts.answer : composeSection(p)].filter(Boolean).map(body);
   const url=p.publicAvailabilityUrl||(["availability","bundle_availability"].includes(p.type)?publicAvailabilityUrl:"");
   if(url)parts.push(reference(url));
   return parts;
 }
-function partsFor(record,publicAvailabilityUrl){return fragmentsFor(record,publicAvailabilityUrl).map(part=>part.text);}
+function partsFor(record,publicAvailabilityUrl,finalDecision){return fragmentsFor(record,publicAvailabilityUrl,finalDecision).map(part=>part.text);}
 function obligationErrors(plan){
   const records=plan.renderObligations;
   if(!Array.isArray(records))return ["render_obligations_required"];
@@ -124,16 +129,21 @@ function decisionOnlyLayout(finalDecision, responsePrefix, publicAvailabilityUrl
 function coverageLayout(plan,{finalDecision,responsePrefix="",publicAvailabilityUrl=""}={}){
   if (plan === null) return decisionOnlyLayout(finalDecision, responsePrefix, publicAvailabilityUrl);
   const errors=obligationErrors(plan),records=plan.renderObligations||[];
-  const visible=records.filter(item=>!["ABSENT","SUPPRESSED","MISSING_OUTCOME"].includes(item.kind));
+  if(records.some(record=>publicAction(record,finalDecision)===undefined))errors.push("public_reply_decision_invalid");
+  const visible=records.filter(item=>publicAction(item,finalDecision)!=="no_reply"&&!["ABSENT","SUPPRESSED","MISSING_OUTCOME"].includes(item.kind));
   if(finalDecision?.action==="no_reply")return {text:"",segments:[],errors:visible.length?[...errors,"final_section_missing"]:errors};
   const ordered=[...visible];
   const rank=item=>["CLARIFY","TEMPORAL_REJECTION"].includes(item.kind)?1:item.kind==="HANDOFF"?2:0;
-  if(finalDecision?.action!=="reply")ordered.sort((a,b)=>rank(a)-rank(b));
+  if(finalDecision?.publicReplies)ordered.sort((a,b)=>{
+    const publicRank=item=>publicAction(item,finalDecision)==="handoff"?2:rank(item);
+    return publicRank(a)-publicRank(b);
+  });
+  else if(finalDecision?.action!=="reply")ordered.sort((a,b)=>rank(a)-rank(b));
   const groups=[];
   for(const record of ordered){
-    const shared=groups.find(group=>canSharePresentation(group.record,record));
+    const shared=groups.find(group=>publicAction(record,finalDecision)==="handoff"&&publicAction(group.record,finalDecision)==="handoff"||canSharePresentation(group.record,record));
     if(shared){shared.taskIds.push(record.taskId);continue;}
-    groups.push({record,taskIds:[record.taskId],parts:fragmentsFor(record,publicAvailabilityUrl)});
+    groups.push({record,taskIds:[record.taskId],parts:fragmentsFor(record,publicAvailabilityUrl,finalDecision)});
   }
   // Resource identity is typed and scope-bound. Sharing presentation does not
   // create, merge or discard task obligations; content is never text-deduped.
@@ -156,9 +166,9 @@ function validateVisibleCoverage(text,plan,options){
   const layout=coverageLayout(plan,options),actual=Buffer.from(String(text)),expected=Buffer.from(layout.text),errors=[...layout.errors];
   const covered=new Set();
   for(const record of plan.renderObligations||[]){
-    if(["ABSENT","SUPPRESSED"].includes(record.kind))continue;
+    if(publicAction(record,options.finalDecision)==="no_reply"||["ABSENT","SUPPRESSED"].includes(record.kind))continue;
     const segments=layout.segments.filter(segment=>segment.taskIds.includes(record.taskId));
-    const obligationParts=partsFor(record,options.publicAvailabilityUrl||"");
+    const obligationParts=partsFor(record,options.publicAvailabilityUrl||"",options.finalDecision);
     const visible=segments.length===obligationParts.length&&segments.length>0&&segments.every((segment,index)=>
       segment.end<=actual.length&&actual.subarray(segment.start,segment.end).equals(Buffer.from(obligationParts[index])));
     if(!visible)errors.push("final_section_missing");
