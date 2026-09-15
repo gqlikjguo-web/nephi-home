@@ -1424,6 +1424,7 @@ function createApp(options = {}) {
       providerConfig: { apiKey: String(runtimeEnv.OPENAI_API_KEY || runtimeEnv.OPENAI_TEST_API_KEY || "") },
       publicBaseUrl: publicBrand.publicBaseUrl,
       responsePrefixForProperty: aiIdentityPrefix,
+      useConversationContext: false,
       now,
       onDiagnostic: captureSafeTrace,
       ...(typeof options.newCoreProductionExecuteTurn === "function" ? { executeTurn: options.newCoreProductionExecuteTurn } : {})

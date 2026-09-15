@@ -17,7 +17,7 @@ function runtimeConfig(env = process.env) {
     dataFile: env.NEPHI_PILOT_DATA_FILE || path.join(PILOT_ROOT, ".runtime", "store.json"),
     seedFile: env.NEPHI_PILOT_SEED_FILE || path.join(PILOT_ROOT, "fixtures", "seed.json"),
     timeZone: env.NEPHI_PILOT_TIME_ZONE || "Asia/Taipei",
-    conversationDebounceMs: Number(env.NEPHI_PILOT_DEBOUNCE_MS || 2000),
+    conversationDebounceMs: Number(env.NEPHI_PILOT_DEBOUNCE_MS || 0),
     conversationTtlMs: Number(env.NEPHI_PILOT_CONVERSATION_TTL_MS || 30 * 60 * 1000),
     recentMessageLimit: Number(env.NEPHI_PILOT_RECENT_MESSAGE_LIMIT || 10),
     recentMessageWindowMs: Number(env.NEPHI_PILOT_RECENT_MESSAGE_WINDOW_MS || 30 * 60 * 1000),

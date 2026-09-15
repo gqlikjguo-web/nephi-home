@@ -22,7 +22,9 @@ class ConversationEngineV2Coordinator {
     if (!burst) { burst = { messages: [], waiters: [], timer: null }; this.pending.set(key, burst); }
     if (burst.timer) this.cancel(burst.timer); burst.messages.push(input);
     const promise = new Promise((resolve, reject) => burst.waiters.push({ resolve, reject }));
-    burst.timer = this.schedule(() => this.flush(key), this.debounceMs); return promise;
+    if (this.debounceMs === 0) void this.flush(key);
+    else burst.timer = this.schedule(() => this.flush(key), this.debounceMs);
+    return promise;
   }
   async flush(key) {
     const burst = this.pending.get(key); if (!burst) return; this.pending.delete(key);

@@ -239,7 +239,8 @@ function createNewCoreProductionTurnAdapter({
   executeTurn,
   onDiagnostic,
   responsePrefixForProperty = () => "",
-  recentMessageLimit = 10
+  recentMessageLimit = 10,
+  useConversationContext = true
 } = {}) {
   const getConversationState = requiredFunction(persistence, "getConversationState");
   const setConversationState = requiredFunction(persistence, "setConversationState");
@@ -290,6 +291,7 @@ function createNewCoreProductionTurnAdapter({
           ).slice(-historyLimit);
         }
         const result = await turnExecutor({
+          useConversationContext,
           input: {
             turnId: eventId,
             traceId,

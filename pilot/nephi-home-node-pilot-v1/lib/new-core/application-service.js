@@ -245,7 +245,7 @@ function finalizeTurnResponse({ scope, turnId, property, terminalContext, reques
   return { finalDecision, finalResponse, responsePlan, claimValidation, initialClaimValidation, rebuildCount, terminalFailures: context.failures };
 }
 
-async function executeNewCoreTurn({ input, state, property, resolver, providerConfig, publicBaseUrl, now, scope = state && state.scope, understandingProvider = callOpenAIUnderstandingV1, lifecycleDecisionIdPrefix = "new-core", onDiagnostic = null, responsePrefix = "" }) {
+async function executeNewCoreTurn({ input, state, property, resolver, providerConfig, publicBaseUrl, now, scope = state && state.scope, understandingProvider = callOpenAIUnderstandingV1, lifecycleDecisionIdPrefix = "new-core", onDiagnostic = null, responsePrefix = "", useConversationContext = true }) {
   if (!scope || !property || property.propertyId !== scope.propertyId) {
     const error = new Error("property_scope_invalid"); error.code = "PROPERTY_SCOPE_INVALID"; throw error;
   }
@@ -255,8 +255,10 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     verifiedPropertyBinding: { propertyId: scope.propertyId, channel: scope.channel },
     verifiedConversationScope: { channel: scope.channel, userId: scope.userId },
     sourceEvents: input.sourceEvents || [{ eventId: input.turnId, messageRef: input.turnId, role: "guest", timestamp: now, messageKind: "text", messageText: input.message }],
-    recentConversation: input.recentConversation,
-    stateV3Snapshot: turnStateSnapshot(state, scope, now),
+    // LINE event independence changes only the semantic view. State remains
+    // authoritative for serialization, lifecycle writes and event ownership.
+    recentConversation: useConversationContext ? input.recentConversation : [],
+    stateV3Snapshot: useConversationContext ? turnStateSnapshot(state, scope, now) : { scope, referenceableCycles: [] },
     publicCatalog: buildPublicCatalog(property, catalog)
   });
   const terminalContext = createTerminalContext({ propertyId: scope.propertyId, turnId: input.turnId });
