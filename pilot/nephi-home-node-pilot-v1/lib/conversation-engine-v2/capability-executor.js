@@ -198,7 +198,7 @@ function executeQueryPlan({ property, catalog, queryPlan, availabilityResolver, 
   );
   try {
     if (resolverId === "property_catalog" && queryPlan.capability === "lodging_room_composition") {
-      const result = require("../room-composition").resolveRoomComposition(property, queryPlan.entity);
+      const result = require("../room-composition").resolveRoomComposition(property, queryPlan.entity, queryPlan.detailIntent);
       return queryOutcome(queryPlan, result.outcome, { ...result, resolverAttempted: true });
     }
     if (resolverId === "property_catalog" && queryPlan.capability === "amenity_list") {

@@ -42,7 +42,7 @@ async function query(property, specs, id = "composition-query") {
           capability: spec.capability, subject: spec.subject, stayDependent: false,
           evidenceRefs: [{ eventId: events[index].eventId, messageRef: events[index].messageRef, startOffset: 0, endOffset: spec.text.length, quote: spec.text }],
           temporalCandidate: null, contextLinkCandidateId: `link-${index}`, safetyCandidate: spec.safetyCandidate || null,
-          slotCandidates: [], quantityCandidate: null, confidenceBand: "high" }));
+          slotCandidates: spec.informationNeed ? [{ slotCandidateId: `need-${index}`, slot: "information_need", operation: "SET", value: spec.informationNeed, evidenceRefs: [{ eventId: events[index].eventId, messageRef: events[index].messageRef, startOffset: 0, endOffset: spec.text.length, quote: spec.text }] }] : [], quantityCandidate: null, confidenceBand: "high" }));
         const envelope = { understandingOutput: { schemaVersion: 1, turnId: turn.turnId, units },
           contextLinkCandidates: units.map(unit => ({ contextLinkCandidateId: unit.contextLinkCandidateId, unitId: unit.unitId,
             relationKind: unit.capability === null ? "NONE" : "NEW_REQUEST", currentSourceEvidenceRefs: unit.evidenceRefs, referencedHistoryEventRefs: [] })) };

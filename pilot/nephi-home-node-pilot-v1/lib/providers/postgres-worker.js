@@ -149,7 +149,7 @@ async function operation(name, args) {
         return { valid: false, code: "UNKNOWN_CUSTOMER_ID" };
       }
       const settings = row.rows[0].settings || {};
-      const rooms = await client.query("SELECT room_id AS id FROM room_types WHERE property_id=$1", [propertyId]);
+      const rooms = await client.query("SELECT room_id AS id, name FROM room_types WHERE property_id=$1", [propertyId]);
       const inventory = { propertyId, roomTypes: rooms.rows, bundles: await operation("listBundles", [propertyId]) };
       const stored = settings.roomCompositionV1;
       if (!writing) return { valid: true, propertyId, composition: stored === undefined ? null : stored, inventory };

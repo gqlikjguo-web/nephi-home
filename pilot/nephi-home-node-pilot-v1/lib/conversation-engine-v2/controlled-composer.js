@@ -56,6 +56,10 @@ function composeSection(section) {
   }
   if (facts.availableInventory) return facts.availableInventory.length ? `${facts.checkIn} 入住可選：${facts.availableInventory.map((item) => item.publicName).join("、")}。` : `${facts.checkIn} 入住目前沒有符合條件的空房。`;
   if (facts.availableDates) return facts.availableDates.length ? `這段期間可查詢的日期有：${facts.availableDates.join("、")}。` : "這段期間目前沒有可售日期。";
+  if (Array.isArray(facts.roomTypes)) {
+    const names = facts.roomTypes.map(type => type.publicName).join("、");
+    return names ? `${facts.subject}正式登錄的房型有：${names}。` : `${facts.subject}完整登錄的房間組成中沒有房型。`;
+  }
   if (Number.isInteger(facts.physicalRoomCount) && Array.isArray(facts.physicalRooms)) {
     const names = facts.physicalRooms.map(room => room.publicName).join("、");
     return `${facts.subject}正式登錄的房間組成共 ${facts.physicalRoomCount} 間${names ? `：${names}` : ""}。`;

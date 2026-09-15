@@ -223,7 +223,7 @@ function temporalCandidateSchema() {
   };
 }
 
-const { INFORMATION_NEED_SLOT, supportsInformationNeed, DETAIL_INTENTS } = require("../new-core/contracts/information-need");
+const { INFORMATION_NEED_SLOT, supportsInformationNeed, informationNeedsFor } = require("../new-core/contracts/information-need");
 function slotCandidateSchema(input, policy = null) {
   const base = {
     slotCandidateId: stringSchema(),
@@ -243,7 +243,7 @@ function slotCandidateSchema(input, policy = null) {
     objectSchema({...base, slot:enumSchema([...SLOT_NAMES].filter(slot => slot !== "product" && slot !== INFORMATION_NEED_SLOT
       && (!policy || slot !== "other_supported")))}),
     ...(supportsInformationNeed(policy) ? [
-      objectSchema({...base, slot:enumSchema([INFORMATION_NEED_SLOT]), operation:enumSchema(["SET"]), value:enumSchema(DETAIL_INTENTS)}),
+      objectSchema({...base, slot:enumSchema([INFORMATION_NEED_SLOT]), operation:enumSchema(["SET"]), value:enumSchema(informationNeedsFor(policy))}),
       objectSchema({...base, slot:enumSchema([INFORMATION_NEED_SLOT]), operation:enumSchema(["CLEAR"]), value:{type:"null"}})
     ] : []),
     ...(policy ? [objectSchema({...base, slot:enumSchema(["other_supported"]), operation:enumSchema(["CLEAR"])})] : []),

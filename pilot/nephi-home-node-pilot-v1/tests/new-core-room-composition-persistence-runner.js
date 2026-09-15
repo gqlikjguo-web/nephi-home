@@ -82,6 +82,12 @@ async function run() {
     assert.equal(final.result.artifacts.executionOutcomes[0].facts.physicalRoomCount, 2);
     assert.ok(final.result.finalResponse.replyText.includes("West suite"));
     assert.ok(final.result.finalResponse.replyText.includes("Loft")); cases++;
+    const typeList = await query(providers.customerSettings.getProperty("scope-alpha"), [{ text: "包套有哪些房型", capability: "lodging_room_composition", subject: { kind: "bundle", catalogIdentity: "package" }, informationNeed: "room_types" }]);
+    assert.equal(typeList.result.earliestFailure, null); assert.equal(typeList.validated, true);
+    assert.deepEqual(typeList.result.artifacts.executionOutcomes[0].facts.roomTypes, [
+      { roomTypeId: "type-family", publicName: "type-family" }, { roomTypeId: "type-loft", publicName: "type-loft" }
+    ]);
+    assert.ok(!typeList.result.finalResponse.replyText.includes("West suite")); cases++;
     const { policy } = require("./new-core-operator-policy-runner");
     const reopenedService = createMvpService(providers);
     for (const id of ["scope-alpha", "scope-beta"]) for (const status of ["allowed", "not_allowed", "conditional", "unknown"]) {

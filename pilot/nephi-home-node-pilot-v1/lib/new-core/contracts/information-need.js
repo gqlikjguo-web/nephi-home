@@ -1,25 +1,33 @@
 "use strict";
 
-const { QUALIFIED_DETAIL_INTENTS: DETAIL_INTENTS } = require("../../conversation-engine-v2/detail-intent");
+const { QUALIFIED_DETAIL_INTENTS } = require("../../conversation-engine-v2/detail-intent");
 
-// These existing property-catalog request types consume one detailIntent.
-// This position describes a requested fact, never an operator's answer.
+// One requested-fact position; accepted values are owned by the capability.
 const INFORMATION_NEED_SLOT = "information_need";
-const DETAIL_QUERY_CAPABILITIES = new Set(["amenity", "policy", "property_fact"]);
-function supportsInformationNeed(policy) {
-  return Boolean(policy?.registryCapabilities?.length)
-    && policy.registryCapabilities.every(capability => DETAIL_QUERY_CAPABILITIES.has(capability));
+const INFORMATION_NEEDS = Object.freeze({
+  amenity: QUALIFIED_DETAIL_INTENTS,
+  policy: QUALIFIED_DETAIL_INTENTS,
+  property_fact: QUALIFIED_DETAIL_INTENTS,
+  lodging_room_composition: new Set(["room_types"])
+});
+const DETAIL_INTENTS = new Set(Object.values(INFORMATION_NEEDS).flatMap(values => [...values]));
+function informationNeedsFor(policy) {
+  const capabilities = policy?.registryCapabilities || [];
+  return capabilities.length ? new Set([...DETAIL_INTENTS].filter(value =>
+    capabilities.every(capability => INFORMATION_NEEDS[capability]?.has(value)))) : new Set();
 }
+function supportsInformationNeed(policy) { return informationNeedsFor(policy).size > 0; }
 function validInformationNeedOperation(slot) {
   return slot.operation === "CLEAR" ? slot.value === null
     : slot.operation === "SET" && DETAIL_INTENTS.has(slot.value);
 }
 function informationNeedAdmission(slot, policy) {
   if (slot.slot !== INFORMATION_NEED_SLOT) return { allowed: true };
-  return { allowed: supportsInformationNeed(policy) && validInformationNeedOperation(slot),
-    rule: "informationNeedAdmission", actualKind: typeof slot.value,
-    allowedKinds: supportsInformationNeed(policy) ? [...DETAIL_INTENTS] : [] };
+  const values = informationNeedsFor(policy);
+  return { allowed: values.size > 0 && validInformationNeedOperation(slot)
+      && (slot.operation === "CLEAR" || values.has(slot.value)),
+    rule: "informationNeedAdmission", actualKind: typeof slot.value, allowedKinds: [...values] };
 }
 
-module.exports = { INFORMATION_NEED_SLOT, supportsInformationNeed,
+module.exports = { INFORMATION_NEED_SLOT, supportsInformationNeed, informationNeedsFor,
   validInformationNeedOperation, informationNeedAdmission, DETAIL_INTENTS };

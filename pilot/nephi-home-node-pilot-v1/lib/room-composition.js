@@ -53,7 +53,7 @@ function validateRoomComposition(value, inventory) {
   return { valid: true, errors: [] };
 }
 
-function resolveRoomComposition(property, entity) {
+function resolveRoomComposition(property, entity, detailIntent = "general") {
   const document = property.roomCompositionV1;
   const inventory = property.roomCompositionInventory;
   const selectedIds = entity.status === "matched_set" ? entity.canonicalSet
@@ -85,6 +85,19 @@ function resolveRoomComposition(property, entity) {
   else complete = false;
   if (!complete) return unknown();
   const members = [...new Set(ids)].map(id => document.physicalRooms.find(room => room.physicalRoomId === id));
+  if (detailIntent === "room_types") {
+    const typeIds = [...new Set(members.map(room => room.roomTypeId))];
+    const roomTypes = typeIds.map(id => inventory.roomTypes.find(type => type.id === id));
+    if (roomTypes.some(type => !text(type?.name))) return {
+      outcome: "technical_error", reason: "room_composition_invalid_formal_data", facts: {}
+    };
+    return { outcome: "answered", facts: {
+      subject, roomTypes: roomTypes.map(type => ({ roomTypeId: type.id, publicName: type.name })),
+      compositionRevision: document.revision, propertyId: property.propertyId,
+      source: "postgresql.property_settings.roomCompositionV1",
+      roomTypeSource: "postgresql.room_types"
+    } };
+  }
   return { outcome: "answered", facts: {
     subject, physicalRoomCount: members.length,
     physicalRooms: members.map(room => ({ ...room })),
