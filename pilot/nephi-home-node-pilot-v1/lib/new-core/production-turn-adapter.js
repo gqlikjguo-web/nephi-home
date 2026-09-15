@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { monotonicNow, emitPreparationLatency } = require("./understanding-latency");
 
 const { readConversationStateV3 } = require("../conversation-contracts/conversation-state-v3");
 const { createTerminalContext } = require("./terminal-failure");
@@ -259,6 +260,7 @@ function createNewCoreProductionTurnAdapter({
 
   return Object.freeze({
     async process(input = {}) {
+      const adapterStarted = monotonicNow();
       const propertyId = text(input.customerId);
       const channel = text(input.channelId);
       const userId = text(input.lineUserId);
@@ -273,7 +275,7 @@ function createNewCoreProductionTurnAdapter({
       const timestamp = now().toISOString();
       const scope = { propertyId, channel, userId };
       const traceId = crypto.randomUUID();
-      emitDiagnostic(onDiagnostic, { traceId, stage: "line_inbound", propertyId,
+      emitDiagnostic(onDiagnostic, { traceId, stage: "line_inbound", propertyId, monotonicMs: adapterStarted,
         channelHash: hash(channel), userHash: hash(userId), eventHash: hash(eventId),
         guestMessage: String(input.messageText || "") });
       let previous = null;
@@ -290,6 +292,7 @@ function createNewCoreProductionTurnAdapter({
             snapshot.referenceableCycles
           ).slice(-historyLimit);
         }
+        emitPreparationLatency(onDiagnostic, traceId, "adapter_preparation", adapterStarted);
         const result = await turnExecutor({
           useConversationContext,
           input: {

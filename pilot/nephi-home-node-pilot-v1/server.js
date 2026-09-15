@@ -28,6 +28,7 @@ const { isDateKey, isPriceType, resolveDatePrice } = require("./lib/date-price-a
 const { createNewCoreManualTestService } = require("./lib/new-core/manual-test-service");
 const { createNewCoreProductionTurnAdapter } = require("./lib/new-core/production-turn-adapter");
 const { formatNewCoreProductionTrace } = require("./lib/new-core/production-safe-trace");
+const { monotonicNow } = require("./lib/new-core/understanding-latency");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -1592,7 +1593,7 @@ function createApp(options = {}) {
         const finalResponseReplyText = String(result.finalResponse && result.finalResponse.replyText || "");
         const decision = String(result.finalDecision && result.finalDecision.action || result.finalResponse && result.finalResponse.action || "no_reply");
         testOnlyLineMessageTrace.finalResponse({ traceId: result.traceId, eventId: input.eventId, propertyId: id, finalDecision: result.finalDecision, finalResponse: result.finalResponse });
-        const traceTransport = (details) => { const { replyText: _replyText, ...diagnostic } = details; captureSafeTrace(details); emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
+        const traceTransport = (details) => { details = { ...details, monotonicMs: monotonicNow() }; const { replyText: _replyText, ...diagnostic } = details; captureSafeTrace(details); emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
         const persistTrace = async () => {
           try { await updateEventStatus(id, input.channelId, input.eventId, { safeTrace: (acceptanceTraces.get(result.traceId) || []).slice(-40) }); }
           catch (error) { console.error(JSON.stringify({ scope: "new-core-production-trace", traceId: result.traceId, stage: "persistence_failed", errorCode: String(error && error.code || "TRACE_PERSISTENCE_FAILURE") })); }

@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { createLatencyClock } = require("../new-core/understanding-latency");
 const { CAPABILITY_REGISTRY } = require("../conversation-engine-v2/capability-registry");
 const {
   validateUnderstandingTurnInput
@@ -585,7 +586,8 @@ function understandingEvidence(understandingTurnInput, structuredOutput) {
   });
 }
 
-async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, understandingTurnInput, correction = null }, attemptNumber) {
+async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, understandingTurnInput, correction = null, latency, onRequest }, attemptNumber) {
+  latency.enter("prep");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let httpStatus = 0;
@@ -596,7 +598,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
   try {
     const generatedId = String(requestIdFactory() || "");
     const clientRequestId = UUID_PATTERN.test(generatedId) ? generatedId : crypto.randomUUID();
-    const response = await fetchImpl(RESPONSES_URL, {
+    const requestOptions = {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -605,13 +607,17 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
       },
       signal: controller.signal,
       body: JSON.stringify(providerRequestBody(understandingTurnInput, correction))
-    });
+    };
+    onRequest(attemptNumber);
+    latency.enter("openai");
+    const response = await fetchImpl(RESPONSES_URL, requestOptions);
     httpStatus = Number.isInteger(Number(response && (response.status || response.statusCode)))
       ? Number(response.status || response.statusCode) : 0;
     try {
       providerRequestId = safeToken(response && response.headers && response.headers.get("x-request-id"), 200);
     } catch { providerRequestId = ""; }
     const read = await readProviderPayload(response);
+    latency.enter("validation");
     responseBodyPresent = read.bodyPresent;
     if (!response || !response.ok) throw httpFailure(httpStatus, read.payload);
     if (read.parseFailed || !read.bodyPresent) {
@@ -663,6 +669,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
     });
     throw error;
   } finally {
+    latency.enter("validation");
     clearTimeout(timer);
   }
 }
@@ -1029,6 +1036,9 @@ function buildCorrectionInput(report) {
 }
 
 async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
+  const latency = createLatencyClock();
+  let correctionCalls = 0;
+  try {
   const inputValidation = validateUnderstandingTurnInput(understandingTurnInput);
   if (!inputValidation.ok) throw understandingError(inputValidation.code);
   if (!buildPublicCatalogIdentityProjection(understandingTurnInput)) {
@@ -1058,6 +1068,7 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
   const attempts = [], reports = [];
   let firstResult = null, firstOutput = null, correction = null;
   const finish = (value, error, acceptedAttempt) => {
+    latency.enter("other");
     if (value && value.failedUnits.length && !value.validatedUnits.length) acceptedAttempt = null;
     const metadata = deepFreeze({ ...providerDiagnostic(attempts, value?.[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC]?.understandingEvidence || null),
       attempts: reports.map(report => ({ ...report, accepted: report.attemptNumber === acceptedAttempt, rejected: report.attemptNumber !== acceptedAttempt })),
@@ -1075,7 +1086,7 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     let value, output, caught, failureReport;
     const operational = [];
     try {
-      const response = await requestOnce({ apiKey, fetchImpl, timeoutMs: Math.min(timeoutMs, remaining), requestIdFactory, understandingTurnInput, correction }, number);
+      const response = await requestOnce({ apiKey, fetchImpl, timeoutMs: Math.min(timeoutMs, remaining), requestIdFactory, understandingTurnInput, correction, latency, onRequest: attempt => { if (attempt > 1) correctionCalls++; } }, number);
       attempts.push(response.attempt); output = response.value;
       value = admitUnderstandingValue(output, understandingTurnInput, { ...options, onOperationalDiagnostic: entry => { operational.push(entry); emitOperational(options, entry); } }, attempts, traceEmitter, nowMs);
       failureReport = { output, failures: value.failedUnits.map(failure => correctionUnitFailure(failure, output, understandingTurnInput, operational)) };
@@ -1095,7 +1106,7 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     reports.push(report);
     if (number === 1) {
       firstResult = value || null; firstOutput = output;
-      if (shouldCorrectUnderstanding(failureReport)) { correction = buildCorrectionInput(failureReport); continue; }
+      if (shouldCorrectUnderstanding(failureReport)) { latency.enter("prep"); correction = buildCorrectionInput(failureReport); continue; }
       return finish(value, caught, value ? 1 : null);
     }
     const preserves = !firstResult || firstResult.validatedUnits.every(unit => {
@@ -1122,6 +1133,9 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     if (value && !value.failedUnits.length && preserves && retained && fieldsPreserved) return finish(value, null, 2);
     if (!preserves || !retained) report.validationResult = { ...report.validationResult, ok: false, adoptionFailure: "CORRECTION_SIBLING_NOT_PRESERVED" };
     return finish(firstResult, caught || understandingError("UNDERSTANDING_SCHEMA_INVALID"), firstResult ? 1 : null);
+  }
+  } finally {
+    emitOperational(options, { traceId: understandingTurnInput?.traceId, stage: "new_core_latency", segment: "provider", ...latency.finish(), correctionCalls });
   }
 }
 

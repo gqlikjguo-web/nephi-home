@@ -1,4 +1,5 @@
 "use strict";
+const { monotonicNow, emitPreparationLatency } = require("./understanding-latency");
 
 const { CAPABILITY_REGISTRY } = require("../conversation-engine-v2/capability-registry");
 const { buildPropertyCatalog } = require("../conversation-engine-v2/property-catalog");
@@ -246,6 +247,7 @@ function finalizeTurnResponse({ scope, turnId, property, terminalContext, reques
 }
 
 async function executeNewCoreTurn({ input, state, property, resolver, providerConfig, publicBaseUrl, now, scope = state && state.scope, understandingProvider = callOpenAIUnderstandingV1, lifecycleDecisionIdPrefix = "new-core", onDiagnostic = null, responsePrefix = "", useConversationContext = true }) {
+  const preparationStarted = monotonicNow();
   if (!scope || !property || property.propertyId !== scope.propertyId) {
     const error = new Error("property_scope_invalid"); error.code = "PROPERTY_SCOPE_INVALID"; throw error;
   }
@@ -261,6 +263,7 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     stateV3Snapshot: useConversationContext ? turnStateSnapshot(state, scope, now) : { scope, referenceableCycles: [] },
     publicCatalog: buildPublicCatalog(property, catalog)
   });
+  emitPreparationLatency(onDiagnostic, input.traceId, "c01_preparation", preparationStarted);
   const terminalContext = createTerminalContext({ propertyId: scope.propertyId, turnId: input.turnId });
   const providerOperationalDiagnostics = [];
   let understanding;
@@ -269,7 +272,7 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     onDiagnostic,
     onOperationalDiagnostic: (entry) => {
       providerOperationalDiagnostics.push(entry);
-      if (entry.stage === "new_core_understanding_attempts") {
+      if (entry.stage === "new_core_understanding_attempts" || entry.stage === "new_core_latency") {
         try { onDiagnostic?.(entry); } catch { /* trace isolation */ }
       }
     }

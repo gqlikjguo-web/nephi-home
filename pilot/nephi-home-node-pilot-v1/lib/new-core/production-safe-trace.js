@@ -3,7 +3,7 @@
 const crypto = require("node:crypto");
 
 const STAGES = new Set([
-  "line_inbound", "state_before", "new_core_c01", "new_core_understanding", "new_core_understanding_attempts",
+  "new_core_latency", "line_inbound", "state_before", "new_core_c01", "new_core_understanding", "new_core_understanding_attempts",
   "new_core_c03", "new_core_context_filter", "new_core_context", "new_core_c07", "new_core_c08", "new_core_canonical_request",
   "new_core_resolver", "new_core_final", "state_after", "new_core_failure", "line_transport"
 ]);
@@ -329,6 +329,22 @@ function formatNewCoreProductionTrace(details = {}) {
   const stage = token(details.stage);
   if (!STAGES.has(stage)) return null;
   const base = { scope: "new-core-production", traceId: token(details.traceId), stage };
+  const validMs = value => typeof value === "number" && Number.isFinite(value) && value >= 0;
+  if (validMs(details.monotonicMs)) base.monotonicMs = details.monotonicMs;
+  if (stage === "new_core_latency") {
+    if (!["adapter_preparation", "c01_preparation", "provider"].includes(details.segment)) return null;
+    return { ...base, segment: details.segment,
+      ...(validMs(details.startedMs) ? { startedMs: details.startedMs } : {}),
+      ...(validMs(details.endedMs) ? { endedMs: details.endedMs } : {}),
+      ...(validMs(details.durationMs) ? { durationMs: details.durationMs } : {}),
+      ...(validMs(details.prepMs) ? { prepMs: details.prepMs } : {}),
+      ...(validMs(details.openaiMs) ? { openaiMs: details.openaiMs } : {}),
+      ...(validMs(details.validationMs) ? { validationMs: details.validationMs } : {}),
+      ...(validMs(details.otherMs) ? { otherMs: details.otherMs } : {}),
+      ...(validMs(details.totalMs) ? { totalMs: details.totalMs } : {}),
+      ...([0, 1].includes(details.correctionCalls) ? { correctionCalls: details.correctionCalls } : {})
+    };
+  }
   if (stage === "new_core_understanding_attempts") return {
     ...base,
     totalUnderstandingCalls: [0, 1, 2].includes(details.totalUnderstandingCalls) ? details.totalUnderstandingCalls : null,
