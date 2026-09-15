@@ -34,6 +34,7 @@ async function query(propertyId, specs, { detailRegistered = false, configure = 
     } }) });
   return { result, calls, valid: result.finalResponse.shouldReply ? isValidatedFinalResponse(result.finalResponse, { propertyId, eventId: "turn", turnId: "turn" }) : result.finalDecision.action === "no_reply" && result.finalResponse.replyText === "" && result.artifacts.claimValidation.ok };
 }
+module.exports = { query };
 
 
 for (const propertyId of ["responsibility-alpha", "responsibility-beta"]) {
@@ -53,7 +54,7 @@ for (const propertyId of ["responsibility-alpha", "responsibility-beta"]) {
     assert.equal(out.outcome,"unknown");assert.equal(unknownProvenanceFor(out).propertyId,propertyId);
     assert.equal(out.facts.answer,undefined);assert.equal(x.result.finalDecision.action,"reply");
     assert.equal(out.knownFacts.answerScope,"general_policy");
-    assert.equal(x.result.finalResponse.replyText, "一般政策：Pets are welcome under the published general policy.");
+    assert.equal(x.result.finalResponse.replyText, "Pets are welcome under the published general policy.");
   });
   test(`${propertyId}: registered restriction is the answer, never an inferred approval`, async () => {
     const answer="The registered limit is two pets; larger groups are not permitted.";
@@ -96,7 +97,7 @@ for (const propertyId of ["known-policy-alpha", "known-policy-beta"]) {
     assert.ok(unknownProvenanceFor(out));
     assert.equal(out.facts.answer, undefined, "unknown conditions must not acquire an invented answer");
     assert.equal(out.knownFacts?.answer, answer, "retain separately registered general policy");
-    assert.equal(x.result.finalResponse.replyText, "一般政策：" + answer);
+    assert.equal(x.result.finalResponse.replyText, answer);
     assert.equal(x.result.finalDecision.reviewRequired, false);
     assert.equal(x.valid, true);
     assert.equal(x.result.state.tasks[0].status, "unknown");

@@ -26,7 +26,8 @@ function composeSection(section) {
     const official = composeSection({ ...section, facts: officialFacts });
     return [facts.customReply, official].filter(Boolean).join("\n");
   }
-  if (facts.answerScope === "general_policy") return `一般政策：${facts.answer}`;
+  // Scope is validation evidence, not owner-authored public content.
+  if (facts.answerScope === "general_policy") return facts.answer;
   if (facts.detailNeedsConfirmation) {
     const known = facts.answer ? `${facts.answer}\n` : "";
     return `${known}${detailLabel(facts.detailIntent)}目前沒有正式資料，需由業者依當日狀況確認。`;
