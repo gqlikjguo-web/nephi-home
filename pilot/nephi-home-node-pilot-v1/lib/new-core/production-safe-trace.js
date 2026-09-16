@@ -325,6 +325,21 @@ function attemptValidationEvidence(value) {
   return Object.keys(result).length ? { validationResult: result } : {};
 }
 
+function attemptUsageAccounting(value) {
+  if (!value || typeof value !== "object") return {};
+  const count = item => Number.isSafeInteger(item) && item >= 0 ? item : null;
+  return { usageAccounting: {
+    propertyId: token(value.propertyId),
+    timestamp: token(value.timestamp),
+    usage: {
+      input_tokens: count(value.usage?.input_tokens),
+      input_tokens_details: { cached_tokens: count(value.usage?.input_tokens_details?.cached_tokens) },
+      output_tokens: count(value.usage?.output_tokens),
+      total_tokens: count(value.usage?.total_tokens)
+    }
+  } };
+}
+
 function formatNewCoreProductionTrace(details = {}) {
   const stage = token(details.stage);
   if (!STAGES.has(stage)) return null;
@@ -353,6 +368,7 @@ function formatNewCoreProductionTrace(details = {}) {
     attempts: list(details.attempts, (attempt) => ({
       attemptNumber: [1, 2].includes(attempt?.attemptNumber) ? attempt.attemptNumber : null,
       attemptType: ["initial", "correction"].includes(attempt?.attemptType) ? attempt.attemptType : "",
+      ...attemptUsageAccounting(attempt?.usageAccounting),
       accepted: attempt?.accepted === true,
       rejected: attempt?.rejected === true,
       ...(Array.isArray(attempt?.triggerFailure) ? { triggerFailure: list(attempt.triggerFailure, failure, 20) } : {}),

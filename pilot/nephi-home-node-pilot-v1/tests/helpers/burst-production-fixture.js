@@ -12,7 +12,7 @@ function envelope(c01){
  const units=c01.sourceEvents.map((e,i)=>({unitId:c01.turnId+'-unit-'+i,evidenceRefs:[{eventId:e.eventId,messageRef:e.messageRef,startOffset:0,endOffset:e.messageText.length,quote:e.messageText}],purpose:'lodging_question',capability:'policy',subject:{kind:'policy',catalogIdentity:'check_in'},stayDependent:false,temporalCandidate:null,contextLinkCandidateId:'link-'+i,safetyCandidate:null,slotCandidates:[],confidenceBand:'high'}));
  return {understandingOutput:{schemaVersion:1,turnId:c01.turnId,units},contextLinkCandidates:units.map(u=>({contextLinkCandidateId:u.contextLinkCandidateId,unitId:u.unitId,relationKind:'NEW_REQUEST',currentSourceEvidenceRefs:u.evidenceRefs,referencedHistoryEventRefs:[]}))};
 }
-async function setup(name,{debounce=5,failSend=false,holdEvent=null,testOnly=false,pg=false,acceptance=false}={}){
+async function setup(name,{debounce=5,failSend=false,holdEvent=null,testOnly=false,pg=false,acceptance=false,providerResponse}={}){
  const dir=fs.mkdtempSync(OUT+'/'+name+'-');const seed=dir+'/seed.json';
  fs.writeFileSync(seed,JSON.stringify({testOnly:true,seedDays:1,messageLogs:{audit_a:[],audit_b:[]},homestays:['audit_a','audit_b'].map(customerId=>({customerId,name:customerId,safeFacts:{checkInTime:customerId==='audit_a'?'15:00':'16:00'},rooms:[]}))}));
  let providers;
@@ -33,7 +33,8 @@ async function setup(name,{debounce=5,failSend=false,holdEvent=null,testOnly=fal
    const r=await executeNewCoreTurn({...args,understandingProvider:(input,options)=>{c.c01=input;return callOpenAIUnderstandingV1(input,{...options,fetchImpl:async()=>{
     if(args.input.turnId===holdEvent)await gate;
     c.mockCalls=(c.mockCalls||0)+1;
-    return {ok:true,status:200,headers:{get:()=> 'audit-request'},text:async()=>JSON.stringify({model:'gpt-5.6-luna',status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(envelope(input))}]}]})};
+    const payload={model:'gpt-5.6-luna',status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(envelope(input))}]}]};
+    return {ok:true,status:200,headers:{get:()=> 'audit-request'},text:async()=>JSON.stringify(providerResponse ? providerResponse(payload,c.mockCalls) : payload)};
    }});}});core.push({event:args.input.turnId,earliestFailure:r.earliestFailure,lifecycle:r.lifecycle,state:r.state,decision:r.finalDecision,response:r.finalResponse,claimValidation:r.artifacts.claimValidation});return r;
   },lineReplyClientFactory:()=>({replyMessageWithHttpInfo:async body=>{sent.push(body);if(failSend)throw Object.assign(Error('synthetic LINE outage'),{status:503});return{httpResponse:{status:200}};}})});
  const server=await app.start(0,'127.0.0.1');

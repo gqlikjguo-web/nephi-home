@@ -542,6 +542,23 @@ function httpFailure(status, payload) {
   });
 }
 
+function usageAccountingFor(payload, propertyId) {
+  try {
+    const usage = payload && payload.usage;
+    const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+    return {
+      propertyId: safeToken(propertyId),
+      timestamp: new Date().toISOString(),
+      usage: {
+        input_tokens: count(usage?.input_tokens),
+        input_tokens_details: { cached_tokens: count(usage?.input_tokens_details?.cached_tokens) },
+        output_tokens: count(usage?.output_tokens),
+        total_tokens: count(usage?.total_tokens)
+      }
+    };
+  } catch { return null; } // Accounting cannot change provider or guest outcomes.
+}
+
 function safeAttempt(details) {
   return deepFreeze({
     attemptNumber: details.attemptNumber,
@@ -554,7 +571,8 @@ function safeAttempt(details) {
     responseBodyPresent: Boolean(details.responseBodyPresent),
     parsedOutputPresent: Boolean(details.parsedOutputPresent),
     requestedModel: NEW_CORE_OPENAI_MODEL,
-    resolvedModel: safeToken(details.resolvedModel, 160)
+    resolvedModel: safeToken(details.resolvedModel, 160),
+    ...(details.usageAccounting ? { usageAccounting: details.usageAccounting } : {})
   });
 }
 
@@ -595,6 +613,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
   let responseBodyPresent = false;
   let parsedOutputPresent = false;
   let resolvedModel = "";
+  let usageAccounting = usageAccountingFor(null, understandingTurnInput.propertyScope.propertyId);
   try {
     const generatedId = String(requestIdFactory() || "");
     const clientRequestId = UUID_PATTERN.test(generatedId) ? generatedId : crypto.randomUUID();
@@ -618,6 +637,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
     } catch { providerRequestId = ""; }
     const read = await readProviderPayload(response);
     latency.enter("validation");
+    usageAccounting = usageAccountingFor(read.payload, understandingTurnInput.propertyScope.propertyId) || usageAccounting;
     responseBodyPresent = read.bodyPresent;
     if (!response || !response.ok) throw httpFailure(httpStatus, read.payload);
     if (read.parseFailed || !read.bodyPresent) {
@@ -640,7 +660,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
         value,
         attempt: safeAttempt({
           attemptNumber, timeoutMs, timeout: false, retryable: false, errorCategory: "",
-          httpStatus, providerRequestId, responseBodyPresent, parsedOutputPresent, resolvedModel
+          httpStatus, providerRequestId, responseBodyPresent, parsedOutputPresent, resolvedModel, usageAccounting
         })
       };
     } catch {
@@ -665,7 +685,8 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
       providerRequestId,
       responseBodyPresent,
       parsedOutputPresent,
-      resolvedModel: error.resolvedModel
+      resolvedModel: error.resolvedModel,
+      usageAccounting
     });
     throw error;
   } finally {
@@ -1099,7 +1120,9 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
       if (error.providerAttempt) attempts.push(error.providerAttempt);
       failureReport = CORRECTION_FAILURES.get(error) || { failures: [], output: null };
     }
+    const accounting = attempts.find(attempt => attempt.attemptNumber === number)?.usageAccounting;
     const report = { attemptNumber: number, attemptType: number === 1 ? "initial" : "correction",
+      ...(accounting ? { usageAccounting: accounting } : {}),
       triggerFailure: correction?.failures || null,
       validationResult: { ...(value ? { ok: value.failedUnits.length === 0 } : failureReport.failures.length ? { ok: false } : {}), failures: failureReport.failures,
         terminalCode: caught?.code || null, category: caught?.errorCategory || null } };
