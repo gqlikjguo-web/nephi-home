@@ -24,7 +24,7 @@ const {
 } = require("./turn-input-adapter");
 const { contextRelationEvidenceForValidatedLink } = require("./context-link-validator");
 const { projectCapabilityRegistry } = require("./semantic-unit-validator");
-const { createLifecycleDecision } = require("./lifecycle-manager");
+const { createLifecycleDecision, isValidatedLifecycleDecision } = require("./lifecycle-manager");
 const { createUnitReplyRoutingRegistry, createUnitReadiness, createTrustedOperatorSafetyPolicy, createUnitRoutingDecision, createPropertySuppressedNoReplyDecision } = require("./unit-reply-router");
 const { createCanonicalizerInputItem, executeCanonicalizerInputItem } = require("./canonical-execution-adapter");
 const { aggregateUnitOutcomes } = require("./unit-aggregator");
@@ -334,11 +334,12 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   });
   const queryPlans = formalRequests.map(buildCanonicalQueryPlan).filter(Boolean);
   const requestEvidence = outcomes.map(item => {
-    const link = understanding.validatedContextLinks.find(link => link.unitId === item.unit.unitId);
-    const relation = link && contextRelationEvidenceForValidatedLink(link, item.unit);
-    const activeRequest = Boolean(item.unit.capability !== null && relation
-      && (relation.relationKind === "NEW_REQUEST" || relation.resolvedTargetRequestCycleId !== null));
-    const absent = item.unit.capability === null && relation?.relationKind === "NONE";
+    const lifecycle = item.lifecycleDecision;
+    const validatedLifecycle = isValidatedLifecycleDecision(lifecycle) && lifecycle.unitId === item.unit.unitId;
+    // Request existence belongs to the validated lifecycle, not a second
+    // interpretation of the Understanding relation candidate.
+    const activeRequest = Boolean(item.unit.capability !== null && validatedLifecycle && lifecycle.action !== "NONE");
+    const absent = Boolean(item.unit.capability === null && validatedLifecycle && lifecycle.action === "NONE");
     const route = item.routingDecision;
     return { taskId: item.canonicalItem?.canonicalRequest.taskId || item.unit.unitId,
       requestPresence: activeRequest ? "PRESENT" : absent ? "ABSENT" : "UNDETERMINED", activeRequest,

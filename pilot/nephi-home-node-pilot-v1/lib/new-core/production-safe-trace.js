@@ -1,6 +1,13 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { DAY_PERIODS, MAX_DAY_OFFSET } = require("../conversation-contracts/relative-temporal-semantics");
+
+const TEMPORAL_DIAGNOSTIC_REASONS = new Set([
+  "", "relative_semantics_invalid", "relative_semantics_conflict", "temporal_clock_invalid",
+  "temporal_expression_ambiguous", "temporal_expression_unrecognized", "past_date", "temporal_range_invalid",
+  "planner_temporal_span_invalid", "planner_temporal_span_recovered", "planner_kind_repaired", "planner_candidate_rejected"
+]);
 
 const STAGES = new Set([
   "new_core_latency", "line_inbound", "state_before", "new_core_c01", "new_core_understanding", "new_core_understanding_attempts",
@@ -58,7 +65,18 @@ function temporal(value) {
     searchFrom: token(value.searchFrom || value.from),
     searchTo: token(value.searchTo || value.to),
     nights: Number.isInteger(value.nights || value.nightsCandidate) ? Number(value.nights || value.nightsCandidate) : null,
-    timezone: token(value.timezone)
+    timezone: token(value.timezone),
+    ...(Object.hasOwn(value, "relativeSemantics") ? { relativeSemantics: {
+      dayOffset: Number.isSafeInteger(value.relativeSemantics?.dayOffset)
+        && Math.abs(value.relativeSemantics.dayOffset) <= MAX_DAY_OFFSET ? value.relativeSemantics.dayOffset : null,
+      dayPeriod: DAY_PERIODS.includes(value.relativeSemantics?.dayPeriod) ? value.relativeSemantics.dayPeriod : null
+    } } : {}),
+    ...(Object.hasOwn(value, "repairReasonCode") ? {
+      repairReasonCode: TEMPORAL_DIAGNOSTIC_REASONS.has(value.repairReasonCode) ? value.repairReasonCode : null
+    } : {}),
+    ...(Object.hasOwn(value, "ambiguity") ? {
+      ambiguity: TEMPORAL_DIAGNOSTIC_REASONS.has(value.ambiguity) ? value.ambiguity : null
+    } : {})
   } : null;
 }
 
