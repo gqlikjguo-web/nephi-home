@@ -446,6 +446,27 @@ function providerVisibleInput(understandingTurnInput) {
   };
 }
 
+function sharedProviderSchema(understandingTurnInput) {
+  const schema = openAiUnderstandingV1ProviderSchema(understandingTurnInput);
+  const definitions = {};
+  const references = new Map();
+  // Only share byte-identical subschemas. Keep every constraint, annotation,
+  // property order and per-turn catalog binding in the freshly built schema.
+  for (const branch of schema.properties.understandingOutput.properties.units.items.anyOf) {
+    for (const field of ["temporalCandidate", "slotCandidates"]) {
+      const value = branch.properties[field];
+      const key = JSON.stringify(value);
+      if (!references.has(key)) {
+        const name = `${field}_${references.size + 1}`;
+        references.set(key, name);
+        definitions[name] = value;
+      }
+      branch.properties[field] = { $ref: `#/$defs/${references.get(key)}` };
+    }
+  }
+  return { ...schema, $defs: definitions };
+}
+
 function providerRequestBody(understandingTurnInput, correction = null) {
   const modelInput = providerVisibleInput(understandingTurnInput);
   return {
@@ -461,7 +482,7 @@ function providerRequestBody(understandingTurnInput, correction = null) {
         type: "json_schema",
         name: "junzan_understanding_v1",
         strict: true,
-        schema: openAiUnderstandingV1ProviderSchema(understandingTurnInput)
+        schema: sharedProviderSchema(understandingTurnInput)
       }
     }
   };
