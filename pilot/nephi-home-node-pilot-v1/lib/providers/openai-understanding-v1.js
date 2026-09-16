@@ -1,6 +1,8 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { isDeepStrictEqual } = require("node:util");
+const { resolveCanonicalTemporal } = require("../conversation-engine-v2/temporal-resolver");
 const { beforeCommercialAttempt, finishCommercialAttempt, isCommercialError } = require("../commercial-ai-gate");
 const { createLatencyClock } = require("../new-core/understanding-latency");
 const { CAPABILITY_REGISTRY } = require("../conversation-engine-v2/capability-registry");
@@ -1031,7 +1033,7 @@ const CORRECTION_FAILURES = new WeakMap();
 // This projection is used only for correction obligations, never execution.
 // The original envelope remains rejected and the replacement must pass every
 // normal admission gate. Unknown keys cannot acquire semantic authority.
-function correctionPreservationForUnit(rawUnit, input) {
+function correctionPreservationForUnit(rawUnit, input, repairRelativeOffset = false) {
   if (!rawUnit || typeof rawUnit !== "object") return [];
   const fields = [...UNIT_FIELDS, "quantityCandidate"];
   const unit = Object.fromEntries(fields.filter(field => Object.hasOwn(rawUnit, field))
@@ -1045,7 +1047,45 @@ function correctionPreservationForUnit(rawUnit, input) {
     publicCatalogIdentitySet: buildPublicCatalogIdentitySet(input),
     capabilityRegistryProjection: projectCapabilityRegistry(CAPABILITY_REGISTRY)
   });
-  return semantic.fieldValidationState || [];
+  return (semantic.fieldValidationState || []).map(state => repairRelativeOffset && state.field === "temporalCandidate"
+    ? { ...state, preservation: "REVALIDATE" } : state);
+}
+
+// Consult the existing temporal authority before finishing Understanding.
+// This result only schedules/validates correction; C08 still owns execution.
+function relativeTemporalForUnit(unit, input) {
+  const temporal = unit?.temporalCandidate;
+  if (temporal?.kind !== "relative_date" || !temporal.relativeSemantics) return null;
+  const owners = unit.evidenceRefs.filter(ref => ref.quote.includes(temporal.rawText));
+  if (owners.length !== 1) return null;
+  const owner = owners[0];
+  const sources = input.sourceEvents.filter(event => event.eventId === owner.eventId && event.messageRef === owner.messageRef
+    && event.messageText.slice(owner.startOffset, owner.endOffset) === owner.quote);
+  if (sources.length !== 1) return null;
+  const sourceText = unit.evidenceRefs.map(ref => ref.quote).join("\n");
+  return resolveCanonicalTemporal({ guestMessage: sourceText, candidateSourceText: sourceText,
+    plannerCandidate: { dateExpression: { rawText: temporal.rawText, kind: "relative", anchor: "message_time",
+      relativeSemantics: temporal.relativeSemantics }, checkInCandidate: temporal.checkInCandidate,
+      checkOutCandidate: temporal.checkOutCandidate, nightsCandidate: temporal.nightsCandidate },
+    eventTimestamp: sources[0].timestamp, timezone: input.propertyTimezone, allowSharedMessageInference: false });
+}
+
+function relativeTemporalFailures(value, input) {
+  return value.validatedUnits.filter(unit => relativeTemporalForUnit(unit, input)?.repairReasonCode === "relative_semantics_conflict")
+    .map(unit => ({ boundary: "C08", code: "relative_semantics_conflict", origin: "model_output", unitId: unit.unitId,
+      reason: ["relative_semantics_conflict"], fieldValidationState: correctionPreservationForUnit(unit, input, true) }));
+}
+
+function relativeOffsetRepairPreserved(previous, next, input) {
+  if (relativeTemporalForUnit(next, input)?.resolutionStatus !== "resolved") return false;
+  const before = detach(previous.temporalCandidate), after = detach(next.temporalCandidate);
+  delete before.relativeSemantics.dayOffset;
+  delete after.relativeSemantics.dayOffset;
+  return isDeepStrictEqual(before, after);
+}
+
+function relativeOffsetFailure(failure) {
+  return failure.boundary === "C08" && failure.code === "relative_semantics_conflict" && failure.origin === "model_output";
 }
 const MODEL_UNIT_FAILURES = new Set(["SEMANTIC_UNIT_INVALID", "CATALOG_IDENTITY_INVALID", "CAPABILITY_SUBJECT_CONFLICT", "STAY_DEPENDENCY_CONFLICT", "UNIT_MEANING_UNSUPPORTED", "UNIT_EVIDENCE_MISSING"]);
 const MODEL_EVIDENCE_FAILURES = new Set(["EVIDENCE_QUOTE_MISMATCH", "EVIDENCE_RANGE_INVALID", "EVIDENCE_MATCH_AMBIGUOUS", "EVIDENCE_SOURCE_UNKNOWN", "EVIDENCE_SCOPE_CONFLICT"]);
@@ -1137,7 +1177,8 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
       const response = await requestOnce({ apiKey, fetchImpl, timeoutMs: Math.min(timeoutMs, remaining), requestIdFactory, understandingTurnInput, correction, latency, onRequest: attempt => { if (attempt > 1) correctionCalls++; } }, number);
       attempts.push(response.attempt); output = response.value;
       value = admitUnderstandingValue(output, understandingTurnInput, { ...options, onOperationalDiagnostic: entry => { operational.push(entry); emitOperational(options, entry); } }, attempts, traceEmitter, nowMs);
-      failureReport = { output, failures: value.failedUnits.map(failure => correctionUnitFailure(failure, output, understandingTurnInput, operational)) };
+      failureReport = { output, failures: [...value.failedUnits.map(failure => correctionUnitFailure(failure, output, understandingTurnInput, operational)),
+        ...relativeTemporalFailures(value, understandingTurnInput)] };
     } catch (error) {
       if (isCommercialError(error)) throw error;
       caught = error;
@@ -1152,7 +1193,7 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     const report = { attemptNumber: number, attemptType: number === 1 ? "initial" : "correction",
       ...(accounting ? { usageAccounting: accounting } : {}),
       triggerFailure: correction?.failures || null,
-      validationResult: { ...(value ? { ok: value.failedUnits.length === 0 } : failureReport.failures.length ? { ok: false } : {}), failures: failureReport.failures,
+      validationResult: { ...(value ? { ok: failureReport.failures.length === 0 } : failureReport.failures.length ? { ok: false } : {}), failures: failureReport.failures,
         terminalCode: caught?.code || null, category: caught?.errorCategory || null } };
     reports.push(report);
     if (number === 1) {
@@ -1166,7 +1207,9 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
       const candidateLink = value?.validatedContextLinks.find(other => other.unitId === unit.unitId);
       const relation = link && contextRelationEvidenceForValidatedLink(link, unit);
       const candidateRelation = candidateLink && contextRelationEvidenceForValidatedLink(candidateLink, candidate);
-      return semanticObligationsPreserved(unit, candidate, correctionPreservationForUnit(unit, understandingTurnInput), understandingTurnInput)
+      const repairOffset = correction.failures.some(failure => failure.unitId === unit.unitId && relativeOffsetFailure(failure));
+      return (!repairOffset || relativeOffsetRepairPreserved(unit, candidate, understandingTurnInput))
+        && semanticObligationsPreserved(unit, candidate, correctionPreservationForUnit(unit, understandingTurnInput, repairOffset), understandingTurnInput)
         && Boolean(relation && candidateRelation)
         && relation.relationKind === candidateRelation.relationKind
         && relation.resolvedTargetRequestCycleId === candidateRelation.resolvedTargetRequestCycleId;
@@ -1177,11 +1220,12 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     const fieldsPreserved = !correction || correction.failures.every(failure => {
       const previous = firstOutput?.understandingOutput.units.find(unit => unit.unitId === failure.unitId);
       const next = value?.understandingOutput.units.find(unit => unit.unitId === failure.unitId);
-      return !(failure.fieldValidationState || []).length
-        || semanticObligationsPreserved(previous, next, failure.fieldValidationState, understandingTurnInput);
+      return (!relativeOffsetFailure(failure) || relativeOffsetRepairPreserved(previous, next, understandingTurnInput))
+        && (!(failure.fieldValidationState || []).length
+          || semanticObligationsPreserved(previous, next, failure.fieldValidationState, understandingTurnInput));
     });
     if (!fieldsPreserved) report.validationResult = {...report.validationResult, ok:false, adoptionFailure:"CORRECTION_FIELD_NOT_PRESERVED"};
-    if (value && !value.failedUnits.length && preserves && retained && fieldsPreserved) return finish(value, null, 2);
+    if (value && !failureReport.failures.length && preserves && retained && fieldsPreserved) return finish(value, null, 2);
     if (!preserves || !retained) report.validationResult = { ...report.validationResult, ok: false, adoptionFailure: "CORRECTION_SIBLING_NOT_PRESERVED" };
     return finish(firstResult, caught || understandingError("UNDERSTANDING_SCHEMA_INVALID"), firstResult ? 1 : null);
   }

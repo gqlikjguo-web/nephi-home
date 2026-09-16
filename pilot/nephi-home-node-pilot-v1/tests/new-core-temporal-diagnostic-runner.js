@@ -60,7 +60,7 @@ test("existing message_logs persistence retains temporal evidence without changi
     await x.post([event]);
     await x.done(event.webhookEventId);
     const record = x.record(event.webhookEventId);
-    assert.equal(x.calls[0].mockCalls, 1);
+    assert.equal(x.calls[0].mockCalls, 2);
     assert.equal(x.core[0].decision.action, "clarification");
     assert.equal(record.processingStatus, "reply_succeeded");
     assert.equal(record.replyText, x.core[0].response.replyText);
