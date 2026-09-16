@@ -35,3 +35,5 @@
 .ai-management progress::-moz-progress-bar{background:#22633e}
 .ai-quota-note{color:#56685d;font-size:.85rem}
 @media(max-width:480px){.ai-quota-cards,.ai-usage-windows{gap:6px}.ai-quota-card,.ai-usage-card{padding:10px 8px}.ai-quota-card strong,.ai-usage-card strong{font-size:1.2rem}.ai-bubble{max-width:90%}}
+
+.ai-guest-row[data-selected=true]{background:#e5f0e8;border-color:#49825c;box-shadow:inset 4px 0 #22633e}

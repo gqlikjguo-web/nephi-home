@@ -35,6 +35,7 @@ const AiControls = (() => {
           progress.setAttribute("aria-valuetext", data.monthlyLimit === null ? "額度未設定" : `已用 ${data.used}／上限 ${data.monthlyLimit} 則`);
         } else usage.textContent = `本月已用 ${data.used} 則／額度 ${data.monthlyLimit === null ? "未設定" : data.monthlyLimit} 則／剩餘 ${data.remaining === null ? "未設定" : data.remaining} 則`;
         status.textContent = data.monthlyLimit === null ? "額度未設定" : data.remaining === 0 ? "額度已用完，AI 自動回覆已暫停" : data.used >= data.monthlyLimit * .9 ? "本月額度已使用 90% 以上" : data.used >= data.monthlyLimit * .8 ? "本月額度已使用 80% 以上" : "本月額度正常";
+        if (cards) status.textContent = data.monthlyLimit === null ? "額度未設定" : data.remaining === 0 ? "本月額度已用完，AI 自動回覆已暫停" : `本月剩餘 ${data.remaining} 則，可正常使用${data.used >= data.monthlyLimit * .9 ? "（已使用 90% 以上）" : data.used >= data.monthlyLimit * .8 ? "（已使用 80% 以上）" : ""}`;
       }
     };
   }
@@ -45,27 +46,27 @@ const AiControls = (() => {
     enabled.setAttribute("role","switch"); enabled.setAttribute("aria-label","AI 自動回覆");
     switchBox.append(label,enabled);heading.append(node(host,"h2","AI 回覆管理"),switchBox);host.append(heading);
     const totals=summary(host,true), usageWindow=node(host,"div","","usageWindow");usageWindow.className="ai-usage-windows";host.append(usageWindow);
-    const usageNote=node(host,"p","台灣時間；依正式訊息扣額紀錄顯示，非 Luna 呼叫次數。");usageNote.className="ai-quota-note";host.append(usageNote);
+    const usageNote=node(host,"p","只計算實際使用的 AI 回覆額度。");usageNote.className="ai-quota-note";host.append(usageNote);
     const refresh=node(host,"button","重新整理","refresh"),message=node(host,"p","","message");
     refresh.type="button";message.setAttribute("role","status");message.setAttribute("aria-live","polite");host.append(refresh,message);
     const layout=node(host,"div"),list=node(host,"div",undefined,"conversation"),detail=node(host,"section");
     layout.className="ai-conversation-layout";list.className="ai-conversation-list";detail.className="ai-conversation-detail";
     list.setAttribute("aria-label","客人對話列表");detail.setAttribute("aria-label","已保存對話");
-    const detailHeader=node(host,"div"),title=node(host,"h3","請選擇客人對話","guestTitle"),state=node(host,"p","","guestState"),handoff=node(host,"button","轉人工","handoff"),older=node(host,"button","載入較早訊息","older"),history=node(host,"div",undefined,"history");
+    const detailHeader=node(host,"div"),title=node(host,"h3","請選擇客人對話","guestTitle"),state=node(host,"p","","guestState"),handoffNote=node(host,"p","","handoffNote"),handoff=node(host,"button","轉人工","handoff"),older=node(host,"button","載入較早訊息","older"),history=node(host,"div",undefined,"history");
     detailHeader.className="ai-detail-header";history.className="ai-history";handoff.type=older.type="button";handoff.disabled=true;handoff.hidden=true;older.hidden=true;
-    detailHeader.append(title,state,handoff);detail.append(detailHeader,older,history);layout.append(list,detail);host.append(layout);
+    detailHeader.append(title,state,handoffNote,handoff);detail.append(detailHeader,older,history);layout.append(list,detail);host.append(layout);
     let version=0,guestVersion=0,currentId=null,savedEnabled=false,items=[],selected=null,nextCursor=null,historyItems=[],busyHistory=false,writesInFlight=0;
     const current=(revision,id)=>revision===version&&id===currentId&&id===getPropertyId();
     const time=value=>{const date=new Date(value);return value&&Number.isFinite(date.getTime())?date.toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}):"時間未提供";};
     const identity=guest=>`${String(guest.displayName||"客人對話").slice(0,40)}（${guest.userId.slice(-8)}）`;
     function renderSwitch(){enabled.checked=savedEnabled;enabled.setAttribute("aria-checked",String(savedEnabled));label.textContent=`AI 自動回覆：${savedEnabled?"開啟":"關閉"}`;}
-    function renderState(){state.textContent=selected?(selected.humanControlled?"人工接管中":"AI 回覆中"):"";handoff.textContent=selected?.humanControlled?"恢復 AI":"轉人工";handoff.hidden=!selected;handoff.disabled=!selected||Boolean(selected.busy);}
+    function renderState(){state.textContent=selected?(selected.humanControlled?"人工接管中":"AI 回覆中"):"";handoffNote.textContent=selected?.humanControlled?"AI 已暫停回覆這位客人":"";handoffNote.hidden=!selected?.humanControlled;handoff.textContent=selected?.humanControlled?"恢復 AI 回覆":"轉人工";handoff.hidden=!selected;handoff.disabled=!selected||Boolean(selected.busy);}
     function renderList(){
       list.replaceChildren();
       if(!items.length){list.append(node(host,"p","目前沒有已保存的客人對話"));return;}
       items.forEach(guest=>{
         const row=node(host,"article"),open=node(host,"button",identity(guest),"guestOpen"),badge=node(host,"span",guest.humanControlled?"人工接管中":"AI 回覆中"),preview=node(host,"p",guest.messagePreview?String(guest.messagePreview).slice(0,80):"尚無文字訊息摘要"),at=node(host,"p",time(guest.lastMessageAt));
-        row.className="ai-guest-row";open.type="button";open.className="ai-guest-open";badge.className="ai-guest-state";at.className="ai-message-time";preview.className="ai-guest-preview";
+        row.className="ai-guest-row";row.dataset.selected=String(selected===guest);open.type="button";open.className="ai-guest-open";badge.className="ai-guest-state";at.className="ai-message-time";preview.className="ai-guest-preview";
         open.setAttribute("aria-pressed",String(selected===guest));
         open.onclick=()=>openGuest(guest);row.append(open,badge,preview,at);list.append(row);
       });
@@ -99,7 +100,7 @@ const AiControls = (() => {
         const turn=node(host,"article");turn.className="ai-turn";
         const guest=node(host,"div");guest.className="ai-bubble ai-bubble-guest";guest.append(node(host,"strong",item.recordKind==="review"?"系統覆核紀錄（關聯客人訊息）":"客人訊息"),node(host,"p",item.guestMessage||"（未保存文字內容）"),node(host,"small",time(item.createdAt)));turn.append(guest);
         if(item.replyText){const reply=node(host,"div");reply.className="ai-bubble ai-bubble-reply";reply.append(node(host,"strong",item.replyDelivered?"AI 回覆":"系統保存回覆（未確認送出）"),node(host,"p",item.replyText),node(host,"small",item.replyAt?time(item.replyAt):"回覆時間未保存"));turn.append(reply);}
-        else if(item.recordKind!=="review")turn.append(node(host,"p",item.processingStatus==="processing"?"處理中":"此則無已保存回覆"));
+        else if(item.recordKind!=="review")turn.append(node(host,"p",item.processingStatus==="processing"?"處理中":item.processingStatus==="no_reply"?"AI 未回覆":"尚無回覆內容"));
         history.append(turn);
       }
       if(!historyItems.length)history.append(node(host,"p","目前沒有已保存訊息"));older.hidden=!nextCursor;

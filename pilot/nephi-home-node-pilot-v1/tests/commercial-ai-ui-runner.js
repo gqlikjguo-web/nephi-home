@@ -90,7 +90,7 @@ async function run() {
   await field("handoff").onclick();
   assert.equal(writes.at(-1).url, "/api/ai-controls/conversations?propertyId=owner-alpha");
   assert.deepEqual(writes.at(-1).body, { channelId: "channel/B", userId: "user?B", humanControlled: true });
-  assert.equal(field("handoff").textContent, "恢復 AI");
+  assert.equal(field("handoff").textContent, "恢復 AI 回覆");
   await field("handoff").onclick(); assert.equal(writes.at(-1).body.humanControlled, false);
   assert.ok(reads.some(url => url.includes("channelId=channel%2FB") && url.includes("userId=user%3FB")));
   for (const url of reads.filter(value => value.startsWith("/api/ai-controls"))) assert.equal(new URL(url, "https://ui.example.invalid").searchParams.get("propertyId"), "owner-alpha", "every operator read must declare the displayed property");
@@ -107,7 +107,7 @@ async function run() {
   assert.equal(field("rowHandoff",select.children[0]),undefined,"list has no duplicate handoff action");
   delayedControl=null;await openSecond();await field("handoff").onclick();
   finishControl(respond({humanControlled:false}));await openingControl;
-  assert.equal(field("handoff").textContent,"恢復 AI","a stale control read must not undo confirmed handoff in UI");
+  assert.equal(field("handoff").textContent,"恢復 AI 回覆","a stale control read must not undo confirmed handoff in UI");
   await field("handoff").onclick();assert.equal(human,false);
   let finishWrite; delayedWrite=new Promise(resolve=>{finishWrite=resolve;});
   field("aiEnabled").checked=true;const writing=field("aiEnabled").onchange();const readsBefore=reads.length;
