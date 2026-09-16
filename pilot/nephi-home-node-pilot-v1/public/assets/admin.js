@@ -386,7 +386,7 @@ populateAvailabilityRanges();
 $("availabilityRange").onchange = async () => { availabilityState.selection = $("availabilityRange").value; noteEditorState = null; $("noteEditor").hidden = true; closePriceEditor(); await loadMonth(); await loadPricing(); };
 $("availabilityToday").onclick = async () => { availabilityState.selection = "rolling"; $("availabilityRange").value = "rolling"; noteEditorState = null; $("noteEditor").hidden = true; closePriceEditor(); await loadMonth(); await loadPricing(); };
 function initializeAdminNavigation() {
-  const panelMap = { availability: document.querySelector(".availability-card"), pricing: document.querySelector(".pricing-card"), bundles: document.querySelector(".bundles"), "custom-replies": document.querySelector(".custom-replies-card"), other: document.querySelector(".other-settings") };
+  const panelMap = { availability: document.querySelector(".availability-card"), pricing: document.querySelector(".pricing-card"), bundles: document.querySelector(".bundles"), "custom-replies": document.querySelector(".custom-replies-card"), ai: document.querySelector(".ai-management"), other: document.querySelector(".other-settings") };
   for (const [tab, panel] of Object.entries(panelMap)) if (panel) panel.dataset.adminPanel = tab;
   const select = $("adminTabSelect");
   const show = tab => { for (const [name, panel] of Object.entries(panelMap)) if (panel) panel.hidden = name !== tab; document.querySelectorAll("[data-admin-tab]").forEach(button => button.classList.toggle("active", button.dataset.adminTab === tab)); if (select) select.value = tab; };

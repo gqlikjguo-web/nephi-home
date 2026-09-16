@@ -15,6 +15,7 @@ async function run() {
   const doc = { createElement: tag => new Node(tag, doc) };
   const host = new Node("section", doc), platformHost = new Node("section", doc);
   let propertyId = "owner-alpha", limit = 100, used = 80, enabled = true, human = false, fail = false, pending = null, cookiePropertyId = null, reverseGuests = false;
+  let delayedHistory = null, delayedControl = null, delayedWrite = null;
   const writes = [], reads = [];
   const conversationItems = [
     { channelId: "channel/A", userId: "user?A", displayName: "同名 <script>", messagePreview: "請問入住時間？", lastMessageAt: "2026-09-16T01:00:00.000Z" },
@@ -31,6 +32,7 @@ async function run() {
     if (options.method === "PUT") {
       const body = JSON.parse(options.body); writes.push({ url, body });
       if (fail) return respond(null, false);
+      if (delayedWrite) return delayedWrite;
       if (path === "/api/ai-controls") enabled = body.aiEnabled;
       else if (url === "/api/platform/ai-controls") limit = body.monthlyLimit;
       else { assert.equal(path, "/api/ai-controls/conversations"); human = body.humanControlled; return respond({ humanControlled: human }); }
@@ -39,7 +41,11 @@ async function run() {
     reads.push(url);
     if (url === "/api/admin/platform/properties") return respond({ items: [{ propertyId: "owner-alpha", propertyName: "A旅宿" }, { propertyId: "owner-beta", propertyName: "B旅宿" }] });
     if (path === "/api/ai-controls/conversations" && !requestUrl.searchParams.has("channelId")) return respond({ items: reverseGuests ? [...conversationItems].reverse() : conversationItems });
+    if (path === "/api/ai-controls/conversations" && requestUrl.searchParams.has("channelId") && delayedControl) return delayedControl;
     if (url.startsWith("/api/ai-controls/conversations?")) return respond({ humanControlled: human });
+    if (path === "/api/ai-controls/usage") return respond({today:2,week:5,day:"2026-09-17",weekStart:"2026-09-14"});
+    if (path === "/api/ai-controls/history" && delayedHistory && requestUrl.searchParams.get("userId") === "user?A") return delayedHistory;
+    if (path === "/api/ai-controls/history") return respond({items:[{reviewId:"r",guestMessage:requestUrl.searchParams.get("userId"),replyText:"Saved reply",replyDelivered:true,createdAt:"2026-09-17T01:00:00Z"}],nextCursor:null});
     if (pending) return pending;
     return respond(status());
   };
@@ -49,7 +55,7 @@ async function run() {
   const operator = controls.createOperator(host, { getPropertyId: () => propertyId });
   const field = (name, root = host) => root.querySelectorAll().find(n => n.dataset.field === name);
   await operator.load();
-  assert.equal(writes.length, 0); assert.equal(field("aiEnabled").checked, true);
+  assert.equal(writes.length, 0); assert.equal(field("aiEnabled").checked, true); assert.match(field("switchLabel").textContent,/開啟/); assert.match(field("usageWindow").textContent,/2.*5.*80/);
   // A different tab changes the shared cookie to beta while this DOM still displays alpha.
   cookiePropertyId = "owner-beta";
   field("aiEnabled").checked = false; await field("aiEnabled").onchange();
@@ -62,24 +68,24 @@ async function run() {
   assert.deepEqual(writes.at(-1), { url: "/api/ai-controls?propertyId=owner-alpha", body: { aiEnabled: false } });
   fail = true; field("aiEnabled").checked = true; await field("aiEnabled").onchange();
   assert.equal(field("aiEnabled").checked, false); assert.match(field("message").textContent, /拒絕變更/); fail = false;
-  const select = field("conversation"); assert.equal(select.children.length, 3, "invalid tuples must not be selectable");
-  const firstLabel = select.children[1].textContent, secondLabel = select.children[2].textContent;
+  const select = field("conversation"); const rowText=row=>row.children.slice(0,4).map(n=>n.textContent).join(" "); const openSecond=()=>select.children[1].children[0].onclick(); assert.equal(select.children.length, 2, "invalid tuples must not be selectable");
+  const firstLabel = rowText(select.children[0]), secondLabel = rowText(select.children[1]);
   assert.match(firstLabel, /請問入住時間？/, "first same-name guest must show their message preview");
   assert.match(secondLabel, /我要確認停車位置 <script>/, "second same-name guest must show their own literal message preview");
   assert.match(firstLabel, /user\?A/); assert.match(secondLabel, /user\?B/);
   assert.match(firstLabel, /2026/); assert.match(secondLabel, /2026/);
   assert.notEqual(firstLabel, secondLabel); assert.ok(secondLabel.length < 160, "message preview must be bounded");
   reverseGuests = true; await operator.load();
-  assert.equal(select.children[1].textContent, secondLabel, "guest identity label must survive server list reordering");
-  assert.equal(select.children[2].textContent, firstLabel);
+  assert.equal(rowText(select.children[0]), secondLabel, "guest identity label must survive server list reordering");
+  assert.equal(rowText(select.children[1]), firstLabel);
   reverseGuests = false; await operator.load();
-  select.value = "1"; await select.onchange(); assert.equal(field("handoff").textContent, "轉人工");
+  await openSecond(); assert.equal(field("handoff").textContent, "轉人工");
   cookiePropertyId = "owner-beta"; const beforeStaleHandoff = writes.length;
   await field("handoff").onclick(); assert.equal(writes.length, beforeStaleHandoff, "stale-tab handoff must not mutate the cookie-selected property");
   assert.equal(human, false); assert.equal(field("handoff").textContent, "轉人工");
-  await select.onchange(); assert.equal(field("handoff").disabled, true, "stale-tab conversation reads must fail closed");
+  await openSecond(); assert.equal(field("handoff").disabled, true, "stale-tab conversation reads must fail closed");
   await operator.load(); assert.equal(field("aiEnabled").disabled, true); assert.equal(field("conversation").children.length, 0);
-  cookiePropertyId = null; await operator.load(); select.value = "1"; await select.onchange();
+  cookiePropertyId = null; await operator.load(); await openSecond();
   await field("handoff").onclick();
   assert.equal(writes.at(-1).url, "/api/ai-controls/conversations?propertyId=owner-alpha");
   assert.deepEqual(writes.at(-1).body, { channelId: "channel/B", userId: "user?B", humanControlled: true });
@@ -87,6 +93,24 @@ async function run() {
   await field("handoff").onclick(); assert.equal(writes.at(-1).body.humanControlled, false);
   assert.ok(reads.some(url => url.includes("channelId=channel%2FB") && url.includes("userId=user%3FB")));
   for (const url of reads.filter(value => value.startsWith("/api/ai-controls"))) assert.equal(new URL(url, "https://ui.example.invalid").searchParams.get("propertyId"), "owner-alpha", "every operator read must declare the displayed property");
+  const textTree = root => [root.textContent,...root.querySelectorAll().map(n=>n.textContent)].join(" ");
+  let finishHistory; delayedHistory = new Promise(resolve=>{finishHistory=resolve;});
+  const openingA=select.children[0].children[0].onclick();
+  assert.equal(field("history").children.length,0,"switching guest clears previous saved messages immediately");
+  await openSecond();assert.match(textTree(field("history")),/user\?B/);
+  finishHistory(respond({items:[{reviewId:"a",guestMessage:"SECRET_A",replyText:"",createdAt:"2026-09-17T01:00:00Z"}],nextCursor:null}));await openingA;delayedHistory=null;
+  assert.doesNotMatch(textTree(field("history")),/SECRET_A/,"late guest A response cannot enter guest B history");
+  assert.match(textTree(field("history")),/user\?B/);
+  let finishControl; delayedControl=new Promise(resolve=>{finishControl=resolve;});
+  const openingControl=select.children[0].children[0].onclick();
+  await field("rowHandoff",select.children[0]).onclick();
+  finishControl(respond({humanControlled:false}));await openingControl;delayedControl=null;
+  assert.equal(field("handoff").textContent,"恢復 AI","a stale control read must not undo confirmed handoff in UI");
+  await field("handoff").onclick();assert.equal(human,false);
+  let finishWrite; delayedWrite=new Promise(resolve=>{finishWrite=resolve;});
+  field("aiEnabled").checked=true;const writing=field("aiEnabled").onchange();const readsBefore=reads.length;
+  assert.equal(field("refresh").disabled,true);await operator.load();assert.equal(reads.length,readsBefore,"refresh cannot replace UI with a pre-write snapshot");
+  enabled=true;finishWrite(respond(status()));await writing;delayedWrite=null;assert.equal(field("refresh").disabled,false);assert.equal(field("aiEnabled").checked,true);
   limit = null; await operator.load(); assert.match(field("quotaStatus").textContent, /額度未設定/); assert.doesNotMatch(field("usage").textContent, /無限/);
   limit = 100; used = 90; await operator.load(); assert.match(field("quotaStatus").textContent, /90%/);
   used = 100; await operator.load(); assert.match(field("quotaStatus").textContent, /用完/);

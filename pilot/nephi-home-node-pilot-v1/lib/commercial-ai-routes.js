@@ -25,11 +25,17 @@ async function commercialAiRoute({path,method,body={},query=new URLSearchParams(
     only(body,['aiEnabled']);if(typeof body.aiEnabled!=='boolean')throw failure(400,'AI_SWITCH_INVALID');
     return store.setAiEnabled(id,body.aiEnabled);
   }
-  if(path!=='/api/ai-controls/conversations')throw failure(404,'NOT_FOUND');
+  if(path==='/api/ai-controls/usage') {
+    if(method!=='GET')throw failure(405,'METHOD_NOT_ALLOWED');
+    return store.getUsage(id);
+  }
+  if(!['/api/ai-controls/conversations','/api/ai-controls/history'].includes(path))throw failure(404,'NOT_FOUND');
+  if(path==='/api/ai-controls/history'&&method!=='GET')throw failure(405,'METHOD_NOT_ALLOWED');
   const items=await store.listConversations(id);
   const channel=method==='GET'?query.get('channelId'):body.channelId,user=method==='GET'?query.get('userId'):body.userId;
-  if(method==='GET'&&!channel&&!user)return {items};
+  if(path==='/api/ai-controls/conversations'&&method==='GET'&&!channel&&!user)return {items};
   if(!items.some(item=>item.channelId===channel&&item.userId===user))throw failure(404,'CONVERSATION_NOT_FOUND');
+  if(path==='/api/ai-controls/history')return store.getHistory(id,channel,user,query.get('before'));
   if(method==='GET')return store.getHandoff(id,channel,user);
   if(method!=='PUT')throw failure(405,'METHOD_NOT_ALLOWED');
   only(body,['channelId','userId','humanControlled']);if(typeof body.humanControlled!=='boolean')throw failure(400,'HANDOFF_INVALID');

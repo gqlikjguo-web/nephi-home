@@ -20,82 +20,97 @@ const AiControls = (() => {
       clear() { period.textContent = ""; usage.textContent = ""; status.textContent = ""; },
       render(data) {
         period.textContent = `計費月份：${data.period}`;
-        usage.textContent = `本月已用 ${data.used} 次／額度 ${data.monthlyLimit === null ? "未設定" : data.monthlyLimit} 次／剩餘 ${data.remaining === null ? "未設定" : data.remaining} 次`;
-        status.textContent = data.monthlyLimit === null ? "額度未設定" : data.remaining === 0 ? "本月額度已用完" : data.used >= data.monthlyLimit * .9 ? "本月額度已使用 90% 以上" : data.used >= data.monthlyLimit * .8 ? "本月額度已使用 80% 以上" : "本月額度正常";
+        usage.textContent = `本月已用 ${data.used} 則／額度 ${data.monthlyLimit === null ? "未設定" : data.monthlyLimit} 則／剩餘 ${data.remaining === null ? "未設定" : data.remaining} 則`;
+        status.textContent = data.monthlyLimit === null ? "額度未設定" : data.remaining === 0 ? "額度已用完，AI 自動回覆已暫停" : data.used >= data.monthlyLimit * .9 ? "本月額度已使用 90% 以上" : data.used >= data.monthlyLimit * .8 ? "本月額度已使用 80% 以上" : "本月額度正常";
       }
     };
   }
   function createOperator(host, { getPropertyId }) {
-    const enabled = node(host, "input", undefined, "aiEnabled"), label = node(host, "label", "AI 自動回覆");
-    enabled.type = "checkbox"; enabled.disabled = true; label.append(enabled);
-    host.append(node(host, "h2", "AI 回覆管理"), label);
-    const totals = summary(host);
-    const conversation = node(host, "select", undefined, "conversation"), conversationLabel = node(host, "label", "客人對話"), handoff = node(host, "button", "轉人工", "handoff"), message = node(host, "p", "", "message"), refresh = node(host, "button", "重新整理", "refresh");
-    conversationLabel.append(conversation); handoff.type = "button"; refresh.type = "button"; handoff.disabled = true;
-    message.setAttribute("role", "status"); message.setAttribute("aria-live", "polite");
-    host.append(conversationLabel, handoff, refresh, message);
-    let version = 0, guestVersion = 0, currentId = null, savedEnabled = false, human = false, items = [];
-    const current = (revision, id) => revision === version && id === currentId && id === getPropertyId();
-    function clear() {
-      version++; guestVersion++; currentId = null; items = []; enabled.disabled = true; enabled.checked = false;
-      conversation.disabled = true; conversation.replaceChildren(); handoff.disabled = true; totals.clear(); message.textContent = "";
+    const heading=node(host,"div"), switchBox=node(host,"div"), enabled=node(host,"input",undefined,"aiEnabled"), label=node(host,"label","AI 自動回覆：載入中","switchLabel");
+    heading.className="ai-heading"; switchBox.className="ai-switch-box";
+    enabled.type="checkbox"; enabled.disabled=true; enabled.className="ai-master-toggle";
+    enabled.setAttribute("role","switch"); enabled.setAttribute("aria-label","AI 自動回覆");
+    switchBox.append(label,enabled);heading.append(node(host,"h2","AI 回覆管理"),switchBox);host.append(heading);
+    const totals=summary(host), usageWindow=node(host,"p","","usageWindow");host.append(usageWindow);
+    const refresh=node(host,"button","重新整理","refresh"),message=node(host,"p","","message");
+    refresh.type="button";message.setAttribute("role","status");message.setAttribute("aria-live","polite");host.append(refresh,message);
+    const layout=node(host,"div"),list=node(host,"div",undefined,"conversation"),detail=node(host,"section");
+    layout.className="ai-conversation-layout";list.className="ai-conversation-list";detail.className="ai-conversation-detail";
+    list.setAttribute("aria-label","客人對話列表");detail.setAttribute("aria-label","已保存對話");
+    const detailHeader=node(host,"div"),title=node(host,"h3","請選擇客人對話","guestTitle"),state=node(host,"p","","guestState"),handoff=node(host,"button","轉人工","handoff"),older=node(host,"button","載入較早訊息","older"),history=node(host,"div",undefined,"history");
+    detailHeader.className="ai-detail-header";history.className="ai-history";handoff.type=older.type="button";handoff.disabled=true;older.hidden=true;
+    detailHeader.append(title,state,handoff);detail.append(detailHeader,older,history);layout.append(list,detail);host.append(layout);
+    let version=0,guestVersion=0,currentId=null,savedEnabled=false,items=[],selected=null,nextCursor=null,historyItems=[],busyHistory=false,writesInFlight=0;
+    const current=(revision,id)=>revision===version&&id===currentId&&id===getPropertyId();
+    const time=value=>{const date=new Date(value);return value&&Number.isFinite(date.getTime())?date.toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}):"時間未提供";};
+    const identity=guest=>`${String(guest.displayName||"客人對話").slice(0,40)}（${guest.userId.slice(-8)}）`;
+    function renderSwitch(){enabled.checked=savedEnabled;enabled.setAttribute("aria-checked",String(savedEnabled));label.textContent=`AI 自動回覆：${savedEnabled?"開啟":"關閉"}`;}
+    function renderState(){state.textContent=selected?(selected.humanControlled?"人工接管中":"AI 回覆中"):"";handoff.textContent=selected?.humanControlled?"恢復 AI":"轉人工";handoff.disabled=!selected||Boolean(selected.busy);}
+    function renderList(){
+      list.replaceChildren();
+      if(!items.length){list.append(node(host,"p","目前沒有已保存的客人對話"));return;}
+      items.forEach(guest=>{
+        const row=node(host,"article"),open=node(host,"button",identity(guest),"guestOpen"),badge=node(host,"span",guest.humanControlled?"人工接管中":"AI 回覆中"),preview=node(host,"p",guest.messagePreview?String(guest.messagePreview).slice(0,80):"尚無文字訊息摘要"),at=node(host,"p",time(guest.lastMessageAt)),action=node(host,"button",guest.humanControlled?"恢復 AI":"轉人工","rowHandoff");
+        row.className="ai-guest-row";open.type=action.type="button";open.className="ai-guest-open";badge.className="ai-guest-state";at.className="ai-message-time";
+        open.setAttribute("aria-pressed",String(selected===guest));action.disabled=Boolean(guest.busy);
+        open.onclick=()=>openGuest(guest);action.onclick=()=>toggleGuest(guest);row.append(open,badge,preview,at,action);list.append(row);
+      });
     }
-    async function load() {
-      clear(); const id = getPropertyId(); if (!id) return;
-      currentId = id; const revision = version; message.textContent = "載入中…";
-      try {
-        const [data, list] = await Promise.all([api(`/api/ai-controls?${new URLSearchParams({ propertyId: id })}`), api(`/api/ai-controls/conversations?${new URLSearchParams({ propertyId: id })}`)]);
-        if (!current(revision, id)) return;
-        if (data.propertyId !== id) throw new Error("旅宿已切換，請重新整理。");
-        savedEnabled = data.aiEnabled; enabled.checked = savedEnabled; enabled.disabled = false; totals.render(data);
-        items = (list.items || []).filter(item => typeof item.channelId === "string" && item.channelId && typeof item.userId === "string" && item.userId);
-        const placeholder = node(host, "option", items.length ? "請選擇客人對話" : "目前沒有可管理的對話"); placeholder.value = "";
-        conversation.replaceChildren(placeholder, ...items.map((item, index) => {
-          const timestamp = item.lastMessageAt ? new Date(item.lastMessageAt) : null;
-          const time = timestamp && Number.isFinite(timestamp.getTime()) ? timestamp.toLocaleString("zh-TW", { timeZone: "Asia/Taipei", hour12: false }) : "時間未提供";
-          const preview = typeof item.messagePreview === "string" && item.messagePreview ? item.messagePreview.slice(0, 80) : "尚無訊息摘要";
-          const identity = `${String(item.displayName || "客人對話").slice(0, 40)}（${item.userId.slice(-8)}）`;
-          const option = node(host, "option", `${identity} · ${time} · ${preview}`); option.value = String(index); return option;
-        }));
-        conversation.value = ""; conversation.disabled = !items.length; message.textContent = "";
-      } catch (error) { if (current(revision, id)) message.textContent = error.message || "連線失敗，請重試。"; }
+    function resetDetail(){guestVersion++;selected=null;nextCursor=null;historyItems=[];busyHistory=false;title.textContent="請選擇客人對話";history.replaceChildren();older.hidden=true;older.disabled=false;renderState();}
+    function clear(){version++;currentId=null;items=[];enabled.disabled=true;enabled.checked=false;enabled.setAttribute("aria-checked","false");label.textContent="AI 自動回覆：尚未載入";list.replaceChildren();totals.clear();usageWindow.textContent="";message.textContent="";resetDetail();}
+    async function load(){
+      if(writesInFlight&&currentId===getPropertyId())return;
+      clear();const id=getPropertyId();if(!id)return;currentId=id;const revision=version;message.textContent="載入中…";
+      try{
+        const query=new URLSearchParams({propertyId:id});
+        const [data,conversations,usage]=await Promise.all([api(`/api/ai-controls?${query}`),api(`/api/ai-controls/conversations?${query}`),api(`/api/ai-controls/usage?${query}`)]);
+        if(!current(revision,id))return;if(data.propertyId!==id)throw Error("旅宿已切換，請重新整理。");
+        savedEnabled=data.aiEnabled;renderSwitch();enabled.disabled=false;totals.render(data);
+        usageWindow.textContent=`今日 ${usage.day}：${usage.today} 則 · 本週（週一起 ${usage.weekStart}）：${usage.week} 則 · 本月：${data.used} 則（台灣時間；訊息扣額，非 Luna calls）`;
+        items=(conversations.items||[]).filter(g=>typeof g.channelId==="string"&&g.channelId&&typeof g.userId==="string"&&g.userId).map(g=>({...g,humanControlled:g.humanControlled===true}));renderList();message.textContent="";
+      }catch(error){if(current(revision,id))message.textContent=error.message||"載入失敗，請重新整理。";}
     }
-    enabled.onchange = async () => {
-      if (enabled.disabled || currentId !== getPropertyId()) return;
-      const revision = version, id = currentId, requested = enabled.checked; enabled.disabled = true;
-      try {
-        const data = await api(`/api/ai-controls?${new URLSearchParams({ propertyId: id })}`, { method: "PUT", body: JSON.stringify({ aiEnabled: requested }) });
-        if (!current(revision, id)) return;
-        if (data.propertyId !== id) throw new Error("旅宿已切換，請重新整理。");
-        savedEnabled = data.aiEnabled; enabled.checked = savedEnabled; totals.render(data); message.textContent = "已儲存 AI 自動回覆設定。";
-      } catch (error) { if (current(revision, id)) { enabled.checked = savedEnabled; message.textContent = error.message || "儲存失敗，請重試。"; } }
-      finally { if (current(revision, id)) enabled.disabled = false; }
+    enabled.onchange=async()=>{
+      if(enabled.disabled||currentId!==getPropertyId())return;const revision=version,id=currentId,requested=enabled.checked;enabled.disabled=true;writesInFlight++;refresh.disabled=true;
+      try{const data=await api(`/api/ai-controls?${new URLSearchParams({propertyId:id})}`,{method:"PUT",body:JSON.stringify({aiEnabled:requested})});
+        if(!current(revision,id))return;if(data.propertyId!==id)throw Error("旅宿已切換，請重新整理。");savedEnabled=data.aiEnabled;totals.render(data);message.textContent="已儲存 AI 自動回覆設定。";
+      }catch(error){if(current(revision,id))message.textContent=error.message||"儲存失敗，請重試。";}
+      finally{writesInFlight--;refresh.disabled=writesInFlight>0;if(current(revision,id)){renderSwitch();enabled.disabled=false;}}
     };
-    conversation.onchange = async () => {
-      const guestRevision = ++guestVersion, revision = version, id = currentId;
-      handoff.disabled = true; message.textContent = "";
-      const guest = conversation.value === "" ? null : items[Number(conversation.value)]; if (!guest || !current(revision, id)) return;
-      try {
-        const query = new URLSearchParams({ propertyId: id, channelId: guest.channelId, userId: guest.userId });
-        const data = await api(`/api/ai-controls/conversations?${query}`);
-        if (!current(revision, id) || guestRevision !== guestVersion) return;
-        human = data.humanControlled; handoff.textContent = human ? "恢復 AI" : "轉人工"; handoff.disabled = false;
-      } catch (error) { if (current(revision, id) && guestRevision === guestVersion) message.textContent = error.message || "載入失敗，請重試。"; }
+    function renderHistory(){
+      history.replaceChildren();
+      for(const item of historyItems){
+        const turn=node(host,"article");turn.className="ai-turn";
+        const guest=node(host,"div");guest.className="ai-bubble ai-bubble-guest";guest.append(node(host,"strong",item.recordKind==="review"?"系統覆核紀錄（關聯客人訊息）":"客人訊息"),node(host,"p",item.guestMessage||"（未保存文字內容）"),node(host,"small",time(item.createdAt)));turn.append(guest);
+        if(item.replyText){const reply=node(host,"div");reply.className="ai-bubble ai-bubble-reply";reply.append(node(host,"strong",item.replyDelivered?"AI 回覆":"系統保存回覆（未確認送出）"),node(host,"p",item.replyText),node(host,"small",item.replyAt?time(item.replyAt):"回覆時間未保存"));turn.append(reply);}
+        else if(item.recordKind!=="review")turn.append(node(host,"p",item.processingStatus==="processing"?"處理中":"此則無已保存回覆"));
+        history.append(turn);
+      }
+      if(!historyItems.length)history.append(node(host,"p","目前沒有已保存訊息"));older.hidden=!nextCursor;
+    }
+    async function openGuest(guest){
+      resetDetail();selected=guest;const revision=version,id=currentId,gv=guestVersion,controlRevision=guest.controlRevision||0;title.textContent=identity(guest);state.textContent="載入中…";handoff.disabled=true;renderList();message.textContent="";
+      try{const query=new URLSearchParams({propertyId:id,channelId:guest.channelId,userId:guest.userId});
+        const [control,page]=await Promise.all([api(`/api/ai-controls/conversations?${query}`),api(`/api/ai-controls/history?${query}`)]);
+        if(!current(revision,id)||gv!==guestVersion)return;if((guest.controlRevision||0)===controlRevision)guest.humanControlled=control.humanControlled;historyItems=page.items;nextCursor=page.nextCursor;renderState();renderList();renderHistory();
+      }catch(error){if(current(revision,id)&&gv===guestVersion){state.textContent="狀態載入失敗";message.textContent=error.message;}}
+    }
+    older.onclick=async()=>{
+      if(!selected||!nextCursor||busyHistory)return;const revision=version,id=currentId,gv=guestVersion,guest=selected;busyHistory=true;older.disabled=true;
+      try{const query=new URLSearchParams({propertyId:id,channelId:guest.channelId,userId:guest.userId,before:nextCursor});const page=await api(`/api/ai-controls/history?${query}`);
+        if(!current(revision,id)||gv!==guestVersion)return;historyItems=[...page.items,...historyItems];nextCursor=page.nextCursor;renderHistory();
+      }catch(error){if(current(revision,id)&&gv===guestVersion)message.textContent=error.message;}
+      finally{if(current(revision,id)&&gv===guestVersion){busyHistory=false;older.disabled=false;}}
     };
-    handoff.onclick = async () => {
-      const guest = conversation.value === "" ? null : items[Number(conversation.value)], revision = version, guestRevision = guestVersion, id = currentId;
-      if (handoff.disabled || !guest || !current(revision, id)) return;
-      handoff.disabled = true; conversation.disabled = true;
-      try {
-        const data = await api(`/api/ai-controls/conversations?${new URLSearchParams({ propertyId: id })}`, { method: "PUT", body: JSON.stringify({ channelId: guest.channelId, userId: guest.userId, humanControlled: !human }) });
-        if (!current(revision, id) || guestRevision !== guestVersion) return;
-        human = data.humanControlled; handoff.textContent = human ? "恢復 AI" : "轉人工";
-        message.textContent = human ? "此對話已轉人工。" : "此對話已恢復 AI；仍依旅宿開關與額度決定是否回覆。";
-      } catch (error) { if (current(revision, id) && guestRevision === guestVersion) message.textContent = error.message || "儲存失敗，請重試。"; }
-      finally { if (current(revision, id) && guestRevision === guestVersion) { handoff.disabled = false; conversation.disabled = false; } }
-    };
-    refresh.onclick = load;
-    return { load, clear };
+    async function toggleGuest(guest){
+      const revision=version,id=currentId;if(guest.busy||!current(revision,id))return;guest.busy=true;guest.controlRevision=(guest.controlRevision||0)+1;writesInFlight++;refresh.disabled=true;renderList();renderState();
+      try{const data=await api(`/api/ai-controls/conversations?${new URLSearchParams({propertyId:id})}`,{method:"PUT",body:JSON.stringify({channelId:guest.channelId,userId:guest.userId,humanControlled:!guest.humanControlled})});
+        if(!current(revision,id))return;guest.humanControlled=data.humanControlled;message.textContent=guest.humanControlled?"此對話已轉人工。":"此對話已恢復 AI；仍依總開關與額度決定是否回覆。";
+      }catch(error){if(current(revision,id))message.textContent=error.message||"儲存失敗，請重試。";}
+      finally{writesInFlight--;refresh.disabled=writesInFlight>0;if(current(revision,id)){guest.controlRevision++;guest.busy=false;renderList();renderState();}}
+    }
+    handoff.onclick=()=>!handoff.disabled&&selected?toggleGuest(selected):undefined;refresh.onclick=load;
+    return {load,clear};
   }
   function createPlatform(host) {
     host.append(node(host, "h2", "每月 AI 額度"));

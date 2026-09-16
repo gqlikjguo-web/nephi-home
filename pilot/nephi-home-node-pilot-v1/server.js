@@ -842,7 +842,7 @@ function createRequestHandler(service, options = {}) {
         return sendData(response, { status: "ready", testOnly: testOnlyEnvironment, commit: deploymentCommit, deployment: deploymentIdentity });
       }
       if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
-      if (["/api/ai-controls", "/api/ai-controls/conversations", "/api/platform/ai-controls"].includes(pathname)) {
+      if (["/api/ai-controls", "/api/ai-controls/conversations", "/api/ai-controls/usage", "/api/ai-controls/history", "/api/platform/ai-controls"].includes(pathname)) {
         const token = cookieValue(request, "nephi_admin_session");
         const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
         const platform = Boolean(session && onboarding && await onboarding.isPlatformAdmin(session));
