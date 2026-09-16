@@ -1,0 +1,12 @@
+/* Shared presentation only: native checked values remain the form authority. */
+label.admin-control-row,label.admin-choice-row,label.admin-confirmation-row{display:flex;align-items:center;gap:14px;min-height:48px;padding:12px 16px;margin:10px 0;border:1px solid #cbded1;border-radius:12px;background:#f8fbf9;cursor:pointer;box-sizing:border-box;overflow-wrap:anywhere}
+label.admin-control-row{justify-content:space-between;font-weight:700}
+label.admin-choice-row:has(input:checked),label.admin-confirmation-row:has(input:checked){background:#e5f0e8;border-color:#49825c}
+label.admin-confirmation-row{background:#fff8e9;font-weight:650}
+label.admin-choice-row input[type=checkbox],label.admin-confirmation-row input[type=checkbox]{width:26px;height:26px;min-width:26px;flex-shrink:0;order:-1;margin:0;accent-color:#22633e;cursor:pointer}
+input.admin-toggle{appearance:none;cursor:pointer;width:64px;height:36px;min-width:64px;flex-shrink:0;padding:3px;border:0;border-radius:30px;background:#6b756f;position:relative;margin:0;box-sizing:border-box;transition:background .15s}
+input.admin-toggle:before{content:"";display:block;width:30px;height:30px;background:white;border-radius:50%;box-shadow:0 1px 4px #0003;transition:transform .15s}
+input.admin-toggle:checked{background:#22633e}
+input.admin-toggle:checked:before{transform:translateX(28px)}
+input.admin-toggle:disabled{opacity:.5;cursor:wait}
+.admin-control-row:focus-within,.admin-choice-row:focus-within,.admin-confirmation-row:focus-within,input.admin-toggle:focus-visible{outline:3px solid #bc8b32;outline-offset:3px}

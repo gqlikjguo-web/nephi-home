@@ -8,7 +8,7 @@ const RoomCompositionEditor = (() => {
     const status = node('p'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
     const form = node('form'), inputs = node('fieldset'), roomList = node('div'), bundlesList = node('div');
     const complete = node('input'); complete.type = 'checkbox'; complete.dataset.field = 'inventoryComplete';
-    const label = (text, input) => { const el = node('label', text); el.append(input); return el; };
+    const label = (text, input) => { const el = node('label', text); if (input.type === 'checkbox') el.className = input.dataset.field === 'member' ? 'admin-choice-row' : 'admin-confirmation-row'; el.append(input); return el; };
     let scope = null, generation = 0, draft = null, types = [], bundles = [], busy = false, conflict = false;
     const add = button('新增實體房間', 'add', () => {
       if (!editable() || draft.physicalRooms.length >= 10000) return;
@@ -17,7 +17,7 @@ const RoomCompositionEditor = (() => {
     });
     const reload = button('重新載入', 'reload', () => load());
     const save = button('儲存房間組成', 'save', () => submit());
-    inputs.append(label('已完整登錄所有實體房間', complete), roomList, add, node('h3', '包棟包含的實體房間'), bundlesList);
+    inputs.append(label('我確認以上已包含所有實體房間', complete), roomList, add, node('h3', '包棟包含的實體房間'), bundlesList);
     form.append(inputs, save, reload);
     form.onsubmit = event => { event.preventDefault(); return submit(); };
     host.append(node('h2', '房間組成'), node('p', '請逐間登錄實際房間，並選擇所屬房型。房型不是房數；只有確認資料完整後才勾選完整登錄。刪除房間也會移除其包棟成員關聯。'), form, status);
@@ -58,7 +58,7 @@ const RoomCompositionEditor = (() => {
         }
         const confirmed = node('input'); confirmed.type = 'checkbox'; confirmed.checked = item?.complete === true; confirmed.dataset.field = 'bundleComplete';
         confirmed.onchange = () => { if (editable()) edit().complete = confirmed.checked; };
-        group.append(label('已完整登錄此包棟包含的房間', confirmed)); bundlesList.append(group);
+        group.append(label('我確認已完整登錄此包棟包含的所有房間', confirmed)); bundlesList.append(group);
       }
       if (!bundles.length) bundlesList.append(node('p', '目前沒有包棟方案。請先在包棟設定建立方案。'));
     }

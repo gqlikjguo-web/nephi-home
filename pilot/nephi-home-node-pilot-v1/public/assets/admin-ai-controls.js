@@ -12,15 +12,28 @@ const AiControls = (() => {
     if (field) result.dataset.field = field;
     return result;
   }
-  function summary(host) {
-    const period = node(host, "p", "", "period"), usage = node(host, "p", "", "usage"), status = node(host, "p", "", "quotaStatus");
+  function summary(host, cards = false) {
+    const period = node(host, "p", "", "period"), usage = node(host, cards ? "div" : "p", "", "usage"), status = node(host, "p", "", "quotaStatus");
     status.setAttribute("role", "status");
-    host.append(period, usage, status);
+    const progress = cards ? node(host, "progress", undefined, "quotaProgress") : null;
+    if (cards) usage.className = "ai-quota-cards";
+    host.append(period, usage);
+    if (progress) { progress.hidden = true; progress.setAttribute("aria-label", "本月訊息額度使用進度"); host.append(progress); }
+    host.append(status);
     return {
-      clear() { period.textContent = ""; usage.textContent = ""; status.textContent = ""; },
+      clear() { period.textContent = ""; usage.replaceChildren(); usage.textContent = ""; status.textContent = ""; if (progress) progress.hidden = true; },
       render(data) {
         period.textContent = `計費月份：${data.period}`;
-        usage.textContent = `本月已用 ${data.used} 則／額度 ${data.monthlyLimit === null ? "未設定" : data.monthlyLimit} 則／剩餘 ${data.remaining === null ? "未設定" : data.remaining} 則`;
+        if (cards) {
+          usage.replaceChildren(...[["本月已用", data.used], ["本月上限", data.monthlyLimit], ["剩餘額度", data.remaining]].map(([label, value]) => {
+            const card = node(host, "div"); card.className = "ai-quota-card";
+            card.append(node(host, "span", label), node(host, "strong", value === null ? "未設定" : `${value} 則`)); return card;
+          }));
+          progress.hidden = data.monthlyLimit === null;
+          progress.max = data.monthlyLimit > 0 ? data.monthlyLimit : 1;
+          progress.value = data.monthlyLimit === 0 ? 1 : Math.min(data.used, progress.max);
+          progress.setAttribute("aria-valuetext", data.monthlyLimit === null ? "額度未設定" : `已用 ${data.used}／上限 ${data.monthlyLimit} 則`);
+        } else usage.textContent = `本月已用 ${data.used} 則／額度 ${data.monthlyLimit === null ? "未設定" : data.monthlyLimit} 則／剩餘 ${data.remaining === null ? "未設定" : data.remaining} 則`;
         status.textContent = data.monthlyLimit === null ? "額度未設定" : data.remaining === 0 ? "額度已用完，AI 自動回覆已暫停" : data.used >= data.monthlyLimit * .9 ? "本月額度已使用 90% 以上" : data.used >= data.monthlyLimit * .8 ? "本月額度已使用 80% 以上" : "本月額度正常";
       }
     };
@@ -28,36 +41,37 @@ const AiControls = (() => {
   function createOperator(host, { getPropertyId }) {
     const heading=node(host,"div"), switchBox=node(host,"div"), enabled=node(host,"input",undefined,"aiEnabled"), label=node(host,"label","AI 自動回覆：載入中","switchLabel");
     heading.className="ai-heading"; switchBox.className="ai-switch-box";
-    enabled.type="checkbox"; enabled.disabled=true; enabled.className="ai-master-toggle";
+    enabled.type="checkbox"; enabled.disabled=true; enabled.className="ai-master-toggle admin-toggle";
     enabled.setAttribute("role","switch"); enabled.setAttribute("aria-label","AI 自動回覆");
     switchBox.append(label,enabled);heading.append(node(host,"h2","AI 回覆管理"),switchBox);host.append(heading);
-    const totals=summary(host), usageWindow=node(host,"p","","usageWindow");host.append(usageWindow);
+    const totals=summary(host,true), usageWindow=node(host,"div","","usageWindow");usageWindow.className="ai-usage-windows";host.append(usageWindow);
+    const usageNote=node(host,"p","台灣時間；依正式訊息扣額紀錄顯示，非 Luna 呼叫次數。");usageNote.className="ai-quota-note";host.append(usageNote);
     const refresh=node(host,"button","重新整理","refresh"),message=node(host,"p","","message");
     refresh.type="button";message.setAttribute("role","status");message.setAttribute("aria-live","polite");host.append(refresh,message);
     const layout=node(host,"div"),list=node(host,"div",undefined,"conversation"),detail=node(host,"section");
     layout.className="ai-conversation-layout";list.className="ai-conversation-list";detail.className="ai-conversation-detail";
     list.setAttribute("aria-label","客人對話列表");detail.setAttribute("aria-label","已保存對話");
     const detailHeader=node(host,"div"),title=node(host,"h3","請選擇客人對話","guestTitle"),state=node(host,"p","","guestState"),handoff=node(host,"button","轉人工","handoff"),older=node(host,"button","載入較早訊息","older"),history=node(host,"div",undefined,"history");
-    detailHeader.className="ai-detail-header";history.className="ai-history";handoff.type=older.type="button";handoff.disabled=true;older.hidden=true;
+    detailHeader.className="ai-detail-header";history.className="ai-history";handoff.type=older.type="button";handoff.disabled=true;handoff.hidden=true;older.hidden=true;
     detailHeader.append(title,state,handoff);detail.append(detailHeader,older,history);layout.append(list,detail);host.append(layout);
     let version=0,guestVersion=0,currentId=null,savedEnabled=false,items=[],selected=null,nextCursor=null,historyItems=[],busyHistory=false,writesInFlight=0;
     const current=(revision,id)=>revision===version&&id===currentId&&id===getPropertyId();
     const time=value=>{const date=new Date(value);return value&&Number.isFinite(date.getTime())?date.toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}):"時間未提供";};
     const identity=guest=>`${String(guest.displayName||"客人對話").slice(0,40)}（${guest.userId.slice(-8)}）`;
     function renderSwitch(){enabled.checked=savedEnabled;enabled.setAttribute("aria-checked",String(savedEnabled));label.textContent=`AI 自動回覆：${savedEnabled?"開啟":"關閉"}`;}
-    function renderState(){state.textContent=selected?(selected.humanControlled?"人工接管中":"AI 回覆中"):"";handoff.textContent=selected?.humanControlled?"恢復 AI":"轉人工";handoff.disabled=!selected||Boolean(selected.busy);}
+    function renderState(){state.textContent=selected?(selected.humanControlled?"人工接管中":"AI 回覆中"):"";handoff.textContent=selected?.humanControlled?"恢復 AI":"轉人工";handoff.hidden=!selected;handoff.disabled=!selected||Boolean(selected.busy);}
     function renderList(){
       list.replaceChildren();
       if(!items.length){list.append(node(host,"p","目前沒有已保存的客人對話"));return;}
       items.forEach(guest=>{
-        const row=node(host,"article"),open=node(host,"button",identity(guest),"guestOpen"),badge=node(host,"span",guest.humanControlled?"人工接管中":"AI 回覆中"),preview=node(host,"p",guest.messagePreview?String(guest.messagePreview).slice(0,80):"尚無文字訊息摘要"),at=node(host,"p",time(guest.lastMessageAt)),action=node(host,"button",guest.humanControlled?"恢復 AI":"轉人工","rowHandoff");
-        row.className="ai-guest-row";open.type=action.type="button";open.className="ai-guest-open";badge.className="ai-guest-state";at.className="ai-message-time";
-        open.setAttribute("aria-pressed",String(selected===guest));action.disabled=Boolean(guest.busy);
-        open.onclick=()=>openGuest(guest);action.onclick=()=>toggleGuest(guest);row.append(open,badge,preview,at,action);list.append(row);
+        const row=node(host,"article"),open=node(host,"button",identity(guest),"guestOpen"),badge=node(host,"span",guest.humanControlled?"人工接管中":"AI 回覆中"),preview=node(host,"p",guest.messagePreview?String(guest.messagePreview).slice(0,80):"尚無文字訊息摘要"),at=node(host,"p",time(guest.lastMessageAt));
+        row.className="ai-guest-row";open.type="button";open.className="ai-guest-open";badge.className="ai-guest-state";at.className="ai-message-time";preview.className="ai-guest-preview";
+        open.setAttribute("aria-pressed",String(selected===guest));
+        open.onclick=()=>openGuest(guest);row.append(open,badge,preview,at);list.append(row);
       });
     }
     function resetDetail(){guestVersion++;selected=null;nextCursor=null;historyItems=[];busyHistory=false;title.textContent="請選擇客人對話";history.replaceChildren();older.hidden=true;older.disabled=false;renderState();}
-    function clear(){version++;currentId=null;items=[];enabled.disabled=true;enabled.checked=false;enabled.setAttribute("aria-checked","false");label.textContent="AI 自動回覆：尚未載入";list.replaceChildren();totals.clear();usageWindow.textContent="";message.textContent="";resetDetail();}
+    function clear(){version++;currentId=null;items=[];enabled.disabled=true;enabled.checked=false;enabled.setAttribute("aria-checked","false");label.textContent="AI 自動回覆：尚未載入";list.replaceChildren();totals.clear();usageWindow.replaceChildren();message.textContent="";resetDetail();}
     async function load(){
       if(writesInFlight&&currentId===getPropertyId())return;
       clear();const id=getPropertyId();if(!id)return;currentId=id;const revision=version;message.textContent="載入中…";
@@ -66,7 +80,9 @@ const AiControls = (() => {
         const [data,conversations,usage]=await Promise.all([api(`/api/ai-controls?${query}`),api(`/api/ai-controls/conversations?${query}`),api(`/api/ai-controls/usage?${query}`)]);
         if(!current(revision,id))return;if(data.propertyId!==id)throw Error("旅宿已切換，請重新整理。");
         savedEnabled=data.aiEnabled;renderSwitch();enabled.disabled=false;totals.render(data);
-        usageWindow.textContent=`今日 ${usage.day}：${usage.today} 則 · 本週（週一起 ${usage.weekStart}）：${usage.week} 則 · 本月：${data.used} 則（台灣時間；訊息扣額，非 Luna calls）`;
+        usageWindow.replaceChildren(...[["今日",usage.today,usage.day,"usageToday"],["本週",usage.week,`週一起 ${usage.weekStart}`,"usageWeek"],["本月",data.used,data.period,"usageMonth"]].map(([label,value,period,field])=>{
+          const card=node(host,"div",undefined,field);card.className="ai-usage-card";card.append(node(host,"span",label),node(host,"strong",`${value} 則`),node(host,"small",period));return card;
+        }));
         items=(conversations.items||[]).filter(g=>typeof g.channelId==="string"&&g.channelId&&typeof g.userId==="string"&&g.userId).map(g=>({...g,humanControlled:g.humanControlled===true}));renderList();message.textContent="";
       }catch(error){if(current(revision,id))message.textContent=error.message||"載入失敗，請重新整理。";}
     }
