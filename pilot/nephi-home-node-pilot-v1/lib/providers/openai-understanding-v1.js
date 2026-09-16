@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { beforeCommercialAttempt, finishCommercialAttempt, isCommercialError } = require("../commercial-ai-gate");
 const { createLatencyClock } = require("../new-core/understanding-latency");
 const { CAPABILITY_REGISTRY } = require("../conversation-engine-v2/capability-registry");
 const {
@@ -635,6 +636,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
   let parsedOutputPresent = false;
   let resolvedModel = "";
   let usageAccounting = usageAccountingFor(null, understandingTurnInput.propertyScope.propertyId);
+  let commercialTicket = null;
   try {
     const generatedId = String(requestIdFactory() || "");
     const clientRequestId = UUID_PATTERN.test(generatedId) ? generatedId : crypto.randomUUID();
@@ -648,6 +650,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
       signal: controller.signal,
       body: JSON.stringify(providerRequestBody(understandingTurnInput, correction))
     };
+    commercialTicket = await beforeCommercialAttempt(understandingTurnInput, attemptNumber, apiKey);
     onRequest(attemptNumber);
     latency.enter("openai");
     const response = await fetchImpl(RESPONSES_URL, requestOptions);
@@ -659,6 +662,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
     const read = await readProviderPayload(response);
     latency.enter("validation");
     usageAccounting = usageAccountingFor(read.payload, understandingTurnInput.propertyScope.propertyId) || usageAccounting;
+    await finishCommercialAttempt(commercialTicket, usageAccounting.usage, response.ok ? "response" : "http_error");
     responseBodyPresent = read.bodyPresent;
     if (!response || !response.ok) throw httpFailure(httpStatus, read.payload);
     if (read.parseFailed || !read.bodyPresent) {
@@ -690,6 +694,8 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
       throw error;
     }
   } catch (caught) {
+    if (isCommercialError(caught)) throw caught;
+    await finishCommercialAttempt(commercialTicket, usageAccounting.usage, "transport_error");
     let error = caught;
     if (!error || typeof error !== "object" || error[INTERNAL_PROVIDER_FAILURE] !== true) {
       error = caught && caught.name === "AbortError"
@@ -1133,6 +1139,7 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
       value = admitUnderstandingValue(output, understandingTurnInput, { ...options, onOperationalDiagnostic: entry => { operational.push(entry); emitOperational(options, entry); } }, attempts, traceEmitter, nowMs);
       failureReport = { output, failures: value.failedUnits.map(failure => correctionUnitFailure(failure, output, understandingTurnInput, operational)) };
     } catch (error) {
+      if (isCommercialError(error)) throw error;
       caught = error;
       if (error.providerAttempt) emit(traceEmitter, understandingTurnInput, {
         boundary: "C02", unitIds: [], outputUnitIds: [], status: "FAILURE", code: error.code,

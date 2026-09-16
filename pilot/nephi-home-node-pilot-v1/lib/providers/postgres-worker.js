@@ -96,6 +96,11 @@ async function loadAdminSession(tokenHash){const r=await client.query("SELECT to
 
 async function operation(name, args) {
   if (name === "ready") return true;
+  if (name === "commercial_listConversations") {
+    const result = await client.query("SELECT * FROM (SELECT DISTINCT ON(channel_id,line_user_id) channel_id,line_user_id,created_at,left(COALESCE(payload->>'guestMessage',''),80) AS preview FROM message_logs WHERE property_id=$1 AND channel_id<>'' AND line_user_id<>'' ORDER BY channel_id,line_user_id,created_at DESC,review_id DESC) conversations ORDER BY created_at DESC,channel_id,line_user_id", [args[0]]);
+    return result.rows.map(row => ({channelId:row.channel_id,userId:row.line_user_id,messagePreview:row.preview,lastMessageAt:iso(row.created_at)}));
+  }
+  if (name.startsWith("commercial_")) return require("./commercial-ai-store").commercialOperation(client, name.slice(11), args);
   if(name==="createNewCoreTestSession"){
     const x=args[0],r=await client.query("INSERT INTO new_core_test_sessions(test_session_id,property_id,owner_id,generation,state_v3,created_at,updated_at) VALUES($1,$2,$3,$4,$5::jsonb,$6,$7) RETURNING *",[x.testSessionId,x.propertyId,x.ownerId,x.generation,JSON.stringify(x.state),x.createdAt,x.updatedAt]),row=r.rows[0];
     return{testSessionId:row.test_session_id,propertyId:row.property_id,ownerId:row.owner_id,generation:row.generation,state:row.state_v3,createdAt:new Date(row.created_at).toISOString(),updatedAt:new Date(row.updated_at).toISOString()};

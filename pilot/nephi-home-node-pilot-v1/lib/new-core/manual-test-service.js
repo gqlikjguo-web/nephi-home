@@ -256,7 +256,7 @@ async function executeNewCoreManualTurn(args) {
   };
 }
 
-function createNewCoreManualTestService({ persistence, providers, service, factsProviders = providers, factsService = service, apiKey, publicBaseUrl = "", now = () => new Date(), executeTurn = executeNewCoreManualTurn } = {}) {
+function createNewCoreManualTestService({ persistence, providers, service, factsProviders = providers, factsService = service, apiKey, publicBaseUrl = "", now = () => new Date(), executeTurn = executeNewCoreManualTurn, commercialController = null } = {}) {
   const repository = new NewCoreManualTestRepository({ persistence, now });
   const resolver = { availability: (query) => factsService.searchAvailability(query), availableDates: (query) => factsService.searchAvailableDates(query), priceOverrides: () => factsProviders.customerSettings.listInventoryPriceOverrides(PROPERTY_ID), dateClassifications: () => factsProviders.customerSettings.listDatePriceClassifications(PROPERTY_ID), customReplies: () => factsProviders.customReplies ? factsProviders.customReplies.list(PROPERTY_ID) : [] };
   function scopeFor(id) { return { propertyId: PROPERTY_ID, channel: CHANNEL, userId: userIdFor(id) }; }
@@ -273,7 +273,10 @@ function createNewCoreManualTestService({ persistence, providers, service, facts
     const property = factsProviders.customerSettings.getProperty(PROPERTY_ID); if (!property) { const error = new Error("property_not_found"); error.code = "PROPERTY_NOT_FOUND"; throw error; }
     let result; const sideEffectGuard = createSideEffectGuard();
     try {
-      result = await executeTurn({ input: { turnId, traceId, message, recentConversation }, state: current.state, property, resolver, providerConfig: { apiKey }, publicBaseUrl, sideEffectGuard, now: timestamp });
+      const execute = () => executeTurn({ input: { turnId, traceId, message, recentConversation }, state: current.state, property, resolver, providerConfig: { apiKey }, publicBaseUrl, sideEffectGuard, now: timestamp });
+      result = commercialController ? await commercialController.runManual({propertyId:current.propertyId,
+        channelId:current.state.scope.channel,userId:current.state.scope.userId,turnId,eventIds:[turnId],
+        testSessionId:current.testSessionId,ownerId:current.ownerId}, execute) : await execute();
     } catch (error) {
       const failureCode = /^[A-Z][A-Z0-9_]{1,79}$/.test(String(error && error.code || "")) ? error.code : "NEW_CORE_RUNTIME_FAILURE";
       const finalDecision = buildFinalDecision({ plannerFailure: failureCode });

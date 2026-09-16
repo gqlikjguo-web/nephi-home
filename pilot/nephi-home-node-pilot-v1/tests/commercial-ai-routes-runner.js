@@ -1,0 +1,23 @@
+"use strict";
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const file=require('node:path').join(__dirname,'../lib/commercial-ai-routes.js');
+const route=fs.existsSync(file)?require(file).commercialAiRoute:null;
+assert.equal(typeof route,'function','commercial operator/platform routes must enforce distinct authority');
+const calls=[],store={getStatus:async id=>({propertyId:id,monthlyLimit:10}),setLimit:async(...a)=>{calls.push(['limit',...a]);return{};},setAiEnabled:async(...a)=>{calls.push(['switch',...a]);return{};},listConversations:async id=>id==='a'?[{channelId:'line-a',userId:'guest-a'}]:[],getHandoff:async()=>({humanControlled:false}),setHandoff:async(...a)=>{calls.push(['handoff',...a]);return{};}};
+const base={path:'/api/ai-controls',method:'GET',body:{},query:new URLSearchParams(),session:{propertyId:'a'},platform:false,store};
+(async()=>{
+ assert.equal((await route(base)).propertyId,'a');
+ await assert.rejects(()=>route({...base,session:null}),e=>e.status===401);
+ await assert.rejects(()=>route({...base,session:{propertyId:'a',properties:[{propertyId:'b'}]},method:'PUT',body:{aiEnabled:false}}),e=>e.status===403);
+ await assert.rejects(()=>route({...base,query:new URLSearchParams({propertyId:'b'})}),e=>e.status===403);
+ await assert.rejects(()=>route({...base,method:'PUT',body:{monthlyLimit:1000}}),e=>e.status===403);
+ await assert.rejects(()=>route({...base,path:'/api/platform/ai-controls',method:'PUT',body:{propertyId:'b',monthlyLimit:100}}),e=>e.status===403);
+ await route({...base,path:'/api/platform/ai-controls',method:'PUT',platform:true,body:{propertyId:'b',monthlyLimit:0}});
+ assert.deepEqual(calls.pop(),['limit','b',0]);
+ await route({...base,method:'PUT',body:{aiEnabled:false}});assert.deepEqual(calls.pop(),['switch','a',false]);
+ await assert.rejects(()=>route({...base,method:'PUT',body:{aiEnabled:'false'}}),e=>e.status===400);
+ await assert.rejects(()=>route({...base,path:'/api/ai-controls/conversations',method:'PUT',body:{channelId:'line-b',userId:'guest-b',humanControlled:true}}),e=>e.status===404);
+ await route({...base,path:'/api/ai-controls/conversations',method:'PUT',body:{channelId:'line-a',userId:'guest-a',humanControlled:true}});assert.deepEqual(calls.pop(),['handoff','a','line-a','guest-a',true]);
+ await assert.rejects(()=>route({...base,store:null}),e=>e.status===503);
+ assert.equal(calls.length,0);console.log('PASS commercial route authority/property/guest scope/types/fail-closed');
+})().catch(e=>{console.error(e);process.exitCode=1;});

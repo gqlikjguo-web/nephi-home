@@ -842,6 +842,15 @@ function createRequestHandler(service, options = {}) {
         return sendData(response, { status: "ready", testOnly: testOnlyEnvironment, commit: deploymentCommit, deployment: deploymentIdentity });
       }
       if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
+      if (["/api/ai-controls", "/api/ai-controls/conversations", "/api/platform/ai-controls"].includes(pathname)) {
+        const token = cookieValue(request, "nephi_admin_session");
+        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        const platform = Boolean(session && onboarding && await onboarding.isPlatformAdmin(session));
+        const data = await require("./lib/commercial-ai-routes").commercialAiRoute({path:pathname,method:request.method,
+          body:request.method === "GET" ? {} : await readJsonBody(request),query:url.searchParams,
+          session,platform,store:options.commercialStore});
+        return sendData(response, data);
+      }
       if (pathname === "/admin/new-core-test" && request.method === "GET") {
         if (!newCoreManualTest) throw new AppError(503, "NEW_CORE_MANUAL_TEST_FACTS_AUTHORITY_REQUIRED", "新核心人工測試缺少正式唯讀資料來源");
         await authorizeNewCoreManualTest(request);
@@ -1143,7 +1152,7 @@ function createRequestHandler(service, options = {}) {
       if (request.method === "POST" && pathname === "/api/custom-replies/test") {
         const body = request.adminBody || await readJsonBody(request);
         if (typeof customReplyTestHandler !== "function") throw new AppError(503, "CUSTOM_REPLY_TEST_UNAVAILABLE", "Custom reply testing is unavailable");
-        return sendData(response, await customReplyTestHandler(body));
+        return sendData(response, await customReplyTestHandler(body, { adminSessionHash: adminSession ? sessionTokenHash(cookieValue(request, "nephi_admin_session")) : null }));
       }
       const customReplyMatch = /^\/api\/custom-replies\/([^/]+)(?:\/(enabled))?$/.exec(pathname);
       if (customReplyMatch && request.method === "PUT" && !customReplyMatch[2]) {
@@ -1416,7 +1425,10 @@ function createApp(options = {}) {
   const captureSafeTrace = (entry) => { try { testOnlyLineMessageTrace.diagnostic(entry); const safe = formatSafeTestOnlyConversationTrace(entry); logSafeTestOnlyConversationTrace(entry); if (safe && safe.traceId) { const list = acceptanceTraces.get(safe.traceId) || []; list.push(safe); acceptanceTraces.set(safe.traceId, list.slice(-40)); } } catch { /* diagnostics must never affect production behavior */ } };
   const newCoreLineEnabled = options.enableProductionLineEngine === true
     || (testOnlyEnvironment && String(runtimeEnv.NEW_CORE_LINE_CANDIDATE_ENABLED || "").trim().toLowerCase() === "true");
-  const newCoreLineEngine = newCoreLineEnabled
+  const commercialController = providers.commercial
+    ? require("./lib/commercial-ai-gate").createCommercialAiController(providers.commercial,
+      {apiKeys:[runtimeEnv.OPENAI_API_KEY, runtimeEnv.OPENAI_TEST_API_KEY]}) : null;
+  const rawNewCoreLineEngine = newCoreLineEnabled
     ? createNewCoreProductionTurnAdapter({
       persistence: providers.persistence,
       customerSettings: providers.customerSettings,
@@ -1431,6 +1443,9 @@ function createApp(options = {}) {
       ...(typeof options.newCoreProductionExecuteTurn === "function" ? { executeTurn: options.newCoreProductionExecuteTurn } : {})
     })
     : null;
+  const newCoreLineEngine = rawNewCoreLineEngine && commercialController
+    ? {process:input => commercialController.run(input, () => rawNewCoreLineEngine.process(input))}
+    : rawNewCoreLineEngine;
   const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: testOnlyLineMessageTrace.active, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null, lineEngine: newCoreLineEngine });
   const manualTestFactsDatabaseUrl = String(runtimeEnv.NEW_CORE_MANUAL_TEST_FACTS_DATABASE_URL || "").trim();
   const ownedNewCoreManualTestFactsProviders = !options.newCoreManualTestFactsProviders && testOnlyEnvironment && manualTestFactsDatabaseUrl
@@ -1440,9 +1455,9 @@ function createApp(options = {}) {
     ? options.newCoreManualTestFactsService || (newCoreManualTestFactsProviders === providers ? service : createMvpService(newCoreManualTestFactsProviders, { now, safeTraceFormatter: formatSafeTestOnlyConversationTrace }))
     : null;
   const newCoreManualTest = newCoreManualTestFactsProviders
-    ? createNewCoreManualTestService({ persistence: providers.kind === "postgres" ? providers.persistence : null, providers, service, factsProviders: newCoreManualTestFactsProviders, factsService: newCoreManualTestFactsService, apiKey: String(runtimeEnv.OPENAI_API_KEY || ""), publicBaseUrl: publicBrand.publicBaseUrl, now, ...(typeof options.newCoreManualTestExecuteTurn === "function" ? { executeTurn: options.newCoreManualTestExecuteTurn } : {}) })
+    ? createNewCoreManualTestService({ commercialController, persistence: providers.kind === "postgres" ? providers.persistence : null, providers, service, factsProviders: newCoreManualTestFactsProviders, factsService: newCoreManualTestFactsService, apiKey: String(runtimeEnv.OPENAI_API_KEY || ""), publicBaseUrl: publicBrand.publicBaseUrl, now, ...(typeof options.newCoreManualTestExecuteTurn === "function" ? { executeTurn: options.newCoreManualTestExecuteTurn } : {}) })
     : null;
-  const customReplyTestHandler = async (body = {}) => {
+  const customReplyTestHandler = async (body = {}, trustedContext = {}) => {
     const propertyId = String(body.propertyId || body.customerId || "").trim();
     const ruleId = String(body.ruleId || "").trim();
     const messageText = String(body.messageText || "").trim();
@@ -1455,14 +1470,19 @@ function createApp(options = {}) {
     const eventId = `custom-reply-test:${nonce}`;
     let result;
     try {
-      result = await (newCoreLineEngine || root.engine).process({
+      const input = {
         customerId: propertyId,
         channelId,
         lineUserId,
         eventId,
         eventTimestamp: now().toISOString(),
         messageText
-      });
+      };
+      result = commercialController
+        ? await commercialController.runOperatorTest({ propertyId, channelId, userId: lineUserId,
+          turnId: eventId, eventIds: [eventId], adminSessionHash: trustedContext.adminSessionHash },
+          () => (rawNewCoreLineEngine || root.engine).process(input))
+        : await (newCoreLineEngine || root.engine).process(input);
     } finally {
       if (typeof providers.persistence.deleteConversationState === "function") {
         providers.persistence.deleteConversationState(propertyId, channelId, lineUserId);
@@ -1620,12 +1640,16 @@ function createApp(options = {}) {
           await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_failed", replyDelivered: false, deliveryErrorCode: Number.isFinite(status) && status > 0 ? `line_reply_http_error_${status}` : "line_reply_exception" });
           await persistTrace(); acceptanceTraces.delete(result.traceId);
         }
-      }).catch(async () => updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
+      }).catch(async (error) => updateEventStatus(id, input.channelId, input.eventId,
+        require("./lib/commercial-ai-gate").isCommercialError(error)
+          ? {processingStatus:"no_reply",shouldReply:false,noReply:true,replyDelivered:false,replyText:"",
+            decisionReason:error.reason,needsReview:error.reason === "ACCOUNTING_UNAVAILABLE",deliveryErrorCode:""}
+          : { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
-  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (typeof ownedNewCoreManualTestFactsProviders?.close === "function") await ownedNewCoreManualTestFactsProviders.close(); if (typeof providers.close === "function") await providers.close(); } };
+  const server = http.createServer(createRequestHandler(service, { commercialStore:providers.commercial, sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
+  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (commercialController) commercialController.close(); if (typeof ownedNewCoreManualTestFactsProviders?.close === "function") await ownedNewCoreManualTestFactsProviders.close(); if (typeof providers.close === "function") await providers.close(); } };
 }
 
 if (require.main === module) {

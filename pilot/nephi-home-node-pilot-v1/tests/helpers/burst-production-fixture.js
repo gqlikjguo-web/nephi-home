@@ -23,6 +23,8 @@ async function setup(name,{debounce=5,failSend=false,holdEvent=null,testOnly=fal
   for(const id of ['audit_a','audit_b']){await db.query('INSERT INTO properties(property_id,display_name) VALUES($1,$2)',[id,id]);await db.query('INSERT INTO property_settings(property_id,settings) VALUES($1,$2::jsonb)',[id,JSON.stringify({commonAnswers:{checkInTime:id==='audit_a'?'15:00':'16:00'}})]);}
   await db.close();providers=require(R+'/lib/providers/provider-factory').createProviders({databaseUrl:'pglite:audit',postgresConnection:connection});
  }else providers={kind:'json',...createJsonProviders({seedFile:seed,dataFile:dir+'/store.json'})};
+ // Isolated core-test precondition: configured AI quota; commercial gate cases override it explicitly.
+ if(providers.commercial)for(const property of providers.customerSettings.listProperties())providers.commercial.setLimit(property.propertyId,1000);
  const binding=attachPropertyScopedLineBinding({providers,propertyId:'audit_a'});
  const b=attachPropertyScopedLineBinding({providers,propertyId:'audit_b',encryptionKey:binding.lineBindingEnv.JUNZAN_LINE_CREDENTIAL_ENCRYPTION_KEY});
  const calls=[],sent=[],core=[];let release;const gate=new Promise(r=>release=r);
