@@ -285,7 +285,7 @@ function createNewCoreProductionTurnAdapter({
         const snapshot = turnStateSnapshot(previous, scope, timestamp);
         emitDiagnostic(onDiagnostic, { traceId, stage: "state_before", state: stateDiagnostic(previous), snapshot });
         let recentConversation = [];
-        if (typeof persistence.listRecentMessages === "function") {
+        if (useConversationContext && typeof persistence.listRecentMessages === "function") {
           const since = new Date(Date.parse(timestamp) - 24 * 60 * 60 * 1000).toISOString();
           recentConversation = bindProductionHistoryToCycles(
             persistence.listRecentMessages(propertyId, channel, userId, { limit: historyLimit, since }),

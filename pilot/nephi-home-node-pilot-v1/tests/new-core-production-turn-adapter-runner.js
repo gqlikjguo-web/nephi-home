@@ -30,14 +30,16 @@ function result(action, nextState) {
   };
 }
 
-function fixture({ executeTurn, providerConfig = { apiKey: "test-provider-key" }, diagnosticSink } = {}) {
+function fixture({ executeTurn, providerConfig = { apiKey: "test-provider-key" }, diagnosticSink, useConversationContext } = {}) {
   const stored = new Map();
   const writes = [];
   const historyCalls = [];
+  const stateReads = [];
   const resolverCalls = [];
   const diagnostics = [];
   const persistence = {
     getConversationState(propertyId, channelId, lineUserId) {
+      stateReads.push({ propertyId, channelId, lineUserId });
       return stored.get(`${propertyId}:${channelId}:${lineUserId}`) || null;
     },
     setConversationState(propertyId, channelId, lineUserId, value) {
@@ -74,9 +76,10 @@ function fixture({ executeTurn, providerConfig = { apiKey: "test-provider-key" }
     publicBaseUrl: "https://example.invalid",
     now: () => new Date(NOW),
     executeTurn
+    , useConversationContext
     , onDiagnostic: diagnosticSink || ((entry) => diagnostics.push(entry))
   });
-  return { adapter, stored, writes, historyCalls, resolverCalls, diagnostics };
+  return { adapter, stored, writes, historyCalls, stateReads, resolverCalls, diagnostics };
 }
 
 function input(overrides = {}) {
@@ -287,6 +290,7 @@ function input(overrides = {}) {
   assert.equal(seen[0].input.message, "guest message");
   assert.equal(seen[0].input.sourceEvents[0].eventId, "event-current");
   assert.equal(seen[0].input.recentConversation[0].eventId, "prior-event");
+  assert.equal(fx.historyCalls.length, 1, "context-enabled turns retain history preparation");
   assert.equal(fx.writes.length, 1, "next ConversationStateV3 must be persisted once");
   assert.deepEqual(fx.resolverCalls.map((item) => item.propertyId), ["property_a", "property_a", "property_a", "property_a"]);
   assert.ok(fx.diagnostics.some((entry) => entry.stage === "line_inbound"));
@@ -294,6 +298,30 @@ function input(overrides = {}) {
   assert.ok(fx.diagnostics.some((entry) => entry.stage === "new_core_final"));
   assert.equal(new Set(fx.diagnostics.map((entry) => entry.traceId)).size, 1,
     "one production turn must use one traceId across inbound, state, and result boundaries");
+
+  const independentSeen = [];
+  const independent = fixture({ useConversationContext: false, executeTurn: async (args) => {
+    independentSeen.push(args);
+    return result("reply", state(args.scope, args.state.revision + 1));
+  } });
+  const prior = state({ propertyId: "property_a", channel: "line-binding:abc", userId: "line-user-a" }, 7);
+  independent.stored.set("property_a:line-binding:abc:line-user-a", prior);
+  const independentAnswer = await independent.adapter.process(input());
+  assert.equal(independent.historyCalls.length, 0, "context-disabled turns must not read unused history");
+  assert.deepEqual(independentSeen[0].input.recentConversation, []);
+  assert.deepEqual(independent.stateReads, [{ propertyId: "property_a", channelId: "line-binding:abc", lineUserId: "line-user-a" }]);
+  assert.deepEqual(independentSeen[0].state, prior, "authoritative State must still reach the core");
+  assert.equal(independentSeen[0].property, PROPERTY_A);
+  assert.deepEqual(independentSeen[0].input.sourceEvents, seen[0].input.sourceEvents);
+  assert.equal(independent.writes.length, 1);
+  assert.equal(independent.writes[0].value.revision, 8);
+  const before = independent.diagnostics.find(entry => entry.stage === "state_before");
+  assert.equal(before.state.revision, 7);
+  assert.ok(before.snapshot, "snapshot and safety evidence must remain available");
+  assert.ok(independent.diagnostics.some(entry => entry.stage === "state_after" && entry.state.revision === 8));
+  assert.deepEqual(independentAnswer.finalDecision, answer.finalDecision);
+  assert.deepEqual(independentAnswer.finalResponse, answer.finalResponse);
+  assert.deepEqual(independentAnswer.requestCycleRefs, answer.requestCycleRefs);
 
   for (const action of ["clarification", "handoff", "no_reply"]) {
     const current = fixture({ executeTurn: async (args) => result(action, state(args.scope, args.state.revision + 1)) });
