@@ -8,6 +8,8 @@ Only the existing enabled binding and verified raw webhook signature authorize p
 
 An authenticated operator POST to `/api/ai-controls/profile` requires selected-property membership and an existing exact conversation tuple. Claimed property values can only reject a mismatch. Only the selected conversation triggers lookup; loading the list never fetches historical profiles in bulk.
 
+The authenticated conversation list may attach already-cached names to exact tuples in its existing property-scoped result. This read checks the current enabled binding, credential version and TTL; it performs no LINE request or write. Cache read failure preserves the original conversation list. Thus a valid name remains visible after refresh without historical profile recovery.
+
 The current enabled binding, channel hash and fingerprint must match the signed evidence. The same property-bound credential is decrypted. `GET /v2/bot/info` must identify the signed destination before `GET /v2/bot/profile/{userId}` is allowed. The returned userId must exactly match the target. Both requests have a 3-second timeout and forbid redirects. Unprovable legacy conversations retain their short identifier until a future valid direct-user webhook supplies evidence; no bulk backfill or inferred association is allowed.
 
 ## Storage and lifetime

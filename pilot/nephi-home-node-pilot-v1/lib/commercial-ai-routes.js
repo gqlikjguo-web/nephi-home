@@ -1,7 +1,7 @@
 "use strict";
 function failure(status,code){return Object.assign(new Error(code),{status,code});}
 function only(body,keys){if(Object.keys(body).some(k=>!keys.includes(k)))throw failure(400,'AI_CONTROL_FIELDS_INVALID');}
-async function commercialAiRoute({path,method,body={},query=new URLSearchParams(),session,platform,store}) {
+async function commercialAiRoute({path,method,body={},query=new URLSearchParams(),session,platform,store,profileService}) {
   if(!session)throw failure(401,'LOGIN_REQUIRED');
   if(!store)throw failure(503,'COMMERCIAL_STORAGE_REQUIRED');
   if(path==='/api/platform/ai-controls') {
@@ -33,7 +33,7 @@ async function commercialAiRoute({path,method,body={},query=new URLSearchParams(
   if(path==='/api/ai-controls/history'&&method!=='GET')throw failure(405,'METHOD_NOT_ALLOWED');
   const items=await store.listConversations(id);
   const channel=method==='GET'?query.get('channelId'):body.channelId,user=method==='GET'?query.get('userId'):body.userId;
-  if(path==='/api/ai-controls/conversations'&&method==='GET'&&!channel&&!user)return {items};
+  if(path==='/api/ai-controls/conversations'&&method==='GET'&&!channel&&!user)return {items:profileService?await profileService.decorateConversations(id,items):items};
   if(!items.some(item=>item.channelId===channel&&item.userId===user))throw failure(404,'CONVERSATION_NOT_FOUND');
   if(path==='/api/ai-controls/history')return store.getHistory(id,channel,user,query.get('before'));
   if(method==='GET')return store.getHandoff(id,channel,user);

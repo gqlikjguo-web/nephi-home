@@ -40,7 +40,7 @@ class PostgresCommercialProvider{constructor(rpc){this.rpc=rpc;}}
 class PostgresLineProfileProvider{constructor(rpc){this.rpc=rpc;}}
 // Optional display metadata must not Atomics.wait on the request/LINE event thread.
 async function profileRpc(rpc,name,input){
-  const signal=new SharedArrayBuffer(8),buffer=new SharedArrayBuffer(64*1024),status=new Int32Array(signal);
+  const signal=new SharedArrayBuffer(8),buffer=new SharedArrayBuffer(name==="lineProfile_readNames"?4*1024*1024:64*1024),status=new Int32Array(signal);
   rpc.worker.postMessage({name,args:[input],signal,buffer});
   const waited=await Atomics.waitAsync(status,0,0,1500).value;
   if(waited==="timed-out")throw Error("PROFILE_STORAGE_TIMEOUT");
@@ -48,7 +48,7 @@ async function profileRpc(rpc,name,input){
   if(!value.ok)throw Error("PROFILE_STORAGE_UNAVAILABLE");
   return value.result;
 }
-for(const method of ["observe","claim","finish"]){PostgresLineProfileProvider.prototype[method]=function(input){return profileRpc(this.rpc,`lineProfile_${method}`,input);};}
+for(const method of ["observe","claim","finish","readNames"]){PostgresLineProfileProvider.prototype[method]=function(input){return profileRpc(this.rpc,`lineProfile_${method}`,input);};}
 for(const method of ["getStatus","setLimit","setAiEnabled","getHandoff","setHandoff","reserve","beginAttempt","finishAttempt","listConversations","getUsage","getHistory","authorizeManual","authorizeOperatorTest"]){PostgresCommercialProvider.prototype[method]=function(...args){return this.rpc.call(`commercial_${method}`,args);};}
 for(const method of ["listGuests","createGuest","updateGuest","getGuest","findGuestByLineUserId","listNotes","addNote","updateNote","listMessageLogs","listRecentMessages","findMessageByEventId","claimMessageEvent","updateMessageEvent","appendMessageLog","listGuestMessages","linkMessagesToGuest","getConversationState","setConversationState","deleteConversationState","upsertTestOnlyLineTrace","listTestOnlyLineTraces","createNewCoreTestSession","getNewCoreTestSession","saveNewCoreTestTurn","resetNewCoreTestConversation","listNewCoreTestTurns","reviewNewCoreTestTurn","listNewCoreTestRecords","getNewCoreTestRecordByTraceId","resolveReview","getAdminUser","getAdminIdentityByEmail","listAdminPropertyAccounts","updateAdminIdentityPassword","createAdminSession","getAdminSession","selectAdminProperty","deleteAdminSession"]){PostgresPersistenceProvider.prototype[method]=function(...args){return this.rpc.call(method,args);};}
 for(const method of ["createOnboarding","createOnboardingInvitation","resolveOnboardingInvitation","revokeOnboardingInvitation","verifyOnboardingToken","resolveOnboardingResumeToken","rotateOnboardingResumeToken","getOnboarding","getOnboardingForReview","saveOnboarding","addOnboardingAttachment","submitOnboarding","isPlatformAdmin","listOnboarding","listOnboardingProperties","onboardingPropertyExists","getOnboardingMembershipSafety","reviewOnboarding","reopenOnboarding","claimOnboardingEmailDelivery","completeOnboardingEmailDelivery","approveOnboardingExisting","issueAdminSetupInvitationsByEmail","getAdminInvitation","redeemAdminInvitation"]){PostgresOnboardingProvider.prototype[method]=function(...args){return this.rpc.call(method,args);};}

@@ -5,14 +5,22 @@ const {credentialVersion,channelForBinding}=require('../line-profile-source');
 // Holding that lock through commit fences credential rotation and stale responses.
 async function profileOperation(db,operation,input){
   const x=input||{},key=[x.propertyId,x.channelId,x.userId];
-  if(key.some(v=>typeof v!=='string'||!v||v.length>256))return null;
+  const namesOnly=operation==='readNames';
+  if((namesOnly?[x.propertyId]:key).some(v=>typeof v!=='string'||!v||v.length>256))return null;
   return db.transaction(async tx=>{
     await tx.query("SET LOCAL lock_timeout='200ms'");
     await tx.query("SET LOCAL statement_timeout='1000ms'");
     const binding=(await tx.query('SELECT * FROM property_line_bindings WHERE property_id=$1 FOR SHARE',[x.propertyId])).rows[0];
-    if(!binding?.enabled||channelForBinding(binding)!==x.channelId)return null;
+    if(!binding?.enabled||(!namesOnly&&channelForBinding(binding)!==x.channelId))return null;
     const version=credentialVersion(binding);
     if(!version||(x.credentialVersion&&x.credentialVersion!==version))return null;
+    if(namesOnly){
+      const rows=(await tx.query(`SELECT channel_id,line_user_id,display_name FROM line_guest_profiles
+        WHERE property_id=$1 AND channel_id=$2 AND credential_version=$3
+        AND last_result='success' AND display_name IS NOT NULL AND next_refresh_at>now()`,
+        [x.propertyId,channelForBinding(binding),version])).rows;
+      return rows.map(r=>({channelId:r.channel_id,userId:r.line_user_id,displayName:r.display_name}));
+    }
     const exists=await tx.query('SELECT 1 FROM message_logs WHERE property_id=$1 AND channel_id=$2 AND line_user_id=$3 LIMIT 1',key);
     if(!exists.rows.length)return null;
     if(operation==='observe'){

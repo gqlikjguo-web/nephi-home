@@ -856,7 +856,7 @@ function createRequestHandler(service, options = {}) {
         const platform = Boolean(session && onboarding && await onboarding.isPlatformAdmin(session));
         const data = await require("./lib/commercial-ai-routes").commercialAiRoute({path:pathname,method:request.method,
           body:request.method === "GET" ? {} : await readJsonBody(request),query:url.searchParams,
-          session,platform,store:options.commercialStore});
+          session,platform,store:options.commercialStore,profileService:options.lineProfileService});
         return sendData(response, data);
       }
       if (pathname === "/admin/new-core-test" && request.method === "GET") {

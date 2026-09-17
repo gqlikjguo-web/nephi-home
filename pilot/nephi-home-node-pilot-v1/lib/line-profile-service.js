@@ -7,6 +7,15 @@ function createLineProfileService({store,bindingService,fetchImpl=globalThis.fet
     return response.json();
   }
   return {
+    async decorateConversations(propertyId,items){
+      try{
+        const names=await store?.readNames({propertyId});
+        if(!Array.isArray(names))return items;
+        const key=x=>JSON.stringify([x.channelId,x.userId]);
+        const byIdentity=new Map(names.map(x=>[key(x),x.displayName]));
+        return items.map(item=>byIdentity.has(key(item))?{...item,displayName:byIdentity.get(key(item))}:item);
+      }catch{return items;}
+    },
     async observe(input){
       if(typeof input?.destination!=='string'||!input.destination||!input.credentialVersion)return null;
       try{return await store?.observe(input);}catch{return null;}
