@@ -17,7 +17,7 @@ function collectBundleAmenities(){const rows=[...$("bundleAmenities").querySelec
 function syncBundleAmenityEditor(){const allowed=$("bundleAmenityStatus").value==="yes";$("bundleAmenityDetailField").hidden=!allowed;if(!allowed)$("bundleAmenityDetail").value=""}
 function openBundleAmenityEditor(row,{custom=false,isNew=false}={}){bundleAmenityEditorState={row,custom,isNew};$("bundleAmenityEditorTitle").textContent=isNew?"新增其他設備":(row.dataset.amenityName+"設定");$("bundleAmenityName").value=row?.dataset.amenityName||"";$("bundleAmenityName").readOnly=!custom;$("bundleAmenityStatus").value=row?.dataset.amenityStatus||(custom?"yes":"unknown");$("bundleAmenityDetail").value=row?.dataset.amenityNote||"";$("bundleAmenityDelete").hidden=!custom||isNew;syncBundleAmenityEditor();$("bundleAmenityEditor").showModal()}
 function saveBundleAmenityEditor(){const state=bundleAmenityEditorState;if(!state)return;const name=$("bundleAmenityName").value.trim(),status=$("bundleAmenityStatus").value,note=status==="yes"?$("bundleAmenityDetail").value.trim():"";if(state.custom&&!name){$("bundleAmenityName").focus();return}if(state.custom&&status!=="yes"){state.row?.remove();$("bundleAmenityEditor").close();return}const row=state.row||createBundleAmenityRow({key:"",displayName:name,provided:true,note,source:"custom"},{custom:true});row.dataset.amenityName=name;row.dataset.amenityStatus=status;row.dataset.amenityNote=note;const button=row.querySelector("[data-edit-amenity]");button.replaceChildren(cell("span",name),cell("strong",bundleAmenityStatusLabel(status)));if(!state.row)$("bundleAmenities").append(row);$("bundleAmenityEditor").close()}
-const availabilityState = { rooms: [], days: new Map(), notesByDate: {}, selection: "rolling", selectedDate: "", loading: false, loadedSelection: "" };
+const availabilityState = { rooms: [], days: new Map(), notesByDate: {}, selection: "rolling", selectedDate: "", loading: false, loadedSelection: "", view: "daily", roomFilter: "all", statusFilter: "all" };
 let requestGeneration = 0;
 const mutationQueues = new Map();
 const mutationVersions = new Map();
@@ -233,40 +233,120 @@ function createDayCard(date) {
 function renderDailyView() {
   const container = $("dailyAvailability");
   if (!availabilityState.rooms.length) { container.replaceChildren(element("div", "availability-empty", "目前沒有可管理的房型。")); return; }
-  const dates = [...availabilityState.days.keys()];
+  const dates = AdminAvailabilityWindow.availabilityLoadPlan(currentDateKey(), availabilityState.selection).dateKeys.filter(date => availabilityState.days.has(date));
   container.replaceChildren(...(dates.length ? dates.map(createDayCard) : [element("div", "availability-empty", "每日房況只顯示今天與未來日期；過去日期請切換到月曆查看。") ]));
 }
 
-function renderDayDetails(date) {
-  const container = $("dayDetails"); if (!date || !availabilityState.days.has(date)) { container.replaceChildren(); return; }
-  const title = element("h3", "", dateLabel(date)), hint = element("p", "hint", "此處與每日房況共用相同資料與儲存邏輯。"), body = element("div", "day-detail-rooms"); body.append(...availabilityState.rooms.map(room => createRoomRow(date, room))); container.replaceChildren(title, hint, body);
+function calendarRooms(date) {
+  return availabilityState.rooms.filter(room => {
+    if (availabilityState.roomFilter !== "all" && room.id !== availabilityState.roomFilter) return false;
+    if (availabilityState.statusFilter === "notes") return Boolean(noteFor(date, room));
+    return availabilityState.statusFilter === "all" || calendarStatus(date, room) === availabilityState.statusFilter;
+  });
 }
-
+function calendarStatus(date, room) {
+  const row = availabilityState.days.get(date);
+  return row?._hasAvailability && row._knownInventory.includes(room.id) ? row[room.id] : "unknown";
+}
+function renderDayDetails(date) {
+  const container = $("dayDetails");
+  if (!date || !availabilityState.days.has(date)) { container.replaceChildren(element("p", "hint", "請選擇日期查看房況與備註。")); return; }
+  const title = element("h3", "", dateLabel(date)), body = element("div", "day-detail-rooms");
+  for (const room of availabilityState.rooms) {
+    const row = createRoomRow(date, room), status = calendarStatus(date, room);
+    row.querySelector(".status-text").textContent = status === "available" ? "可訂" : status === "closed" ? "關閉" : "無房況資料";
+    row.querySelector(".status-toggle").setAttribute("aria-label", `${dateLabel(date)} ${room.name}房況開關`);
+    const note = noteFor(date, room);
+    if (note) row.append(element("p", "calendar-saved-note", note.note));
+    body.append(row);
+  }
+  container.replaceChildren(title, body);
+}
+function syncCalendarControls() {
+  const value = availabilityState.selection === "rolling" ? currentMonth() : availabilityState.selection;
+  $("month").value = value;
+  const [year, month] = value.split("-").map(Number);
+  $("calendarMonthLabel").textContent = `${year} 年 ${month} 月`;
+  const select = $("calendarRoomFilter"), all = element("option", "", "全部"); all.value = "all";
+  select.replaceChildren(all, ...availabilityState.rooms.map(room => { const option = element("option", "", room.name); option.value = room.id; return option; }));
+  if (!availabilityState.rooms.some(room => room.id === availabilityState.roomFilter)) availabilityState.roomFilter = "all";
+  select.value = availabilityState.roomFilter;
+  $("calendarStatusFilter").value = availabilityState.statusFilter;
+  if (availabilityState.selection !== "rolling" && !Array.from($("availabilityRange").options).some(option => option.value === value)) {
+    const option = element("option", "", `${year} 年 ${month} 月`); option.value = value; $("availabilityRange").append(option);
+  }
+  $("availabilityRange").value = availabilityState.selection;
+}
 function renderCalendarView() {
-  const grid = $("calendarGrid"), [year, month] = $("month").value.split("-").map(Number), dates = [...availabilityState.days.keys()];
+  const grid = $("calendarGrid"), [year, month] = $("month").value.split("-").map(Number);
   const nodes = "日一二三四五六".split("").map(day => element("div", "calendar-weekday", day));
-  const leading = new Date(Date.UTC(year, month - 1, 1)).getUTCDay(); for (let index = 0; index < leading; index += 1) nodes.push(element("div", "calendar-cell is-empty"));
-  for (const date of dates) { const day = availabilityState.days.get(date), part = dateParts(date), available = availabilityState.rooms.filter(room => day[room.id] === "available").length, closed = availabilityState.rooms.length - available, hasNote = Boolean(availabilityState.notesByDate[date] && Object.keys(availabilityState.notesByDate[date]).length), button = element("button", `calendar-cell${date === currentDateKey() ? " is-today" : ""}${date === availabilityState.selectedDate ? " is-selected" : ""}`); button.type = "button"; button.setAttribute("aria-label", `${dateLabel(date)}，${available} 個可售，${closed} 個不可售${hasNote ? "，有內部備註" : ""}`); const top = element("span", "calendar-date", String(part.day)); if (hasNote) top.append(element("i", "calendar-note-dot")); button.append(top, element("span", "calendar-count available", `${available} 可售`), element("span", "calendar-count closed", `${closed} 不可售`), element("span", "calendar-note-action", hasNote ? "查看備註" : "＋備註")); button.onclick = () => { availabilityState.selectedDate = date; renderCalendarView(); }; nodes.push(button); }
+  const leading = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  for (let index = 0; index < leading; index++) nodes.push(element("div", "calendar-cell is-empty"));
+  for (const date of monthDateKeys(year, month)) {
+    const matches = calendarRooms(date), available = matches.filter(room => calendarStatus(date, room) === "available").length;
+    const closed = matches.filter(room => calendarStatus(date, room) === "closed").length, unknown = matches.length - available - closed;
+    const hasNote = matches.some(room => noteFor(date, room));
+    const button = element("button", `calendar-cell${date === currentDateKey() ? " is-today" : ""}${date === availabilityState.selectedDate ? " is-selected" : ""}`);
+    button.type = "button"; button.dataset.date = date; button.disabled = !matches.length || availabilityState.loading;
+    button.setAttribute("aria-pressed", String(date === availabilityState.selectedDate));
+    button.setAttribute("aria-label", `${dateLabel(date)}，${available} 可訂，${closed} 關閉${unknown ? `，${unknown} 無資料` : ""}${hasNote ? "，有備註" : ""}`);
+    button.append(element("span", "calendar-date", String(dateParts(date).day)));
+    if (!matches.length) button.append(element("span", "calendar-no-match", "無符合房間"));
+    else {
+      button.append(element("span", "calendar-count available", `${available} 可訂`), element("span", "calendar-count closed", `${closed} 關閉`));
+      if (unknown) button.append(element("span", "calendar-unknown", `${unknown} 無資料`));
+      for (const room of matches) { const status = calendarStatus(date, room); button.append(element("span", `calendar-room-line ${status}`, `${room.name} ${status === "available" ? "可訂" : status === "closed" ? "關閉" : "無資料"}`)); }
+      if (hasNote) button.append(element("span", "calendar-note-hint", "有備註"));
+    }
+    button.onclick = () => { availabilityState.selectedDate = date; renderCalendarView(); $("dayDetails").scrollIntoView({behavior:"smooth",block:"start"}); };
+    nodes.push(button);
+  }
   grid.replaceChildren(...nodes); renderDayDetails(availabilityState.selectedDate);
 }
-
 function renderAvailability() {
-  renderMonthlyInventoryControls();
-  $("dailyAvailability").hidden = false; $("availabilityCalendar").hidden = true; renderDailyView();
+  renderMonthlyInventoryControls(); syncCalendarControls();
+  const calendar = availabilityState.view === "calendar";
+  $("dailyAvailability").hidden = calendar; $("availabilityCalendar").hidden = !calendar;
+  $("calendarControls").hidden = !calendar; $("listRangeControls").hidden = calendar;
+  document.querySelectorAll("[data-view]").forEach(button => { const active = button.dataset.view === availabilityState.view; button.classList.toggle("active", active); button.setAttribute("aria-pressed", String(active)); });
+  renderDailyView(); renderCalendarView();
+}
+async function switchView(view) {
+  if (!["calendar", "daily"].includes(view) || availabilityState.loading) return;
+  if (hasUnsavedNote() && !confirm("備註尚未儲存，確定切換檢視嗎？")) return;
+  noteEditorState = null; $("noteEditor").hidden = true; closePriceEditor();
+  availabilityState.view = view;
+  try { localStorage.setItem("junzanAvailabilityView", view); } catch {}
+  if (view === "calendar" && availabilityState.selection === "rolling") return changeCalendarMonth(currentMonth());
+  renderAvailability();
+}
+async function changeCalendarMonth(value) {
+  const [year, month] = String(value).split("-").map(Number);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12 || !$("month").validity.valid) return;
+  if (hasUnsavedNote() && !confirm("備註尚未儲存，確定切換月份嗎？")) { $("month").value = availabilityState.selection; return; }
+  noteEditorState = null; $("noteEditor").hidden = true; closePriceEditor();
+  availabilityState.selection = value; await loadMonth(); await loadPricing();
+}
+function moveCalendarMonth(offset) {
+  const [year, month] = $("month").value.split("-").map(Number), date = new Date(Date.UTC(year, month - 1 + offset, 1));
+  return changeCalendarMonth(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`);
 }
 
 async function loadMonth() {
-  const generation = ++requestGeneration, plan = AdminAvailabilityWindow.availabilityLoadPlan(currentDateKey(), availabilityState.selection), months = plan.months; availabilityState.loading = true; $("availabilityLoading").hidden = false; $("status").textContent = "";
+  const generation = ++requestGeneration, propertyId = session.propertyId, selection = availabilityState.selection;
+  const plan = selection === "rolling" ? AdminAvailabilityWindow.availabilityLoadPlan(currentDateKey(), selection) : {months:[selection], dateKeys:monthDateKeys(...selection.split("-").map(Number))}, months = plan.months; availabilityState.loading = true; $("availabilityLoading").hidden = false; $("status").textContent = "";
+  availabilityState.days.clear(); availabilityState.notesByDate = {}; $("dailyAvailability").replaceChildren(); $("calendarGrid").replaceChildren(); $("dayDetails").replaceChildren();
   try {
-    const pages = await Promise.all(months.map(async value => { const [year, month] = value.split("-").map(Number); return api(`/api/availability/month?propertyId=${encodeURIComponent(session.propertyId)}&year=${year}&month=${month}`); })); if (generation !== requestGeneration) return;
-    const data = pages[0] || { rooms: [], rows: [], notesByDate: {} }, rows = new Map(pages.flatMap(page => page.rows || []).map(row => [row.date, row])), dateKeys = plan.dateKeys; availabilityState.rooms = data.rooms || []; rooms = availabilityState.rooms; availabilityState.notesByDate = Object.assign({}, ...pages.map(page => page.notesByDate || {})); availabilityState.days = new Map(dateKeys.map(date => { const row = rows.get(date), normalized = { date, _hasAvailability: Boolean(row) }; for (const room of rooms) normalized[room.id] = row?.[room.id] === "available" ? "available" : "closed"; return [date, normalized]; }));
-    availabilityState.selectedDate = availabilityState.days.has(currentDateKey()) ? currentDateKey() : [...availabilityState.days.keys()][0] || ""; availabilityState.loadedSelection = availabilityState.selection; renderMembers(); renderAvailability(); if (availabilityState.refreshBulk) availabilityState.refreshBulk(); $("status").textContent = "房況已載入";
+    const pages = await Promise.all(months.map(async value => { const [year, month] = value.split("-").map(Number); return api(`/api/availability/month?propertyId=${encodeURIComponent(propertyId)}&year=${year}&month=${month}`); })); if (generation !== requestGeneration || propertyId !== session?.propertyId) return;
+    if (pages.some(page => page.propertyId !== propertyId)) throw Error("旅宿資料不一致，請重新登入。");
+    const data = pages[0] || { rooms: [], rows: [], notesByDate: {} }, rows = new Map(pages.flatMap(page => page.rows || []).map(row => [row.date, row])), dateKeys = plan.dateKeys; availabilityState.rooms = data.rooms || []; rooms = availabilityState.rooms; availabilityState.notesByDate = Object.assign({}, ...pages.map(page => page.notesByDate || {})); availabilityState.days = new Map(dateKeys.map(date => { const row = rows.get(date), normalized = { date, _hasAvailability: Boolean(row), _knownInventory: Object.keys(row || {}).filter(id => ["available", "closed"].includes(row[id])) }; for (const room of rooms) normalized[room.id] = row?.[room.id] === "available" ? "available" : "closed"; return [date, normalized]; }));
+    availabilityState.selectedDate = availabilityState.days.has(currentDateKey()) ? currentDateKey() : [...availabilityState.days.keys()][0] || ""; availabilityState.loadedSelection = selection; availabilityState.loading = false; renderMembers(); renderAvailability(); if (availabilityState.refreshBulk) availabilityState.refreshBulk(); $("status").textContent = "房況已載入";
   } catch (error) { if (generation === requestGeneration) $("status").textContent = `房況載入失敗：${error.message}，請稍後重試。`; }
   finally { if (generation === requestGeneration) { availabilityState.loading = false; $("availabilityLoading").hidden = true; } }
 }
 async function saveDay(date, room, status) {
   const key = mutationKey("status", date, room.id), version = nextMutationVersion(key), retry = () => saveDay(date, room, status); saveStates.set(key, { phase: "saving", message: "儲存中…" }); renderAvailability();
-  return queueMutation(key, async () => { try { const data = await api("/api/availability/day", { method: "POST", body: JSON.stringify({ propertyId: session.propertyId, date, roomTypeId: room.id, status }) }); const row = data.row || {}; if (availabilityState.days.has(date)) for (const currentRoom of availabilityState.rooms) if (row[currentRoom.id]) availabilityState.days.get(date)[currentRoom.id] = row[currentRoom.id]; if (isLatestMutation(key, version)) saveStates.set(key, { phase: "success", message: "已儲存" }); }
+  return queueMutation(key, async () => { try { const data = await api("/api/availability/day", { method: "POST", body: JSON.stringify({ propertyId: session.propertyId, date, roomTypeId: room.id, status }) }); const row = data.row || {}; if (availabilityState.days.has(date)) for (const currentRoom of availabilityState.rooms) if (row[currentRoom.id]) { const day = availabilityState.days.get(date); day[currentRoom.id] = row[currentRoom.id]; day._hasAvailability = true; if (!day._knownInventory.includes(currentRoom.id)) day._knownInventory.push(currentRoom.id); } if (isLatestMutation(key, version)) saveStates.set(key, { phase: "success", message: "已儲存" }); }
     catch (error) { if (isLatestMutation(key, version)) saveStates.set(key, { phase: "failed", message: `儲存失敗：${error.message}`, retry }); } finally { renderAvailability(); } });
 }
 
@@ -358,12 +438,17 @@ $("customReplyForm").onsubmit=async event=>{event.preventDefault();const form=ev
 $("priceEditorForm").onsubmit = event => { event.preventDefault(); savePriceEditor(false); };
 $("priceEditorClear").onclick = () => savePriceEditor(true);
 $("priceEditorCancel").onclick = closePriceEditor;
-async function enter(value) { if (value.requiresPropertySelection || !value.propertyId) return showPropertyChooser(value); if (expectedSlug) value = await api(`/api/admin/session?slug=${encodeURIComponent(expectedSlug)}`); session = value; $("login").hidden = true; $("propertyChooser").hidden = true; $("workspace").hidden = false; $("logout").hidden = false; configureGuestFrontendLinks(value.propertyId); configurePlatformViewing(value); $("propertyLabel").textContent = `業者：${value.propertyId}`; $("month").value = $("month").value || currentMonth(); let savedView = "recent"; try { savedView = localStorage.getItem("junzanAvailabilityView") || "recent"; } catch {} availabilityState.view = matchMedia("(max-width: 640px)").matches ? "recent" : ["recent", "calendar"].includes(savedView) ? savedView : "recent"; await loadMonth(); await Promise.all([loadBundles(), loadPricing(), loadProfile(), loadPropertyFacts(), roomCompositionEditor.load()]); fillCustomReplyOptions();clearCustomReplyForm();await loadCustomReplies(); }
+async function enter(value) { if (value.requiresPropertySelection || !value.propertyId) return showPropertyChooser(value); if (expectedSlug) value = await api(`/api/admin/session?slug=${encodeURIComponent(expectedSlug)}`); session = value; $("login").hidden = true; $("propertyChooser").hidden = true; $("workspace").hidden = false; $("logout").hidden = false; configureGuestFrontendLinks(value.propertyId); configurePlatformViewing(value); $("propertyLabel").textContent = `業者：${value.propertyId}`; $("month").value = $("month").value || currentMonth(); let savedView = "calendar"; try { savedView = localStorage.getItem("junzanAvailabilityView") || "calendar"; } catch {} availabilityState.view = savedView === "calendar" ? "calendar" : "daily"; availabilityState.selection = availabilityState.view === "calendar" ? currentMonth() : "rolling"; availabilityState.roomFilter = "all"; availabilityState.statusFilter = "all"; await loadMonth(); await Promise.all([loadBundles(), loadPricing(), loadProfile(), loadPropertyFacts(), roomCompositionEditor.load()]); fillCustomReplyOptions();clearCustomReplyForm();await loadCustomReplies(); }
 $("loginForm").onsubmit = async event => { event.preventDefault(); try { await enter(await api("/api/admin/login", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) })); } catch (error) { showLogin(error.message); } };
 $("copyGuestFrontendLink").onclick = async () => { const button = $("copyGuestFrontendLink"); try { await navigator.clipboard.writeText(guestFrontendUrl(session.propertyId)); button.textContent = "已複製前台連結"; } catch { button.textContent = "複製失敗，請重試"; } setTimeout(() => { button.textContent = "複製前台連結"; }, 2000); };
 document.querySelectorAll("[data-view]").forEach(button => { button.onclick = () => switchView(button.dataset.view); });
 $("noteText").oninput = updateNoteCount; $("noteSave").onclick = () => saveNote(); $("noteClear").onclick = () => saveNote(""); $("noteClose").onclick = closeNoteEditor;
-$("month").onchange = async () => { if (hasUnsavedNote() && !confirm("備註尚未儲存，確定切換月份嗎？")) { $("month").value = availabilityState.loadedMonth; return; } noteEditorState = null; $("noteEditor").hidden = true; closePriceEditor(); await loadMonth(); await loadPricing(); };
+$("month").onchange = () => changeCalendarMonth($("month").value);
+$("calendarPrevious").onclick = () => moveCalendarMonth(-1);
+$("calendarNext").onclick = () => moveCalendarMonth(1);
+$("calendarToday").onclick = () => changeCalendarMonth(currentMonth());
+$("calendarRoomFilter").onchange = () => { availabilityState.roomFilter = $("calendarRoomFilter").value; renderCalendarView(); };
+$("calendarStatusFilter").onchange = () => { availabilityState.statusFilter = $("calendarStatusFilter").value; renderCalendarView(); };
 $("bundleCancel").onclick = clearBundle; $("logout").onclick = async () => { await api("/api/admin/logout", { method: "POST", body: "{}" }); showLogin(); };
 window.addEventListener("beforeunload", event => { if (!hasUnsavedNote() && !pricingState.dirty && !mutationQueues.size) return; event.preventDefault(); event.returnValue = ""; });
 function populateAvailabilityRanges() {
