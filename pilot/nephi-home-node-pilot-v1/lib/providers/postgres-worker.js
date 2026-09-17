@@ -96,6 +96,7 @@ async function loadAdminSession(tokenHash){const r=await client.query("SELECT to
 
 async function operation(name, args) {
   if (name === "ready") return true;
+  if (name.startsWith("lineProfile_")) return require("./line-profile-store").profileOperation(client,name.slice(12),args[0]);
   if (name === "commercial_listConversations") return require("./commercial-ai-read-model").readConversations(client,args[0]);
   if (name === "commercial_getUsage") return require("./commercial-ai-read-model").readCommercialUsage(client,args[0]);
   if (name === "commercial_getHistory") return require("./commercial-ai-read-model").readHistory(client,...args);

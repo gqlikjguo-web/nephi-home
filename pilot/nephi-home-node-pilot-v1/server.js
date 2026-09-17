@@ -842,6 +842,14 @@ function createRequestHandler(service, options = {}) {
         return sendData(response, { status: "ready", testOnly: testOnlyEnvironment, commit: deploymentCommit, deployment: deploymentIdentity });
       }
       if (request.method === "GET" && pathname === "/api/public/brand") return sendData(response, publicBrand);
+      if (pathname === "/api/ai-controls/profile") {
+        const token = cookieValue(request, "nephi_admin_session");
+        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        return sendData(response, await require("./lib/line-profile-route").lineProfileRoute({
+          method:request.method,session,body:request.method === "POST" ? await readJsonBody(request) : {},query:url.searchParams,
+          conversationStore:options.commercialStore,profileService:options.lineProfileService
+        }));
+      }
       if (["/api/ai-controls", "/api/ai-controls/conversations", "/api/ai-controls/usage", "/api/ai-controls/history", "/api/platform/ai-controls"].includes(pathname)) {
         const token = cookieValue(request, "nephi_admin_session");
         const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
@@ -1329,6 +1337,7 @@ function createApp(options = {}) {
   const onboardingEmailNotifier=createOnboardingEmailNotifier({env:options.onboardingEmailEnv||process.env,fetchImpl:options.onboardingEmailFetch||globalThis.fetch,publicBaseUrl:publicBrand.publicBaseUrl});
   const onboarding = createOnboardingService(providers.onboarding,{emailNotifier:onboardingEmailNotifier});
   const lineBindingService = createLineBindingService({ provider: providers.lineBindings, env: options.lineBindingEnv || process.env });
+  const lineProfileService = require("./lib/line-profile-service").createLineProfileService({store:providers.lineProfiles,bindingService:lineBindingService});
   const lineSetupService = createLineSetupService({
     provider: providers.lineBindings,
     lineBindingService,
@@ -1570,7 +1579,7 @@ function createApp(options = {}) {
   const updateEventStatus = (customerId, channelId, eventId, patch) => providers.persistence.updateMessageEvent(customerId, channelId, eventId, patch);
   const sharedLineWebhookHandler = async ({ rawBody, signature, webhookKey }) => {
     if (!lineBindingService) throw new AppError(503, "LINE_BINDING_WEBHOOK_NOT_CONFIGURED", "LINE webhook is not configured");
-    const binding = lineBindingService.resolve(webhookKey);
+    const binding = lineBindingService.resolve(webhookKey, { profileSource: true });
     if (!binding) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE webhook is unavailable");
     if (!validateSignature(rawBody, binding.channelSecret, String(signature || ""))) throw new AppError(401, "INVALID_LINE_SIGNATURE", "Invalid LINE signature");
     let payload; try { payload = JSON.parse(rawBody.toString("utf8")); } catch { throw new AppError(400, "INVALID_JSON", "Request body must be valid JSON"); }
@@ -1645,10 +1654,14 @@ function createApp(options = {}) {
           ? {processingStatus:"no_reply",shouldReply:false,noReply:true,replyDelivered:false,replyText:"",
             decisionReason:error.reason,needsReview:error.reason === "ACCOUNTING_UNAVAILABLE",deliveryErrorCode:""}
           : { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
+      // Best-effort auxiliary metadata, independent of message processing/ACK.
+      // The profile provider is nonblocking and enforces short database timeouts.
+      if (event.source?.type === "user") void lineProfileService.observe({propertyId:id,channelId,userId:input.lineUserId,
+        eventId:input.eventId,destination:payload.destination,credentialVersion:binding.profileCredentialVersion});
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { commercialStore:providers.commercial, sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
+  const server = http.createServer(createRequestHandler(service, { commercialStore:providers.commercial, lineProfileService, sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (commercialController) commercialController.close(); if (typeof ownedNewCoreManualTestFactsProviders?.close === "function") await ownedNewCoreManualTestFactsProviders.close(); if (typeof providers.close === "function") await providers.close(); } };
 }
 

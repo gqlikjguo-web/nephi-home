@@ -1,0 +1,63 @@
+"use strict";
+// FAKE_INTEGRATION: actual PostgreSQL SQL in isolated PGlite; LINE HTTP is a double.
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+(async()=>{
+  assert.ok(fs.existsSync(path.join(__dirname,'../lib/line-profile-service.js')),'on-demand identity-scoped profile service must exist');
+  const {profileOperation}=require('../lib/providers/line-profile-store');
+  const {createLineProfileService}=require('../lib/line-profile-service');
+  const {credentialVersion,channelForBinding}=require('../lib/line-profile-source');
+  const {lineProfileRoute}=require('../lib/line-profile-route');
+  const {PGlite}=await import('@electric-sql/pglite');const db=new PGlite();
+  try{
+    const directory=path.join(__dirname,'../migrations');
+    for(const f of fs.readdirSync(directory).filter(f=>f.endsWith('.sql')&&!f.startsWith('027_')).sort())await db.exec(fs.readFileSync(path.join(directory,f),'utf8'));
+    await db.exec("INSERT INTO properties(property_id,display_name) VALUES('a','A'),('b','B')");
+    const bindings={a:{propertyId:'a',webhookKey:'webhook-a',channelSecretEncrypted:{version:1,iv:'a',tag:'a',ciphertext:'a'},channelAccessTokenEncrypted:{version:1,iv:'t',tag:'t',ciphertext:'t'}},b:{propertyId:'b',webhookKey:'webhook-b',channelSecretEncrypted:{iv:'b'},channelAccessTokenEncrypted:{iv:'b'}}};
+    const saveBinding=async b=>db.query('INSERT INTO property_line_bindings(property_id,webhook_key,channel_secret_encrypted,channel_access_token_encrypted,enabled) VALUES($1,$2,$3,$4,true) ON CONFLICT(property_id) DO UPDATE SET channel_access_token_encrypted=EXCLUDED.channel_access_token_encrypted',[b.propertyId,b.webhookKey,JSON.stringify(b.channelSecretEncrypted),JSON.stringify(b.channelAccessTokenEncrypted)]);
+    for(const b of Object.values(bindings))await saveBinding(b);
+    const a={propertyId:'a',channelId:channelForBinding(bindings.a),userId:'user-a'},b={propertyId:'b',channelId:channelForBinding(bindings.b),userId:'user-a'},other={...a,userId:'user-other'};
+    for(const x of [a,b,other])await db.query("INSERT INTO message_logs(property_id,channel_id,line_user_id,event_id,review_id,payload) VALUES($1,$2,$3,$3,$3,'{}')",[x.propertyId,x.channelId,x.userId]);
+    async function snapshot(){const tables=(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows;const result={};for(const {tablename:t} of tables)result[t]=(await db.query(`SELECT * FROM "${t}" ORDER BY 1`)).rows;return result;}
+    const before=await snapshot(),columns=(await db.query("SELECT * FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name,ordinal_position")).rows;
+    await db.exec(fs.readFileSync(path.join(directory,'027_line_guest_profiles.sql'),'utf8'));
+    const after=await snapshot();delete after.line_guest_profiles;assert.deepEqual(after,before,'migration must preserve every existing row');
+    assert.deepEqual((await db.query("SELECT * FROM information_schema.columns WHERE table_schema='public' AND table_name<>'line_guest_profiles' ORDER BY table_name,ordinal_position")).rows,columns,'migration must preserve existing columns');
+    const store=Object.fromEntries(['observe','claim','finish'].map(n=>[n,x=>profileOperation(db,n,x)]));
+    let calls=[],name='LINE official name',failure=0,returnedUser='user-a',bot='bot-a',onProfile=null;
+    const bindingService={resolveProfile(id,channel,version){const x=bindings[id];assert.equal(channel,channelForBinding(x));assert.equal(version,credentialVersion(x));return {propertyId:id,channelId:channel,credentialVersion:version,channelAccessToken:'token-'+id};}};
+    const service=createLineProfileService({store,bindingService,fetchImpl:async(url,options)=>{calls.push({url,token:options.headers.Authorization});if(url.endsWith('/info'))return {ok:true,status:200,json:async()=>({userId:bot,pictureUrl:'discard'})};if(onProfile)await onProfile();return {ok:!failure,status:failure||200,json:async()=>({userId:returnedUser,displayName:name,pictureUrl:'discard-avatar',statusMessage:'discard-status',language:'discard-language'})};}});
+    const observe=async(x,destination='bot-a')=>store.observe({...x,destination,eventId:x.userId,credentialVersion:credentialVersion(bindings[x.propertyId])});
+    assert.equal((await service.lookup(a)).displayName,null);assert.equal(calls.length,0,'unproven legacy source must not call LINE');
+    await observe(a);assert.equal((await service.lookup(a)).displayName,name);assert.equal(calls.length,2);
+    assert.ok(calls.every(c=>c.token==='Bearer token-a'),'property A uses only token A');
+    assert.equal((await service.lookup(a)).displayName,name);assert.equal(calls.length,2,'valid cache makes zero requests');
+    assert.equal((await service.lookup({...a,channelId:b.channelId})).displayName,null);assert.equal(calls.length,2);
+    assert.equal((await service.lookup(other)).displayName,null);assert.equal(calls.length,2,'no user A name for user B');
+    const expire=()=>db.exec("UPDATE line_guest_profiles SET next_refresh_at=now()-interval '1 second'");
+    await expire();name='Updated name';assert.equal((await service.lookup(a)).displayName,name);assert.equal(calls.length,4);
+    await expire();failure=404;assert.equal((await service.lookup(a)).displayName,null);let count=calls.length;
+    assert.equal((await service.lookup(a)).displayName,null);assert.equal(calls.length,count,'failed attempts back off');
+    assert.equal((await db.query('SELECT last_result FROM line_guest_profiles')).rows[0].last_result,'unavailable','404 never means blocked');
+    await expire();failure=0;returnedUser='wrong-user';assert.equal((await service.lookup(a)).displayName,null);
+    await expire();returnedUser=a.userId;bot='wrong-bot';count=calls.length;assert.equal((await service.lookup(a)).displayName,null);assert.equal(calls.length,count+1,'wrong bot must prevent Profile call');
+    await expire();bot='bot-a';let release,entered;const ready=new Promise(r=>entered=r);onProfile=()=>new Promise(r=>{release=r;entered();});
+    const pending=service.lookup(a);await ready;count=calls.length;
+    assert.equal((await service.lookup(a)).displayName,null);assert.equal(calls.length,count,'database lease prevents duplicate lookup');
+    bindings.a.channelAccessTokenEncrypted={iv:'rotated'};await saveBinding(bindings.a);release();await pending;onProfile=null;
+    assert.equal((await service.lookup(a)).displayName,null,'old credential request cannot publish name');assert.equal(calls.length,count,'new version without signed evidence cannot fetch');
+    await observe(a);assert.equal((await service.lookup(a)).displayName,name,'new signed source permits refreshed name');
+    const persisted=(await db.query('SELECT * FROM line_guest_profiles')).rows;
+    assert.ok(!JSON.stringify(persisted).includes('discard-'),'never persist unused profile fields');
+    assert.deepEqual(Object.keys(persisted[0]).sort(),['property_id','channel_id','line_user_id','display_name','fetched_at','last_attempt_at','next_refresh_at','last_result','credential_version','source_destination','source_event_id','source_observed_at','attempt_id','lease_until'].sort());
+    const session={propertyId:'a',properties:[{propertyId:'a'}]},conversationStore={listConversations:async id=>id==='a'?[{channelId:a.channelId,userId:a.userId}]:[]};
+    const request={method:'POST',session,body:{channelId:a.channelId,userId:a.userId},query:new URLSearchParams(),conversationStore,profileService:service};
+    assert.equal((await lineProfileRoute(request)).displayName,name);
+    await assert.rejects(()=>lineProfileRoute({...request,session:null}),e=>e.status===401);
+    await assert.rejects(()=>lineProfileRoute({...request,session:{...session,properties:[{propertyId:'b'}]}}),e=>e.status===403);
+    await assert.rejects(()=>lineProfileRoute({...request,body:{...request.body,propertyId:'b'}}),e=>e.status===403);
+    await assert.rejects(()=>lineProfileRoute({...request,body:{...request.body,userId:'missing'}}),e=>e.status===404);
+    assert.equal((await lineProfileRoute({...request,profileService:{lookup:async()=>{throw Error('storage unavailable')}}})).displayName,null,'profile failure cannot reject existing conversation');
+    assert.deepEqual(await db.query('SELECT count(*)::int n FROM commercial_ai_message_ledger').then(r=>r.rows[0].n),0,'profiles do not reserve quota');
+    console.log('PASS profile identity/source/cache/TTL/backoff/race/privacy/routes/migration invariance (FAKE_INTEGRATION)');
+  }finally{await db.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

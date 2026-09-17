@@ -108,13 +108,20 @@ function createLineBindingService({ provider, env = process.env } = {}) {
       if (typeof provider.markLineBindingWebhookObserved !== "function") return null;
       return safeStatus(provider.markLineBindingWebhookObserved(String(webhookKey || "").trim(), observedAt));
     },
-    resolve(webhookKey) {
+    resolveProfile(propertyId, channelId, version) {
+      const row = provider.getLineBindingByPropertyId(propertyId);
+      const source = require("./line-profile-source");
+      if (!row || !row.enabled || source.channelForBinding(row) !== channelId || source.credentialVersion(row) !== version) return null;
+      return { channelAccessToken: open(requireKey(), row.propertyId, "channel-access-token", row.channelAccessTokenEncrypted) };
+    },
+    resolve(webhookKey, { profileSource = false } = {}) {
       const row = provider.getLineBindingByWebhookKey(String(webhookKey || "").trim());
       if (!row || !row.enabled) return null;
       const encryption = requireKey();
       return {
         propertyId: row.propertyId,
         webhookKey: row.webhookKey,
+        ...(profileSource ? { profileCredentialVersion: require("./line-profile-source").credentialVersion(row) } : {}),
         channelSecret: open(encryption, row.propertyId, "channel-secret", row.channelSecretEncrypted),
         channelAccessToken: open(encryption, row.propertyId, "channel-access-token", row.channelAccessTokenEncrypted)
       };

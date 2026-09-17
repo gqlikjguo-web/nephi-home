@@ -110,7 +110,17 @@ const AiControls = (() => {
       try{const query=new URLSearchParams({propertyId:id,channelId:guest.channelId,userId:guest.userId});
         const [control,page]=await Promise.all([api(`/api/ai-controls/conversations?${query}`),api(`/api/ai-controls/history?${query}`)]);
         if(!current(revision,id)||gv!==guestVersion)return;if((guest.controlRevision||0)===controlRevision)guest.humanControlled=control.humanControlled;historyItems=page.items;nextCursor=page.nextCursor;renderState();renderList();renderHistory();
+        void loadGuestName(guest,revision,id,gv);
       }catch(error){if(current(revision,id)&&gv===guestVersion){state.textContent="狀態載入失敗";message.textContent=error.message;}}
+    }
+    async function loadGuestName(guest,revision,id,gv){
+      try{
+        const data=await api(`/api/ai-controls/profile?${new URLSearchParams({propertyId:id})}`,{method:"POST",body:JSON.stringify({channelId:guest.channelId,userId:guest.userId})});
+        if(!current(revision,id)||gv!==guestVersion||selected!==guest)return;
+        if(!data||!Object.hasOwn(data,"displayName")||(data.displayName!==null&&typeof data.displayName!=="string"))return;
+        guest.displayName=typeof data.displayName==="string"&&data.displayName?data.displayName:null;
+        title.textContent=identity(guest);renderList();
+      }catch{/* Optional display metadata must never block conversation controls. */}
     }
     older.onclick=async()=>{
       if(!selected||!nextCursor||busyHistory)return;const revision=version,id=currentId,gv=guestVersion,guest=selected;busyHistory=true;older.disabled=true;
