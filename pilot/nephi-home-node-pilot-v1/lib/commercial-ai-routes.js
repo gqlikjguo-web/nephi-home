@@ -4,6 +4,16 @@ function only(body,keys){if(Object.keys(body).some(k=>!keys.includes(k)))throw f
 async function commercialAiRoute({path,method,body={},query=new URLSearchParams(),session,platform,store,profileService}) {
   if(!session)throw failure(401,'LOGIN_REQUIRED');
   if(!store)throw failure(503,'COMMERCIAL_STORAGE_REQUIRED');
+  if(path==='/api/platform/ai-subscriptions') {
+    if(!platform)throw failure(403,'PLATFORM_ADMIN_REQUIRED');
+    const id=method==='GET'?query.get('propertyId'):body.propertyId;
+    if(typeof id!=='string'||!id)throw failure(400,'PROPERTY_REQUIRED');
+    if(method==='GET')return store.getSubscription(id);
+    if(method!=='PUT')throw failure(405,'METHOD_NOT_ALLOWED');
+    only(body,['propertyId','status','contractStart','contractEnd','monthlyLimit']);
+    const {propertyId,...input}=body;
+    return store.setSubscription(id,input,{userId:session.userId,propertyId:session.propertyId,username:session.username});
+  }
   if(path==='/api/platform/ai-controls') {
     if(!platform)throw failure(403,'PLATFORM_ADMIN_REQUIRED');
     const id=method==='GET'?query.get('propertyId'):body.propertyId;
@@ -18,6 +28,10 @@ async function commercialAiRoute({path,method,body={},query=new URLSearchParams(
   if(!id)throw failure(409,'PROPERTY_SELECTION_REQUIRED');
   if(Array.isArray(session.properties)&&!session.properties.some(property=>property.propertyId===id))throw failure(403,'PROPERTY_ACCESS_DENIED');
   for(const claimed of [query.get('propertyId'),query.get('customerId'),body.propertyId,body.customerId])if(claimed&&claimed!==id)throw failure(403,'PROPERTY_ACCESS_DENIED');
+  if(path==='/api/ai-subscription') {
+    if(method!=='GET')throw failure(403,'PLATFORM_ADMIN_REQUIRED');
+    return store.getSubscription(id);
+  }
   if(path==='/api/ai-controls') {
     if(method==='GET')return store.getStatus(id);
     if(method!=='PUT')throw failure(405,'METHOD_NOT_ALLOWED');

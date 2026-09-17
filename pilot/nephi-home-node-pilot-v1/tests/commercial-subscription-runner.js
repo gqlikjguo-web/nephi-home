@@ -1,0 +1,78 @@
+"use strict";
+// FAKE_INTEGRATION: real commercial store/transactions, isolated PGlite, no paid providers.
+// Detects missing or late entitlement gates, incorrect Taipei boundaries, legacy leakage,
+// unauthorized plan writes, quota resets, and renewal deleting existing property data.
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {PGlite}=require('@electric-sql/pglite');
+const {commercialOperation}=require('../lib/providers/commercial-ai-store');
+const {commercialAiRoute}=require('../lib/commercial-ai-routes');
+(async()=>{
+ const db=new PGlite(),op=(n,...a)=>commercialOperation({transaction:f=>db.transaction(f)},n,a);
+ const dir=path.join(__dirname,'../migrations');
+ const start='2026-09-30T16:00:00Z',end='2026-10-31T16:00:00Z';
+ const scope={propertyId:'new',channelId:'channel',userId:'guest',eventIds:['event'],now:start};
+ try{
+  for(const f of fs.readdirSync(dir).filter(f=>f.endsWith('.sql')&&f<'028').sort())await db.exec(fs.readFileSync(path.join(dir,f),'utf8'));
+  await db.exec("INSERT INTO properties(property_id,display_name) VALUES('legacy','Existing operator')");
+  const before=(await db.query('SELECT * FROM properties')).rows;
+  const migration=path.join(dir,'028_commercial_subscriptions.sql');
+  if(fs.existsSync(migration))await db.exec(fs.readFileSync(migration,'utf8'));
+  assert.deepEqual((await db.query('SELECT * FROM properties')).rows,before,'migration preserves existing property rows');
+  await db.exec("INSERT INTO properties(property_id,display_name) VALUES('new','New operator'),('other','Other operator')");
+  await op('setLimit','new',1000);
+  await db.exec("INSERT INTO message_logs(property_id,channel_id,line_user_id,event_id,review_id,payload) VALUES('new','channel','guest','event','review','{}')");
+  assert.equal((await op('reserve',scope)).reason,'SUBSCRIPTION_UNCONFIGURED','new property without contract must stop before quota/network');
+  assert.equal((await op('getStatus','new',start)).used,0);
+  assert.equal((await op('getSubscription','legacy',start)).status,'LEGACY');
+  assert.equal((await op('getSubscription','new',start)).status,'UNCONFIGURED');
+  await db.exec("INSERT INTO admin_users(property_id,username,password_hash) VALUES('legacy','platform','fixture'),('new','operator','fixture'); INSERT INTO platform_admin_grants(property_id,username) VALUES('legacy','platform')");
+  const actor={propertyId:'legacy',username:'platform'},operator={propertyId:'new',username:'operator',properties:[{propertyId:'new'}]};
+  const contract={status:'active',contractStart:'2026-10-01',contractEnd:'2026-10-31',monthlyLimit:1000};
+  await assert.rejects(op('setSubscription','new',contract,operator),e=>e.code==='PLATFORM_ADMIN_REQUIRED');
+  await assert.rejects(op('setSubscription','new',{...contract,contractStart:'2026-02-30'},actor),e=>e.code==='SUBSCRIPTION_INVALID');
+  await assert.rejects(op('setSubscription','new',{...contract,contractEnd:'2026-09-30'},actor),e=>e.code==='SUBSCRIPTION_INVALID');
+  await assert.rejects(op('setSubscription','new',{...contract,status:'legacy'},actor),e=>e.code==='SUBSCRIPTION_INVALID');
+  await op('setSubscription','new',contract,actor);
+  const prior={...scope,now:'2026-09-30T15:59:59.999Z'};
+  assert.equal((await op('reserve',prior)).reason,'SUBSCRIPTION_NOT_STARTED');
+  assert.equal((await op('getStatus','new',prior.now)).used,0);
+  assert.equal((await op('reserve',scope)).allowed,true);
+  assert.equal((await op('getSubscription','new',start)).status,'ACTIVE');
+  assert.equal((await op('getSubscription','new','2026-10-31T15:59:59.999Z')).status,'ACTIVE');
+  assert.equal((await op('getSubscription','new',end)).status,'EXPIRED');
+  const attempt={...scope,turnId:'turn',attemptNumber:1};
+  assert.equal((await op('beginAttempt',attempt)).allowed,true);
+  assert.equal((await op('beginAttempt',{...attempt,attemptNumber:2,now:end})).reason,'SUBSCRIPTION_EXPIRED','each correction rechecks expiration');
+  assert.equal((await op('reserve',{...scope,now:end})).reason,'SUBSCRIPTION_EXPIRED');
+  const persisted=(await db.query('SELECT * FROM message_logs')).rows;
+  assert.equal(persisted.length,1,'blocked/expired source message remains saved');
+  assert.equal((await op('getStatus','new','2026-10-31T15:59:59Z')).used,1);
+  assert.equal((await op('getStatus','new',end)).used,0);
+  await op('setSubscription','new',{...contract,contractEnd:'2027-10-31'},actor);
+  assert.equal((await op('reserve',{...scope,now:end})).period,'2026-10','renewed cross-month retry keeps original period');
+  assert.equal((await op('beginAttempt',{...attempt,attemptNumber:2,now:end})).allowed,true);
+  assert.deepEqual((await db.query('SELECT * FROM message_logs')).rows,persisted,'renewal preserves conversation');
+  assert.equal((await op('getStatus','new',end)).remaining,1000,'no quota carryover or re-charge');
+  await op('setAiEnabled','new',false);assert.equal((await op('reserve',scope)).reason,'AI_DISABLED');
+  await op('setAiEnabled','new',true);await op('setHandoff','new','channel','guest',true);assert.equal((await op('reserve',scope)).reason,'HUMAN_CONTROLLED');
+  await op('setHandoff','new','channel','guest',false);
+  await op('setSubscription','new',{...contract,status:'disabled'},actor);assert.equal((await op('reserve',scope)).reason,'SUBSCRIPTION_DISABLED');
+  assert.equal((await op('authorizeManual',{...scope,turnId:'manual',ownerId:'owner',testSessionId:'11111111-1111-4111-8111-111111111111'})).reason,'SUBSCRIPTION_DISABLED');
+  assert.equal((await op('authorizeOperatorTest',{...scope,turnId:'manual',adminSessionHash:'fixture'})).reason,'SUBSCRIPTION_DISABLED');
+  await op('setSubscription','new',contract,actor);
+  await op('setLimit','new',0);
+  await db.exec("INSERT INTO message_logs(property_id,channel_id,line_user_id,event_id,review_id,payload) VALUES('new','channel','guest','fresh','fresh','{}')");
+  assert.equal((await op('reserve',{...scope,eventIds:['fresh']})).reason,'QUOTA_EXHAUSTED');
+  assert.equal((await op('getSubscription','other',start)).status,'UNCONFIGURED','no cross-property subscription');
+  const store=Object.fromEntries(['getSubscription','setSubscription','getStatus','setLimit'].map(n=>[n,(...a)=>op(n,...a)]));
+  const request={path:'/api/ai-subscription',method:'GET',session:operator,platform:false,store,query:new URLSearchParams()};
+  assert.equal((await commercialAiRoute(request)).propertyId,'new');
+  await assert.rejects(commercialAiRoute({...request,query:new URLSearchParams({propertyId:'other'})}),e=>e.status===403);
+  await assert.rejects(commercialAiRoute({...request,method:'PUT',body:contract}),e=>e.status===403);
+  await assert.rejects(commercialAiRoute({...request,path:'/api/platform/ai-subscriptions',method:'PUT',body:{propertyId:'other',...contract}}),e=>e.status===403);
+  await commercialAiRoute({...request,path:'/api/platform/ai-subscriptions',session:actor,platform:true,method:'PUT',body:{propertyId:'other',...contract}});
+  assert.equal((await op('getSubscription','other',start)).status,'ACTIVE');
+  assert.ok(Number((await db.query('SELECT count(*) n FROM commercial_ai_subscription_audit')).rows[0].n)>=5);
+  console.log('PASS subscription migration/legacy/new-property/boundaries/renewal/gates/manual/correction/retention/route authority/isolation (FAKE_INTEGRATION)');
+ }finally{await db.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

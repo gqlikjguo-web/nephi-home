@@ -28,6 +28,7 @@ const path = require("node:path");
       await db.exec(fs.readFileSync(path.resolve(__dirname, "../migrations", file), "utf8"));
     }
     await db.query("INSERT INTO properties(property_id,display_name) VALUES('p1','Synthetic one'),('p2','Synthetic two'),('race','Synthetic race')");
+    await db.query("INSERT INTO commercial_ai_subscriptions(property_id,status) SELECT property_id,'legacy' FROM properties ON CONFLICT DO NOTHING");
     assert.deepEqual(await op("getStatus", "p1", september), { propertyId:"p1", monthlyLimit:null, used:0, remaining:null, period:"2026-09", aiEnabled:true, status:"UNCONFIGURED" });
     await message("e1");
     assert.equal((await op("reserve", source(["e1"]))).reason, "UNCONFIGURED");

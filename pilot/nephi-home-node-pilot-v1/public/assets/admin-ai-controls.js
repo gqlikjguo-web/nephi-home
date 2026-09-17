@@ -12,6 +12,16 @@ const AiControls = (() => {
     if (field) result.dataset.field = field;
     return result;
   }
+  function subscriptionText(data) {
+    if (!data) return "方案狀態暫時無法取得";
+    if (data.status === "EXPIRED") return "方案已到期，AI 自動回覆已暫停";
+    if (data.status === "NOT_STARTED") return `方案將於 ${data.contractStart.split("-").join("/")} 開始，AI 自動回覆尚未啟用`;
+    if (data.status === "DISABLED") return "方案已暫停，AI 自動回覆已暫停";
+    if (data.status === "UNCONFIGURED") return "方案尚未設定，AI 自動回覆已暫停";
+    if (data.status === "LEGACY") return "目前沿用原方案；合約期限待平台設定";
+    if (data.status === "ACTIVE") return `方案有效至 ${data.contractEnd.split("-").join("/")}`;
+    return "方案狀態暫時無法取得";
+  }
   function summary(host, cards = false) {
     const period = node(host, "p", "", "period"), usage = node(host, cards ? "div" : "p", "", "usage"), status = node(host, "p", "", "quotaStatus");
     status.setAttribute("role", "status");
@@ -22,7 +32,7 @@ const AiControls = (() => {
     host.append(status);
     return {
       clear() { period.textContent = ""; usage.replaceChildren(); usage.textContent = ""; status.textContent = ""; if (progress) progress.hidden = true; },
-      render(data) {
+      render(data, subscription) {
         period.textContent = `計費月份：${data.period}`;
         if (cards) {
           usage.replaceChildren(...[["本月已用", data.used], ["本月上限", data.monthlyLimit], ["剩餘額度", data.remaining]].map(([label, value]) => {
@@ -36,6 +46,7 @@ const AiControls = (() => {
         } else usage.textContent = `本月已用 ${data.used} 則／額度 ${data.monthlyLimit === null ? "未設定" : data.monthlyLimit} 則／剩餘 ${data.remaining === null ? "未設定" : data.remaining} 則`;
         status.textContent = data.monthlyLimit === null ? "額度未設定" : data.remaining === 0 ? "額度已用完，AI 自動回覆已暫停" : data.used >= data.monthlyLimit * .9 ? "本月額度已使用 90% 以上" : data.used >= data.monthlyLimit * .8 ? "本月額度已使用 80% 以上" : "本月額度正常";
         if (cards) status.textContent = data.monthlyLimit === null ? "額度未設定" : data.remaining === 0 ? "本月額度已用完，AI 自動回覆已暫停" : `本月剩餘 ${data.remaining} 則，可正常使用${data.used >= data.monthlyLimit * .9 ? "（已使用 90% 以上）" : data.used >= data.monthlyLimit * .8 ? "（已使用 80% 以上）" : ""}`;
+        if (["EXPIRED","NOT_STARTED","DISABLED","UNCONFIGURED"].includes(subscription?.status)) status.textContent = subscriptionText(subscription);
       }
     };
   }
@@ -45,6 +56,7 @@ const AiControls = (() => {
     enabled.type="checkbox"; enabled.disabled=true; enabled.className="ai-master-toggle admin-toggle";
     enabled.setAttribute("role","switch"); enabled.setAttribute("aria-label","AI 自動回覆");
     switchBox.append(label,enabled);heading.append(node(host,"h2","AI 回覆管理"),switchBox);host.append(heading);
+    const subscriptionStatus=node(host,"p","","subscriptionStatus");subscriptionStatus.setAttribute("role","status");host.append(subscriptionStatus);
     const totals=summary(host,true), usageWindow=node(host,"div","","usageWindow");usageWindow.className="ai-usage-windows";host.append(usageWindow);
     const usageNote=node(host,"p","只計算實際使用的 AI 回覆額度。");usageNote.className="ai-quota-note";host.append(usageNote);
     const refresh=node(host,"button","重新整理","refresh"),message=node(host,"p","","message");
@@ -55,6 +67,7 @@ const AiControls = (() => {
     const detailHeader=node(host,"div"),title=node(host,"h3","請選擇客人對話","guestTitle"),state=node(host,"p","","guestState"),handoffNote=node(host,"p","","handoffNote"),handoff=node(host,"button","轉人工","handoff"),older=node(host,"button","載入較早訊息","older"),history=node(host,"div",undefined,"history");
     detailHeader.className="ai-detail-header";history.className="ai-history";handoff.type=older.type="button";handoff.disabled=true;handoff.hidden=true;older.hidden=true;
     detailHeader.append(title,state,handoffNote,handoff);detail.append(detailHeader,older,history);layout.append(list,detail);host.append(layout);
+    let lastSubscription=null;
     let version=0,guestVersion=0,currentId=null,savedEnabled=false,items=[],selected=null,nextCursor=null,historyItems=[],busyHistory=false,writesInFlight=0;
     const current=(revision,id)=>revision===version&&id===currentId&&id===getPropertyId();
     const time=value=>{const date=new Date(value);return value&&Number.isFinite(date.getTime())?date.toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}):"時間未提供";};
@@ -72,15 +85,16 @@ const AiControls = (() => {
       });
     }
     function resetDetail(){guestVersion++;selected=null;nextCursor=null;historyItems=[];busyHistory=false;title.textContent="請選擇客人對話";history.replaceChildren();older.hidden=true;older.disabled=false;renderState();}
-    function clear(){version++;currentId=null;items=[];enabled.disabled=true;enabled.checked=false;enabled.setAttribute("aria-checked","false");label.textContent="AI 自動回覆：尚未載入";list.replaceChildren();totals.clear();usageWindow.replaceChildren();message.textContent="";resetDetail();}
+    function clear(){version++;currentId=null;items=[];enabled.disabled=true;enabled.checked=false;enabled.setAttribute("aria-checked","false");label.textContent="AI 自動回覆：尚未載入";list.replaceChildren();totals.clear();lastSubscription=null;subscriptionStatus.textContent="";usageWindow.replaceChildren();message.textContent="";resetDetail();}
     async function load(){
       if(writesInFlight&&currentId===getPropertyId())return;
       clear();const id=getPropertyId();if(!id)return;currentId=id;const revision=version;message.textContent="載入中…";
       try{
         const query=new URLSearchParams({propertyId:id});
-        const [data,conversations,usage]=await Promise.all([api(`/api/ai-controls?${query}`),api(`/api/ai-controls/conversations?${query}`),api(`/api/ai-controls/usage?${query}`)]);
+        const [data,conversations,usage,subscription]=await Promise.all([api(`/api/ai-controls?${query}`),api(`/api/ai-controls/conversations?${query}`),api(`/api/ai-controls/usage?${query}`),api(`/api/ai-subscription?${query}`)]);
         if(!current(revision,id))return;if(data.propertyId!==id)throw Error("旅宿已切換，請重新整理。");
-        savedEnabled=data.aiEnabled;renderSwitch();enabled.disabled=false;totals.render(data);
+        lastSubscription=subscription;subscriptionStatus.textContent=subscriptionText(subscription);
+        savedEnabled=data.aiEnabled;renderSwitch();enabled.disabled=false;totals.render(data,lastSubscription);
         usageWindow.replaceChildren(...[["今日",usage.today,usage.day,"usageToday"],["本週",usage.week,`週一起 ${usage.weekStart}`,"usageWeek"],["本月",data.used,data.period,"usageMonth"]].map(([label,value,period,field])=>{
           const card=node(host,"div",undefined,field);card.className="ai-usage-card";card.append(node(host,"span",label),node(host,"strong",`${value} 則`),node(host,"small",period));return card;
         }));
@@ -90,7 +104,7 @@ const AiControls = (() => {
     enabled.onchange=async()=>{
       if(enabled.disabled||currentId!==getPropertyId())return;const revision=version,id=currentId,requested=enabled.checked;enabled.disabled=true;writesInFlight++;refresh.disabled=true;
       try{const data=await api(`/api/ai-controls?${new URLSearchParams({propertyId:id})}`,{method:"PUT",body:JSON.stringify({aiEnabled:requested})});
-        if(!current(revision,id))return;if(data.propertyId!==id)throw Error("旅宿已切換，請重新整理。");savedEnabled=data.aiEnabled;totals.render(data);message.textContent="已儲存 AI 自動回覆設定。";
+        if(!current(revision,id))return;if(data.propertyId!==id)throw Error("旅宿已切換，請重新整理。");savedEnabled=data.aiEnabled;totals.render(data,lastSubscription);message.textContent="已儲存 AI 自動回覆設定。";
       }catch(error){if(current(revision,id))message.textContent=error.message||"儲存失敗，請重試。";}
       finally{writesInFlight--;refresh.disabled=writesInFlight>0;if(current(revision,id)){renderSwitch();enabled.disabled=false;}}
     };
@@ -145,15 +159,21 @@ const AiControls = (() => {
     const totals = summary(host), input = node(host, "input", undefined, "monthlyLimit"), label = node(host, "label", "每月額度（留白代表未設定）"), save = node(host, "button", "儲存額度", "saveLimit"), message = node(host, "p", "", "message");
     input.type = "number"; input.min = "0"; input.step = "1"; input.disabled = true; save.type = "button"; save.disabled = true;
     label.append(input); message.setAttribute("role", "status"); message.setAttribute("aria-live", "polite"); host.append(label, save, message);
+    const contractStart=node(host,"input",undefined,"contractStart"), contractEnd=node(host,"input",undefined,"contractEnd"), subscriptionEnabled=node(host,"input",undefined,"subscriptionEnabled"), saveSubscription=node(host,"button","儲存合約／續約","saveSubscription"), subscriptionStatus=node(host,"p","","subscriptionStatus");
+    contractStart.type=contractEnd.type="date"; subscriptionEnabled.type="checkbox";subscriptionEnabled.className="admin-toggle";subscriptionEnabled.setAttribute("role","switch");saveSubscription.type="button";
+    for(const [caption,element] of [["合約開始日（台灣時間）",contractStart],["合約到期日（含當日）",contractEnd],["方案啟用",subscriptionEnabled]]){const row=node(host,"label",caption);row.append(element);host.append(row);}
+    host.append(subscriptionStatus,saveSubscription);
+    const contractDisabled=value=>{contractStart.disabled=contractEnd.disabled=subscriptionEnabled.disabled=saveSubscription.disabled=value;};contractDisabled(true);
     let version = 0, knownIds = new Set();
     property.onchange = async () => {
-      const revision = ++version, id = property.value; input.disabled = true; save.disabled = true; input.value = ""; totals.clear(); message.textContent = "";
+      const revision = ++version, id = property.value; contractDisabled(true);contractStart.value=contractEnd.value="";subscriptionStatus.textContent=""; input.disabled = true; save.disabled = true; input.value = ""; totals.clear(); message.textContent = "";
       if (!knownIds.has(id)) return;
       try {
-        const data = await api(`/api/platform/ai-controls?${new URLSearchParams({ propertyId: id })}`);
+        const [data,subscription] = await Promise.all([api(`/api/platform/ai-controls?${new URLSearchParams({ propertyId: id })}`),api(`/api/platform/ai-subscriptions?${new URLSearchParams({ propertyId: id })}`)]);
         if (revision !== version || id !== property.value) return;
         if (data.propertyId !== id) throw new Error("旅宿已切換，請重新整理。");
-        totals.render(data); input.value = data.monthlyLimit === null ? "" : String(data.monthlyLimit); input.disabled = false; save.disabled = false;
+        totals.render(data,subscription); input.value = data.monthlyLimit === null ? "" : String(data.monthlyLimit); input.disabled = false; save.disabled = false;
+        contractStart.value=subscription.contractStart||"";contractEnd.value=subscription.contractEnd||"";subscriptionEnabled.checked=subscription.configuredStatus!=="disabled";subscriptionStatus.textContent=subscriptionText(subscription);contractDisabled(false);
       } catch (error) { if (revision === version) message.textContent = error.message || "載入失敗，請重試。"; }
     };
     save.onclick = async () => {
@@ -169,8 +189,24 @@ const AiControls = (() => {
       } catch (error) { if (revision === version) message.textContent = error.message || "儲存失敗，請重試。"; }
       finally { if (revision === version) save.disabled = false; }
     };
+    saveSubscription.onclick=async()=>{
+      if(saveSubscription.disabled||!knownIds.has(property.value))return;
+      const id=property.value,revision=version,monthlyLimit=Number(input.value);
+      if(!contractStart.value||!contractEnd.value||contractEnd.value<contractStart.value||!input.value.trim()||!Number.isSafeInteger(monthlyLimit)||monthlyLimit<0){message.textContent="請填寫有效的合約起訖日期與每月額度。";return;}
+      contractDisabled(true);save.disabled=true;input.disabled=true;
+      try{
+        const subscription=await api("/api/platform/ai-subscriptions",{method:"PUT",body:JSON.stringify({propertyId:id,status:subscriptionEnabled.checked?"active":"disabled",contractStart:contractStart.value,contractEnd:contractEnd.value,monthlyLimit})});
+        if(revision!==version||id!==property.value)return;
+        if(subscription.propertyId!==id)throw Error("旅宿已切換，請重新整理。");
+        const data=await api(`/api/platform/ai-controls?${new URLSearchParams({propertyId:id})}`);
+        if(revision!==version||id!==property.value)return;
+        if(data.propertyId!==id)throw Error("旅宿已切換，請重新整理。");
+        totals.render(data,subscription);subscriptionStatus.textContent=subscriptionText(subscription);message.textContent="已儲存合約與每月額度。";
+      }catch(error){if(revision===version)message.textContent=error.message||"儲存失敗，請重試。";}
+      finally{if(revision===version){contractDisabled(false);save.disabled=false;input.disabled=false;}}
+    };
     async function load() {
-      const revision = ++version; save.disabled = true; input.disabled = true;
+      const revision = ++version; contractDisabled(true); save.disabled = true; input.disabled = true;
       try {
         const data = await api("/api/admin/platform/properties"); if (revision !== version) return;
         const items = data.items || []; knownIds = new Set(items.map(item => item.propertyId));

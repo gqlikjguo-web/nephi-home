@@ -16,6 +16,7 @@ const hash=name=>createHash("sha256").update(`synthetic-session:${name}`).digest
     const directory=path.resolve(__dirname,"../migrations");
     for(const file of fs.readdirSync(directory).filter(file=>file.endsWith(".sql")).sort())await db.exec(fs.readFileSync(path.join(directory,file),"utf8"));
     await db.query("INSERT INTO properties(property_id,display_name) VALUES('operator','Synthetic operator'),('other','Synthetic other')");
+    await db.query("INSERT INTO commercial_ai_subscriptions(property_id,status) SELECT property_id,'legacy' FROM properties ON CONFLICT DO NOTHING");
     await db.query("INSERT INTO admin_users(property_id,username,password_hash) VALUES('operator','legacy','synthetic'),('operator','identity','synthetic'),('other','identity','synthetic')");
     await db.query("INSERT INTO admin_identities(user_id,email,normalized_email,password_hash) VALUES('identity-id','synthetic@example.test','synthetic@example.test','synthetic')");
     await db.query("INSERT INTO admin_user_properties(user_id,property_id,username) VALUES('identity-id','operator','identity'),('identity-id','other','identity')");

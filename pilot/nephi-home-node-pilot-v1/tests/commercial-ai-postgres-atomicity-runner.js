@@ -66,10 +66,11 @@ function loadOperation(mutate) {
     await connections[0].query(`CREATE SCHEMA ${schema}`);
     created = true;
     await Promise.all(connections.map(connection => connection.query(`SET search_path TO ${schema}`)));
-    for (const file of ["001_initial.sql","002_admin_auth.sql","025_new_core_test_sessions.sql","026_commercial_ai_controls.sql"]) {
+    for (const file of ["001_initial.sql","002_admin_auth.sql","025_new_core_test_sessions.sql","026_commercial_ai_controls.sql","028_commercial_subscriptions.sql"]) {
       await connections[0].query(fs.readFileSync(path.resolve(__dirname,"../migrations",file),"utf8"));
     }
     await connections[0].query("INSERT INTO properties(property_id,display_name) VALUES('distinct','Synthetic distinct race'),('duplicate','Synthetic duplicate race')");
+    await connections[0].query("INSERT INTO commercial_ai_subscriptions(property_id,status) SELECT property_id,'legacy' FROM properties ON CONFLICT DO NOTHING");
     for (const [propertyId,ids] of [["distinct",["one","two","next"]],["duplicate",["same"]]]) {
       for (const id of ids) await connections[0].query("INSERT INTO message_logs(property_id,channel_id,line_user_id,event_id,review_id,payload) VALUES($1,'synthetic-channel','synthetic-user',$2,$2,'{}')",[propertyId,id]);
       await op(0,"setLimit",propertyId,1);

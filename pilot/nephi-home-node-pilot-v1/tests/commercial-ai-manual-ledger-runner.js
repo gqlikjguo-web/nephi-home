@@ -16,8 +16,9 @@ const { commercialOperation } = require("../lib/providers/commercial-ai-store");
   const scope = {propertyId:"manual",channelId:"manual-test",userId:"manual-user"};
   const input = {...scope,turnId:"manual-turn",eventIds:["manual-event"],testSessionId:"f585c9af-e5e5-4880-9fca-45c13c6e7cb7",ownerId:"owner"};
   try {
-    for (const file of ["001_initial.sql","002_admin_auth.sql","025_new_core_test_sessions.sql","026_commercial_ai_controls.sql"]) await db.exec(fs.readFileSync(path.resolve(__dirname,"../migrations",file),"utf8"));
+    for (const file of ["001_initial.sql","002_admin_auth.sql","025_new_core_test_sessions.sql","026_commercial_ai_controls.sql","028_commercial_subscriptions.sql"]) await db.exec(fs.readFileSync(path.resolve(__dirname,"../migrations",file),"utf8"));
     await db.query("INSERT INTO properties(property_id,display_name) VALUES('manual','Synthetic manual test'),('other','Synthetic other')");
+    await db.query("INSERT INTO commercial_ai_subscriptions(property_id,status) SELECT property_id,'legacy' FROM properties ON CONFLICT DO NOTHING");
     await db.query("INSERT INTO new_core_test_sessions(test_session_id,property_id,owner_id,state_v3,created_at,updated_at) VALUES($1,$2,$3,$4,now(),now())",[input.testSessionId,input.propertyId,input.ownerId,JSON.stringify({scope:{propertyId:scope.propertyId,channel:scope.channelId,userId:scope.userId}})]);
     await op("setAiEnabled","manual",false);
     await op("setHandoff","manual",scope.channelId,scope.userId,true);

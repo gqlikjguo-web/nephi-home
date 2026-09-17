@@ -1,4 +1,5 @@
 "use strict";
+const {readSubscription,subscriptionDenial,setSubscription}=require('./commercial-subscription');
 
 function identity(value) {
   if (typeof value !== "string" || !value.trim()) throw new Error("COMMERCIAL_IDENTITY_REQUIRED");
@@ -182,7 +183,13 @@ async function commercialOperation(client, name, args = []) {
   if (objectOperation) { identity(input.channelId); identity(input.userId); }
   return client.transaction(async tx => {
     let control = await lockControls(tx, propertyId);
-    const time = await clock(tx, objectOperation ? input.now : name === "getStatus" ? args[1] : undefined);
+    const time = await clock(tx, objectOperation ? input.now : ["getStatus","getSubscription"].includes(name) ? args[1] : undefined);
+    if (name === "getSubscription") return {...await readSubscription(tx,propertyId,time),monthlyLimit:control.monthly_limit===null?null:Number(control.monthly_limit)};
+    if (name === "setSubscription") return setSubscription(tx,propertyId,args[1],args[2],time,control);
+    if (["reserve","authorizeManual","authorizeOperatorTest","beginAttempt"].includes(name)) {
+      const reason=await subscriptionDenial(tx,propertyId,time);
+      if(reason)return {allowed:false,reason,period:time.period};
+    }
     if (name === "getStatus") return status(tx, propertyId, control, time.period);
     if (name === "setLimit") {
       const limit = args[1];

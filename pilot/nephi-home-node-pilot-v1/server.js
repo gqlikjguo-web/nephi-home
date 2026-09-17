@@ -850,7 +850,7 @@ function createRequestHandler(service, options = {}) {
           conversationStore:options.commercialStore,profileService:options.lineProfileService
         }));
       }
-      if (["/api/ai-controls", "/api/ai-controls/conversations", "/api/ai-controls/usage", "/api/ai-controls/history", "/api/platform/ai-controls"].includes(pathname)) {
+      if (["/api/ai-subscription", "/api/platform/ai-subscriptions", "/api/ai-controls", "/api/ai-controls/conversations", "/api/ai-controls/usage", "/api/ai-controls/history", "/api/platform/ai-controls"].includes(pathname)) {
         const token = cookieValue(request, "nephi_admin_session");
         const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
         const platform = Boolean(session && onboarding && await onboarding.isPlatformAdmin(session));
