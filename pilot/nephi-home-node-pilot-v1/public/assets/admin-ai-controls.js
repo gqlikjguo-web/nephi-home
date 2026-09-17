@@ -58,7 +58,7 @@ const AiControls = (() => {
     let version=0,guestVersion=0,currentId=null,savedEnabled=false,items=[],selected=null,nextCursor=null,historyItems=[],busyHistory=false,writesInFlight=0;
     const current=(revision,id)=>revision===version&&id===currentId&&id===getPropertyId();
     const time=value=>{const date=new Date(value);return value&&Number.isFinite(date.getTime())?date.toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}):"時間未提供";};
-    const identity=guest=>`${String(guest.displayName||"客人對話").slice(0,40)}（${guest.userId.slice(-8)}）`;
+    const identity=guest=>guest.displayName?String(guest.displayName).slice(0,40):`客人對話（${guest.userId.slice(-8)}）`;
     function renderSwitch(){enabled.checked=savedEnabled;enabled.setAttribute("aria-checked",String(savedEnabled));label.textContent=`AI 自動回覆：${savedEnabled?"開啟":"關閉"}`;}
     function renderState(){state.textContent=selected?(selected.humanControlled?"人工接管中":"AI 回覆中"):"";handoffNote.textContent=selected?.humanControlled?"AI 已暫停回覆這位客人":"";handoffNote.hidden=!selected?.humanControlled;handoff.textContent=selected?.humanControlled?"恢復 AI 回覆":"轉人工";handoff.hidden=!selected;handoff.disabled=!selected||Boolean(selected.busy);}
     function renderList(){

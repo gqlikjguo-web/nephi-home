@@ -73,7 +73,7 @@ async function run() {
   const firstLabel = rowText(select.children[0]), secondLabel = rowText(select.children[1]);
   assert.match(firstLabel, /請問入住時間？/, "first same-name guest must show their message preview");
   assert.match(secondLabel, /我要確認停車位置 <script>/, "second same-name guest must show their own literal message preview");
-  assert.match(firstLabel, /user\?A/); assert.match(secondLabel, /user\?B/);
+  assert.equal(select.children[0].children[0].textContent, "同名 <script>"); assert.equal(select.children[1].children[0].textContent, "同名 <script>");
   assert.match(firstLabel, /2026/); assert.match(secondLabel, /2026/);
   assert.notEqual(firstLabel, secondLabel); assert.ok(secondLabel.length < 160, "message preview must be bounded");
   reverseGuests = true; await operator.load();
