@@ -68,7 +68,7 @@ async function main() {
   const output = { understandingOutput: { schemaVersion: 1, turnId: "turn", units: [invalid] }, contextLinkCandidates: [{
     contextLinkCandidateId: "link", unitId: "unit", relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: [evidence], referencedHistoryEventRefs: []
   }] };
-  assert.equal(schemaAccepts(openAiUnderstandingV1ProviderSchema(input), output), true, "fixture must pass provider schema");
+  assert.equal(schemaAccepts(openAiUnderstandingV1ProviderSchema(input), output), false, "provider schema must reject the same inadmissible identity as C03");
   const bodies = [], markers = [], operational = [];
   const result = await callOpenAIUnderstandingV1(input, {
     apiKey: "isolated-test-placeholder", nowMs: () => Date.parse(now),

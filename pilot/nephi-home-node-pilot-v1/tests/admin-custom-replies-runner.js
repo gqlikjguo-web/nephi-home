@@ -89,11 +89,11 @@ async function request(base, route, options = {}) {
     const order = ["房況管理", "房型與價格", "包棟方案", "自訂回覆", "其他必要設定"].map((label) => html.indexOf(label));
     assert.ok(order.every((position) => position >= 0));
     assert.deepEqual([...order].sort((a, b) => a - b), order, "operator sections must use the required order");
-    assert.match(html, /<details[^>]*class="[^"]*other-settings[^"]*"[^>]*>/);
-    assert.doesNotMatch(html, /<details[^>]*class="[^"]*other-settings[^"]*"[^>]*\sopen(?:\s|>)/);
-    assert.match(html, /房型特色（選填，最多3項）/);
-    assert.match(html, /旅客查房頁/);
-    assert.match(html, /不提供 AI 回答/);
+    const adminAsset = await request(running.url, "/assets/admin.js");
+    assert.equal(adminAsset.response.status, 200);
+    assert.match(adminAsset.body, /房型特色（選填，最多3項）/);
+    assert.match(adminAsset.body, /旅客查房頁/);
+    assert.match(adminAsset.body, /不提供 AI 回答/);
 
     assert.match(html, /客人詢問的主題/);
     assert.match(html, /客人詢問的入住日期/);

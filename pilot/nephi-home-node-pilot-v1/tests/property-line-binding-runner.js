@@ -223,7 +223,8 @@ async function waitFor(predicate, timeoutMs = 1000) {
     assert.equal(blankRecord.noReply, false);
     assert.equal(blankRecord.deliveryErrorCode, "final_response_empty_reply");
     const blankDiagnostic = transportDiagnostics.find((entry) => entry.traceId === scenarioResults.get(blankEventId).traceId && entry.reasonCode === "final_response_empty_reply");
-    assert.deepEqual(blankDiagnostic, { traceId: scenarioResults.get(blankEventId).traceId, propertyId: "property_a", stage: "line_transport", decision: "reply", reasonCode: "final_response_empty_reply", attempted: false, delivered: false });
+    assert.ok(Number.isFinite(blankDiagnostic.monotonicMs) && blankDiagnostic.monotonicMs >= 0, "transport timestamp must be a finite monotonic clock value");
+    assert.deepEqual(blankDiagnostic, { traceId: scenarioResults.get(blankEventId).traceId, monotonicMs: blankDiagnostic.monotonicMs, propertyId: "property_a", stage: "line_transport", decision: "reply", reasonCode: "final_response_empty_reply", attempted: false, delivered: false });
 
     const callsBeforeFailures = plannerProperties.length;
     const bindingBWebhookBeforeRejectedRequests = bindingService.status("property_b").lastValidWebhookAt;

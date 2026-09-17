@@ -126,7 +126,8 @@ function assertRecordAlignment(result) {
   }
   const silent = await run("no_reply", "success");
   assert.equal(silent.engineDiagnostics.find((entry) => entry.stage === "final_decision").decision, "no_reply");
-  assert.deepEqual(silent.transportDiagnostics, [{ traceId: silent.transportDiagnostics[0].traceId, propertyId, stage: "line_transport", decision: "no_reply", reasonCode: "no_reply_gate_hit", attempted: false, delivered: false }]);
+  assert.ok(Number.isFinite(silent.transportDiagnostics[0].monotonicMs) && silent.transportDiagnostics[0].monotonicMs >= 0, "transport timestamp must be a finite monotonic clock value");
+  assert.deepEqual(silent.transportDiagnostics, [{ traceId: silent.transportDiagnostics[0].traceId, monotonicMs: silent.transportDiagnostics[0].monotonicMs, propertyId, stage: "line_transport", decision: "no_reply", reasonCode: "no_reply_gate_hit", attempted: false, delivered: false }]);
   assert.equal(silent.finalResponse.shouldReply, false);
   assert.equal(silent.finalResponse.replyText.trim(), "");
   assert.equal(silent.calls.length, 0);
@@ -156,7 +157,8 @@ function assertRecordAlignment(result) {
   assert.equal(blankRecord.replyDelivered, false);
   assert.equal(blankRecord.noReply, false);
   assert.equal(blankRecord.deliveryErrorCode, "final_response_empty_reply");
-  assert.deepEqual(blank.transportDiagnostics.at(-1), { traceId: blank.transportDiagnostics.at(-1).traceId, propertyId, stage: "line_transport", decision: "reply", reasonCode: "final_response_empty_reply", attempted: false, delivered: false });
+  assert.ok(Number.isFinite(blank.transportDiagnostics.at(-1).monotonicMs) && blank.transportDiagnostics.at(-1).monotonicMs >= 0, "transport timestamp must be a finite monotonic clock value");
+  assert.deepEqual(blank.transportDiagnostics.at(-1), { traceId: blank.transportDiagnostics.at(-1).traceId, monotonicMs: blank.transportDiagnostics.at(-1).monotonicMs, propertyId, stage: "line_transport", decision: "reply", reasonCode: "final_response_empty_reply", attempted: false, delivered: false });
   const callbackFailure = await run("reply", "success", { callbackThrows: true });
   assert.equal(callbackFailure.calls.length, 1, "a diagnostic callback failure must not suppress the LINE reply");
   assert.equal(callbackFailure.records.find((entry) => entry.eventId === callbackFailure.eventId).processingStatus, "reply_succeeded");
