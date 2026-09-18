@@ -22,22 +22,26 @@ function validate(body){
 }
 function createFeedbackStore({db,now=()=>new Date()}){
  async function resolve(token,client=db,lock=false){
-  if(typeof token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(token))fail(404,'此回饋連結無效，請向旅宿取得新連結');
-  const row=(await client.query('SELECT property_id FROM property_feedback_links WHERE public_token=$1'+(lock?' FOR SHARE':''),[token])).rows[0];
+  if(typeof token!=='string'||!/^(?:[A-Za-z0-9_-]{16}|[A-Za-z0-9_-]{43})$/.test(token))fail(404,'此回饋連結無效，請向旅宿取得新連結');
+  const row=(await client.query('SELECT property_id FROM property_feedback_links WHERE '+(token.length===16?'short_public_id':'public_token')+'=$1'+(lock?' FOR SHARE':''),[token])).rows[0];
   if(!row)fail(404,'此回饋連結無效，請向旅宿取得新連結');return row.property_id;
  }
  async function link(propertyId){
-  await db.query('INSERT INTO property_feedback_links(property_id,public_token) VALUES($1,$2) ON CONFLICT(property_id) DO NOTHING',[propertyId,randomBytes(32).toString('base64url')]);
+  for(let attempt=0;attempt<5;attempt++){
+   try{await db.query('INSERT INTO property_feedback_links(property_id,public_token,short_public_id) VALUES($1,$2,$3) ON CONFLICT(property_id) DO NOTHING',[propertyId,randomBytes(32).toString('base64url'),randomBytes(12).toString('base64url')]);break;}
+   catch(error){if(error.code!=='23505'||attempt===4)throw error;}
+  }
   return (await db.query('SELECT public_token FROM property_feedback_links WHERE property_id=$1',[propertyId])).rows[0].public_token;
  }
- async function rotate(propertyId){const token=randomBytes(32).toString('base64url');const result=await db.query('UPDATE property_feedback_links SET public_token=$2,rotated_at=$3 WHERE property_id=$1 RETURNING public_token',[propertyId,token,now()]);if(!result.rows.length)fail(404,'找不到回饋表');return token;}
+ async function shortLink(propertyId){await link(propertyId);return (await db.query('SELECT short_public_id FROM property_feedback_links WHERE property_id=$1',[propertyId])).rows[0].short_public_id;}
+ async function rotate(propertyId){const token=randomBytes(32).toString('base64url');const result=await db.query('UPDATE property_feedback_links SET public_token=$2,rotated_at=$3,short_public_id=$4 WHERE property_id=$1 RETURNING public_token',[propertyId,token,now(),randomBytes(12).toString('base64url')]);if(!result.rows.length)fail(404,'找不到回饋表');return token;}
  async function submit(token,body,visitor){
   const value=validate(body);
   return db.transaction(async t=>{
    const propertyId=await resolve(token,t,true);
    let roomName=null;
    if(value.roomId){const room=(await t.query('SELECT COALESCE(NULLIF(display_name,\'\'),name) name FROM room_types WHERE property_id=$1 AND room_id=$2 AND enabled=true',[propertyId,value.roomId])).rows[0];if(!room)fail(400,'請重新選擇入住房型');roomName=room.name;}
-   const at=now(),hash=createHash('sha256').update(token+'\0'+visitor).digest('hex');
+   const at=now(),hash=createHash('sha256').update(propertyId+'\0'+visitor).digest('hex');
    // Transactional, bounded per-property and per-visitor counters; no identity lookup.
    for(const [key,limit] of [[hash,10],['property',300]]){
     const row=(await t.query(`INSERT INTO feedback_rate_limits(property_id,visitor_hash,window_start,attempts) VALUES($1,$2,$3,1)
@@ -83,6 +87,6 @@ function createFeedbackStore({db,now=()=>new Date()}){
   const row=(await db.query('UPDATE guest_feedback SET status=$3,internal_note=$4,updated_at=$5 WHERE property_id=$1 AND id=$2 RETURNING status,internal_note',[propertyId,id,body.status,text(body.internalNote,1000),now()])).rows[0];
   if(!row)fail(404,'找不到這則回饋');return row;
  }
- return {link,resolve,rotate,submit,summary,list,update};
+ return {link,shortLink,resolve,rotate,submit,summary,list,update};
 }
 module.exports={createFeedbackStore,fail};

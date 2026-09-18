@@ -14,7 +14,7 @@ function createFeedbackRoutes({getStore,persistence,customerSettings,publicBaseU
  function guard(request){const key=visitor(request),now=Date.now();for(const [k,v] of bursts)if(now-v.start>60000)bursts.delete(k);let value=bursts.get(key);if(!value){if(bursts.size>=10000)fail(429,'請稍候再試');value={start:now,count:0};bursts.set(key,value);}if(++value.count>600)fail(429,'送出次數較多，請稍候再試');}
  return async(request,response,url)=>{
   const publicMatch=/^\/api\/public\/feedback\/([A-Za-z0-9_-]{1,128})$/.exec(url.pathname);
-  const pageMatch=/^\/feedback\/([A-Za-z0-9_-]{1,128})$/.exec(url.pathname);
+  const pageMatch=/^\/(?:feedback|f)\/([A-Za-z0-9_-]{1,128})$/.exec(url.pathname);
   const operatorMatch=/^\/api\/feedback(?:\/(share|summary|[a-f0-9-]{36}))?$/.exec(url.pathname);
   if(!publicMatch&&!pageMatch&&!operatorMatch)return false;
   response.setHeader('referrer-policy','no-referrer');response.setHeader('x-content-type-options','nosniff');
@@ -42,7 +42,7 @@ function createFeedbackRoutes({getStore,persistence,customerSettings,publicBaseU
   for(const key of ['propertyId','customerId'])if(url.searchParams.has(key)&&url.searchParams.get(key)!==propertyId)fail(403,'無權管理其他旅宿');
   const store=await getStore(),part=operatorMatch[1];
   if(request.method==='GET'&&part==='share'){
-   const link=new URL('/feedback/'+await store.link(propertyId),publicBaseUrl).href;
+   const link=new URL('/f/'+await store.shortLink(propertyId),publicBaseUrl).href;
    sendData(response,{url:link,qr:await require('qrcode').toDataURL(link,{errorCorrectionLevel:'M',margin:4,width:280})});return true;
   }
   if(request.method==='GET'&&part==='summary'){sendData(response,await store.summary(propertyId));return true;}
