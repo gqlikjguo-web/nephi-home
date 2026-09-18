@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/assets/admin-controls.css">
 <link rel="stylesheet" href="/assets/admin-ai-controls.css">
 <link rel="stylesheet" href="/assets/admin-calendar.css">
+<link rel="stylesheet" href="/assets/admin-feedback.css">
 </head>
 <body data-public-base-url="{{PUBLIC_BASE_URL}}">
 <main class="shell">
@@ -19,9 +20,10 @@
   <section id="propertyChooser" class="card login" hidden><h2>選擇要管理的旅宿</h2><p class="hint">此 Email 可管理多家旅宿，請選擇本次要進入的後台。</p><div id="propertyChoices" class="property-choices"></div><p id="propertyChoiceMessage" class="message" role="alert"></p></section>
 	  <div id="workspace" hidden>
       <nav id="adminNavigation" class="admin-navigation" aria-label="admin navigation">
-        <button type="button" data-admin-tab="availability" class="active">&#25151;&#27841;&#31649;&#29702;</button><button type="button" data-admin-tab="pricing">&#25151;&#22411;&#33287;&#20729;&#26684;</button><button type="button" data-admin-tab="bundles">&#21253;&#26847;&#26041;&#26696;</button><button type="button" data-admin-tab="ai">AI 回覆管理</button><button type="button" data-admin-tab="other">&#20854;&#20182;&#35373;&#23450;</button>
+        <button type="button" data-admin-tab="availability" class="active">&#25151;&#27841;&#31649;&#29702;</button><button type="button" data-admin-tab="pricing">&#25151;&#22411;&#33287;&#20729;&#26684;</button><button type="button" data-admin-tab="bundles">&#21253;&#26847;&#26041;&#26696;</button><button type="button" data-admin-tab="ai">AI 回覆管理</button><button type="button" data-admin-tab="feedback">住客回饋</button><button type="button" data-admin-tab="other">&#20854;&#20182;&#35373;&#23450;</button>
       </nav>
-      <label id="adminMobileNavigation" class="admin-mobile-navigation">&#21151;&#33021;&#36984;&#21934;<select id="adminTabSelect"><option value="availability">&#25151;&#27841;&#31649;&#29702;</option><option value="pricing">&#25151;&#22411;&#33287;&#20729;&#26684;</option><option value="bundles">&#21253;&#26847;&#26041;&#26696;</option><option value="ai">AI 回覆管理</option><option value="other">&#20854;&#20182;&#35373;&#23450;</option></select></label>
+      <label id="adminMobileNavigation" class="admin-mobile-navigation">&#21151;&#33021;&#36984;&#21934;<select id="adminTabSelect"><option value="availability">&#25151;&#27841;&#31649;&#29702;</option><option value="pricing">&#25151;&#22411;&#33287;&#20729;&#26684;</option><option value="bundles">&#21253;&#26847;&#26041;&#26696;</option><option value="ai">AI 回覆管理</option><option value="feedback">住客回饋</option><option value="other">&#20854;&#20182;&#35373;&#23450;</option></select></label>
+	    <section id="guestFeedback" aria-label="住客回饋" data-admin-panel="feedback" hidden></section>
 	    <section id="aiControls" class="card ai-management" aria-label="AI 回覆管理" data-admin-panel="ai" hidden></section>
 	    <section class="card availability-card" data-admin-panel="availability">
       <div class="toolbar availability-toolbar"><div><p class="eyebrow" id="propertyLabel"></p><h2>房況管理</h2></div><div id="listRangeControls" class="availability-range-actions"><label>顯示日期<select id="availabilityRange" aria-label="房況顯示日期"><option value="rolling">今天起 30 天</option></select></label><button id="availabilityToday" type="button" class="secondary">回到今天</button></div></div>
@@ -70,6 +72,7 @@
 <script src="/assets/admin-room-composition.js" defer></script>
 <script src="/assets/admin.js" defer></script>
 <script src="/assets/admin-ai-controls.js" defer></script>
+<script src="/assets/admin-feedback.js" defer></script>
 <script src="/assets/admin-back-to-top.js" defer></script>
 </body>
 </html>
