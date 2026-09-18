@@ -833,11 +833,17 @@ function createRequestHandler(service, options = {}) {
     if (!accessible) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權存取尼腓的家");
     return session;
   }
+  const feedbackRoutes = require("./lib/guest-feedback-routes").createFeedbackRoutes({
+    getStore: options.getFeedbackStore || (async () => { throw new AppError(503, "FEEDBACK_UNAVAILABLE", "回饋表暫時無法使用"); }),
+    persistence, customerSettings, publicBaseUrl: publicBrand.publicBaseUrl,
+    sendData, sendStatic: (response, file) => sendStatic(response, file, publicBrand)
+  });
   return async function handleRequest(request, response) {
     const url = new URL(request.url, "http://127.0.0.1");
     const pathname = url.pathname;
 
     try {
+      if (await feedbackRoutes(request, response, url)) return;
       if (request.method === "GET" && pathname === "/api/health") {
         return sendData(response, { status: "ready", testOnly: testOnlyEnvironment, commit: deploymentCommit, deployment: deploymentIdentity });
       }
@@ -1661,8 +1667,18 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
-  const server = http.createServer(createRequestHandler(service, { commercialStore:providers.commercial, lineProfileService, sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
-  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (commercialController) commercialController.close(); if (typeof ownedNewCoreManualTestFactsProviders?.close === "function") await ownedNewCoreManualTestFactsProviders.close(); if (typeof providers.close === "function") await providers.close(); } };
+  let feedbackDatabase = null;
+  let feedbackStorePromise = null;
+  const getFeedbackStore = options.getFeedbackStore || (() => {
+    if (!feedbackStorePromise) feedbackStorePromise = (async () => {
+      if (!config.databaseUrl) throw new AppError(503, "FEEDBACK_UNAVAILABLE", "回饋表暫時無法使用");
+      feedbackDatabase = await require("./lib/providers/postgres-client").openPostgres({ kind: "pg", databaseUrl: config.databaseUrl });
+      return require("./lib/guest-feedback-store").createFeedbackStore({ db: feedbackDatabase });
+    })().catch(error => { feedbackStorePromise = null; throw error; });
+    return feedbackStorePromise;
+  });
+  const server = http.createServer(createRequestHandler(service, { getFeedbackStore, commercialStore:providers.commercial, lineProfileService, sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
+  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (feedbackDatabase) await feedbackDatabase.close(); if (commercialController) commercialController.close(); if (typeof ownedNewCoreManualTestFactsProviders?.close === "function") await ownedNewCoreManualTestFactsProviders.close(); if (typeof providers.close === "function") await providers.close(); } };
 }
 
 if (require.main === module) {

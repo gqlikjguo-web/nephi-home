@@ -13,8 +13,8 @@ const desktopTabs = [...html.matchAll(/<button[^>]+data-admin-tab="([^"]+)"[^>]*
 const mobileNavigation = html.match(/<select id="adminTabSelect">([\s\S]*?)<\/select>/);
 assert.ok(mobileNavigation, "mobile navigation select must remain present");
 const mobileTabs = [...mobileNavigation[1].matchAll(/<option[^>]+value="([^"]+)"[^>]*>/g)].map((match) => match[1]);
-assert.deepEqual(desktopTabs, ["availability", "pricing", "bundles", "ai", "other"], "desktop tab order must remain unchanged apart from custom replies");
-assert.deepEqual(mobileTabs, ["availability", "pricing", "bundles", "ai", "other"], "mobile tab order must remain unchanged apart from custom replies");
+assert.deepEqual(desktopTabs, ["availability", "pricing", "bundles", "ai", "feedback", "other"], "desktop tab order must include feedback before other settings");
+assert.deepEqual(mobileTabs, ["availability", "pricing", "bundles", "ai", "feedback", "other"], "mobile tab order must include feedback before other settings");
 
 assert.match(html, /<section class="card custom-replies-card">/, "custom reply panel and its existing data flow must remain present");
 
