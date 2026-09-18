@@ -4,10 +4,10 @@
 <form id="feedbackForm" hidden novalidate>
 <section class="form-section"><h2>整體住宿滿意度 <small>必填</small></h2><div id="overallRating"></div><p class="rating-hint">1 分非常不滿意 · 5 分非常滿意</p></section>
 <section class="form-section"><h2>這次住宿各方面的感受</h2><p class="hint">有感受的項目再填就好。</p><div id="experienceRatings"></div></section>
-<section class="form-section"><h2>最滿意的地方</h2><p class="hint">可複選</p><div id="positiveChoices" class="choices"></div></section>
-<section class="form-section"><h2>希望改善的地方</h2><p class="hint">可複選；沒有特別需要改善也沒關係。</p><div id="improvementChoices" class="choices"></div></section>
+<section class="form-section"><h2>最滿意的地方</h2><p class="hint">可複選</p><div id="positiveChoices" class="choices"></div><label id="positiveOtherTextField" class="field other-field" hidden>其他滿意的地方（選填）<textarea name="positiveOtherText" rows="2" maxlength="500" placeholder="例如：陽台、停車、景觀……" disabled></textarea></label></section>
+<section class="form-section"><h2>希望改善的地方</h2><p class="hint">可複選；沒有特別需要改善也沒關係。</p><div id="improvementChoices" class="choices"></div><label id="improvementOtherTextField" class="field other-field" hidden>其他希望改善的地方（選填）<textarea name="improvementOtherText" rows="2" maxlength="500" placeholder="可以告訴我們希望改善什麼" disabled></textarea></label></section>
 <section class="form-section"><h2>之後是否願意再次入住？</h2><div id="revisitChoices" class="choices"></div></section>
 <section class="form-section"><h2>想讓我們知道是哪組旅客嗎？</h2><p class="hint">完全選填，不填也可以匿名回饋。</p><div class="stay-fields"><label class="field">入住日期（選填）<input type="date" name="stayDate" min="1900-01-01" max="2199-12-31"></label><label class="field">入住房型（選填）<select name="roomId"><option value="">不填寫</option></select></label></div></section>
-<section class="form-section"><label class="field"><span class="question">還有什麼想告訴我們的？（選填）</span><textarea name="comment" rows="4" maxlength="2000" placeholder="您的感受與建議，我們都會認真看。"></textarea></label></section>
+<section class="form-section"><label class="field"><span class="question">還有什麼想告訴我們的？（選填）</span><textarea name="comment" rows="3" maxlength="2000" placeholder="您的感受與建議，我們都會認真看。"></textarea></label></section>
 <p id="submitMessage" role="alert"></p><button class="submit" type="submit">送出回饋</button><p class="privacy">不需留下姓名或聯絡方式，安心分享您的感受。</p>
 </form><section id="feedbackComplete" class="complete" hidden tabindex="-1"><span class="complete-mark" aria-hidden="true">✓</span><h1>謝謝您的回饋。</h1><p>每一則意見我們都會查看，做得好的地方會繼續保持，需要改善的地方也會認真處理。</p></section></main></body></html>

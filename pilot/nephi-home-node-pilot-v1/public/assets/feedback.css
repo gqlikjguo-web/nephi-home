@@ -6,3 +6,17 @@
 .field{display:grid;gap:7px;margin-top:14px;min-width:0;font-size:15px}.field input,.field select,.field textarea{display:block;width:100%;min-width:0;max-width:100%;min-height:48px;padding:11px;border:1px solid #aebeb4;border-radius:10px;background:#fff;color:#203a30}.field textarea{resize:vertical}.field input:focus-visible,.field select:focus-visible,.field textarea:focus-visible,.submit:focus-visible{outline:3px solid #9b7129;outline-offset:3px}.submit{width:100%;min-height:54px;background:#22633e;color:#fff;border:0;border-radius:12px;font-size:18px;font-weight:750;cursor:pointer;margin-top:4px}.submit:disabled{opacity:.65;cursor:wait}.privacy{text-align:center;font-size:12px;margin-top:12px}.complete{background:#fff;border:1px solid #dce6df;border-radius:16px;padding:32px 24px;text-align:center;margin-top:30px}.complete-mark{display:inline-flex;border-radius:50%;background:#e8f0e3;color:#22633e;width:56px;height:56px;align-items:center;justify-content:center;font-size:28px}#submitMessage{color:#942e2e;font-size:15px}#submitMessage:empty,#feedbackMessage:empty{display:none}
 @media(min-width:540px){.experience{display:grid;grid-template-columns:1fr 260px;align-items:center;gap:16px}.experience .ratings{margin:0}.experience+.experience{padding-top:12px}.stay-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}}
 @media(max-width:380px){.feedback-shell{padding:24px 12px 32px}.form-section{padding:18px 14px}h1{font-size:24px}.choices{gap:8px}.choice span{font-size:14px}.overall span{font-size:38px}}
+
+/* A checked control has a strong edge and a symbol as well as color. */
+.choice input:checked+span{background:#22633e;color:#fff;border-color:#174d2c}
+.rating-choice input:checked+span{border:2px solid #174d2c;box-shadow:inset 0 0 0 1px #fff}
+.overall .is-filled span{background:#e0eee4;color:#22633e}
+.overall input:checked+span{background:#22633e;color:#fff;border-color:#174d2c}
+.other-field{margin-top:12px}.other-field textarea{line-height:1.5}
+@media(max-width:539px){
+ .feedback-shell{padding-top:22px}.form-section{padding:14px;margin:10px 0}
+ h2,.question{margin-bottom:8px}.hint{margin:4px 0 8px}
+ .experience{margin-top:5px}.experience .ratings{margin-top:4px}
+ .choices{gap:6px}.choice,.choice span{min-height:44px}.choice span{padding:8px 6px}.choice input:checked+span{padding:7px 5px}
+ .field{gap:5px;margin-top:10px}.field textarea{padding:9px}.overall span{min-height:56px}
+}

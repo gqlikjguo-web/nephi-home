@@ -46,11 +46,20 @@ const assert=require('node:assert/strict'),crypto=require('node:crypto'),fs=requ
   const start=Date.now();await page.goto(shareA.body.data.url);await page.locator('#feedbackForm').waitFor({state:'visible'});
   if(process.env.FEEDBACK_EVIDENCE_DIR)await page.screenshot({path:process.env.FEEDBACK_EVIDENCE_DIR+'/public-'+label+'.png',fullPage:true});assert.equal(await page.title(),'湖畔旅宿｜住宿回饋');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   assert.equal(await page.locator('input[type=email],input[type=tel],input[name=name]').count(),0);
+  for(const [category,field] of [['positives','positiveOtherText'],['improvements','improvementOtherText']]){
+   const input=page.locator('[name='+field+']'),other=page.locator('[name='+category+'][value=other]');
+   assert.equal(await input.count(),1,'independent optional other text field');assert.equal(await input.isVisible(),false);
+   await other.check();await input.waitFor({state:'visible'});await input.fill('STALE_'+field);await other.uncheck();assert.equal(await input.isVisible(),false);assert.equal(await input.inputValue(),'');assert.equal(await input.isDisabled(),true);
+   await other.check();assert.equal(await input.inputValue(),'');
+   if(category==='improvements'){await input.fill('STALE_NONE');await page.locator('[name=improvements][value=none]').check();assert.equal(await input.isVisible(),false);assert.equal(await input.inputValue(),'');await page.locator('[name=improvements][value=none]').uncheck();}
+   else await other.uncheck();
+  }
+  if(width<=390){const h=await page.evaluate(()=>document.documentElement.scrollHeight);if(process.env.FEEDBACK_EVIDENCE_DIR)fs.writeFileSync(process.env.FEEDBACK_EVIDENCE_DIR+'/height-'+width+'.json',JSON.stringify({height:h}));assert.ok(h<(width===390?2475:2425)-100,'public form must be at least 100px shorter');}
   await page.locator('input[name=overall][value="5"]').check();
   assert.equal(await page.locator('.overall .is-filled').count(),5,'five stars must light cumulatively');
   await page.locator('input[name=overall][value="5"]').focus();await page.keyboard.press('ArrowLeft');assert.equal(await page.locator('input[name=overall]:checked').inputValue(),'4');assert.equal(await page.locator('.overall .is-filled').count(),4);await page.keyboard.press('ArrowRight');
   assert.ok(await page.locator('.rating-choice:focus-within').count());
-  for(const selector of ['.overall .rating-choice','.choice','.submit'])for(const box of await page.locator(selector).evaluateAll(nodes=>nodes.map(n=>({width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height}))))assert.ok(box.width>=44&&box.height>=44,selector+' needs 44px touch targets');
+  for(const selector of ['.rating-choice','.choice','.submit'])for(const box of await page.locator(selector).evaluateAll(nodes=>nodes.map(n=>({width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height}))))assert.ok(box.width>=44&&box.height>=44,selector+' needs 44px touch targets');
   if(width<=390)assert.ok((await page.locator('#experienceRatings').boundingBox()).height<400,'five optional ratings should remain compact');
   await page.locator('[name=equipment][value="4"]').check();await page.locator('[name=positives][value=clean]').check();await page.locator('[name=positives][value=arrival]').check();assert.equal(await page.locator('[name=positives]:checked').count(),2);
   await page.locator('[name=revisit][value=yes]').check();assert.equal(await page.locator('[name=revisit]:checked').inputValue(),'yes');
@@ -60,6 +69,8 @@ const assert=require('node:assert/strict'),crypto=require('node:crypto'),fs=requ
    await page.getByRole('button',{name:'送出回饋',exact:true}).click();await page.locator('#submitMessage').filter({hasText:'請稍後再試'}).waitFor();assert.ok(!(await page.locator('#submitMessage').innerText()).includes('STACK_SECRET'));await page.unroute('**/api/public/feedback/*');
    await page.route('**/api/public/feedback/*',route=>route.request().method()==='POST'?route.abort():route.continue());await page.getByRole('button',{name:'送出回饋',exact:true}).click();await page.locator('#submitMessage').filter({hasText:'網路'}).waitFor();await page.unroute('**/api/public/feedback/*');
   }
+  if(label==='mobile')for(const [category,field,value] of [['positives','positiveOtherText','陽台很舒服 <img src=x onerror=alert(1)>'],['improvements','improvementOtherText','停車入口不好找']]){await page.locator('[name='+category+'][value=other]').check();await page.locator('[name='+field+']').fill(value);}
+  page.on('request',r=>{if(r.method()==='POST'&&r.url().includes('/api/public/feedback/'))assert.ok(!r.postData().includes('STALE_'),'deselected text cannot be submitted');});
   if(process.env.FEEDBACK_EVIDENCE_DIR)await page.screenshot({path:process.env.FEEDBACK_EVIDENCE_DIR+'/selected-'+label+'.png',fullPage:true});
   let submits=0;page.on('request',r=>{if(r.method()==='POST'&&r.url().includes('/api/public/feedback/'))submits++;});
   await page.evaluate(()=>{document.getElementById('feedbackForm').requestSubmit();document.getElementById('feedbackForm').requestSubmit();});await page.locator('#feedbackComplete').waitFor({state:'visible'});assert.equal(submits,1,'repeated submit must send only once');assert.ok(Date.now()-start<60000,'mobile flow under one minute by automated interaction');
@@ -69,11 +80,22 @@ const assert=require('node:assert/strict'),crypto=require('node:crypto'),fs=requ
   if(process.env.FEEDBACK_QR_DECODER){const png=require('pngjs').PNG.sync.read(await page.locator('[data-feedback=qr]').screenshot()),decoded=require(process.env.FEEDBACK_QR_DECODER)(new Uint8ClampedArray(png.data),png.width,png.height);assert.ok(decoded,'rendered QR must decode');assert.equal(decoded.data,await page.locator('[data-feedback=url]').textContent());}
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.ok((await page.locator('#guestFeedback').innerText()).includes('匿名回饋'));
   assert.equal(await page.locator('#guestFeedback img[src=x]').count(),0);
+  if(label==='mobile'){assert.ok((await page.locator('.feedback-answer-positive').first().innerText()).includes('其他：陽台很舒服'));assert.ok((await page.locator('.feedback-answer-improvement').first().innerText()).includes('其他：停車入口不好找'));}
+  assert.equal(await page.locator('.feedback-customer').count(),await page.locator('.feedback-entry').count());assert.equal(await page.locator('.feedback-edit h4').first().innerText(),'業者處理');
+  const blank=page.locator('.feedback-entry').last();assert.equal(await blank.locator('.feedback-answer,.feedback-rating-chips,.feedback-revisit').count(),0);assert.ok((await blank.innerText()).includes('匿名回饋'));
+  if(width<=390){
+   const heading=await page.locator('header h1').boundingBox();assert.ok(heading.height<40,'operator heading remains one line');assert.ok((await page.locator('header').boundingBox()).height<125,'mobile header compact');assert.ok((await page.locator('.feedback-share').boundingBox()).height<200,'mobile share compact');
+   for(const control of ['.feedback-filters select','.feedback-edit textarea','.feedback-edit button']){
+    await page.locator(control).first().evaluate(n=>{const b=n.getBoundingClientRect();window.scrollBy(0,b.bottom-innerHeight+40);});await page.waitForTimeout(100);
+    assert.equal(await page.evaluate(sel=>{const top=document.getElementById('adminBackToTop'),c=document.querySelector(sel),a=top.getBoundingClientRect(),b=c.getBoundingClientRect();return getComputedStyle(top).visibility!=='hidden'&&!top.hidden&&a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;},control),false,'TOP does not cover '+control);
+   }
+  }
+
   const entry=page.locator('.feedback-entry').first();await entry.locator('select').selectOption('improved');await entry.locator('textarea').fill('9/25 已增加置物架');await entry.getByRole('button',{name:'儲存處理狀態'}).click();await entry.getByText('已儲存',{exact:true}).waitFor();
   await page.locator('#guestFeedback h2').click();await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));await page.locator('#adminBackToTop').waitFor({state:'visible'});await page.locator('#adminBackToTop').click();await page.waitForFunction(()=>scrollY<5);assert.equal(await page.locator('#adminBackToTop').count(),1);
   if(process.env.FEEDBACK_EVIDENCE_DIR)await page.screenshot({path:process.env.FEEDBACK_EVIDENCE_DIR+'/'+label+'.png',fullPage:true});
   await page.reload();await page.locator('#workspace').waitFor({state:'visible'});await tab('feedback');await page.locator('.feedback-entry').first().waitFor();assert.equal(await page.locator('[data-feedback=url]').textContent(),shareA.body.data.url);
-  await page.getByRole('button',{name:'登出',exact:true}).click();await page.locator('#login').waitFor({state:'visible'});const again=await login(a);ca=again;await context.addCookies([{name:'nephi_admin_session',value:again.split('=')[1],url:started.url}]);await page.reload();await page.locator('#workspace').waitFor({state:'visible'});await tab('feedback');await page.locator('.feedback-entry').first().waitFor();assert.ok((await page.locator('#guestFeedback').innerText()).includes('已改善'));
+  await page.getByRole('button',{name:'登出',exact:true}).click();await page.locator('#login').waitFor({state:'visible'});assert.equal(await page.locator('body:has(#workspace:not([hidden]) #guestFeedback:not([hidden]))').count(),0,'Feedback styling must end on logout');const again=await login(a);ca=again;await context.addCookies([{name:'nephi_admin_session',value:again.split('=')[1],url:started.url}]);await page.reload();await page.locator('#workspace').waitFor({state:'visible'});await tab('feedback');await page.locator('.feedback-entry').first().waitFor();assert.ok((await page.locator('#guestFeedback').innerText()).includes('已改善'));
   assert.deepEqual(errors,[]);await context.close();console.log('PASS '+label+' anonymous/stay info/form/QR/fixed link/history/relogin/status/TOP/no overflow/XSS (FAKE_INTEGRATION)');
  }
  const after=await call('/api/feedback','GET',undefined,ca);assert.equal(after.body.data.items.length,4);assert.equal((await call('/api/feedback','GET',undefined,cb)).body.data.items.length,1);
@@ -87,6 +109,22 @@ const assert=require('node:assert/strict'),crypto=require('node:crypto'),fs=requ
  await p.locator('[data-feedback=status]').selectOption('needs_improvement');await p.getByRole('button',{name:'套用篩選',exact:true}).click();await p.waitForFunction(()=>document.querySelectorAll('.feedback-entry').length===1);
  await p.locator('[data-feedback=period]').selectOption('previous');await p.getByRole('button',{name:'套用篩選',exact:true}).click();await p.locator('.feedback-empty').waitFor();await paging.close();
  console.log('PASS browser filters and applied-query pagination (FAKE_INTEGRATION)');
+ // A separate native persisted platform-admin fixture exercises mobile chrome only.
+ const platform='feedback_platform_'+suffix;await db.query('INSERT INTO properties(property_id,display_name) VALUES($1,$1)',[platform]);
+ const identity=await require(root+'/lib/admin-auth').upsertAdminUser(connection,{propertyId:platform,username:platform,email:platform+'@example.test',password:'Fixture9Pass'});
+ await db.query('INSERT INTO platform_admin_grants(property_id,username,granted_user_id,granted_email_snapshot) VALUES($1,$1,$2,$3)',[platform,identity.userId,platform+'@example.test']);
+ await db.query("INSERT INTO property_settings(property_id,settings) VALUES($1,'{}')",[platform]);
+ const cp=await login(platform);assert.equal((await call('/api/admin/select-property','POST',{propertyId:a},cp)).status,200);assert.equal((await call('/api/feedback','GET',undefined,cp)).status,403,'Feedback still requires property membership for platform users');assert.equal((await call('/api/admin/select-property','POST',{propertyId:platform},cp)).status,200);
+ for(const width of [390,360]){
+  const context=await browser.newContext({viewport:{width,height:844}});await context.route('**/*',r=>new URL(r.request().url()).origin===started.url?r.continue():r.abort());await context.addCookies([{name:'nephi_admin_session',value:cp.split('=')[1],url:started.url}]);const page=await context.newPage();
+  await page.goto(started.url+'/admin?platform=1');await page.locator('#workspace').waitFor({state:'visible'});
+  const original=await page.locator('header').evaluate(n=>({height:n.getBoundingClientRect().height,font:getComputedStyle(n.querySelector('h1')).fontSize}));
+  await page.locator('#adminTabSelect').selectOption('feedback');await page.locator('.feedback-empty').waitFor();await page.locator('#platformViewingBar').waitFor({state:'visible'});assert.equal(await page.getByRole('link',{name:'返回業者列表'}).getAttribute('href'),'/admin/platform');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  const metrics=await page.evaluate(()=>Object.fromEntries(['header','#platformViewingBar','.feedback-share'].map(s=>[s,document.querySelector(s).getBoundingClientRect().height])));assert.ok(metrics.header<125);
+  if(process.env.FEEDBACK_EVIDENCE_DIR){await page.screenshot({path:process.env.FEEDBACK_EVIDENCE_DIR+'/platform-'+width+'.png'});fs.writeFileSync(process.env.FEEDBACK_EVIDENCE_DIR+'/platform-'+width+'.json',JSON.stringify(metrics));}
+  await page.locator('#adminTabSelect').selectOption('availability');assert.deepEqual(await page.locator('header').evaluate(n=>({height:n.getBoundingClientRect().height,font:getComputedStyle(n.querySelector('h1')).fontSize})),original,'other admin page header is unchanged');await context.close();
+ }
+
  // Render empty and adversarial content through the real Feedback UI at every size.
  const c='feedback_empty_'+suffix,longName='山與海之間的旅人住宿空間'.repeat(6),longComment='很長的住宿建議'.repeat(160)+'W'.repeat(500);
  await db.query('INSERT INTO properties(property_id,display_name) VALUES($1,$2)',[c,longName]);await db.query("INSERT INTO property_settings(property_id,settings) VALUES($1,'{}')",[c]);

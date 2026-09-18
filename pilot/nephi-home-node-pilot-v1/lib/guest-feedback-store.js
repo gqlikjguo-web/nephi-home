@@ -10,7 +10,7 @@ function object(value){return value&&typeof value==='object'&&!Array.isArray(val
 function text(value,max){if(value===undefined||value===null)return '';if(typeof value!=='string'||value.length>max||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value))fail(400,'文字內容過長或格式不正確');return value.trim();}
 function selections(value,allowed){if(value===undefined)return [];if(!Array.isArray(value)||value.length>allowed.length||value.some(x=>!allowed.includes(x))||new Set(value).size!==value.length)fail(400,'請重新選擇回饋項目');return value;}
 function validate(body){
- if(!object(body)||Object.keys(body).some(k=>!['overall','ratings','positives','improvements','revisit','stayDate','roomId','comment'].includes(k)))fail(400,'表單欄位不正確');
+ if(!object(body)||Object.keys(body).some(k=>!['overall','ratings','positives','improvements','revisit','stayDate','roomId','comment','positiveOtherText','improvementOtherText'].includes(k)))fail(400,'表單欄位不正確');
  if(!Number.isInteger(body.overall)||body.overall<1||body.overall>5)fail(400,'請選擇整體住宿滿意度');
  const ratings=body.ratings===undefined?{}:body.ratings;
  if(!object(ratings)||Object.entries(ratings).some(([k,v])=>!CATEGORIES.includes(k)||!Number.isInteger(v)||v<1||v>5))fail(400,'請選擇 1～5 分');
@@ -18,7 +18,9 @@ function validate(body){
  if(improvements.includes('none')&&improvements.length>1)fail(400,'沒有特別需要改善不能與其他改善項目同時選擇');
  if(body.revisit&&!['yes','maybe','no'].includes(body.revisit))fail(400,'請重新選擇再次入住意願');
  if(body.stayDate&&!date(body.stayDate))fail(400,'請輸入有效入住日期');
- return {overall:body.overall,ratings,positives,improvements,revisit:body.revisit||null,stayDate:body.stayDate||null,roomId:text(body.roomId,120)||null,comment:text(body.comment,2000)};
+ const positiveOtherText=text(body.positiveOtherText,500)||null,improvementOtherText=text(body.improvementOtherText,500)||null;
+ if((positiveOtherText&&!positives.includes('other'))||(improvementOtherText&&!improvements.includes('other')))fail(400,'請先選擇其他，再填寫補充內容');
+ return {positiveOtherText,improvementOtherText,overall:body.overall,ratings,positives,improvements,revisit:body.revisit||null,stayDate:body.stayDate||null,roomId:text(body.roomId,120)||null,comment:text(body.comment,2000)};
 }
 function createFeedbackStore({db,now=()=>new Date()}){
  async function resolve(token,client=db,lock=false){
@@ -51,8 +53,8 @@ function createFeedbackStore({db,now=()=>new Date()}){
     if(row.attempts>limit)fail(429,'送出次數較多，請稍候再試');
    }
    await t.query("DELETE FROM feedback_rate_limits WHERE property_id=$1 AND window_start<$2::timestamptz-interval '1 day'",[propertyId,at]);
-   await t.query(`INSERT INTO guest_feedback(id,property_id,overall,ratings,positives,improvements,revisit,stay_date,room_id,room_name,comment,created_at,updated_at)
-    VALUES($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10,$11,$12,$12)`,[randomUUID(),propertyId,value.overall,JSON.stringify(value.ratings),value.positives,value.improvements,value.revisit,value.stayDate,value.roomId,roomName,value.comment,at]);
+   await t.query(`INSERT INTO guest_feedback(id,property_id,overall,ratings,positives,improvements,revisit,stay_date,room_id,room_name,comment,created_at,updated_at,positive_other_text,improvement_other_text)
+    VALUES($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14)`,[randomUUID(),propertyId,value.overall,JSON.stringify(value.ratings),value.positives,value.improvements,value.revisit,value.stayDate,value.roomId,roomName,value.comment,at,value.positiveOtherText,value.improvementOtherText]);
    return {submitted:true};
   });
  }
@@ -79,7 +81,7 @@ function createFeedbackStore({db,now=()=>new Date()}){
   if(filters.cursor){let cursor;try{if(filters.cursor.length>300)throw Error();cursor=JSON.parse(Buffer.from(filters.cursor,'base64url').toString());if(!Array.isArray(cursor)||cursor.length!==2||!/^\d{4}-\d\d-\d\dT[\d:.]+Z$/.test(cursor[0])||!/^[a-f0-9-]{36}$/.test(cursor[1]))throw Error();}catch{fail(400,'載入位置不正確，請重新整理');}
    args.push(...cursor);where.push(`(created_at,id)<($${args.length-1}::timestamptz,$${args.length}::uuid)`);
   }
-  const rows=(await db.query(`SELECT id,overall,ratings,positives,improvements,revisit,stay_date::text,room_name,comment,status,internal_note,created_at FROM guest_feedback WHERE ${where.join(' AND ')} ORDER BY created_at DESC,id DESC LIMIT 21`,args)).rows;
+  const rows=(await db.query(`SELECT id,overall,ratings,positives,improvements,revisit,stay_date::text,room_name,comment,positive_other_text,improvement_other_text,status,internal_note,created_at FROM guest_feedback WHERE ${where.join(' AND ')} ORDER BY created_at DESC,id DESC LIMIT 21`,args)).rows;
   const items=rows.slice(0,20),last=items.at(-1);return {items,nextCursor:rows.length>20?Buffer.from(JSON.stringify([new Date(last.created_at).toISOString(),last.id])).toString('base64url'):null};
  }
  async function update(propertyId,id,body){

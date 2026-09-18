@@ -21,7 +21,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('nod
   assert.equal(rows.length,2,'030 must provision every existing property, including one without a legacy link');
   for(const row of rows)assert.match(row.short_public_id,/^[A-Za-z0-9_-]{16}$/);
   assert.equal(rows[0].public_token,legacy);assert.notEqual(rows[0].short_public_id,rows[1].short_public_id);
-  assert.deepEqual((await db.query('SELECT * FROM guest_feedback')).rows,history,'migration cannot rewrite history');
+  const migratedHistory=(await db.query('SELECT * FROM guest_feedback')).rows;for(const row of migratedHistory){assert.equal(row.positive_other_text,null);assert.equal(row.improvement_other_text,null);delete row.positive_other_text;delete row.improvement_other_text;}assert.deepEqual(migratedHistory,history,'migration cannot rewrite history');
   const {createFeedbackStore}=require('../lib/guest-feedback-store');let store=createFeedbackStore({db});
   const a=await store.shortLink('short_a'),b=await store.shortLink('short_b');
   assert.equal(await store.resolve(a),'short_a');assert.equal(await store.resolve(legacy),'short_a');assert.equal(await store.resolve(b),'short_b');

@@ -20,6 +20,11 @@
  choices($('improvementChoices'),'improvements',[['noise','隔音'],['clean','清潔細節'],['bed','床／枕頭'],['equipment','房內設備'],['bathroom','浴室'],['instructions','入住說明'],['other','其他'],['none','沒有特別需要改善']]);
  choices($('revisitChoices'),'revisit',[['yes','願意'],['maybe','可能會'],['no','暫時不會']],'radio');
  $('improvementChoices').addEventListener('change',e=>{if(!e.target.checked)return;for(const input of form.querySelectorAll('[name=improvements]'))if(input!==e.target&&(e.target.value==='none'||input.value==='none'))input.checked=false;});
+ function syncOther(category,field){const selected=!!form.querySelector('[name='+category+'][value=other]:checked'),input=form.elements[field];$(field+'Field').hidden=!selected;input.disabled=!selected;if(!selected)input.value='';}
+ for(const [category,field,host] of [['positives','positiveOtherText','positiveChoices'],['improvements','improvementOtherText','improvementChoices']]){
+  const other=form.querySelector('[name='+category+'][value=other]');other.setAttribute('aria-controls',field+'Field');other.setAttribute('aria-expanded','false');
+  $(host).addEventListener('change',()=>{syncOther(category,field);other.setAttribute('aria-expanded',String(other.checked));});
+ }
  function failure(status){return status===429?'送出次數較多，請稍候再試。':status===404?'此回饋連結無效，請向旅宿取得新連結。':status===400?'請確認評分、日期與房型後再送出。':'暫時無法完成，請稍後再試。';}
  async function request(options){let response;try{response=await fetch('/api/public/feedback/'+token,options);}catch{throw Error('網路連線不穩，請確認連線後再試一次。');}if(!response.ok)throw Error(failure(response.status));try{return await response.json();}catch{throw Error('暫時無法完成，請稍後再試。');}}
  try{const body=await request();$('feedbackTitle').textContent=body.data.propertyName+'｜住宿回饋';document.title=$('feedbackTitle').textContent;for(const room of body.data.rooms){const option=node('option',room.name);option.value=room.id;form.elements.roomId.append(option);}$('feedbackMessage').textContent='';form.hidden=false;}catch(e){$('feedbackMessage').textContent=e.message;}
@@ -29,7 +34,7 @@
   if(!form.reportValidity())return;
   submitting=true;const button=form.querySelector('[type=submit]');button.disabled=true;button.textContent='送出中…';form.setAttribute('aria-busy','true');$('submitMessage').textContent='';
   const data=new FormData(form),ratings={};for(const [key] of categories)if(data.has(key))ratings[key]=Number(data.get(key));
-  try{await request({method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({overall:Number(data.get('overall')),ratings,positives:data.getAll('positives'),improvements:data.getAll('improvements'),revisit:data.get('revisit')||null,stayDate:data.get('stayDate')||null,roomId:data.get('roomId')||null,comment:data.get('comment')})});form.hidden=true;document.querySelector('header').hidden=true;$('feedbackComplete').hidden=false;$('feedbackComplete').focus();window.scrollTo(0,0);}
+  try{await request({method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({overall:Number(data.get('overall')),ratings,positives:data.getAll('positives'),improvements:data.getAll('improvements'),revisit:data.get('revisit')||null,stayDate:data.get('stayDate')||null,roomId:data.get('roomId')||null,comment:data.get('comment'),positiveOtherText:data.getAll('positives').includes('other')?data.get('positiveOtherText'):null,improvementOtherText:data.getAll('improvements').includes('other')?data.get('improvementOtherText'):null})});form.hidden=true;document.querySelector('header').hidden=true;$('feedbackComplete').hidden=false;$('feedbackComplete').focus();window.scrollTo(0,0);}
   catch(e){$('submitMessage').textContent=e.message;submitting=false;button.disabled=false;button.textContent='送出回饋';}
   finally{form.setAttribute('aria-busy','false');}
  };

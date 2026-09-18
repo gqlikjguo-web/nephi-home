@@ -35,17 +35,21 @@
   for(const [key,names] of [['positives',positive],['improvements',improvement]]){const list=$(key);list.replaceChildren();if(!data[key].length){list.append(el('p','hint','還沒有相關回饋'));continue;}for(const item of data[key].slice(0,3)){const li=el('li');li.append(el('span','',names[item.key]),el('strong','',item.count+' 次'));list.append(li);}}
  }
  function card(item){
-  const a=el('article','feedback-card feedback-entry'),top=el('div','feedback-entry-top');
+  const a=el('article','feedback-card feedback-entry'),customer=el('div','feedback-customer'),top=el('div','feedback-entry-top');
   const stars=el('strong','feedback-stars','★'.repeat(item.overall)+'☆'.repeat(5-item.overall)+' '+number(item.overall));stars.setAttribute('aria-label','整體評分 '+item.overall+' 分');
-  const badge=el('span','feedback-badge',statuses[item.status]);badge.dataset.status=item.status;top.append(stars,badge);a.append(top);
+  const badge=el('span','feedback-badge',statuses[item.status]);badge.dataset.status=item.status;top.append(stars,badge);customer.append(el('h4','feedback-section-label','客人原始回饋'),top);a.append(customer);
   const identity=!item.stay_date&&!item.room_name?'匿名回饋':[item.stay_date?'入住 '+item.stay_date.replaceAll('-','/'):'',item.room_name].filter(Boolean).join(' · ');
-  a.append(el('p','feedback-entry-meta',date(item.created_at)+' ｜ '+identity));
-  for(const [title,value,kind] of [['希望改善',item.improvements.map(k=>improvement[k]).join('、'),'improvement'],['做得好的',item.positives.map(k=>positive[k]).join('、'),'positive'],['客人留言',item.comment,'comment']])if(value){const answer=el('div','feedback-answer feedback-answer-'+kind);answer.append(el('strong','',title),el('p','',value));a.append(answer);}
-  const ratings=el('div','feedback-rating-chips');for(const [key,title] of Object.entries(labels))if(item.ratings[key])ratings.append(el('span','',title+' '+item.ratings[key]));if(ratings.children.length)a.append(ratings);
-  if(revisits[item.revisit])a.append(el('p','feedback-revisit','再次入住：'+revisits[item.revisit]));
+  customer.append(el('p','feedback-entry-meta',date(item.created_at)+' ｜ '+identity));
+  for(const [title,keys,names,other,kind] of [['希望改善',item.improvements,improvement,item.improvement_other_text,'improvement'],['做得好的',item.positives,positive,item.positive_other_text,'positive']]){
+   const value=keys.filter(k=>k!=='other'||!other).map(k=>names[k]).join('、'),detail=keys.includes('other')&&other;
+   if(value||detail){const answer=el('div','feedback-answer feedback-answer-'+kind);answer.append(el('strong','',title));if(value)answer.append(el('p','',value));if(detail)answer.append(el('p','feedback-other-text','其他：'+detail));customer.append(answer);}
+  }
+  if(item.comment){const answer=el('div','feedback-answer feedback-answer-comment');answer.append(el('strong','','客人留言'),el('p','',item.comment));customer.append(answer);}
+  const ratings=el('div','feedback-rating-chips');for(const [key,title] of Object.entries(labels))if(item.ratings[key])ratings.append(el('span','',title+' '+item.ratings[key]));if(ratings.children.length)customer.append(ratings);
+  if(revisits[item.revisit])customer.append(el('p','feedback-revisit','再次入住：'+revisits[item.revisit]));
   const edit=el('form','feedback-edit'),state=select('entryStatus',Object.entries(statuses));state.value=item.status;
   const note=el('textarea');note.rows=2;note.maxLength=1000;note.value=item.internal_note;note.placeholder='記下改善進度，例如已增加浴室置物架';
-  const save=el('button','secondary','儲存處理狀態'),message=el('p','message');message.setAttribute('role','status');edit.append(field('處理狀態',state),field('內部改善備註（只有業者可見）',note),save,message);
+  const save=el('button','secondary','儲存處理狀態'),message=el('p','message');message.setAttribute('role','status');edit.append(el('h4','feedback-section-label','業者處理'),field('處理狀態',state),field('內部改善備註（只有業者可見）',note),save,message);
   edit.onsubmit=async e=>{e.preventDefault();if(save.disabled)return;const current=generation;save.disabled=true;save.textContent='儲存中…';try{await request('/'+item.id,{method:'PATCH',body:JSON.stringify({status:state.value,internalNote:note.value})});if(current!==generation)return;badge.textContent=statuses[state.value];badge.dataset.status=state.value;message.textContent='已儲存';const data=await request('/summary');if(current===generation)summary(data);}catch(e){message.textContent=e.message;}finally{save.disabled=false;save.textContent='儲存處理狀態';}};a.append(edit);return a;
  }
  async function loadHistory(append){if(busy)return;busy=true;const current=generation;$('more').disabled=true;$('message').textContent='載入中…';const params=new URLSearchParams({status:$('status').value,period:$('period').value,rating:$('rating').value});if(params.get('period')==='custom'){params.set('from',$('from').value);params.set('to',$('to').value);}if(append&&appliedFilters){for(const key of [...params.keys()])params.delete(key);for(const [key,value] of appliedFilters)params.set(key,value);}if(append&&cursor)params.set('cursor',cursor);
@@ -53,5 +57,16 @@
  }
  async function load(){const current=++generation;busy=false;cursor=null;appliedFilters=null;build();$('message').textContent='正在載入住客回饋…';try{const [share,data]=await Promise.all([request('/share'),request('/summary')]);if(current!==generation)return;$('url').href=share.url;$('url').textContent=share.url;$('qr').src=share.qr;summary(data);await loadHistory(false);}catch(e){if(current===generation)$('message').textContent=e.message;}}
  window.addEventListener('junzan-admin-tab',e=>{if(e.detail==='feedback')load();});
+ const topButton=document.getElementById('adminBackToTop');let topFrame=0;
+ function positionTop(){topFrame=0;if(!topButton)return;let obscured=false;
+  if(!host.hidden&&matchMedia('(max-width:640px)').matches){
+   const a=topButton.getBoundingClientRect();
+   obscured=host.contains(document.activeElement)&&document.activeElement.matches('input,select,textarea');
+   if(!obscured)obscured=[...host.querySelectorAll('h2,h3,.feedback-share,.feedback-metric,.feedback-experience,.feedback-ranking li,.feedback-field,.feedback-answer,.feedback-entry-top,.feedback-entry-meta,.feedback-rating-chips,.feedback-revisit,.feedback-section-label,button')].some(n=>{const b=n.getBoundingClientRect();return b.width&&b.height&&a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;});
+  }
+  topButton.classList.toggle('feedback-top-obscured',obscured);
+ }
+ function scheduleTop(){if(!topFrame)topFrame=requestAnimationFrame(positionTop);}
+ window.addEventListener('scroll',scheduleTop,{passive:true});window.addEventListener('resize',scheduleTop);window.addEventListener('junzan-admin-tab',scheduleTop);host.addEventListener('focusin',scheduleTop);host.addEventListener('focusout',scheduleTop);new ResizeObserver(scheduleTop).observe(host);
  const workspace=document.getElementById('workspace');new MutationObserver(()=>{if(workspace.hidden){generation++;host.replaceChildren();}else if(!host.hidden)load();}).observe(workspace,{attributes:true,attributeFilter:['hidden']});
 })();
