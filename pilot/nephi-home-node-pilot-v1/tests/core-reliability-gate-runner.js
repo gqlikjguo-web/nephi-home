@@ -81,4 +81,37 @@ for (const requiredReal of [false, true]) {
   if (requiredReal) assert.equal(evidence.real.realCalls, 0);
   cases++;
 }
-console.log(JSON.stringify({ classification: "STRUCTURED_CONTRACT_TEST", cases, passed: cases, temporaryRepositoryPreserved: root, realOpenaiCalls: 0 }));
+async function verifyWorkflow() {
+  const workflow = fs.readFileSync(path.resolve(__dirname, "../../../.github/workflows/core-reliability.yml"), "utf8");
+  const blocks = [...workflow.matchAll(/          script: \|\n((?: {12}[^\n]*\n|\n)+)/g)].map(m => m[1].split("\n").map(line => line.slice(12)).join("\n"));
+  assert.equal(blocks.length, 2);
+  const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
+  const scopeScript = new AsyncFunction("github", "context", "core", "require", "process", blocks[0]);
+  const statusScript = new AsyncFunction("github", "context", "process", blocks[1]);
+  // Match github-script@v7: runId exists; context.runAttempt does not.
+  const context = { runId: 1, repo: { owner: "gate-owner", repo: "gate-repo" }, payload: {} };
+  context.payload.pull_request = { number: 1, base: { sha: cliBase }, head: { sha: cliHead, repo: { full_name: "gate-owner/gate-repo" } } };
+  let head = cliHead, base = cliBase;
+  const statuses = [], outputs = {};
+  const github = { rest: { repos: {}, pulls: {} } };
+  github.rest.repos.getBranch = async () => ({ data: { commit: { sha: base } } });
+  github.rest.repos.getContent = async () => ({ data: { content: Buffer.from(JSON.stringify(cliTask)).toString("base64") } });
+  github.rest.repos.createCommitStatus = async value => { statuses.push(value); };
+  github.rest.pulls.get = async () => ({ data: { head: { sha: head } } });
+  const summary = { addHeading() { return this; }, addRaw() { return this; }, addCodeBlock() { return this; }, async write() {} };
+  const core = { summary, setOutput: (name, value) => { outputs[name] = value; } };
+  await scopeScript(github, context, core, require, { env: { GITHUB_RUN_ATTEMPT: "1" } });
+  assert.equal(outputs.digest, gate.digest(cliTask)); cases++;
+  await assert.rejects(() => scopeScript(github, context, core, require, { env: { GITHUB_RUN_ATTEMPT: "2" } }), /Repeated release attempts/); cases++;
+  for (const probe of [
+    { attempt: "1", head: cliHead, base: cliBase, state: "success" },
+    { attempt: "2", head: cliHead, base: cliBase, state: "failure" },
+    { attempt: "1", head: cliBase, base: cliBase, state: "failure" },
+    { attempt: "1", head: cliHead, base: cliHead, state: "failure" }
+  ]) {
+    head = probe.head; base = probe.base;
+    await statusScript(github, context, { env: { GITHUB_RUN_ATTEMPT: probe.attempt, SCOPE_RESULT: "success", GATE_RESULT: "success" } });
+    assert.equal(statuses.at(-1).state, probe.state); assert.equal(statuses.at(-1).sha, cliHead); cases++;
+  }
+}
+verifyWorkflow().then(() => console.log(JSON.stringify({ classification: "STRUCTURED_CONTRACT_TEST", cases, passed: cases, temporaryRepositoryPreserved: root, realOpenaiCalls: 0 }))).catch(e => { console.error(e); process.exitCode = 1; });

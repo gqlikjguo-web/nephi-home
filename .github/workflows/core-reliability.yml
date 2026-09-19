@@ -18,7 +18,7 @@ jobs:
           script: |
             const crypto = require('crypto');
             const pr = context.payload.pull_request;
-            if (Number(context.runAttempt) !== 1) throw Error('Repeated release attempts are not accepted; preserve the failed run');
+            if (Number(process.env.GITHUB_RUN_ATTEMPT) !== 1) throw Error('Repeated release attempts are not accepted; preserve the failed run');
             const {data: branch} = await github.rest.repos.getBranch({...context.repo, branch: 'production'});
             if (branch.commit.sha !== pr.base.sha) throw Error('Production baseline changed');
             if (pr.head.repo.full_name !== context.repo.owner + '/' + context.repo.repo) throw Error('Trusted same-repository candidate required');
@@ -106,7 +106,7 @@ jobs:
             const {data: branch} = await github.rest.repos.getBranch({...context.repo, branch: 'production'});
             const passed = process.env.SCOPE_RESULT === 'success' && process.env.GATE_RESULT === 'success'
               && current.head.sha === pr.head.sha && branch.commit.sha === pr.base.sha
-              && Number(context.runAttempt) === 1;
+              && Number(process.env.GITHUB_RUN_ATTEMPT) === 1;
             await github.rest.repos.createCommitStatus({...context.repo, sha: pr.head.sha,
               state: passed ? 'success' : 'failure', context: 'Core Reliability Gate / candidate',
               description: passed ? 'Scope and required evidence verified for this SHA' : 'STOP: failure, blocked evidence, repeated run or stale SHA',
