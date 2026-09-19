@@ -44,26 +44,26 @@ after(async () => {
 });
 
 async function run({ propertyId = "inventory-a", capabilities = ["availability"], kind = "room", inventory = "missing", sibling = false,
-  formalRead = true, requests = null, quantity = null, factStatus = "provided", date = DATE } = {}) {
+  formalRead = true, requests = null, quantity = null, factStatus = "provided", date = DATE, now = NOW, availabilityProvider = null } = {}) {
   const scope = { propertyId, channel: "isolated", userId: "inventory-guest" };
   const room = { id: "product-a", name: "Garden lodging", type: "double", capacity: 2, basePrice: 1000,
     mondayThursdayPrice: 1000, fridayPrice: 1000, saturdayHolidayPrice: 1000, sundayPrice: 1000 };
   const bundle = { ...room, id: "product-b", name: "Courtyard group", inventoryType: "bundle", memberRoomIds: [room.id] };
   const property = { propertyId, displayName: "Inventory fixture", timezone: "Asia/Taipei", rooms: [room, bundle], commonAnswers: {},
     propertyFacts: [{ canonicalId: "facility-a", publicName: "Reading lounge", category: "amenity", status: factStatus, publicText: factStatus === "unknown" ? "" : "A reading lounge is provided." }] };
-  const availability = inventory === "missing" && formalRead ? (await formalProviders()).providers.availability : {
+  const availability = availabilityProvider || (inventory === "missing" && formalRead ? (await formalProviders()).providers.availability : {
     getRows: () => inventory === "missing" ? [] : [{ date, [room.id]: inventory, [bundle.id]: inventory }]
-  };
+  });
   const service = createMvpService({ customerSettings: { getProperty: () => property }, persistence: {}, availability });
   const specs = requests || capabilities.map(capability => ({ capability, kind, identity: kind === "bundle" ? bundle.id : room.id,
     text: `${capability} for ${kind === "bundle" ? bundle.name : room.name} on ${date}` }));
   if (sibling) specs.push({ capability: "amenity", kind: "amenity", identity: "facility-a", text: "Is there a reading lounge?" });
   const message = specs.map(s => s.text).join("\n"), turnId = "inventory-turn";
   let calls = 0;
-  const result = await executeNewCoreTurn({ scope, property, now: NOW,
-    state: createConversationStateV3({ ...scope, tasks: [], createdAt: NOW, updatedAt: NOW, expiresAt: "2026-09-13T11:35:00.000Z" }),
+  const result = await executeNewCoreTurn({ scope, property, now,
+    state: createConversationStateV3({ ...scope, tasks: [], createdAt: now, updatedAt: now, expiresAt: new Date(Date.parse(now) + 86400000).toISOString() }),
     input: { turnId, traceId: turnId, message, recentConversation: [], sourceEvents: [{ eventId: turnId, messageRef: turnId,
-      role: "guest", timestamp: NOW, messageKind: "text", messageText: message }] },
+      role: "guest", timestamp: now, messageKind: "text", messageText: message }] },
     publicBaseUrl: "https://example.invalid", providerConfig: { apiKey: "fixture-only" },
     resolver: { availability: query => {
       if (inventory === "exception") throw new Error("controlled provider failure");
@@ -75,7 +75,7 @@ async function run({ propertyId = "inventory-a", capabilities = ["availability"]
       const units = specs.map((s, i) => ({ unitId: `request-${i}`, purpose: s.purpose || (s.capability === null ? "conversational_statement" : "lodging_question"), capability: s.capability,
         subject: { kind: s.kind, catalogIdentity: s.identity }, stayDependent: ["availability", "price"].includes(s.capability),
         evidenceRefs: [{ eventId: turnId, messageRef: turnId, startOffset: message.indexOf(s.text), endOffset: message.indexOf(s.text) + s.text.length, quote: s.text }],
-        temporalCandidate: s.noDate || !["availability", "price"].includes(s.capability) ? null : { rawText: date, kind: "absolute_date", checkInCandidate: date, checkOutCandidate: null, nightsCandidate: null },
+        temporalCandidate: s.temporal || (s.noDate || !["availability", "price"].includes(s.capability) ? null : { rawText: date, kind: "absolute_date", checkInCandidate: date, checkOutCandidate: null, nightsCandidate: null }),
         slotCandidates: [], quantityCandidate: quantity && s.capability === "availability" ? { requestedQuantity: quantity, distinctRequirement: "distinct_entities", evidenceRefs: [{ eventId: turnId, messageRef: turnId, startOffset: message.indexOf(s.text), endOffset: message.indexOf(s.text) + s.text.length, quote: s.text }] } : null,
         safetyCandidate: s.safetyCandidate || null, contextLinkCandidateId: `link-${i}`, confidenceBand: "high" }));
       const output = { understandingOutput: { schemaVersion: 1, turnId, units }, contextLinkCandidates: units.map(u => ({

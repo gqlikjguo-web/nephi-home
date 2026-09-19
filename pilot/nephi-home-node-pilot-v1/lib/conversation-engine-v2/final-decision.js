@@ -63,6 +63,9 @@ function buildFinalDecision({ executionOutcomes = [], plannerFailure = "", claim
       let action = "no_reply";
       if (permitted) {
         if (claimType === "FACTUAL_ANSWER" && (!section.facts?.detailNeedsConfirmation || section.facts.answer)) action = "reply";
+        else if (claimType === "EPISTEMIC_UNKNOWN"
+          && ["availability", "bundle_availability", "available_dates"].includes(section.type)
+          && section.unknownProvenance?.sourceReasonCode === "missing_inventory_records") action = "reply";
         else if (claimType === "CLARIFY") action = "clarification";
         else if (human) action = "handoff";
       }

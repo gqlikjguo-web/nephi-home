@@ -16,6 +16,10 @@ function composeSection(section) {
     return '目前只確認符合需求的商品有 '+section.matchedCount+'/'+section.requestedQuantity+' 個，尚差 '+section.unresolvedRemainder+' 個。\n'+composeSection(rest);
   }
   const facts = section.facts || {};
+  if (section.claimType === "EPISTEMIC_UNKNOWN"
+    && section.unknownProvenance?.sourceReasonCode === "missing_inventory_records") {
+    return "這個日期的房況資料尚未完整，請稍後再查詢。";
+  }
   if (section.claimType === "EPISTEMIC_UNKNOWN") return section.unknownProvenance?.sourceReasonCode === "property_applicability_unknown"
     ? "無法確認該條件是否適用。" : "目前無法確認。";
   if (facts.customReply) {
@@ -41,6 +45,9 @@ function composeSection(section) {
   if (facts.feasibility?.inventoryStatus === "available" && facts.feasibility.capacityStatus === "insufficient") {
     const feasibility = `${facts.checkIn} 仍有空房，但目前可用房源無法在指定房數內容納這次入住人數，請調整房數或入住人數。`;
     return facts.priceBasis === "registered_rate" ? feasibility + "\n" + composeSection({ ...section, facts: { ...facts, feasibility: null } }) : feasibility;
+  }
+  if (["availability", "bundle_availability"].includes(section.type) && section.outcomeStatus === "no_availability") {
+    return "目前沒有可提供的房型。";
   }
   if (facts.prices) {
     if (facts.priceBasis === "registered_rate") return `${facts.checkIn} 登錄房價：\n${facts.prices.map(item => `${item.inventory.publicName}共 ${money(item.total)} ${item.currency === "TWD" ? "元" : item.currency}。`).join("\n")}`;

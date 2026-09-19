@@ -179,10 +179,16 @@ function renderSaveState(container, key) {
 }
 
 function createStatusControl(date, room) {
-  const wrapper = element("div", "room-status-control"), current = availabilityState.days.get(date)?.[room.id] || "closed", available = current === "available";
-  const label = element("span", "status-text", available ? "可售" : "不可售");
+  const wrapper = element("div", "room-status-control"), current = calendarStatus(date, room), available = current === "available";
+  const label = element("span", "status-text", available ? "可售" : current === "closed" ? "不可售" : "尚未設定");
   const input = document.createElement("input"); input.type = "checkbox"; input.className = "status-toggle"; input.checked = available; input.setAttribute("aria-label", `${dateLabel(date)} ${room.name}目前${label.textContent}`); input.onchange = () => saveDay(date, room, input.checked ? "available" : "closed");
+  input.indeterminate = current === "unknown";
   wrapper.append(label, input);
+  if (current === "unknown") {
+    const close = element("button", "secondary", "設為關閉"); close.type = "button";
+    close.disabled = saveStates.get(mutationKey("status", date, room.id))?.phase === "saving";
+    close.onclick = () => saveDay(date, room, "closed"); wrapper.append(close);
+  }
   return wrapper;
 }
 
@@ -223,9 +229,12 @@ function renderMonthlyInventoryControls() {
 function createDayCard(date) {
   const day = availabilityState.days.get(date), card = element("section", `availability-day-card${date === currentDateKey() ? " is-today" : ""}`), heading = element("div", "availability-day-heading"), title = element("h3", "", dateLabel(date)), inventoryGrid = element("div", "availability-inventory-grid");
   inventoryGrid.style.setProperty("--inventory-count", String(availabilityState.rooms.length));
-  const available = availabilityState.rooms.filter(room => day[room.id] === "available").length, summary = element("span", "day-summary", `${available} 可售／${availabilityState.rooms.length - available} 不可售`);
+  const available = availabilityState.rooms.filter(room => calendarStatus(date, room) === "available").length;
+  const closed = availabilityState.rooms.filter(room => calendarStatus(date, room) === "closed").length;
+  const unknown = availabilityState.rooms.length - available - closed;
+  const summary = element("span", "day-summary", `${available} 可售／${closed} 不可售${unknown ? `／${unknown} 尚未設定` : ""}`);
   heading.append(title, summary);
-  if (!day._hasAvailability) heading.append(element("span", "missing-data", "尚無房況資料，依不可售顯示"));
+  if (unknown) heading.append(element("span", "missing-data", "請設定尚未登錄的房況"));
   inventoryGrid.append(...availabilityState.rooms.map(room => createRoomRow(date, room)));
   card.append(heading, inventoryGrid);
   return card;
@@ -339,7 +348,7 @@ async function loadMonth() {
   try {
     const pages = await Promise.all(months.map(async value => { const [year, month] = value.split("-").map(Number); return api(`/api/availability/month?propertyId=${encodeURIComponent(propertyId)}&year=${year}&month=${month}`); })); if (generation !== requestGeneration || propertyId !== session?.propertyId) return;
     if (pages.some(page => page.propertyId !== propertyId)) throw Error("旅宿資料不一致，請重新登入。");
-    const data = pages[0] || { rooms: [], rows: [], notesByDate: {} }, rows = new Map(pages.flatMap(page => page.rows || []).map(row => [row.date, row])), dateKeys = plan.dateKeys; availabilityState.rooms = data.rooms || []; rooms = availabilityState.rooms; availabilityState.notesByDate = Object.assign({}, ...pages.map(page => page.notesByDate || {})); availabilityState.days = new Map(dateKeys.map(date => { const row = rows.get(date), normalized = { date, _hasAvailability: Boolean(row), _knownInventory: Object.keys(row || {}).filter(id => ["available", "closed"].includes(row[id])) }; for (const room of rooms) normalized[room.id] = row?.[room.id] === "available" ? "available" : "closed"; return [date, normalized]; }));
+    const data = pages[0] || { rooms: [], rows: [], notesByDate: {} }, rows = new Map(pages.flatMap(page => page.rows || []).map(row => [row.date, row])), dateKeys = plan.dateKeys; availabilityState.rooms = data.rooms || []; rooms = availabilityState.rooms; availabilityState.notesByDate = Object.assign({}, ...pages.map(page => page.notesByDate || {})); availabilityState.days = new Map(dateKeys.map(date => { const row = rows.get(date), normalized = { date, _hasAvailability: Boolean(row), _knownInventory: Object.keys(row || {}).filter(id => ["available", "closed"].includes(row[id])) }; for (const room of rooms) normalized[room.id] = ["available", "closed"].includes(row?.[room.id]) ? row[room.id] : "unknown"; return [date, normalized]; }));
     availabilityState.selectedDate = availabilityState.days.has(currentDateKey()) ? currentDateKey() : [...availabilityState.days.keys()][0] || ""; availabilityState.loadedSelection = selection; availabilityState.loading = false; renderMembers(); renderAvailability(); if (availabilityState.refreshBulk) availabilityState.refreshBulk(); $("status").textContent = "房況已載入";
   } catch (error) { if (generation === requestGeneration) $("status").textContent = `房況載入失敗：${error.message}，請稍後重試。`; }
   finally { if (generation === requestGeneration) { availabilityState.loading = false; $("availabilityLoading").hidden = true; } }
@@ -484,7 +493,7 @@ function initializeAvailabilityBulkControls() {
   const box = element("section", "availability-bulk"), title = element("h3", "", "\u5168\u90e8\u623f\u578b\u6574\u6708\u8a2d\u5b9a"), status = element("p", "hint"), actions = element("div", "actions"), open = element("button", "", "\u5168\u90e8\u958b\u653e"), close = element("button", "secondary", "\u5168\u90e8\u95dc\u9589"), confirmBox = element("section", "availability-bulk-confirm"), confirmText = element("p"), yes = element("button", "", "\u78ba\u5b9a"), no = element("button", "secondary", "\u53d6\u6d88");
   status.id = "availabilityBulkStatus"; open.id = "availabilityBulkOpen"; close.id = "availabilityBulkClose"; confirmBox.id = "availabilityBulkConfirm"; confirmText.id = "availabilityBulkConfirmText"; yes.id = "availabilityBulkConfirmYes"; no.id = "availabilityBulkConfirmNo"; confirmBox.hidden = true; open.type = close.type = yes.type = no.type = "button"; actions.append(open, close); confirmBox.append(confirmText, element("div", "actions")); confirmBox.lastChild.append(yes, no); box.append(title, status, actions, confirmBox); $("availabilityAutoReply").after(box);
   let pending = null;
-  const refresh = () => { const plan = AdminAvailabilityWindow.availabilityBulkPlan(currentDateKey(), availabilityState.selection); const states = [...availabilityState.days.values()].flatMap(day => availabilityState.rooms.map(room => day[room.id])); const state = states.length && states.every(value => value === "available") ? "\u5168\u90e8\u958b\u653e" : states.length && states.every(value => value === "closed") ? "\u5168\u90e8\u95dc\u9589" : "\u90e8\u5206\u958b\u653e"; status.textContent = plan.allowed ? `\u76ee\u524d\uff1a${state}` : plan.message; open.disabled = close.disabled = !plan.allowed; confirmBox.hidden = true; };
+  const refresh = () => { const plan = AdminAvailabilityWindow.availabilityBulkPlan(currentDateKey(), availabilityState.selection); const states = [...availabilityState.days.values()].flatMap(day => availabilityState.rooms.map(room => day[room.id])); const state = states.some(value => !["available", "closed"].includes(value)) ? "部分尚未設定" : states.length && states.every(value => value === "available") ? "\u5168\u90e8\u958b\u653e" : states.length && states.every(value => value === "closed") ? "\u5168\u90e8\u95dc\u9589" : "\u90e8\u5206\u958b\u653e"; status.textContent = plan.allowed ? `\u76ee\u524d\uff1a${state}` : plan.message; open.disabled = close.disabled = !plan.allowed; confirmBox.hidden = true; };
   const ask = state => { const plan = AdminAvailabilityWindow.availabilityBulkPlan(currentDateKey(), availabilityState.selection); if (!plan.allowed) return refresh(); const [year, month] = availabilityState.selection.split("-").map(Number); pending = { ...plan, state }; confirmText.textContent = state === "closed" ? `${year}\u5e74${month}\u6708\u7684\u6240\u6709\u623f\u578b\u8207\u5305\u68df\u5c07\u5168\u90e8\u95dc\u9589\uff0c\u78ba\u5b9a\uff1f` : `\u5373\u5c07\u5c07 ${plan.startDate} \u81f3 ${plan.endDate} \u7684\u6240\u6709\u623f\u578b\u8207\u5305\u68df\u8a2d\u70ba\u5168\u90e8\u958b\u653e\u3002`; confirmBox.hidden = false; };
   open.onclick = () => ask("available"); close.onclick = () => ask("closed"); no.onclick = () => { pending = null; confirmBox.hidden = true; };
   yes.onclick = async () => { if (!pending) return; yes.disabled = true; try { await api("/api/availability/batch", { method: "POST", body: JSON.stringify({ customerId: session.propertyId, mode: "all_inventory", startDate: pending.startDate, endDate: pending.endDate, status: pending.state }) }); await loadMonth(); } catch (error) { status.textContent = `\u6279\u6b21\u5132\u5b58\u5931\u6557\uff1a${error.message}`; } finally { pending = null; yes.disabled = false; confirmBox.hidden = true; refresh(); } };
