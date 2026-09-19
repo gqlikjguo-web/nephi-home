@@ -40,6 +40,13 @@ function validateClaimSet(reply, plan, claimedTaskIds, composedSections = null) 
   if (missingFactSource) errors.push("missing_fact_source");
   for (const section of plan.sections || []) {
     const type = claimTypeForSection(section);
+    // Even deterministic rendering must satisfy the independent availability
+    // contract; changing its renderer cannot redefine a valid guest answer.
+    const availabilityErrors = require("./availability-reply-validation").validateAvailabilityReply(section,
+      Array.isArray(composedSections)
+        ? composedSections.find(item => item.taskId === section.taskId)?.text || ""
+        : (plan.sections || []).length === 1 ? text : composeControlledReply({ ...plan, sections: [section] }));
+    if (availabilityErrors) errors.push(...availabilityErrors);
     const expected = section.status === "answered" ? ["FACTUAL_ANSWER", "EPISTEMIC_UNKNOWN", "PROCESSING_STATUS"]
       : section.status === "needs_clarification" ? ["CLARIFY"] : ["HANDOFF"];
     if (!expected.includes(type)) errors.push("invalid_claim_type");

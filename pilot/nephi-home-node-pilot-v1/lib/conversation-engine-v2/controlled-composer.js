@@ -17,8 +17,10 @@ function composeSection(section) {
   }
   const facts = section.facts || {};
   if (section.claimType === "EPISTEMIC_UNKNOWN"
+    && ["availability", "bundle_availability"].includes(section.type)
     && section.unknownProvenance?.sourceReasonCode === "missing_inventory_records") {
-    return "謝謝您的詢問，請稍後再試，或直接與我們聯繫。";
+    const checkIn = section.unknownProvenance.resolverProvenance?.readEvidence?.from;
+    return `${checkIn} 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。`;
   }
   if (section.claimType === "EPISTEMIC_UNKNOWN") return section.unknownProvenance?.sourceReasonCode === "property_applicability_unknown"
     ? "無法確認該條件是否適用。" : "目前無法確認。";
@@ -47,7 +49,7 @@ function composeSection(section) {
     return facts.priceBasis === "registered_rate" ? feasibility + "\n" + composeSection({ ...section, facts: { ...facts, feasibility: null } }) : feasibility;
   }
   if (["availability", "bundle_availability"].includes(section.type) && section.outcomeStatus === "no_availability") {
-    return "您查詢的日期目前沒有可提供的房型，歡迎查看其他日期，謝謝您。";
+    return `${facts.checkIn} 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。`;
   }
   if (facts.prices) {
     if (facts.priceBasis === "registered_rate") return `${facts.checkIn} 登錄房價：\n${facts.prices.map(item => `${item.inventory.publicName}共 ${money(item.total)} ${item.currency === "TWD" ? "元" : item.currency}。`).join("\n")}`;
@@ -102,6 +104,11 @@ function validateComposedSection(section, text) {
   if (meaningfulCharacterCount(value) < 3) errors.push("meaningless_section_text");
   if (section.responseMode === "handoff") errors.push("handoff_deterministic_boundary");
   if (section.responseMode !== "handoff" && value) {
+    const availabilityErrors = require("./availability-reply-validation").validateAvailabilityReply(section, value);
+    if (availabilityErrors !== null) {
+      errors.push(...availabilityErrors);
+      return { ok: errors.length === 0, errors: [...new Set(errors)] };
+    }
     const expected = composeSection(section);
     const proposedMeaning = normalizedMeaning(value);
     const expectedMeaning = normalizedMeaning(expected);
