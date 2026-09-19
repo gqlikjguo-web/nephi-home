@@ -34,28 +34,60 @@ test("missing dates are not displayed as closed and can be explicitly closed wit
     await page.clock.setFixedTime(new Date("2026-09-19T03:00:00Z"));
     await page.goto(started.url + "/admin");
     await page.locator("#status").getByText("房況已載入", { exact: true }).waitFor();
-    await page.locator("#month").fill("2026-11");
-    await page.locator("#month").dispatchEvent("change");
-    await page.locator('#calendarGrid [data-date="2026-11-25"]').waitFor();
-    await page.locator('[data-view="daily"]').click();
-    const card = page.locator("#dailyAvailability .availability-day-card").filter({ has: page.locator("h3", { hasText: "11/25" }) });
-    assert.equal(await card.locator(".status-text").textContent(), "尚未設定");
-    assert.ok(!(await card.locator(".day-summary").textContent()).includes("1 不可售"));
-    assert.deepEqual(providers.availability.getRows("closure-a", "2026-11-25", "2026-11-26"), []);
-    assert.equal(writes.length, 0, "viewing missing dates must not create availability facts");
-    await card.getByRole("button", { name: "設為關閉", exact: true }).click();
-    await card.getByText("已儲存", { exact: true }).waitFor();
-    assert.equal(writes.length, 1);
-    assert.equal(writes[0].status, "closed");
-    assert.equal(providers.availability.getRows("closure-a", "2026-11-25", "2026-11-26")[0].suite, "closed");
-    assert.deepEqual(providers.availability.getRows("closure-b", "2026-11-25", "2026-11-26"), []);
     const service = require("../lib/mvp-service").createMvpService(providers);
-    assert.equal(service.searchAvailability({ customerId: "closure-a", checkIn: "2026-11-25", checkOut: "2026-11-26" }).feasibility.inventoryStatus, "closed");
-    await page.reload();
-    await page.locator("#status").getByText("房況已載入", { exact: true }).waitFor();
-    const stored = await context.request.get(started.url + "/api/availability/month?propertyId=closure-a&year=2026&month=11");
-    assert.equal((await stored.json()).data.rows.find(row => row.date === "2026-11-25").suite, "closed");
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    for (const [date, month, label] of [
+      ["2026-09-28", "2026-09", "9/28"], ["2026-11-25", "2026-11", "11/25"],
+      ["2026-12-25", "2026-12", "12/25"], ["2027-01-02", "2027-01", "1/2"],
+      ["2026-11-26", "2026-11", "11/26"]
+    ]) {
+      const checkout = new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10);
+      await page.locator('[data-view="calendar"]').click();
+      await page.locator("#month").fill(month); await page.locator("#month").dispatchEvent("change");
+      await page.locator(`#calendarGrid [data-date="${date}"]`).waitFor();
+      await page.locator('[data-view="daily"]').click();
+      const card = page.locator("#dailyAvailability .availability-day-card").filter({ has: page.locator("h3", { hasText: label + "（" }) });
+      assert.equal(await card.locator(".status-toggle").count(), 0, "missing must not look like a closed toggle");
+      assert.equal(await card.locator(".status-text").count(), 0, "missing is not a third business status");
+      assert.equal(await card.locator(".room-status-control").getByRole("button").allTextContents().then(x=>x.sort()).then(x=>x.join("/")), "開放/關閉");
+      for (const forbidden of ["尚未設定", "無資料", "無房況資料", "missing", "unknown", "inventory"]) {
+        assert.ok(!(await card.locator(".room-status-control").innerText()).includes(forbidden));
+      }
+      assert.ok((await card.locator(".day-summary").textContent()).includes("0 關閉"));
+      assert.deepEqual(providers.availability.getRows("closure-a", date, checkout), []);
+      const before = writes.length;
+      await card.getByRole("button", { name: "關閉", exact: true }).click();
+      await card.getByText("已儲存", { exact: true }).waitFor();
+      assert.equal(writes.length, before + 1); assert.equal(writes.at(-1).status, "closed");
+      assert.equal(await card.locator(".status-text").textContent(), "關閉");
+      assert.equal(providers.availability.getRows("closure-a", date, checkout)[0].suite, "closed");
+      assert.equal(service.searchAvailability({ customerId: "closure-a", checkIn: date, checkOut: checkout }).feasibility.inventoryStatus, "closed");
+      await card.locator(".status-toggle").check();
+      await card.getByText("已儲存", { exact: true }).waitFor();
+      assert.equal(writes.length, before + 2); assert.equal(writes.at(-1).status, "available");
+      assert.equal(await card.locator(".status-text").textContent(), "開放");
+      assert.equal(providers.availability.getRows("closure-a", date, checkout)[0].suite, "available");
+      assert.equal(service.searchAvailability({ customerId: "closure-a", checkIn: date, checkOut: checkout }).rooms.length, 1);
+      assert.deepEqual(providers.availability.getRows("closure-b", date, checkout), []);
+      await page.reload(); await page.locator("#status").getByText("房況已載入", { exact: true }).waitFor();
+      await page.locator('[data-view="calendar"]').click();
+      await page.locator("#month").fill(month); await page.locator("#month").dispatchEvent("change");
+      await page.locator(`#calendarGrid [data-date="${date}"]`).waitFor();
+      await page.locator('[data-view="daily"]').click();
+      assert.equal(await card.locator(".status-text").textContent(), "開放");
+      assert.equal(await card.locator(".status-toggle").isChecked(), true);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    }
+    // Opening must also create a formal row directly, without closing first.
+    await page.locator('[data-view="calendar"]').click();
+    await page.locator("#month").fill("2027-01"); await page.locator("#month").dispatchEvent("change");
+    await page.locator('#calendarGrid [data-date="2027-01-03"]').click();
+    const detail = page.locator("#dayDetails");
+    assert.deepEqual(providers.availability.getRows("closure-a", "2027-01-03", "2027-01-04"), []);
+    await detail.getByRole("button", { name: "開放", exact: true }).click();
+    await detail.getByText("已儲存", { exact: true }).waitFor();
+    assert.equal(writes.at(-1).status, "available");
+    assert.equal(providers.availability.getRows("closure-a", "2027-01-03", "2027-01-04")[0].suite, "available");
+    assert.equal(service.searchAvailability({ customerId: "closure-a", checkIn: "2027-01-03", checkOut: "2027-01-04" }).rooms.length, 1);
     assert.deepEqual(errors, []);
   } finally { if (browser) await browser.close(); await app.stop(); fs.rmSync(connection.dataDir, { recursive: true, force: true }); }
 });

@@ -49,7 +49,8 @@
     "test:unknown-lifecycle-affected": "node tests/new-core-context-status-roundtrip-runner.js && node tests/new-core-context-lifecycle-runner.js && node tests/new-core-production-turn-adapter-runner.js && node tests/new-core-operator-policy-runner.js && node tests/new-core-reliability-provenance-runner.js && node tests/new-core-decision-only-response-runner.js && node tests/new-core-source-evidence-runner.js && node tests/new-core-quantity-state-turn-runner.js",
     "test:responsibility-routing": "node tests/new-core-policy-responsibility-runner.js",
     "test:new-core-usage": "node tests/new-core-usage-runner.js",
-    "test:new-core-schema-sharing": "node tests/new-core-schema-sharing-runner.js"
+    "test:new-core-schema-sharing": "node tests/new-core-schema-sharing-runner.js",
+    "test:availability-business-states": "node tests/new-core-availability-reliability-runner.js && node tests/admin-availability-missing-runner.js"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.3.14",

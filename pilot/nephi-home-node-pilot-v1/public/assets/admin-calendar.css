@@ -27,3 +27,8 @@
   .calendar-room-line{display:none}.calendar-date{font-size:13px}.calendar-count{font-size:10px;white-space:normal}
   .calendar-note-hint,.calendar-no-match,.calendar-unknown{font-size:10px}.day-details{padding:10px;scroll-margin-top:12px}
 }
+
+/* Missing cells require an explicit business choice, never a third toggle state. */
+.room-status-control.needs-selection{flex-wrap:wrap;gap:4px}
+.availability-setup-prompt{flex-basis:100%;font-size:12px;color:#607268;overflow-wrap:anywhere}
+.room-status-control.needs-selection button{flex:1;min-width:0;min-height:44px;border:1px solid #aebeb4;border-radius:6px}

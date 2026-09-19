@@ -18,7 +18,7 @@ for (const status of ["missing", "closed", "available"]) for (const [text, raw, 
   test(`${status}: ${text}`, async () => {
     const { providers } = await formalProviders();
     if (status !== "missing") {
-      const service = createMvpService(providers);
+      const service = createMvpService(providers, { now: () => new Date(now) });
       // Exercise the same all-inventory operator write used by the admin API.
       const endDate = new Date(Date.parse(checkout) - 86400000).toISOString().slice(0, 10);
       service.applyBatch({ customerId: "inventory-a", mode: "all_inventory", startDate: date, endDate, status });
@@ -45,9 +45,14 @@ for (const status of ["missing", "closed", "available"]) for (const [text, raw, 
       assert.equal(outcome.reason, "missing_inventory_records");
       assert.ok(unknownProvenanceFor(outcome));
       assert.equal(r.artifacts.responsePlan.sections[0].claimType, "EPISTEMIC_UNKNOWN");
-      assert.ok(r.finalResponse.replyText.includes("房況資料尚未完整"));
+      assert.ok(r.finalResponse.replyText.includes("謝謝您的詢問，請稍後再試，或直接與我們聯繫。"));
+      // The fixture property URL contains "inventorya"; check guest prose, not its URL slug.
+      const prose = r.finalResponse.replyText.replace(/https?:\/\/\S+/g, "");
+      for (const forbidden of ["資料", "missing", "unknown", "inventory"]) assert.ok(!prose.includes(forbidden));
+      const trace = require("../lib/new-core/production-safe-trace").formatNewCoreProductionTrace({ stage: "new_core_resolver", traceId: "availability-reliability", results: r.artifacts.executionOutcomes });
+      assert.equal(trace.results[0].reason, "missing_inventory_records");
       assert.ok(!r.finalResponse.replyText.includes("目前沒有可提供的房型"));
-    } else if (status === "closed") assert.ok(r.finalResponse.replyText.includes("目前沒有可提供的房型。"));
+    } else if (status === "closed") assert.ok(r.finalResponse.replyText.includes("您查詢的日期目前沒有可提供的房型，歡迎查看其他日期，謝謝您。"));
     else assert.ok(r.finalResponse.replyText.includes("目前可預訂"));
   });
 }

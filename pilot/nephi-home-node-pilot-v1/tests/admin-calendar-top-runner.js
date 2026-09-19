@@ -56,7 +56,7 @@ async function run() {
       await page.waitForFunction(()=>document.querySelector('#calendarGrid [data-date="2026-09-23"]'));
       assert.equal(await page.locator('#calendarGrid button[data-date]').count(),30);
       assert.deepEqual(await page.locator('.calendar-weekday').allTextContents(),['日','一','二','三','四','五','六']);
-      assert.equal(await page.locator('#calendarGrid [data-date="2026-09-01"]').getAttribute('aria-label').then(s=>s.includes('無資料')),true);
+      assert.equal(await page.locator('#calendarGrid [data-date="2026-09-01"]').getAttribute('aria-label').then(s=>s.includes('請設定房況')),true);
       assert.ok(!(await page.locator('#calendarGrid').textContent()).includes('B_PRIVATE_ROOM'));
       const day=page.locator('#calendarGrid [data-date="2026-09-23"]');
       await day.click();
@@ -64,7 +64,7 @@ async function run() {
       assert.ok((await detail.textContent()).includes('湖景套房'));
       const room=detail.locator('.availability-room-row').filter({hasText:'湖景套房'});
       await room.locator('.status-toggle').uncheck();
-      await page.waitForFunction(()=>document.querySelector('#calendarGrid [data-date="2026-09-23"]').textContent.includes('0 可訂'));
+      await page.waitForFunction(()=>document.querySelector('#calendarGrid [data-date="2026-09-23"]').textContent.includes('0 開放'));
       assert.equal(writes.at(-1).path,'/api/availability/day');
       assert.equal(writes.at(-1).body.roomTypeId,'suite_x');
       await page.locator('[data-view=daily]').click();
@@ -72,7 +72,7 @@ async function run() {
       const listRoom=listDay.locator('.availability-room-row').filter({hasText:'湖景套房'});
       assert.equal(await listRoom.locator('.status-toggle').isChecked(),false);
       await listRoom.locator('.status-toggle').check();
-      await page.waitForFunction(()=>document.querySelector('#calendarGrid [data-date="2026-09-23"]').textContent.includes('1 可訂'));
+      await page.waitForFunction(()=>document.querySelector('#calendarGrid [data-date="2026-09-23"]').textContent.includes('1 開放'));
       await page.locator('[data-view=calendar]').click();await day.click();
       await room.locator('.note-button').click();await page.locator('#noteText').fill('測試備註 '+label);await page.locator('#noteSave').click();
       await page.locator('#noteStatus').getByText('已儲存內部備註',{exact:true}).waitFor();
