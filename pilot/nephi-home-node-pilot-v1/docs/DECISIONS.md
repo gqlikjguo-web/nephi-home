@@ -575,3 +575,15 @@
 **Reason:** Production Application Logs did not provide reliable per-message retrieval even though the existing formatter already produced sanitized stage diagnostics. The gap was the missing Engine-result-to-message-log persistence boundary and the missing reviews projection, not the Engine, resolver, database schema, or LINE transport.
 
 **Constraint:** No second formatter, trace table, migration, service, writer, provider, resolver, deployment path, or data authority may be introduced. Persisted and returned traces remain bounded, property scoped, non-authoritative, and free of prompts, guest text, credentials, tokens, secrets, raw provider/OpenAI responses, headers, stacks, and arbitrary payload fields. Successful persistence clears the in-memory trace; diagnostic retrieval cannot change user-visible behavior.
+
+## 2026-09-20 superseded／現行規則註記
+
+D-003的內部Unknown與禁止捏造facts仍有效；其對客必須說明／澄清／handoff的長期後果由後續public visibility契約限縮。原決策正文保留作歷史證據。
+
+目前正式基準：`8f1719c71dd590d85e9a4d1b47f1f08bb8a4af70`。
+
+- 成功正式讀取後，無可提供房型（含正式closed，及缺列且無正式可售房型）回覆「YYYY-MM-DD 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。」；日期由正式解析結果提供。
+- 可提供房型及容量不足分別保留正式房型／價格與既有容量語意。內部missing與technical error不得混同。
+- 非房況Unknown的public responsibility保留 c021f812 的已批准行為；一般NO_REPLY不變。
+- 獨立保護：`tests/new-core-availability-final-text-runner.js`、`tests/new-core-availability-capacity-final-text-runner.js`、`tests/new-core-public-reply-contract-runner.js`。批准紀錄：`docs/phase1-public-reply-change.md`；取代diff：c021f812、eb4eb40、8f1719c。
+- 本註記只標明已有Git／正式行為／有效回歸證據的取代關係。其他UNKNOWN、historical fixture與正式runtime未更動。

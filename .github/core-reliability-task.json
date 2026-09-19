@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "baseline": "8f1719c71dd590d85e9a4d1b47f1f08bb8a4af70",
+  "objective": "Install phase-1 external Core Reliability Gate and evidenced superseded annotations; no normal runtime changes or Render deployment.",
+  "allowedPaths": [
+    ".github/core-reliability-policy.json",
+    ".github/core-reliability-task.json",
+    ".github/workflows/core-reliability.yml",
+    "AGENTS.md",
+    "pilot/nephi-home-node-pilot-v1/docs/CONTROLLED_ARCHITECTURE_RULES.md",
+    "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
+    "pilot/nephi-home-node-pilot-v1/docs/DECISIONS.md",
+    "pilot/nephi-home-node-pilot-v1/docs/JUNZAN_AI_CONSTITUTION.md",
+    "pilot/nephi-home-node-pilot-v1/docs/PRODUCT_BASELINE.md",
+    "pilot/nephi-home-node-pilot-v1/docs/phase1-public-reply-change.md",
+    "pilot/nephi-home-node-pilot-v1/docs/superpowers/plans/2026-09-20-core-reliability-gate.md",
+    "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/run-core-reliability-real.js",
+    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-real-contract-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/fixtures/core-reliability-real-cases.json"
+  ],
+  "contractChangeAllowed": false,
+  "gateChangeAllowed": true,
+  "affectedCapabilities": [
+    "release-protection"
+  ],
+  "preExistingUntracked": [
+    "pilot/nephi-home-node-pilot-v1/node_modules"
+  ],
+  "approvalSource": "User instruction 2026-09-20; first installation requires independent bootstrap review."
+}

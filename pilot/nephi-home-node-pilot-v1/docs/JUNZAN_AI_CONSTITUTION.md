@@ -103,3 +103,15 @@ Unknown ≠ No。
 - intent-only Bot
 
 任何新功能若削弱自然理解、可信事實邊界、完整多問題處理或 Shared Core 通用性，即違反本憲法。
+
+## 2026-09-20 superseded／現行規則註記
+
+第八節及「任何流程不得沉默」的對客表達限制，已由 c021f812 的 public responsibility 契約及 8f1719c 的房況最終文字契約限縮；Unknown ≠ No 的內部facts／provenance原則仍有效。
+
+目前正式基準：`8f1719c71dd590d85e9a4d1b47f1f08bb8a4af70`。
+
+- 成功正式讀取後，無可提供房型（含正式closed，及缺列且無正式可售房型）回覆「YYYY-MM-DD 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。」；日期由正式解析結果提供。
+- 可提供房型及容量不足分別保留正式房型／價格與既有容量語意。內部missing與technical error不得混同。
+- 非房況Unknown的public responsibility保留 c021f812 的已批准行為；一般NO_REPLY不變。
+- 獨立保護：`tests/new-core-availability-final-text-runner.js`、`tests/new-core-availability-capacity-final-text-runner.js`、`tests/new-core-public-reply-contract-runner.js`。批准紀錄：`docs/phase1-public-reply-change.md`；取代diff：c021f812、eb4eb40、8f1719c。
+- 本註記只標明已有Git／正式行為／有效回歸證據的取代關係。其他UNKNOWN、historical fixture與正式runtime未更動。

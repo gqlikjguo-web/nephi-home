@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "referenceTime": "2026-09-19T03:00:00.000Z",
+  "maxCalls": 26,
+  "turns": [
+    {
+      "id": "today",
+      "propertyId": "gate_a",
+      "message": "今天有房嗎",
+      "date": "2026-09-19",
+      "checkOut": "2026-09-20",
+      "outcome": "no_availability",
+      "action": "reply",
+      "expectedText": "2026-09-19 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。\n查房連結：https://example.invalid/gatea"
+    },
+    {
+      "id": "after-tomorrow",
+      "propertyId": "gate_a",
+      "message": "後天有房嗎",
+      "date": "2026-09-21",
+      "checkOut": "2026-09-22",
+      "outcome": "no_availability",
+      "action": "reply",
+      "expectedText": "2026-09-21 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。\n查房連結：https://example.invalid/gatea"
+    },
+    {
+      "id": "available",
+      "propertyId": "gate_a",
+      "message": "9/28有房嗎",
+      "date": "2026-09-28",
+      "checkOut": "2026-09-29",
+      "outcome": "answered",
+      "action": "reply",
+      "price": 1000,
+      "room": "401花園雙人房",
+      "expectedText": "2026-09-28 入住\n目前可預訂。\n401花園雙人房共 1,000 元。\n查房連結：https://example.invalid/gatea"
+    },
+    {
+      "id": "november",
+      "propertyId": "gate_a",
+      "message": "11/25有房嗎",
+      "date": "2026-11-25",
+      "checkOut": "2026-11-26",
+      "outcome": "unknown",
+      "action": "reply",
+      "expectedText": "2026-11-25 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。\n查房連結：https://example.invalid/gatea"
+    },
+    {
+      "id": "december",
+      "propertyId": "gate_a",
+      "message": "12/25可以預訂嗎",
+      "date": "2026-12-25",
+      "checkOut": "2026-12-26",
+      "outcome": "no_availability",
+      "action": "reply",
+      "expectedText": "2026-12-25 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。\n查房連結：https://example.invalid/gatea"
+    },
+    {
+      "id": "next-year",
+      "propertyId": "gate_a",
+      "message": "2027/1/2有房嗎",
+      "date": "2027-01-02",
+      "checkOut": "2027-01-03",
+      "outcome": "unknown",
+      "action": "reply",
+      "expectedText": "2027-01-02 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。\n查房連結：https://example.invalid/gatea"
+    },
+    {
+      "id": "range-room",
+      "propertyId": "gate_a",
+      "message": "11/25~11/27 401房，還有嗎？",
+      "date": "2026-11-25",
+      "checkOut": "2026-11-27",
+      "outcome": "unknown",
+      "action": "reply",
+      "expectedText": "2026-11-25 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。\n查房連結：https://example.invalid/gatea"
+    },
+    {
+      "id": "capacity",
+      "propertyId": "gate_a",
+      "message": "9/28有房嗎？我們6個人想住一間房",
+      "date": "2026-09-28",
+      "checkOut": "2026-09-29",
+      "outcome": "no_availability",
+      "action": "reply",
+      "expectedText": "2026-09-28 仍有空房，但目前可用房源無法在指定房數內容納這次入住人數，請調整房數或入住人數。\n查房連結：https://example.invalid/gatea"
+    },
+    {
+      "id": "normal-no-reply",
+      "propertyId": "gate_a",
+      "message": "謝謝",
+      "action": "no_reply",
+      "expectedText": ""
+    },
+    {
+      "id": "property-isolation",
+      "propertyId": "gate_b",
+      "message": "9/28有房嗎",
+      "date": "2026-09-28",
+      "checkOut": "2026-09-29",
+      "outcome": "answered",
+      "action": "reply",
+      "price": 2000,
+      "room": "海景雙人房",
+      "expectedText": "2026-09-28 入住\n目前可預訂。\n海景雙人房共 2,000 元。\n查房連結：https://example.invalid/gateb"
+    },
+    {
+      "id": "known-policy",
+      "propertyId": "gate_a",
+      "message": "好，謝謝，請問幾點可以入住？",
+      "action": "reply",
+      "answer": "下午15:00起可以入住。",
+      "expectedText": "下午15:00起可以入住。"
+    },
+    {
+      "id": "human-responsibility",
+      "propertyId": "gate_a",
+      "message": "請提供匯款帳號，我要付訂金",
+      "action": "handoff",
+      "expectedText": "請稍後，將盡快回覆您。"
+    },
+    {
+      "id": "context-date-change",
+      "propertyId": "gate_a",
+      "previous": "available",
+      "message": "那改9/30入住，住一晚",
+      "date": "2026-09-30",
+      "checkOut": "2026-10-01",
+      "outcome": "answered",
+      "action": "reply",
+      "price": 1000,
+      "room": "401花園雙人房",
+      "expectedText": "2026-09-30 入住\n目前可預訂。\n401花園雙人房共 1,000 元。\n查房連結：https://example.invalid/gatea"
+    }
+  ],
+  "coverageNotes": [
+    "13 turns; max 2 genuine Understanding attempts each. No repeat-to-pass.",
+    "Cross-month Context, cross-year date, range/named room, capacity, known policy plus absent sibling, HANDOFF, NO_REPLY, two properties.",
+    "Deterministic incident runners additionally force correction failures, missing-catalog risk admission, and exact cross-month/year ranges. REAL model correction is not forced or fabricated."
+  ]
+}
