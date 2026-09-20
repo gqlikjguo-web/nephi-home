@@ -1,0 +1,63 @@
+name: Production zero-Luna reliability monitor
+run-name: ${{ github.event_name == 'workflow_dispatch' && inputs.alert_test && 'JunZan monitor — synthetic alert drill (expected failure)' || 'JunZan production monitor' }}
+on:
+  pull_request:
+    branches: [production]
+    paths:
+      - '.github/workflows/production-reliability-monitor.yml'
+      - 'pilot/nephi-home-node-pilot-v1/lib/production-reliability-monitor.js'
+      - 'pilot/nephi-home-node-pilot-v1/scripts/monitor-production-reliability.js'
+      - 'pilot/nephi-home-node-pilot-v1/tests/production-reliability-monitor-runner.js'
+  schedule:
+    - cron: '2-57/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      alert_test:
+        description: 'Synthetic alert drill: expected failure; no production access'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: production-reliability-${{ github.event_name }}
+  cancel-in-progress: false
+jobs:
+  contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test tests/production-reliability-monitor-runner.js
+        working-directory: pilot/nephi-home-node-pilot-v1
+  observe:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install PostgreSQL reader only when configured
+        env:
+          HAS_DATABASE: ${{ secrets.PRODUCTION_MONITOR_DATABASE_URL != '' }}
+        if: env.HAS_DATABASE == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.alert_test)
+        run: npm ci --ignore-scripts
+        working-directory: pilot/nephi-home-node-pilot-v1
+      - name: Observe existing production signals
+        env:
+          PRODUCTION_MONITOR_ALERT_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.alert_test && 'true' || 'false' }}
+          PRODUCTION_MONITOR_RENDER_API_KEY: ${{ !(github.event_name == 'workflow_dispatch' && inputs.alert_test) && secrets.PRODUCTION_MONITOR_RENDER_API_KEY || '' }}
+          PRODUCTION_MONITOR_DATABASE_URL: ${{ !(github.event_name == 'workflow_dispatch' && inputs.alert_test) && secrets.PRODUCTION_MONITOR_DATABASE_URL || '' }}
+          PRODUCTION_MONITOR_OWNER_ID: tea-d9b4066cjfls73dt1va0
+          PRODUCTION_MONITOR_SERVICE_ID: srv-d9b630reo5us73e0rk8g
+          PRODUCTION_MONITOR_HEALTH_URL: https://app.junzanai.com/api/health
+        run: node scripts/monitor-production-reliability.js
+        working-directory: pilot/nephi-home-node-pilot-v1
