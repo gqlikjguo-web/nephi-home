@@ -47,6 +47,18 @@ or operator LINE messages are sent. During this task the owner said the Render
 secret will be configured later and notification settings are uncertain; the
 production schedule is therefore not declared active or delivered.
 
+Activation update (2026-09-21): the owner confirmed configuring the Render secret
+and GitHub Email / On GitHub / failed-workflows-only notifications. Secret name
+existence was checked without reading its value. Actual access and delivery still
+require the first workflow runs.
+
+For the authorized notification check, manually dispatch with `alert_test=true`.
+This feeds one synthetic failed-delivery record through the same analyzer and
+nonzero-exit reporting path. It receives no monitor credentials, makes no network
+or database calls and labels the run as an expected synthetic failure. Scheduled
+runs and the default manual input always observe real production. A GitHub failed
+run proves the failure trigger; inbox receipt requires separate delivery evidence.
+
 The repository is public. Standard GitHub-hosted runners are free; this workflow
 uses those runners, no paid services, additional Render instances or artifact
 storage. If repository visibility or runner type changes, reassess cost before

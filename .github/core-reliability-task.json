@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "baseline": "f80b2d7122bd99af860d759e099fe78c4fa19845",
-  "objective": "Add an external zero-OpenAI production reliability monitor over existing Render traces, health and optional read-only PostgreSQL message records. Do not change normal runtime, facts, decisions, transport, credentials or paid services.",
+  "objective": "Add and activate an external zero-OpenAI production reliability monitor over existing Render traces, health and optional read-only PostgreSQL message records, with a manual synthetic alert drill. Do not change normal runtime, facts, decisions, transport, credentials or paid services.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
     ".github/workflows/production-reliability-monitor.yml",
@@ -18,5 +18,5 @@
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "User approved phase-2 zero-Luna monitoring evidence, RED/GREEN implementation and affected regression on 2026-09-20. Existing business behavior and unrelated changes forbidden."
+  "approvalSource": "User approved phase-2 monitoring on 2026-09-20 and activation through Gate, PR, CI, production merge, real read-only run and safe failure notification drill on 2026-09-21. Existing business behavior and unrelated changes forbidden."
 }

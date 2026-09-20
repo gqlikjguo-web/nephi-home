@@ -113,3 +113,16 @@ test("monitor uses only health and Render GETs, with missing database coverage e
   assert.equal(report.openaiCalls, 0); assert.equal(report.status, "NO_ALERT_WITH_GAPS"); assert.ok(report.gaps.includes("POSTGRES_NOT_CONNECTED"));
   assert.equal(calls.length, 2); assert.ok(calls.every(([, method]) => method === "GET"));
 });
+test("manual alert drill fails through the real monitor without network or database access", () => {
+  const { spawnSync } = require("node:child_process");
+  const script = path.join(__dirname, "../scripts/monitor-production-reliability.js");
+  const source = `globalThis.fetch = () => { throw Error("NETWORK_FORBIDDEN"); }; const M=require("node:module"), original=M._load; M._load=function(name,...args){if(name==="pg")throw Error("DATABASE_FORBIDDEN");return original.call(this,name,...args);}; require(${JSON.stringify(script)});`;
+  const r = spawnSync(process.execPath, ["-e", source], { encoding: "utf8", env: { PATH: process.env.PATH, PRODUCTION_MONITOR_ALERT_TEST: "true", PRODUCTION_MONITOR_DATABASE_URL: "must-not-open" } });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /"testOnly":true/);
+  const report = JSON.parse(r.stdout.trim());
+  assert.equal(report.status, "ALERT");
+  assert.equal(report.openaiCalls, 0);
+  assert.deepEqual(report.alerts.map(x => x.code), ["LINE_DELIVERY_FAILED"]);
+  assert.match(r.stderr, /::error title=JunZan monitor alert drill/);
+});
