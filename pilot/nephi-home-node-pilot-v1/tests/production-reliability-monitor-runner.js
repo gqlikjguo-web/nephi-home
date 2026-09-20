@@ -117,7 +117,7 @@ test("manual alert drill fails through the real monitor without network or datab
   const { spawnSync } = require("node:child_process");
   const script = path.join(__dirname, "../scripts/monitor-production-reliability.js");
   const source = `globalThis.fetch = () => { throw Error("NETWORK_FORBIDDEN"); }; const M=require("node:module"), original=M._load; M._load=function(name,...args){if(name==="pg")throw Error("DATABASE_FORBIDDEN");return original.call(this,name,...args);}; require(${JSON.stringify(script)});`;
-  const r = spawnSync(process.execPath, ["-e", source], { encoding: "utf8", env: { PATH: process.env.PATH, PRODUCTION_MONITOR_ALERT_TEST: "true", PRODUCTION_MONITOR_DATABASE_URL: "must-not-open" } });
+  const r = spawnSync(process.execPath, ["-e", source], { encoding: "utf8", env: { PATH: process.env.PATH, PRODUCTION_MONITOR_ALERT_TEST: "true", PRODUCTION_MONITOR_DATABASE_URL: "unused" } });
   assert.equal(r.status, 1);
   assert.match(r.stdout, /"testOnly":true/);
   const report = JSON.parse(r.stdout.trim());
