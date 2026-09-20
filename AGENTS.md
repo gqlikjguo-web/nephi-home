@@ -1,5 +1,21 @@
 # JunZan AI Codex Integrity Rules
 
+## Core Reliability task boundary (2026-09-20)
+
+Every change task must record its baseline, approved objective, exact allowed
+paths and contract-change permission in `.github/core-reliability-task.json`.
+The external Gate uses the actual Git diff and trusted-base policy. A manifest
+written by Codex is not human scope approval. Do not fix, optimize or refactor
+anything outside that approved scope; report additional findings only.
+
+On any valid PASS becoming FAIL, STOP and preserve the worktree, modifications,
+test output and evidence. Do not reset, revert, rollback, restore, clean, retry
+for a passing sample, or add a second patch. Recovery requires the user's explicit
+request. This preservation rule supersedes older automatic rollback instructions.
+
+Gate operation and bootstrap limits:
+`pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md`.
+
 These repository-wide rules apply to every Codex task. Read this file and each applicable descendant `AGENTS.md` before acting. For work under JunZan AI, the required authority entry is [pilot/nephi-home-node-pilot-v1/docs/RULES_INDEX.md](pilot/nephi-home-node-pilot-v1/docs/RULES_INDEX.md). Repository history, source, tests, and observed command output are the only project facts; do not rely on chat memory or invent missing evidence.
 
 ## Trust Boundaries and Evidence

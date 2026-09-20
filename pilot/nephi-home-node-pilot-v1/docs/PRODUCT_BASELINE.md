@@ -128,3 +128,15 @@
 - Legacy daily room data is converted exactly once by migration into property-scoped inventory rows; formal bundles are derived only from stored member relations.
 - The admin month API, public frontend API, Conversation Resolver, and LINE flow consume the same normalized rows. A backend toggle is not an initialization or warm-up requirement.
 - Missing daily rows remain visibly missing/unreliable rather than being silently converted into either availability or a false no-room answer.
+
+## 2026-09-20 superseded／現行規則註記
+
+第23、60、130行附近的舊對客規則被下列有界規則取代；缺列內部诊斷及資料庫錯誤分類不變，不得把此例外套到讀取失敗。
+
+目前正式基準：`8f1719c71dd590d85e9a4d1b47f1f08bb8a4af70`。
+
+- 成功正式讀取後，無可提供房型（含正式closed，及缺列且無正式可售房型）回覆「YYYY-MM-DD 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。」；日期由正式解析結果提供。
+- 可提供房型及容量不足分別保留正式房型／價格與既有容量語意。內部missing與technical error不得混同。
+- 非房況Unknown的public responsibility保留 c021f812 的已批准行為；一般NO_REPLY不變。
+- 獨立保護：`tests/new-core-availability-final-text-runner.js`、`tests/new-core-availability-capacity-final-text-runner.js`、`tests/new-core-public-reply-contract-runner.js`。批准紀錄：`docs/phase1-public-reply-change.md`；取代diff：c021f812、eb4eb40、8f1719c。
+- 本註記只標明已有Git／正式行為／有效回歸證據的取代關係。其他UNKNOWN、historical fixture與正式runtime未更動。
