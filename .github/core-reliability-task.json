@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
   "baseline": "8f1719c71dd590d85e9a4d1b47f1f08bb8a4af70",
-  "objective": "Install phase-1 external Core Reliability Gate and evidenced superseded annotations; no normal runtime changes or Render deployment.",
+  "objective": "Complete the approved first Gate installation through a one-time bootstrap CI using the reviewed Gate and policy; preserve the existing installation results, trusted-base workflow, contracts and all normal runtime; no Render deployment.",
   "allowedPaths": [
     ".github/core-reliability-policy.json",
     ".github/core-reliability-task.json",
+    ".github/workflows/core-reliability-bootstrap.yml",
     ".github/workflows/core-reliability.yml",
     "AGENTS.md",
     "pilot/nephi-home-node-pilot-v1/docs/CONTROLLED_ARCHITECTURE_RULES.md",
@@ -17,6 +18,7 @@
     "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
     "pilot/nephi-home-node-pilot-v1/scripts/run-core-reliability-real.js",
     "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-bootstrap-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/core-reliability-real-contract-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/fixtures/core-reliability-real-cases.json"
   ],
@@ -28,5 +30,5 @@
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "User instruction 2026-09-20; first installation requires independent bootstrap review."
+  "approvalSource": "User explicitly approved PR #1 Ready, one-time bootstrap CI and the three review-field changes on 2026-09-20. Relative to reviewed e3b590adcc27d729f0d04c87bffb9bd163921428, only this task, the bootstrap workflow and its regression runner may change; all previous approved installation paths remain preserved."
 }
