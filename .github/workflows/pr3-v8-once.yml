@@ -1,0 +1,137 @@
+# One-shot diagnostic only. Never merge into production; never publishes Gate success.
+name: PR3 V8 native diagnostic — once
+on:
+  push:
+    branches: [diagnostic/pr3-v8-once-20260921]
+permissions:
+  contents: read
+jobs:
+  compare:
+    if: github.event.created == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    services:
+      postgres:
+        image: postgres@sha256:a3b7f434b2dc57ce85a67e171163eb8ab1a1ebcb39d27484661f26b1dfbe30d6
+        env:
+          POSTGRES_USER: gate_test
+          POSTGRES_PASSWORD: isolated_ci_only
+          POSTGRES_DB: junzan_core_gate
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U gate_test -d junzan_core_gate"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - name: Refuse repeat attempts and image mismatch before executing tests
+        run: |
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$ImageOS" = "ubuntu24"
+          test "$ImageVersion" = "20260907.300.1"
+      - uses: actions/checkout@v4
+        with:
+          path: entry
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 3a73b1353b668a53fa087b738cf7f0de336d4e03
+          path: base
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 1bbb6a1622bea1d4bcc0b2e1618473899caa0752
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+      - name: Verify exact versions, approved scope and immutable source SHAs
+        env:
+          APPROVED_SCOPE_DIGEST: 8c0638769a6c5564589b4167049d17c516fca295a57edff8736929db9926ef24
+        run: |
+          test "$(node --version)" = "v24.20.0"
+          test "$(npm --version)" = "11.19.0"
+          node <<'NODE'
+          const fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
+          const base = '3a73b1353b668a53fa087b738cf7f0de336d4e03';
+          const candidate = '1bbb6a1622bea1d4bcc0b2e1618473899caa0752';
+          const gate = require('./base/pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate');
+          const root = path.resolve('entry');
+          const task = JSON.parse(fs.readFileSync(root + '/.github/core-reliability-task.json'));
+          const policy = JSON.parse(fs.readFileSync('base/.github/core-reliability-policy.json'));
+          gate.validateTask(task, base, process.env.APPROVED_SCOPE_DIGEST);
+          const changed = gate.changedPaths(root, base, process.env.GITHUB_SHA);
+          gate.validateDiff(changed, task, policy);
+          gate.verifyCheckout(root, process.env.GITHUB_SHA);
+          gate.verifyCheckout(path.resolve('base'), base);
+          gate.verifyCheckout(path.resolve('candidate'), candidate);
+          const evidence = path.join(process.env.RUNNER_TEMP, 'pr3-v8-once');
+          fs.mkdirSync(evidence, { recursive: false });
+          fs.writeFileSync(path.join(evidence, 'environment.json'), JSON.stringify({
+            diagnosticSha: process.env.GITHUB_SHA, base, candidate, changed,
+            runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
+            imageOS: process.env.ImageOS, imageVersion: process.env.ImageVersion,
+            node: process.version, versions: process.versions,
+            npm: cp.execFileSync('npm', ['--version'], {encoding: 'utf8'}).trim(),
+            kernel: cp.execFileSync('uname', ['-r'], {encoding: 'utf8'}).trim(),
+            install: ['npm', 'ci', '--ignore-scripts'],
+            originalFailedRun: '35572488401', classification: 'FAKE_INTEGRATION',
+            releaseGate: false, openAiCalls: 0
+          }, null, 2));
+          NODE
+      - name: Run only the approved runner once per SHA; STOP on first failure
+        env:
+          BASELINE: 3a73b1353b668a53fa087b738cf7f0de336d4e03
+          CANDIDATE: 1bbb6a1622bea1d4bcc0b2e1618473899caa0752
+          SCOPE_DIGEST: f148999ddbcb2fa19de33f300c21d269718d02241a657e4f614a50c762cb9c73
+          CORE_GATE_REAL_APPROVED: 'true'
+          CORE_GATE_DATABASE_URL: postgres://gate_test:isolated_ci_only@127.0.0.1:5432/junzan_core_gate
+          OPENAI_API_KEY: ''
+          OPENAI_TEST_API_KEY: ''
+          CORE_GATE_OPENAI_API_KEY: ''
+          LINE_CHANNEL_ACCESS_TOKEN: ''
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process'), crypto = require('node:crypto');
+          const evidence = path.join(process.env.RUNNER_TEMP, 'pr3-v8-once');
+          const runner = 'tests/new-core-usage-runner.js';
+          const report = { diagnosticSha: process.env.GITHUB_SHA, releaseGate: false, attemptsPerSource: 1, status: 'RUNNING', results: [] };
+          const save = () => fs.writeFileSync(path.join(evidence, 'comparison.json'), JSON.stringify(report, null, 2));
+          save();
+          for (const [name, sha] of [['base', process.env.BASELINE], ['candidate', process.env.CANDIDATE]]) {
+            const cwd = path.resolve(name, 'pilot/nephi-home-node-pilot-v1');
+            const dir = path.join(evidence, name);
+            fs.mkdirSync(dir, { recursive: false });
+            const install = cp.spawnSync('npm', ['ci', '--ignore-scripts'], { cwd, encoding: 'utf8', timeout: 600000, maxBuffer: 64 * 1024 * 1024 });
+            fs.writeFileSync(path.join(dir, 'install.stdout.log'), install.stdout || '');
+            fs.writeFileSync(path.join(dir, 'install.stderr.log'), install.stderr || '');
+            const result = { name, sha, runner, installExitCode: install.status, installSignal: install.signal, executions: 0, status: 'NOT_RUN' };
+            report.results.push(result);
+            if (install.status !== 0) {
+              result.error = install.error ? String(install.error) : null;
+              report.status = 'STOP_INSTALL'; save(); process.exitCode = 1; break;
+            }
+            result.runnerSha256 = crypto.createHash('sha256').update(fs.readFileSync(path.join(cwd, runner))).digest('hex');
+            result.lockSha256 = crypto.createHash('sha256').update(fs.readFileSync(path.join(cwd, 'package-lock.json'))).digest('hex');
+            fs.writeFileSync(path.join(dir, 'started.json'), JSON.stringify({ sha, startedAt: new Date().toISOString() }), { flag: 'wx' });
+            result.executions = 1; result.status = 'RUNNING'; save();
+            const r = cp.spawnSync(process.execPath, [runner], { cwd, encoding: 'utf8', timeout: 600000, maxBuffer: 64 * 1024 * 1024, env: { ...process.env } });
+            fs.writeFileSync(path.join(dir, 'stdout.log'), r.stdout || '');
+            fs.writeFileSync(path.join(dir, 'native-stderr.log'), r.stderr || '');
+            Object.assign(result, { exitCode: r.status, signal: r.signal, error: r.error ? { code: r.error.code, message: r.error.message } : null,
+              status: r.status === 0 ? 'PASS' : 'FAIL',
+              stdoutSha256: crypto.createHash('sha256').update(r.stdout || '').digest('hex'),
+              stderrSha256: crypto.createHash('sha256').update(r.stderr || '').digest('hex') });
+            console.log(JSON.stringify(result)); save();
+            if (r.status !== 0) { report.status = 'STOP_RUNNER'; save(); process.exitCode = 1; break; }
+          }
+          if (report.status === 'RUNNING') { report.status = 'COMPARISON_COMPLETE'; save(); }
+          NODE
+      - name: Preserve original outputs regardless of result; never publish release status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr3-v8-once-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pr3-v8-once
+          if-no-files-found: error
+          retention-days: 30

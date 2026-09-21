@@ -1,22 +1,16 @@
 {
   "schemaVersion": 1,
-  "baseline": "f80b2d7122bd99af860d759e099fe78c4fa19845",
-  "objective": "Add and activate an external zero-OpenAI production reliability monitor over existing Render traces, health and optional read-only PostgreSQL message records, with a manual synthetic alert drill. Do not change normal runtime, facts, decisions, transport, credentials or paid services.",
+  "baseline": "3a73b1353b668a53fa087b738cf7f0de336d4e03",
+  "objective": "User-approved one-shot PR3 Node/V8 diagnostic only: run base 3a73b135 and candidate 1bbb6a16 new-core-usage-runner.js once each under the original CI image, Node, npm and installation conditions; stop on any failure. Diagnostic is never a release Gate and must not be merged. No runtime/test/Gate rule/image changes.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    ".github/workflows/production-reliability-monitor.yml",
-    "pilot/nephi-home-node-pilot-v1/lib/production-reliability-monitor.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/monitor-production-reliability.js",
-    "pilot/nephi-home-node-pilot-v1/tests/production-reliability-monitor-runner.js",
-    "pilot/nephi-home-node-pilot-v1/docs/PRODUCTION_RELIABILITY_MONITOR.md"
+    ".github/workflows/pr3-v8-once.yml"
   ],
   "contractChangeAllowed": false,
-  "gateChangeAllowed": false,
+  "gateChangeAllowed": true,
   "affectedCapabilities": [
-    "external-production-observability"
+    "one-shot-ci-native-diagnostic"
   ],
-  "preExistingUntracked": [
-    "pilot/nephi-home-node-pilot-v1/node_modules"
-  ],
-  "approvalSource": "User approved phase-2 monitoring on 2026-09-20 and activation through Gate, PR, CI, production merge, real read-only run and safe failure notification drill on 2026-09-21. Existing business behavior and unrelated changes forbidden."
+  "preExistingUntracked": [],
+  "approvalSource": "User explicitly approved the minimal GitHub CI diagnostic entry in this conversation on 2026-09-21."
 }
