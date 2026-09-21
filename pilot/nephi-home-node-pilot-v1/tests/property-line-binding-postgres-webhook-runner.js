@@ -49,6 +49,39 @@ async function waitFor(predicate, timeoutMs = 1500) {
   }
 }
 
+function assertMigrationChain(files) {
+  assert.ok(files.length > 0, "the migration chain must not be empty");
+  const numbers = files.map((file) => {
+    assert.match(file, /^\d+_.+\.sql$/, "each migration must have a numeric identity");
+    return Number(file.split("_")[0]);
+  });
+  assert.equal(new Set(numbers).size, files.length, "migration numbers must be unique");
+  assert.deepEqual(numbers, files.map((_, index) => index + 1), "migration numbers must be complete and ordered from the first migration");
+  // These historical identities are required, not the maximum size of the chain.
+  // Later approved migrations may append without moving or replacing this prefix.
+  for (const file of [
+    "015_property_line_bindings.sql",
+    "016_onboarding_intake_invites.sql",
+    "017_property_line_setup_tokens.sql",
+    "018_property_custom_replies.sql",
+    "019_property_line_binding_webhook_status.sql",
+    "020_inventory_availability_authority.sql",
+    "021_test_only_line_message_traces.sql",
+    "022_inventory_date_completeness.sql",
+    "023_date_price_authority.sql",
+    "024_platform_admin_bootstrap_audit.sql",
+    "025_new_core_test_sessions.sql",
+    "026_commercial_ai_controls.sql",
+    "027_line_guest_profiles.sql",
+    "028_commercial_subscriptions.sql",
+    "029_guest_feedback.sql",
+    "030_guest_feedback_short_links.sql",
+    "031_guest_feedback_other_text.sql"
+  ]) {
+    assert.equal(files[Number(file.split("_")[0]) - 1], file, "new migrations must extend the existing authority chain without replacing prior migrations");
+  }
+}
+
 (async () => {
   const runtime = path.join(__dirname, "../.runtime");
   fs.mkdirSync(runtime, { recursive: true });
@@ -61,28 +94,20 @@ async function waitFor(predicate, timeoutMs = 1500) {
   try {
     const migration = await migratePostgres(connection);
     assert.ok(migration.files.includes("015_property_line_bindings.sql"), "the production binding migration must be applied");
-    assert.equal(migration.files.length, 31, "the migration chain must remain complete and uniquely numbered");
-    assert.deepEqual(migration.files.slice(-17), [
-      "015_property_line_bindings.sql",
-      "016_onboarding_intake_invites.sql",
-      "017_property_line_setup_tokens.sql",
-      "018_property_custom_replies.sql",
-      "019_property_line_binding_webhook_status.sql",
-      "020_inventory_availability_authority.sql",
-      "021_test_only_line_message_traces.sql",
-      "022_inventory_date_completeness.sql",
-      "023_date_price_authority.sql",
-      "024_platform_admin_bootstrap_audit.sql",
-      "025_new_core_test_sessions.sql",
-      "026_commercial_ai_controls.sql",
-      "027_line_guest_profiles.sql",
-      "028_commercial_subscriptions.sql",
-      "029_guest_feedback.sql",
-      "030_guest_feedback_short_links.sql",
-      "031_guest_feedback_other_text.sql"
-    ], "date price authority must extend the existing authority chain without replacing prior migrations");
+    assertMigrationChain(migration.files);
+    assert.deepEqual(migration.applied, migration.files, "a fresh database must execute every discovered migration");
+    const futureFiles = [1, 2].map((offset) => `${String(migration.files.length + offset).padStart(3, "0")}_future_schema.sql`);
+    assert.doesNotThrow(() => assertMigrationChain([...migration.files, ...futureFiles]), "legitimate future appends must not require a new total-count snapshot");
+    assert.throws(() => assertMigrationChain([]), /must not be empty/);
+    assert.throws(() => assertMigrationChain(migration.files.slice(1)), /complete and ordered/);
+    assert.throws(() => assertMigrationChain([...migration.files.slice(1), migration.files[0]]), /complete and ordered/);
+    assert.throws(() => assertMigrationChain([...migration.files, "001_duplicate.sql"]), /numbers must be unique/);
+    assert.throws(() => assertMigrationChain(migration.files.map((file) => file === "015_property_line_bindings.sql" ? "015_replaced.sql" : file)), /without replacing prior migrations/);
+    assert.throws(() => assertMigrationChain(migration.files.filter((file) => file !== "031_guest_feedback_other_text.sql")), /complete and ordered|without replacing prior migrations/);
     assert.equal(migration.files.includes("016_property_line_binding_webhook_status.sql"), false, "the removed duplicate migration number must not return");
     const setup = await openPostgres(connection);
+    const ledger = await setup.query("SELECT filename FROM schema_migrations ORDER BY filename");
+    assert.deepEqual(ledger.rows.map((row) => row.filename), migration.files, "the persisted migration ledger must cover the entire executed chain");
     await setup.query("INSERT INTO properties(property_id,display_name) VALUES($1,$2),($3,$4)", ["pg_property_a", "Postgres Property A", "pg_property_b", "Postgres Property B"]);
     await setup.query("INSERT INTO property_settings(property_id,settings) VALUES($1,$2::jsonb),($3,$4::jsonb)", ["pg_property_a", JSON.stringify({ propertyFacts: [{ canonicalId: "parking", category: "amenity", status: "provided", publicText: "Postgres Parking A", aliases: ["parking"] }] }), "pg_property_b", JSON.stringify({ propertyFacts: [{ canonicalId: "parking", category: "amenity", status: "provided", publicText: "Postgres Parking B", aliases: ["parking"] }] })]);
     await setup.close();
