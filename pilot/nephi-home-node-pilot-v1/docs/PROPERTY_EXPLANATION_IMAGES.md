@@ -44,3 +44,34 @@ Store in existing PostgreSQL, not ephemeral Render disk. No new service.
 Full release Gate still requires dedicated REAL credentials for core-path changes.
 Missing credentials block release; production credentials cannot substitute. No
 protected tests, Gate policy, or normal factual decision may change to bypass a gate.
+
+## Current task execution rule — user-approved 2026-09-21
+
+This rule governs continued image development, not release-Gate admission.
+It supersedes unconditional development-stop wording for a *proven infrastructure*
+prerequisite failure only. No failed, missing or skipped release check becomes PASS.
+
+- BLOCKING: direct evidence of possible candidate-caused existing-function regression
+  means immediate STOP; preserve work and evidence.
+- INFRA: proven test/CI/environment deficiency without candidate causal evidence
+  blocks release, but independent safe product implementation continues.
+- UNKNOWN: if candidate causality cannot be excluded, STOP.
+- A proven candidate-caused existing PASS-to-FAIL always stops the mainline.
+- Lock baseline SHA/PASS evidence, Node/npm/dependencies and test environment before
+  changes. Never change the environment before baseline verification.
+- Keep infrastructure maintenance separate from the product worktree. Never reset,
+  revert, restore, clean or discard product work/evidence to resolve infrastructure.
+- Do not handle REAL E2E/OpenAI keys in this continuation.
+
+Trusted integrated baseline: `b590e32d64296c191ea3170e40432b39c56948ae`;
+PR4 trusted Gate 110/110 and production CI run `35589958526` PASS.
+The original baseline and earlier evidence above remain historical records.
+Execution lock/classification evidence is retained outside the repository at
+`/home/gqlik/junzan-images-evidence-20260921/continuity/`.
+
+Chromium is currently INFRA-blocked: a direct `--version` invocation outside the
+repository exits 127; `ldd` identifies missing `libnspr4.so`, `libnss3.so`,
+`libnssutil3.so` and `libasound.so.2`. No product/browser code runs before failure.
+The image candidate adds only the `sharp` dependency, not Chromium or Playwright.
+Browser UI verification remains a release prerequisite; the latest candidate has
+not completed it and must not be described as fully verified or release-ready.

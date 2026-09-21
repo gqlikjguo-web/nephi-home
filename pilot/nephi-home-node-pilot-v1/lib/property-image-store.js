@@ -27,7 +27,8 @@ function createPropertyImageStore({db,publicBaseUrl}){
   if(!r.rows[0])return false;
   const settings=r.rows[0].settings;
   const catalog=buildPropertyCatalog({...settings,propertyId,displayName:r.rows[0].display_name,rooms:[],bundles:[]});
-  return [...catalog.amenities,...catalog.policies].some(x=>x.canonicalId===sourceId&&x.status!=='unknown'&&Boolean(x.answer));
+  const sources=[...catalog.amenities,...catalog.policies].filter(x=>x.canonicalId===sourceId);
+  return sources.length===1&&sources[0].status!=='unknown'&&Boolean(sources[0].answer);
  }
  return {
   async save(propertyId,sourceId,content){

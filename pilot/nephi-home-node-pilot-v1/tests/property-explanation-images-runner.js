@@ -53,6 +53,24 @@ async function run() {
   const bundleReply=await answer(collision,'bbq',{capability:'amenity',kind:'amenity'});
   assert.equal(bundleReply.artifacts.executionOutcomes[0].facts.answer,'僅包棟露台使用。');
   assert.deepEqual(validator.finalResponseImageSources(bundleReply.finalResponse),[],'same canonical ID from bundle source cannot use property-card image');
+  // Images require a unique formal source, including same-ID policy/settings collisions.
+  for(const [index,sourceId] of ['self_check_in_out_instructions','parking'].entries()){
+   const propertyId=`image_source_case_${index}`;
+   const original={propertyId,displayName:'Lodge',rooms:[],commonAnswers:{},propertyFacts:[],selfCheckInOutInstructions:{status:'allowed',publicText:'請依照門口說明完成自助入住。'}};
+   if(sourceId==='parking')original.propertyFacts.push({canonicalId:sourceId,category:'policy',publicName:'停車',status:'allowed',publicText:'請使用入口停車區。'});
+   await db.query('INSERT INTO properties(property_id,display_name) VALUES($1,$2)',[propertyId,'Lodge']);
+   await db.query('INSERT INTO property_settings(property_id,settings) VALUES($1,$2::jsonb)',[propertyId,JSON.stringify(original)]);
+   await store.save(propertyId,sourceId,PNG);
+   assert.equal((await store.attachments(propertyId,[sourceId])).length,1,'unique formal source may attach its image');
+   const ambiguous={...original,propertyFacts:[...original.propertyFacts,{canonicalId:sourceId,category:'policy',publicName:'另一份說明',status:'allowed',publicText:'另一份正式來源內容。'}]};
+   await db.query('UPDATE property_settings SET settings=$2::jsonb WHERE property_id=$1',[propertyId,JSON.stringify(ambiguous)]);
+   const sources=require('../lib/conversation-engine-v2/property-catalog').buildPropertyCatalog(ambiguous).policies.filter(x=>x.canonicalId===sourceId);
+   assert.equal(sources.length,2,'exercise two genuine catalog sources sharing the same canonical identity');
+   assert.deepEqual(await store.attachments(propertyId,[sourceId]),[],'ambiguous canonical identity must never select an existing image');
+   await assert.rejects(()=>store.save(propertyId,sourceId,PNG),e=>e.status===400,'ambiguous identity cannot bind a new image');
+   await db.query('UPDATE property_settings SET settings=$2::jsonb WHERE property_id=$1',[propertyId,JSON.stringify(original)]);
+   assert.equal((await store.attachments(propertyId,[sourceId])).length,1,'resolving the ambiguity restores only the original binding');
+  }
   await db.close();db=await require('../lib/providers/postgres-client').openPostgres(connection);store=make();
   assert.equal((await store.list('image_alpha'))[0].originalContentUrl,a.originalContentUrl);
   const replacement=await store.save('image_alpha','parking',PNG);assert.notEqual(replacement.originalContentUrl,a.originalContentUrl);
