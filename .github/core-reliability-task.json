@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "baseline": "3a73b1353b668a53fa087b738cf7f0de336d4e03",
-  "objective": "Operator-managed images v1: property-scoped persisted images bound to existing formal explanation source identity, validated additive FinalResponse attachments and the same LINE reply transport; upload/replace/delete UI. Preserve all existing factual decisions, Understanding, Context, inventory, and unrelated behavior. User-approved migration test maintenance: replace obsolete fixed-total/tail snapshots with append-safe migration integrity checks, preserving existing assertions and image work.",
+  "baseline": "b590e32d64296c191ea3170e40432b39c56948ae",
+  "objective": "Operator-managed images v1: property-scoped persisted images bound to existing formal explanation source identity, validated additive FinalResponse attachments and the same LINE reply transport; upload/replace/delete UI. Preserve all existing factual decisions, Understanding, Context, inventory, and unrelated behavior.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
     "pilot/nephi-home-node-pilot-v1/docs/PROPERTY_EXPLANATION_IMAGES.md",
@@ -21,10 +21,9 @@
     "pilot/nephi-home-node-pilot-v1/tests/property-explanation-images-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/property-explanation-images-http-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/property-explanation-images-line-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/property-explanation-images-ui-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/property-line-binding-postgres-webhook-runner.js"
+    "pilot/nephi-home-node-pilot-v1/tests/property-explanation-images-ui-runner.js"
   ],
-  "contractChangeAllowed": true,
+  "contractChangeAllowed": false,
   "gateChangeAllowed": false,
   "affectedCapabilities": [
     "formal-explanation-media",
@@ -34,5 +33,5 @@
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "User explicitly approved minimal persisted image schema, formal source binding, additive attachment Contract, existing LINE transport extension, UI and Gate followed by commit/push/deploy on 2026-09-21. No existing protected expected changes authorized. Subsequent explicit user approval permits only common-root stale migration-count assertions to change after history proves they are snapshots, preserving migration integrity and all other runner protections. This does not authorize changes to Gate policy or bypass protected-path review."
+  "approvalSource": "User-approved persisted image schema and additive attachment Contract remain authorized. Existing protected tests/expected may not change. The separately approved migration test repair is now in trusted baseline b590e32; image work resumes without modifying that test or Gate policy."
 }

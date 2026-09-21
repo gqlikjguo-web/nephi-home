@@ -30,11 +30,11 @@ function validateTask(task, baseline, approvedDigest) {
   insist(typeof task.contractChangeAllowed === "boolean" && Array.isArray(task.affectedCapabilities), "MISSING_TASK_FIELDS");
   return task;
 }
-function validateDiff(changed, task, policy) {
+function validateDiff(changed, task, policy, contractReceipt) {
   const outside = changed.filter(p => !task.allowedPaths.includes(p));
   insist(!outside.length, "OUTSIDE_APPROVED_SCOPE: " + outside.join(","));
   const contracts = changed.filter(p => policy.protectedPaths.includes(p));
-  insist(!contracts.length, "CONTRACT_CHANGE_REQUIRED: " + contracts.join(","));
+  insist(!contracts.length || contractReceipt && require("./core-contract-approval").matches(contractReceipt, changed, task, policy), "CONTRACT_CHANGE_REQUIRED: " + contracts.join(","));
   const governance = changed.filter(p => policy.governancePaths.includes(p));
   insist(!governance.length || task.gateChangeAllowed === true && !changed.some(p => policy.capabilities.some(c => c.paths.some(prefix => p.startsWith(prefix)))), "GATE_CHANGE_REQUIRES_REVIEW");
 }
@@ -62,7 +62,7 @@ function runCommands({ root, cwd, candidate, baseline, commands, evidenceDir }) 
   fs.writeFileSync(path.join(evidenceDir, "report.json"), JSON.stringify(report, null, 2));
   for (const [index, command] of commands.entries()) {
     const r = spawnSync(command.argv[0], command.argv.slice(1), { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 600000,
-      env: { ...process.env, OPENAI_API_KEY: "", OPENAI_TEST_API_KEY: "", CORE_GATE_OPENAI_API_KEY: "", LINE_CHANNEL_ACCESS_TOKEN: "" } });
+      env: { ...process.env, OPENAI_API_KEY: "", OPENAI_TEST_API_KEY: "", CORE_GATE_OPENAI_API_KEY: "", CORE_GATE_GITHUB_READ_TOKEN: "", LINE_CHANNEL_ACCESS_TOKEN: "" } });
     const log = String(r.stdout || "") + String(r.stderr || "") + (r.error ? "\n" + r.error.message : "");
     const logFile = `${String(index).padStart(3, "0")}.log`;
     fs.writeFileSync(path.join(evidenceDir, logFile), log);
@@ -82,7 +82,7 @@ function argumentsFor(argv) {
   for (let i = 0; i < argv.length; i += 2) { insist(argv[i].startsWith("--") && argv[i + 1], "INVALID_GATE_ARGUMENT"); result[argv[i].slice(2)] = argv[i + 1]; }
   return result;
 }
-function main(argv) {
+async function main(argv) {
   const a = argumentsFor(argv), root = path.resolve(a.root || path.join(__dirname, "../../.."));
   const baseline = a.baseline, candidate = a.candidate;
   const changed = changedPaths(root, baseline, candidate);
@@ -94,7 +94,18 @@ function main(argv) {
   const policyText = a["bootstrap-policy"] ? fs.readFileSync(a["bootstrap-policy"], "utf8") : git(root, ["show", `${baseline}:${POLICY}`]);
   insist(!a["bootstrap-policy"] || a["bootstrap-policy-digest"] === digest(policyText), "BOOTSTRAP_REVIEW_REQUIRED");
   const policy = JSON.parse(policyText);
-  validateDiff(changed, task, policy);
+  let contractReceipt;
+  if (a["contract-review"] === "github" && changed.some(p => policy.protectedPaths.includes(p))) {
+    insist(!a["bootstrap-policy"], "CONTRACT_BOOTSTRAP_FORBIDDEN");
+    const approval = require("./core-contract-approval");
+    const descriptor = approval.describe({ root, baseline, candidate, task, policy, context: {
+      repository: process.env.GITHUB_REPOSITORY, pullRequest: Number(process.env.CORE_CONTRACT_PR),
+      runId: Number(process.env.GITHUB_RUN_ID), runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT)
+    } });
+    contractReceipt = await approval.authorize(descriptor, policy, process.env.CORE_GATE_GITHUB_READ_TOKEN);
+    verifyCheckout(root, candidate, task.preExistingUntracked || []);
+  }
+  validateDiff(changed, task, policy, contractReceipt);
   const coreChanged = changed.some(p => policy.capabilities.some(c => c.paths.some(prefix => p.startsWith(prefix))));
   const runners = selectRunners(changed, policy);
   const cwd = path.join(root, APP);
@@ -110,6 +121,7 @@ function main(argv) {
   }
   const report = runCommands({ root, cwd, candidate, baseline, commands, evidenceDir: path.resolve(a.evidence) });
   report.changedPaths = changed; report.coreChanged = coreChanged; report.approvedScopeDigest = a["approved-scope-digest"];
+  if (contractReceipt) report.contractApproval = contractReceipt;
   report.realE2eRequired = coreChanged || a["require-real"] === "true";
   if (report.status === "PASS") {
     try {
@@ -149,5 +161,5 @@ function main(argv) {
   console.log(JSON.stringify(report));
   if (report.status !== "PASS") process.exitCode = 1;
 }
-if (require.main === module) { try { main(process.argv.slice(2)); } catch (e) { console.error("RELIABILITY_GATE_STOP: " + e.message); process.exitCode = 1; } }
+if (require.main === module) main(process.argv.slice(2)).catch(e => { console.error("RELIABILITY_GATE_STOP: " + e.message); process.exitCode = 1; });
 module.exports = { digest, changedPaths, verifyCheckout, validateTask, validateDiff, selectRunners, validateEvidence, runCommands };
