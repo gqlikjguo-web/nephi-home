@@ -1,0 +1,7 @@
+.property-image-control{display:grid;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #e2e8e5;min-width:0}
+.property-image-control img{width:auto;max-width:100%;height:112px;object-fit:contain;object-position:left;border-radius:6px}
+.property-image-control [hidden]{display:none}
+.property-image-actions{display:flex;flex-wrap:wrap;gap:8px}
+.property-image-actions button{min-height:44px;padding:8px 14px;font-size:14px}
+.property-image-control small{color:#52665d;overflow-wrap:anywhere;line-height:1.5}
+.property-image-actions button:focus-visible{outline:3px solid #26734d;outline-offset:3px}

@@ -104,6 +104,7 @@ function validateClaimSet(reply, plan, claimedTaskIds, composedSections = null) 
 
 const VALIDATIONS = new WeakSet();
 const FINAL_RESPONSES = new WeakMap();
+const IMAGE_SOURCES = new WeakMap();
 function isClaimValidationResult(value) { return Boolean(value && VALIDATIONS.has(value)); }
 function validateClaims(reply, plan, claimedTaskIds, composedSections = null, finalAssembly = null) {
   // One validator owns section and whole-message applicability, including delivery text.
@@ -141,11 +142,21 @@ function validateClaims(reply, plan, claimedTaskIds, composedSections = null, fi
   const result = Object.freeze({ ...base, ok: !errors.length, errors: Object.freeze(errors), sectionResults: Object.freeze(sectionResults),
     globalErrors: Object.freeze([...new Set(globalErrors)]), propertyId: plan.propertyId, turnId: plan.turnId,
     ...(finalAssembly ? { validatedText: String(reply || ""), validatedAction: finalAssembly.finalDecision.action } : {}) });
+  if (result.ok && finalAssembly) IMAGE_SOURCES.set(result, Object.freeze([
+    ...require("../property-image-attachments").imageSourcesForPlan(plan)
+  ]));
   VALIDATIONS.add(result); return result;
 }
 function sealFinalResponse(response, validation) {
   if (!isClaimValidationResult(validation) || !validation.ok || validation.validatedText !== response.replyText
     || validation.validatedAction !== response.action) throw new TypeError("final_response_not_validated");
+  if (response.attachments !== undefined) {
+    const sources = IMAGE_SOURCES.get(validation) || [];
+    if (!Array.isArray(response.attachments) || response.attachments.length > 4 || response.action !== "reply"
+      || response.attachments.some(item => !require("../property-image-attachments").isImageReceipt(item)
+        || item.propertyId !== validation.propertyId || !sources.includes(item.sourceId))) throw new TypeError("image_attachment_not_validated");
+    Object.freeze(response.attachments);
+  }
   const frozen = Object.freeze(response); FINAL_RESPONSES.set(frozen, validation); return frozen;
 }
 function isValidatedFinalResponse(response, deliveryScope = null) {
@@ -155,4 +166,12 @@ function isValidatedFinalResponse(response, deliveryScope = null) {
     || !validation || validation.propertyId !== deliveryScope.propertyId || validation.turnId !== deliveryScope.turnId)) return false;
   return Boolean(validation && validation.ok && validation.validatedText === response.replyText && validation.validatedAction === response.action && response.shouldReply === true);
 }
-module.exports = { validateClaims, claimTypeForSection, unknownProvenanceFor, isClaimValidationResult, sealFinalResponse, isValidatedFinalResponse };
+function finalResponseImageSources(response) {
+  if (!isValidatedFinalResponse(response) || response.action !== "reply") return [];
+  return [...(IMAGE_SOURCES.get(FINAL_RESPONSES.get(response)) || [])];
+}
+function attachFinalResponseImages(response, images) {
+  if (!isValidatedFinalResponse(response)) throw new TypeError("image_final_response_not_validated");
+  return sealFinalResponse({...response, attachments: [...images]}, FINAL_RESPONSES.get(response));
+}
+module.exports = { finalResponseImageSources, attachFinalResponseImages, validateClaims, claimTypeForSection, unknownProvenanceFor, isClaimValidationResult, sealFinalResponse, isValidatedFinalResponse };

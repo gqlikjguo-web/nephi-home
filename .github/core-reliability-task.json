@@ -1,22 +1,38 @@
 {
   "schemaVersion": 1,
-  "baseline": "f80b2d7122bd99af860d759e099fe78c4fa19845",
-  "objective": "Add and activate an external zero-OpenAI production reliability monitor over existing Render traces, health and optional read-only PostgreSQL message records, with a manual synthetic alert drill. Do not change normal runtime, facts, decisions, transport, credentials or paid services.",
+  "baseline": "3a73b1353b668a53fa087b738cf7f0de336d4e03",
+  "objective": "Operator-managed images v1: property-scoped persisted images bound to existing formal explanation source identity, validated additive FinalResponse attachments and the same LINE reply transport; upload/replace/delete UI. Preserve all existing factual decisions, Understanding, Context, inventory, and unrelated behavior. User-approved migration test maintenance: replace obsolete fixed-total/tail snapshots with append-safe migration integrity checks, preserving existing assertions and image work.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    ".github/workflows/production-reliability-monitor.yml",
-    "pilot/nephi-home-node-pilot-v1/lib/production-reliability-monitor.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/monitor-production-reliability.js",
-    "pilot/nephi-home-node-pilot-v1/tests/production-reliability-monitor-runner.js",
-    "pilot/nephi-home-node-pilot-v1/docs/PRODUCTION_RELIABILITY_MONITOR.md"
+    "pilot/nephi-home-node-pilot-v1/docs/PROPERTY_EXPLANATION_IMAGES.md",
+    "pilot/nephi-home-node-pilot-v1/migrations/032_property_explanation_images.sql",
+    "pilot/nephi-home-node-pilot-v1/lib/property-image-store.js",
+    "pilot/nephi-home-node-pilot-v1/lib/property-image-routes.js",
+    "pilot/nephi-home-node-pilot-v1/lib/property-image-attachments.js",
+    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/response-planner.js",
+    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/claim-validator.js",
+    "pilot/nephi-home-node-pilot-v1/server.js",
+    "pilot/nephi-home-node-pilot-v1/public/assets/admin.js",
+    "pilot/nephi-home-node-pilot-v1/public/assets/property-images.js",
+    "pilot/nephi-home-node-pilot-v1/public/assets/property-images.css",
+    "pilot/nephi-home-node-pilot-v1/public/admin.html",
+    "pilot/nephi-home-node-pilot-v1/package.json",
+    "pilot/nephi-home-node-pilot-v1/package-lock.json",
+    "pilot/nephi-home-node-pilot-v1/tests/property-explanation-images-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/property-explanation-images-http-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/property-explanation-images-line-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/property-explanation-images-ui-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/property-line-binding-postgres-webhook-runner.js"
   ],
-  "contractChangeAllowed": false,
+  "contractChangeAllowed": true,
   "gateChangeAllowed": false,
   "affectedCapabilities": [
-    "external-production-observability"
+    "formal-explanation-media",
+    "validated-reply-attachments",
+    "operator-media-management"
   ],
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "User approved phase-2 monitoring on 2026-09-20 and activation through Gate, PR, CI, production merge, real read-only run and safe failure notification drill on 2026-09-21. Existing business behavior and unrelated changes forbidden."
+  "approvalSource": "User explicitly approved minimal persisted image schema, formal source binding, additive attachment Contract, existing LINE transport extension, UI and Gate followed by commit/push/deploy on 2026-09-21. No existing protected expected changes authorized. Subsequent explicit user approval permits only common-root stale migration-count assertions to change after history proves they are snapshots, preserving migration integrity and all other runner protections. This does not authorize changes to Gate policy or bypass protected-path review."
 }
