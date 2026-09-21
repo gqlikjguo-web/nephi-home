@@ -6,6 +6,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  actions: read
 jobs:
   scope:
     runs-on: ubuntu-latest
@@ -30,6 +31,19 @@ jobs:
             await core.summary.addHeading('Approve this exact candidate scope')
               .addRaw('Candidate: ' + pr.head.sha + '\nBaseline: ' + pr.base.sha + '\nScope digest: ' + digest + '\n')
               .addCodeBlock(JSON.stringify(task, null, 2), 'json').write();
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: scope-trusted
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Describe exact protected Contract change before approval
+        env:
+          BASELINE: ${{ github.event.pull_request.base.sha }}
+          CANDIDATE: ${{ github.event.pull_request.head.sha }}
+          CORE_CONTRACT_PR: ${{ github.event.pull_request.number }}
+          CORE_CONTRACT_ROOT: scope-trusted
+        run: node scope-trusted/pilot/nephi-home-node-pilot-v1/scripts/core-contract-approval.js describe
   gate:
     name: Core Reliability Gate
     needs: scope
@@ -72,12 +86,15 @@ jobs:
           BASELINE: ${{ github.event.pull_request.base.sha }}
           CANDIDATE: ${{ github.event.pull_request.head.sha }}
           SCOPE_DIGEST: ${{ needs.scope.outputs.digest }}
+          CORE_CONTRACT_PR: ${{ github.event.pull_request.number }}
+          CORE_GATE_GITHUB_READ_TOKEN: ${{ github.token }}
           CORE_GATE_REAL_APPROVED: 'true'
           CORE_GATE_OPENAI_API_KEY: ${{ secrets.CORE_GATE_OPENAI_API_KEY }}
           CORE_GATE_DATABASE_URL: postgres://gate_test:isolated_ci_only@127.0.0.1:5432/junzan_core_gate
         run: >-
           node trusted/pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js
           --root candidate --baseline "$BASELINE" --candidate "$CANDIDATE"
+          --contract-review github
           --approved-scope-digest "$SCOPE_DIGEST" --evidence "$RUNNER_TEMP/core-reliability"
       - name: Preserve evidence on success or STOP
         if: always()
