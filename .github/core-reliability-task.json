@@ -1,18 +1,21 @@
 {
   "schemaVersion": 1,
-  "baseline": "0f587e0e5a52353b36eb4dff3fdc830c91cfa80e",
-  "objective": "Install only the previously user-approved migration-chain stale snapshot repair: replace fixed total and fixed tail with historical identities, contiguous unique order, execution and persisted ledger invariants. Exact reviewed runner only. No runtime, image, Gate policy or other protected expected changes.",
+  "baseline": "b590e32d64296c191ea3170e40432b39c56948ae",
+  "objective": "User-approved REAL OpenAI release classification from trusted policy and actual diff; preserve all deterministic, incident, affected, contract, scope and SHA gates; no product runtime changes.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    "pilot/nephi-home-node-pilot-v1/tests/property-line-binding-postgres-webhook-runner.js"
+    ".github/core-reliability-policy.json",
+    "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
+    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
+    "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md"
   ],
-  "contractChangeAllowed": true,
-  "gateChangeAllowed": false,
+  "contractChangeAllowed": false,
+  "gateChangeAllowed": true,
   "affectedCapabilities": [
-    "migration-chain-integrity"
+    "reliability-governance"
   ],
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "User explicitly approved this exact protected migration runner repair and separate Contract-change installation; current instruction authorizes installation after PR3 merge. External run/candidate/diff-bound GitHub approval remains required."
+  "approvalSource": "Explicit user instruction: fix REAL E2E overblocking; no OpenAI key or production credential; protected classification, negative tests, no runtime changes."
 }

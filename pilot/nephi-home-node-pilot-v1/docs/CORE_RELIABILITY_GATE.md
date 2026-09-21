@@ -46,7 +46,30 @@ verification failures; emergency recovery requires a separate explicit request.
 
 ## REAL release qualification
 
-Only actual core-path changes invoke the real harness after deterministic checks.
+REAL qualification is selected separately from deterministic affected tests.
+The trusted baseline policy's `realE2e.requiredPaths` covers Understanding,
+OpenAI contracts, Context, CanonicalRequest, the AI/core decision boundary and
+shared server wiring. Actual Git diff paths (including deletions and both sides
+of a rename) determine qualification; task `skipRealE2e` or similar candidate
+claims have no effect. `--require-real true` may only add a requirement.
+
+Pure UI, image storage/attachments and separate LINE transport changes do not
+require live model understanding. Shared core/server files remain REQUIRED
+unless their exact before/after regular-file SHA-256 contents match a reviewed
+attachment-only transition in that trusted policy. This is an exact content
+review, not a path-wide exemption: changing a decision alongside an attachment,
+changing one additional byte, deleting or replacing the file invalidates it.
+
+Classification lives in the existing protected governance policy; ordinary
+runtime candidates cannot change it. Policy updates use the independent,
+explicitly approved Gate-maintenance flow and the existing scope approval.
+Every required deterministic/incident/affected/lifecycle runner still runs.
+A NOT_REQUIRED result records the candidate SHA, zero calls and the trusted
+classification evidence. Missing credentials still block genuinely required
+REAL qualification. A baseline without this new classification retains its
+previous rules while the Gate update is being installed.
+
+For changes that require REAL, the real harness runs after deterministic checks.
 It calls the real OpenAI adapter and the current core with an isolated native
 PostgreSQL database. It rejects non-local/non-dedicated/existing databases before
 migration or writes. It never loads the LINE or commercial quota entrypoint.

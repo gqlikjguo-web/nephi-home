@@ -598,5 +598,43 @@
     "environmentId": 22310568412,
     "reviewerId": 295622497,
     "workflow": ".github/workflows/core-reliability.yml"
+  },
+  "realE2e": {
+    "schemaVersion": 1,
+    "requiredPaths": [
+      "pilot/nephi-home-node-pilot-v1/lib/new-core/",
+      "pilot/nephi-home-node-pilot-v1/lib/conversation-contracts/",
+      "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/",
+      "pilot/nephi-home-node-pilot-v1/lib/providers/openai",
+      "pilot/nephi-home-node-pilot-v1/lib/providers/test-only-openai",
+      "pilot/nephi-home-node-pilot-v1/lib/ai-first-decision-pipeline.js",
+      "pilot/nephi-home-node-pilot-v1/config/",
+      "pilot/nephi-home-node-pilot-v1/server.js",
+      "pilot/nephi-home-node-pilot-v1/lib/v2-composition-root.js",
+      "pilot/nephi-home-node-pilot-v1/lib/property-facts",
+      "pilot/nephi-home-node-pilot-v1/lib/providers/json-providers.js",
+      "pilot/nephi-home-node-pilot-v1/lib/providers/postgres-providers.js",
+      "pilot/nephi-home-node-pilot-v1/lib/providers/postgres-worker.js"
+    ],
+    "reviewedTransitions": [
+      {
+        "path": "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/claim-validator.js",
+        "beforeSha256": "44f69c3fe6c44d52341758d0ac71bae70744ef55b85368f9077d67390cc516bf",
+        "afterSha256": "037243c0dd4b4b2265349d6eecc1cd74577f56fa7037fdf08e59cc32346c22f6",
+        "reason": "User-approved additive image source/receipt metadata only; existing factual decision, text validation and Understanding contracts unchanged. Any additional edit requires REAL qualification."
+      },
+      {
+        "path": "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/response-planner.js",
+        "beforeSha256": "57eea6afb7f0d304844d71c366f39cb657b7e2c61a3f6bf56902852c2f9bfd8d",
+        "afterSha256": "ce28b942671134118d629e297ed54bebdcffe60f312f357d72b36f64f179ece7",
+        "reason": "User-approved additive image source/receipt metadata only; existing factual decision, text validation and Understanding contracts unchanged. Any additional edit requires REAL qualification."
+      },
+      {
+        "path": "pilot/nephi-home-node-pilot-v1/server.js",
+        "beforeSha256": "580bfa0ca75a2563fb2f45ab44a8de12585a51214ad4cf554ca6c89ec8ff27f1",
+        "afterSha256": "995c191441f743bd72875fa3fede2b2d225182dfe873f2df703515c1da220e03",
+        "reason": "User-approved property-image routes and validated attachments appended to existing LINE reply only. No Understanding, Context or factual decision changes; any other server integration edit requires REAL."
+      }
+    ]
   }
 }
