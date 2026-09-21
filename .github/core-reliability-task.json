@@ -1,21 +1,37 @@
 {
   "schemaVersion": 1,
-  "baseline": "b590e32d64296c191ea3170e40432b39c56948ae",
-  "objective": "User-approved REAL OpenAI release classification from trusted policy and actual diff; preserve all deterministic, incident, affected, contract, scope and SHA gates; no product runtime changes.",
+  "baseline": "1cb22938bbd0f5df54c7969a5e875956b7965e32",
+  "objective": "Operator-managed images v1: property-scoped persisted images bound to existing formal explanation source identity, validated additive FinalResponse attachments and the same LINE reply transport; upload/replace/delete UI. Preserve all existing factual decisions, Understanding, Context, inventory, and unrelated behavior.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    ".github/core-reliability-policy.json",
-    "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
-    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
-    "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md"
+    "pilot/nephi-home-node-pilot-v1/docs/PROPERTY_EXPLANATION_IMAGES.md",
+    "pilot/nephi-home-node-pilot-v1/migrations/032_property_explanation_images.sql",
+    "pilot/nephi-home-node-pilot-v1/lib/property-image-store.js",
+    "pilot/nephi-home-node-pilot-v1/lib/property-image-routes.js",
+    "pilot/nephi-home-node-pilot-v1/lib/property-image-attachments.js",
+    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/response-planner.js",
+    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/claim-validator.js",
+    "pilot/nephi-home-node-pilot-v1/server.js",
+    "pilot/nephi-home-node-pilot-v1/public/assets/admin.js",
+    "pilot/nephi-home-node-pilot-v1/public/assets/property-images.js",
+    "pilot/nephi-home-node-pilot-v1/public/assets/property-images.css",
+    "pilot/nephi-home-node-pilot-v1/public/admin.html",
+    "pilot/nephi-home-node-pilot-v1/package.json",
+    "pilot/nephi-home-node-pilot-v1/package-lock.json",
+    "pilot/nephi-home-node-pilot-v1/tests/property-explanation-images-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/property-explanation-images-http-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/property-explanation-images-line-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/property-explanation-images-ui-runner.js"
   ],
   "contractChangeAllowed": false,
-  "gateChangeAllowed": true,
+  "gateChangeAllowed": false,
   "affectedCapabilities": [
-    "reliability-governance"
+    "formal-explanation-media",
+    "validated-reply-attachments",
+    "operator-media-management"
   ],
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "Explicit user instruction: fix REAL E2E overblocking; no OpenAI key or production credential; protected classification, negative tests, no runtime changes."
+  "approvalSource": "User-approved existing images candidate remains byte-identical to 64f2cd0; integrate trusted Gate PR #5 baseline only. Original persisted schema and additive attachment approval retained. No protected tests, product expected or Gate policy changes in this image candidate."
 }

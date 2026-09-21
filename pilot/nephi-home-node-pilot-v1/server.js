@@ -833,6 +833,10 @@ function createRequestHandler(service, options = {}) {
     if (!accessible) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權存取尼腓的家");
     return session;
   }
+  const propertyImageRoutes = require("./lib/property-image-routes").createPropertyImageRoutes({
+    getStore: options.getPropertyImageStore || (async () => { throw new AppError(503, "PROPERTY_IMAGES_UNAVAILABLE", "圖片暫時無法使用"); }),
+    persistence, publicBaseUrl: publicBrand.publicBaseUrl, sendData
+  });
   const feedbackRoutes = require("./lib/guest-feedback-routes").createFeedbackRoutes({
     getStore: options.getFeedbackStore || (async () => { throw new AppError(503, "FEEDBACK_UNAVAILABLE", "回饋表暫時無法使用"); }),
     persistence, customerSettings, publicBaseUrl: publicBrand.publicBaseUrl,
@@ -843,6 +847,7 @@ function createRequestHandler(service, options = {}) {
     const pathname = url.pathname;
 
     try {
+      if (await propertyImageRoutes(request, response, url)) return;
       if (await feedbackRoutes(request, response, url)) return;
       if (request.method === "GET" && pathname === "/api/health") {
         return sendData(response, { status: "ready", testOnly: testOnlyEnvironment, commit: deploymentCommit, deployment: deploymentIdentity });
@@ -1643,9 +1648,24 @@ function createApp(options = {}) {
           await persistTrace(); acceptanceTraces.delete(result.traceId); return;
         }
         const lineReplyText = newCoreLineEnabled ? finalResponseReplyText : `${aiIdentityPrefix(providers.customerSettings.getProperty(id))}${finalResponseReplyText}`;
+        let lineMessages = [{type:"text",text:lineReplyText}];
+        if (newCoreLineEnabled) {
+          const imageValidator = require("./lib/conversation-engine-v2/claim-validator");
+          const sources = imageValidator.finalResponseImageSources(result.finalResponse);
+          if (sources.length) {
+            try {
+              const images = await (await getPropertyImageStore()).attachments(id, sources);
+              const imageResponse = imageValidator.attachFinalResponseImages(result.finalResponse, images);
+              lineMessages = require("./lib/property-image-attachments").lineMessages(imageResponse);
+            } catch {
+              // Media is optional; storage/validation failure never changes the factual text.
+              console.warn(JSON.stringify({scope:"property-images",code:"IMAGE_ATTACHMENT_UNAVAILABLE"}));
+            }
+          }
+        }
         try {
           traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_attempt", attempted: true, delivered: false, replyText: lineReplyText });
-          await (replyClient ? replyClient({ channelAccessToken: binding.channelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: binding.channelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: [{ type: "text", text: lineReplyText }] });
+          await (replyClient ? replyClient({ channelAccessToken: binding.channelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: binding.channelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: lineMessages });
           traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_succeeded", attempted: true, delivered: true, replyText: lineReplyText });
           await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" });
           await persistTrace(); acceptanceTraces.delete(result.traceId);
@@ -1667,6 +1687,16 @@ function createApp(options = {}) {
     }
     return { accepted: true };
   };
+  let imageDatabase = null;
+  let imageStorePromise = null;
+  const getPropertyImageStore = options.getPropertyImageStore || (() => {
+    if (!imageStorePromise) imageStorePromise = (async () => {
+      if (!config.databaseUrl) throw new AppError(503, "PROPERTY_IMAGES_UNAVAILABLE", "圖片暫時無法使用");
+      imageDatabase = await require("./lib/providers/postgres-client").openPostgres({kind:"pg",databaseUrl:config.databaseUrl});
+      return require("./lib/property-image-store").createPropertyImageStore({db:imageDatabase,publicBaseUrl:publicBrand.publicBaseUrl});
+    })().catch(error => { imageStorePromise = null; throw error; });
+    return imageStorePromise;
+  });
   let feedbackDatabase = null;
   let feedbackStorePromise = null;
   const getFeedbackStore = options.getFeedbackStore || (() => {
@@ -1677,8 +1707,8 @@ function createApp(options = {}) {
     })().catch(error => { feedbackStorePromise = null; throw error; });
     return feedbackStorePromise;
   });
-  const server = http.createServer(createRequestHandler(service, { getFeedbackStore, commercialStore:providers.commercial, lineProfileService, sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
-  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (feedbackDatabase) await feedbackDatabase.close(); if (commercialController) commercialController.close(); if (typeof ownedNewCoreManualTestFactsProviders?.close === "function") await ownedNewCoreManualTestFactsProviders.close(); if (typeof providers.close === "function") await providers.close(); } };
+  const server = http.createServer(createRequestHandler(service, { getPropertyImageStore, getFeedbackStore, commercialStore:providers.commercial, lineProfileService, sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
+  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (imageDatabase) await imageDatabase.close(); if (feedbackDatabase) await feedbackDatabase.close(); if (commercialController) commercialController.close(); if (typeof ownedNewCoreManualTestFactsProviders?.close === "function") await ownedNewCoreManualTestFactsProviders.close(); if (typeof providers.close === "function") await providers.close(); } };
 }
 
 if (require.main === module) {

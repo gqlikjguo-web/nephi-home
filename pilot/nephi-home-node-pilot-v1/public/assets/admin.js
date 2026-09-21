@@ -98,6 +98,7 @@ function propertyFactCardRow(fact, options = {}) {
   notesLabel.insertBefore(noteHint, notes);
   syncStatus();
   row.append(title, grid, ...(options.hiddenFields || ["canonicalId", "publicName", "category", "source", "updatedAt"]).map((field) => hiddenPropertyFactField(field, field === "category" && options.category ? options.category : fact[field])));
+  if (typeof PropertyImages !== "undefined" && session?.propertyId) row.append(PropertyImages.create(fact.canonicalId, session.propertyId));
   return row;
 }
 function equipmentFactRow(fact) { return propertyFactCardRow(fact, { category: "amenity", dynamicEquipmentPolicy: true }); }
