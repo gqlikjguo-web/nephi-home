@@ -1,25 +1,18 @@
 {
   "schemaVersion": 1,
-  "baseline": "3a73b1353b668a53fa087b738cf7f0de336d4e03",
-  "objective": "Install user-approved controlled Contract-change admission using existing external GitHub environment review bound to exact candidate, full diff, protected paths and independent-review evidence. Default protected changes still fail. No runtime, image work or existing protected test changes. Approved follow-up: replace proven stale full npm runner-chain snapshots with required-runner/order/fail-fast invariants only; preserve all acceptance assertions.",
+  "baseline": "0f587e0e5a52353b36eb4dff3fdc830c91cfa80e",
+  "objective": "Install only the previously user-approved migration-chain stale snapshot repair: replace fixed total and fixed tail with historical identities, contiguous unique order, execution and persisted ledger invariants. Exact reviewed runner only. No runtime, image, Gate policy or other protected expected changes.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    ".github/core-reliability-policy.json",
-    ".github/workflows/core-reliability.yml",
-    "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/core-contract-approval.js",
-    "pilot/nephi-home-node-pilot-v1/tests/core-contract-approval-runner.js",
-    "pilot/nephi-home-node-pilot-v1/package.json",
-    "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
-    "pilot/nephi-home-node-pilot-v1/tests/deployed-conversation-acceptance-contract-runner.js"
+    "pilot/nephi-home-node-pilot-v1/tests/property-line-binding-postgres-webhook-runner.js"
   ],
-  "contractChangeAllowed": false,
-  "gateChangeAllowed": true,
+  "contractChangeAllowed": true,
+  "gateChangeAllowed": false,
   "affectedCapabilities": [
-    "external-core-reliability-governance"
+    "migration-chain-integrity"
   ],
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "User explicitly approved this separate controlled Contract-change installation task on 2026-09-21. Existing GitHub review authority only; no new credential or permission changes. User expressly authorized the stale lifecycle snapshot common-root correction on 2026-09-21; no protected contract weakening or runtime/image changes."
+  "approvalSource": "User explicitly approved this exact protected migration runner repair and separate Contract-change installation; current instruction authorizes installation after PR3 merge. External run/candidate/diff-bound GitHub approval remains required."
 }
