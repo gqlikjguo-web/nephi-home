@@ -81,6 +81,72 @@ for (const requiredReal of [false, true]) {
   if (requiredReal) assert.equal(evidence.real.realCalls, 0);
   cases++;
 }
+// REAL admission is separate from deterministic impact. Expectations below are
+// literal release contracts; candidate declarations never select qualification.
+function verifyRealClassification() {
+  const installedPolicy = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../../.github/core-reliability-policy.json"), "utf8"));
+  const examples = [
+    { name: "transport keeps deterministic checks without REAL", file: "lib/line-transport.js", required: false },
+    { name: "operator UI", file: "public/admin.js", required: false },
+    { name: "image storage", file: "lib/property-image-store.js", required: false },
+    { name: "image attachments", file: "lib/property-image-attachments.js", required: false },
+    { name: "Understanding cannot skip", file: "lib/new-core/understanding.js", required: true },
+    { name: "Context cannot skip", file: "lib/new-core/context.js", required: true },
+    { name: "CanonicalRequest cannot skip", file: "lib/new-core/canonical.js", required: true },
+    { name: "OpenAI Contract cannot skip", file: "lib/providers/openai-understanding-v1.js", required: true },
+    { name: "persisted Context/history cannot skip", file: "lib/providers/postgres-worker.js", required: true },
+    { name: "composition root cannot skip", file: "lib/v2-composition-root.js", required: true },
+    { name: "property interpretation cannot skip", file: "lib/property-facts.js", required: true },
+    { name: "JSON property projection cannot skip", file: "lib/providers/json-providers.js", required: true },
+    { name: "PostgreSQL property projection cannot skip", file: "lib/providers/postgres-providers.js", required: true },
+    { name: "server core wiring cannot skip", file: "server.js", required: true },
+    { name: "conversation Contract cannot skip", file: "lib/conversation-contracts/conversation-state-v3.js", required: true },
+    { name: "runtime configuration cannot skip", file: "config/runtime.json", required: true },
+    { name: "decision boundary cannot skip", file: "lib/conversation-engine-v2/final-decision.js", required: true },
+    { name: "reviewed attachment-only bridge", file: "lib/conversation-engine-v2/claim-validator.js", required: false, reviewed: true },
+    { name: "core edit hidden beside approved attachment", file: "lib/conversation-engine-v2/claim-validator.js", required: true, reviewed: true, tampered: true },
+    { name: "bridge removal is not an exemption", file: "lib/conversation-engine-v2/claim-validator.js", required: true, reviewed: true, deleted: true },
+    { name: "core rename into image path", file: "lib/new-core/understanding.js", required: true, renamed: true },
+    { name: "forced REAL remains available", file: "public/admin.js", required: true, force: true },
+    { name: "candidate policy forgery fails", file: "lib/new-core/understanding.js", policyForgery: true },
+    { name: "transport runner failure still stops", file: "lib/line-transport.js", runnerFails: true }
+  ];
+  for (const example of examples) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-real-admission-"));
+    const g = (...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    const write = (name, content) => { const target = path.join(dir, name); fs.mkdirSync(path.dirname(target), {recursive:true}); fs.writeFileSync(target, content); };
+    const file = app + "/" + example.file, before = "module.exports = {decision: 'unchanged'};\n", approved = before + "// approved attachment metadata\n";
+    const manifest = { protectedPaths: [], governancePaths: [".github/core-reliability-policy.json"],
+      capabilities: [{paths:[app + "/"], runners:["tests/check.js"]}], incidents: [], requiredRunners:["tests/check.js"], lifecycle:["test"],
+      realE2e: { schemaVersion:1, requiredPaths:installedPolicy.realE2e.requiredPaths,
+        reviewedTransitions: example.reviewed ? [{path:file, beforeSha256:gate.digest(before), afterSha256:gate.digest(approved), reason:"independently reviewed attachment-only bridge"}] : [] } };
+    write(file, before); write(app+"/tests/check.js", "require('node:assert/strict').equal(true," + String(!example.runnerFails) + ");\n");
+    write(app+"/package.json", JSON.stringify({scripts:{test:"node tests/check.js"}}));
+    write(".github/core-reliability-policy.json", JSON.stringify(manifest));
+    g("init","-q");g("config","user.email","gate@example.invalid");g("config","user.name","Gate isolated classification");g("add",".");g("commit","-qm","trusted admission policy");
+    const base=g("rev-parse","HEAD");
+    const changed = [file,".github/core-reliability-task.json"];
+    if(example.renamed){ const renamed=app+"/lib/property-image-renamed.js";fs.renameSync(path.join(dir,file),path.join(dir,renamed));changed.push(renamed); }
+    else if(example.deleted)fs.unlinkSync(path.join(dir,file));
+    else write(file, example.tampered ? approved.replace("'unchanged'","'wrong decision'") : approved);
+    if(example.policyForgery){write(".github/core-reliability-policy.json",JSON.stringify({...manifest,realE2e:{schemaVersion:1,requiredPaths:[],reviewedTransitions:[]}}));changed.push(".github/core-reliability-policy.json");}
+    const scope={schemaVersion:1,baseline:base,objective:example.name,allowedPaths:changed,contractChangeAllowed:false,affectedCapabilities:[],realE2eRequired:false,skipRealE2e:true};
+    write(".github/core-reliability-task.json",JSON.stringify(scope));g("add",".");g("commit","-qm","candidate");const head=g("rev-parse","HEAD");
+    const evidenceDir=fs.mkdtempSync(path.join(os.tmpdir(),"junzan-real-admission-evidence-"));
+    const execution=spawnSync(process.execPath,[gatePath,"--root",dir,"--baseline",base,"--candidate",head,"--approved-scope-digest",gate.digest(scope),"--evidence",evidenceDir,"--require-real",String(Boolean(example.force))],{encoding:"utf8",env:{...process.env,CORE_GATE_OPENAI_API_KEY:""}});
+    if(example.policyForgery){assert.equal(execution.status,1);assert.match(execution.stderr,/GATE_CHANGE_REQUIRES_REVIEW/);cases++;continue;}
+    const report=JSON.parse(fs.readFileSync(path.join(evidenceDir,"report.json"),"utf8"));
+    if(example.runnerFails){assert.equal(execution.status,1);assert.equal(report.status,"STOP");assert.equal(report.results[0].status,"FAIL");cases++;continue;}
+    assert.equal(report.status,example.required?"BLOCKED_CREDENTIAL":"PASS",example.name);
+    assert.equal(execution.status,example.required?1:0,example.name);
+    assert.equal(report.realE2eRequired,example.required,example.name);
+    assert.equal(report.results.length,1,"deterministic affected runner still executes exactly once");
+    assert.equal(report.results[0].status,"PASS");assert.equal(report.candidateSha,head);
+    assert.equal(report.real.status,example.required?"BLOCKED_CREDENTIAL":"NOT_REQUIRED");
+    assert.equal(report.real.realCalls,0);cases++;
+  }
+}
+verifyRealClassification();
 async function verifyWorkflow() {
   const workflow = fs.readFileSync(path.resolve(__dirname, "../../../.github/workflows/core-reliability.yml"), "utf8");
   const blocks = [...workflow.matchAll(/          script: \|\n((?: {12}[^\n]*\n|\n)+)/g)].map(m => m[1].split("\n").map(line => line.slice(12)).join("\n"));
