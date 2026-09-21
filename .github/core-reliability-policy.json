@@ -313,7 +313,9 @@
     "pilot/nephi-home-node-pilot-v1/tests/fixtures/core-reliability-real-cases.json",
     "pilot/nephi-home-node-pilot-v1/tests/core-reliability-real-contract-runner.js",
     "AGENTS.md",
-    "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md"
+    "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
+    "pilot/nephi-home-node-pilot-v1/scripts/core-contract-approval.js",
+    "pilot/nephi-home-node-pilot-v1/tests/core-contract-approval-runner.js"
   ],
   "requiredRunners": [
     "tests/new-core-context-subject-roundtrip-runner.js",
@@ -340,7 +342,8 @@
     "tests/admin-custom-replies-runner.js",
     "tests/controlled-custom-reply-runtime-runner.js",
     "tests/planner-boundary-contract-runner.js",
-    "tests/conversation-state-v3-runtime-reducer-runner.js"
+    "tests/conversation-state-v3-runtime-reducer-runner.js",
+    "tests/core-contract-approval-runner.js"
   ],
   "lifecycle": [
     "pretest",
@@ -588,5 +591,12 @@
     "LINE delivery has no safe target and is NOT_RUN."
   ],
   "realTurns": 13,
-  "realMaxCalls": 26
+  "realMaxCalls": 26,
+  "contractReview": {
+    "repository": "gqlikjguo-web/nephi-home",
+    "environment": "core-scope-approval",
+    "environmentId": 22310568412,
+    "reviewerId": 295622497,
+    "workflow": ".github/workflows/core-reliability.yml"
+  }
 }

@@ -35,6 +35,19 @@ const {
 const root = path.resolve(__dirname, "../../..");
 const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
 
+function assertRequiredRunnerChain(script, required) {
+  assert.equal(typeof script, "string", "the required test entry must exist");
+  const commands = script.split(" && ");
+  assert.ok(commands.every(command => /^node [a-zA-Z0-9./_-]+\.js$/.test(command)), "test runners must execute directly in a fail-fast && chain");
+  assert.equal(new Set(commands).size, commands.length, "test runners must not execute twice in one chain");
+  let previous = -1;
+  for (const command of required) {
+    const position = commands.indexOf(command);
+    assert.ok(position > previous, `required runner missing or reordered: ${command}`);
+    previous = position;
+  }
+}
+
 (async () => {
   const caseNumbers = ACCEPTANCE_MATRIX.map((item) => item.id.slice(3, 6));
   assert.equal(ACCEPTANCE_MATRIX.length, 53, "the deployed matrix must retain all fixed real-guest cases");
@@ -1207,8 +1220,28 @@ const expectedCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
   assert.doesNotMatch(deployedRunnerSource, /console\.(?:log|error)\([^\n]*(?:oidcToken|requestToken)/, "OIDC tokens must never be passed to output calls");
 
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "../package.json"), "utf8"));
-  assert.equal(packageJson.scripts["test:deployed-acceptance-contract"], "node tests/test-only-acceptance-oidc-runner.js && node tests/deployed-conversation-acceptance-contract-runner.js && node tests/real-guest-deployed-acceptance-matrix-runner.js && node tests/test-only-conversation-acceptance-api-runner.js");
-  assert.equal(packageJson.scripts.posttest, "node tests/test-only-acceptance-oidc-runner.js && node tests/deployed-conversation-acceptance-contract-runner.js && node tests/real-guest-deployed-acceptance-matrix-runner.js");
+  const requiredPosttest = [
+    "node tests/test-only-acceptance-oidc-runner.js",
+    "node tests/deployed-conversation-acceptance-contract-runner.js",
+    "node tests/real-guest-deployed-acceptance-matrix-runner.js"
+  ];
+  const requiredAcceptance = [...requiredPosttest, "node tests/test-only-conversation-acceptance-api-runner.js"];
+  assertRequiredRunnerChain(packageJson.scripts.posttest, requiredPosttest);
+  assertRequiredRunnerChain(packageJson.scripts["test:deployed-acceptance-contract"], requiredAcceptance);
+  // Required coverage and failure propagation are invariant; total runner count is not.
+  for (const required of [requiredPosttest, requiredAcceptance]) {
+    const original = required.join(" && ");
+    assert.doesNotThrow(() => assertRequiredRunnerChain(original, required));
+    assert.doesNotThrow(() => assertRequiredRunnerChain(`${original} && node tests/future-regression-runner.js`, required));
+    for (const omitted of required) {
+      assert.throws(() => assertRequiredRunnerChain(required.filter(command => command !== omitted).join(" && "), required), /missing or reordered/);
+    }
+    assert.throws(() => assertRequiredRunnerChain([...required].reverse().join(" && "), required), /missing or reordered/);
+    assert.throws(() => assertRequiredRunnerChain(`${original} && ${required[0]}`, required), /must not execute twice/);
+    assert.throws(() => assertRequiredRunnerChain(original.replace(" && ", " || "), required), /fail-fast/);
+    assert.throws(() => assertRequiredRunnerChain(`${original} || true`, required), /fail-fast/);
+    assert.throws(() => assertRequiredRunnerChain(original.replace(" && ", "; "), required), /fail-fast/);
+  }
 
   console.log(JSON.stringify({ suite: "deployed-conversation-acceptance-contract", caseCount: 24, passCount: 24, failCount: 0 }));
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });

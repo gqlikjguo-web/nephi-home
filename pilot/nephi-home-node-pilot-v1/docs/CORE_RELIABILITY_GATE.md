@@ -92,3 +92,47 @@ the first trusted-base installation remain USER_ACTION_REQUIRED. No passing
 GitHub Gate run is claimed before that installation.
 
 No Render configuration or deployment is part of this Gate installation.
+
+## Controlled Contract-change installation (2026-09-21)
+
+The installation mechanism now implements the separate review requirement above.
+Default protected-path rejection is unchanged; `contractChangeAllowed=true` is a
+request, never approval. Ordinary runtime PRs cannot use this exception.
+
+A Contract-change candidate may modify only explicitly scoped protected paths
+under `tests/` or `pilot/nephi-home-node-pilot-v1/tests/`, plus its task manifest. Runtime, dependencies, other files and Gate
+policy/implementation changes cannot be mixed into that candidate. Governance
+paths remain excluded even if they are also classified as protected.
+
+Before the existing `core-scope-approval` environment pauses, the trusted base
+workflow publishes a descriptor binding repository, PR, run/attempt, baseline,
+candidate, task/policy digests, exact changed/protected paths and the SHA-256 of
+the full binary Git diff. An independent review must assess that exact candidate.
+The configured reviewer approves the run with this exact comment:
+
+`CONTRACT_CHANGE_APPROVED <descriptor SHA-256> REVIEW_SHA256=<independent review evidence SHA-256>`
+
+The review digest identifies the independently reviewed evidence retained with
+the PR/release records; the GitHub reviewer attests that review passed. It is not
+an AI-generated self-approval or a candidate-supplied approval file. The Gate reads
+GitHub's run/review/PR/production APIs directly with a read-only Actions token,
+verifies the configured reviewer/environment and exact bindings, then issues an
+in-process admission receipt. Serialized or candidate-created receipts fail.
+Changing candidate, diff, scope, baseline or run invalidates the approval. No
+matching review, API failure or missing read token means STOP. Rerunning to pick a
+passing result remains prohibited. The token is not forwarded to test runners.
+
+All existing incident, affected and npm lifecycle checks still execute; approved
+Contract changes receive no test-result exemptions. A passing, current-SHA PR
+may merge through the existing production requirements; the merge becomes the
+next trusted baseline. Never edit protectedPaths or manufacture a success status
+to install a Contract change.
+
+This uses the existing GitHub approval authority, not a new key/service. It
+prevents candidate code from generating approval evidence. As documented above,
+GitHub proves the approving account, not whether a human or an agent sharing its
+admin credential operated it. This feature does not claim credential separation.
+
+Protected files outside those test directories remain ineligible. Files also
+covered by `.github/protected-acceptance.json` still have to satisfy its existing
+hash checks; this mechanism grants no exemption from that separate protection.
