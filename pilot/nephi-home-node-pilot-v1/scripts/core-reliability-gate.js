@@ -43,6 +43,32 @@ function selectRunners(changed, policy) {
   for (const capability of policy.capabilities) if (changed.some(p => capability.paths.some(prefix => p.startsWith(prefix)))) runners.push(...capability.runners);
   return [...new Set(runners)].sort();
 }
+function classifyRealE2e({ root, baseline, candidate, changed, policy }) {
+  const manifest = policy.realE2e;
+  // Old trusted policies keep their existing behavior during installation.
+  if (!manifest) return { required: changed.some(p => policy.capabilities.some(c => c.paths.some(prefix => p.startsWith(prefix)))), source: "legacy-trusted-policy", requiredPaths: [], reviewedPaths: [] };
+  insist(manifest.schemaVersion === 1 && Array.isArray(manifest.requiredPaths) && manifest.requiredPaths.length && manifest.requiredPaths.every(exact) && Array.isArray(manifest.reviewedTransitions), "INVALID_REAL_E2E_POLICY");
+  for (const entry of manifest.reviewedTransitions) insist(exact(entry.path) && /^[a-f0-9]{64}$/.test(entry.beforeSha256) && /^[a-f0-9]{64}$/.test(entry.afterSha256) && typeof entry.reason === "string" && entry.reason.trim(), "INVALID_REAL_E2E_REVIEW");
+  const requiredPaths = [], reviewedPaths = [];
+  for (const file of changed.filter(p => manifest.requiredPaths.some(prefix => p.startsWith(prefix)))) {
+    let reviewed = false;
+    const entries = manifest.reviewedTransitions.filter(entry => entry.path === file);
+    if (entries.length) {
+      try {
+        // Exact regular-file contents, including whitespace. No textconv, regex,
+        // candidate skip flag, renamed source or symlink can inherit an exemption.
+        const read = ref => {
+          insist(git(root, ["ls-tree", ref, "--", file]).startsWith("100644 blob "), "REAL_E2E_NOT_REGULAR_FILE");
+          return digest(execFileSync("git", ["show", `${ref}:${file}`], { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }));
+        };
+        const beforeSha256 = read(baseline), afterSha256 = read(candidate);
+        reviewed = entries.some(entry => entry.beforeSha256 === beforeSha256 && entry.afterSha256 === afterSha256);
+      } catch { reviewed = false; }
+    }
+    (reviewed ? reviewedPaths : requiredPaths).push(file);
+  }
+  return { required: requiredPaths.length > 0, source: "trusted-baseline-diff-policy", requiredPaths, reviewedPaths };
+}
 function validateEvidence(e, baseline, candidate, required) {
   insist(e && e.candidateSha === candidate && e.baselineSha === baseline, "STALE_CANDIDATE_EVIDENCE");
   insist(e.status === "PASS", "GATE_NOT_PASS");
@@ -107,6 +133,7 @@ async function main(argv) {
   }
   validateDiff(changed, task, policy, contractReceipt);
   const coreChanged = changed.some(p => policy.capabilities.some(c => c.paths.some(prefix => p.startsWith(prefix))));
+  const realClassification = classifyRealE2e({ root, baseline, candidate, changed, policy });
   const runners = selectRunners(changed, policy);
   const cwd = path.join(root, APP);
   for (const runner of runners) insist(exact(runner) && fs.existsSync(path.join(cwd, runner)), "MISSING_RUNNER: " + runner);
@@ -122,7 +149,9 @@ async function main(argv) {
   const report = runCommands({ root, cwd, candidate, baseline, commands, evidenceDir: path.resolve(a.evidence) });
   report.changedPaths = changed; report.coreChanged = coreChanged; report.approvedScopeDigest = a["approved-scope-digest"];
   if (contractReceipt) report.contractApproval = contractReceipt;
-  report.realE2eRequired = coreChanged || a["require-real"] === "true";
+  report.realClassification = realClassification;
+  report.realE2eRequired = realClassification.required || a["require-real"] === "true";
+  if (!report.realE2eRequired) report.real = { status: "NOT_REQUIRED", candidateSha: candidate, realCalls: 0, reason: realClassification.source };
   if (report.status === "PASS") {
     try {
       verifyCheckout(root, candidate, task.preExistingUntracked || []);
