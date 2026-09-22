@@ -1,15 +1,12 @@
 {
   "schemaVersion": 1,
-  "baseline": "df393f7bd3c23554c5f433c9cc9a80181ad6a7be",
-  "objective": "Independently reviewed exact non-AI room-gallery HTTP wiring classification; preserve immutable gallery candidate 4b6df3f and all AI/contract/scope/incident/SHA protections. Add adversarial actual-diff tests. No product runtime or credential changes.",
+  "baseline": "95d0cde10cd7cf540d87e6ce9d9c9dc42e7f80e9",
+  "objective": "Install exact reviewed room-gallery r2.dev policy approval after explicit user acceptance; no product runtime change in Gate PR. Preserve all prior transitions, required paths and guards.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
     ".github/core-reliability-policy.json",
     "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/fixtures/room-gallery-server-route.patch",
-    "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
-    "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
-    "pilot/nephi-home-node-pilot-v1/tests/fixtures/room-gallery-reviewed-modules.json"
+    "pilot/nephi-home-node-pilot-v1/tests/fixtures/room-gallery-r2dev-approved.patch"
   ],
   "contractChangeAllowed": false,
   "gateChangeAllowed": true,
@@ -19,5 +16,5 @@
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "Explicit user approval 2026-09-22 for room-gallery release blocker #1 only: trusted exact diff classification and negative regression; no OpenAI key, no product candidate changes."
+  "approvalSource": "User 2026-09-22 approved HTTPS r2.dev v1, necessary Gate verification and release; existing exact-hash guarded adapter requires independently reviewed policy installation."
 }
