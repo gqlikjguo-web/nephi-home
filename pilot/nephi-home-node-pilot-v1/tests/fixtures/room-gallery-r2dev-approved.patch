@@ -1,0 +1,13 @@
+diff --git a/pilot/nephi-home-node-pilot-v1/lib/room-gallery-r2.js b/pilot/nephi-home-node-pilot-v1/lib/room-gallery-r2.js
+index ccbd5b2..38e104e 100644
+--- a/pilot/nephi-home-node-pilot-v1/lib/room-gallery-r2.js
++++ b/pilot/nephi-home-node-pilot-v1/lib/room-gallery-r2.js
+@@ -7,7 +7,7 @@ function readRoomGalleryConfig(env=process.env) {
+ function createRoomGalleryR2(config,injectedClient) {
+   let base;
+   try {base=new URL(config.publicBaseUrl);} catch {fail(503,'房間照片尚未啟用');}
+-  if(base.protocol!=='https:'||base.username||base.password||base.search||base.hash||base.pathname!=='/'||base.hostname.endsWith('.r2.dev')||base.hostname.endsWith('.r2.cloudflarestorage.com'))fail(503,'房間照片需使用正式 HTTPS 圖片網域');
++  if(base.protocol!=='https:'||base.username||base.password||base.search||base.hash||base.pathname!=='/'||base.hostname.endsWith('.r2.cloudflarestorage.com'))fail(503,'房間照片需使用正式 HTTPS 圖片網域');
+   if(!/^[a-f0-9]{32}$/.test(config.accountId)||! /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(config.bucket)||!config.accessKeyId||!config.secretAccessKey)fail(503,'房間照片尚未啟用');
+   const {S3Client,PutObjectCommand,DeleteObjectCommand}=require('@aws-sdk/client-s3');
+   const client=injectedClient||new S3Client({region:'auto',endpoint:`https://${config.accountId}.r2.cloudflarestorage.com`,credentials:{accessKeyId:config.accessKeyId,secretAccessKey:config.secretAccessKey},maxAttempts:1});
