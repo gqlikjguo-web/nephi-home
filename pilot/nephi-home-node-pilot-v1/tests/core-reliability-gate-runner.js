@@ -160,7 +160,12 @@ function verifyRoomGalleryRouteClassification() {
   const modulesPath = app + "/tests/fixtures/room-gallery-reviewed-modules.json";
   const modules = JSON.parse(fs.readFileSync(path.join(repo, modulesPath), "utf8"));
   const helperPath = app + "/lib/room-gallery-routes.js";
+  const r2devFixture = app + "/tests/fixtures/room-gallery-r2dev-approved.patch";
+  const r2devPatch = fs.readFileSync(path.join(repo,r2devFixture),"utf8");
   const probes = [
+    {name:"approved r2.dev policy transition",required:false,r2dev:true},
+    {name:"r2.dev plus unreviewed adapter byte",required:true,r2dev:true,dependency:app+"/lib/room-gallery-r2.js"},
+    {name:"r2.dev plus AI Context",required:true,r2dev:true,serverCore:true},
     {name:"approved actual room-gallery route",required:false},
     {name:"same server with unreviewed handler",required:true,helper:true},
     {name:"later handler edit with unchanged server",required:true,helper:true,later:true},
@@ -191,6 +196,7 @@ function verifyRoomGalleryRouteClassification() {
     let base=g("rev-parse","HEAD");
     execFileSync("git",["apply","--whitespace=error"],{cwd:dir,input:patch,stdio:["pipe","pipe","pipe"]});
     for(const [file,contents] of Object.entries(modules)) write(file,contents);
+    if(probe.r2dev) execFileSync("git",["apply","--whitespace=error"],{cwd:dir,input:r2devPatch,stdio:["pipe","pipe","pipe"]});
     if(probe.later){g("add",".");g("commit","-qm","reviewed gallery installed");base=g("rev-parse","HEAD");}
     const changed=[serverPath,...Object.keys(modules),".github/core-reliability-task.json"];
     if(probe.helper) fs.appendFileSync(path.join(dir,helperPath),"\n// unreviewed handler change\n");
@@ -217,6 +223,7 @@ function verifyRoomGalleryRouteClassification() {
   }
   assert.ok(installed.governancePaths.includes(fixturePath),"reviewed diff fixture must remain governance-protected");cases++;
   assert.ok(installed.governancePaths.includes(modulesPath),"reviewed module fixture must remain governance-protected");cases++;
+  assert.ok(installed.governancePaths.includes(r2devFixture),"approved URL policy fixture must remain governance-protected");cases++;
 }
 verifyRoomGalleryRouteClassification();
 async function verifyWorkflow() {

@@ -317,7 +317,8 @@
     "pilot/nephi-home-node-pilot-v1/scripts/core-contract-approval.js",
     "pilot/nephi-home-node-pilot-v1/tests/core-contract-approval-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/fixtures/room-gallery-server-route.patch",
-    "pilot/nephi-home-node-pilot-v1/tests/fixtures/room-gallery-reviewed-modules.json"
+    "pilot/nephi-home-node-pilot-v1/tests/fixtures/room-gallery-reviewed-modules.json",
+    "pilot/nephi-home-node-pilot-v1/tests/fixtures/room-gallery-r2dev-approved.patch"
   ],
   "requiredRunners": [
     "tests/new-core-context-subject-roundtrip-runner.js",
@@ -660,6 +661,30 @@
           }
         ],
         "reason": "Independently reviewed non-AI room-gallery HTTP wiring from df393f7 to immutable candidate 4b6df3f. Exact route/runtime/storage modules are part of this reviewed change; any different server or guarded module content requires REAL qualification."
+      },
+      {
+        "path": "pilot/nephi-home-node-pilot-v1/server.js",
+        "beforeSha256": "995c191441f743bd72875fa3fede2b2d225182dfe873f2df703515c1da220e03",
+        "afterSha256": "af64169a46ddbc2f44e2b69def3aa51352f7ecc3a3a6c7f9a9e3f41e1512427e",
+        "candidateFiles": [
+          {
+            "path": "pilot/nephi-home-node-pilot-v1/lib/room-gallery-routes.js",
+            "sha256": "4031a1b1f36577e71e561658210b3a0de9a43519b7170529374552b883d714a4"
+          },
+          {
+            "path": "pilot/nephi-home-node-pilot-v1/lib/room-gallery-runtime.js",
+            "sha256": "102720be376fa8a31c133c91c725eeaaa6d5dc7951001e7caf329530d0a18be1"
+          },
+          {
+            "path": "pilot/nephi-home-node-pilot-v1/lib/room-gallery-store.js",
+            "sha256": "751161ce3f156f9707316df813cacc679342bd6795135ee9c0296381093e2d15"
+          },
+          {
+            "path": "pilot/nephi-home-node-pilot-v1/lib/room-gallery-r2.js",
+            "sha256": "22d77025db72ea58523175254cced03b5c66ce761217c0380c7f06c00fcaf518"
+          }
+        ],
+        "reason": "User explicitly approved first-version HTTPS r2.dev public URLs on 2026-09-22. Exact reviewed delta removes only r2.dev rejection; HTTPS, URL credentials/path/query/fragment, S3 endpoint, credential, property and object-key checks unchanged. No AI path change. All four module guards and server transition remain exact."
       }
     ]
   }
