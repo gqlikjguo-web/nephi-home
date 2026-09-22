@@ -147,6 +147,78 @@ function verifyRealClassification() {
   }
 }
 verifyRealClassification();
+// Actual independently reviewed room-gallery transition, not a server filename
+// exemption. The fixture is the original candidate's exact Git diff. This
+// historical baseline is permanent evidence, not the current runtime snapshot.
+function verifyRoomGalleryRouteClassification() {
+  const repo = path.resolve(__dirname, "../../..");
+  const serverPath = app + "/server.js";
+  const fixturePath = app + "/tests/fixtures/room-gallery-server-route.patch";
+  const installed = JSON.parse(fs.readFileSync(path.join(repo, ".github/core-reliability-policy.json"), "utf8"));
+  const original = execFileSync("git", ["show", "df393f7bd3c23554c5f433c9cc9a80181ad6a7be:" + serverPath], {cwd:repo,encoding:"utf8"});
+  const patch = fs.readFileSync(path.join(repo, fixturePath), "utf8");
+  const modulesPath = app + "/tests/fixtures/room-gallery-reviewed-modules.json";
+  const modules = JSON.parse(fs.readFileSync(path.join(repo, modulesPath), "utf8"));
+  const helperPath = app + "/lib/room-gallery-routes.js";
+  const probes = [
+    {name:"approved actual room-gallery route",required:false},
+    {name:"same server with unreviewed handler",required:true,helper:true},
+    {name:"later handler edit with unchanged server",required:true,helper:true,later:true},
+    ...["room-gallery-runtime.js", "room-gallery-store.js", "room-gallery-r2.js"].map(file=>({name:"altered reviewed dependency "+file,required:true,dependency:app+"/lib/"+file})),
+    {name:"executable handler cannot inherit approval",required:true,helperExecutable:true},
+    {name:"missing reviewed handler",required:true,missingHelper:true},
+    {name:"symlink reviewed handler",required:true,helperSymlink:true},
+    {name:"route plus server AI Context wiring",required:true,serverCore:true},
+    {name:"route plus Understanding change",required:true,coreFile:"lib/new-core/understanding.js"},
+    {name:"route plus OpenAI provider change",required:true,coreFile:"lib/providers/openai-understanding-v1.js"},
+    {name:"route plus CanonicalRequest change",required:true,coreFile:"lib/conversation-contracts/canonical-request.js"},
+    {name:"route plus FinalDecision change",required:true,coreFile:"lib/conversation-engine-v2/final-decision.js"},
+    {name:"unreviewed extra route byte cannot reuse approval",required:true,extra:true},
+    {name:"different server baseline cannot reuse approval",required:true,wrongBase:true},
+    {name:"server symlink cannot reuse approval",required:true,symlink:true},
+    {name:"candidate cannot rewrite reviewed manifest",forged:true}
+  ];
+  for(const probe of probes) {
+    const dir=fs.mkdtempSync(path.join(os.tmpdir(),"junzan-gallery-gate-"));
+    const g=(...args)=>execFileSync("git",args,{cwd:dir,encoding:"utf8",stdio:["ignore","pipe","pipe"]}).trim();
+    const write=(name,value)=>{const p=path.join(dir,name);fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,value);};
+    const policy={protectedPaths:[],governancePaths:[".github/core-reliability-policy.json",fixturePath],capabilities:[{paths:[app+"/"],runners:["tests/check.js"]}],incidents:[],requiredRunners:["tests/check.js"],lifecycle:["test"],realE2e:installed.realE2e};
+    write(serverPath,original+(probe.wrongBase?"\n// different base\n":""));
+    write(app+"/tests/check.js","require('node:assert/strict').equal(2 + 2, 4);\n");
+    write(app+"/package.json",JSON.stringify({scripts:{test:"node tests/check.js"}}));
+    write(".github/core-reliability-policy.json",JSON.stringify(policy));
+    g("init","-q");g("config","user.email","gate@example.invalid");g("config","user.name","Gallery gate isolated");g("add",".");g("commit","-qm","trusted policy");
+    let base=g("rev-parse","HEAD");
+    execFileSync("git",["apply","--whitespace=error"],{cwd:dir,input:patch,stdio:["pipe","pipe","pipe"]});
+    for(const [file,contents] of Object.entries(modules)) write(file,contents);
+    if(probe.later){g("add",".");g("commit","-qm","reviewed gallery installed");base=g("rev-parse","HEAD");}
+    const changed=[serverPath,...Object.keys(modules),".github/core-reliability-task.json"];
+    if(probe.helper) fs.appendFileSync(path.join(dir,helperPath),"\n// unreviewed handler change\n");
+    if(probe.dependency) fs.appendFileSync(path.join(dir,probe.dependency),"\n// unreviewed dependency change\n");
+    if(probe.helperExecutable) fs.chmodSync(path.join(dir,helperPath),0o755);
+    if(probe.missingHelper) fs.unlinkSync(path.join(dir,helperPath));
+    if(probe.helperSymlink){fs.renameSync(path.join(dir,helperPath),path.join(dir,helperPath+".target"));fs.symlinkSync("room-gallery-routes.js.target",path.join(dir,helperPath));changed.push(helperPath+".target");}
+    if(probe.serverCore){const p=path.join(dir,serverPath),s=fs.readFileSync(p,"utf8");assert.ok(s.includes("useConversationContext: false"));fs.writeFileSync(p,s.replace("useConversationContext: false","useConversationContext: true"));}
+    if(probe.coreFile){write(app+"/"+probe.coreFile,"module.exports = {changed: true};\n");changed.push(app+"/"+probe.coreFile);}
+    if(probe.extra)fs.appendFileSync(path.join(dir,serverPath),"\n// additional unreviewed change\n");
+    if(probe.symlink){fs.renameSync(path.join(dir,serverPath),path.join(dir,serverPath+".target"));fs.symlinkSync("server.js.target",path.join(dir,serverPath));changed.push(serverPath+".target");}
+    if(probe.forged){write(".github/core-reliability-policy.json",JSON.stringify({...policy,realE2e:{...policy.realE2e,requiredPaths:[]}}));changed.push(".github/core-reliability-policy.json");}
+    const scope={schemaVersion:1,baseline:base,objective:probe.name,allowedPaths:changed,contractChangeAllowed:false,affectedCapabilities:[],skipRealE2e:true};
+    write(".github/core-reliability-task.json",JSON.stringify(scope));g("add",".");g("commit","-qm","candidate");const head=g("rev-parse","HEAD");
+    const evidenceDir=fs.mkdtempSync(path.join(os.tmpdir(),"junzan-gallery-classification-"));
+    const execution=spawnSync(process.execPath,[gatePath,"--root",dir,"--baseline",base,"--candidate",head,"--approved-scope-digest",gate.digest(scope),"--evidence",evidenceDir],{encoding:"utf8",env:{...process.env,CORE_GATE_OPENAI_API_KEY:""}});
+    if(probe.forged){assert.equal(execution.status,1);assert.match(execution.stderr,/GATE_CHANGE_REQUIRES_REVIEW/);cases++;continue;}
+    const report=JSON.parse(fs.readFileSync(path.join(evidenceDir,"report.json"),"utf8"));
+    assert.equal(report.realE2eRequired,probe.required,probe.name);
+    assert.equal(report.status,probe.required?"BLOCKED_CREDENTIAL":"PASS",probe.name);
+    assert.equal(execution.status,probe.required?1:0,probe.name);
+    assert.equal(report.results.length,1);assert.equal(report.results[0].status,"PASS");
+    assert.equal(report.real.realCalls,0);assert.equal(report.candidateSha,head);cases++;
+  }
+  assert.ok(installed.governancePaths.includes(fixturePath),"reviewed diff fixture must remain governance-protected");cases++;
+  assert.ok(installed.governancePaths.includes(modulesPath),"reviewed module fixture must remain governance-protected");cases++;
+}
+verifyRoomGalleryRouteClassification();
 async function verifyWorkflow() {
   const workflow = fs.readFileSync(path.resolve(__dirname, "../../../.github/workflows/core-reliability.yml"), "utf8");
   const blocks = [...workflow.matchAll(/          script: \|\n((?: {12}[^\n]*\n|\n)+)/g)].map(m => m[1].split("\n").map(line => line.slice(12)).join("\n"));
