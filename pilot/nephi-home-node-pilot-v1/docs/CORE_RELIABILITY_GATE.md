@@ -60,6 +60,15 @@ attachment-only transition in that trusted policy. This is an exact content
 review, not a path-wide exemption: changing a decision alongside an attachment,
 changing one additional byte, deleting or replacing the file invalidates it.
 
+A reviewed HTTP mount may include `candidateFiles`: exact path/content hashes
+for its newly introduced handlers and dependencies. Every listed file must be a
+regular `100644` blob with the reviewed content. A change to any guarded module
+(including a later helper-only change with unchanged server wiring) is considered
+for REAL qualification; the original server transition and all guarded hashes
+must match together. This prevents a reviewed mount from admitting an unreviewed
+handler that intercepts AI requests. These guards and their actual-diff fixtures
+are protected governance, never candidate-provided exceptions.
+
 Classification lives in the existing protected governance policy; ordinary
 runtime candidates cannot change it. Policy updates use the independent,
 explicitly approved Gate-maintenance flow and the existing scope approval.

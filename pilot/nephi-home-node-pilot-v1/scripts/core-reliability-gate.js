@@ -48,23 +48,26 @@ function classifyRealE2e({ root, baseline, candidate, changed, policy }) {
   // Old trusted policies keep their existing behavior during installation.
   if (!manifest) return { required: changed.some(p => policy.capabilities.some(c => c.paths.some(prefix => p.startsWith(prefix)))), source: "legacy-trusted-policy", requiredPaths: [], reviewedPaths: [] };
   insist(manifest.schemaVersion === 1 && Array.isArray(manifest.requiredPaths) && manifest.requiredPaths.length && manifest.requiredPaths.every(exact) && Array.isArray(manifest.reviewedTransitions), "INVALID_REAL_E2E_POLICY");
-  for (const entry of manifest.reviewedTransitions) insist(exact(entry.path) && /^[a-f0-9]{64}$/.test(entry.beforeSha256) && /^[a-f0-9]{64}$/.test(entry.afterSha256) && typeof entry.reason === "string" && entry.reason.trim(), "INVALID_REAL_E2E_REVIEW");
+  for (const entry of manifest.reviewedTransitions) {
+    insist(exact(entry.path) && /^[a-f0-9]{64}$/.test(entry.beforeSha256) && /^[a-f0-9]{64}$/.test(entry.afterSha256) && typeof entry.reason === "string" && entry.reason.trim(), "INVALID_REAL_E2E_REVIEW");
+    if (entry.candidateFiles !== undefined) insist(Array.isArray(entry.candidateFiles) && entry.candidateFiles.length > 0 && entry.candidateFiles.every(file => file && exact(file.path) && /^[a-f0-9]{64}$/.test(file.sha256)) && new Set(entry.candidateFiles.map(file => file.path)).size === entry.candidateFiles.length, "INVALID_REAL_E2E_REVIEW_FILES");
+  }
   const requiredPaths = [], reviewedPaths = [];
-  for (const file of changed.filter(p => manifest.requiredPaths.some(prefix => p.startsWith(prefix)))) {
-    let reviewed = false;
-    const entries = manifest.reviewedTransitions.filter(entry => entry.path === file);
-    if (entries.length) {
+  const includesFile = (entry, file) => entry.path === file || (entry.candidateFiles || []).some(guard => guard.path === file);
+  const read = (ref, file) => {
+    // Exact regular-file contents. A symlink, deleted file or executable cannot
+    // inherit approval; no source regex or candidate skip flag is trusted.
+    insist(git(root, ["ls-tree", ref, "--", file]).startsWith("100644 blob "), "REAL_E2E_NOT_REGULAR_FILE");
+    return digest(execFileSync("git", ["show", `${ref}:${file}`], { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }));
+  };
+  for (const file of changed.filter(p => manifest.requiredPaths.some(prefix => p.startsWith(prefix)) || manifest.reviewedTransitions.some(entry => includesFile(entry, p)))) {
+    const reviewed = manifest.reviewedTransitions.filter(entry => includesFile(entry, file)).some(entry => {
       try {
-        // Exact regular-file contents, including whitespace. No textconv, regex,
-        // candidate skip flag, renamed source or symlink can inherit an exemption.
-        const read = ref => {
-          insist(git(root, ["ls-tree", ref, "--", file]).startsWith("100644 blob "), "REAL_E2E_NOT_REGULAR_FILE");
-          return digest(execFileSync("git", ["show", `${ref}:${file}`], { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }));
-        };
-        const beforeSha256 = read(baseline), afterSha256 = read(candidate);
-        reviewed = entries.some(entry => entry.beforeSha256 === beforeSha256 && entry.afterSha256 === afterSha256);
-      } catch { reviewed = false; }
-    }
+        // Bind the entire reviewed attachment graph, not only server.js. Later
+        // helper-only edits also require REAL unless separately reviewed.
+        return read(baseline, entry.path) === entry.beforeSha256 && read(candidate, entry.path) === entry.afterSha256 && (entry.candidateFiles || []).every(guard => read(candidate, guard.path) === guard.sha256);
+      } catch { return false; }
+    });
     (reviewed ? reviewedPaths : requiredPaths).push(file);
   }
   return { required: requiredPaths.length > 0, source: "trusted-baseline-diff-policy", requiredPaths, reviewedPaths };

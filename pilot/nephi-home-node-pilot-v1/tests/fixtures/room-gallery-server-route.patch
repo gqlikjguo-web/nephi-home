@@ -1,0 +1,43 @@
+diff --git a/pilot/nephi-home-node-pilot-v1/server.js b/pilot/nephi-home-node-pilot-v1/server.js
+index b9ba5b4..3776a6f 100644
+--- a/pilot/nephi-home-node-pilot-v1/server.js
++++ b/pilot/nephi-home-node-pilot-v1/server.js
+@@ -833,6 +833,10 @@ function createRequestHandler(service, options = {}) {
+     if (!accessible) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權存取尼腓的家");
+     return session;
+   }
++  const roomGalleryRoutes = require("./lib/room-gallery-routes").createRoomGalleryRoutes({
++    getStore: options.getRoomGalleryStore || (async () => { throw new AppError(503, "ROOM_GALLERY_UNAVAILABLE", "房間照片尚未啟用"); }),
++    persistence, customerSettings, publicBaseUrl: publicBrand.publicBaseUrl, sendData
++  });
+   const propertyImageRoutes = require("./lib/property-image-routes").createPropertyImageRoutes({
+     getStore: options.getPropertyImageStore || (async () => { throw new AppError(503, "PROPERTY_IMAGES_UNAVAILABLE", "圖片暫時無法使用"); }),
+     persistence, publicBaseUrl: publicBrand.publicBaseUrl, sendData
+@@ -847,6 +851,7 @@ function createRequestHandler(service, options = {}) {
+     const pathname = url.pathname;
+ 
+     try {
++      if (await roomGalleryRoutes(request, response, url)) return;
+       if (await propertyImageRoutes(request, response, url)) return;
+       if (await feedbackRoutes(request, response, url)) return;
+       if (request.method === "GET" && pathname === "/api/health") {
+@@ -1687,6 +1692,8 @@ function createApp(options = {}) {
+     }
+     return { accepted: true };
+   };
++  const roomGalleryRuntime = require("./lib/room-gallery-runtime").createRoomGalleryRuntime({databaseUrl:config.databaseUrl,env:runtimeEnv});
++  const getRoomGalleryStore = options.getRoomGalleryStore || roomGalleryRuntime.getStore;
+   let imageDatabase = null;
+   let imageStorePromise = null;
+   const getPropertyImageStore = options.getPropertyImageStore || (() => {
+@@ -1707,8 +1714,8 @@ function createApp(options = {}) {
+     })().catch(error => { feedbackStorePromise = null; throw error; });
+     return feedbackStorePromise;
+   });
+-  const server = http.createServer(createRequestHandler(service, { getPropertyImageStore, getFeedbackStore, commercialStore:providers.commercial, lineProfileService, sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
+-  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); if (imageDatabase) await imageDatabase.close(); if (feedbackDatabase) await feedbackDatabase.close(); if (commercialController) commercialController.close(); if (typeof ownedNewCoreManualTestFactsProviders?.close === "function") await ownedNewCoreManualTestFactsProviders.close(); if (typeof providers.close === "function") await providers.close(); } };
++  const server = http.createServer(createRequestHandler(service, { getRoomGalleryStore, getPropertyImageStore, getFeedbackStore, commercialStore:providers.commercial, lineProfileService, sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
++  return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); await roomGalleryRuntime.close(); if (imageDatabase) await imageDatabase.close(); if (feedbackDatabase) await feedbackDatabase.close(); if (commercialController) commercialController.close(); if (typeof ownedNewCoreManualTestFactsProviders?.close === "function") await ownedNewCoreManualTestFactsProviders.close(); if (typeof providers.close === "function") await providers.close(); } };
+ }
+ 
+ if (require.main === module) {
