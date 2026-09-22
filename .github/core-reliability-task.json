@@ -1,20 +1,41 @@
 {
   "schemaVersion": 1,
-  "baseline": "95d0cde10cd7cf540d87e6ce9d9c9dc42e7f80e9",
-  "objective": "Install exact reviewed room-gallery r2.dev policy approval after explicit user acceptance; no product runtime change in Gate PR. Preserve all prior transitions, required paths and guards.",
+  "baseline": "08be2d086e7f1027a84e0c2762f69238a53ad110",
+  "objective": "Property-scoped R2 room galleries, max 10 per formal room; metadata-only PostgreSQL, existing room/pricing card management and guest result-card galleries. Preserve explanation images, AI, LINE and inventory facts.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    ".github/core-reliability-policy.json",
-    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/fixtures/room-gallery-r2dev-approved.patch"
+    "pilot/nephi-home-node-pilot-v1/docs/ROOM_GALLERY.md",
+    "pilot/nephi-home-node-pilot-v1/docs/superpowers/plans/2026-09-22-room-gallery.md",
+    "pilot/nephi-home-node-pilot-v1/migrations/033_room_gallery.sql",
+    "pilot/nephi-home-node-pilot-v1/lib/room-gallery-store.js",
+    "pilot/nephi-home-node-pilot-v1/lib/room-gallery-r2.js",
+    "pilot/nephi-home-node-pilot-v1/lib/room-gallery-routes.js",
+    "pilot/nephi-home-node-pilot-v1/lib/room-gallery-runtime.js",
+    "pilot/nephi-home-node-pilot-v1/server.js",
+    "pilot/nephi-home-node-pilot-v1/public/assets/admin.js",
+    "pilot/nephi-home-node-pilot-v1/public/assets/guest.js",
+    "pilot/nephi-home-node-pilot-v1/public/assets/admin-room-gallery.js",
+    "pilot/nephi-home-node-pilot-v1/public/assets/guest-room-gallery.js",
+    "pilot/nephi-home-node-pilot-v1/public/assets/room-gallery.css",
+    "pilot/nephi-home-node-pilot-v1/public/admin.html",
+    "pilot/nephi-home-node-pilot-v1/public/guest.html",
+    "pilot/nephi-home-node-pilot-v1/package.json",
+    "pilot/nephi-home-node-pilot-v1/package-lock.json",
+    "pilot/nephi-home-node-pilot-v1/tests/room-gallery-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/room-gallery-http-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/room-gallery-r2-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/room-gallery-ui-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/room-gallery-browser-integration-runner.js"
   ],
   "contractChangeAllowed": false,
-  "gateChangeAllowed": true,
+  "gateChangeAllowed": false,
   "affectedCapabilities": [
-    "reliability-governance"
+    "room-gallery",
+    "operator-room-management",
+    "public-room-display"
   ],
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "User 2026-09-22 approved HTTPS r2.dev v1, necessary Gate verification and release; existing exact-hash guarded adapter requires independently reviewed policy installation."
+  "approvalSource": "User explicitly approved room-gallery schema/R2/API/UI only, 2026-09-22. No existing protected expected, Gate policy, AI or LINE changes. User approved separate integration candidate on trusted Gate baseline, preserving original image source/tests exactly; 2026-09-22. User explicitly approved HTTPS r2.dev public origin for v1 on 2026-09-22; preserve HTTPS, scope, credentials and remaining URL validation; no DNS migration. Integrate reviewed Gate PR9 baseline only; preserve approved product commit 4ebcb19 unchanged."
 }
