@@ -37,5 +37,5 @@
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "User explicitly approved room-gallery schema/R2/API/UI only, 2026-09-22. No existing protected expected, Gate policy, AI or LINE changes. User approved separate integration candidate on trusted Gate baseline, preserving original image source/tests exactly; 2026-09-22."
+  "approvalSource": "User explicitly approved room-gallery schema/R2/API/UI only, 2026-09-22. No existing protected expected, Gate policy, AI or LINE changes. User approved separate integration candidate on trusted Gate baseline, preserving original image source/tests exactly; 2026-09-22. User explicitly approved HTTPS r2.dev public origin for v1 on 2026-09-22; preserve HTTPS, scope, credentials and remaining URL validation; no DNS migration."
 }

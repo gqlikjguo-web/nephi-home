@@ -6,7 +6,9 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const {createRoomGalleryR2,readRoomGalleryConfig}=require('../lib/room-gallery-r2');
   assert.equal(readRoomGalleryConfig({}),null);
   const config={accountId:'a'.repeat(32),bucket:'test-room-photos',accessKeyId:'fixture-access',secretAccessKey:'fixture-secret',publicBaseUrl:'https://photos.example.test'};
-  for(const publicBaseUrl of ['http://photos.example.test','https://photos.example.test/path','https://user:pass@photos.example.test','https://photos.example.test/?signed=1','https://photos.r2.dev'])assert.throws(()=>createRoomGalleryR2({...config,publicBaseUrl},{send:async()=>{}}));
+  for(const publicBaseUrl of ['http://photos.example.test','https://photos.example.test/path','https://user:pass@photos.example.test','https://photos.example.test/?signed=1','http://photos.r2.dev','https://photos.r2.dev/path','https://photos.r2.dev/?signed=1','https://photos.r2.dev/#fragment','https://user:pass@photos.r2.dev','https://example.r2.cloudflarestorage.com','ftp://photos.r2.dev'])assert.throws(()=>createRoomGalleryR2({...config,publicBaseUrl},{send:async()=>{}}));
+  const approved=createRoomGalleryR2({...config,publicBaseUrl:'https://pub-approved-fixture.r2.dev'},{send:async()=>{}});
+  assert.equal(approved.url('room-photos/'+'k'.repeat(32)+'/original.jpg'),'https://pub-approved-fixture.r2.dev/room-photos/'+'k'.repeat(32)+'/original.jpg','user-approved HTTPS r2.dev origin must preserve object identity');
   const calls=[],client={send:async(command,options)=>{calls.push({command,options});}};
   const r2=createRoomGalleryR2(config,client),key='room-photos/'+'k'.repeat(32)+'/original.jpg';
   await r2.put(key,Buffer.from([255,216,255]));await r2.remove(key);
