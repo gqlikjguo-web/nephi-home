@@ -306,10 +306,15 @@
   ],
   "governancePaths": [
     ".github/core-reliability-policy.json",
+    ".github/protected-acceptance.json",
+    ".github/workflows/codex-integrity.yml",
     ".github/workflows/core-reliability.yml",
+    "pilot/nephi-home-node-pilot-v1/scripts/core-ui-fast-path.js",
     "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/verify-codex-integrity.js",
     "pilot/nephi-home-node-pilot-v1/scripts/run-core-reliability-real.js",
     "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/core-ui-fast-path-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/fixtures/core-reliability-real-cases.json",
     "pilot/nephi-home-node-pilot-v1/tests/core-reliability-real-contract-runner.js",
     "AGENTS.md",
@@ -321,6 +326,7 @@
     "pilot/nephi-home-node-pilot-v1/tests/fixtures/room-gallery-r2dev-approved.patch"
   ],
   "requiredRunners": [
+    "tests/core-ui-fast-path-runner.js",
     "tests/new-core-context-subject-roundtrip-runner.js",
     "tests/new-core-unit-routing-runner.js",
     "tests/new-core-understanding-correction-runner.js",

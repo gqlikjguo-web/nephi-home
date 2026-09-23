@@ -49,7 +49,7 @@
     },
     {
       "path": "pilot/nephi-home-node-pilot-v1/scripts/verify-codex-integrity.js",
-      "sha256": "87c90e31b745251c28bc1ac7eaef2dc8ae7922c54c5bc8464d54705db01c002d",
+      "sha256": "9deba02fb71913624e5dc153f82be2630c1ee50490f585725d61c9f352c9561a",
       "baseline": "accepted-current"
     },
     {
@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/codex-integrity.yml",
-      "sha256": "c568d9f55f19e1be50b9724542423e8ae3159fae8b2834539b4175428e05db2d",
+      "sha256": "ecf0459616f4228782ca84922f5ad4c53159de5d119a3c48018dfd5673a2b7be",
       "baseline": "accepted-current"
     },
     {

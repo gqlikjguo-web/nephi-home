@@ -1,16 +1,22 @@
 {
   "schemaVersion": 1,
-  "baseline": "7c15880e7c25ff2e53e8ae60c607d8efae916cfc",
-  "objective": "Promote the test-accepted guest empty-availability display text only: replace 此區間目前沒有符合條件的可售房型或方案。 with 此日期目前已無空房可預訂。 in guest.js. Preserve all availability logic, data, LINE, and other runtime behavior.",
+  "baseline": "3e99c6fdc3911b26007b228ff0171da371c11fc1",
+  "objective": "Install a trusted actual-Git-diff fast path only for designated public guest display text and guest CSS; preserve the full Core Reliability Gate for every other or mixed change.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    "pilot/nephi-home-node-pilot-v1/public/assets/guest.js"
+    ".github/core-reliability-policy.json",
+    ".github/protected-acceptance.json",
+    ".github/workflows/core-reliability.yml",
+    ".github/workflows/codex-integrity.yml",
+    "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
+    "pilot/nephi-home-node-pilot-v1/scripts/core-ui-fast-path.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/verify-codex-integrity.js",
+    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/core-ui-fast-path-runner.js"
   ],
   "contractChangeAllowed": false,
-  "gateChangeAllowed": false,
-  "affectedCapabilities": [
-    "public-room-display"
-  ],
+  "gateChangeAllowed": true,
+  "affectedCapabilities": [],
   "preExistingUntracked": [],
-  "approvalSource": "User approved promotion of the exact guest.js text replacement from test commit d0db4f60a79972e412fa60cf04a436169e806d7d to production, 2026-09-23. User separately approved updating only this Gate task manifest as the sole additional file, 2026-09-23. No test-only infrastructure, test DB plan, workflow, OIDC, application logic, production data, or contract changes."
+  "approvalSource": "User explicitly approved minimal protected Gate/governance changes solely for pure display-text and pure CSS fast path, 2026-09-23. This task changes no product runtime, Resolver, PostgreSQL fact authority, Context, State, FinalDecision, FinalResponse, API, LINE, inventory, or Contract acceptance. Governance installation itself must remain on the existing full reviewed Gate."
 }
