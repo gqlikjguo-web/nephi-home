@@ -1,22 +1,14 @@
 {
   "schemaVersion": 1,
-  "baseline": "3e99c6fdc3911b26007b228ff0171da371c11fc1",
-  "objective": "Install a trusted actual-Git-diff fast path only for designated public guest display text and guest CSS; preserve the full Core Reliability Gate for every other or mixed change.",
+  "baseline": "b896638807d9ca7daba6986f36a7d64eb31453bf",
+  "objective": "Install the independently reviewed acceptance prerequisite for immediate message processing that may reference verified scoped history; preserve zero fixed waiting, same-guest ordering, deduplication, source-event attribution and cross-scope isolation. No runtime repair is included.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    ".github/core-reliability-policy.json",
-    ".github/protected-acceptance.json",
-    ".github/workflows/core-reliability.yml",
-    ".github/workflows/codex-integrity.yml",
-    "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
-    "pilot/nephi-home-node-pilot-v1/scripts/core-ui-fast-path.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/verify-codex-integrity.js",
-    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/core-ui-fast-path-runner.js"
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-zero-wait-runner.js"
   ],
-  "contractChangeAllowed": false,
-  "gateChangeAllowed": true,
+  "contractChangeAllowed": true,
+  "gateChangeAllowed": false,
   "affectedCapabilities": [],
   "preExistingUntracked": [],
-  "approvalSource": "User explicitly approved minimal protected Gate/governance changes solely for pure display-text and pure CSS fast path, 2026-09-23. This task changes no product runtime, Resolver, PostgreSQL fact authority, Context, State, FinalDecision, FinalResponse, API, LINE, inventory, or Contract acceptance. Governance installation itself must remain on the existing full reviewed Gate."
+  "approvalSource": "User explicitly approved this separate protected acceptance and task-manifest prerequisite PR on 2026-09-24: replace only the rule forbidding prior context with immediate processing that permits verified prior context. Preserve zero fixed waiting, same-guest ordering, deduplication, event ownership and cross-scope isolation. The existing controlled Contract-change owner review remains required. This is the sole production-branch exception; no runtime, data, environment, Gate or other governance changes and no production Render deployment are authorized. Context runtime repair proceeds only on the fixed test branch after this installation."
 }
