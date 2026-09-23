@@ -10,7 +10,7 @@ databases:
     databaseName: nephi_home_node_pilot_test_only
     user: nephi_home_node_pilot_test_only
     region: singapore
-    plan: free
+    plan: 0.1c-256mb
     ipAllowList: []
 
 services:
