@@ -6,7 +6,7 @@ const GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
 const GITHUB_OIDC_JWKS_URL = `${GITHUB_OIDC_ISSUER}/.well-known/jwks`;
 const TEST_ONLY_ACCEPTANCE_AUDIENCE = "junzan-test-only-acceptance";
 const EXPECTED_REPOSITORY = "gqlikjguo-web/nephi-home";
-const EXPECTED_REF = "refs/heads/test-only/node-pilot-integration";
+const EXPECTED_REF = "refs/heads/test-only/junzan-fixed";
 const EXPECTED_WORKFLOW_REF = `${EXPECTED_REPOSITORY}/.github/workflows/test-only-ci.yml@${EXPECTED_REF}`;
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 

@@ -5,7 +5,7 @@ const crypto = require("node:crypto");
 const { createGithubActionsOidcVerifier, GITHUB_OIDC_ISSUER, TEST_ONLY_ACCEPTANCE_AUDIENCE } = require("../lib/test-only-acceptance-oidc");
 
 const repository = "gqlikjguo-web/nephi-home";
-const ref = "refs/heads/test-only/node-pilot-integration";
+const ref = "refs/heads/test-only/junzan-fixed";
 const workflowRef = `${repository}/.github/workflows/test-only-ci.yml@${ref}`;
 const deploymentCommit = "c56c7df564fed841a65c851b94adc7fa820841f5";
 const nowSeconds = 1785800000;

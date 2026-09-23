@@ -2,9 +2,9 @@ name: test-only-ci
 
 on:
   push:
-    branches: [test-only/node-pilot-integration]
+    branches: [test-only/junzan-fixed]
   pull_request:
-    branches: [test-only/node-pilot-integration]
+    branches: [test-only/junzan-fixed]
   workflow_dispatch:
     inputs:
       acceptance_mode:

@@ -2,9 +2,9 @@ name: codex-integrity
 
 on:
   push:
-    branches: [production, test-only/node-pilot-integration]
+    branches: [production, test-only/junzan-fixed]
   pull_request:
-    branches: [production, test-only/node-pilot-integration]
+    branches: [production, test-only/junzan-fixed]
 
 jobs:
   verify-codex-integrity:

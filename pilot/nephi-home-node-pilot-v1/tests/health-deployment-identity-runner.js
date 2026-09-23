@@ -26,7 +26,7 @@ async function main() {
       TEST_ONLY_ENVIRONMENT: "false",
       RENDER_SERVICE_ID: serviceId,
       RENDER_SERVICE_NAME: serviceName,
-      RENDER_GIT_BRANCH: "test-only/node-pilot-integration",
+      RENDER_GIT_BRANCH: "test-only/junzan-fixed",
       RENDER_GIT_COMMIT: commit,
       RENDER_GIT_REPO_SLUG: "gqlikjguo-web/nephi-home",
       [databaseUrlKey]: sensitiveSentinel,
@@ -48,7 +48,7 @@ async function main() {
         deployment: {
           serviceId,
           serviceName,
-          branch: "test-only/node-pilot-integration",
+          branch: "test-only/junzan-fixed",
           commit,
           repoSlug: "gqlikjguo-web/nephi-home"
         }

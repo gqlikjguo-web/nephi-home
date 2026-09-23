@@ -127,7 +127,7 @@ function assertRequiredRunnerChain(script, required) {
     serviceId: "srv-d9bqupbbc2fs73aselig",
     serviceName: "nephi-home-node-pilot-test-only",
     repoSlug: "gqlikjguo-web/nephi-home",
-    branch: "test-only/node-pilot-integration",
+    branch: "test-only/junzan-fixed",
     commit: expectedCommit
   };
   const health = await pollForDeployment({
@@ -1051,8 +1051,8 @@ function assertRequiredRunnerChain(script, required) {
   assert.throws(() => selectAcceptanceMatrix({ matrix: DEPLOYED_ACCEPTANCE_MATRIX, caseIds: ["rg-999-unknown"] }), /acceptance_case_id_unknown/);
   const trustedIdentity = {
     GITHUB_REPOSITORY: "gqlikjguo-web/nephi-home",
-    GITHUB_REF: "refs/heads/test-only/node-pilot-integration",
-    GITHUB_WORKFLOW_REF: "gqlikjguo-web/nephi-home/.github/workflows/test-only-ci.yml@refs/heads/test-only/node-pilot-integration"
+    GITHUB_REF: "refs/heads/test-only/junzan-fixed",
+    GITHUB_WORKFLOW_REF: "gqlikjguo-web/nephi-home/.github/workflows/test-only-ci.yml@refs/heads/test-only/junzan-fixed"
   };
   assert.doesNotThrow(() => validateWorkflowIdentity({ ...trustedIdentity, GITHUB_EVENT_NAME: "workflow_dispatch" }));
   assert.doesNotThrow(() => validateWorkflowIdentity({ ...trustedIdentity, GITHUB_EVENT_NAME: "push" }));
