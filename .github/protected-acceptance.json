@@ -69,7 +69,7 @@
     },
     {
       "path": ".github/workflows/codex-integrity.yml",
-      "sha256": "c568d9f55f19e1be50b9724542423e8ae3159fae8b2834539b4175428e05db2d",
+      "sha256": "82970837d1374c5fe4f5e4acc2228d4cdac2ee663d73beb9d02e6f63a93083c9",
       "baseline": "accepted-current"
     },
     {
