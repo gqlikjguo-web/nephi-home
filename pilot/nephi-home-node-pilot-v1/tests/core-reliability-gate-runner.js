@@ -255,7 +255,18 @@ async function verifyWorkflow() {
     { attempt: "1", head: cliHead, base: cliHead, state: "failure" }
   ]) {
     head = probe.head; base = probe.base;
-    await statusScript(github, context, { env: { GITHUB_RUN_ATTEMPT: probe.attempt, SCOPE_RESULT: "success", GATE_RESULT: "success" } });
+    await statusScript(github, context, { env: { GITHUB_RUN_ATTEMPT: probe.attempt, SCOPE_RESULT: "success", GATE_RESULT: "success", FAST_CLASS: "false", FAST_RESULT: "skipped" } });
+    assert.equal(statuses.at(-1).state, probe.state); assert.equal(statuses.at(-1).sha, cliHead); cases++;
+  }
+  head = cliHead; base = cliBase;
+  for (const probe of [
+    { fastClass: "false", gateResult: "failure", fastResult: "skipped", state: "failure" },
+    { fastClass: "true", gateResult: "skipped", fastResult: "success", state: "success" },
+    { fastClass: "true", gateResult: "skipped", fastResult: "failure", state: "failure" },
+    { fastClass: "true", gateResult: "success", fastResult: "success", state: "failure" }
+  ]) {
+    await statusScript(github, context, { env: { GITHUB_RUN_ATTEMPT: "1", SCOPE_RESULT: "success", GATE_RESULT: probe.gateResult,
+      FAST_CLASS: probe.fastClass, FAST_RESULT: probe.fastResult } });
     assert.equal(statuses.at(-1).state, probe.state); assert.equal(statuses.at(-1).sha, cliHead); cases++;
   }
 }

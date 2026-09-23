@@ -16,6 +16,27 @@ executed. The scope digest cannot be supplied by candidate code. The gate and
 policy are read from the base checkout, not from changed candidate files.
 Review the actual scope and PR diff; an arbitrary task manifest is not approval.
 
+## Public text/CSS fast path
+
+The production-base trusted classifier reads the exact baseline and candidate
+Git blobs and the complete binary diff. It admits only regular-file changes to
+`public/assets/guest.js` display-string literal contents at the enumerated DOM
+text assignments, `public/assets/guest.css` pure styles, and the exact task
+manifest. The manifest must match the actual changed paths and declare no
+Contract or Gate change. A JS operator, API string, non-display literal, CSS
+import/resource reference, other file, or mixed diff takes the existing full
+Gate route. A task declaration alone never selects the fast route.
+
+The fast route checks `git diff --check`, runs
+`first-version-public-admin-runner.js`, binds every result and log digest to the
+candidate SHA, and publishes the existing required candidate status only after
+the PR head and production base are rechecked. A failed runner stops and keeps
+its evidence. The fast route has no `core-scope-approval` environment, live E2E,
+or full core regression. Integrity and protected-acceptance checks still run.
+All other changes retain the human-reviewed full Gate, incident runners,
+affected regression and REAL qualification rules below. Governance changes
+that install or alter this route use that full reviewed Gate.
+
 Protected tests cannot change in ordinary runtime PRs, including changes that
 set `contractChangeAllowed=true`: they return CONTRACT_CHANGE_REQUIRED. A
 contract change needs its own approved review and trusted-baseline installation.

@@ -7,7 +7,33 @@ on:
     branches: [production, test-only/node-pilot-integration]
 
 jobs:
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      fast: ${{ steps.fast.outputs.fast }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: trusted
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify production PR from trusted base and exact Git diff
+        id: fast
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASELINE: ${{ github.event.pull_request.base.sha }}
+          CANDIDATE: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ] || [ ! -f trusted/pilot/nephi-home-node-pilot-v1/scripts/core-ui-fast-path.js ]; then
+            echo 'fast=false' >> "$GITHUB_OUTPUT"
+          else
+            git -C trusted fetch --no-tags origin "$CANDIDATE"
+            node trusted/pilot/nephi-home-node-pilot-v1/scripts/core-ui-fast-path.js classify \
+              --root trusted --baseline "$BASELINE" --candidate "$CANDIDATE"
+          fi
   verify-codex-integrity:
+    needs: classify
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -38,27 +64,49 @@ jobs:
       - run: node tests/verify-protected-acceptance-runner.js
       - run: npm run verify:codex-integrity
       - run: node tests/verify-codex-integrity-runner.js
+      - run: node tests/first-version-public-admin-runner.js
+        if: needs.classify.outputs.fast == 'true'
       - run: npm run test:canonical-golden
+        if: needs.classify.outputs.fast != 'true'
       - run: npm run test:runtime-uniqueness
+        if: needs.classify.outputs.fast != 'true'
       - run: npm run test:provider-fail-closed
+        if: needs.classify.outputs.fast != 'true'
       - run: npm run test:custom-replies
+        if: needs.classify.outputs.fast != 'true'
         env:
           CUSTOM_REPLY_TEST_DATABASE_URL: postgresql://codex_test:codex_test_password@localhost:5432/codex_admin_test
       - run: npm test
+        if: needs.classify.outputs.fast != 'true'
         env:
           CUSTOM_REPLY_TEST_DATABASE_URL: postgresql://codex_test:codex_test_password@localhost:5432/codex_admin_test
       - run: node tests/test-only-conversation-acceptance-api-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/planner-boundary-contract-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/canonical-request-contract-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/conversation-state-v3-runtime-reducer-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/planner-failure-safety-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/planner-semantic-contract-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/v2-runtime-uniqueness-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/final-decision-contract-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/pending-arbitration-contract-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/dialogue-temporal-state-contract-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/relative-date-availability-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/property-line-binding-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/property-line-binding-postgres-webhook-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/property-line-setup-runner.js
+        if: needs.classify.outputs.fast != 'true'
       - run: node tests/postgres-worker-smoke-runner.js
+        if: needs.classify.outputs.fast != 'true'

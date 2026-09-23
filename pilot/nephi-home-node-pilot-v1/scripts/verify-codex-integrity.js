@@ -337,6 +337,7 @@ function verify(root) {
   const workflowPath = requireFile(".github/workflows/codex-integrity.yml", "missing .github/workflows/codex-integrity.yml");
   if (fs.existsSync(workflowPath)) {
     const workflow = readText(workflowPath);
+    const fastEnabled = /^  classify:\s*$/m.test(workflow);
     const requiredWorkflowLines = [
       "uses: actions/checkout@v4",
       "run: npm ci",
@@ -349,7 +350,8 @@ function verify(root) {
       "run: npm run test:provider-fail-closed",
       "run: npm test"
     ];
-    const normalizedLines = workflow.split(/\r?\n/).map((line) => line.trim().replace(/^-[ ]*/, ""));
+    const verifyJob = fastEnabled ? (workflow.match(/^  verify-codex-integrity:\s*\n([\s\S]*?)(?=^  [a-zA-Z0-9_-]+:|(?![\s\S]))/m) || [])[1] || "" : workflow;
+    const normalizedLines = verifyJob.split(/\r?\n/).map((line) => line.trim().replace(/^-[ ]*/, ""));
     const positions = [];
     for (const requiredLine of requiredWorkflowLines) {
       const matches = normalizedLines.reduce((items, line, index) => line === requiredLine ? [...items, index] : items, []);
@@ -361,7 +363,47 @@ function verify(root) {
       failures.push("integrity CI workflow must run checkout, install, protection, integrity, canonical, uniqueness, provider fail-closed, then complete tests in order");
     }
     if (/continue-on-error\s*:\s*true/i.test(workflow)) failures.push("integrity CI workflow must not use continue-on-error for required Gates");
-    if (/^\s*if\s*:/m.test(workflow)) failures.push("integrity CI workflow must not conditionally skip required Gates");
+    if (!fastEnabled) {
+      if (/^\s*if\s*:/m.test(workflow)) failures.push("integrity CI workflow must not conditionally skip required Gates");
+    } else {
+      const classifier = (workflow.match(/^  classify:\s*\n([\s\S]*?)(?=^  [a-zA-Z0-9_-]+:|(?![\s\S]))/m) || [])[1] || "";
+      for (const required of [
+        "fast: ${{ steps.fast.outputs.fast }}",
+        "ref: ${{ github.event.pull_request.base.sha || github.sha }}",
+        "git -C trusted fetch --no-tags origin \"$CANDIDATE\"",
+        "trusted/pilot/nephi-home-node-pilot-v1/scripts/core-ui-fast-path.js classify",
+        "--root trusted --baseline \"$BASELINE\" --candidate \"$CANDIDATE\"",
+        "echo 'fast=false' >> \"$GITHUB_OUTPUT\""
+      ]) if (!classifier.includes(required)) failures.push(`integrity CI trusted classifier is missing: ${required}`);
+      if (!verifyJob.includes("needs: classify")) failures.push("integrity CI must depend on trusted classification");
+      const steps = verifyJob.split(/(?=^      - (?:run|uses): )/m).filter(item => /^      - (?:run|uses): /m.test(item));
+      const fullCommands = [
+        "npm run test:canonical-golden", "npm run test:runtime-uniqueness", "npm run test:provider-fail-closed",
+        "npm run test:custom-replies", "npm test", "node tests/test-only-conversation-acceptance-api-runner.js",
+        "node tests/planner-boundary-contract-runner.js", "node tests/canonical-request-contract-runner.js",
+        "node tests/conversation-state-v3-runtime-reducer-runner.js", "node tests/planner-failure-safety-runner.js",
+        "node tests/planner-semantic-contract-runner.js", "node tests/v2-runtime-uniqueness-runner.js",
+        "node tests/final-decision-contract-runner.js", "node tests/pending-arbitration-contract-runner.js",
+        "node tests/dialogue-temporal-state-contract-runner.js", "node tests/relative-date-availability-runner.js",
+        "node tests/property-line-binding-runner.js", "node tests/property-line-binding-postgres-webhook-runner.js",
+        "node tests/property-line-setup-runner.js", "node tests/postgres-worker-smoke-runner.js"
+      ];
+      const fastOnly = "node tests/first-version-public-admin-runner.js";
+      const fullCondition = "needs.classify.outputs.fast != 'true'";
+      const fastCondition = "needs.classify.outputs.fast == 'true'";
+      for (const step of steps) {
+        const command = (step.match(/^      - run: (.+)$/m) || [])[1];
+        const conditions = [...step.matchAll(/^\s+if: (.+)$/gm)].map(match => match[1]);
+        const expected = fullCommands.includes(command) ? fullCondition : command === fastOnly ? fastCondition : null;
+        if (conditions.length !== (expected ? 1 : 0) || expected && conditions[0] !== expected) {
+          failures.push(`integrity CI step has invalid conditional route: ${command || "action"}`);
+        }
+      }
+      for (const command of [...fullCommands, fastOnly]) {
+        if (steps.filter(step => step.includes(`- run: ${command}\n`)).length !== 1) failures.push(`integrity CI fast route must retain exactly one ${command}`);
+      }
+      if (/^    if:/m.test(verifyJob) || /^    if:/m.test(classifier)) failures.push("integrity CI jobs must not be conditionally skipped");
+    }
   }
 
   const protectedPaths = [
