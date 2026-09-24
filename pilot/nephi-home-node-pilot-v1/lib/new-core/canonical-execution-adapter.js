@@ -7,6 +7,7 @@ const { isCanonicalRequest } = require("../conversation-engine-v2/canonical-requ
 const { isValidatedSemanticUnitFor } = require("./semantic-unit-validator");
 const {
   isValidatedLifecycleDecision,
+  contextSourceForValidatedLifecycleDecision,
   understandingInputForValidatedLifecycleDecision
 } = require("./lifecycle-manager");
 const { isTrustedUnitRoutingDecisionFor } = require("./unit-reply-router");
@@ -284,7 +285,8 @@ function productFromIdentity(identity, kind) {
 }
 
 function contextCycleFor(provenance, contextSnapshot) {
-  const target = provenance.lifecycleDecision.targetRequestCycleId;
+  const source = contextSourceForValidatedLifecycleDecision(provenance.lifecycleDecision);
+  const target = source?.requestCycleId || provenance.lifecycleDecision.targetRequestCycleId;
   if (target === null) return { ok: true, cycle: null };
   const matches = (contextSnapshot.cycles || []).filter((cycle) => cycle && cycle.requestCycleId === target);
   return matches.length === 1
@@ -480,8 +482,9 @@ function buildCompatibilityInvocation({
   temporal,
   guestOperation
 }) {
-  const guestCountCandidate = guestOperation && guestOperation.operation === "SET"
-    ? guestOperation.value : null;
+  const guestCountCandidate = guestOperation
+    ? guestOperation.operation === "SET" ? guestOperation.value : null
+    : contextTaskFor(context.cycle)?.guestCount || null;
   const informationNeed = uniqueSlotOperation(provenance.lifecycleDecision.verifiedSlotOperations, INFORMATION_NEED_SLOT);
   const detailIntent = informationNeed?.operation === "SET" ? informationNeed.value
     : compatibilityDetailIntent(provenance.unit.capability);

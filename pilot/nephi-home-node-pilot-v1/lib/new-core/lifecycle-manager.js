@@ -33,6 +33,7 @@ const PERSISTED_FIELDS = new Set(["guestCount", "lodgingProduct", null]);
 const PERSISTED_PRODUCT_TYPES = new Set(["room_type", "bundle", null]);
 const VALIDATED_LIFECYCLE_DECISIONS = new WeakSet();
 const INPUT_BY_VALIDATED_LIFECYCLE_DECISION = new WeakMap();
+const CONTEXT_SOURCE_BY_VALIDATED_LIFECYCLE_DECISION = new WeakMap();
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -245,7 +246,7 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
       && relation.compatiblePendingTargetIds.length === 0
       && ["supplement", "context_update"].includes(unit.purpose))) {
     action = "NONE";
-  } else if (relation.relationKind === "NEW_REQUEST") {
+  } else if (["NEW_REQUEST", "RELATED_REQUEST"].includes(relation.relationKind)) {
     action = unit.capability !== null || unit.purpose === "context_update" ? "START" : "NONE";
   } else if (unit.purpose === "cancellation" || relation.relationKind === "TERMINATION") {
     const selected = chooseTarget(relation.compatibleExistingTargetIds);
@@ -294,6 +295,12 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
   const value = deepFreeze(detach(decision));
   VALIDATED_LIFECYCLE_DECISIONS.add(value);
   INPUT_BY_VALIDATED_LIFECYCLE_DECISION.set(value, input);
+  const sourceId = relation.relationKind === "RELATED_REQUEST"
+    ? relation.resolvedTargetRequestCycleId : target;
+  if (sourceId !== null && ["START", "CONTINUE", "MODIFY"].includes(action)) {
+    CONTEXT_SOURCE_BY_VALIDATED_LIFECYCLE_DECISION.set(value,
+      input.referenceableCycles.find(cycle => cycle.requestCycleId === sourceId));
+  }
   return { ok: true, code: null, errors: [], value };
 }
 
@@ -307,6 +314,11 @@ function understandingInputForValidatedLifecycleDecision(value) {
     : null;
 }
 
+function contextSourceForValidatedLifecycleDecision(value) {
+  return isValidatedLifecycleDecision(value)
+    ? CONTEXT_SOURCE_BY_VALIDATED_LIFECYCLE_DECISION.get(value) || null : null;
+}
+
 module.exports = {
   LIFECYCLE_FIELDS,
   VERIFIED_SLOT_OPERATION_FIELDS,
@@ -316,5 +328,6 @@ module.exports = {
   validateLifecycleDecision,
   validateLifecycleDecisions,
   isValidatedLifecycleDecision,
+  contextSourceForValidatedLifecycleDecision,
   understandingInputForValidatedLifecycleDecision
 };

@@ -380,7 +380,7 @@ function contextLinkSchema(understandingTurnInput) {
     contextLinkCandidateId: stringSchema(),
     unitId: stringSchema(),
     relationKind: enumSchema(RELATION_KINDS,
-      "Use NEW_REQUEST unless current-source semantic evidence explicitly supplements, modifies, or terminates one compatible prior cycle."),
+      "Use NEW_REQUEST for an independent request. RELATED_REQUEST explicitly cites the same lodging stay for a different capability; other targeted relations supplement, modify, or terminate a compatible prior cycle."),
     currentSourceEvidenceRefs: evidenceArraySchema(),
     referencedHistoryEventRefs: arraySchema(
       historyRefs.length ? { anyOf: historyRefs } : objectSchema({ eventId: stringSchema(), messageRef: stringSchema() }),
@@ -410,8 +410,10 @@ function instructions() {
     "Recent conversation helps interpret language and references but is never a property-fact source. Evidence must cite exact C01 sourceEvents UTF-16 coordinates and quote text.",
     "When the current source message supplies missing values for a prior pending request, represent the composite lodging meaning with its trusted capability and subject identity, use SUPPLEMENT, cite the exact prior history event/message refs, and never emit or infer an internal requestCycleId.",
     "Context relation is semantic evidence, never a lifecycle decision. Use NEW_REQUEST for an independent actionable request, SUPPLEMENT for additional information completing an existing request, MODIFICATION for an explicit change to an existing request, TERMINATION for an explicit end, and NONE only when no conversational relation is expressed. The deterministic core alone chooses START, CONTINUE, MODIFY, END, or NONE.",
+    "Use RELATED_REQUEST only when current-source meaning explicitly asks a different lodging capability about the same stay and same lodging subject, citing the exact prior event/message refs that establish that stay. This begins a separate request and reuses only verified applicable conditions; it never changes the prior request into the new capability or reuses its answers as facts. Do not copy prior dates into current-source temporal evidence. Independent requests, unrelated subjects, uncertain references or new stays must not inherit prior conditions.",
+    "For an explicit change of the lodging product within an existing request, use MODIFICATION with exact history refs and a source-grounded product SET or CLEAR slot matching the new subject. Keep other unchanged conditions in the referenced cycle; do not relabel historical values as current-source evidence.",
     "Select responsibility by communicative meaning, not grammatical question form. Use conversational_statement with capability null, null subject identity, and relation NONE for personal narration, deliberation or social language that seeks no property information or action and neither supplies pending information nor changes or ends an existing request. Interrogative form alone does not establish responsibility. A genuine question seeking permission, policy or a service still requires a supported capability even when the formal data is unregistered; do not treat lack of a known answer as lack of a request. Do not use conversational_statement for an unclear or unsupported actual request; preserve that request as unsupported so the deterministic core can fail closed.",
-    "SUPPLEMENT, MODIFICATION, or TERMINATION requires current-source evidence plus exact referencedHistoryEventRefs. Topic proximity, recency, or a shared date/availability word is not relation evidence. A complete standalone lodging request is NEW_REQUEST with no history refs.",
+    "RELATED_REQUEST, SUPPLEMENT, MODIFICATION, or TERMINATION requires current-source evidence plus exact referencedHistoryEventRefs. Topic proximity, recency, or a shared date/availability word is not relation evidence. A complete standalone lodging request is NEW_REQUEST with no history refs.",
     "For that continuation, compare only the supplied candidate values with the cycle's missingFields; deterministic routing alone decides whether to answer or clarify.",
     "Capability, subject, stay dependency, and safety meaning are source-derived candidates, but their combination must match one capability-discriminated schema branch. Never use a null subject kind, catalog identity, stay dependency, purpose, or safety shape that conflicts with the selected capability. Context relation remains separate semantic evidence. Never propose ANSWER, CLARIFY, HANDOFF, NO_REPLY, START, CONTINUE, MODIFY, END, or lifecycle NONE.",
     "An occupancy quantity is a guest_count slot and must not by itself select a matched_room_set subject. Select matched_room_set only when the source explicitly names a lodging product type or room category independently of occupancy.",
@@ -887,7 +889,7 @@ function envelopeWireFailure(value, understandingTurnInput) {
     ));
     return false;
   };
-  const targetedRelations = new Set(["SUPPLEMENT", "MODIFICATION", "TERMINATION"]);
+  const targetedRelations = new Set(["RELATED_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION"]);
   for (const [index, candidate] of links.entries()) {
     if (!targetedRelations.has(candidate.relationKind)) continue;
     const unit = units.find((item) => item.unitId === candidate.unitId
@@ -900,7 +902,7 @@ function envelopeWireFailure(value, understandingTurnInput) {
       .flatMap((event) => event.referenceableCycleIds));
     const boundCycles = understandingTurnInput.referenceableCycles
       .filter((cycle) => boundCycleIds.has(cycle.requestCycleId));
-    const compatibleCycles = boundCycles.filter((cycle) => cycleIdentityCompatible(unit, cycle));
+    const compatibleCycles = boundCycles.filter((cycle) => cycleIdentityCompatible(unit, cycle, candidate.relationKind));
     if (boundCycles.length > 0 && compatibleCycles.length === 0) {
       return { code: "UNDERSTANDING_SCHEMA_INVALID", violation: {
         validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID",
@@ -1099,7 +1101,7 @@ function correctionUnitFailure(failure, output, input, operational) {
     // C01 exposes conversation history separately from formal request bindings.
     // A targeted relation citing only explicitly unbound events cannot identify
     // a cycle. Correct the relation using the same snapshot; never infer a target.
-    const unboundTarget = links.some(link => ["SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(link.relationKind)
+    const unboundTarget = links.some(link => ["RELATED_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(link.relationKind)
       && link.referencedHistoryEventRefs.length > 0
       && link.referencedHistoryEventRefs.every(ref => input.recentConversation.some(event =>
         event.eventId === ref.eventId && event.messageRef === ref.messageRef && event.referenceableCycleIds.length === 0)));

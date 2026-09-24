@@ -783,6 +783,21 @@ function resolveCanonicalTemporal({
 
   const durationOnly = explicitNights(rawText);
   if (durationOnly && !expressionBeforeNights(rawText)) {
+    if (allowContextReuse && approvedContext) {
+      // The existing Context authority supplies the start; this Temporal
+      // authority alone derives the new end from the source-validated duration.
+      const reused = resolvedContext({ rawText, timezone, applicableTaskIds: taskIds,
+        approvedContext: { ...approvedContext, checkOut: null, nights: null },
+        plannerCandidate: { ...plannerCandidate, nightsCandidate: durationOnly },
+        sourceEvidenceRefs: approvedContext.sourceEvidenceRefs || [] });
+      if (reused) {
+        reused.fields.nights.sourceEvidenceRefs = sourceEvidenceRefs(evidence);
+        reused.fields.checkOut.sourceEvidenceRefs = sourceEvidenceRefs([
+          ...(approvedContext.sourceEvidenceRefs || []), ...evidence
+        ]);
+        return reused;
+      }
+    }
     return withFieldMetadata({
       rawText,
       expressionType: "duration_only",

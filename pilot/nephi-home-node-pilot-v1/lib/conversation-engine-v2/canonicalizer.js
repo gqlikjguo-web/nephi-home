@@ -155,7 +155,7 @@ function canonicalizeExecutionItem({
   const plannerStay = normalizedTaskStay(plannerTask);
   const evidenceRefs = sourceEvidenceRefsForRelation(relation);
   const reducerContext = item.transition && item.transition.contextTask || null;
-  const approvedContext = reducerContext && !plannerStay.dateExpression.rawText
+  const approvedContext = reducerContext
     ? { checkIn: reducerContext.checkIn, checkOut: reducerContext.checkOut, nights: null, sourceEvidenceRefs: [] }
     : null;
   const temporalState = resolveCanonicalTemporal({

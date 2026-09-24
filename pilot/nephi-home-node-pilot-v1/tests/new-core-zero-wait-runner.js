@@ -13,10 +13,10 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
       await x.post([x.event('prior')]);await x.done('prior');
       await x.post([x.event('next')]);await x.done('next');
       assert.ok(x.calls[1].priorRevision>x.calls[0].priorRevision);
-      assert.deepEqual(x.calls[1].c01.recentConversation,[],'Prior guest semantics must not enter this event');
-      assert.deepEqual(x.calls[1].c01.referenceableCycles,[],'Persisted State must not supply a semantic target');
+      assert.ok(x.calls[1].c01.recentConversation.every(event=>event.eventId==='prior'),'Only the verified prior scoped event may enter C01');
+      assert.ok(x.calls[1].c01.referenceableCycles.every(cycle=>x.core[0].state.tasks.some(task=>task.taskId===cycle.requestCycleId)),'Every semantic target must belong to persisted scoped State');
     } finally {await x.app.stop();}
-    console.log('PASS independent C01 input with retained State');return;
+    console.log('PASS immediate C01 input with scoped persisted State');return;
   }
   assert.equal(runtimeConfig({}).conversationDebounceMs, 0, 'Production default must not wait for another message');
   let release, timers = 0;
@@ -74,11 +74,11 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
       assert.equal(x.core.find(c=>c.event===id).earliestFailure,null);
     }
     assert.ok(x.calls[1].priorRevision>x.calls[0].priorRevision);
-    assert.deepEqual(x.calls[1].c01.recentConversation,[]);
-    assert.deepEqual(x.calls[1].c01.referenceableCycles,[]);
+    assert.ok(x.calls[1].c01.recentConversation.every(event=>event.eventId==='first'));
+    assert.ok(x.calls[1].c01.referenceableCycles.every(cycle=>x.core[0].state.tasks.some(task=>task.taskId===cycle.requestCycleId)));
     await x.post([x.event('third')]);await x.done('third');
-    assert.deepEqual(x.calls[2].c01.recentConversation,[]);
-    assert.deepEqual(x.calls[2].c01.referenceableCycles,[]);
+    assert.ok(x.calls[2].c01.recentConversation.every(event=>['first','second'].includes(event.eventId)));
+    assert.ok(x.calls[2].c01.referenceableCycles.every(cycle=>x.core[1].state.tasks.some(task=>task.taskId===cycle.requestCycleId)));
     const ids=x.core.map(c=>c.state.tasks.map(t=>t.taskId));
     assert.ok(ids[1].includes(ids[0][0]),'Previous State remains persisted');
     assert.equal(new Set(x.core.flatMap(c=>c.state.tasks.map(t=>t.taskId))).size,3,'Each event owns a distinct request cycle');

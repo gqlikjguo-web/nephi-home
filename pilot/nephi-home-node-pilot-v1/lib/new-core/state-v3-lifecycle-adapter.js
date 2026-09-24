@@ -4,6 +4,7 @@ const { singleSlotOperation } = require("./contracts/semantic-position");
 
 const {
   isValidatedLifecycleDecision,
+  contextSourceForValidatedLifecycleDecision,
   understandingInputForValidatedLifecycleDecision
 } = require("./lifecycle-manager");
 const { isTrustedUnitAggregationResult } = require("./unit-aggregator");
@@ -97,6 +98,7 @@ function taskCreationFor(outcome) {
   const product = taskProduct(unit, decision);
   if (!product) return null;
   const temporal = unit.temporalCandidate || {};
+  const source = contextSourceForValidatedLifecycleDecision(decision)?.confirmedValues || {};
   const availableDates = unit.capability === "available_dates";
   const guestOperations = decision.verifiedSlotOperations.filter((item) => (
     item.persistedField === "guestCount"
@@ -121,9 +123,9 @@ function taskCreationFor(outcome) {
     productId: product.productId,
     roomTypeId: product.roomTypeId,
     bundleId: product.bundleId,
-    checkIn: availableDates ? null : temporal.checkInCandidate || null,
-    checkOut: availableDates ? null : temporal.checkOutCandidate || null,
-    guestCount: guestOperation && guestOperation.operation === "SET" ? guestOperation.value : null,
+    checkIn: availableDates ? null : unit.temporalCandidate ? temporal.checkInCandidate || null : source.checkIn || null,
+    checkOut: availableDates ? null : unit.temporalCandidate ? temporal.checkOutCandidate || null : source.checkOut || null,
+    guestCount: guestOperation ? guestOperation.operation === "SET" ? guestOperation.value : null : source.guestCount || null,
     searchFrom: availableDates ? temporal.checkInCandidate || null : null,
     searchTo: availableDates ? temporal.checkOutCandidate || null : null,
     entityId: product.productId,

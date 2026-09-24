@@ -12,7 +12,7 @@ const CONTEXT_LINK_FIELDS = Object.freeze([
   "referencedHistoryEventRefs"
 ]);
 const HISTORY_EVENT_REF_FIELDS = Object.freeze(["eventId", "messageRef"]);
-const RELATION_KINDS = new Set(["NEW_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION", "NONE"]);
+const RELATION_KINDS = new Set(["NEW_REQUEST", "RELATED_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION", "NONE"]);
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -60,7 +60,7 @@ function validateContextLinkCandidate(value) {
   }
   if (["NEW_REQUEST", "NONE"].includes(value && value.relationKind)
     && Array.isArray(historyRefs) && historyRefs.length !== 0) errors.push("referencedHistoryEventRefs.forbidden");
-  if (["SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(value && value.relationKind)
+  if (["RELATED_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(value && value.relationKind)
     && Array.isArray(historyRefs) && historyRefs.length === 0) errors.push("referencedHistoryEventRefs.required");
   const uniqueErrors = [...new Set(errors)];
   return uniqueErrors.length

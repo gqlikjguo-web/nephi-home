@@ -24,7 +24,7 @@ const {
 } = require("./turn-input-adapter");
 const { contextRelationEvidenceForValidatedLink } = require("./context-link-validator");
 const { projectCapabilityRegistry } = require("./semantic-unit-validator");
-const { createLifecycleDecision, isValidatedLifecycleDecision } = require("./lifecycle-manager");
+const { createLifecycleDecision, isValidatedLifecycleDecision, contextSourceForValidatedLifecycleDecision } = require("./lifecycle-manager");
 const { createUnitReplyRoutingRegistry, createUnitReadiness, createTrustedOperatorSafetyPolicy, createUnitRoutingDecision, createPropertySuppressedNoReplyDecision } = require("./unit-reply-router");
 const { createCanonicalizerInputItem, executeCanonicalizerInputItem } = require("./canonical-execution-adapter");
 const { aggregateUnitOutcomes } = require("./unit-aggregator");
@@ -330,7 +330,11 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   if (!adapted.ok) { const error = new Error(adapted.code); error.code = adapted.code; throw error; }
   const formalRequests = canonicalItems.map((item) => {
     const binding = adapted.value.canonicalTaskBindings.find((candidate) => candidate.unitId === item.unitId);
-    return buildCanonicalFormalRequest({ property, canonicalRequest: item.canonicalRequest, requestCycleId: binding.requestCycleId, confirmedInputs: executionConditionsV3(state, item, binding.requestCycleId) });
+    const decision = successful.find(outcome => outcome.canonicalItem === item).lifecycleDecision;
+    const source = contextSourceForValidatedLifecycleDecision(decision);
+    // C05/C06 alone authorize condition reuse. Keep the new request identity;
+    // project existing State conditions and their original quantity evidence.
+    return buildCanonicalFormalRequest({ property, canonicalRequest: item.canonicalRequest, requestCycleId: binding.requestCycleId, confirmedInputs: executionConditionsV3(state, item, source?.requestCycleId || binding.requestCycleId) });
   });
   const queryPlans = formalRequests.map(buildCanonicalQueryPlan).filter(Boolean);
   const requestEvidence = outcomes.map(item => {

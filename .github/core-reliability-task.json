@@ -1,23 +1,51 @@
 {
   "schemaVersion": 1,
-  "baseline": "7c15880e7c25ff2e53e8ae60c607d8efae916cfc",
-  "objective": "Establish the fixed test branch from the exact production SHA with only the paid test database Blueprint plan and test-only branch identity updates. Preserve production application behavior and do not send real LINE messages.",
+  "baseline": "d0db4f60a79972e412fa60cf04a436169e806d7d",
+  "objective": "Repair verified Context continuity in the fixed test environment: formal entry history wiring, completed-event provenance publication before releasing same-scope processing, and explicitly evidenced same-lodging cross-capability condition reuse. Preserve immediate processing, ordering, deduplication, event ownership, scope isolation, single State/lifecycle authority and Resolver/PostgreSQL facts. No runtime release to production.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    ".github/workflows/codex-integrity.yml",
-    ".github/workflows/test-only-ci.yml",
-    "render.yaml",
-    "pilot/nephi-home-node-pilot-v1/lib/test-only-acceptance-oidc.js",
-    "pilot/nephi-home-node-pilot-v1/tests/deployed-conversation-acceptance-contract-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/health-deployment-identity-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/test-only-acceptance-oidc-runner.js"
+    "pilot/nephi-home-node-pilot-v1/server.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/application-service.js",
+    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/canonicalizer.js",
+    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/temporal-resolver.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/contracts/context-link-candidate.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/context-link-validator.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/lifecycle-manager.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/unit-reply-router.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/canonical-execution-adapter.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/state-v3-lifecycle-adapter.js",
+    "pilot/nephi-home-node-pilot-v1/lib/providers/openai-understanding-v1.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-zero-wait-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-relative-temporal-contract-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-context-continuity-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-context-burst-provenance-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-same-lodging-context-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/helpers/new-core-context-scenarios.js"
   ],
   "contractChangeAllowed": true,
   "gateChangeAllowed": false,
   "affectedCapabilities": [
-    "test-only-deployment-identity",
-    "test-only-acceptance"
+    "context",
+    "temporal",
+    "understanding",
+    "transport"
   ],
   "preExistingUntracked": [],
-  "approvalSource": "User explicitly approved a new fixed test branch from production SHA 7c15880e7c25ff2e53e8ae60c607d8efae916cfc, inclusion of the ff04370 test DB plan correction, and only necessary test-only branch identity changes on 2026-09-23. No production, Context, real LINE send, or production DB change is authorized."
+  "acceptedContractInstallation": {
+    "pullRequest": 12,
+    "candidateSha": "3043073aedcecfc06940d73dd8c7e7b206e5164b",
+    "mergeSha": "967481deb64651f23b8122617c7f58c9b96088b9",
+    "gateRunId": 35900346249,
+    "protectedPath": "pilot/nephi-home-node-pilot-v1/tests/new-core-zero-wait-runner.js",
+    "installedSha256": "9b672bc004f97a51f693151dc1f2607c268f4fc4166791a71500bd4047ffa442"
+  },
+  "acceptedContractRetirement": {
+    "pullRequest": 13,
+    "candidateSha": "d8c6fa918669a8c4307b7a7d7bfdc15304263092",
+    "mergeSha": "1cbcbca7405731e00a41d4a7bb75af27aa427ebe",
+    "gateRunId": 35981842900,
+    "protectedPath": "pilot/nephi-home-node-pilot-v1/tests/new-core-relative-temporal-contract-runner.js",
+    "installedSha256": "adbcffd032627e467a5061e3b5033ba48bb7bac2fcc4845f2ffdbcca9bb861de"
+  },
+  "approvalSource": "User explicitly approved continuing the existing Context repair, same-lodging cross-capability evidence contract, test-only commit/push/deploy and real validation. PR #12 owner review and core-scope-approval completed; its exact candidate Gate passed and the prerequisite was merged. User then approved retirement of the three proven obsolete no-Context supplement assertions; PR #13 independent owner review and bound core-scope-approval completed, its unchanged required Gate passed 117/117, and the retirement was merged. Only the exact installed protected test content from these two specification PRs is carried into the fixed test worktree. No Gate edits, extra persisted schema or authority, production runtime/service/DB changes, real LINE sends, or repetition of the five initial OpenAI investigation calls."
 }
