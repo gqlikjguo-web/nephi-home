@@ -1495,15 +1495,22 @@ function createApp(options = {}) {
     return result;
   }};
   const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: testOnlyLineMessageTrace.active, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null, lineEngine: newCoreLineEngine });
+  const manualLineTransport = require("./lib/test-only-manual-line-transport").createTestOnlyManualLineTransport({
+    enabled: testOnlyEnvironment, engineAvailable: Boolean(newCoreLineEngine), env: runtimeEnv,
+    persistence: providers.persistence, now, handleMessage: input => sharedLineWebhookHandler(input)
+  });
+  // The existing injected manual executor remains a component-test seam. The
+  // deployed test page always enters the production message handler below.
+  const manualProductionEntry = testOnlyEnvironment && typeof options.newCoreManualTestExecuteTurn !== "function";
   const manualTestFactsDatabaseUrl = String(runtimeEnv.NEW_CORE_MANUAL_TEST_FACTS_DATABASE_URL || "").trim();
-  const ownedNewCoreManualTestFactsProviders = !options.newCoreManualTestFactsProviders && testOnlyEnvironment && manualTestFactsDatabaseUrl
+  const ownedNewCoreManualTestFactsProviders = !manualProductionEntry && !options.newCoreManualTestFactsProviders && testOnlyEnvironment && manualTestFactsDatabaseUrl
     ? createProviders({ databaseUrl: manualTestFactsDatabaseUrl }) : null;
-  const newCoreManualTestFactsProviders = options.newCoreManualTestFactsProviders || ownedNewCoreManualTestFactsProviders || (!testOnlyEnvironment ? providers : null);
+  const newCoreManualTestFactsProviders = manualProductionEntry ? providers : options.newCoreManualTestFactsProviders || ownedNewCoreManualTestFactsProviders || (!testOnlyEnvironment ? providers : null);
   const newCoreManualTestFactsService = newCoreManualTestFactsProviders
     ? options.newCoreManualTestFactsService || (newCoreManualTestFactsProviders === providers ? service : createMvpService(newCoreManualTestFactsProviders, { now, safeTraceFormatter: formatSafeTestOnlyConversationTrace }))
     : null;
   const newCoreManualTest = newCoreManualTestFactsProviders
-    ? createNewCoreManualTestService({ commercialController, persistence: providers.kind === "postgres" ? providers.persistence : null, providers, service, factsProviders: newCoreManualTestFactsProviders, factsService: newCoreManualTestFactsService, apiKey: String(runtimeEnv.OPENAI_API_KEY || ""), publicBaseUrl: publicBrand.publicBaseUrl, now, ...(typeof options.newCoreManualTestExecuteTurn === "function" ? { executeTurn: options.newCoreManualTestExecuteTurn } : {}) })
+    ? createNewCoreManualTestService({ commercialController, persistence: providers.kind === "postgres" ? providers.persistence : null, providers, service, factsProviders: newCoreManualTestFactsProviders, factsService: newCoreManualTestFactsService, apiKey: String(runtimeEnv.OPENAI_API_KEY || ""), publicBaseUrl: publicBrand.publicBaseUrl, now, ...(manualProductionEntry ? { dispatchMessage: manualLineTransport.dispatch } : {}), ...(typeof options.newCoreManualTestExecuteTurn === "function" ? { executeTurn: options.newCoreManualTestExecuteTurn } : {}) })
     : null;
   const customReplyTestHandler = async (body = {}, trustedContext = {}) => {
     const propertyId = String(body.propertyId || body.customerId || "").trim();
@@ -1616,14 +1623,17 @@ function createApp(options = {}) {
     : null;
   const claimEvent = (input) => providers.persistence.claimMessageEvent(input.customerId, input.channelId, input.eventId, { lineUserId: String(input.lineUserId || ""), eventTimestamp: input.eventTimestamp || "", guestMessage: String(input.messageText || ""), replyType: "processing", replyText: "", route: "", decisionReason: "", humanHandoff: false, silentIgnore: false });
   const updateEventStatus = (customerId, channelId, eventId, patch) => providers.persistence.updateMessageEvent(customerId, channelId, eventId, patch);
-  const sharedLineWebhookHandler = async ({ rawBody, signature, webhookKey }) => {
+  const sharedLineWebhookHandler = async ({ rawBody, signature, webhookKey, manualTransport }) => {
+    // This object can only originate from the authenticated manual route, never
+    // from a webhook body, header, query parameter, or client-supplied identity.
+    const browserTransport = manualLineTransport.recognizes(manualTransport) ? manualTransport : null;
     if (!lineBindingService) throw new AppError(503, "LINE_BINDING_WEBHOOK_NOT_CONFIGURED", "LINE webhook is not configured");
-    const binding = lineBindingService.resolve(webhookKey, { profileSource: true });
+    const binding = browserTransport ? browserTransport.binding : lineBindingService.resolve(webhookKey, { profileSource: true });
     if (!binding) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE webhook is unavailable");
-    if (!validateSignature(rawBody, binding.channelSecret, String(signature || ""))) throw new AppError(401, "INVALID_LINE_SIGNATURE", "Invalid LINE signature");
+    if (!browserTransport && !validateSignature(rawBody, binding.channelSecret, String(signature || ""))) throw new AppError(401, "INVALID_LINE_SIGNATURE", "Invalid LINE signature");
     let payload; try { payload = JSON.parse(rawBody.toString("utf8")); } catch { throw new AppError(400, "INVALID_JSON", "Request body must be valid JSON"); }
     const observedAt = now().toISOString();
-    try {
+    if (!browserTransport) try {
       lineBindingService.markWebhookObserved(webhookKey, observedAt);
     } catch (error) {
       console.error("LINE webhook observation update failed", {
@@ -1633,7 +1643,7 @@ function createApp(options = {}) {
     }
     const id = binding.propertyId;
     if (!providers.customerSettings.getProperty(id)) throw new AppError(404, "LINE_BINDING_NOT_FOUND", "LINE webhook is unavailable");
-    try {
+    if (!browserTransport) try {
       lineBindingService.recordValidWebhook(id, observedAt);
     } catch (error) {
       console.error("Valid LINE webhook update failed", {
@@ -1642,11 +1652,13 @@ function createApp(options = {}) {
       });
     }
     const channelId = `line-binding:${crypto.createHash("sha256").update(binding.webhookKey).digest("hex").slice(0, 24)}`;
+    const browserCompletions = [];
     for (const event of (payload.events || []).filter((item) => item && item.type === "message" && item.message && item.message.type === "text" && item.replyToken)) {
       const input = { customerId: id, channelId, lineUserId: String(event.source && event.source.userId || ""), eventId: String(event.webhookEventId || event.message.id || ""), eventTimestamp: event.timestamp || "", messageText: event.message.text || "" };
       if (!(await claimEvent(input)).claimed) continue;
       testOnlyLineMessageTrace.begin({ propertyId: id, ...input });
-      void root.coordinator.enqueue(input).then(async (result) => {
+      const completion = root.coordinator.enqueue(input).then(async (result) => {
+        if (browserTransport) browserTransport.result = result;
         if (require("./lib/conversation-engine-v2/coordinator").isMergedTransportResult(result,input)) {
           const transport = {traceId:result.traceId,eventId:input.eventId,propertyId:id,stage:"line_transport",
             disposition:"MERGED",targetEventId:result.transportDisposition.targetEventId,
@@ -1694,7 +1706,7 @@ function createApp(options = {}) {
         }
         try {
           traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_attempt", attempted: true, delivered: false, replyText: lineReplyText });
-          await (replyClient ? replyClient({ channelAccessToken: binding.channelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: binding.channelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: lineMessages });
+          await (browserTransport ? browserTransport.replyClient : replyClient ? replyClient({ channelAccessToken: binding.channelAccessToken }) : new messagingApi.MessagingApiClient({ channelAccessToken: binding.channelAccessToken })).replyMessageWithHttpInfo({ replyToken: event.replyToken, messages: lineMessages });
           traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "reply_succeeded", attempted: true, delivered: true, replyText: lineReplyText });
           await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "reply_succeeded", replyDelivered: true, deliveryErrorCode: "" });
           await persistTrace(); acceptanceTraces.delete(result.traceId);
@@ -1709,11 +1721,13 @@ function createApp(options = {}) {
           ? {processingStatus:"no_reply",shouldReply:false,noReply:true,replyDelivered:false,replyText:"",
             decisionReason:error.reason,needsReview:error.reason === "ACCOUNTING_UNAVAILABLE",deliveryErrorCode:""}
           : { processingStatus: "processing_failed", replyDelivered: false, needsReview: true, deliveryErrorCode: "message_processing_exception" }));
+      if (browserTransport) browserCompletions.push(completion);
       // Best-effort auxiliary metadata, independent of message processing/ACK.
       // The profile provider is nonblocking and enforces short database timeouts.
-      if (event.source?.type === "user") void lineProfileService.observe({propertyId:id,channelId,userId:input.lineUserId,
+      if (!browserTransport && event.source?.type === "user") void lineProfileService.observe({propertyId:id,channelId,userId:input.lineUserId,
         eventId:input.eventId,destination:payload.destination,credentialVersion:binding.profileCredentialVersion});
     }
+    if (browserTransport) await Promise.all(browserCompletions);
     return { accepted: true };
   };
   const roomGalleryRuntime = require("./lib/room-gallery-runtime").createRoomGalleryRuntime({databaseUrl:config.databaseUrl,env:runtimeEnv});

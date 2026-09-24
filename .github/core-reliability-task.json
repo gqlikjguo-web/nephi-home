@@ -1,60 +1,20 @@
 {
   "schemaVersion": 1,
-  "baseline": "d0db4f60a79972e412fa60cf04a436169e806d7d",
-  "objective": "Repair verified Context continuity in the fixed test environment: formal entry history wiring, completed-event provenance publication before releasing same-scope processing, and explicitly evidenced same-lodging cross-capability condition reuse. Preserve immediate processing, ordering, deduplication, event ownership, scope isolation, single State/lifecycle authority and Resolver/PostgreSQL facts. No runtime release to production. The saved real dates-first Context test also proves C08 rejects overlapping valid evidence refs for one unique temporal occurrence; repair only source projection so this request can establish State, preserving ambiguity across distinct events/occurrences and the same canonical Temporal authority.",
+  "baseline": "dc39c78992269198ed45ffd4b8560c5e0cfcba61",
+  "objective": "Make the existing fixed-test manual page represent the actual production message ingress: use the same message claim/persistence, coordinator, production adapter, history, shared core and test PostgreSQL; replace only outer LINE receive/reply transport with browser input/output. Preserve existing Context code, model, State/schema/authority, production behavior and access controls. No production release or real LINE operation.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
     "pilot/nephi-home-node-pilot-v1/server.js",
-    "pilot/nephi-home-node-pilot-v1/lib/new-core/application-service.js",
-    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/canonicalizer.js",
-    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/temporal-resolver.js",
-    "pilot/nephi-home-node-pilot-v1/lib/new-core/contracts/context-link-candidate.js",
-    "pilot/nephi-home-node-pilot-v1/lib/new-core/context-link-validator.js",
-    "pilot/nephi-home-node-pilot-v1/lib/new-core/lifecycle-manager.js",
-    "pilot/nephi-home-node-pilot-v1/lib/new-core/unit-reply-router.js",
-    "pilot/nephi-home-node-pilot-v1/lib/new-core/canonical-execution-adapter.js",
-    "pilot/nephi-home-node-pilot-v1/lib/new-core/state-v3-lifecycle-adapter.js",
-    "pilot/nephi-home-node-pilot-v1/lib/providers/openai-understanding-v1.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-zero-wait-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-relative-temporal-contract-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-context-continuity-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-context-burst-provenance-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-same-lodging-context-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/helpers/new-core-context-scenarios.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-context-temporal-provenance-runner.js"
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/manual-test-service.js",
+    "pilot/nephi-home-node-pilot-v1/lib/test-only-manual-line-transport.js",
+    "pilot/nephi-home-node-pilot-v1/public/assets/admin-new-core-test.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-production-entry-runner.js"
   ],
-  "contractChangeAllowed": true,
+  "contractChangeAllowed": false,
   "gateChangeAllowed": false,
   "affectedCapabilities": [
-    "context",
-    "temporal",
-    "understanding",
     "transport"
   ],
   "preExistingUntracked": [],
-  "acceptedContractInstallation": {
-    "pullRequest": 12,
-    "candidateSha": "3043073aedcecfc06940d73dd8c7e7b206e5164b",
-    "mergeSha": "967481deb64651f23b8122617c7f58c9b96088b9",
-    "gateRunId": 35900346249,
-    "protectedPath": "pilot/nephi-home-node-pilot-v1/tests/new-core-zero-wait-runner.js",
-    "installedSha256": "9b672bc004f97a51f693151dc1f2607c268f4fc4166791a71500bd4047ffa442"
-  },
-  "acceptedContractRetirement": {
-    "pullRequest": 13,
-    "candidateSha": "d8c6fa918669a8c4307b7a7d7bfdc15304263092",
-    "mergeSha": "1cbcbca7405731e00a41d4a7bb75af27aa427ebe",
-    "gateRunId": 35981842900,
-    "protectedPath": "pilot/nephi-home-node-pilot-v1/tests/new-core-relative-temporal-contract-runner.js",
-    "installedSha256": "adbcffd032627e467a5061e3b5033ba48bb7bac2fcc4845f2ffdbcca9bb861de"
-  },
-  "approvalSource": "User explicitly approved continuing the existing Context repair, same-lodging cross-capability evidence contract, test-only commit/push/deploy and real validation. PR #12 owner review and core-scope-approval completed; its exact candidate Gate passed and the prerequisite was merged. User then approved retirement of the three proven obsolete no-Context supplement assertions; PR #13 independent owner review and bound core-scope-approval completed, its unchanged required Gate passed 117/117, and the retirement was merged. Only the exact installed protected test content from these two specification PRs is carried into the fixed test worktree. No Gate edits, extra persisted schema or authority, production runtime/service/DB changes, real LINE sends, or repetition of the five initial OpenAI investigation calls.",
-  "recordedContextPrerequisite": {
-    "traceId": "7052c63e-f95c-49a8-b46a-572fee3bdfd2",
-    "failureCode": "CANONICAL_INPUT_INCOMPLETE",
-    "baseline": "d0db4f60a79972e412fa60cf04a436169e806d7d",
-    "candidate": "93c7ab2ec7c668c05911364e6c7f61818b17471d",
-    "unchangedFailingHelperSha256": "1a80ba3c84607fa700d84158d4b3db9210d0b08b1804121bbde8416e1ce2725f",
-    "scope": "C08 exact temporal occurrence provenance; no new contract, persisted schema or authority"
-  }
+  "approvalSource": "User stopped manual acceptance and explicitly approved reusing /admin/new-core-test through the existing production message path with browser-only transport, deterministic integration then minimal real OpenAI/test PostgreSQL E2E and fixed-test deployment. Context repair, production changes, costly evidence repetition, prefilled State/history and any real LINE transport are prohibited."
 }

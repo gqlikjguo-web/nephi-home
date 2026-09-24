@@ -205,6 +205,11 @@ async function executeNewCoreManualTurn(args) {
     scope: args.state.scope,
     lifecycleDecisionIdPrefix: "manual"
   });
+  return projectTurnDiagnostics(result, args.input.traceId);
+}
+
+function projectTurnDiagnostics(result, traceId) {
+  // Projection only: production ingress already executed and saved its own State.
   const { artifacts, ...coreResult } = result;
   const { understanding, outcomes, aggregation, adapted, previousState, contextCandidates } = artifacts;
   const understandingEvidence = understanding[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC]
@@ -220,7 +225,7 @@ async function executeNewCoreManualTurn(args) {
       ? { reason: "START_CLARIFY_MAPPING_EMPTY", failureCode: "START_CLARIFY_TASK_CREATION_MISSING" }
       : { reason: "NO_START_CLARIFY_OUTCOME", failureCode: null };
   const stateTransitionDiagnostics = {
-    traceId: args.input.traceId,
+    traceId,
     c09Outcomes: aggregation.unitOutcomes.map((outcome) => ({
       unitId: outcome.unitId,
       purpose: outcome.unit.purpose,
@@ -248,7 +253,7 @@ async function executeNewCoreManualTurn(args) {
       ...c08ExecutionDiagnosticFor(outcome.c08ExecutionResult)
     })),
     contextRelationDiagnostics: {
-      traceId: args.input.traceId,
+      traceId,
       candidates: contextCandidates,
       referenceableCycles: artifacts.c01.referenceableCycles
     },
@@ -256,7 +261,7 @@ async function executeNewCoreManualTurn(args) {
   };
 }
 
-function createNewCoreManualTestService({ persistence, providers, service, factsProviders = providers, factsService = service, apiKey, publicBaseUrl = "", now = () => new Date(), executeTurn = executeNewCoreManualTurn, commercialController = null } = {}) {
+function createNewCoreManualTestService({ persistence, providers, service, factsProviders = providers, factsService = service, apiKey, publicBaseUrl = "", now = () => new Date(), executeTurn = executeNewCoreManualTurn, commercialController = null, dispatchMessage = null } = {}) {
   const repository = new NewCoreManualTestRepository({ persistence, now });
   const resolver = { availability: (query) => factsService.searchAvailability(query), availableDates: (query) => factsService.searchAvailableDates(query), priceOverrides: () => factsProviders.customerSettings.listInventoryPriceOverrides(PROPERTY_ID), dateClassifications: () => factsProviders.customerSettings.listDatePriceClassifications(PROPERTY_ID), customReplies: () => factsProviders.customReplies ? factsProviders.customReplies.list(PROPERTY_ID) : [] };
   function scopeFor(id) { return { propertyId: PROPERTY_ID, channel: CHANNEL, userId: userIdFor(id) }; }
@@ -265,13 +270,21 @@ function createNewCoreManualTestService({ persistence, providers, service, facts
   async function runTurn(id, session, body = {}) {
     assertScope(body.propertyId); if (Object.hasOwn(body, "state") || Object.hasOwn(body, "model")) throw failure("TEST_CLIENT_AUTHORITY_FORBIDDEN", 400, "測試 state 與 model 只能由伺服器決定");
     const message = String(body.input || "").trim().slice(0, 1000); if (!message) throw failure("TEST_INPUT_REQUIRED", 400, "請輸入客人訊息");
-    const current = await requireSession(id, session); const turnId = crypto.randomUUID(), traceId = crypto.randomUUID(), timestamp = now().toISOString();
+    const current = await requireSession(id, session); const turnId = crypto.randomUUID(), timestamp = now().toISOString();
+    let traceId = crypto.randomUUID(), result, transport;
+    const sideEffectGuard = createSideEffectGuard();
+    if (dispatchMessage) {
+      const delivered = await dispatchMessage({ session: current, turnId, message });
+      traceId = delivered.result.traceId;
+      result = delivered.result.artifacts?.aggregation && delivered.result.artifacts?.adapted
+        ? projectTurnDiagnostics(delivered.result, traceId) : delivered.result;
+      transport = delivered.transport;
+    } else {
     const history = await repository.listTurns(id, ownerId(session), PROPERTY_ID);
     const generationHistory = history.filter((turn) => turn.generation === current.generation).slice(-10);
     const snapshot = turnStateSnapshot(current.state, scopeFor(id), timestamp);
     const recentConversation = bindRecentConversationToCycles(generationHistory, current.state, snapshot.referenceableCycles);
     const property = factsProviders.customerSettings.getProperty(PROPERTY_ID); if (!property) { const error = new Error("property_not_found"); error.code = "PROPERTY_NOT_FOUND"; throw error; }
-    let result; const sideEffectGuard = createSideEffectGuard();
     try {
       const execute = () => executeTurn({ input: { turnId, traceId, message, recentConversation }, state: current.state, property, resolver, providerConfig: { apiKey }, publicBaseUrl, sideEffectGuard, now: timestamp });
       result = commercialController ? await commercialController.runManual({propertyId:current.propertyId,
@@ -282,9 +295,13 @@ function createNewCoreManualTestService({ persistence, providers, service, facts
       const finalDecision = buildFinalDecision({ plannerFailure: failureCode });
       result = { state: current.state, understanding: { summary: "新版核心未完成可信理解", units: [] }, lifecycle: [], routing: ["HANDOFF"], resolver: { name: "existing canonical Resolver", foundOfficialData: false, status: "NOT_EXECUTED" }, finalDecision, finalResponse: buildFinalResponse({ finalDecision, responsePlan: null, validatedReplyText: "", claimValidation: null }), earliestFailure: { layer: String(error && error.boundary || "new-core-runtime").slice(0, 80), failureCode, ...(error && error.schemaViolation ? { schemaViolation: error.schemaViolation } : {}) }, requestedModel: String(error && error.requestedModel || NEW_CORE_OPENAI_MODEL), resolvedModel: String(error && error.resolvedModel || "") };
     }
+    }
     const diagnostic = projectDiagnostic(result, traceId, sideEffectGuard.counters);
+    if (transport) diagnostic.transport = transport;
     const turn = { turnId, traceId, testSessionId: id, ownerId: ownerId(session), propertyId: PROPERTY_ID, generation: current.generation, timestamp, input: message, predictedResponse: result.finalResponse.shouldReply ? result.finalResponse.replyText : "系統判定：不需要回覆", diagnostic, manualReview: { status: "UNMARKED", problemCategory: "", note: "" } };
-    await repository.saveTurn({ session: current, state: result.state, turn }); return clone(turn);
+    // In browser-transport mode this row is UI/review metadata only. Production
+    // adapter owns all conversation State/history reads and writes.
+    await repository.saveTurn({ session: current, state: dispatchMessage ? current.state : result.state, turn }); return clone(turn);
   }
   return {
     createSession, runTurn,
