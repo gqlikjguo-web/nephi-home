@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "baseline": "967481deb64651f23b8122617c7f58c9b96088b9",
-  "objective": "Retire only the three obsolete relative-temporal supplement assertions that require clarification, missing_information and zero Resolver calls by ignoring a verified scoped guestCount. Preserve the runner, fixtures, all other assertions, temporal correctness, ambiguity rejection, cycle identity, source-grounded CONTINUE, Resolver authority and all existing safety tests. No replacement expected values or runtime changes are included.",
+  "baseline": "1cbcbca7405731e00a41d4a7bb75af27aa427ebe",
+  "objective": "Prepare the approved fixed-test admin authentication change by identifying the existing manual-page test fixture with the exact fixed test service and both fixture-only test DB targets, and moving the obsolete test-only anonymous admin 401 assertion into the existing non-test authentication control. Preserve its 401 expectation, all other assertions and the entire runner. This prerequisite contains no runtime change and does not assert the not-yet-implemented fixed-test admin 200 behavior.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-relative-temporal-contract-runner.js"
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-test-page-runner.js"
   ],
   "contractChangeAllowed": true,
   "gateChangeAllowed": false,
   "affectedCapabilities": [],
   "preExistingUntracked": [],
-  "approvalSource": "User explicitly approved Contract retirement on 2026-09-24: audit and delete only assertions whose sole purpose is forbidding verified Context; preserve every still-valid safety assertion and keep any runner with remaining valid coverage. Prior fixed-input traces prove this exact supplement has a unique unexpired same-scope cycle, confirmed guestCount and complete dates. Only the three proven obsolete assertions and this task manifest are changed. Existing controlled independent owner review and full Gate remain required. No runtime, Gate, protected-path/hash, data, environment or production deployment change is authorized. After installation, resume the existing fixed-test Context candidate and its full required validation."
+  "approvalSource": "User explicitly approved the minimum independent Controlled Contract-change PR for fixed test-only /admin and /admin/new-core-test password-free access, with trusted server-side deployment identity and unchanged production/non-test authentication. The saved test-admin-isolation proposal is authorized. Only the conflicting protected assertion/fixture and this task manifest may change; no runtime, Gate, Context, LINE, production environment, DB/schema/data or production runtime deployment. Owner independent review and exact-candidate core-scope-approval are required before installation. Subsequent implementation and minimal admin-to-test-DB-to-chat verification belong only on the fixed test branch/service."
 }

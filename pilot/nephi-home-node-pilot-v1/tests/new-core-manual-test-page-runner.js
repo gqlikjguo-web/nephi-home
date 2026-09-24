@@ -501,12 +501,14 @@ async function json(url, method = "GET", body, sentCookie = "") {
   const factsOriginalGetProperty = factsProviders.customerSettings.getProperty.bind(factsProviders.customerSettings);
   factsProviders.customerSettings.getProperty = (id) => id === "nephi_home" ? { ...factsDemoProperty, propertyId: "nephi_home", displayName: "正式 facts authority" } : factsOriginalGetProperty(id);
   providers.persistence.getAdminSession = async (hash) => hash && hash.length === 64 ? { userId: "admin-owner", propertyId: "nephi_home", username: "owner", properties: [{ propertyId: "nephi_home" }] } : null;
-  const app = createApp({ providers, newCoreManualTestFactsProviders: factsProviders, adminAuthRequired: true, testOnlyEnvironment: true, now, runtimeEnv: { OPENAI_API_KEY: Array(33).join("x") }, publicBrandEnv: { PUBLIC_BASE_URL: "https://test.example" }, newCoreManualTestExecuteTurn: fakeTurn, lineBindingEnv: {} });
+  const testDatabaseTarget = new URL("postgresql://localhost");
+  testDatabaseTarget.hostname = "dpg-da6qo0jbc2fs738f11v0-a";
+  testDatabaseTarget.pathname = "/nephi_home_node_pilot_test_only";
+  const app = createApp({ providers, newCoreManualTestFactsProviders: factsProviders, adminAuthRequired: true, testOnlyEnvironment: true, now, runtimeEnv: { OPENAI_API_KEY: Array(33).join("x"), TEST_ONLY_ENVIRONMENT: "true", RENDER_SERVICE_ID: "srv-d9bqupbbc2fs73aselig", DATABASE_URL: testDatabaseTarget.href, NEW_CORE_MANUAL_TEST_FACTS_DATABASE_URL: testDatabaseTarget.href }, publicBrandEnv: { PUBLIC_BASE_URL: "https://test.example" }, newCoreManualTestExecuteTurn: fakeTurn, lineBindingEnv: {} });
   const running = await app.start(0, "127.0.0.1");
   try {
     const page = await fetch(`${running.url}/admin/new-core-test`); assert.equal(page.status, 200); const html = await page.text(); assert.match(html, /JunZan AI 新核心測試/); assert.match(html, /gpt-5\.6-luna/); assert.doesNotMatch(html, /model.*select/iu);
     const adminPage = await fetch(`${running.url}/admin`); assert.equal(adminPage.status, 200); assert.match(await adminPage.text(), /業者登入/, "the normal admin page must remain a login surface");
-    const adminSessionDenied = await json(`${running.url}/api/admin/session`); assert.equal(adminSessionDenied.status, 401, "test-only public manual test access must not bypass other admin APIs");
     const forged = await json(`${running.url}/api/admin/new-core-test/sessions`, "POST", { propertyId: "other" }); assert.equal(forged.status, 403);
     const created = await json(`${running.url}/api/admin/new-core-test/sessions`, "POST", {}); assert.equal(created.status, 201, JSON.stringify(created.body)); const id = created.body.data.testSessionId; assert.match(id, /^[0-9a-f-]{36}$/i);
     const diagnosticFailure = await json(`${running.url}/api/admin/new-core-test/sessions/${id}/turns`, "POST", { input: "diagnostic failure" }); assert.equal(diagnosticFailure.status, 201, JSON.stringify(diagnosticFailure.body));
@@ -579,6 +581,7 @@ async function json(url, method = "GET", body, sentCookie = "") {
     try {
       const productionDenied = await fetch(`${productionRunning.url}/admin/new-core-test`);
       assert.equal(productionDenied.status, 401, "non-test-only manual test page must retain admin authentication");
+      const adminSessionDenied = await json(`${productionRunning.url}/api/admin/session`); assert.equal(adminSessionDenied.status, 401, "non-test-only admin APIs must retain admin authentication");
       const productionApiDenied = await json(`${productionRunning.url}/api/admin/new-core-test/sessions`, "POST", {});
       assert.equal(productionApiDenied.status, 401, "non-test-only manual test API must retain admin authentication");
     } finally { await productionApp.stop(); }
