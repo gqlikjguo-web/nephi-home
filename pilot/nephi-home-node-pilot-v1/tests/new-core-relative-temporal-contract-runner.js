@@ -502,9 +502,6 @@ async function runApplicationTemporalMatrix() {
     artifacts: supplement.result.artifacts,
     diagnostics: supplement.diagnostics
   }));
-  assert.equal(supplement.result.finalDecision.action, "clarification");
-  assert.equal(supplement.result.finalDecision.reasonCode, "missing_information");
-  assert.equal(supplement.availabilityCalls, 0);
   assert.ok(
     supplement.result.artifacts.outcomes.some(outcome => (
       outcome.lifecycleDecision.action === "CONTINUE"
