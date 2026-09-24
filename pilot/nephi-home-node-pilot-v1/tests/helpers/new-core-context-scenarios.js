@@ -21,10 +21,12 @@ function dateRange(checkIn="2026-10-10", checkOut="2026-10-11") {
   return {kind:"date_range",rawText:`${checkIn}入住，${checkOut}退房`,checkInCandidate:checkIn,
     checkOutCandidate:checkOut,nightsCandidate:(Date.parse(checkOut)-Date.parse(checkIn))/86400000};
 }
-async function turn(specs, {previous, history=[], turnScope=scope, now=NOW, inventory="available"}={}) {
+async function turn(specs, {previous, history=[], turnScope=scope, now=NOW, inventory="available", extraMessages=[], transformOutput=value=>value}={}) {
   const id = `context-turn-${++serial}`;
   const events = specs.map((s,i)=>({eventId:`${id}-${i}`,messageRef:`${id}-${i}`,role:"guest",timestamp:now,
     messageKind:"text",messageText:s.text||[s.capability,s.kind,s.identity,s.temporal?.rawText].filter(Boolean).join(" ")}));
+  for(const messageText of extraMessages)events.push({eventId:`${id}-${events.length}`,messageRef:`${id}-${events.length}`,
+    role:"guest",timestamp:now,messageKind:"text",messageText});
   const scopedProperty={...property,propertyId:turnScope.propertyId};
   const service=createMvpService({customerSettings:{getProperty:()=>scopedProperty},persistence:{},availability:{
     getRows:(_property,start,end)=>{
@@ -58,7 +60,7 @@ async function turn(specs, {previous, history=[], turnScope=scope, now=NOW, inve
         contextLinkCandidateId:u.contextLinkCandidateId,unitId:u.unitId,relationKind:specs[i].relation||"NEW_REQUEST",
         currentSourceEvidenceRefs:u.evidenceRefs,referencedHistoryEventRefs:specs[i].refs||[]}))};
       return {ok:true,status:200,headers:{get:()=>"fixture-context"},text:async()=>JSON.stringify({model:"gpt-5.6-luna",
-        status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(output)}]}]})};
+        status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(transformOutput(output,input))}]}]})};
     }})});
   // Reload serialized actual State, never manufacture an ideal pending cycle.
   return {result,state:JSON.parse(JSON.stringify(result.state)),events,calls,c01,queries,diagnostics,

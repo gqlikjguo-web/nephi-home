@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "baseline": "d0db4f60a79972e412fa60cf04a436169e806d7d",
-  "objective": "Repair verified Context continuity in the fixed test environment: formal entry history wiring, completed-event provenance publication before releasing same-scope processing, and explicitly evidenced same-lodging cross-capability condition reuse. Preserve immediate processing, ordering, deduplication, event ownership, scope isolation, single State/lifecycle authority and Resolver/PostgreSQL facts. No runtime release to production.",
+  "objective": "Repair verified Context continuity in the fixed test environment: formal entry history wiring, completed-event provenance publication before releasing same-scope processing, and explicitly evidenced same-lodging cross-capability condition reuse. Preserve immediate processing, ordering, deduplication, event ownership, scope isolation, single State/lifecycle authority and Resolver/PostgreSQL facts. No runtime release to production. The saved real dates-first Context test also proves C08 rejects overlapping valid evidence refs for one unique temporal occurrence; repair only source projection so this request can establish State, preserving ambiguity across distinct events/occurrences and the same canonical Temporal authority.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
     "pilot/nephi-home-node-pilot-v1/server.js",
@@ -20,7 +20,8 @@
     "pilot/nephi-home-node-pilot-v1/tests/new-core-context-continuity-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/new-core-context-burst-provenance-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/new-core-same-lodging-context-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/helpers/new-core-context-scenarios.js"
+    "pilot/nephi-home-node-pilot-v1/tests/helpers/new-core-context-scenarios.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-context-temporal-provenance-runner.js"
   ],
   "contractChangeAllowed": true,
   "gateChangeAllowed": false,
@@ -47,5 +48,13 @@
     "protectedPath": "pilot/nephi-home-node-pilot-v1/tests/new-core-relative-temporal-contract-runner.js",
     "installedSha256": "adbcffd032627e467a5061e3b5033ba48bb7bac2fcc4845f2ffdbcca9bb861de"
   },
-  "approvalSource": "User explicitly approved continuing the existing Context repair, same-lodging cross-capability evidence contract, test-only commit/push/deploy and real validation. PR #12 owner review and core-scope-approval completed; its exact candidate Gate passed and the prerequisite was merged. User then approved retirement of the three proven obsolete no-Context supplement assertions; PR #13 independent owner review and bound core-scope-approval completed, its unchanged required Gate passed 117/117, and the retirement was merged. Only the exact installed protected test content from these two specification PRs is carried into the fixed test worktree. No Gate edits, extra persisted schema or authority, production runtime/service/DB changes, real LINE sends, or repetition of the five initial OpenAI investigation calls."
+  "approvalSource": "User explicitly approved continuing the existing Context repair, same-lodging cross-capability evidence contract, test-only commit/push/deploy and real validation. PR #12 owner review and core-scope-approval completed; its exact candidate Gate passed and the prerequisite was merged. User then approved retirement of the three proven obsolete no-Context supplement assertions; PR #13 independent owner review and bound core-scope-approval completed, its unchanged required Gate passed 117/117, and the retirement was merged. Only the exact installed protected test content from these two specification PRs is carried into the fixed test worktree. No Gate edits, extra persisted schema or authority, production runtime/service/DB changes, real LINE sends, or repetition of the five initial OpenAI investigation calls.",
+  "recordedContextPrerequisite": {
+    "traceId": "7052c63e-f95c-49a8-b46a-572fee3bdfd2",
+    "failureCode": "CANONICAL_INPUT_INCOMPLETE",
+    "baseline": "d0db4f60a79972e412fa60cf04a436169e806d7d",
+    "candidate": "93c7ab2ec7c668c05911364e6c7f61818b17471d",
+    "unchangedFailingHelperSha256": "1a80ba3c84607fa700d84158d4b3db9210d0b08b1804121bbde8416e1ce2725f",
+    "scope": "C08 exact temporal occurrence provenance; no new contract, persisted schema or authority"
+  }
 }

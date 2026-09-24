@@ -348,12 +348,23 @@ function compatibilityTemporal(unit, sources) {
       }
     };
   }
-  const ownedSourceIndexes = unit.evidenceRefs.flatMap((reference, index) => (
-    reference.quote.includes(temporal.rawText) ? [index] : []
-  ));
-  if (ownedSourceIndexes.length !== 1) return null;
+  // Evidence spans can overlap while identifying the same exact occurrence.
+  // Preserve event/message and absolute UTF-16 offsets as the source identity;
+  // equal text in distinct events or positions remains ambiguous.
+  const temporalSources = new Map();
+  unit.evidenceRefs.forEach((reference, index) => {
+    for (let offset = reference.quote.indexOf(temporal.rawText); offset !== -1;
+      offset = reference.quote.indexOf(temporal.rawText, offset + 1)) {
+      const start = reference.startOffset + offset;
+      temporalSources.set(JSON.stringify([
+        reference.eventId, reference.messageRef, start, start + temporal.rawText.length
+      ]), index);
+    }
+  });
+  if (temporalSources.size !== 1) return null;
+  const sourceIndex = temporalSources.values().next().value;
   return {
-    eventTimestamp: sources[ownedSourceIndexes[0]].timestamp,
+    eventTimestamp: sources[sourceIndex].timestamp,
     stayCandidate: {
       dateExpression: {
         rawText: temporal.rawText,
