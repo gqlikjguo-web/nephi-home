@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "baseline": "b896638807d9ca7daba6986f36a7d64eb31453bf",
-  "objective": "Install the independently reviewed acceptance prerequisite for immediate message processing that may reference verified scoped history; preserve zero fixed waiting, same-guest ordering, deduplication, source-event attribution and cross-scope isolation. No runtime repair is included.",
+  "baseline": "967481deb64651f23b8122617c7f58c9b96088b9",
+  "objective": "Retire only the three obsolete relative-temporal supplement assertions that require clarification, missing_information and zero Resolver calls by ignoring a verified scoped guestCount. Preserve the runner, fixtures, all other assertions, temporal correctness, ambiguity rejection, cycle identity, source-grounded CONTINUE, Resolver authority and all existing safety tests. No replacement expected values or runtime changes are included.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-zero-wait-runner.js"
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-relative-temporal-contract-runner.js"
   ],
   "contractChangeAllowed": true,
   "gateChangeAllowed": false,
   "affectedCapabilities": [],
   "preExistingUntracked": [],
-  "approvalSource": "User explicitly approved this separate protected acceptance and task-manifest prerequisite PR on 2026-09-24: replace only the rule forbidding prior context with immediate processing that permits verified prior context. Preserve zero fixed waiting, same-guest ordering, deduplication, event ownership and cross-scope isolation. The existing controlled Contract-change owner review remains required. This is the sole production-branch exception; no runtime, data, environment, Gate or other governance changes and no production Render deployment are authorized. Context runtime repair proceeds only on the fixed test branch after this installation."
+  "approvalSource": "User explicitly approved Contract retirement on 2026-09-24: audit and delete only assertions whose sole purpose is forbidding verified Context; preserve every still-valid safety assertion and keep any runner with remaining valid coverage. Prior fixed-input traces prove this exact supplement has a unique unexpired same-scope cycle, confirmed guestCount and complete dates. Only the three proven obsolete assertions and this task manifest are changed. Existing controlled independent owner review and full Gate remain required. No runtime, Gate, protected-path/hash, data, environment or production deployment change is authorized. After installation, resume the existing fixed-test Context candidate and its full required validation."
 }
