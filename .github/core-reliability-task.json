@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "baseline": "dc39c78992269198ed45ffd4b8560c5e0cfcba61",
-  "objective": "Make the existing fixed-test manual page represent the actual production message ingress: use the same message claim/persistence, coordinator, production adapter, history, shared core and test PostgreSQL; replace only outer LINE receive/reply transport with browser input/output. Preserve existing Context code, model, State/schema/authority, production behavior and access controls. No production release or real LINE operation.",
+  "baseline": "dc63c0cbe18dd3397aec0dc78bb87912e843419c",
+  "objective": "Enable password-free use of the existing admin and manual-chat routes only for the positively identified fixed test service and both exact test DB targets. Supply a server-owned fixed nephi_home identity only to necessary operational admin APIs, keep property scope enforced, and retain existing cookie authentication for every mismatch/non-test environment. Prove admin inventory/price writes and the existing production-adapter chat use the same test facts. No Context, production runtime/environment/database or real LINE changes.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
     "pilot/nephi-home-node-pilot-v1/server.js",
-    "pilot/nephi-home-node-pilot-v1/lib/new-core/manual-test-service.js",
-    "pilot/nephi-home-node-pilot-v1/lib/test-only-manual-line-transport.js",
-    "pilot/nephi-home-node-pilot-v1/public/assets/admin-new-core-test.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-production-entry-runner.js"
+    "pilot/nephi-home-node-pilot-v1/lib/fixed-test-admin-access.js",
+    "pilot/nephi-home-node-pilot-v1/tests/fixed-test-admin-access-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-production-entry-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-test-page-runner.js"
   ],
   "contractChangeAllowed": false,
   "gateChangeAllowed": false,
@@ -16,5 +16,5 @@
     "transport"
   ],
   "preExistingUntracked": [],
-  "approvalSource": "User stopped manual acceptance and explicitly approved reusing /admin/new-core-test through the existing production message path with browser-only transport, deterministic integration then minimal real OpenAI/test PostgreSQL E2E and fixed-test deployment. Context repair, production changes, costly evidence repetition, prefilled State/history and any real LINE transport are prohibited."
+  "approvalSource": "User explicitly resumed fixed-test authentication implementation after PR #14 installation, approved RED/GREEN, affected authentication/property/manual-page checks, commit/push/fixed-test deployment and minimum synthetic admin-to-test-DB-to-chat verification. The protected manual-page runner is copied byte-for-byte from already approved PR #14 candidate 98f21ed793607df54bc5599f7204d75853e74fdc, installed as production merge 7189dc0cb3f7fc50478f7954b1dc0dc667065fdc; no new Contract change or Gate run is requested. Existing unprotected ingress fixture expectations change only where the new requirement explicitly replaces anonymous fixed-test admin 401 and mandates normal 401 login on invalid test identity. Valid PASS-to-FAIL requires STOP without another patch. No real model calls until final minimal live consistency proof needs them."
 }

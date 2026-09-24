@@ -16,6 +16,7 @@ const NOW = new Date("2026-09-24T03:00:00Z");
 const DB_ID = "dpg-da6qo0jbc2fs738f11v0-a";
 const SERVICE_ID = "srv-d9bqupbbc2fs73aselig";
 const localEnv = {
+  TEST_ONLY_ENVIRONMENT: "true",
   RENDER_SERVICE_ID: SERVICE_ID,
   DATABASE_URL: `postgresql://fixture@${DB_ID}/nephi_home_node_pilot_test_only`,
   NEW_CORE_MANUAL_TEST_FACTS_DATABASE_URL: `postgresql://fixture@${DB_ID}/nephi_home_node_pilot_test_only`,
@@ -156,7 +157,7 @@ function envelope(c01) {
       ["NEW_CORE_MANUAL_TEST_FACTS_DATABASE_URL","postgresql://fixture@unapproved.invalid/unknown"],
       ["DATABASE_URL",`${localEnv.DATABASE_URL}?host=unapproved.invalid`]]) {
       const previous = localEnv[key]; localEnv[key] = value;
-      try { assert.equal((await request(route, {input:firstText})).status, 503); }
+      try { assert.equal((await request(route, {input:firstText})).status, 401); }
       finally { localEnv[key] = previous; }
     }
     assert.equal(providers.persistence.listMessageLogs("nephi_home").length, beforeRejected,
@@ -164,8 +165,9 @@ function envelope(c01) {
     assert.equal(calls.length, 6, "misconfigured entry must not call OpenAI");
     const invalidWebhook = await binding.post(running.url,JSON.stringify({events:[event],manualTransport:{binding:{propertyId:"nephi_home"}}}),{signature:"invalid"});
     assert.equal(invalidWebhook.status,401,"browser isolation must not weaken public webhook signature authentication");
-    const deniedAdmin = await fetch(`${running.url}/api/admin/session`);
-    assert.equal(deniedAdmin.status,401,"manual-page identity must not authorize other admin APIs");
+    const fixedAdmin = await fetch(`${running.url}/api/admin/session`);
+    assert.equal(fixedAdmin.status,200,"verified fixed deployment must use the same scoped admin identity");
+    assert.equal((await fixedAdmin.json()).data.propertyId,"nephi_home");
     console.log(JSON.stringify({classification:"FAKE_INTEGRATION",caseCount:11,passCount:11,
       paths:["manual-page HTTP","signed LINE webhook"],coreCalls:calls.length,realOpenAICalls:0,
       nativeStores:["message_logs","event_claims","conversation_states"],uiStateAuthority:false}));

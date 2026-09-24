@@ -10,6 +10,7 @@ const { createV2CompositionRoot } = require("./lib/v2-composition-root");
 const { createMvpService, AppError } = require("./lib/mvp-service");
 const { runtimeConfig } = require("./config/runtime");
 const { hashPassword, verifyPassword, sessionTokenHash } = require("./lib/admin-auth");
+const { createFixedTestAdminAccess, isFixedTestAdminDataRoute } = require("./lib/fixed-test-admin-access");
 const { createOnboardingService } = require("./lib/onboarding-service");
 const { resolvePublicProperty, normalizePublicSlug } = require("./lib/public-property-routing");
 const { createOnboardingEmailNotifier } = require("./lib/onboarding-email");
@@ -803,6 +804,7 @@ function createRequestHandler(service, options = {}) {
   const testOnlyLineMessageTrace = options.testOnlyLineMessageTrace;
   const newCoreManualTest = options.newCoreManualTest;
   const adminAuthRequired = Boolean(options.adminAuthRequired);
+  const getFixedTestAdminIdentity = options.getFixedTestAdminIdentity || (() => null);
   const publicBrand = options.publicBrand || createPublicBrand();
   const testOnlyEnvironment = options.testOnlyEnvironment === true;
   const deploymentIdentity = options.deploymentIdentity || deploymentIdentityFromEnv();
@@ -820,12 +822,8 @@ function createRequestHandler(service, options = {}) {
     return { kind: "github_actions_oidc" };
   }
   async function authorizeNewCoreManualTest(request) {
-    if (testOnlyEnvironment) return Object.freeze({
-      userId: "test-only-public-new-core-test",
-      propertyId: "nephi_home",
-      username: "test-only-public",
-      properties: Object.freeze([{ propertyId: "nephi_home" }])
-    });
+    const fixedTestIdentity = getFixedTestAdminIdentity();
+    if (fixedTestIdentity) return fixedTestIdentity;
     const token = cookieValue(request, "nephi_admin_session");
     const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
     if (!session) throw new AppError(401, "LOGIN_REQUIRED", "請先登入");
@@ -1120,7 +1118,7 @@ function createRequestHandler(service, options = {}) {
       }
       if (request.method === "GET" && pathname === "/api/admin/session") {
         const token = cookieValue(request, "nephi_admin_session");
-        const session = token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        const session = getFixedTestAdminIdentity() || (token && adminAuthRequired ? await persistence.getAdminSession(sessionTokenHash(token)) : null);
         if (!session) throw new AppError(401, "LOGIN_REQUIRED", "請先登入");
         const expected = normalizePublicSlug(url.searchParams.get("slug"));
         if (expected) {
@@ -1131,14 +1129,29 @@ function createRequestHandler(service, options = {}) {
       }
 
       let adminSession = null;
-      if (adminAuthRequired && isAdminDataRoute(pathname)) {
+      const fixedTestAdmin = isFixedTestAdminDataRoute(request.method, pathname) ? getFixedTestAdminIdentity() : null;
+      if ((adminAuthRequired || fixedTestAdmin) && isAdminDataRoute(pathname)) {
         const token = cookieValue(request, "nephi_admin_session");
-        adminSession = token ? await persistence.getAdminSession(sessionTokenHash(token)) : null;
+        adminSession = fixedTestAdmin || (token ? await persistence.getAdminSession(sessionTokenHash(token)) : null);
         if (!adminSession) throw new AppError(401, "LOGIN_REQUIRED", "請先登入");
         if (!adminSession.propertyId) throw new AppError(409, "PROPERTY_SELECTION_REQUIRED", "請先選擇要管理的旅宿");
         if (request.method !== "GET") request.adminBody = await readJsonBody(request);
         const requestedPropertyId = String(request.method === "GET" ? url.searchParams.get("propertyId") || url.searchParams.get("customerId") || "" : request.adminBody.propertyId || request.adminBody.customerId || "").trim();
         if (requestedPropertyId && requestedPropertyId !== adminSession.propertyId) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權存取其他業者資料");
+        if (fixedTestAdmin) {
+          const propertyValues = request.method === "GET"
+            ? [...url.searchParams.getAll("propertyId"), ...url.searchParams.getAll("customerId")]
+            : [request.adminBody.propertyId, request.adminBody.customerId];
+          if (propertyValues.some(value => value !== undefined && value !== null && String(value).trim()
+            && String(value).trim() !== fixedTestAdmin.propertyId)) throw new AppError(403, "PROPERTY_ACCESS_DENIED", "無權存取其他業者資料");
+          if (request.method === "GET") {
+            url.searchParams.set("propertyId", fixedTestAdmin.propertyId);
+            url.searchParams.set("customerId", fixedTestAdmin.propertyId);
+          } else {
+            request.adminBody.propertyId = fixedTestAdmin.propertyId;
+            request.adminBody.customerId = fixedTestAdmin.propertyId;
+          }
+        }
       }
 
       if (request.method === "GET" && pathname === "/api/test-only/line-message-traces") {
@@ -1375,6 +1388,7 @@ function createApp(options = {}) {
     now
   });
   const testOnlyEnvironment = Object.hasOwn(options, "testOnlyEnvironment") ? options.testOnlyEnvironment === true : config.testOnlyEnvironment === true;
+  const getFixedTestAdminIdentity = createFixedTestAdminAccess({ testOnlyEnvironment, env: runtimeEnv });
   const testOnlyAcceptanceEnabled = Object.hasOwn(options, "testOnlyAcceptanceEnabled") ? options.testOnlyAcceptanceEnabled === true : config.testOnlyAcceptanceEnabled === true;
   const testOnlyAcceptancePropertyId = String(options.testOnlyAcceptancePropertyId || config.testOnlyAcceptancePropertyId || "").trim();
   const deploymentCommit = String(options.deploymentCommit || runtimeEnv.RENDER_GIT_COMMIT || "").trim().toLowerCase();
@@ -1752,7 +1766,7 @@ function createApp(options = {}) {
     })().catch(error => { feedbackStorePromise = null; throw error; });
     return feedbackStorePromise;
   });
-  const server = http.createServer(createRequestHandler(service, { getRoomGalleryStore, getPropertyImageStore, getFeedbackStore, commercialStore:providers.commercial, lineProfileService, sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
+  const server = http.createServer(createRequestHandler(service, { getRoomGalleryStore, getPropertyImageStore, getFeedbackStore, commercialStore:providers.commercial, lineProfileService, sharedLineWebhookHandler, lineBindingService, lineSetupService, lineBindingProvider:providers.lineBindings, customReplyService, customReplyTestHandler, testOnlyAcceptanceHandler, testOnlyAcceptanceDataInitializer, testOnlyAcceptanceOidcVerifier, testOnlyLineMessageTrace, newCoreManualTest, getFixedTestAdminIdentity, persistence: providers.persistence, customerSettings: providers.customerSettings, availability:providers.availability, onboarding, adminAuthRequired, publicBrand, testOnlyEnvironment, deploymentIdentity }));
   return { providers, service, conversationEngineV2: root.engine, lineWebhookCoordinator: root.coordinator, start(port = config.port, host = config.host) { return new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, () => { resolve({ url: `http://${host}:${server.address().port}`, port: server.address().port, host }); }); }); }, async stop() { await new Promise((resolve, reject) => { if (!server.listening) return resolve(); server.close((error) => error ? reject(error) : resolve()); }); await roomGalleryRuntime.close(); if (imageDatabase) await imageDatabase.close(); if (feedbackDatabase) await feedbackDatabase.close(); if (commercialController) commercialController.close(); if (typeof ownedNewCoreManualTestFactsProviders?.close === "function") await ownedNewCoreManualTestFactsProviders.close(); if (typeof providers.close === "function") await providers.close(); } };
 }
 
