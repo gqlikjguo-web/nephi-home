@@ -21,7 +21,7 @@ function evidence(overrides = {}) {
     eventId: "event-semantic",
     messageRef: "message-semantic",
     startOffset: 0,
-    endOffset: 4,
+    endOffset: 7,
     quote: "10/9住一晚",
     ...overrides
   };
@@ -35,7 +35,8 @@ function unit(overrides = {}) {
     capability: "availability",
     subject: { kind: "bundle", catalogIdentity: "bundle-a" },
     stayDependent: true,
-    temporalCandidate: null,
+    temporalCandidate: { rawText: "10/9住一晚", kind: "month_day",
+      checkInCandidate: null, checkOutCandidate: null, nightsCandidate: 1 },
     contextLinkCandidateId: "link-semantic",
     safetyCandidate: null,
     slotCandidates: [],
@@ -163,11 +164,19 @@ assert.equal(availableDatesPolicy.subjectKinds.includes("property"), true);
 for (const capability of ["price", "total_price"]) {
   const policy = capabilityPolicyFor(projectCapabilityRegistry(CAPABILITY_REGISTRY), capability);
   assert.equal(policy.subjectKinds.includes("property"), true, `${capability} must admit a property subject`);
+  const priceSource = { ...c01.sourceEvents[0], messageText: "房價" };
+  const priceInput = buildUnderstandingTurnInput(c01Args({ sourceEvents: [priceSource] }));
+  const priceEvidence = evidence({ quote: "房價", endOffset: 2 });
   const genericPrice = validate(unit({
     capability,
     subject: { kind: "property", catalogIdentity: null },
-    temporalCandidate: null
-  }));
+    temporalCandidate: null,
+    evidenceRefs: [priceEvidence]
+  }), {
+    understandingTurnInput: priceInput,
+    publicCatalogIdentitySet: buildPublicCatalogIdentitySet(priceInput),
+    validatedEvidenceRefs: [priceEvidence]
+  });
   assert.equal(genericPrice.ok, true, `${capability}/property must be a legal semantic representation`);
 }
 assert.deepEqual(availableDatesPolicy.requiredGuestFields, []);
