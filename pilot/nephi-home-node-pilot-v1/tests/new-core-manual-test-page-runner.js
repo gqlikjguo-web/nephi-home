@@ -314,7 +314,9 @@ async function json(url, method = "GET", body, sentCookie = "") {
         understandingOutput: { schemaVersion: 1, turnId: c01.turnId, units: [{
           unitId: "availability-off-unit", evidenceRefs: [reference], purpose: "lodging_question", capability: "availability",
           subject: { kind: "property", catalogIdentity: null }, stayDependent: true,
-          temporalCandidate: null, contextLinkCandidateId: "availability-off-context", safetyCandidate: null,
+          temporalCandidate: { rawText: "今天", kind: "relative_date", checkInCandidate: null, checkOutCandidate: null,
+            nightsCandidate: null, relativeSemantics: { dayOffset: 0, dayPeriod: "unspecified" } },
+          contextLinkCandidateId: "availability-off-context", safetyCandidate: null,
           slotCandidates: [], confidenceBand: "high"
         }] },
         contextLinkCandidates: [{ contextLinkCandidateId: "availability-off-context", unitId: "availability-off-unit", relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: [reference], referencedHistoryEventRefs: [] }]
