@@ -222,12 +222,25 @@ function validateLifecycleDecisions(values, { unitIds = null } = {}) {
     : { ok: true, code: null, errors: [], value: values };
 }
 
-function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLink } = {}) {
+function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLink, currentSourceOutcome = null } = {}) {
   if (!isValidatedContextLinkFor(validatedContextLink, unit)) {
     return failure("LIFECYCLE_TRANSITION_INVALID", ["validatedContextLink"]);
   }
   const relation = contextRelationEvidenceForValidatedLink(validatedContextLink, unit);
   if (!relation) return failure("LIFECYCLE_TRANSITION_INVALID", ["contextRelationEvidence"]);
+  let currentSource = null;
+  if (relation.relationKind === "RELATED_UNIT") {
+    const sourceDecision = currentSourceOutcome?.lifecycleDecision;
+    if (!isValidatedLifecycleDecision(sourceDecision) || sourceDecision.unitId !== relation.sourceUnitId
+      || understandingInputForValidatedLifecycleDecision(sourceDecision) !== understandingInputForValidatedContextLink(validatedContextLink)
+      || !["START", "CONTINUE", "MODIFY"].includes(sourceDecision.action) || currentSourceOutcome.failure) {
+      return failure("CONTEXT_TARGET_UNAVAILABLE", ["currentSourceOutcome"]);
+    }
+    if (currentSourceOutcome.canonicalItem) {
+      currentSource = require("./canonical-execution-adapter").conditionsForValidatedCanonicalItem(currentSourceOutcome.canonicalItem, sourceDecision);
+      if (!currentSource) return failure("CONTEXT_TARGET_UNAVAILABLE", ["currentSourceCanonicalConditions"]);
+    }
+  }
   const chooseTarget = (targetIds) => {
     if (relation.resolvedTargetRequestCycleId !== null) {
       return targetIds.includes(relation.resolvedTargetRequestCycleId)
@@ -246,7 +259,7 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
       && relation.compatiblePendingTargetIds.length === 0
       && ["supplement", "context_update"].includes(unit.purpose))) {
     action = "NONE";
-  } else if (["NEW_REQUEST", "RELATED_REQUEST"].includes(relation.relationKind)) {
+  } else if (["NEW_REQUEST", "RELATED_REQUEST", "RELATED_UNIT"].includes(relation.relationKind)) {
     action = unit.capability !== null || unit.purpose === "context_update" ? "START" : "NONE";
   } else if (unit.purpose === "cancellation" || relation.relationKind === "TERMINATION") {
     const selected = chooseTarget(relation.compatibleExistingTargetIds);
@@ -301,6 +314,7 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
     CONTEXT_SOURCE_BY_VALIDATED_LIFECYCLE_DECISION.set(value,
       input.referenceableCycles.find(cycle => cycle.requestCycleId === sourceId));
   }
+  if (currentSource) CONTEXT_SOURCE_BY_VALIDATED_LIFECYCLE_DECISION.set(value, currentSource);
   return { ok: true, code: null, errors: [], value };
 }
 

@@ -293,9 +293,13 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   const c08Catalog = buildC01TrustedCanonicalizerCatalog(c01, catalog);
   const projection = buildPublicCatalogIdentityProjection(c01);
   const outcomes = [];
+  const contextSnapshot = buildContextSnapshotV3(state, { ...scope, now });
+  const canonicalItems = [];
   for (const [index, unit] of understanding.validatedUnits.entries()) {
     const link = understanding.validatedContextLinks.find((item) => item.unitId === unit.unitId);
-    const lifecycle = createLifecycleDecision({ lifecycleDecisionId: `${lifecycleDecisionIdPrefix}-${input.turnId}-${index}`, unit, validatedContextLink: link });
+    const relation = contextRelationEvidenceForValidatedLink(link, unit);
+    const lifecycle = createLifecycleDecision({ lifecycleDecisionId: `${lifecycleDecisionIdPrefix}-${input.turnId}-${index}`, unit, validatedContextLink: link,
+      currentSourceOutcome: relation?.sourceUnitId ? outcomes.find(outcome => outcome.unit.unitId === relation.sourceUnitId) : null });
     if (!lifecycle.ok) { outcomes.push({ unit, failure: { layer: "C06", failureCode: lifecycle.code } }); continue; }
     const readiness = createUnitReadiness({ unit, lifecycleDecision: lifecycle.value, routingRegistry: registry });
     if (!readiness.ok) { outcomes.push({ unit, lifecycleDecision: lifecycle.value, failure: { layer: "C07", failureCode: readiness.code } }); continue; }
@@ -308,11 +312,10 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
       c08CreationResult: gatedRouting.disposition === "ANSWER" ? c08 : null,
       canonicalItem: c08.ok ? c08.value : null,
       failure: c08.ok ? null : { layer: "C08", failureCode: c08.code, errors: c08.errors || [] } });
-  }
-  const contextSnapshot = buildContextSnapshotV3(state, { ...scope, now });
-  const canonicalItems = [];
-  const successful = outcomes.filter((item) => item.routingDecision);
-  for (const outcome of successful.filter((item) => item.canonicalItem)) {
+    // C05 orders declared dependencies. A dependent sees only its source's
+    // already validated C08 conditions, before any Resolver answers exist.
+    const outcome = outcomes[outcomes.length - 1];
+    if (!outcome.canonicalItem) continue;
     outcome.c08Input = outcome.canonicalItem;
     const result = executeCanonicalizerInputItem({ canonicalizerInputItem: outcome.canonicalItem, catalog: c08Catalog, publicCatalogIdentityProjection: projection, contextSnapshot });
     outcome.c08ExecutionResult = result;
@@ -320,6 +323,7 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     outcome.canonicalItem = result.value;
     canonicalItems.push(result.value);
   }
+  const successful = outcomes.filter((item) => item.routingDecision);
   const failedUnits = normalizeFailureRefs([
     ...understanding.failedUnits,
     ...outcomes.filter((item) => item.failure).map((item) => ({ unitId: item.unit.unitId, failureCode: item.failure.failureCode }))
@@ -334,7 +338,12 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     const source = contextSourceForValidatedLifecycleDecision(decision);
     // C05/C06 alone authorize condition reuse. Keep the new request identity;
     // project existing State conditions and their original quantity evidence.
-    return buildCanonicalFormalRequest({ property, canonicalRequest: item.canonicalRequest, requestCycleId: binding.requestCycleId, confirmedInputs: executionConditionsV3(state, item, source?.requestCycleId || binding.requestCycleId) });
+    const confirmedInputs = executionConditionsV3(state, item, source?.requestCycleId || binding.requestCycleId);
+    if (source?.currentUnitId && !item.canonicalRequest.quantityCandidate) {
+      Object.assign(confirmedInputs, require("../conversation-contracts/resolver-quantity").resolverQuantityFields(source.confirmedInputs),
+        source.confirmedInputs.quantityEvidenceRefs ? {quantityEvidenceRefs:source.confirmedInputs.quantityEvidenceRefs} : {});
+    }
+    return buildCanonicalFormalRequest({ property, canonicalRequest: item.canonicalRequest, requestCycleId: binding.requestCycleId, confirmedInputs });
   });
   const queryPlans = formalRequests.map(buildCanonicalQueryPlan).filter(Boolean);
   const requestEvidence = outcomes.map(item => {

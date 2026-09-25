@@ -9,10 +9,11 @@ const CONTEXT_LINK_FIELDS = Object.freeze([
   "unitId",
   "relationKind",
   "currentSourceEvidenceRefs",
-  "referencedHistoryEventRefs"
+  "referencedHistoryEventRefs",
+  "referencedCurrentUnitId"
 ]);
 const HISTORY_EVENT_REF_FIELDS = Object.freeze(["eventId", "messageRef"]);
-const RELATION_KINDS = new Set(["NEW_REQUEST", "RELATED_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION", "NONE"]);
+const RELATION_KINDS = new Set(["NEW_REQUEST", "RELATED_REQUEST", "RELATED_UNIT", "SUPPLEMENT", "MODIFICATION", "TERMINATION", "NONE"]);
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -31,7 +32,9 @@ function boundedText(value, limit = MAX_ID_LENGTH) {
 function validateContextLinkCandidate(value) {
   const errors = [];
   let unknownWireField = false;
-  if (!exactKeys(value, CONTEXT_LINK_FIELDS)) {
+  const fields = Object.hasOwn(value || {}, "referencedCurrentUnitId")
+    ? CONTEXT_LINK_FIELDS : CONTEXT_LINK_FIELDS.filter(field => field !== "referencedCurrentUnitId");
+  if (!exactKeys(value, fields)) {
     errors.push("keys");
     unknownWireField ||= isPlainObject(value)
       && Object.keys(value).some((key) => !CONTEXT_LINK_FIELDS.includes(key));
@@ -58,7 +61,10 @@ function validateContextLinkCandidate(value) {
       identities.add(identity);
     });
   }
-  if (["NEW_REQUEST", "NONE"].includes(value && value.relationKind)
+  if (value?.relationKind === "RELATED_UNIT") {
+    if (!boundedText(value.referencedCurrentUnitId) || value.referencedCurrentUnitId === value.unitId) errors.push("referencedCurrentUnitId");
+  } else if (value?.referencedCurrentUnitId != null) errors.push("referencedCurrentUnitId.forbidden");
+  if (["NEW_REQUEST", "NONE", "RELATED_UNIT"].includes(value && value.relationKind)
     && Array.isArray(historyRefs) && historyRefs.length !== 0) errors.push("referencedHistoryEventRefs.forbidden");
   if (["RELATED_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(value && value.relationKind)
     && Array.isArray(historyRefs) && historyRefs.length === 0) errors.push("referencedHistoryEventRefs.required");

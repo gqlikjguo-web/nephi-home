@@ -377,12 +377,14 @@ function parseRelativeSemantics(expression, rawText, eventTimestamp, timezone, n
   };
 }
 
-function inferTemporalSpanFromMessage(text, eventTimestamp, timezone, ownedRawText = "") {
-  const message = normalizeText(text);
+function inferTemporalSpanFromMessage(text, eventTimestamp, timezone, ownedRawText = "", preserveSourceBoundaries = false) {
+  // Completeness scans evidence before compacting it: removing a separator can
+  // join a date endpoint to adjacent numeric text and change the selected span.
+  const message = preserveSourceBoundaries ? String(text || "") : normalizeText(text);
   const timestamp = Number(eventTimestamp) || Date.parse(eventTimestamp || "");
   if (!message || !Number.isFinite(timestamp)) return null;
   const baseParts = partsAt(timestamp, timezone);
-  const normalizedOwnedRaw = normalizeText(ownedRawText);
+  const normalizedOwnedRaw = preserveSourceBoundaries ? String(ownedRawText || "") : normalizeText(ownedRawText);
   const ownedStart = normalizedOwnedRaw ? message.indexOf(normalizedOwnedRaw) : -1;
   const ownedSpan = ownedStart >= 0 && message.indexOf(normalizedOwnedRaw, ownedStart + 1) === -1
     ? { start: ownedStart, end: ownedStart + normalizedOwnedRaw.length }
@@ -392,15 +394,29 @@ function inferTemporalSpanFromMessage(text, eventTimestamp, timezone, ownedRawTe
     return { ambiguity: wholeMessage.unresolvedReason };
   }
   const candidates = [];
+  if (preserveSourceBoundaries && ownedSpan) {
+    // C02 supplies an exact source substring. Only after locating that unique
+    // span may the canonical grammar normalize its complete expression. Keep
+    // its source coordinates so contained dates remain parts of one range.
+    const rawText = message.slice(ownedSpan.start, ownedSpan.end);
+    const parsed = parseTemporalGrammarAtBase(normalizeText(rawText), baseParts);
+    if (((!parsed.unresolvedReason || parsed.unresolvedReason === "past_date") && parsed.checkIn)
+      || parsed.unresolvedReason === "temporal_expression_ambiguous") {
+      candidates.push({ rawText, parsed, ...ownedSpan });
+    }
+  }
   for (let start = 0; start < message.length; start += 1) {
     const maxEnd = Math.min(message.length, start + 200);
     for (let end = start + 1; end <= maxEnd; end += 1) {
       const rawText = message.slice(start, end);
+      // Exterior padding is not part of a temporal condition's ownership.
+      // The loop visits the corresponding unpadded source substring itself.
+      if (preserveSourceBoundaries && rawText !== rawText.trim()) continue;
       const previous = start > 0 ? message[start - 1] : "";
       const next = end < message.length ? message[end] : "";
       if ((/\d/.test(rawText[0]) && /\d/.test(previous))
         || (/\d/.test(rawText[rawText.length - 1]) && /\d/.test(next))) continue;
-      const parsed = parseTemporalGrammarAtBase(rawText, baseParts);
+      const parsed = parseTemporalGrammarAtBase(preserveSourceBoundaries ? rawText.trim() : rawText, baseParts);
       if (((!parsed.unresolvedReason || parsed.unresolvedReason === "past_date") && parsed.checkIn)
         || parsed.unresolvedReason === "temporal_expression_ambiguous") {
         candidates.push({ rawText, parsed, start, end });
@@ -408,7 +424,8 @@ function inferTemporalSpanFromMessage(text, eventTimestamp, timezone, ownedRawTe
     }
   }
   if (!candidates.length) return null;
-  const eligibleCandidates = ownedSpan
+  // Completeness must also inspect conditions outside the model-owned span.
+  const eligibleCandidates = ownedSpan && !preserveSourceBoundaries
     ? candidates.filter((candidate) => candidate.start < ownedSpan.end && candidate.end > ownedSpan.start)
     : candidates;
   if (!eligibleCandidates.length) return null;
@@ -871,11 +888,18 @@ function resolveCanonicalTemporal({
     });
   }
 
+  // Only an admitted Context interval may supply unchanged stay length. A new
+  // explicit duration/end has priority; an untrusted/missing interval cannot.
+  const contextNights = allowContextReuse && valid(approvedContext?.checkIn)
+    && valid(approvedContext?.checkOut) && approvedContext.checkOut > approvedContext.checkIn
+    ? daysBetween(approvedContext.checkIn, approvedContext.checkOut) : null;
+  const inheritedDuration = !parsed.checkOut && !Number.isInteger(parsed.nights)
+    && !Number.isInteger(plannerCandidate.nightsCandidate) && Number.isInteger(contextNights) && contextNights > 0;
   const parsedNights = Number.isInteger(parsed.nights)
     ? parsed.nights
     : Number.isInteger(plannerCandidate.nightsCandidate)
       ? plannerCandidate.nightsCandidate
-      : Number.isInteger(defaultNights) ? defaultNights : null;
+      : inheritedDuration ? contextNights : Number.isInteger(defaultNights) ? defaultNights : null;
   const checkIn = parsed.checkIn || null;
   const checkOut = parsed.checkOut || (checkIn && parsedNights ? addDays(checkIn, parsedNights) : null);
   if (!valid(checkIn) || (checkOut && (!valid(checkOut) || checkOut <= checkIn))) {
@@ -922,17 +946,18 @@ function resolveCanonicalTemporal({
     provenance: {
       checkIn: "explicit",
       checkOut: canonical.checkOut ? (parsed.checkOut ? "explicit" : "derived") : null,
-      nights: Number.isInteger(parsed.nights) ? "explicit" : Number.isInteger(plannerCandidate.nightsCandidate) ? "explicit" : Number.isInteger(defaultNights) ? "defaulted" : null,
+      nights: Number.isInteger(parsed.nights) ? "explicit" : Number.isInteger(plannerCandidate.nightsCandidate) ? "explicit" : inheritedDuration ? "context" : Number.isInteger(defaultNights) ? "defaulted" : null,
       searchRange: canonical.searchRange ? "explicit" : null
     },
     ruleRefs: {
       checkIn: CANONICAL_TEMPORAL_RULE_REF,
-      checkOut: parsed.checkOut ? CANONICAL_TEMPORAL_RULE_REF : canonical.checkOut ? (Number.isInteger(defaultNights) ? defaultNightsRuleRef : "temporal:checkout_from_checkin_and_nights") : null,
-      nights: Number.isInteger(defaultNights) && !Number.isInteger(plannerCandidate.nightsCandidate) && !Number.isInteger(parsed.nights) ? defaultNightsRuleRef : null,
+      checkOut: parsed.checkOut ? CANONICAL_TEMPORAL_RULE_REF : canonical.checkOut ? (!inheritedDuration && Number.isInteger(defaultNights) && !Number.isInteger(parsed.nights) && !Number.isInteger(plannerCandidate.nightsCandidate) ? defaultNightsRuleRef : "temporal:checkout_from_checkin_and_nights") : null,
+      nights: inheritedDuration ? CONTEXTUAL_TEMPORAL_RULE_REF : Number.isInteger(defaultNights) && !Number.isInteger(plannerCandidate.nightsCandidate) && !Number.isInteger(parsed.nights) ? defaultNightsRuleRef : null,
       searchRange: canonical.searchRange ? CANONICAL_TEMPORAL_RULE_REF : null
     },
     derivedFromFieldRefs: {
-      checkOut: parsed.checkOut ? [] : canonical.checkOut ? ["stay.checkIn", "stay.nights"] : []
+      checkOut: parsed.checkOut ? [] : canonical.checkOut ? ["stay.checkIn", "stay.nights"] : [],
+      nights: inheritedDuration ? ["context.stay.checkIn", "context.stay.checkOut"] : []
     },
     sourceEvidenceRefs: evidence
   });
@@ -962,9 +987,58 @@ function resolveTemporalExpression(expression = {}, context = {}) {
   });
 }
 
+// Admission checks use this same Temporal authority, without defaults or Context.
+// Only the unit's validated source spans are eligible. This reports missing or
+// contradictory source conditions; it never fills an Understanding candidate.
+function validateTemporalSourceCompleteness({ temporalCandidate, sourceSpans, timezone }) {
+  const conditions = [];
+  for (const source of sourceSpans) {
+    const dated = inferTemporalSpanFromMessage(source.quote, source.eventTimestamp, timezone, temporalCandidate?.rawText || "", true);
+    const duration = inferDurationSpanFromMessage(source.quote);
+    if (dated?.ambiguity || duration?.ambiguity) {
+      return { ok: false, errors: ["temporal_source_completeness.ambiguous_owned_conditions"] };
+    }
+    const fields = dated?.parsed || {};
+    for (const [field, value] of [["checkIn", fields.checkIn], ["checkOut", fields.checkOut],
+      ["nights", duration?.nights || fields.nights]]) {
+      if (value != null) conditions.push({ field, value, source });
+    }
+  }
+  const errors = [];
+  for (const field of new Set(conditions.map(condition => condition.field))) {
+    const owned = conditions.filter(condition => condition.field === field);
+    if (new Set(owned.map(condition => condition.value)).size !== 1) {
+      errors.push(`temporal_source_completeness.${field}.ambiguous`);
+      continue;
+    }
+    const matches = temporalCandidate && owned.every(condition => {
+      const rawText = temporalCandidate.rawText;
+      const carried = resolveCanonicalTemporal({
+        guestMessage: rawText, candidateSourceText: rawText,
+        // This is source coverage, not a second relative-offset validator.
+        // Existing relative-semantics consistency remains at its own boundary.
+        plannerCandidate: { dateExpression: { rawText, kind: temporalCandidate.kind },
+          checkInCandidate: temporalCandidate.checkInCandidate,
+          checkOutCandidate: temporalCandidate.checkOutCandidate,
+          nightsCandidate: temporalCandidate.nightsCandidate },
+        eventTimestamp: condition.source.eventTimestamp, timezone
+      });
+      // Past-date admission belongs to execution. Its unresolved canonical
+      // result must not make a faithfully carried source date look omitted.
+      const raw = carried.repairReasonCode === "past_date"
+        ? parseTemporalGrammar(rawText, condition.source.eventTimestamp, timezone) : null;
+      const value = raw && ["checkIn", "checkOut"].includes(field) ? raw[field] : carried[field];
+      return value === condition.value;
+    });
+    if (!matches) errors.push(`temporal_source_completeness.${field}.not_carried`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 module.exports = {
   resolveCanonicalTemporal,
   resolveTemporalExpression,
+  validateTemporalSourceCompleteness,
   inferExplicitTemporalExpression,
   addDays,
   valid,

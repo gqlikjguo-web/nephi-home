@@ -1,20 +1,44 @@
 {
   "schemaVersion": 1,
-  "baseline": "dc63c0cbe18dd3397aec0dc78bb87912e843419c",
-  "objective": "Enable password-free use of the existing admin and manual-chat routes only for the positively identified fixed test service and both exact test DB targets. Supply a server-owned fixed nephi_home identity only to necessary operational admin APIs, keep property scope enforced, and retain existing cookie authentication for every mismatch/non-test environment. Prove admin inventory/price writes and the existing production-adapter chat use the same test facts. No Context, production runtime/environment/database or real LINE changes.",
+  "baseline": "0726e50bd877bcb9dc20c98ee4331e94c590d304",
+  "objective": "Preserve the approved B4/B6 candidate and add only source-owned Temporal Understanding completeness validation before C03 trust, through the sole Temporal authority and existing bounded correction. No new natural-language rules or persisted schema. Fixed test only; Unknown-to-No stays out of scope. Repair only the proven source-boundary regression in Temporal completeness admission: preserve owned evidence boundaries, retain trusted-first one-call behavior, and keep missing-duration correction and approved B4/B6 protections. Repair the proven spaced-range completeness ambiguity by reusing the uniquely source-owned temporal expression at the existing Temporal grammar boundary; preserve exact source offsets and all conditions outside that expression. Complete this single Context workstream to fixed-test user acceptance, first synchronizing only the four exact reviewed PR #11 governance dependencies missing from the fixed test branch.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    "pilot/nephi-home-node-pilot-v1/server.js",
-    "pilot/nephi-home-node-pilot-v1/lib/fixed-test-admin-access.js",
-    "pilot/nephi-home-node-pilot-v1/tests/fixed-test-admin-access-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-production-entry-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-test-page-runner.js"
+    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/temporal-resolver.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/canonical-execution-adapter.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/contracts/context-link-candidate.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/context-link-validator.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/lifecycle-manager.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/application-service.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/capability-subject-policy.js",
+    "pilot/nephi-home-node-pilot-v1/lib/providers/openai-understanding-v1.js",
+    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/render-obligation.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-b4-b6-context-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-unit-routing-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-required-clarification-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/helpers/new-core-context-scenarios.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-test-page-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-openai-adapter-contract-runner.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/semantic-unit-validator.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-temporal-completeness-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-semantic-unit-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-detached-ownership-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-relative-semantics-runner.js",
+    ".github/workflows/core-reliability.yml",
+    "pilot/nephi-home-node-pilot-v1/scripts/core-ui-fast-path.js",
+    "pilot/nephi-home-node-pilot-v1/tests/core-ui-fast-path-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js"
   ],
-  "contractChangeAllowed": false,
+  "contractChangeAllowed": true,
   "gateChangeAllowed": false,
   "affectedCapabilities": [
-    "transport"
+    "temporal",
+    "context",
+    "facts",
+    "reply",
+    "understanding",
+    "shared-core"
   ],
   "preExistingUntracked": [],
-  "approvalSource": "User explicitly resumed fixed-test authentication implementation after PR #14 installation, approved RED/GREEN, affected authentication/property/manual-page checks, commit/push/fixed-test deployment and minimum synthetic admin-to-test-DB-to-chat verification. The protected manual-page runner is copied byte-for-byte from already approved PR #14 candidate 98f21ed793607df54bc5599f7204d75853e74fdc, installed as production merge 7189dc0cb3f7fc50478f7954b1dc0dc667065fdc; no new Contract change or Gate run is requested. Existing unprotected ingress fixture expectations change only where the new requirement explicitly replaces anonymous fixed-test admin 401 and mandates normal 401 login on invalid test identity. Valid PASS-to-FAIL requires STOP without another patch. No real model calls until final minimal live consistency proof needs them."
+  "approvalSource": "User explicitly approved the minimum Temporal Understanding completeness Contract and runtime correction path in addition to preserved B4/B6; RED/GREEN, affected/protected/integrity checks, necessary REAL OpenAI/test PostgreSQL E2E, commit/push/deploy only fixed test. No new keyword/regex, second parser, persisted schema, production runtime operations, Gate changes or Unknown-to-No fix. Stop on any valid PASS-to-FAIL. PR #15 independently reviewed and installed the obsolete C03 fixture synchronization at trusted base 329ad1a57a9c9128403a4d1dc56e5088f2a519be; this test candidate includes that protected fixture byte-identically. User approved continuing the preserved runtime candidate after that specification installation; no runtime code is changed by the fixture synchronization. PR #16 completed independent owner review and Core Reliability Gate run 36103111850 (117/117 commands, exact candidate a11ebd4731def640161e8cc8bf8340eefd50fc27), then installed the three audited stale fixtures at trusted base 452705661a773b5b02e8624a3768ea1744814f8f. Apply only that reviewed fixture delta while preserving this runtime candidate and all existing B4/B6 assertions. User explicitly authorized continuing affected/protected/integrity checks, then REAL B4 before REAL B6, and commit/push/deploy only the fixed test service if both pass. No production runtime deployment or Unknown-to-No work. User explicitly authorized recovery from the three availability-final-text failures: minimal Temporal completeness source-boundary runtime repair, additive RED/GREEN without changing original 1-call expectations, complete affected regression and protected/integrity checks, then REAL B4 before B6. Any new valid PASS-to-FAIL stops; no other test cleanup, no production operations, no Unknown-to-No work. User explicitly authorized recovery from the new spaced-range regression on 2026-09-26: prove both ambiguous source spans, add RED, minimally reuse the existing source-owned Temporal authority, keep original one-call and missing-duration protections, resume all remaining affected regression, then protected/integrity/diff checks. Only after deterministic GREEN may REAL B4 then REAL B6 run; only both REAL PASS permit fixed-test commit/push/deploy. No stale cleanup, production operations or Unknown-to-No work. User authorized on 2026-09-26 the minimum exact synchronization of already approved trusted governance files and continued bounded recovery within the approved Context/Temporal/completeness/correction/same-turn Contract. Exact sources are PR #11 commit 0c3d194556af0f77b1072c59ec91cc7fb2d15410 as retained in trusted base 452705661a773b5b02e8624a3768ea1744814f8f. No new Gate policy or test assertions are authored; no production runtime/database work. Stop only for the six latest user-specified objective blockers; preserve all existing work. Reuse current-byte reliable evidence, finish affected/protected/integrity/Gate, then REAL B4 before B6, commit/push/deploy only fixed test after both pass."
 }

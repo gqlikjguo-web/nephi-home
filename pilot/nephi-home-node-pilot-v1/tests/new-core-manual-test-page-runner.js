@@ -217,11 +217,11 @@ async function json(url, method = "GET", body, sentCookie = "") {
       });
     }
   });
-  assert.deepEqual(noDatePriceTurn.routing, ["ANSWER"], "C07 must not clarify a no-date price request");
+  assert.deepEqual(noDatePriceTurn.routing, ["CLARIFY"], "C07 price readiness requires a verified stay date source");
   assert.equal(noDatePriceResolverCalls, 0, "no-date price fallback must not query or invent a formal price");
   assert.equal(noDatePriceTurn.finalDecision.action, "clarification", "the existing not-ready formal request remains fail-closed internally");
-  assert.equal(noDatePriceTurn.finalResponse.replyText, "查房連結：https://test.example/priceproperty");
-  assert.doesNotMatch(noDatePriceTurn.finalResponse.replyText, /請提供|補充|業者確認/);
+  assert.equal(noDatePriceTurn.finalResponse.replyText, "請提供入住日期。\n查房連結：https://test.example/priceproperty");
+  assert.doesNotMatch(noDatePriceTurn.finalResponse.replyText, /業者確認/);
   const genericPriceTurn = await sharedApplicationService.executeNewCoreTurn({
     input: { turnId: "generic-price-link-turn", traceId: "generic-price-link-trace", message: "房價多少", recentConversation: [] },
     state: priceState,
@@ -256,10 +256,10 @@ async function json(url, method = "GET", body, sentCookie = "") {
       });
     }
   });
-  assert.deepEqual(genericPriceTurn.routing, ["ANSWER"], "generic property price must use the shared price route");
+  assert.deepEqual(genericPriceTurn.routing, ["CLARIFY"], "generic property price uses the same verified stay requirement");
   assert.equal(noDatePriceResolverCalls, 0, "generic no-date price must not query or invent a formal price");
-  assert.equal(genericPriceTurn.finalResponse.replyText, "查房連結：https://test.example/priceproperty");
-  assert.doesNotMatch(genericPriceTurn.finalResponse.replyText, /請提供|補充|業者確認|\d+[,.]?\d*\s*元/);
+  assert.equal(genericPriceTurn.finalResponse.replyText, "請提供入住日期。\n查房連結：https://test.example/priceproperty");
+  assert.doesNotMatch(genericPriceTurn.finalResponse.replyText, /業者確認|\d+[,.]?\d*\s*元/);
   const clarificationControl = await sharedApplicationService.executeNewCoreTurn({
     input: { turnId: "clarify-control-turn", traceId: "clarify-control-trace", message: "有房嗎", recentConversation: [] },
     state: priceState,
@@ -314,7 +314,9 @@ async function json(url, method = "GET", body, sentCookie = "") {
         understandingOutput: { schemaVersion: 1, turnId: c01.turnId, units: [{
           unitId: "availability-off-unit", evidenceRefs: [reference], purpose: "lodging_question", capability: "availability",
           subject: { kind: "property", catalogIdentity: null }, stayDependent: true,
-          temporalCandidate: null, contextLinkCandidateId: "availability-off-context", safetyCandidate: null,
+          temporalCandidate: { rawText: "今天", kind: "relative_date", checkInCandidate: null, checkOutCandidate: null,
+            nightsCandidate: null, relativeSemantics: { dayOffset: 0, dayPeriod: "unspecified" } },
+          contextLinkCandidateId: "availability-off-context", safetyCandidate: null,
           slotCandidates: [], confidenceBand: "high"
         }] },
         contextLinkCandidates: [{ contextLinkCandidateId: "availability-off-context", unitId: "availability-off-unit", relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: [reference], referencedHistoryEventRefs: [] }]

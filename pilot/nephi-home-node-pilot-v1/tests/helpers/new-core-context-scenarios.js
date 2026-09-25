@@ -45,7 +45,7 @@ async function turn(specs, {previous, history=[], turnScope=scope, now=NOW, inve
     resolver:{availability:query=>{queries.push(query);return service.searchAvailability(query);},
       availableDates:query=>{queries.push(query);return service.searchAvailableDates(query);},
       priceOverrides:()=>[],dateClassifications:()=>[],customReplies:()=>[]},
-    understandingProvider:(input,options)=>callOpenAIUnderstandingV1(input,{...options,fetchImpl:async()=>{
+    understandingProvider:(input,options)=>callOpenAIUnderstandingV1(input,{...options,nowMs:()=>Date.parse(now),fetchImpl:async()=>{
       calls++;c01=input;
       const units=specs.map((s,i)=>{
         const e=events[i],ref={eventId:e.eventId,messageRef:e.messageRef,startOffset:0,endOffset:e.messageText.length,quote:e.messageText};

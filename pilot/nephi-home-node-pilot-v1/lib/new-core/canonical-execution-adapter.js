@@ -18,6 +18,7 @@ const C08_AUTHORITY_MARKER = new WeakSet();
 const PROVENANCE_BY_C08 = new WeakMap();
 const OFFICIAL_CANONICAL_RESULTS = new WeakSet();
 const EXECUTION_DIAGNOSTICS = new WeakMap();
+const CONDITIONS_BY_CANONICAL_ITEM = new WeakMap();
 const EXECUTABLE_LIFECYCLE_ACTIONS = new Set(["START", "CONTINUE", "MODIFY"]);
 const CANONICAL_REJECTION_CODES = new Set([
   "invalid_canonical_request",
@@ -286,6 +287,7 @@ function productFromIdentity(identity, kind) {
 
 function contextCycleFor(provenance, contextSnapshot) {
   const source = contextSourceForValidatedLifecycleDecision(provenance.lifecycleDecision);
+  if (source?.currentUnitId) return { ok: true, cycle: source };
   const target = source?.requestCycleId || provenance.lifecycleDecision.targetRequestCycleId;
   if (target === null) return { ok: true, cycle: null };
   const matches = (contextSnapshot.cycles || []).filter((cycle) => cycle && cycle.requestCycleId === target);
@@ -693,6 +695,17 @@ function executeCanonicalizerInputItem({
       exactCondition: "canonicalizerResult:forbiddenRecursiveKey"
     });
   }
+  const confirmedInputs = require("../conversation-engine-v2/conversation-state-v3-reducer").executionConditionsV3(null, value, null);
+  const inheritedQuantity = context.cycle?.confirmedInputs || {};
+  if (!value.canonicalRequest.quantityCandidate) Object.assign(confirmedInputs,
+    require("../conversation-contracts/resolver-quantity").resolverQuantityFields(inheritedQuantity),
+    inheritedQuantity.quantityEvidenceRefs ? {quantityEvidenceRefs: inheritedQuantity.quantityEvidenceRefs} : {});
+  CONDITIONS_BY_CANONICAL_ITEM.set(value, { decision: provenance.lifecycleDecision, source: deepFreeze({
+    currentUnitId: value.unitId, requestCycleId: provenance.lifecycleDecision.targetRequestCycleId,
+    confirmedInputs, sourceEvidenceRefs: detach(value.canonicalRequest.evidenceRefs),
+    confirmedValues: { checkIn: confirmedInputs.stay.checkIn, checkOut: confirmedInputs.stay.checkOut,
+      guestCount: confirmedInputs.stay.guests }
+  }) });
   return withExecutionDiagnostic({ ok: true, code: null, errors: [], value }, {
     ...diagnostic,
     failureCode: null,
@@ -700,9 +713,15 @@ function executeCanonicalizerInputItem({
   });
 }
 
+function conditionsForValidatedCanonicalItem(item, lifecycleDecision) {
+  const record = CONDITIONS_BY_CANONICAL_ITEM.get(item);
+  return record?.decision === lifecycleDecision ? record.source : null;
+}
+
 module.exports = {
   c08ExecutionDiagnosticFor,
   createCanonicalizerInputItem,
   executeCanonicalizerInputItem,
+  conditionsForValidatedCanonicalItem,
   isTrustedCanonicalizerInputItem
 };

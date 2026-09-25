@@ -49,7 +49,7 @@ function fragmentsFor(record,publicAvailabilityUrl,finalDecision){
   if(["ABSENT","SUPPRESSED","MISSING_OUTCOME"].includes(record.kind))return [];
   if(record.kind==="TEMPORAL_REJECTION")return [body(TEMPORAL_REJECTIONS[p.readinessStatus].text)];
   if(record.kind==="CLARIFY"){
-    if(p.publicAvailabilityUrl && p.clarificationRequired !== true)return [reference(p.publicAvailabilityUrl)];
+    if(p.publicAvailabilityUrl && p.clarificationRequired !== true && p.outcomeStatus !== "not_ready")return [reference(p.publicAvailabilityUrl)];
     const text=questions(p.missingInputs);if(!text.length)text.push("目前提供的資訊無法安全確認。");
     const fragments=text.map(body);
     const url=p.publicAvailabilityUrl||publicAvailabilityUrl;

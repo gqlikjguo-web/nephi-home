@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       digest: ${{ steps.scope.outputs.digest }}
+      fast: ${{ steps.fast.outputs.fast }}
     steps:
       - uses: actions/github-script@v7
         id: scope
@@ -44,9 +45,19 @@ jobs:
           CORE_CONTRACT_PR: ${{ github.event.pull_request.number }}
           CORE_CONTRACT_ROOT: scope-trusted
         run: node scope-trusted/pilot/nephi-home-node-pilot-v1/scripts/core-contract-approval.js describe
+      - name: Classify exact candidate diff with production-base rules
+        id: fast
+        env:
+          BASELINE: ${{ github.event.pull_request.base.sha }}
+          CANDIDATE: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git -C scope-trusted fetch --no-tags origin "$CANDIDATE"
+          node scope-trusted/pilot/nephi-home-node-pilot-v1/scripts/core-ui-fast-path.js classify \
+            --root scope-trusted --baseline "$BASELINE" --candidate "$CANDIDATE"
   gate:
     name: Core Reliability Gate
     needs: scope
+    if: needs.scope.outputs.fast != 'true'
     environment: core-scope-approval
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -104,9 +115,49 @@ jobs:
           path: ${{ runner.temp }}/core-reliability
           if-no-files-found: error
           retention-days: 30
+  fast:
+    name: Public text/CSS fast path
+    needs: scope
+    if: needs.scope.outputs.fast == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+        working-directory: candidate/pilot/nephi-home-node-pilot-v1
+      - name: Verify trusted exact diff, whitespace and affected public runner
+        env:
+          BASELINE: ${{ github.event.pull_request.base.sha }}
+          CANDIDATE: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          node trusted/pilot/nephi-home-node-pilot-v1/scripts/core-ui-fast-path.js verify
+          --root candidate --baseline "$BASELINE" --candidate "$CANDIDATE"
+          --evidence "$RUNNER_TEMP/core-ui-fast-path"
+      - name: Preserve evidence on success or STOP
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-ui-fast-path-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/core-ui-fast-path
+          if-no-files-found: error
+          retention-days: 30
   candidate-status:
     if: always()
-    needs: [scope, gate]
+    needs: [scope, gate, fast]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -116,12 +167,17 @@ jobs:
         env:
           SCOPE_RESULT: ${{ needs.scope.result }}
           GATE_RESULT: ${{ needs.gate.result }}
+          FAST_RESULT: ${{ needs.fast.result }}
+          FAST_CLASS: ${{ needs.scope.outputs.fast }}
         with:
           script: |
             const pr = context.payload.pull_request;
             const {data: current} = await github.rest.pulls.get({...context.repo, pull_number: pr.number});
             const {data: branch} = await github.rest.repos.getBranch({...context.repo, branch: 'production'});
-            const passed = process.env.SCOPE_RESULT === 'success' && process.env.GATE_RESULT === 'success'
+            const routed = process.env.FAST_CLASS === 'true'
+              ? process.env.FAST_RESULT === 'success' && process.env.GATE_RESULT === 'skipped'
+              : process.env.FAST_CLASS === 'false' && process.env.GATE_RESULT === 'success' && process.env.FAST_RESULT === 'skipped';
+            const passed = process.env.SCOPE_RESULT === 'success' && routed
               && current.head.sha === pr.head.sha && branch.commit.sha === pr.base.sha
               && Number(process.env.GITHUB_RUN_ATTEMPT) === 1;
             await github.rest.repos.createCommitStatus({...context.repo, sha: pr.head.sha,

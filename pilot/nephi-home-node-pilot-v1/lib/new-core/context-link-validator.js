@@ -99,7 +99,8 @@ function validateContextLink({
   linkCandidate,
   understandingTurnInput,
   validatedEvidenceRefs,
-  now
+  now,
+  currentUnitPairs = []
 } = {}) {
   const wire = validateContextLinkCandidate(linkCandidate);
   if (!wire.ok) return failure(wire.code, wire.errors);
@@ -133,6 +134,20 @@ function validateContextLink({
   }
   if (!evidenceOwned(linkCandidate.currentSourceEvidenceRefs, validatedEvidenceRefs)) {
     return failure("CONTEXT_LINK_EVIDENCE_INVALID", ["contextLink.currentSourceEvidenceRefs"]);
+  }
+
+  let currentSource = null;
+  if (linkCandidate.relationKind === "RELATED_UNIT") {
+    const matches = currentUnitPairs.filter(pair => pair.unit?.unitId === linkCandidate.referencedCurrentUnitId);
+    if (matches.length !== 1) return failure(matches.length ? "CONTEXT_TARGET_AMBIGUOUS" : "CONTEXT_TARGET_UNAVAILABLE", ["referencedCurrentUnitId"]);
+    currentSource = matches[0];
+    if (!isValidatedSemanticUnitFor(understandingTurnInput, currentSource.unit)
+      || !isValidatedContextLinkFor(currentSource.link, currentSource.unit)
+      || understandingInputForValidatedContextLink(currentSource.link) !== understandingTurnInput
+      || !["NEW_REQUEST", "RELATED_REQUEST", "RELATED_UNIT", "MODIFICATION", "SUPPLEMENT"].includes(currentSource.link.relationKind)
+      || !cycleIdentityCompatible(unit, currentSource.unit, "RELATED_REQUEST")) {
+      return failure("CONTEXT_TARGET_SCOPE_CONFLICT", ["referencedCurrentUnitId.source"]);
+    }
   }
 
   const relationTargets = ["RELATED_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(linkCandidate.relationKind);
@@ -193,7 +208,8 @@ function validateContextLink({
     relationKind: value.relationKind,
     resolvedTargetRequestCycleId,
     compatibleExistingTargetIds,
-    compatiblePendingTargetIds
+    compatiblePendingTargetIds,
+    ...(currentSource ? { sourceUnitId: currentSource.unit.unitId } : {})
   }));
   const result = { ok: true, code: null, errors: [], value };
   FILTER_DIAGNOSTIC_BY_RESULT.set(result, deepFreeze(detach({ targetFilterResult })));

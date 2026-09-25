@@ -382,6 +382,8 @@ function contextLinkSchema(understandingTurnInput) {
     relationKind: enumSchema(RELATION_KINDS,
       "Use NEW_REQUEST for an independent request. RELATED_REQUEST explicitly cites the same lodging stay for a different capability; other targeted relations supplement, modify, or terminate a compatible prior cycle."),
     currentSourceEvidenceRefs: evidenceArraySchema(),
+    referencedCurrentUnitId: { type: ["string", "null"], maxLength: MAX_ID_LENGTH,
+      description: "Only RELATED_UNIT: exact ID of a different unit in this same output whose verified updated lodging conditions this request explicitly concerns. Otherwise null." },
     referencedHistoryEventRefs: arraySchema(
       historyRefs.length ? { anyOf: historyRefs } : objectSchema({ eventId: stringSchema(), messageRef: stringSchema() }),
       { maxItems: historyRefs.length ? MAX_EVIDENCE_REFS : 0 }
@@ -411,6 +413,7 @@ function instructions() {
     "When the current source message supplies missing values for a prior pending request, represent the composite lodging meaning with its trusted capability and subject identity, use SUPPLEMENT, cite the exact prior history event/message refs, and never emit or infer an internal requestCycleId.",
     "Context relation is semantic evidence, never a lifecycle decision. Use NEW_REQUEST for an independent actionable request, SUPPLEMENT for additional information completing an existing request, MODIFICATION for an explicit change to an existing request, TERMINATION for an explicit end, and NONE only when no conversational relation is expressed. The deterministic core alone chooses START, CONTINUE, MODIFY, END, or NONE.",
     "Use RELATED_REQUEST only when current-source meaning explicitly asks a different lodging capability about the same stay and same lodging subject, citing the exact prior event/message refs that establish that stay. This begins a separate request and reuses only verified applicable conditions; it never changes the prior request into the new capability or reuses its answers as facts. Do not copy prior dates into current-source temporal evidence. Independent requests, unrelated subjects, uncertain references or new stays must not inherit prior conditions.",
+    "Use RELATED_UNIT when one current-source lodging question explicitly concerns the same lodging conditions established or modified by another unit in this very output. Set referencedCurrentUnitId to that source unit's exact unitId, cite the dependent question's exact currentSourceEvidenceRefs, and leave referencedHistoryEventRefs empty. The source unit must itself be source-grounded and use its own correct historical relation when modifying prior lodging. Each question retains its own capability and identity; never use NEW_REQUEST for a dependent question just because its updated lodging subject is not yet in history. Match the source's updated subject, not its old subject. No self-reference, circular reference, guessed relation or copied facts. For all other relation kinds referencedCurrentUnitId is null.",
     "For an explicit change of the lodging product within an existing request, use MODIFICATION with exact history refs and a source-grounded product SET or CLEAR slot matching the new subject. Keep other unchanged conditions in the referenced cycle; do not relabel historical values as current-source evidence.",
     "Select responsibility by communicative meaning, not grammatical question form. Use conversational_statement with capability null, null subject identity, and relation NONE for personal narration, deliberation or social language that seeks no property information or action and neither supplies pending information nor changes or ends an existing request. Interrogative form alone does not establish responsibility. A genuine question seeking permission, policy or a service still requires a supported capability even when the formal data is unregistered; do not treat lack of a known answer as lack of a request. Do not use conversational_statement for an unclear or unsupported actual request; preserve that request as unsupported so the deterministic core can fail closed.",
     "RELATED_REQUEST, SUPPLEMENT, MODIFICATION, or TERMINATION requires current-source evidence plus exact referencedHistoryEventRefs. Topic proximity, recency, or a shared date/availability word is not relation evidence. A complete standalone lodging request is NEW_REQUEST with no history refs.",
@@ -424,6 +427,7 @@ function instructions() {
     "For amenity/policy/property_fact, an explicitly stated qualification of general permission uses information_need SET eligibility with the exact source evidence of that qualification. This includes stated counts, sizes, identities or arrangements whose applicability is being asked. A general permission question has no information_need slot. Request only the applicability rule; never infer permission or provide facts. Named existing policy subjects retain their catalog identity.",
     "For an explicit day-relative meaning, supply relativeSemantics.dayOffset and dayPeriod from the source meaning; preserve the exact source rawText. The sole time anchor is the timestamp of the C01 source event whose evidence owns that rawText, interpreted in propertyTimezone. Use calendar weeks beginning at ISO weekday 1 when the source names a relative calendar week. Do not anchor to the model or server current date, the referenced stay date, or a different source event. Emit only the source-relative offset; do not resolve a calendar date or invent an unstated relative offset.",
     "Temporal candidates preserve source meaning only. temporalCandidate.rawText must be a complete exact substring of one evidenceRefs[].quote for the same unit. When a date range spans multiple lines or labels, cite one single evidence span whose exact source quote fully contains that complete rawText; never combine rawText across separate evidence spans. Do not invent an implicit year, canonical date, availability, price, policy truth, amenity truth, location fact, or any other formal fact.",
+    "Carry every explicit temporal condition belonging to the unit, including a stated stay duration separated from its date by occupancy or other conditions. Put the source duration in nightsCandidate; null must not discard an explicit duration. Keep current-source conditions separate from historical Context. Use evidence spans owned by this request only; never attach another request's date or duration. A temporal completeness rejection requires correction from the unchanged source, not a guessed default or deletion of a validated non-temporal condition.",
     "Do not emit resolver IDs, query plans, state mutations, final reply text, message-level routing, task indexes, credentials, private data, or fields outside the schema.",
     "When meaning or reference is uncertain, preserve that uncertainty in the declared candidate fields; never invent a catalog identity or Context target.",
     "Before returning, verify that every unit and context link has unique matching IDs and exact source evidence, and that no independently meaningful source request was omitted or merged."
@@ -1364,7 +1368,19 @@ function admitUnderstandingValue(providerValue, understandingTurnInput, options,
 
   // C05 admits a unit and its link as one usable pair. A rejected link keeps
   // that unit explicit in failedUnits and cannot remove successful siblings.
-  for (const rawUnit of rawOutput.units) {
+  const pendingUnits = new Map(rawOutput.units.map(unit => [unit.unitId, unit]));
+  const admissionOrder = [];
+  while (pendingUnits.size) {
+    const ready = [...pendingUnits.values()].filter(unit => {
+      const links = preparedByUnitId.get(unit.unitId)?.linkCandidates || [];
+      return links.length !== 1 || links[0].relationKind !== "RELATED_UNIT"
+        || !pendingUnits.has(links[0].referencedCurrentUnitId);
+    });
+    // Cycles cannot acquire an admitted source, so C05 rejects every member.
+    if (!ready.length) { admissionOrder.push(...pendingUnits.values()); break; }
+    for (const unit of ready) { admissionOrder.push(unit); pendingUnits.delete(unit.unitId); }
+  }
+  for (const rawUnit of admissionOrder) {
     const semanticUnit = semanticByUnitId.get(rawUnit.unitId);
     if (!semanticUnit) continue;
     const normalized = preparedByUnitId.get(rawUnit.unitId);
@@ -1383,6 +1399,8 @@ function admitUnderstandingValue(providerValue, understandingTurnInput, options,
       linkCandidate: matchingLinks[0],
       understandingTurnInput,
       validatedEvidenceRefs: normalized.validatedEvidenceRefs,
+      currentUnitPairs: validatedUnits.map(unit => ({ unit,
+        link: validatedContextLinks.find(link => link.unitId === unit.unitId) })),
       now: timestamp(nowMs)
     });
     emitOperational(options, { traceId: understandingTurnInput.traceId, stage: "new_core_context_filter",
