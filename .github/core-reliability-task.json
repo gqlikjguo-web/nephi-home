@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "baseline": "1cbcbca7405731e00a41d4a7bb75af27aa427ebe",
-  "objective": "Prepare the approved fixed-test admin authentication change by identifying the existing manual-page test fixture with the exact fixed test service and both fixture-only test DB targets, and moving the obsolete test-only anonymous admin 401 assertion into the existing non-test authentication control. Preserve its 401 expectation, all other assertions and the entire runner. This prerequisite contains no runtime change and does not assert the not-yet-implemented fixed-test admin 200 behavior.",
+  "baseline": "7189dc0cb3f7fc50478f7954b1dc0dc667065fdc",
+  "objective": "Synchronize only the protected C03 semantic-unit fixture with the approved Temporal source completeness Contract: correct the source span for 10/9住一晚 and carry its explicit date and one-night duration. Preserve generic date-free price/total_price admission using an actually date-free source with matching evidence. Keep every assertion and expected result unchanged. This independent specification prerequisite must pass on the existing trusted-base runtime and contains no runtime modification.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-test-page-runner.js"
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-semantic-unit-runner.js"
   ],
   "contractChangeAllowed": true,
   "gateChangeAllowed": false,
   "affectedCapabilities": [],
   "preExistingUntracked": [],
-  "approvalSource": "User explicitly approved the minimum independent Controlled Contract-change PR for fixed test-only /admin and /admin/new-core-test password-free access, with trusted server-side deployment identity and unchanged production/non-test authentication. The saved test-admin-isolation proposal is authorized. Only the conflicting protected assertion/fixture and this task manifest may change; no runtime, Gate, Context, LINE, production environment, DB/schema/data or production runtime deployment. Owner independent review and exact-candidate core-scope-approval are required before installation. Subsequent implementation and minimal admin-to-test-DB-to-chat verification belong only on the fixed test branch/service."
+  "approvalSource": "User explicitly approved the minimum protected Contract/trusted-base specification synchronization for new-core-semantic-unit-runner.js:134 and the saved temporal-completeness/PROPOSED-protected-fixture.patch. Only this obsolete fixture and the necessary task manifest may change; no Gate weakening, assertion deletion, unrelated expectation change, runtime patch, production DB/environment operation or runtime deployment. A production trusted-base specification installation is authorized only through independent exact-candidate owner review and core-scope-approval. Preserve the uncommitted B4/B6 and Temporal runtime candidate on test-only/junzan-fixed; subsequent regression, REAL E2E and any runtime deployment remain restricted to the existing fixed test service."
 }
