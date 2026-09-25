@@ -39,7 +39,7 @@ test('typed relative day preserves consistent explicit duration',()=>{
  assert.equal(e.value.canonicalRequest.temporalState.checkIn,'2026-08-29');assert.equal(e.value.canonicalRequest.temporalState.checkOut,'2026-08-31');assert.equal(e.value.canonicalRequest.temporalState.nights,2);
 });
 test('typed candidate retains existing broader source-constraint recovery',()=>{
- const p=pipeline({messageText:'明天住兩晚',unitOverrides:{temporalCandidate:{...candidate('明天',1,'unspecified'),nightsCandidate:null}}});
+ const p=pipeline({messageText:'明天住兩晚',unitOverrides:{temporalCandidate:{...candidate('明天住兩晚',1,'unspecified'),nightsCandidate:null}}});
  const c=createC08(p);assert.equal(c.ok,true);const e=execute(c.value);assert.equal(e.ok,true);
  assert.equal(e.value.canonicalRequest.temporalState.checkIn,'2026-08-29');assert.equal(e.value.canonicalRequest.temporalState.checkOut,'2026-08-31');assert.equal(e.value.canonicalRequest.temporalState.nights,2);
 });

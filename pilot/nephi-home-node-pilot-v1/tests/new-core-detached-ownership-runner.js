@@ -21,7 +21,7 @@ function evidence(overrides = {}) {
     eventId: "event-semantic",
     messageRef: "message-semantic",
     startOffset: 0,
-    endOffset: 4,
+    endOffset: 7,
     quote: "10/9住一晚",
     ...overrides
   };
@@ -35,7 +35,10 @@ function unit(overrides = {}) {
     capability: "availability",
     subject: { kind: "bundle", catalogIdentity: "bundle-a" },
     stayDependent: true,
-    temporalCandidate: null,
+    temporalCandidate: {
+      rawText: "10/9住一晚", kind: "month_day",
+      checkInCandidate: null, checkOutCandidate: null, nightsCandidate: 1
+    },
     contextLinkCandidateId: "link-semantic",
     safetyCandidate: null,
     slotCandidates: [],

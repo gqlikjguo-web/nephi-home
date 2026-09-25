@@ -1,14 +1,16 @@
 {
   "schemaVersion": 1,
-  "baseline": "7189dc0cb3f7fc50478f7954b1dc0dc667065fdc",
-  "objective": "Synchronize only the protected C03 semantic-unit fixture with the approved Temporal source completeness Contract: correct the source span for 10/9住一晚 and carry its explicit date and one-night duration. Preserve generic date-free price/total_price admission using an actually date-free source with matching evidence. Keep every assertion and expected result unchanged. This independent specification prerequisite must pass on the existing trusted-base runtime and contains no runtime modification.",
+  "baseline": "329ad1a57a9c9128403a4d1dc56e5088f2a519be",
+  "objective": "One-time synchronization of all three proven stale fixtures found by the approved Context/Temporal completeness affected audit: exact 10/9住一晚 source and duration in detached ownership, complete 明天住兩晚 raw source in relative semantics, and source-backed 今天 in the availability-off manual-page control. Preserve every assertion, expected result and runner. This spec-only candidate must pass on unchanged trusted-base runtime and contains no runtime, Gate, schema, environment or data changes.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-semantic-unit-runner.js"
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-detached-ownership-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-relative-semantics-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-test-page-runner.js"
   ],
   "contractChangeAllowed": true,
   "gateChangeAllowed": false,
   "affectedCapabilities": [],
   "preExistingUntracked": [],
-  "approvalSource": "User explicitly approved the minimum protected Contract/trusted-base specification synchronization for new-core-semantic-unit-runner.js:134 and the saved temporal-completeness/PROPOSED-protected-fixture.patch. Only this obsolete fixture and the necessary task manifest may change; no Gate weakening, assertion deletion, unrelated expectation change, runtime patch, production DB/environment operation or runtime deployment. A production trusted-base specification installation is authorized only through independent exact-candidate owner review and core-scope-approval. Preserve the uncommitted B4/B6 and Temporal runtime candidate on test-only/junzan-fixed; subsequent regression, REAL E2E and any runtime deployment remain restricted to the existing fixed test service."
+  "approvalSource": "User approved a complete affected stale-test audit for the current Context/Temporal completeness Contract, followed by one minimal independent spec PR only if all candidates are classified with no runtime regression or UNKNOWN. The five detached-ownership failures are proven stale; the audit found two additional stale fixture sites. Only those three protected test fixtures and this task manifest may change. Preserve ownership, scope/property isolation, ordering, dedup, authority, fail-closed, auth and reply-suppression assertions. No assertion deletion or expected-value change, protected-path/hash/registry/Gate change, runtime patch, OpenAI call, production operation or deployment. Preserve all 19 uncommitted runtime-candidate paths byte-identically on test-only/junzan-fixed. PR15 review is not approval for this candidate; exact-candidate independent owner review and the existing controlled Contract-change Gate are still required before any later trusted-base installation."
 }
