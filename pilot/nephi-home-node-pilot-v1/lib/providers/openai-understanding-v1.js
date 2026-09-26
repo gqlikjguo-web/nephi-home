@@ -178,18 +178,19 @@ function arraySchema(items, { minItems = 0, maxItems, description } = {}) {
   };
 }
 
-function evidenceSchema() {
-  return objectSchema({
-    eventId: stringSchema(),
-    messageRef: stringSchema(),
+function evidenceSchema(input) {
+  const sources = input.sourceEvents.map(source => objectSchema({
+    eventId: enumSchema([source.eventId], "Exact C01 source event ID; never a trace, turn or generated ID."),
+    messageRef: enumSchema([source.messageRef], "Exact message reference paired with this C01 event ID."),
     startOffset: { type: "integer", minimum: 0 },
     endOffset: { type: "integer", minimum: 0 },
     quote: stringSchema(MAX_QUOTE_LENGTH, "Exact UTF-16 source substring; never paraphrase or normalize.")
-  }, "One source-bound evidence span from C01 sourceEvents.");
+  }, "One source-bound evidence span from C01 sourceEvents."));
+  return sources.length === 1 ? sources[0] : { anyOf: sources };
 }
 
-function evidenceArraySchema() {
-  return arraySchema(evidenceSchema(), { minItems: 1, maxItems: MAX_EVIDENCE_REFS });
+function evidenceArraySchema(input) {
+  return arraySchema(evidenceSchema(input), { minItems: 1, maxItems: MAX_EVIDENCE_REFS });
 }
 
 function temporalCandidateSchema() {
@@ -234,7 +235,7 @@ function slotCandidateSchema(input, policy = null) {
     slot: enumSchema(SLOT_NAMES),
     operation: enumSchema(SLOT_OPERATIONS),
     value: { type: ["string", "integer", "boolean", "null"] },
-    evidenceRefs: evidenceArraySchema()
+    evidenceRefs: evidenceArraySchema(input)
   };
   const identities = buildPublicCatalogIdentitySet(input);
   const productIds = input.publicSubjectCatalog.filter(subject => productSlotAdmission(
@@ -294,7 +295,7 @@ function safetyCandidateSchema(policy) {
   return { type: "null" };
 }
 
-function quantityCandidateSchema() { return {anyOf:[{type:'null'},objectSchema({requestedQuantity:{type:'integer',minimum:1,maximum:Number.MAX_SAFE_INTEGER},distinctRequirement:enumSchema(['none','distinct_entities']),evidenceRefs:evidenceArraySchema()})]}; }
+function quantityCandidateSchema(input) { return {anyOf:[{type:'null'},objectSchema({requestedQuantity:{type:'integer',minimum:1,maximum:Number.MAX_SAFE_INTEGER},distinctRequirement:enumSchema(['none','distinct_entities']),evidenceRefs:evidenceArraySchema(input)})]}; }
 
 function semanticUnitBranchSchema(understandingTurnInput, capability) {
   const policy = capabilityPolicyFor(CAPABILITY_REGISTRY_PROJECTION, capability);
@@ -304,7 +305,7 @@ function semanticUnitBranchSchema(understandingTurnInput, capability) {
       .flatMap((candidatePolicy) => candidatePolicy.purposes));
     return objectSchema({
       unitId: stringSchema(),
-      evidenceRefs: evidenceArraySchema(),
+      evidenceRefs: evidenceArraySchema(understandingTurnInput),
       purpose: enumSchema([...PURPOSES].filter((purpose) => !policyOwnedPurposes.has(purpose)),
         "Only a source meaning with no declared capability policy may use unsupported."),
       capability: enumSchema([capability], "Unsupported language-derived capability candidate; never answer facts."),
@@ -325,7 +326,7 @@ function semanticUnitBranchSchema(understandingTurnInput, capability) {
         ]
       },
       slotCandidates: arraySchema(slotCandidateSchema(understandingTurnInput), { maxItems: MAX_SLOT_CANDIDATES }),
-    quantityCandidate: quantityCandidateSchema(),
+    quantityCandidate: quantityCandidateSchema(understandingTurnInput),
       confidenceBand: enumSchema(CONFIDENCE_BANDS)
     }, "An explicitly unsupported semantic candidate that remains fail-closed at C03.");
   }
@@ -335,7 +336,7 @@ function semanticUnitBranchSchema(understandingTurnInput, capability) {
   if (subjectBranches.length === 0) return null;
   return objectSchema({
     unitId: stringSchema(),
-    evidenceRefs: evidenceArraySchema(),
+    evidenceRefs: evidenceArraySchema(understandingTurnInput),
     purpose: enumSchema(policy.safetyPurposes, "One independent source meaning; do not merge separately actionable meanings."),
     capability: enumSchema([capability], policy.understandingDescription),
     subject: { anyOf: subjectBranches },
@@ -344,7 +345,7 @@ function semanticUnitBranchSchema(understandingTurnInput, capability) {
     contextLinkCandidateId: stringSchema(),
     safetyCandidate: safetyCandidateSchema(policy),
     slotCandidates: arraySchema(slotCandidateSchema(understandingTurnInput, policy), { maxItems: MAX_SLOT_CANDIDATES }),
-    quantityCandidate: quantityCandidateSchema(),
+    quantityCandidate: quantityCandidateSchema(understandingTurnInput),
     confidenceBand: enumSchema(CONFIDENCE_BANDS)
   }, "Exactly one immutable semantic candidate. Do not emit facts, canonical dates, resolver data, state writes, or final copy.");
 }
@@ -359,7 +360,7 @@ function quantityAlignedUnitBranches(branch) {
     const selected = subjects.filter(item => quantitySubjectAdmission(item.properties.kind.enum[0]).allowed === allowed);
     if (!selected.length) return [];
     return [{...branch, properties: {...branch.properties, subject: {anyOf:selected},
-      quantityCandidate: allowed ? quantityCandidateSchema() : {type:"null"}
+      quantityCandidate: allowed ? branch.properties.quantityCandidate : {type:"null"}
     }}];
   });
 }
@@ -381,7 +382,7 @@ function contextLinkSchema(understandingTurnInput) {
     unitId: stringSchema(),
     relationKind: enumSchema(RELATION_KINDS,
       "Use NEW_REQUEST for an independent request. RELATED_REQUEST explicitly cites the same lodging stay for a different capability; other targeted relations supplement, modify, or terminate a compatible prior cycle."),
-    currentSourceEvidenceRefs: evidenceArraySchema(),
+    currentSourceEvidenceRefs: evidenceArraySchema(understandingTurnInput),
     referencedCurrentUnitId: { type: ["string", "null"], maxLength: MAX_ID_LENGTH,
       description: "Only RELATED_UNIT: exact ID of a different unit in this same output whose verified updated lodging conditions this request explicitly concerns. Otherwise null." },
     referencedHistoryEventRefs: arraySchema(
@@ -1095,6 +1096,70 @@ function relativeOffsetFailure(failure) {
 }
 const MODEL_UNIT_FAILURES = new Set(["SEMANTIC_UNIT_INVALID", "CATALOG_IDENTITY_INVALID", "CAPABILITY_SUBJECT_CONFLICT", "STAY_DEPENDENCY_CONFLICT", "UNIT_MEANING_UNSUPPORTED", "UNIT_EVIDENCE_MISSING"]);
 const MODEL_EVIDENCE_FAILURES = new Set(["EVIDENCE_QUOTE_MISMATCH", "EVIDENCE_RANGE_INVALID", "EVIDENCE_MATCH_AMBIGUOUS", "EVIDENCE_SOURCE_UNKNOWN", "EVIDENCE_SCOPE_CONFLICT"]);
+
+// Locate evidence with C04's existing validator; this does not infer a source
+// identity or normalize a rejected reference into a trusted one.
+function unitEvidenceLocations(output, unitId) {
+  const locations = [];
+  const add = (refs, path) => refs.forEach((ref, index) => locations.push({ ref, path: [...path, index] }));
+  output.understandingOutput.units.forEach((unit, index) => {
+    if (unit.unitId !== unitId) return;
+    const path = ["understandingOutput", "units", index];
+    add(unit.evidenceRefs, [...path, "evidenceRefs"]);
+    unit.slotCandidates.forEach((slot, slotIndex) => add(slot.evidenceRefs, [...path, "slotCandidates", slotIndex, "evidenceRefs"]));
+    if (unit.quantityCandidate) add(unit.quantityCandidate.evidenceRefs, [...path, "quantityCandidate", "evidenceRefs"]);
+  });
+  output.contextLinkCandidates.forEach((link, index) => {
+    if (link.unitId === unitId) add(link.currentSourceEvidenceRefs, ["contextLinkCandidates", index, "currentSourceEvidenceRefs"]);
+  });
+  return locations;
+}
+
+function sourceCorrectionFailures(output, unitId, input) {
+  return unitEvidenceLocations(output, unitId).flatMap(({ ref, path }) => {
+    const result = validateAndNormalizeSourceEvidence([ref], input.sourceEvents);
+    return result.ok ? [] : [{ field: path.join("."), code: result.code }];
+  });
+}
+
+function sourceCorrectionPreserved(previous, next, failure, input) {
+  if (failure.boundary !== "C04") return true;
+  if (!next) return false;
+  // Bind by unit/link identity, so unrelated unit ordering is immaterial.
+  const project = output => detach({
+    understandingOutput: { units: output.understandingOutput.units.filter(unit => unit.unitId === failure.unitId) },
+    contextLinkCandidates: output.contextLinkCandidates.filter(link => link.unitId === failure.unitId)
+      .slice().sort((a, b) => a.contextLinkCandidateId.localeCompare(b.contextLinkCandidateId))
+  });
+  const before = project(previous), after = project(next);
+  const replace = (output, path, value) => {
+    let parent = output;
+    for (const key of path.slice(0, -1)) {
+      if (!parent || !Object.hasOwn(parent, key)) return false;
+      parent = parent[key];
+    }
+    if (!parent || !Object.hasOwn(parent, path.at(-1))) return false;
+    parent[path.at(-1)] = value;
+    return true;
+  };
+  for (const { ref, path } of unitEvidenceLocations(before, failure.unitId)) {
+    const valid = validateAndNormalizeSourceEvidence([ref], input.sourceEvents);
+    if (!valid.ok) {
+      // Only C04-rejected references may differ. Their replacements already
+      // undergo complete admission; masking here never changes model output.
+      if (!replace(before, path, null) || !replace(after, path, null)) return false;
+    } else {
+      replace(before, path, valid.value[0]);
+      let candidate = after;
+      for (const key of path) candidate = candidate?.[key];
+      const checked = validateAndNormalizeSourceEvidence([candidate], input.sourceEvents);
+      if (!checked.ok) return false;
+      replace(after, path, checked.value[0]);
+    }
+  }
+  return isDeepStrictEqual(before, after);
+}
+
 function correctionUnitFailure(failure, output, input, operational) {
   let correctable = failure.boundary === "C03" && MODEL_UNIT_FAILURES.has(failure.failureCode)
     || failure.boundary === "C04" && MODEL_EVIDENCE_FAILURES.has(failure.failureCode);
@@ -1113,7 +1178,10 @@ function correctionUnitFailure(failure, output, input, operational) {
     correctable = failure.failureCode === "CONTEXT_LINK_DUPLICATE" || failure.failureCode === "CONTEXT_LINK_EVIDENCE_INVALID"
       || failure.failureCode === "CONTEXT_TARGET_UNAVAILABLE" && (unknownRef || unboundTarget || incompatible);
   }
+  const evidenceFailures = failure.boundary === "C04" ? sourceCorrectionFailures(output, failure.unitId, input) : [];
   return { boundary: failure.boundary, code: failure.failureCode, unitId: failure.unitId,
+    ...(evidenceFailures.length ? { field: evidenceFailures[0].field, evidenceFailures,
+      rule: "Repair only the listed rejected evidence references using exact C01 sourceEvents pairs and source text. Preserve all other references and sibling fields; never propagate a rejected ID into valid references." } : {}),
     fieldValidationState: failure.boundary === "C03" ? detail?.fieldValidationState || []
       : correctionPreservationForUnit(output.understandingOutput.units.find(unit => unit.unitId === failure.unitId), input),
     origin: correctable ? "model_output" : "not_proven_model_output", reason: detail?.validationErrors?.length ? detail.validationErrors : [failure.failureCode],
@@ -1226,7 +1294,8 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     const fieldsPreserved = !correction || correction.failures.every(failure => {
       const previous = firstOutput?.understandingOutput.units.find(unit => unit.unitId === failure.unitId);
       const next = value?.understandingOutput.units.find(unit => unit.unitId === failure.unitId);
-      return (!relativeOffsetFailure(failure) || relativeOffsetRepairPreserved(previous, next, understandingTurnInput))
+      return sourceCorrectionPreserved(firstOutput, value, failure, understandingTurnInput)
+        && (!relativeOffsetFailure(failure) || relativeOffsetRepairPreserved(previous, next, understandingTurnInput))
         && (!(failure.fieldValidationState || []).length
           || semanticObligationsPreserved(previous, next, failure.fieldValidationState, understandingTurnInput));
     });

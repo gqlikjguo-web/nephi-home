@@ -98,7 +98,13 @@ function resolveAvailability({ availabilityResolver, resolverTask = null, proper
   const scopedPropertyId = resolverTask ? resolverTask.propertyId : propertyId;
   const result = availabilityResolver(contractRequest);
   if (!result || result.customerId !== scopedPropertyId) throw new Error("availability_resolver_invalid_result");
-  return { result, facts: availabilityFacts(result, scopedPropertyId) };
+  const notOpenProvenance = require("../mvp-service").availabilityNotOpenProvenanceFor(result, {
+    propertyId: scopedPropertyId, from: contractRequest.checkIn, to: contractRequest.checkOut
+  });
+  if (result.unopenedDates?.length && !notOpenProvenance) throw new Error("untrusted_inventory_not_open");
+  return { result, facts: { ...availabilityFacts(result, scopedPropertyId),
+    ...(notOpenProvenance ? { unopenedDates: [...notOpenProvenance.unopenedDates] } : {}) },
+    ...(notOpenProvenance ? { notOpenProvenance } : {}) };
 }
 
 function resolveAvailableDates({ availableDatesResolver, resolverTask = null, propertyId, request, resolved }) {

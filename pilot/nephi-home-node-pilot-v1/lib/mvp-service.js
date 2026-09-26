@@ -7,13 +7,46 @@ const { normalizePropertyFacts } = require("./property-facts");
 const { normalizeSelfCheckInOutInstructions } = require("./self-check-in-out-instructions");
 
 const ALLOWED_STATUSES = new Set(["available", "closed"]);
-const AVAILABILITY_UNKNOWN_RESULTS = new WeakMap();
-function availabilityUnknownProvenanceFor(result, scope) {
-  const record = AVAILABILITY_UNKNOWN_RESULTS.get(result);
+const AVAILABILITY_RESULTS = new WeakMap();
+function availabilityResultProvenanceFor(result, scope) {
+  const record = AVAILABILITY_RESULTS.get(result);
   if (!record || !scope || record.provenance.readEvidence.propertyId !== scope.propertyId
     || record.provenance.readEvidence.from !== scope.from || record.provenance.readEvidence.to !== scope.to
     || !require("node:util").isDeepStrictEqual(result, record.snapshot)) return null;
   return record.provenance;
+}
+function availabilityUnknownProvenanceFor(result, scope) {
+  const provenance = availabilityResultProvenanceFor(result, scope);
+  return provenance?.status === "unknown" ? provenance : null;
+}
+function availabilityNotOpenProvenanceFor(result, scope) {
+  const provenance = availabilityResultProvenanceFor(result, scope);
+  return provenance?.status === "known_unavailable" ? provenance : null;
+}
+
+function unopenedInventoryDates(rows, dates, rooms, readEvidence) {
+  if (!readEvidence || !Array.isArray(readEvidence.records)) return [];
+  const records = readEvidence.records;
+  // Inspect physical rows, before getRows' existing bundle projection. Only a
+  // successful whole-property read can establish a wholly unconfigured day.
+  if (!rows.every(row => row && dates.includes(row.date)
+    && Object.keys(row).every(key => key === "date" || ALLOWED_STATUSES.has(row[key])))
+    || new Set(rows.map(row => row.date)).size !== rows.length
+    || !records.every(record => dates.includes(record.date) && ALLOWED_STATUSES.has(record.status)
+      && Number.isSafeInteger(record.remaining) && record.remaining >= 0
+      && (record.status === "available" ? record.remaining > 0 : record.remaining === 0))) return [];
+  const unopened = [];
+  for (const date of dates) {
+    const physical = records.filter(record => record.date === date);
+    const projected = rows.find(row => row.date === date);
+    if (!physical.length) {
+      if (projected) return [];
+      unopened.push(date);
+    } else if (!projected || new Set(physical.map(record => record.inventoryId)).size !== physical.length
+      || !rooms.every(room => physical.some(record => record.inventoryId === room.id
+        && projected[room.id] === record.status))) return [];
+  }
+  return unopened;
 }
 
 function missingInventoryRecords(rows, dates, rooms) {
@@ -355,7 +388,11 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
     const queryMode = ["bundle_only","room_only","any"].includes(query.queryMode) ? query.queryMode : "any";
     const rows = repository.getAvailabilityRows(homestay.customerId, checkIn, checkOut);
     const byDate = Object.fromEntries(rows.map((row) => [row.date, row]));
-    const availabilityReliable = rows.length === dates.length && dates.every((date) => {
+    const readEvidence = require("./providers/postgres-providers").availabilityReadEvidenceFor(rows, {
+      propertyId: homestay.customerId, from: checkIn, to: checkOut
+    });
+    const unopenedDates = unopenedInventoryDates(rows, dates, homestay.rooms || [], readEvidence);
+    const availabilityReliable = unopenedDates.length > 0 || rows.length === dates.length && dates.every((date) => {
       const row = byDate[date];
       if (!row || row.date !== date) return false;
       return (homestay.rooms || []).every((room) => row[room.id] === "available" || row[room.id] === "closed");
@@ -418,13 +455,15 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
       availableRooms,
       feasibility,
       rooms,
+      ...(unopenedDates.length ? { unopenedDates } : {}),
       lineUrl: homestay.lineUrl || ""
     };
-    const readEvidence = require("./providers/postgres-providers").availabilityReadEvidenceFor(rows, {
-      propertyId: homestay.customerId, from: checkIn, to: checkOut
-    });
-    if (!availabilityReliable && readEvidence && missingInventoryRecords(rows, dates, homestay.rooms || [])) {
-      AVAILABILITY_UNKNOWN_RESULTS.set(result, {
+    if (unopenedDates.length) {
+      AVAILABILITY_RESULTS.set(result, { snapshot: structuredClone(result),
+        provenance: Object.freeze({ status: "known_unavailable", reason: "inventory_not_open",
+          unopenedDates: Object.freeze([...unopenedDates]), readEvidence }) });
+    } else if (!availabilityReliable && readEvidence && missingInventoryRecords(rows, dates, homestay.rooms || [])) {
+      AVAILABILITY_RESULTS.set(result, {
         snapshot: structuredClone(result),
         provenance: Object.freeze({ status: "unknown", reason: "missing_inventory_records", readEvidence })
       });
@@ -1216,4 +1255,4 @@ function createMvpService(providers, { now = () => new Date(), safeTraceFormatte
   };
 }
 
-module.exports = { createMvpService, AppError, stayDates, availabilityUnknownProvenanceFor };
+module.exports = { createMvpService, AppError, stayDates, availabilityUnknownProvenanceFor, availabilityNotOpenProvenanceFor };

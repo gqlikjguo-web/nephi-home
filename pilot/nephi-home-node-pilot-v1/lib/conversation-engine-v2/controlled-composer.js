@@ -49,6 +49,9 @@ function composeSection(section) {
     return facts.priceBasis === "registered_rate" ? feasibility + "\n" + composeSection({ ...section, facts: { ...facts, feasibility: null } }) : feasibility;
   }
   if (["availability", "bundle_availability"].includes(section.type) && section.outcomeStatus === "no_availability") {
+    if (section.outcomeReason === "inventory_not_open" && facts.unopenedDates?.length) {
+      return `${facts.checkIn} 至 ${facts.checkOut} 的住宿無法完整預訂：${facts.unopenedDates.join("、")} 未開放預訂。`;
+    }
     return `${facts.checkIn} 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。`;
   }
   if (facts.prices) {

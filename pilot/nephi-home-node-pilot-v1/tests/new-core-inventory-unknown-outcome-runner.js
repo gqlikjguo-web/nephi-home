@@ -25,6 +25,10 @@ async function formalProviders() {
         await db.query("INSERT INTO room_types(property_id,room_id,name,capacity,position) VALUES($1,$2,$3,2,0)", [id, "product-a", "Garden lodging"]);
         await db.query("INSERT INTO bundle_offers(property_id,bundle_id,name,capacity) VALUES($1,$2,$3,2)", [id, "product-b", "Courtyard group"]);
         await db.query("INSERT INTO bundle_offer_members(property_id,bundle_id,room_id) VALUES($1,$2,$3)", [id, "product-b", "product-a"]);
+        // Owner-approved zero-day Contract: wholly empty dates are known not-open.
+        // These epistemic tests instead use real partial records: a bundle row
+        // exists, while the room has no record. Keep every Unknown assertion.
+        await db.query("INSERT INTO inventory_availability_days(property_id,inventory_id,stay_date,status,remaining) SELECT $1,'product-b',d,'closed',0 FROM generate_series('2026-09-19'::date,'2027-01-03'::date,interval '1 day') d", [id]);
       }
       // Existing SQL schema permits this identifier; exercise the current
       // worker projection collision without changing schema or production data.
