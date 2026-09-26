@@ -13,7 +13,7 @@ const cases = [
   ["2027/1/2有房嗎", "2027/1/2", "2027-01-02", "2027-01-03", false],
   ["11/25~11/27 401房，還有嗎？", "11/25~11/27", "2026-11-25", "2026-11-27", true]
 ];
-// All missing cases run first, before explicit operator writes materialize dates.
+// Partial-missing cases run first, before operator writes complete those dates.
 for (const status of ["missing", "closed", "available"]) for (const [text, raw, date, checkout, room] of cases) {
   test(`${status}: ${text}`, async () => {
     const { providers } = await formalProviders();
@@ -59,7 +59,7 @@ for (const status of ["missing", "closed", "available"]) for (const [text, raw, 
 }
 test("another property's explicit close cannot create this property's facts", async () => {
   const { providers } = await formalProviders();
-  assert.deepEqual(providers.availability.getRows("inventory-b", "2027-01-02", "2027-01-03"), []);
+  assert.deepEqual(providers.availability.getRows("inventory-b", "2027-01-02", "2027-01-03"), [{ date: "2027-01-02", "product-b": "closed" }]);
   const r = await run({ propertyId: "inventory-b", date: "2027-01-02", availabilityProvider: providers.availability });
   assert.equal(r.artifacts.executionOutcomes[0].outcome, "unknown");
   assert.equal(r.finalResponse.shouldReply, true);
