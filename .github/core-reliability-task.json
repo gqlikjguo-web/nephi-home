@@ -1,16 +1,18 @@
 {
   "schemaVersion": 1,
-  "baseline": "329ad1a57a9c9128403a4d1dc56e5088f2a519be",
-  "objective": "One-time synchronization of all three proven stale fixtures found by the approved Context/Temporal completeness affected audit: exact 10/9住一晚 source and duration in detached ownership, complete 明天住兩晚 raw source in relative semantics, and source-backed 今天 in the availability-off manual-page control. Preserve every assertion, expected result and runner. This spec-only candidate must pass on unchanged trusted-base runtime and contains no runtime, Gate, schema, environment or data changes.",
+  "baseline": "452705661a773b5b02e8624a3768ea1744814f8f",
+  "objective": "Controlled minimum protected-fixture synchronization for the owner-approved inventory Contract: whole stay dates with a successful formal zero-row read mean known not-open, while incomplete product records remain epistemic Unknown. Preserve every existing Unknown, scope, authority, correction-call, closed/available, rate and response safety assertion by making the Unknown fixtures physically partial. Only the related fixture-shape assertion changes. No runtime, Context, State, Understanding, Gate implementation/policy, schema, env or production data changes.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-detached-ownership-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-relative-semantics-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-test-page-runner.js"
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-inventory-unknown-outcome-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-availability-reliability-runner.js"
   ],
   "contractChangeAllowed": true,
   "gateChangeAllowed": false,
-  "affectedCapabilities": [],
+  "affectedCapabilities": [
+    "facts",
+    "reply"
+  ],
   "preExistingUntracked": [],
-  "approvalSource": "User approved a complete affected stale-test audit for the current Context/Temporal completeness Contract, followed by one minimal independent spec PR only if all candidates are classified with no runtime regression or UNKNOWN. The five detached-ownership failures are proven stale; the audit found two additional stale fixture sites. Only those three protected test fixtures and this task manifest may change. Preserve ownership, scope/property isolation, ordering, dedup, authority, fail-closed, auth and reply-suppression assertions. No assertion deletion or expected-value change, protected-path/hash/registry/Gate change, runtime patch, OpenAI call, production operation or deployment. Preserve all 19 uncommitted runtime-candidate paths byte-identically on test-only/junzan-fixed. PR15 review is not approval for this candidate; exact-candidate independent owner review and the existing controlled Contract-change Gate are still required before any later trusted-base installation."
+  "approvalSource": "Owner explicitly approved the minimum whole-day zero-inventory Contract and controlled synchronization of directly conflicting protected acceptance. This spec-only candidate is separately reviewed and installed before runtime release; scope declaration is not GitHub owner approval. No test deletion or weakened safety assertions; no production runtime deployment."
 }
