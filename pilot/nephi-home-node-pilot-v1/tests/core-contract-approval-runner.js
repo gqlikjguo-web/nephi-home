@@ -41,6 +41,86 @@ global.fetch = async (url, options) => {
   assert.ok(Object.hasOwn(replies, suffix), suffix);
   return { ok: true, json: async () => structuredClone(replies[suffix]) };
 };
+
+// Atomic installation fixtures retain independent Git histories; no release files are mutated.
+function atomicFixture(change) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-atomic-contract-"));
+  const g = (...args) => cp.execFileSync("git", args, {cwd:dir,encoding:"utf8",stdio:["ignore","pipe","pipe"]}).trim();
+  const write = (file, text) => { fs.mkdirSync(path.dirname(path.join(dir,file)),{recursive:true}); fs.writeFileSync(path.join(dir,file),text); };
+  write(a,"old specification\n"); write("runtime.js","old runtime\n");
+  g("init","-q");g("config","user.name","Atomic test");g("config","user.email","test@example.invalid");g("add",".");g("commit","-qm","original product");
+  const sourceBaseline=g("rev-parse","HEAD");
+  write("policy.json","reviewed governance\n");
+  if(change==="baseline-drift")write("unreviewed-runtime.js","changed before release\n");
+  g("add",".");g("commit","-qm","governance installation");const base=g("rev-parse","HEAD");
+  const additions={[a]:"new specification\n","runtime.js":"new runtime\n",[b]:"new regression\n"};
+  const registration={id:"reviewed-release",sourceBaseline,baselineGovernancePaths:["policy.json",taskPath],
+    protectedPaths:[a,b],requireReal:true,requiredRunners:["tests/a.js","tests/b.js"],
+    files:Object.entries(additions).map(([file,text])=>({path:file,beforeSha256:file===b?null:contract.digest(file===a?"old specification\n":"old runtime\n"),afterSha256:contract.digest(text)})).sort((x,y)=>x.path.localeCompare(y.path))};
+  const trusted={...structuredClone(policy),atomicContractInstallations:[registration]};
+  const scope={schemaVersion:1,baseline:base,objective:"exact reviewed combination",allowedPaths:[taskPath,...Object.keys(additions)].sort(),contractChangeAllowed:true,gateChangeAllowed:false,affectedCapabilities:[],contractInstallationId:registration.id};
+  for(const [file,text] of Object.entries(additions))write(file,text);
+  if(change==="content")write("runtime.js","unreviewed runtime\n");
+  if(change==="extra"){write("other-runtime.js","extra\n");scope.allowedPaths.push("other-runtime.js");}
+  if(change==="governance"){write("policy.json","candidate approval policy\n");scope.allowedPaths.push("policy.json");}
+  if(change==="mode")fs.chmodSync(path.join(dir,"runtime.js"),0o755);
+  if(change==="symlink"){fs.unlinkSync(path.join(dir,"runtime.js"));fs.symlinkSync(a,path.join(dir,"runtime.js"));}
+  if(change==="deleted")fs.unlinkSync(path.join(dir,"runtime.js"));
+  if(change==="missing-spec")fs.unlinkSync(path.join(dir,b));
+  write(taskPath,JSON.stringify(scope));g("add",".");g("commit","-qm","reviewed combination");
+  const head=g("rev-parse","HEAD");
+  return {root:dir,baseline:base,candidate:head,task:scope,policy:trusted,context,registration};
+}
+async function verifyAtomicInstallation() {
+  const f=atomicFixture(),d=contract.describe(f);
+  assert.equal(d.installationId,"reviewed-release");assert.equal(d.installationDigest,contract.digest(f.registration));
+  assert.deepEqual(d.files,f.registration.files);cases++;
+  const reset=()=>{
+    replies={
+      "/actions/runs/6":{id:6,run_attempt:1,event:"pull_request_target",path:policy.contractReview.workflow,head_sha:f.candidate,repository:{full_name:"owner/repo"}},
+      "/pulls/5":{state:"open",head:{sha:f.candidate,repo:{full_name:"owner/repo"}},base:{sha:f.baseline,ref:"production"}},
+      "/branches/production":{commit:{sha:f.baseline}},
+      "/actions/runs/6/approvals":[{state:"approved",comment:`CONTRACT_RUNTIME_INSTALL_APPROVED ${contract.digest(d)} REVIEW_SHA256=${"c".repeat(64)}`,environments:[{id:12,name:"core-scope-approval"}],user:{id:34}}]
+    };
+  };
+  reset();const receipt=await contract.authorize(d,f.policy,"fixture-read-only");
+  gate.validateDiff(d.changedPaths,f.task,f.policy,receipt);cases++;
+  assert.deepEqual(contract.requirements(receipt,f.policy),{installationId:"reviewed-release",runners:f.registration.requiredRunners,requireReal:true});cases++;
+  fails(()=>contract.requirements(JSON.parse(JSON.stringify(receipt)),f.policy),/CONTRACT_RECEIPT_REQUIRED/);
+  fails(()=>gate.validateDiff(d.changedPaths,f.task,f.policy,{verified:true}),/CONTRACT_CHANGE_REQUIRED/);
+  for(const alteration of [
+    ()=>{replies["/actions/runs/6/approvals"]=[];},
+    ()=>{replies["/actions/runs/6/approvals"][0].comment="approved";},
+    ()=>{replies["/actions/runs/6/approvals"][0].comment=`CONTRACT_CHANGE_APPROVED ${contract.digest(d)} REVIEW_SHA256=${"c".repeat(64)}`;},
+    ()=>{replies["/actions/runs/6/approvals"][0].user.id=99;},
+    ()=>{replies["/actions/runs/6/approvals"][0].environments[0].id=99;},
+    ()=>{replies["/actions/runs/6"].run_attempt=2;},
+    ()=>{replies["/actions/runs/6"].head_sha=f.baseline;},
+    ()=>{replies["/pulls/5"].head.sha=f.baseline;},
+    ()=>{replies["/branches/production"].commit.sha=f.candidate;}
+  ]) {reset();alteration();await assert.rejects(()=>contract.authorize(d,f.policy,"fixture-read-only"),/CONTRACT_/);cases++;}
+  for(const key of ["diffSha256","taskDigest","policyDigest","installationDigest"]){
+    reset();await assert.rejects(()=>contract.authorize({...d,[key]:"b".repeat(64)},f.policy,"fixture-read-only"),/CONTRACT_/);cases++;
+  }
+  for(const change of ["content","extra","governance","mode","symlink","deleted","missing-spec","baseline-drift"]){
+    fails(()=>contract.describe(atomicFixture(change)),/ATOMIC_/);
+  }
+  for(const mutation of [
+    x=>{delete x.policy.atomicContractInstallations;},
+    x=>{x.task.contractInstallationId="candidate-invented";},
+    x=>{x.task.gateChangeAllowed=true;},
+    x=>{x.task.allowedPaths.push("unreviewed.js");},
+    x=>{x.policy.atomicContractInstallations[0].files[0].path="tests/**";},
+    x=>{x.policy.atomicContractInstallations[0].requireReal=false;},
+    x=>{x.policy.atomicContractInstallations[0].requiredRunners=[];}
+  ]){const probe=structuredClone(f);mutation(probe);fails(()=>contract.describe(probe),/ATOMIC_/);}
+  const changedPolicy=structuredClone(f.policy);changedPolicy.atomicContractInstallations[0].files[0].afterSha256="d".repeat(64);
+  fails(()=>gate.validateDiff(d.changedPaths,f.task,changedPolicy,receipt),/CONTRACT_CHANGE_REQUIRED/);
+  fails(()=>contract.requirements(receipt,changedPolicy),/CONTRACT_RECEIPT_REQUIRED/);
+  const returned=contract.requirements(receipt,f.policy);returned.runners.length=0;
+  assert.equal(contract.requirements(receipt,f.policy).runners.length,2);cases++;
+}
+
 (async () => {
   resetResponses();
   await assert.rejects(() => contract.authorize(descriptor, policy, ""), /GITHUB_REVIEW_CREDENTIAL_REQUIRED/); cases++;
@@ -68,5 +148,6 @@ global.fetch = async (url, options) => {
   fails(() => contract.describe({ root, baseline, candidate: git("rev-parse", "HEAD"), task, policy, context }), /CONTRACT_ONLY_CHANGE_REQUIRED/);
   const workflow = fs.readFileSync(path.resolve(__dirname, "../../../.github/workflows/core-reliability.yml"), "utf8");
   assert.match(workflow, /core-contract-approval\.js describe/); assert.match(workflow, /actions: read/); assert.match(workflow, /CORE_GATE_GITHUB_READ_TOKEN: \$\{\{ github\.token \}\}/); cases++;
+  await verifyAtomicInstallation();
   console.log(JSON.stringify({ classification: "STRUCTURED_CONTRACT_TEST", cases, passed: cases, realNetworkCalls: 0, preservedFixture: root }));
 })().catch(e => { console.error(e); process.exitCode = 1; }).finally(() => { global.fetch = originalFetch; });

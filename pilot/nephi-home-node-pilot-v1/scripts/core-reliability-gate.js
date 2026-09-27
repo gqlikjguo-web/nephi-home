@@ -84,6 +84,17 @@ function validateEvidence(e, baseline, candidate, required) {
   }
   insist(JSON.stringify(e.results.map(r => r.runner).sort()) === JSON.stringify([...required].sort()), "RESULT_SET_MISMATCH");
 }
+
+function validRealEvidence(real, candidate) {
+  return Boolean(real && real.candidateSha === candidate && real.status === "PASS" && real.provider === "REAL_OPENAI_AND_POSTGRESQL" &&
+    real.turns === 13 && Number.isInteger(real.realCalls) && real.realCalls >= 13 && real.realCalls <= 26 && real.lineDelivery === "NOT_RUN" && real.quotaWrites === 0);
+}
+function validateReleaseEvidence(e, baseline, candidate, required, requireReal) {
+  validateEvidence(e, baseline, candidate, required);
+  insist(e.realE2eRequired === requireReal, "REAL_REQUIREMENT_MISMATCH");
+  insist(!requireReal || validRealEvidence(e.real, candidate), "REAL_QUALIFICATION_NOT_PASS");
+}
+
 function runCommands({ root, cwd, candidate, baseline, commands, evidenceDir }) {
   insist(!fs.existsSync(path.join(evidenceDir, "report.json")), "EVIDENCE_ALREADY_EXISTS");
   fs.mkdirSync(evidenceDir, { recursive: true });
@@ -137,10 +148,12 @@ async function main(argv) {
   validateDiff(changed, task, policy, contractReceipt);
   const coreChanged = changed.some(p => policy.capabilities.some(c => c.paths.some(prefix => p.startsWith(prefix))));
   const realClassification = classifyRealE2e({ root, baseline, candidate, changed, policy });
-  const runners = selectRunners(changed, policy);
+  const installation = require("./core-contract-approval").requirements(contractReceipt, policy);
+  const runners = [...new Set([...selectRunners(changed, policy), ...installation.runners])].sort();
   const cwd = path.join(root, APP);
   for (const runner of runners) insist(exact(runner) && fs.existsSync(path.join(cwd, runner)), "MISSING_RUNNER: " + runner);
   const commands = runners.map(runner => ({ id: runner, argv: [process.execPath, runner] }));
+  if (installation.installationId) commands.unshift({ id: "git-diff-check", argv: ["git", "diff", "--check", baseline, candidate, "--"] });
   // Extract the trusted baseline lifecycle, so candidate package changes cannot
   // silently drop checks. Deduplicate explicit runner commands across all groups.
   const scripts = JSON.parse(git(root, ["show", `${baseline}:${APP}/package.json`])).scripts;
@@ -153,7 +166,9 @@ async function main(argv) {
   report.changedPaths = changed; report.coreChanged = coreChanged; report.approvedScopeDigest = a["approved-scope-digest"];
   if (contractReceipt) report.contractApproval = contractReceipt;
   report.realClassification = realClassification;
-  report.realE2eRequired = realClassification.required || a["require-real"] === "true";
+  const requireReal = installation.requireReal || realClassification.required || a["require-real"] === "true";
+  report.realE2eRequired = requireReal;
+  if (installation.installationId) report.contractInstallation = installation;
   if (!report.realE2eRequired) report.real = { status: "NOT_REQUIRED", candidateSha: candidate, realCalls: 0, reason: realClassification.source };
   if (report.status === "PASS") {
     try {
@@ -180,13 +195,16 @@ async function main(argv) {
     if (result.status !== 0) report.status = "STOP";
     else {
       const real = JSON.parse(fs.readFileSync(path.join(realDir, "real-report.json"), "utf8"));
-      const valid = real.candidateSha === candidate && real.status === "PASS" && real.provider === "REAL_OPENAI_AND_POSTGRESQL" && real.turns === 13 && real.realCalls >= 13 && real.realCalls <= 26 && real.lineDelivery === "NOT_RUN" && real.quotaWrites === 0;
+      const valid = validRealEvidence(real, candidate);
       report.status = valid ? "PASS" : "STOP";
       report.real = real;
     }
   }
   if (report.status === "PASS") {
-    try { verifyCheckout(root, candidate, task.preExistingUntracked || []); }
+    try {
+      verifyCheckout(root, candidate, task.preExistingUntracked || []);
+      validateReleaseEvidence(report, baseline, candidate, commands.map(c => c.id), requireReal);
+    }
     catch (e) { report.status = "STOP"; report.reason = e.message; }
   }
   fs.writeFileSync(path.join(path.resolve(a.evidence), "report.json"), JSON.stringify(report, null, 2));
@@ -194,4 +212,4 @@ async function main(argv) {
   if (report.status !== "PASS") process.exitCode = 1;
 }
 if (require.main === module) main(process.argv.slice(2)).catch(e => { console.error("RELIABILITY_GATE_STOP: " + e.message); process.exitCode = 1; });
-module.exports = { digest, changedPaths, verifyCheckout, validateTask, validateDiff, selectRunners, validateEvidence, runCommands };
+module.exports = { digest, changedPaths, verifyCheckout, validateTask, validateDiff, selectRunners, validateEvidence, validateReleaseEvidence, runCommands };

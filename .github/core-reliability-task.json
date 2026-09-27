@@ -1,18 +1,22 @@
 {
   "schemaVersion": 1,
-  "baseline": "452705661a773b5b02e8624a3768ea1744814f8f",
-  "objective": "Controlled minimum protected-fixture synchronization for the owner-approved inventory Contract: whole stay dates with a successful formal zero-row read mean known not-open, while incomplete product records remain epistemic Unknown. Preserve every existing Unknown, scope, authority, correction-call, closed/available, rate and response safety assertion by making the Unknown fixtures physically partial. Only the related fixture-shape assertion changes. No runtime, Context, State, Understanding, Gate implementation/policy, schema, env or production data changes.",
+  "baseline": "dbb3dc6b78863aa5b7ac18ddca04f2db1909222a",
+  "objective": "Owner-approved eight-file governance-only installation: independently reviewed exact Contract/runtime combination; current trusted Gate must qualify this governance PR. Preserve all existing assertions, mandatory deterministic and REAL qualification. No application/spec/runtime/env/schema/data changes; no product merge/deploy/rollback. Source combination is the preserved 20260928 release proposal.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-inventory-unknown-outcome-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-availability-reliability-runner.js"
+    ".github/core-reliability-policy.json",
+    "pilot/nephi-home-node-pilot-v1/scripts/core-contract-approval.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
+    "pilot/nephi-home-node-pilot-v1/tests/core-contract-approval-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
+    "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
+    "pilot/nephi-home-node-pilot-v1/docs/RULES_INDEX.md"
   ],
-  "contractChangeAllowed": true,
-  "gateChangeAllowed": false,
-  "affectedCapabilities": [
-    "facts",
-    "reply"
+  "contractChangeAllowed": false,
+  "gateChangeAllowed": true,
+  "affectedCapabilities": [],
+  "preExistingUntracked": [
+    "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "preExistingUntracked": [],
-  "approvalSource": "Owner explicitly approved the minimum whole-day zero-inventory Contract and controlled synchronization of directly conflicting protected acceptance. This spec-only candidate is separately reviewed and installed before runtime release; scope declaration is not GitHub owner approval. No test deletion or weakened safety assertions; no production runtime deployment."
+  "approvalSource": "Current owner instruction approving the previous eight-file governance proposal, governance installation and combined candidate qualification; independent GitHub owner review still required."
 }
