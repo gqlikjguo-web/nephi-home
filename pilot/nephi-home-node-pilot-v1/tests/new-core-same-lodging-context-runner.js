@@ -94,7 +94,14 @@ for(const boundary of ["no_refs","unknown_ref","wrong_subject","non_lodging","ex
 test("independent new stay never inherits prior conditions",async()=>{
   const first=await turn([{capability:"availability",kind:"room",identity:"room-a",temporal:dateRange(),slots:[["guest_count",2]]}]);
   const next=await turn([{capability:"price",kind:"room",identity:"room-a",relation:"NEW_REQUEST",text:"A separate booking inquiry"}],
-    {previous:first.state,history:first.history});
+    {previous:first.state,history:first.history,transformOutput:(output,input)=>{
+      // Fixed model declaration of the source's independent meaning. Assessment
+      // references never authorize Context inheritance or select a target.
+      output.contextLinkCandidates[0].independentRequestEvidence={
+        currentSourceEvidenceRefs:output.understandingOutput.units[0].evidenceRefs,
+        assessedHistoryEventRefs:input.recentConversation.map(({eventId,messageRef})=>({eventId,messageRef}))};
+      return output;
+    }});
   assert.equal(next.result.earliestFailure,null);assert.equal(next.queries.length,0);
   const newTask=next.state.tasks.find(t=>t.taskId!==first.state.tasks[0].taskId);
   assert.equal(newTask.checkIn,null);assert.equal(newTask.guestCount,null);

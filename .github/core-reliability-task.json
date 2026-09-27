@@ -1,21 +1,20 @@
 {
   "schemaVersion": 1,
-  "baseline": "193055bb13f52a5d1934952f35c33e2e3bda7faf",
-  "objective": "Only add non-authoritative, sanitized per-attempt Understanding diagnostic evidence to the existing manual test records: original structured output, exact existing schema violation, formal correction input, corrected output and adoption/rejection checks. Preserve all schema/admission/correction decisions, Context/State, Resolver and FinalDecision/FinalResponse behavior. Fixed test deployment only; one minimal real reproduction after deterministic PASS. No production operations. Owner additionally approves the minimal behavior-preserving structural extraction from executeNewCoreTurn to satisfy the existing 180-line limit; move only the existing diagnostic emission block into a synchronous helper, retaining evaluation order, guards, return values and side effects. Owner also approves synchronizing only the manual production entry runner fixture clock across server/provider using the existing fixed test instant; preserve expiry, C05 and every existing expectation. After deterministic PASS, reproduce the exact four approved guest messages once on the fixed test deployment.",
+  "baseline": "b4e2edd7b05e4ed3a7e99f4eb2b5050cb9588734",
+  "objective": "Implement only the owner-approved relation completeness admission contract. With verified lodging history and no current temporal conditions, a NEW_REQUEST requires explicit source-grounded independence evidence; otherwise the provider must express existing MODIFICATION and RELATED_UNIT relations. Never infer meaning or choose a historical cycle in deterministic code. Preserve all Context/State, Temporal, zero-rows, Resolver/facts authority, existing valid relations and max two Understanding calls. Controlled correction only after formal model-attributable failure. Fixed test only; no production operations.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
     "pilot/nephi-home-node-pilot-v1/lib/providers/openai-understanding-v1.js",
-    "pilot/nephi-home-node-pilot-v1/lib/providers/understanding-attempt-diagnostic.js",
-    "pilot/nephi-home-node-pilot-v1/lib/new-core/application-service.js",
-    "pilot/nephi-home-node-pilot-v1/lib/new-core/manual-test-service.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-understanding-evidence-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-production-entry-runner.js"
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/contracts/context-link-candidate.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/relation-completeness.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-relation-completeness-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-same-lodging-context-runner.js"
   ],
-  "contractChangeAllowed": false,
+  "contractChangeAllowed": true,
   "gateChangeAllowed": false,
   "affectedCapabilities": [
     "shared-core"
   ],
   "preExistingUntracked": [],
-  "approvalSource": "User explicitly approved this diagnostic-only evidence capture, RED/GREEN and affected regression, fixed test deployment srv-d9bqupbbc2fs73aselig, then a single minimal real conversation. No business runtime fix unless separately evidenced and authorized; current task does not change interpretation or validation. Existing schema and protected expectations remain unchanged. Latest user explicitly authorizes only this minimum structural extraction to remove the pre-existing GOD_FUNCTION_FORBIDDEN blocker, then diagnostic/maintainability/remaining affected/protected/integrity checks and fixed-test commit/push/deployment, followed by one real reproduction. No other refactor or behavior change. Latest explicit user authorization permits this runner clock synchronization and evidence-proven stale fixture/test harness corrections within the same diagnostic line; stop for new Contract, authority, genuine runtime regression or production operation. Runtime source remains the previously approved diagnostic/structural candidate."
+  "approvalSource": "Current owner explicitly approves minimal provider guidance and C02-C05 relation completeness contract, RED/GREEN including independent NEW_REQUEST and existing relation protections, affected/protected/integrity/maintainability checks, then the exact four-turn real reproduction, and only after PASS commit/push/deploy existing fixed test service srv-d9bqupbbc2fs73aselig. Protected fixture changes, if required, use one independent controlled Contract PR and await owner approval. No new relation type, persisted schema or authority; no keyword/regex/property-specific interpretation."
 }

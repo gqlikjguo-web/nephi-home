@@ -6,6 +6,7 @@ const { resolveCanonicalTemporal } = require("../conversation-engine-v2/temporal
 const { beforeCommercialAttempt, finishCommercialAttempt, isCommercialError } = require("../commercial-ai-gate");
 const { createLatencyClock } = require("../new-core/understanding-latency");
 const { captureUnderstandingAttempts, schemaErrorEvidence } = require("./understanding-attempt-diagnostic");
+const { referenceableStayHistory, relationCompletenessFailure } = require("../new-core/relation-completeness");
 const { CAPABILITY_REGISTRY } = require("../conversation-engine-v2/capability-registry");
 const {
   validateUnderstandingTurnInput
@@ -378,6 +379,12 @@ function contextLinkSchema(understandingTurnInput) {
     eventId: { type: "string", enum: [event.eventId], maxLength: MAX_ID_LENGTH },
     messageRef: { type: "string", enum: [event.messageRef], maxLength: MAX_ID_LENGTH }
   }));
+  const independentRequestEvidence = referenceableStayHistory(understandingTurnInput).length ? {
+    independentRequestEvidence: { anyOf: [{ type: "null" }, objectSchema({
+      currentSourceEvidenceRefs: evidenceArraySchema(understandingTurnInput),
+      assessedHistoryEventRefs: arraySchema({ anyOf: historyRefs }, { maxItems: MAX_EVIDENCE_REFS })
+    }, "Only an independent NEW_REQUEST: cite the current meaning establishing independence and assess every supplied history event bound to a nonexpired confirmed stay. These refs are an assessment, never a target or inherited conditions. Otherwise null.")] }
+  } : {};
   return objectSchema({
     contextLinkCandidateId: stringSchema(),
     unitId: stringSchema(),
@@ -386,6 +393,7 @@ function contextLinkSchema(understandingTurnInput) {
     currentSourceEvidenceRefs: evidenceArraySchema(understandingTurnInput),
     referencedCurrentUnitId: { type: ["string", "null"], maxLength: MAX_ID_LENGTH,
       description: "Only RELATED_UNIT: exact ID of a different unit in this same output whose verified updated lodging conditions this request explicitly concerns. Otherwise null." },
+    ...independentRequestEvidence,
     referencedHistoryEventRefs: arraySchema(
       historyRefs.length ? { anyOf: historyRefs } : objectSchema({ eventId: stringSchema(), messageRef: stringSchema() }),
       { maxItems: historyRefs.length ? MAX_EVIDENCE_REFS : 0 }
@@ -417,6 +425,7 @@ function instructions() {
     "Use RELATED_REQUEST only when current-source meaning explicitly asks a different lodging capability about the same stay and same lodging subject, citing the exact prior event/message refs that establish that stay. This begins a separate request and reuses only verified applicable conditions; it never changes the prior request into the new capability or reuses its answers as facts. Do not copy prior dates into current-source temporal evidence. Independent requests, unrelated subjects, uncertain references or new stays must not inherit prior conditions.",
     "Use RELATED_UNIT when one current-source lodging question explicitly concerns the same lodging conditions established or modified by another unit in this very output. Set referencedCurrentUnitId to that source unit's exact unitId, cite the dependent question's exact currentSourceEvidenceRefs, and leave referencedHistoryEventRefs empty. The source unit must itself be source-grounded and use its own correct historical relation when modifying prior lodging. Each question retains its own capability and identity; never use NEW_REQUEST for a dependent question just because its updated lodging subject is not yet in history. Match the source's updated subject, not its old subject. No self-reference, circular reference, guessed relation or copied facts. For all other relation kinds referencedCurrentUnitId is null.",
     "For an explicit change of the lodging product within an existing request, use MODIFICATION with exact history refs and a source-grounded product SET or CLEAR slot matching the new subject. Keep other unchanged conditions in the referenced cycle; do not relabel historical values as current-source evidence.",
+    "Relation completeness: when a lodging question has no current temporal conditions but verified stay history is supplied, NEW_REQUEST alone does not establish independence. If it is genuinely independent, provide independentRequestEvidence with the exact current-source meaning that supports a separate request and assessedHistoryEventRefs for every supplied event bound to a nonexpired confirmed stay. Assessment refs never authorize inheritance. Do not fabricate evidence of independence when the current question concerns the existing stay. In particular, a source meaning that changes a lodging product and asks another capability about the changed product requires the source-grounded MODIFICATION plus the dependent RELATED_UNIT, not a lone new-capability NEW_REQUEST. A change in capability or subject is not itself evidence of a new stay. All non-NEW_REQUEST links set independentRequestEvidence to null when the schema includes it. Do not invent dates, products, units or relations unsupported by source meaning; uncertain references must remain uncertain and fail closed.",
     "Select responsibility by communicative meaning, not grammatical question form. Use conversational_statement with capability null, null subject identity, and relation NONE for personal narration, deliberation or social language that seeks no property information or action and neither supplies pending information nor changes or ends an existing request. Interrogative form alone does not establish responsibility. A genuine question seeking permission, policy or a service still requires a supported capability even when the formal data is unregistered; do not treat lack of a known answer as lack of a request. Do not use conversational_statement for an unclear or unsupported actual request; preserve that request as unsupported so the deterministic core can fail closed.",
     "RELATED_REQUEST, SUPPLEMENT, MODIFICATION, or TERMINATION requires current-source evidence plus exact referencedHistoryEventRefs. Topic proximity, recency, or a shared date/availability word is not relation evidence. A complete standalone lodging request is NEW_REQUEST with no history refs.",
     "For that continuation, compare only the supplied candidate values with the cycle's missingFields; deterministic routing alone decides whether to answer or clarify.",
@@ -831,7 +840,7 @@ function validationViolation(code, path, root) {
   };
 }
 
-function envelopeWireFailure(value, understandingTurnInput) {
+function envelopeWireFailure(value, understandingTurnInput, now) {
   if (!exactKeys(value, ["understandingOutput", "contextLinkCandidates"])) return {
     code: "UNKNOWN_WIRE_FIELD",
     violation: { validationErrorCode: "UNKNOWN_WIRE_FIELD", fieldPath: "$", expected: "exact envelope fields", actual: safeActual(value) }
@@ -951,7 +960,7 @@ function envelopeWireFailure(value, understandingTurnInput) {
   if (unitViolations.length) {
     return { code: "UNDERSTANDING_SCHEMA_INVALID", violation: unitViolations[0].violation, unitViolations };
   }
-  return null;
+  return relationCompletenessFailure(value, understandingTurnInput, now);
 }
 
 function rejectedEvidenceForWireFailure(value, understandingTurnInput, wireFailure) {
@@ -1324,7 +1333,7 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
 }
 
 function admitUnderstandingValue(providerValue, understandingTurnInput, options, attempts, traceEmitter, nowMs) {
-  const wireFailure = envelopeWireFailure(providerValue, understandingTurnInput);
+  const wireFailure = envelopeWireFailure(providerValue, understandingTurnInput, nowMs());
   if (wireFailure) {
     emit(traceEmitter, understandingTurnInput, {
       boundary: "C02", unitIds: [], outputUnitIds: [], status: "FAILURE",

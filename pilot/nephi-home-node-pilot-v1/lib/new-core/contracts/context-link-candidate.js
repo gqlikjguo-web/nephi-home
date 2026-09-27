@@ -10,7 +10,8 @@ const CONTEXT_LINK_FIELDS = Object.freeze([
   "relationKind",
   "currentSourceEvidenceRefs",
   "referencedHistoryEventRefs",
-  "referencedCurrentUnitId"
+  "referencedCurrentUnitId",
+  "independentRequestEvidence"
 ]);
 const HISTORY_EVENT_REF_FIELDS = Object.freeze(["eventId", "messageRef"]);
 const RELATION_KINDS = new Set(["NEW_REQUEST", "RELATED_REQUEST", "RELATED_UNIT", "SUPPLEMENT", "MODIFICATION", "TERMINATION", "NONE"]);
@@ -29,11 +30,19 @@ function boundedText(value, limit = MAX_ID_LENGTH) {
   return typeof value === "string" && value.length > 0 && value.length <= limit;
 }
 
+function validateIndependenceEvidence(value) {
+  if (!exactKeys(value, ["currentSourceEvidenceRefs", "assessedHistoryEventRefs"])) return false;
+  if (!validateSourceEvidence(value.currentSourceEvidenceRefs).ok) return false;
+  return Array.isArray(value.assessedHistoryEventRefs) && value.assessedHistoryEventRefs.length <= MAX_EVIDENCE_REFS
+    && value.assessedHistoryEventRefs.every(ref => exactKeys(ref, HISTORY_EVENT_REF_FIELDS)
+      && boundedText(ref.eventId) && boundedText(ref.messageRef));
+}
+
 function validateContextLinkCandidate(value) {
   const errors = [];
   let unknownWireField = false;
-  const fields = Object.hasOwn(value || {}, "referencedCurrentUnitId")
-    ? CONTEXT_LINK_FIELDS : CONTEXT_LINK_FIELDS.filter(field => field !== "referencedCurrentUnitId");
+  const optional = new Set(["referencedCurrentUnitId", "independentRequestEvidence"]);
+  const fields = CONTEXT_LINK_FIELDS.filter(field => !optional.has(field) || Object.hasOwn(value || {}, field));
   if (!exactKeys(value, fields)) {
     errors.push("keys");
     unknownWireField ||= isPlainObject(value)
@@ -68,6 +77,8 @@ function validateContextLinkCandidate(value) {
     && Array.isArray(historyRefs) && historyRefs.length !== 0) errors.push("referencedHistoryEventRefs.forbidden");
   if (["RELATED_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(value && value.relationKind)
     && Array.isArray(historyRefs) && historyRefs.length === 0) errors.push("referencedHistoryEventRefs.required");
+  if (value?.independentRequestEvidence != null && (value.relationKind !== "NEW_REQUEST"
+    || !validateIndependenceEvidence(value.independentRequestEvidence))) errors.push("independentRequestEvidence");
   const uniqueErrors = [...new Set(errors)];
   return uniqueErrors.length
     ? { ok: false, code: "UNDERSTANDING_SCHEMA_INVALID", errors: uniqueErrors, unknownWireField }
