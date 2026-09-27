@@ -246,6 +246,15 @@ function finalizeTurnResponse({ scope, turnId, property, terminalContext, reques
   return { finalDecision, finalResponse, responsePlan, claimValidation, initialClaimValidation, rebuildCount, terminalFailures: context.failures };
 }
 
+function emitUnderstandingAdmissionDiagnostics(onDiagnostic, input, providerOperationalDiagnostics) {
+  if (typeof onDiagnostic === "function") {
+    for (const stage of ["new_core_c03", "new_core_context_filter"]) {
+      try { onDiagnostic({ traceId: input.traceId, stage, items: providerOperationalDiagnostics.filter((entry) => entry.stage === stage) }); }
+      catch { /* diagnostics must never affect execution */ }
+    }
+  }
+}
+
 async function executeNewCoreTurn({ input, state, property, resolver, providerConfig, publicBaseUrl, now, scope = state && state.scope, understandingProvider = callOpenAIUnderstandingV1, lifecycleDecisionIdPrefix = "new-core", onDiagnostic = null, responsePrefix = "", useConversationContext = true }) {
   const preparationStarted = monotonicNow();
   if (!scope || !property || property.propertyId !== scope.propertyId) {
@@ -280,15 +289,12 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
   } catch (error) {
     terminalContext.fromException(error, "turn-failure", "UNDERSTANDING");
     const terminal = finalizeTurnResponse({ scope, turnId: input.turnId, property, terminalContext, responsePrefix });
-    return { state, ...terminal, artifacts: { terminalFailures: terminal.terminalFailures, requestEvidence: [{ taskId: "turn-failure", requestPresence: "UNDETERMINED", activeRequest: false }], executionOutcomes: [], canonicalItems: [] }, earliestFailure: { layer: "UNDERSTANDING", failureCode: error.code || "UNDERSTANDING_FAILURE" } };
+    return { state, ...terminal,
+      understandingAttempts: error[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC]?.attemptEvidence,
+      artifacts: { terminalFailures: terminal.terminalFailures, requestEvidence: [{ taskId: "turn-failure", requestPresence: "UNDETERMINED", activeRequest: false }], executionOutcomes: [], canonicalItems: [] }, earliestFailure: { layer: "UNDERSTANDING", failureCode: error.code || "UNDERSTANDING_FAILURE" } };
   }
   if (understanding.failedUnits.length && require("../providers/openai-understanding-v1").isTrustedUnderstandingResult(understanding)) terminalContext.fromUnderstanding(understanding);
-  if (typeof onDiagnostic === "function") {
-    for (const stage of ["new_core_c03", "new_core_context_filter"]) {
-      try { onDiagnostic({ traceId: input.traceId, stage, items: providerOperationalDiagnostics.filter((entry) => entry.stage === stage) }); }
-      catch { /* diagnostics must never affect execution */ }
-    }
-  }
+  emitUnderstandingAdmissionDiagnostics(onDiagnostic, input, providerOperationalDiagnostics);
   const registry = createUnitReplyRoutingRegistry(projectCapabilityRegistry(CAPABILITY_REGISTRY));
   const c08Catalog = buildC01TrustedCanonicalizerCatalog(c01, catalog);
   const projection = buildPublicCatalogIdentityProjection(c01);

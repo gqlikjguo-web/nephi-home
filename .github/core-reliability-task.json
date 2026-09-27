@@ -1,30 +1,21 @@
 {
   "schemaVersion": 1,
-  "baseline": "11d2aa1f5727ea47789118e9f34de5707ab2f231",
-  "objective": "Implement only the owner-approved formal inventory semantics: a successful scoped PostgreSQL read proving an entire stay date has zero physical inventory rows means that date is not open for booking, a known non-bookable result. Retain not-open dates and completed-read provenance; distinguish explicit closed, partial missing inventory, malformed/contradictory data and technical uncertainty. Preserve all accepted Context/State/Understanding code and behavior. Only existing Resolver classification and its necessary fact projection/render validation consumers; no Unknown-to-No text rewrite. Separate controlled protected-fixture installation; fixed-test runtime only. Preserve the existing zero-rows candidate byte-for-byte. Repair only the existing Understanding provider source-identity/correction gap: source IDs constrained to supplied C01 pairs, C04 rejection precisely located, correction limited to failed evidence while preserving valid sibling fields, full revalidation and max two calls. No Context/Temporal changes and no new authority or persisted schema.",
+  "baseline": "193055bb13f52a5d1934952f35c33e2e3bda7faf",
+  "objective": "Only add non-authoritative, sanitized per-attempt Understanding diagnostic evidence to the existing manual test records: original structured output, exact existing schema violation, formal correction input, corrected output and adoption/rejection checks. Preserve all schema/admission/correction decisions, Context/State, Resolver and FinalDecision/FinalResponse behavior. Fixed test deployment only; one minimal real reproduction after deterministic PASS. No production operations. Owner additionally approves the minimal behavior-preserving structural extraction from executeNewCoreTurn to satisfy the existing 180-line limit; move only the existing diagnostic emission block into a synchronous helper, retaining evaluation order, guards, return values and side effects. Owner also approves synchronizing only the manual production entry runner fixture clock across server/provider using the existing fixed test instant; preserve expiry, C05 and every existing expectation. After deterministic PASS, reproduce the exact four approved guest messages once on the fixed test deployment.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    "pilot/nephi-home-node-pilot-v1/lib/mvp-service.js",
-    "pilot/nephi-home-node-pilot-v1/lib/providers/postgres-providers.js",
-    "pilot/nephi-home-node-pilot-v1/lib/providers/postgres-worker.js",
-    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/resolver-adapter.js",
-    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/capability-executor.js",
-    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/controlled-composer.js",
-    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/availability-reply-validation.js",
-    "pilot/nephi-home-node-pilot-v1/lib/new-core/production-safe-trace.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-inventory-not-open-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-inventory-unknown-outcome-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-availability-reliability-runner.js",
     "pilot/nephi-home-node-pilot-v1/lib/providers/openai-understanding-v1.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-source-correction-runner.js"
+    "pilot/nephi-home-node-pilot-v1/lib/providers/understanding-attempt-diagnostic.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/application-service.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/manual-test-service.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-understanding-evidence-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-production-entry-runner.js"
   ],
-  "contractChangeAllowed": true,
+  "contractChangeAllowed": false,
   "gateChangeAllowed": false,
   "affectedCapabilities": [
-    "facts",
-    "reply",
     "shared-core"
   ],
   "preExistingUntracked": [],
-  "approvalSource": "Owner explicitly approved the minimum zero-whole-day inventory Contract, RED/GREEN, affected/protected/integrity/Gate, necessary REAL test-only OpenAI/PostgreSQL evidence, and commit/push/deploy only srv-d9bqupbbc2fs73aselig. Production runtime/database, Context/State/Understanding, second facts authorities, keyword/regex and unrelated refactors are prohibited. Stop for GitHub-required owner review or unrelated valid PASS-to-FAIL. Protected specification must be installed by the existing independent controlled process; this declaration is not owner GitHub approval. Latest explicit owner authorization additionally permits only this shared source/C04 provider repair with RED/GREEN, full affected tests, REAL TRUE_UNKNOWN then ZERO_ROWS then necessary B4/B6 smoke, and fixed-test commit/push/deploy. Any new formal contract/authority/schema requires approval. This supersedes the prior prohibition on Understanding edits only at this approved provider boundary."
+  "approvalSource": "User explicitly approved this diagnostic-only evidence capture, RED/GREEN and affected regression, fixed test deployment srv-d9bqupbbc2fs73aselig, then a single minimal real conversation. No business runtime fix unless separately evidenced and authorized; current task does not change interpretation or validation. Existing schema and protected expectations remain unchanged. Latest user explicitly authorizes only this minimum structural extraction to remove the pre-existing GOD_FUNCTION_FORBIDDEN blocker, then diagnostic/maintainability/remaining affected/protected/integrity checks and fixed-test commit/push/deployment, followed by one real reproduction. No other refactor or behavior change. Latest explicit user authorization permits this runner clock synchronization and evidence-proven stale fixture/test harness corrections within the same diagnostic line; stop for new Contract, authority, genuine runtime regression or production operation. Runtime source remains the previously approved diagnostic/structural candidate."
 }

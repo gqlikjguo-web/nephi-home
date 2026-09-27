@@ -5,6 +5,7 @@ const { isDeepStrictEqual } = require("node:util");
 const { resolveCanonicalTemporal } = require("../conversation-engine-v2/temporal-resolver");
 const { beforeCommercialAttempt, finishCommercialAttempt, isCommercialError } = require("../commercial-ai-gate");
 const { createLatencyClock } = require("../new-core/understanding-latency");
+const { captureUnderstandingAttempts, schemaErrorEvidence } = require("./understanding-attempt-diagnostic");
 const { CAPABILITY_REGISTRY } = require("../conversation-engine-v2/capability-registry");
 const {
   validateUnderstandingTurnInput
@@ -1227,12 +1228,13 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     traceId: understandingTurnInput.traceId,
     sink: typeof options.onDiagnostic === "function" ? options.onDiagnostic : null
   });
-  const attempts = [], reports = [];
+  const attempts = [], reports = [], attemptEvidence = [];
   let firstResult = null, firstOutput = null, correction = null;
   const finish = (value, error, acceptedAttempt) => {
     latency.enter("other");
     if (value && value.failedUnits.length && !value.validatedUnits.length) acceptedAttempt = null;
     const metadata = deepFreeze({ ...providerDiagnostic(attempts, value?.[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC]?.understandingEvidence || null),
+      attemptEvidence: captureUnderstandingAttempts(attemptEvidence, reports, acceptedAttempt, apiKey),
       attempts: reports.map(report => ({ ...report, accepted: report.attemptNumber === acceptedAttempt, rejected: report.attemptNumber !== acceptedAttempt })),
       finalAcceptedAttempt: acceptedAttempt, totalUnderstandingCalls: attempts.length });
     emitOperational(options, { traceId: understandingTurnInput.traceId, stage: "new_core_understanding_attempts", ...metadata });
@@ -1270,6 +1272,10 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
       validationResult: { ...(value ? { ok: failureReport.failures.length === 0 } : failureReport.failures.length ? { ok: false } : {}), failures: failureReport.failures,
         terminalCode: caught?.code || null, category: caught?.errorCategory || null } };
     reports.push(report);
+    attemptEvidence.push({ structuredOutput: output ?? failureReport.output ?? null,
+      schemaError: schemaErrorEvidence(caught?.schemaViolation, output ?? failureReport.output, failureReport.failures),
+      admissionFailureCode: caught?.code || null, correctionInput: correction,
+      adoption: null });
     if (number === 1) {
       firstResult = value || null; firstOutput = output;
       if (shouldCorrectUnderstanding(failureReport)) { latency.enter("prep"); correction = buildCorrectionInput(failureReport); continue; }
@@ -1299,6 +1305,14 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
         && (!(failure.fieldValidationState || []).length
           || semanticObligationsPreserved(previous, next, failure.fieldValidationState, understandingTurnInput));
     });
+    attemptEvidence.at(-1).adoption = {
+      candidateAdmitted: Boolean(value),
+      rejectionStage: !value ? "admission" : failureReport.failures.length ? "validation"
+        : !preserves || !retained || !fieldsPreserved ? "preservation" : null,
+      checks: { validatedSiblingsPreserved: preserves, unitIdsRetained: retained, fieldsPreserved },
+      previousUnitIds: priorUnits.map(unit => unit?.unitId),
+      candidateUnitIds: value?.understandingOutput.units.map(unit => unit.unitId) || []
+    };
     if (!fieldsPreserved) report.validationResult = {...report.validationResult, ok:false, adoptionFailure:"CORRECTION_FIELD_NOT_PRESERVED"};
     if (value && !failureReport.failures.length && preserves && retained && fieldsPreserved) return finish(value, null, 2);
     if (!preserves || !retained) report.validationResult = { ...report.validationResult, ok: false, adoptionFailure: "CORRECTION_SIBLING_NOT_PRESERVED" };

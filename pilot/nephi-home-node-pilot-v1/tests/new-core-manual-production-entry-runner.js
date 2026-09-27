@@ -6,6 +6,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { mock } = require("node:test");
 const { createApp } = require("../server");
 const { createProviders } = require("../lib/providers/provider-factory");
 const { migratePostgres } = require("../lib/providers/postgres-migrate");
@@ -44,6 +45,9 @@ function envelope(c01) {
 }
 
 (async () => {
+  // Server NOW and the real provider's Date.now must share this fixture clock.
+  // Keep setTimeout/setInterval real; only wall-clock Date is controlled.
+  mock.timers.enable({ apis: ["Date"], now: NOW.getTime() });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-manual-ingress-"));
   const connection = { kind: "pglite", dataDir: path.join(dir, "db") };
   await migratePostgres(connection);
@@ -172,4 +176,5 @@ function envelope(c01) {
       paths:["manual-page HTTP","signed LINE webhook"],coreCalls:calls.length,realOpenAICalls:0,
       nativeStores:["message_logs","event_claims","conversation_states"],uiStateAuthority:false}));
   } finally { releaseFirst(); await app.stop(); globalThis.fetch = nativeFetch; }
-})().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
+})().finally(() => mock.timers.reset())
+  .catch(error => { console.error(error.stack || error); process.exitCode = 1; });

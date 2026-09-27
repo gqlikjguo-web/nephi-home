@@ -169,6 +169,7 @@ function projectDiagnostic(result, traceId, counters) {
     contextRelations: projectContextRelationDiagnostic(result.contextRelationDiagnostics, traceId),
     stateTransition: projectStateTransitionDiagnostic(result.stateTransitionDiagnostics, traceId),
     ...(result.understandingEvidence ? { understandingEvidence: clone(result.understandingEvidence) } : {}),
+    ...(result.understandingAttempts ? { understandingAttempts: clone(result.understandingAttempts) } : {}),
     traceId, requestedModel: bounded(result.requestedModel, 160), resolvedModel: bounded(result.resolvedModel, 160), sideEffectCounters: clone(counters)
   };
   assertSafe(projected); return projected;
@@ -247,6 +248,7 @@ function projectTurnDiagnostics(result, traceId) {
   return {
     ...coreResult,
     understandingEvidence,
+    understandingAttempts: understanding[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC]?.attemptEvidence,
     failedUnitDiagnostics: buildManualTestFailureDiagnostics({ understanding, outcomes }),
     c08Diagnostics: outcomes.filter((outcome) => outcome.c08ExecutionResult).map((outcome) => ({
       unitId: outcome.unit.unitId,
