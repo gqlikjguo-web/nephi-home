@@ -16,6 +16,7 @@
 
 | Authority | Scope | Status | Supersedes/Conflict action |
 |---|---|---|---|
+| `docs/CORE_RELIABILITY_GATE.md` | External release admission and exact Contract/runtime installation | active | 外部 Gate 與獨立審查；僅接受正式 trusted-base 登記的精確安裝組合；不豁免任何測試 |
 | `docs/CODEX_EXECUTION_INTEGRITY_CONTRACT.md` | Codex execution integrity | active | Codex 防作假、完整交付、旁路封閉、證據鏈、BLOCKED 與測試分類的唯一契約；衝突時停止 |
 | `docs/JUNZAN_AI_CONSTITUTION.md` | Product architecture principles | active | 產品行為與架構原則；本次不可修改；衝突時停止 |
 | `docs/SECURITY.md` | Security and external services | active | Credentials、外部服務、LINE binding 與資料安全邊界；衝突時停止 |
@@ -30,3 +31,14 @@
 ## Historical routing
 
 歷史設計、計畫、交接與 changelog 只提供背景；除非上表明列為 active authority，不得覆蓋現行規則或作為完成證據。未來若驗收標準本身被證明錯誤，只能在使用者事前明確批准、不得同時修改 runtime、具有獨立審查與新舊基準對照的獨立任務處理；本次沒有 bootstrap、update 或 bypass 權限。
+
+
+### 精確規格／runtime 組合安裝例外（2026-09-28）
+
+上列規格與 runtime 分離原則維持。唯一受控例外依
+`docs/CORE_RELIABILITY_GATE.md` 的 Exact Contract/runtime installation：
+先以獨立治理 PR 安裝精確路徑／前後內容雜湊登記，再由獨立 owner
+審查同一候選的規格與對應 runtime，於同一鎖定版本完成全部 Gate 與必要
+REAL 驗證後才具備安裝資格。候選不能修改治理以批准自己，不能放寬
+斷言、跳過測試、用舊 PASS 取代驗證或擴大登記內容。此例外不授權
+production 部署、退版或資料操作；未核准的混合修改仍拒絕。

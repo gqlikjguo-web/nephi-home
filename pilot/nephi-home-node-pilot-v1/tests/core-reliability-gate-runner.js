@@ -270,4 +270,30 @@ async function verifyWorkflow() {
     assert.equal(statuses.at(-1).state, probe.state); assert.equal(statuses.at(-1).sha, cliHead); cases++;
   }
 }
-verifyWorkflow().then(() => console.log(JSON.stringify({ classification: "STRUCTURED_CONTRACT_TEST", cases, passed: cases, temporaryRepositoryPreserved: root, realOpenaiCalls: 0 }))).catch(e => { console.error(e); process.exitCode = 1; });
+
+// A release cannot finish with deterministic evidence alone when trusted policy requires REAL.
+function verifyCompleteReleaseEvidence() {
+  const required=["contract.js","new-spec.js"];
+  const complete={baselineSha:baseline,candidateSha:candidate,status:"PASS",realE2eRequired:true,required,
+    results:required.map(runner=>({runner,candidateSha:candidate,exitCode:0,status:"PASS",logSha256:"a".repeat(64)})),
+    real:{candidateSha:candidate,status:"PASS",provider:"REAL_OPENAI_AND_POSTGRESQL",turns:13,realCalls:13,lineDelivery:"NOT_RUN",quotaWrites:0}};
+  assert.equal(typeof gate.validateReleaseEvidence,"function","RED: complete release validation must reject missing REAL evidence");
+  gate.validateReleaseEvidence(complete,baseline,candidate,required,true);cases++;
+  for(const mutate of [
+    e=>{delete e.real;},e=>{e.real.status="NOT_RUN";},e=>{e.real.provider="FAKE_INTEGRATION";},
+    e=>{e.real.candidateSha=baseline;},e=>{e.real.realCalls=27;},e=>{e.real.realCalls=0;},
+    e=>{e.real.turns=12;},e=>{e.real.lineDelivery="SENT";},e=>{e.real.quotaWrites=1;},
+    e=>{e.realE2eRequired=false;}
+  ]) {const e=structuredClone(complete);mutate(e);fails(()=>gate.validateReleaseEvidence(e,baseline,candidate,required,true),"REAL_");}
+  fails(()=>gate.validateReleaseEvidence({...complete,results:complete.results.slice(0,1)},baseline,candidate,required,true),"MISSING_RUNNER_EVIDENCE");
+  for(const change of [{exitCode:1},{status:"SKIP"},{candidateSha:baseline},{logSha256:"missing"}]){
+    const e=structuredClone(complete);Object.assign(e.results[1],change);
+    fails(()=>gate.validateReleaseEvidence(e,baseline,candidate,required,true),"RUNNER_NOT_PASS");
+  }
+  fails(()=>gate.validateReleaseEvidence({...complete,baselineSha:candidate},baseline,candidate,required,true),"STALE_CANDIDATE_EVIDENCE");
+  fails(()=>gate.validateReleaseEvidence({...complete,required:["contract.js"]},baseline,candidate,required,true),"REQUIRED_SET_MISMATCH");
+  // Existing non-REAL releases keep their original qualification semantics.
+  gate.validateReleaseEvidence({...evidence,realE2eRequired:false},baseline,candidate,["contract.js"],false);cases++;
+}
+
+verifyWorkflow().then(() => { verifyCompleteReleaseEvidence(); }).then(() => console.log(JSON.stringify({ classification: "STRUCTURED_CONTRACT_TEST", cases, passed: cases, temporaryRepositoryPreserved: root, realOpenaiCalls: 0 }))).catch(e => { console.error(e); process.exitCode = 1; });

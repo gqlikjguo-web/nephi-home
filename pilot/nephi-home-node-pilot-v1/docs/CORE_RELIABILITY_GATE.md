@@ -189,3 +189,54 @@ admin credential operated it. This feature does not claim credential separation.
 Protected files outside those test directories remain ineligible. Files also
 covered by `.github/protected-acceptance.json` still have to satisfy its existing
 hash checks; this mechanism grants no exemption from that separate protection.
+
+
+## Exact Contract/runtime installation (owner-approved 2026-09-28)
+
+The spec-only route above remains the default. A separately reviewed governance
+PR may register one exact product/specification transition in the production-base
+policy's `atomicContractInstallations`. Installing governance and qualifying the
+product combination are distinct PRs. Governance cannot include runtime or the
+new product assertions; the current trusted Gate, not its proposed replacement,
+qualifies that governance PR. Neither step deploys Render.
+
+A combination requests a registered `contractInstallationId`; the task itself
+is never approval. The trusted registration seals all changed product/test paths
+and before/after SHA-256 contents, the original source baseline, exact protected
+specifications, permitted intervening governance paths, and additional required
+runners. No directory prefix grant is accepted. Both source baseline and current
+production base must contain the registered before contents. Candidate files
+must contain the registered after contents as regular 100644 blobs. Deletion,
+rename, executable/symlink substitution, added paths, same-path content drift,
+missing specs or runtime changes in the intervening baseline fail closed. The
+combination cannot modify governance, package/config/schema or any other
+unregistered file. The only separate metadata path is the exact task manifest.
+
+The descriptor additionally binds the installation ID, registration digest and
+file map to the existing repository, PR, run/attempt, actual production baseline,
+candidate SHA, full binary diff, task and policy digests. Independent review must
+cover the complete product/spec combination. The configured owner approves with:
+
+`CONTRACT_RUNTIME_INSTALL_APPROVED <descriptor SHA-256> REVIEW_SHA256=<independent review evidence SHA-256>`
+
+The trusted workflow generates the exact descriptor before approval. Existing
+spec-only approval text cannot authorize a combination. GitHub API verification
+and the in-process private receipt remain required; candidate JSON, a serialized
+receipt, an edited task or a self-approval cannot supply authority. Changing any
+review binding requires a newly reviewed candidate; failed attempts are retained.
+
+The candidate runs its own corresponding specifications and runtime together.
+All existing incident, affected, required and baseline npm lifecycle checks
+remain; the registration can only add required runners. Exact diff whitespace,
+protected acceptance, integrity and all existing assertions remain checked.
+This route always requires existing REAL OpenAI/core/Context/Resolver/isolated
+PostgreSQL/FinalDecision/FinalResponse qualification. No uploaded old report or
+local fake result substitutes for that run. Missing credentials/REAL, incomplete
+test sets, skips, timeout, nonzero exits or stale SHA prevent success. REAL rules
+and the protected oracle are unchanged; release completion validates both the
+complete deterministic result set and required current-candidate REAL evidence.
+
+Only a fully qualified, independently reviewed current candidate is eligible
+for installation. Product merging and production deployment require their own
+explicit authorization. Original UNDERSTANDING_SCHEMA_INVALID remains unresolved;
+static rollback compatibility is not a rollback rehearsal.

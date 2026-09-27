@@ -7,14 +7,66 @@ const receipts = new WeakMap();
 function insist(ok, reason) { if (!ok) throw new Error(reason); }
 function digest(value) { return crypto.createHash("sha256").update(Buffer.isBuffer(value) ? value : typeof value === "string" ? value : JSON.stringify(value)).digest("hex"); }
 function git(root, args) { return execFileSync("git", args, { cwd: root, maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }); }
+
+function exactPath(value) {
+  return typeof value === "string" && value.length > 0 && !value.startsWith("/") && !/[\\\x00-\x1f*?\[\]]/.test(value) && path.posix.normalize(value) === value && !value.split("/").includes("..");
+}
+function sameSet(a, b) { return JSON.stringify([...a].sort()) === JSON.stringify([...b].sort()); }
+function blobDigest(root, ref, file) {
+  const entry = git(root, ["ls-tree", "-z", ref, "--", file]).toString();
+  if (!entry) return null;
+  insist(entry.startsWith("100644 blob ") && entry.split("\0").filter(Boolean).length === 1, "ATOMIC_REGULAR_FILE_REQUIRED");
+  return digest(git(root, ["show", `${ref}:${file}`]));
+}
+function installationEntry(policy, id) {
+  const entries = policy.atomicContractInstallations;
+  insist(typeof id === "string" && Array.isArray(entries) && entries.filter(e => e.id === id).length === 1, "ATOMIC_REGISTRATION_REQUIRED");
+  return entries.find(e => e.id === id);
+}
+function describeInstallation({root, baseline, candidate, task, policy, changedPaths, protectedPaths}) {
+  const entry = installationEntry(policy, task.contractInstallationId);
+  const files = entry.files;
+  insist(task.gateChangeAllowed === false && /^[a-f0-9]{40}$/.test(entry.sourceBaseline) && entry.requireReal === true &&
+    Array.isArray(entry.baselineGovernancePaths) && entry.baselineGovernancePaths.every(exactPath) &&
+    Array.isArray(entry.requiredRunners) && entry.requiredRunners.length > 0 && entry.requiredRunners.every(p => exactPath(p) && p.endsWith(".js")) &&
+    Array.isArray(files) && files.length > 0 && new Set(files.map(f => f.path)).size === files.length && files.every(f => exactPath(f.path) &&
+      f.path !== TASK && !policy.governancePaths.includes(f.path) && (f.beforeSha256 === null || /^[a-f0-9]{64}$/.test(f.beforeSha256)) && /^[a-f0-9]{64}$/.test(f.afterSha256)), "ATOMIC_REGISTRATION_INVALID");
+  const expected = [TASK, ...files.map(f => f.path)];
+  insist(Array.isArray(task.allowedPaths) && sameSet(changedPaths, expected) && sameSet(task.allowedPaths, expected), "ATOMIC_SCOPE_MISMATCH");
+  insist(Array.isArray(entry.protectedPaths) && entry.protectedPaths.length > 0 && sameSet(protectedPaths, entry.protectedPaths) &&
+    protectedPaths.every(p => /^(?:pilot\/nephi-home-node-pilot-v1\/)?tests\//.test(p) && !policy.governancePaths.includes(p)), "ATOMIC_PROTECTED_SCOPE_MISMATCH");
+  git(root, ["merge-base", "--is-ancestor", entry.sourceBaseline, baseline]);
+  const prior = git(root, ["diff", "--no-renames", "--name-only", "-z", entry.sourceBaseline, baseline]).toString().split("\0").filter(Boolean);
+  insist(prior.every(p => entry.baselineGovernancePaths.includes(p)) && !entry.baselineGovernancePaths.some(p => files.some(f => f.path === p)), "ATOMIC_BASELINE_DRIFT");
+  for (const file of files) {
+    insist(blobDigest(root, entry.sourceBaseline, file.path) === file.beforeSha256 && blobDigest(root, baseline, file.path) === file.beforeSha256 &&
+      blobDigest(root, candidate, file.path) === file.afterSha256, "ATOMIC_CONTENT_MISMATCH: " + file.path);
+  }
+  return { installationId: entry.id, installationDigest: digest(entry), files: structuredClone(files) };
+}
+function requirements(receipt, policy) {
+  if (!receipt) return { runners: [], requireReal: false };
+  const descriptor = receipts.get(receipt);
+  insist(descriptor && descriptor.policyDigest === digest(policy), "CONTRACT_RECEIPT_REQUIRED");
+  if (!descriptor.installationId) return { runners: [], requireReal: false };
+  const entry = installationEntry(policy, descriptor.installationId);
+  insist(descriptor.installationDigest === digest(entry), "CONTRACT_RECEIPT_REQUIRED");
+  return { installationId: entry.id, runners: [...entry.requiredRunners], requireReal: true };
+}
+function approvalPrefix(descriptor) {
+  return `${descriptor.installationId ? "CONTRACT_RUNTIME_INSTALL_APPROVED" : "CONTRACT_CHANGE_APPROVED"} ${digest(descriptor)} REVIEW_SHA256=`;
+}
+
 function describe({ root, baseline, candidate, task, policy, context }) {
   insist(/^[a-f0-9]{40}$/.test(baseline) && /^[a-f0-9]{40}$/.test(candidate), "CONTRACT_INVALID_SHA");
   git(root, ["merge-base", "--is-ancestor", baseline, candidate]);
   const changedPaths = git(root, ["diff", "--no-renames", "--name-only", "-z", baseline, candidate]).toString().split("\0").filter(Boolean).sort();
   const protectedPaths = changedPaths.filter(p => policy.protectedPaths.includes(p));
+  insist(protectedPaths.length || task.contractInstallationId === undefined, "ATOMIC_PROTECTED_SCOPE_MISMATCH");
   if (!protectedPaths.length) return null;
   insist(task.contractChangeAllowed === true, "CONTRACT_REQUEST_REQUIRED");
-  insist(changedPaths.every(p => p === TASK || protectedPaths.includes(p)) &&
+  const installation = task.contractInstallationId === undefined ? null : describeInstallation({root, baseline, candidate, task, policy, changedPaths, protectedPaths});
+  if (!installation) insist(changedPaths.every(p => p === TASK || protectedPaths.includes(p)) &&
     protectedPaths.every(p => /^(?:pilot\/nephi-home-node-pilot-v1\/)?tests\//.test(p) && !policy.governancePaths.includes(p)) &&
     !changedPaths.some(p => policy.capabilities.some(c => c.paths.some(prefix => p.startsWith(prefix)))), "CONTRACT_ONLY_CHANGE_REQUIRED");
   insist(task.baseline === baseline, "CONTRACT_BASELINE_MISMATCH");
@@ -22,7 +74,7 @@ function describe({ root, baseline, candidate, task, policy, context }) {
   insist(authority && authority.repository === context.repository && context.runAttempt === 1 &&
     Number.isSafeInteger(context.runId) && context.runId > 0 && Number.isSafeInteger(context.pullRequest) && context.pullRequest > 0, "CONTRACT_AUTHORITY_REQUIRED");
   return {
-    schemaVersion: 1, repository: context.repository, pullRequest: context.pullRequest,
+    schemaVersion: installation ? 2 : 1, ...(installation || {}), repository: context.repository, pullRequest: context.pullRequest,
     runId: context.runId, runAttempt: context.runAttempt, baselineSha: baseline, candidateSha: candidate,
     changedPaths, protectedPaths, taskDigest: digest(task), policyDigest: digest(policy),
     // Hash bytes, including trailing newlines; disable local diff drivers/textconv.
@@ -51,7 +103,11 @@ async function authorize(descriptor, policy, token) {
   const branch = await get("/branches/production");
   insist(branch.commit?.sha === descriptor.baselineSha, "CONTRACT_BASELINE_CHANGED");
   const history = await get(`/actions/runs/${descriptor.runId}/approvals`);
-  const prefix = `CONTRACT_CHANGE_APPROVED ${digest(descriptor)} REVIEW_SHA256=`;
+  if (descriptor.installationId) {
+    const entry = installationEntry(policy, descriptor.installationId);
+    insist(descriptor.schemaVersion === 2 && descriptor.installationDigest === digest(entry) && JSON.stringify(descriptor.files) === JSON.stringify(entry.files), "CONTRACT_INSTALLATION_MISMATCH");
+  }
+  const prefix = approvalPrefix(descriptor);
   const review = Array.isArray(history) && history.find(r => r.state === "approved" && r.user?.id === authority.reviewerId &&
     r.environments?.some(e => e.id === authority.environmentId && e.name === authority.environment) &&
     typeof r.comment === "string" && r.comment.startsWith(prefix) && /^[a-f0-9]{64}$/.test(r.comment.slice(prefix.length)));
@@ -76,10 +132,10 @@ function describeCli() {
     repository: process.env.GITHUB_REPOSITORY, pullRequest: Number(process.env.CORE_CONTRACT_PR), runId: Number(process.env.GITHUB_RUN_ID), runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT)
   } });
   if (!descriptor) return;
-  const text = `\n## Explicit Contract-change review required\n\nReview the exact diff and the independent review report before approval.\n\n\`\`\`json\n${JSON.stringify(descriptor, null, 2)}\n\`\`\`\n\nApproval comment: \`CONTRACT_CHANGE_APPROVED ${digest(descriptor)} REVIEW_SHA256=<SHA-256 of independent review evidence>\`\n\nNo matching external review means STOP.\n`;
+  const text = `\n## Explicit Contract-change review required\n\nReview the exact diff and the independent review report before approval.\n\n\`\`\`json\n${JSON.stringify(descriptor, null, 2)}\n\`\`\`\n\nApproval comment: \`${approvalPrefix(descriptor)}<SHA-256 of independent review evidence>\`\n\nNo matching external review means STOP.\n`;
   insist(process.env.GITHUB_STEP_SUMMARY, "CONTRACT_REVIEW_SUMMARY_REQUIRED");
   fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, text);
   console.log(JSON.stringify({ descriptorDigest: digest(descriptor), ...descriptor }));
 }
 if (require.main === module) { try { insist(process.argv[2] === "describe", "CONTRACT_INVALID_COMMAND"); describeCli(); } catch (e) { console.error(e.message); process.exitCode = 1; } }
-module.exports = { describe, authorize, matches, digest };
+module.exports = { describe, authorize, matches, digest, requirements };

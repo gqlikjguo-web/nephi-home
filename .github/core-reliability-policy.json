@@ -693,5 +693,285 @@
         "reason": "User explicitly approved first-version HTTPS r2.dev public URLs on 2026-09-22. Exact reviewed delta removes only r2.dev rejection; HTTPS, URL credentials/path/query/fragment, S3 endpoint, credential, property and object-key checks unchanged. No AI path change. All four module guards and server transition remain exact."
       }
     ]
-  }
+  },
+  "atomicContractInstallations": [
+    {
+      "id": "context-production-release-20260928",
+      "sourceBaseline": "dbb3dc6b78863aa5b7ac18ddca04f2db1909222a",
+      "sourceCommit": "82ff0fbf979ceeedc88f9e518ddcdc625621eed6",
+      "specSourceCommit": "11d2aa1f5727ea47789118e9f34de5707ab2f231",
+      "baselineGovernancePaths": [
+        ".github/core-reliability-task.json",
+        ".github/core-reliability-policy.json",
+        "pilot/nephi-home-node-pilot-v1/scripts/core-contract-approval.js",
+        "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
+        "pilot/nephi-home-node-pilot-v1/tests/core-contract-approval-runner.js",
+        "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
+        "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
+        "pilot/nephi-home-node-pilot-v1/docs/RULES_INDEX.md"
+      ],
+      "protectedPaths": [
+        "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-test-page-runner.js",
+        "pilot/nephi-home-node-pilot-v1/tests/new-core-openai-adapter-contract-runner.js",
+        "pilot/nephi-home-node-pilot-v1/tests/new-core-required-clarification-runner.js",
+        "pilot/nephi-home-node-pilot-v1/tests/new-core-unit-routing-runner.js"
+      ],
+      "files": [
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/availability-reply-validation.js",
+          "beforeSha256": "3adcab8ae9692d07bbfb3f2eaad45b59d9ae39f206ac7c10d3cb878b79cc911b",
+          "afterSha256": "f9513ebca4cde524b38420ea6755cc367f050c2ca12ef44a4a113ba70c9b36e2"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/canonicalizer.js",
+          "beforeSha256": "16b05d1d8aa7bafa63ac4d9c05b5825ff9986dab1c9d79ac91abfce9319f75e5",
+          "afterSha256": "7750b08a920f6006cd9b544c27b3033253d1f94305243139c2629e97acff369a"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/capability-executor.js",
+          "beforeSha256": "32db5a9379f41fe50382b23dcea316c0aa9a52b0b3a10a1a97751a5726c4275e",
+          "afterSha256": "68ab7a3977a5f10f8c5aad51231c5514adb19664fe1ca5b4ce7e45567e09f29c"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/controlled-composer.js",
+          "beforeSha256": "b58d1bf327aa7918df749beb6bfd632340a4ee748483c7caac02b4ef7118b2bb",
+          "afterSha256": "ccfdde53fb8e747a199b57bb8c42490272dd377ca5e00bdaa81a3a634139792a"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/render-obligation.js",
+          "beforeSha256": "9930c6a9bff2f0b05f6a8e10849a57923e732b8f49a74a90678474a3f26aadb7",
+          "afterSha256": "5ad63ec76c57c8ac0f12997a7e704dcd1fac25b4f462a1e4ade979cb5bfb2713"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/resolver-adapter.js",
+          "beforeSha256": "486550b54a5476df6dc2e90682cf9e406fb666b7aac8886bc1a6c89157d6919e",
+          "afterSha256": "bcf29632fbca061deca8df75d8dc5916dcc9b00defc57e65d287d1a7ef04d9b2"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/temporal-resolver.js",
+          "beforeSha256": "6860ab78f992ea523a813db8c9056d23ab5b73b35a4b1c6f0006ed59133c1ac5",
+          "afterSha256": "ea8616057f1ce726729c915276b2860c5a7f2c60c7a6efeb5cd913bf7123e171"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/mvp-service.js",
+          "beforeSha256": "19feec4d850e7653639e4e772ce8360c1e1ee66e5e0ba2f8b1b53eebd7b08c7e",
+          "afterSha256": "0a1b1eb35090d9e1a79191ad96b4b26c6c944e45bc87decabea1d5df232414f3"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/application-service.js",
+          "beforeSha256": "1d57b755d472a8b5417142f5b68fee3e07c572017cad34c841079b019515a918",
+          "afterSha256": "2c5b168fbd41e3497c34c3ad27fd0964118c3280f5cc5f5801c8e71c5821b804"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/canonical-execution-adapter.js",
+          "beforeSha256": "b225cd860b04eba31dcf15d0e70136a47dd72b206405865d52750836b865caca",
+          "afterSha256": "3a12ff318a2f4a6a115f7576d19a75c94133506f4ce530f6610f05474840a5d2"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/capability-subject-policy.js",
+          "beforeSha256": "b6c4fb57537a7b6f34649bc6f5a62410c1677cd3969c1360afa7ad4cc60f8905",
+          "afterSha256": "a3e3a2ab52547f7193f2c85886f9d1252f4a818a3d94058bf093ffb602d42883"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/context-link-validator.js",
+          "beforeSha256": "84b70cfe6343bc4c7218c48748e2c80b01d658969c5c78a38a87b7f215329f2d",
+          "afterSha256": "e88af277b27f88fbc6ab8bea7c57452d7dbe709c7746459983d3801689c37e38"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/contracts/context-link-candidate.js",
+          "beforeSha256": "33cbb0702cb873442a97ff64bf478dcdb2005f3091f86554de06e614b7c068f9",
+          "afterSha256": "a7b45a39640f794f7682381b36484a406bba4e905ea32369a1cbcb2f2e8d7d4d"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/lifecycle-manager.js",
+          "beforeSha256": "e23980498568a9e150b0bbd7d480307d1796fcd87b7921b20d7b4c340ac3a5d0",
+          "afterSha256": "a86c9e9bcf69d12648686dbf74d0ad65a7507afd1b9d506b9d02e2709467b125"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/manual-test-service.js",
+          "beforeSha256": "af01171b433bcd7dff58060f9cc88fcb947414301e52370381870c62fc26d88f",
+          "afterSha256": "b9fd52197d620b10059425de13e0e361d571972e8486c7cfa354c2a2a9295626"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/production-safe-trace.js",
+          "beforeSha256": "dec8a977de6dc318c43c763ad6b9d7d33a9312cdac36958947a4af00a4a713e6",
+          "afterSha256": "e13b2b88f11716fc6cece90874f77938597546a963058481dce0d99440d59994"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/relation-completeness.js",
+          "beforeSha256": null,
+          "afterSha256": "4e011ab6c5becba0081aaf9789c09672860a6d1de1272cbf5af4b312e37789ec"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/semantic-unit-validator.js",
+          "beforeSha256": "4df96f916b253d0b39a46cf23136212ad53290bda906436289a8a7d6664fdd17",
+          "afterSha256": "3361f1ec5d79323c8af66ce81c8cdd1839a185799c4e3f0df9a87f19edf115e4"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/state-v3-lifecycle-adapter.js",
+          "beforeSha256": "770b12cae6e735743fc5584328561c067df30b9e2f237f65676083cd1ab18738",
+          "afterSha256": "83d591dd4c49e316c0e462351c674d626eb2ed224ddadd3377fbaae16a79f74b"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/unit-reply-router.js",
+          "beforeSha256": "0cf1753de899ec135e61fa444a96488046f572cd232a9435e25ec4813c9b3829",
+          "afterSha256": "65c0fab1c13f633f4f060467165d90fa2aa1fab45fbc91733bef3fce7facc824"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/providers/openai-understanding-v1.js",
+          "beforeSha256": "bafb414314692434dbfa986a4e1aaca0a678a2af1bb8619fb79d62bdd96c8189",
+          "afterSha256": "d73b7a4bc9a3173054e52df9819866833b122a1f29c34a613dbb8b6689fedbd6"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/providers/postgres-providers.js",
+          "beforeSha256": "6e09daa8e182676ac9d070bdd0eb957a1e40c9642d770bbffad67b3dbed74f36",
+          "afterSha256": "d8823544caf086be5d263ae85a55d4e5e842cf2eecf5b2052df7b313362be4b4"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/providers/postgres-worker.js",
+          "beforeSha256": "5a916bfeaecfba7f783b90764c289f6d59c1b3813c8bd24a8dad2068f82bd8fa",
+          "afterSha256": "fe2d1a24fa4230e1e115acdd567261839b83e56f957262f9c6e79f0eee5a2184"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/providers/understanding-attempt-diagnostic.js",
+          "beforeSha256": null,
+          "afterSha256": "d3643bc1ecec519aa7ff7bf296eb01956a969c0515c17b8d5222d516dba436de"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/server.js",
+          "beforeSha256": "af64169a46ddbc2f44e2b69def3aa51352f7ecc3a3a6c7f9a9e3f41e1512427e",
+          "afterSha256": "48e980b805d48eae075b6eb43e52f9aac1c191bc8dd43f27eb39b6ecb2a6247c"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/helpers/new-core-context-scenarios.js",
+          "beforeSha256": null,
+          "afterSha256": "be9a4281506dc3225e1433cfeef02b35cd5b5823c68cb5c0e3e1defad0791cf6"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-b4-b6-context-runner.js",
+          "beforeSha256": null,
+          "afterSha256": "7d2a7ec4c4811502d8e140ce7a8a5c22b49788942f497daad0669ee8a87fa6f5"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-context-burst-provenance-runner.js",
+          "beforeSha256": null,
+          "afterSha256": "a61332de093cf70a50820ee8e026f3db65b2a2f26c27e83f433d2197781930fd"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-context-continuity-runner.js",
+          "beforeSha256": null,
+          "afterSha256": "e08ee15b3c3769d943eca4b987a558aa40693a8342eb2737342753a396d7fc5c"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-context-temporal-provenance-runner.js",
+          "beforeSha256": null,
+          "afterSha256": "d3103e03f300e8e63fcf852685b79f84c746f03b91094e682b79f82b3fee0c69"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-inventory-not-open-runner.js",
+          "beforeSha256": null,
+          "afterSha256": "e3125271c7843859dcb025886cc0d935d7d9314cf6d796fbd62ecd2925149589"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-test-page-runner.js",
+          "beforeSha256": "10a973bbd1a261f384e84ed4d11005741d8b28bc07cb6c81414ba3df01ffd632",
+          "afterSha256": "45ff267a6d7deb0727bf68b64dc14893ba3960fce233992322052f2830259ea3"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-openai-adapter-contract-runner.js",
+          "beforeSha256": "41e572386a5e5b694c09bd3be3bc07585c2190ab33ea44827fbe7bb9c9bde9b3",
+          "afterSha256": "ef1ebc49640e64cc9b5eb25f1735994e909825a59c2603486ec9e177d16881c9"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-relation-completeness-runner.js",
+          "beforeSha256": null,
+          "afterSha256": "9db7a338449e7c221b954b636f74c5b16e4a8ded55db5b3b488a152a50095ed7"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-required-clarification-runner.js",
+          "beforeSha256": "5b86634a2dfdbd34a8836cf83b695e2d8fbeeb0a93ebbdab86f6cebafc6b78e5",
+          "afterSha256": "9b5b71143a8e1cee161cbf21014690d4b33e85e6b64e3d7e55b49da5faa38b1a"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-same-lodging-context-runner.js",
+          "beforeSha256": null,
+          "afterSha256": "5d19755340a7fc9e8d901b379b870ec5de95bcc554ef6a9553cba53b6015d03b"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-source-correction-runner.js",
+          "beforeSha256": null,
+          "afterSha256": "57e230ddeb5c9be1e74dd70504805b302871122f89c75048029810bb106421df"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-temporal-completeness-runner.js",
+          "beforeSha256": null,
+          "afterSha256": "109de06e3db83cc8871b93b4cd4b41e183bb852f94802c68184d8f979f9c3c7c"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-understanding-evidence-runner.js",
+          "beforeSha256": null,
+          "afterSha256": "7738b1173aeb85e86996d9572b73dd080dab923b88a168b31043f8163e5e098a"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-unit-routing-runner.js",
+          "beforeSha256": "476b8fea0cec487c06ff7494e6985b31e93451f2e567700dc9b3604cb6b9ca72",
+          "afterSha256": "505ea0974ed08f9bdef12a7484eb6d15764c816493b0ac173d4fdd0edd5c8b23"
+        }
+      ],
+      "requiredRunners": [
+        "tests/availability-auto-reply-runner.js",
+        "tests/commercial-ai-gate-runner.js",
+        "tests/commercial-ai-manual-service-runner.js",
+        "tests/commercial-ai-transport-runner.js",
+        "tests/commercial-subscription-http-runner.js",
+        "tests/custom-arrival-departure-text-runner.js",
+        "tests/line-profile-list-runner.js",
+        "tests/line-profile-webhook-runner.js",
+        "tests/new-core-acceptance-authority-runner.js",
+        "tests/new-core-b4-b6-context-runner.js",
+        "tests/new-core-c03-correction-diagnostics-red-runner.js",
+        "tests/new-core-context-burst-provenance-runner.js",
+        "tests/new-core-context-continuity-runner.js",
+        "tests/new-core-context-temporal-provenance-runner.js",
+        "tests/new-core-correction-evidence-report-runner.js",
+        "tests/new-core-correction-field-preservation-runner.js",
+        "tests/new-core-cross-stage-preservation-runner.js",
+        "tests/new-core-deterministic-acceptance-runner.js",
+        "tests/new-core-durable-identity-runner.js",
+        "tests/new-core-epistemic-claim-runner.js",
+        "tests/new-core-inventory-not-open-runner.js",
+        "tests/new-core-latency-transport-runner.js",
+        "tests/new-core-lifecycle-request-evidence-runner.js",
+        "tests/new-core-luna-model-authority-runner.js",
+        "tests/new-core-manual-test-page-runner.js",
+        "tests/new-core-mixed-handoff-bridge-red-runner.js",
+        "tests/new-core-operator-outcome-runner.js",
+        "tests/new-core-operator-policy-runner.js",
+        "tests/new-core-preliminary-intent-runner.js",
+        "tests/new-core-price-resource-coverage-runner.js",
+        "tests/new-core-quantity-provider-alignment-runner.js",
+        "tests/new-core-relation-completeness-runner.js",
+        "tests/new-core-request-responsibility-runner.js",
+        "tests/new-core-room-composition-persistence-runner.js",
+        "tests/new-core-room-type-list-runner.js",
+        "tests/new-core-same-lodging-context-runner.js",
+        "tests/new-core-scoped-collection-admission-runner.js",
+        "tests/new-core-scoped-dependency-runner.js",
+        "tests/new-core-semantic-obligation-runner.js",
+        "tests/new-core-semantic-position-runner.js",
+        "tests/new-core-shadow-isolation-runner.js",
+        "tests/new-core-slot-provider-admission-runner.js",
+        "tests/new-core-source-correction-runner.js",
+        "tests/new-core-state-semantic-projection-runner.js",
+        "tests/new-core-static-capacity-contract-runner.js",
+        "tests/new-core-temporal-completeness-runner.js",
+        "tests/new-core-understanding-evidence-runner.js",
+        "tests/new-core-understanding-latency-runner.js",
+        "tests/new-core-verdict-trace-runner.js",
+        "tests/new-core-visible-outcomes-runner.js",
+        "tests/property-explanation-images-ui-runner.js"
+      ],
+      "requireReal": true
+    }
+  ]
 }
