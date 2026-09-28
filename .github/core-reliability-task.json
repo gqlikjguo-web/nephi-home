@@ -1,13 +1,12 @@
 {
   "schemaVersion": 1,
-  "baseline": "fa6a55c16ce83d13cc1aab96d4b00422d128f8ee",
-  "objective": "Owner-approved five-file REAL oracle synchronization only: preserve thirteen REAL OpenAI turns and max 26 calls; update the three obsolete successful whole-day zero-row Unknown assertions to inventory_not_open with scoped successful-read evidence; preserve explicit closed, genuine partial-missing and technical Unknown safeguards. Keep product runtime and exact 40-file combination unchanged. Independent current trusted Gate and owner review required before governance installation. No product merge, production runtime deployment, DB/config operations or rollback.",
+  "baseline": "18d2683fa28ef698291dd54aac893b0ad0fc7245",
+  "objective": "Repair the proven PR #20 trusted-CI browser dependency gap only: install pinned Playwright 1.63.0 and matching Chromium/system dependencies outside the candidate tree, export the existing runner module/browser paths after successful setup, and retain fail-closed workflow regression tests. Permit only this exact workflow path as intervening governance in the existing atomic registration, with all 40 registered product/spec hashes, runners, REAL requirements and approval protections unchanged. No product runtime, Context, expectations, package/schema/data/settings, product PR merge, deployment or rollback changes. Independent existing trusted Gate and owner approval required.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
     ".github/core-reliability-policy.json",
-    "pilot/nephi-home-node-pilot-v1/scripts/run-core-reliability-real.js",
-    "pilot/nephi-home-node-pilot-v1/tests/fixtures/core-reliability-real-cases.json",
-    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-real-contract-runner.js"
+    ".github/workflows/core-reliability.yml",
+    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js"
   ],
   "contractChangeAllowed": false,
   "gateChangeAllowed": true,
@@ -15,5 +14,5 @@
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "Current owner explicitly approved the five-file REAL oracle/spec governance synchronization identified in the preceding report. This task is not GitHub owner approval."
+  "approvalSource": "Current user explicitly approved the minimum governance repair for the proven CI environment dependency gap. This manifest is not GitHub owner approval."
 }

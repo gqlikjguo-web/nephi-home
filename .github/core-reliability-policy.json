@@ -703,6 +703,7 @@
       "baselineGovernancePaths": [
         ".github/core-reliability-task.json",
         ".github/core-reliability-policy.json",
+        ".github/workflows/core-reliability.yml",
         "pilot/nephi-home-node-pilot-v1/scripts/core-contract-approval.js",
         "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
         "pilot/nephi-home-node-pilot-v1/tests/core-contract-approval-runner.js",
