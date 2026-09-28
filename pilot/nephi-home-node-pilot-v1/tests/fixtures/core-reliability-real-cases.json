@@ -41,9 +41,13 @@
       "message": "11/25有房嗎",
       "date": "2026-11-25",
       "checkOut": "2026-11-26",
-      "outcome": "unknown",
+      "outcome": "no_availability",
       "action": "reply",
-      "expectedText": "2026-11-25 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。\n查房連結：https://example.invalid/gatea"
+      "expectedText": "2026-11-25 至 2026-11-26 的住宿無法完整預訂：2026-11-25 未開放預訂。\n查房連結：https://example.invalid/gatea",
+      "reason": "inventory_not_open",
+      "unopenedDates": [
+        "2026-11-25"
+      ]
     },
     {
       "id": "december",
@@ -61,9 +65,13 @@
       "message": "2027/1/2有房嗎",
       "date": "2027-01-02",
       "checkOut": "2027-01-03",
-      "outcome": "unknown",
+      "outcome": "no_availability",
       "action": "reply",
-      "expectedText": "2027-01-02 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。\n查房連結：https://example.invalid/gatea"
+      "expectedText": "2027-01-02 至 2027-01-03 的住宿無法完整預訂：2027-01-02 未開放預訂。\n查房連結：https://example.invalid/gatea",
+      "reason": "inventory_not_open",
+      "unopenedDates": [
+        "2027-01-02"
+      ]
     },
     {
       "id": "range-room",
@@ -71,9 +79,14 @@
       "message": "11/25~11/27 401房，還有嗎？",
       "date": "2026-11-25",
       "checkOut": "2026-11-27",
-      "outcome": "unknown",
+      "outcome": "no_availability",
       "action": "reply",
-      "expectedText": "2026-11-25 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。\n查房連結：https://example.invalid/gatea"
+      "expectedText": "2026-11-25 至 2026-11-27 的住宿無法完整預訂：2026-11-25、2026-11-26 未開放預訂。\n查房連結：https://example.invalid/gatea",
+      "reason": "inventory_not_open",
+      "unopenedDates": [
+        "2026-11-25",
+        "2026-11-26"
+      ]
     },
     {
       "id": "capacity",

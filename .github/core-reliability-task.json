@@ -1,16 +1,13 @@
 {
   "schemaVersion": 1,
-  "baseline": "dbb3dc6b78863aa5b7ac18ddca04f2db1909222a",
-  "objective": "Owner-approved eight-file governance-only installation: independently reviewed exact Contract/runtime combination; current trusted Gate must qualify this governance PR. Preserve all existing assertions, mandatory deterministic and REAL qualification. No application/spec/runtime/env/schema/data changes; no product merge/deploy/rollback. Source combination is the preserved 20260928 release proposal.",
+  "baseline": "fa6a55c16ce83d13cc1aab96d4b00422d128f8ee",
+  "objective": "Owner-approved five-file REAL oracle synchronization only: preserve thirteen REAL OpenAI turns and max 26 calls; update the three obsolete successful whole-day zero-row Unknown assertions to inventory_not_open with scoped successful-read evidence; preserve explicit closed, genuine partial-missing and technical Unknown safeguards. Keep product runtime and exact 40-file combination unchanged. Independent current trusted Gate and owner review required before governance installation. No product merge, production runtime deployment, DB/config operations or rollback.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
     ".github/core-reliability-policy.json",
-    "pilot/nephi-home-node-pilot-v1/scripts/core-contract-approval.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
-    "pilot/nephi-home-node-pilot-v1/tests/core-contract-approval-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
-    "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
-    "pilot/nephi-home-node-pilot-v1/docs/RULES_INDEX.md"
+    "pilot/nephi-home-node-pilot-v1/scripts/run-core-reliability-real.js",
+    "pilot/nephi-home-node-pilot-v1/tests/fixtures/core-reliability-real-cases.json",
+    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-real-contract-runner.js"
   ],
   "contractChangeAllowed": false,
   "gateChangeAllowed": true,
@@ -18,5 +15,5 @@
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "Current owner instruction approving the previous eight-file governance proposal, governance installation and combined candidate qualification; independent GitHub owner review still required."
+  "approvalSource": "Current owner explicitly approved the five-file REAL oracle/spec governance synchronization identified in the preceding report. This task is not GitHub owner approval."
 }
