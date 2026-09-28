@@ -528,7 +528,7 @@ function sendJson(response, status, payload, headers = {}) {
     "cache-control": "no-store",
     ...headers
   });
-  response.end(JSON.stringify(payload));
+  response.end(JSON.stringify(payload, (key, value) => key === "understandingFailureDiagnostic" ? undefined : value));
 }
 
 function cookieValue(request, name) {
@@ -1663,7 +1663,7 @@ function createApp(options = {}) {
         testOnlyLineMessageTrace.finalResponse({ traceId: result.traceId, eventId: input.eventId, propertyId: id, finalDecision: result.finalDecision, finalResponse: result.finalResponse });
         const traceTransport = (details) => { details = { ...details, monotonicMs: monotonicNow() }; const { replyText: _replyText, ...diagnostic } = details; captureSafeTrace(details); emitTransportDiagnostic(diagnostic); testOnlyLineMessageTrace.transport({ traceId: result.traceId, eventId: input.eventId, propertyId: id, ...details }); };
         const persistTrace = async () => {
-          try { await updateEventStatus(id, input.channelId, input.eventId, { safeTrace: (acceptanceTraces.get(result.traceId) || []).slice(-40) }); }
+          try { await updateEventStatus(id, input.channelId, input.eventId, { safeTrace: (acceptanceTraces.get(result.traceId) || []).slice(-40), ...require("./lib/providers/understanding-attempt-diagnostic").productionUnderstandingFailureEvidence(result) }); }
           catch (error) { console.error(JSON.stringify({ scope: "new-core-production-trace", traceId: result.traceId, stage: "persistence_failed", errorCode: String(error && error.code || "TRACE_PERSISTENCE_FAILURE") })); }
         };
         const eventCycleRefs = completedTurnMessageCycleRefs(result, input.eventId, input.eventId);

@@ -636,7 +636,7 @@ async function operation(name, args) {
         safeTrace:Array.isArray(row.safe_trace)?row.safe_trace:[]
       }));
     }
-    const r=await client.query("SELECT payload FROM message_logs WHERE property_id=$1 ORDER BY created_at",[propertyId]);
+    const r=await client.query("SELECT payload - 'understandingFailureDiagnostic' AS payload FROM message_logs WHERE property_id=$1 ORDER BY created_at",[propertyId]);
     return r.rows.map(payload).map((x)=>({...x,customerId:propertyId}));
   }
   if (name === "findMessageByEventId") { const r=await client.query("SELECT payload FROM message_logs WHERE property_id=$1 AND event_id=$2 AND ($3::text IS NULL OR channel_id=$3) ORDER BY created_at LIMIT 1",[args[0],args[1],args[2]||null]); const x=payload(r.rows[0]); return x?{...x,customerId:args[0]}:null; }
