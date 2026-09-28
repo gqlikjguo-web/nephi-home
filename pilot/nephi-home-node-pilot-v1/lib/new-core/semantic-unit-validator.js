@@ -1,6 +1,7 @@
 "use strict";
 
 const { validateSemanticUnitCandidate } = require("./contracts/semantic-unit-candidate");
+const { validateTemporalSourceCompleteness } = require("../conversation-engine-v2/temporal-resolver");
 const { INFORMATION_NEED_SLOT, informationNeedAdmission } = require("./contracts/information-need");
 const {
   capabilityPolicyFor,
@@ -203,6 +204,19 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnIn
     }
     return { ...failure("UNIT_MEANING_UNSUPPORTED"), diagnostics: positions.failures,
       fieldValidationState: deepFreeze(detach(bindSemanticObligations(states, unit, understandingTurnInput))) };
+  }
+  if (unit.stayDependent) {
+    const sourceSpans = unit.evidenceRefs.map(reference => {
+      const sources = understandingTurnInput.sourceEvents.filter(source => source.eventId === reference.eventId
+        && source.messageRef === reference.messageRef
+        && source.messageText.slice(reference.startOffset, reference.endOffset) === reference.quote);
+      return sources.length === 1 ? { ...reference, eventTimestamp: sources[0].timestamp } : null;
+    });
+    if (sourceSpans.some(source => source === null)) return reject("UNIT_EVIDENCE_MISSING");
+    const completeness = validateTemporalSourceCompleteness({ temporalCandidate: unit.temporalCandidate,
+      sourceSpans, timezone: understandingTurnInput.propertyTimezone });
+    if (!completeness.ok) return { ...reject("SEMANTIC_UNIT_INVALID", "temporalCandidate"), errors: completeness.errors };
+    complete("temporalCandidate", "temporalAdmission");
   }
   const obligations = deepFreeze(detach(bindSemanticObligations(fieldValidationState.map(state => ({
     ...state, preservation: "PRESERVE"

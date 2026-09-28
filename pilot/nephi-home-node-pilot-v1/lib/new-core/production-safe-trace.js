@@ -270,6 +270,7 @@ function outcomeFacts(value) {
     availableRoomIds: list(facts.availableRoomIds, token, 40),
     availableBundleIds: list(facts.availableBundleIds, token, 40),
     availableDates: list(facts.availableDates, token, 40),
+    ...(Array.isArray(facts.unopenedDates) ? { unopenedDates: list(facts.unopenedDates, token, 60) } : {}),
     prices: list(facts.prices, safePrice, 40)
   };
 }

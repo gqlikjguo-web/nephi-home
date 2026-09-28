@@ -17,7 +17,9 @@ function validateAvailabilityReply(section, text) {
     errors.push("availability_reply_forbidden");
   }
   let body;
-  if (missing || section.outcomeStatus === "no_availability") {
+  if (section.outcomeStatus === "no_availability" && section.outcomeReason === "inventory_not_open" && facts.unopenedDates?.length) {
+    body = checkIn + " 至 " + facts.checkOut + " 的住宿無法完整預訂：" + facts.unopenedDates.join("、") + " 未開放預訂。";
+  } else if (missing || section.outcomeStatus === "no_availability") {
     body = checkIn + " 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。";
   } else {
     const amount = number => new Intl.NumberFormat("zh-TW").format(number);
