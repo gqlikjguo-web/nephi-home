@@ -226,6 +226,55 @@ function verifyRoomGalleryRouteClassification() {
   assert.ok(installed.governancePaths.includes(r2devFixture),"approved URL policy fixture must remain governance-protected");cases++;
 }
 verifyRoomGalleryRouteClassification();
+function verifyBrowserDependencySetup() {
+  // Execute the workflow's shell: dependency doubles avoid network/OS changes.
+  // A missing export, failed install or wrong browser path must block the runner.
+  const workflow = fs.readFileSync(path.resolve(__dirname, "../../../.github/workflows/core-reliability.yml"), "utf8");
+  const job = workflow.split("\n  gate:\n")[1].split("\n  fast:\n")[0];
+  const setup = job.match(/      - name: Install pinned browser test dependencies\n        shell: bash\n        run: \|\n((?:          [^\n]*\n)+)/);
+  assert.ok(setup, "trusted CI must provision the browser runner dependency"); cases++;
+  assert.ok(job.indexOf(setup[0]) < job.indexOf("      - name: Run trusted scope")); cases++;
+  const shell = setup[1].split("\n").map(line => line.slice(10)).join("\n");
+  for (const failure of ["none", "npm", "browser"]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-browser-setup-"));
+    const runnerTemp = path.join(dir, "runner temp"), bin = path.join(dir, "bin"), envFile = path.join(dir, "github-env");
+    fs.mkdirSync(runnerTemp); fs.mkdirSync(bin); fs.writeFileSync(envFile, "EXISTING_ENV=preserved\n");
+    const npmDouble = `#!/usr/bin/env node
+const fs=require('node:fs'),path=require('node:path');
+const args=process.argv.slice(2),prefix=args[args.indexOf('--prefix')+1];
+fs.appendFileSync(process.env.SETUP_CALL_LOG,JSON.stringify({tool:'npm',args})+'\\n');
+if(process.env.SETUP_FAILURE==='npm')process.exitCode=23;
+else {const target=path.join(prefix,'node_modules/playwright');fs.mkdirSync(target,{recursive:true});
+fs.copyFileSync(process.env.SETUP_CLI_FIXTURE,path.join(target,'cli.js'));
+fs.writeFileSync(path.join(target,'index.js'),"module.exports={ready:require('node:fs').existsSync(require('node:path').join(process.env.PLAYWRIGHT_BROWSERS_PATH,'ready'))};");}
+`;
+    const cliDouble = `const fs=require('node:fs'),path=require('node:path');
+fs.appendFileSync(process.env.SETUP_CALL_LOG,JSON.stringify({tool:'browser',args:process.argv.slice(2),browserPath:process.env.PLAYWRIGHT_BROWSERS_PATH})+'\\n');
+if(process.env.SETUP_FAILURE==='browser')process.exitCode=24;
+else {fs.mkdirSync(process.env.PLAYWRIGHT_BROWSERS_PATH,{recursive:true});fs.writeFileSync(path.join(process.env.PLAYWRIGHT_BROWSERS_PATH,'ready'),'fixture');}
+`;
+    fs.writeFileSync(path.join(bin, "npm"), npmDouble, { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, "cli.js"), cliDouble);
+    const env = { ...process.env, PATH: bin + path.delimiter + process.env.PATH, RUNNER_TEMP: runnerTemp, GITHUB_ENV: envFile,
+      SETUP_FAILURE: failure, SETUP_CALL_LOG: path.join(dir, "calls.jsonl"), SETUP_CLI_FIXTURE: path.join(dir, "cli.js") };
+    delete env.PLAYWRIGHT_MODULE; delete env.PLAYWRIGHT_BROWSERS_PATH;
+    const result = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", shell], { cwd: dir, env, encoding: "utf8" });
+    assert.equal(result.status, failure === "none" ? 0 : failure === "npm" ? 23 : 24, result.stderr); cases++;
+    const exported = fs.readFileSync(envFile, "utf8");
+    const calls = fs.readFileSync(env.SETUP_CALL_LOG, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    assert.equal(calls.length, failure === "npm" ? 1 : 2); cases++;
+    assert.deepEqual(calls[0].args, ["install", "--prefix", path.join(runnerTemp, "core-gate-playwright"), "--no-save", "--package-lock=false", "--ignore-scripts", "--no-audit", "--no-fund", "playwright@1.63.0"]); cases++;
+    if (failure !== "npm") {
+      assert.deepEqual(calls[1], { tool: "browser", args: ["install", "--with-deps", "chromium"], browserPath: path.join(runnerTemp, "core-gate-playwright/browsers") }); cases++;
+    }
+    if (failure !== "none") { assert.equal(exported, "EXISTING_ENV=preserved\n"); cases++; continue; }
+    const nextEnv = Object.fromEntries(exported.trim().split("\n").map(line => { const at = line.indexOf("="); return [line.slice(0, at), line.slice(at + 1)]; }));
+    assert.deepEqual(nextEnv, { EXISTING_ENV: "preserved", PLAYWRIGHT_MODULE: path.join(runnerTemp, "core-gate-playwright/node_modules/playwright"), PLAYWRIGHT_BROWSERS_PATH: path.join(runnerTemp, "core-gate-playwright/browsers") }); cases++;
+    const consumer = spawnSync(process.execPath, ["-e", "require('node:assert/strict').equal(require(process.env.PLAYWRIGHT_MODULE).ready,true)"], { cwd: dir, env: { ...env, ...nextEnv }, encoding: "utf8" });
+    assert.equal(consumer.status, 0, consumer.stderr); cases++;
+  }
+}
+verifyBrowserDependencySetup();
 async function verifyWorkflow() {
   const workflow = fs.readFileSync(path.resolve(__dirname, "../../../.github/workflows/core-reliability.yml"), "utf8");
   const blocks = [...workflow.matchAll(/          script: \|\n((?: {12}[^\n]*\n|\n)+)/g)].map(m => m[1].split("\n").map(line => line.slice(12)).join("\n"));
