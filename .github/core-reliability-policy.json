@@ -708,7 +708,10 @@
         "pilot/nephi-home-node-pilot-v1/tests/core-contract-approval-runner.js",
         "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
         "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
-        "pilot/nephi-home-node-pilot-v1/docs/RULES_INDEX.md"
+        "pilot/nephi-home-node-pilot-v1/docs/RULES_INDEX.md",
+        "pilot/nephi-home-node-pilot-v1/scripts/run-core-reliability-real.js",
+        "pilot/nephi-home-node-pilot-v1/tests/fixtures/core-reliability-real-cases.json",
+        "pilot/nephi-home-node-pilot-v1/tests/core-reliability-real-contract-runner.js"
       ],
       "protectedPaths": [
         "pilot/nephi-home-node-pilot-v1/tests/new-core-manual-test-page-runner.js",
