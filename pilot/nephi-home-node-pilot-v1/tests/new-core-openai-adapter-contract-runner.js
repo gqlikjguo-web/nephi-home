@@ -495,7 +495,7 @@ async function main() {
   );
   assert.deepEqual(
     body.text.format.schema.properties.contextLinkCandidates.items.required.sort(),
-    ["contextLinkCandidateId", "currentSourceEvidenceRefs", "referencedHistoryEventRefs", "relationKind", "unitId"].sort()
+    ["contextLinkCandidateId", "currentSourceEvidenceRefs", "referencedCurrentUnitId", "referencedHistoryEventRefs", "relationKind", "unitId"].sort()
   );
   assert.deepEqual(
     unitBranches[0].properties.evidenceRefs.items.required.sort(),

@@ -241,12 +241,13 @@ async function operation(name, args) {
   if(name==="listDatePriceClassifications"){const r=await client.query("SELECT stay_date::text date,price_type FROM property_date_price_classifications WHERE property_id=$1 ORDER BY stay_date",[args[0]]);return r.rows.map(x=>({date:x.date.slice(0,10),priceType:x.price_type}));}
   if (name === "getRows") {
     const [propertyId, from, to] = args;
-    const normalized = await client.query("SELECT stay_date::text date,inventory_id,status FROM inventory_availability_days WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date,inventory_id",[propertyId,from||null,to||null]);
+    const normalized = await client.query("SELECT stay_date::text date,inventory_id,status,remaining FROM inventory_availability_days WHERE property_id=$1 AND ($2::date IS NULL OR stay_date >= $2::date) AND ($3::date IS NULL OR stay_date < $3::date) ORDER BY stay_date,inventory_id",[propertyId,from||null,to||null]);
     const by={};
     for(const item of normalized.rows){const date=item.date.slice(0,10);by[date]=by[date]||{date};by[date][item.inventory_id]=item.status;}
     const bundles=await operation("listBundles",[propertyId]);
     for(const row of Object.values(by))for(const bundle of bundles){const own=row[bundle.id]||"closed";row[bundle.id]=bundle.enabled&&bundle.memberRoomIds.length>0&&own==="available"?"available":"closed";}
-    return Object.values(by).sort((left,right)=>left.date.localeCompare(right.date));
+    return { rows: Object.values(by).sort((left,right)=>left.date.localeCompare(right.date)),
+      records: normalized.rows.map(item => ({ date: item.date.slice(0,10), inventoryId: item.inventory_id, status: item.status, remaining: Number(item.remaining) })) };
   }
   if (name === "getDayNotes") {
     const [propertyId,from,to]=args;

@@ -194,9 +194,8 @@ for (const spec of [
   });
 }
 
-// A price request without a supplied stay date is still a valid lodging need.
-// The controlled application layer will expose only the property-scoped public
-// booking reference; C07 must not turn it into a temporal clarification.
+// A price request remains valid, but needs a verified stay before execution.
+// A public booking reference cannot replace its missing-date clarification.
 const noDatePrice = validated({
   unit: candidate({
     messageText: "雙人房多少錢",
@@ -209,10 +208,10 @@ const noDatePrice = validated({
 });
 assert.deepEqual(route(noDatePrice).value, {
   unitId: "unit-routing",
-  disposition: "ANSWER",
-  reasonClass: "executable_lodging_need",
-  requiresCanonicalExecution: true,
-  missingGuestFields: [],
+  disposition: "CLARIFY",
+  reasonClass: "missing_guest_fields",
+  requiresCanonicalExecution: false,
+  missingGuestFields: ["stay.checkIn", "stay.checkOut"],
   operatorActionClass: null,
   riskClass: null
 });

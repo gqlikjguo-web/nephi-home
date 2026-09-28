@@ -9,10 +9,12 @@ const CONTEXT_LINK_FIELDS = Object.freeze([
   "unitId",
   "relationKind",
   "currentSourceEvidenceRefs",
-  "referencedHistoryEventRefs"
+  "referencedHistoryEventRefs",
+  "referencedCurrentUnitId",
+  "independentRequestEvidence"
 ]);
 const HISTORY_EVENT_REF_FIELDS = Object.freeze(["eventId", "messageRef"]);
-const RELATION_KINDS = new Set(["NEW_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION", "NONE"]);
+const RELATION_KINDS = new Set(["NEW_REQUEST", "RELATED_REQUEST", "RELATED_UNIT", "SUPPLEMENT", "MODIFICATION", "TERMINATION", "NONE"]);
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -28,10 +30,20 @@ function boundedText(value, limit = MAX_ID_LENGTH) {
   return typeof value === "string" && value.length > 0 && value.length <= limit;
 }
 
+function validateIndependenceEvidence(value) {
+  if (!exactKeys(value, ["currentSourceEvidenceRefs", "assessedHistoryEventRefs"])) return false;
+  if (!validateSourceEvidence(value.currentSourceEvidenceRefs).ok) return false;
+  return Array.isArray(value.assessedHistoryEventRefs) && value.assessedHistoryEventRefs.length <= MAX_EVIDENCE_REFS
+    && value.assessedHistoryEventRefs.every(ref => exactKeys(ref, HISTORY_EVENT_REF_FIELDS)
+      && boundedText(ref.eventId) && boundedText(ref.messageRef));
+}
+
 function validateContextLinkCandidate(value) {
   const errors = [];
   let unknownWireField = false;
-  if (!exactKeys(value, CONTEXT_LINK_FIELDS)) {
+  const optional = new Set(["referencedCurrentUnitId", "independentRequestEvidence"]);
+  const fields = CONTEXT_LINK_FIELDS.filter(field => !optional.has(field) || Object.hasOwn(value || {}, field));
+  if (!exactKeys(value, fields)) {
     errors.push("keys");
     unknownWireField ||= isPlainObject(value)
       && Object.keys(value).some((key) => !CONTEXT_LINK_FIELDS.includes(key));
@@ -58,10 +70,15 @@ function validateContextLinkCandidate(value) {
       identities.add(identity);
     });
   }
-  if (["NEW_REQUEST", "NONE"].includes(value && value.relationKind)
+  if (value?.relationKind === "RELATED_UNIT") {
+    if (!boundedText(value.referencedCurrentUnitId) || value.referencedCurrentUnitId === value.unitId) errors.push("referencedCurrentUnitId");
+  } else if (value?.referencedCurrentUnitId != null) errors.push("referencedCurrentUnitId.forbidden");
+  if (["NEW_REQUEST", "NONE", "RELATED_UNIT"].includes(value && value.relationKind)
     && Array.isArray(historyRefs) && historyRefs.length !== 0) errors.push("referencedHistoryEventRefs.forbidden");
-  if (["SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(value && value.relationKind)
+  if (["RELATED_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(value && value.relationKind)
     && Array.isArray(historyRefs) && historyRefs.length === 0) errors.push("referencedHistoryEventRefs.required");
+  if (value?.independentRequestEvidence != null && (value.relationKind !== "NEW_REQUEST"
+    || !validateIndependenceEvidence(value.independentRequestEvidence))) errors.push("independentRequestEvidence");
   const uniqueErrors = [...new Set(errors)];
   return uniqueErrors.length
     ? { ok: false, code: "UNDERSTANDING_SCHEMA_INVALID", errors: uniqueErrors, unknownWireField }

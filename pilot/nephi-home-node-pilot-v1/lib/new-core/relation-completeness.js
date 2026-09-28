@@ -1,0 +1,70 @@
+"use strict";
+
+const { validateAndNormalizeSourceEvidence } = require("./source-evidence-validator");
+
+const historyKey = ref => JSON.stringify([ref.eventId, ref.messageRef]);
+
+// C01 supplies the verified conversation scope and snapshot. This is an
+// evidence obligation, not a choice of lifecycle target or a language parser.
+function referenceableStayHistory(input, now = Math.max(...input.sourceEvents.map(event => Date.parse(event.timestamp)))) {
+  const stays = new Set(input.referenceableCycles.filter(cycle =>
+    ["active", "pending", "answered"].includes(cycle.status)
+      && Date.parse(cycle.expiresAt) > now
+      && cycle.confirmedValues.checkIn && cycle.confirmedValues.checkOut
+      && ["property", "room", "bundle", "matched_room_set"].includes(cycle.subject.kind)
+  ).map(cycle => cycle.requestCycleId));
+  return input.recentConversation.filter(event => event.referenceableCycleIds.some(id => stays.has(id)))
+    .map(({ eventId, messageRef }) => ({ eventId, messageRef }));
+}
+
+function sourceOwned(ref, owners) {
+  return owners.some(owner => ref.eventId === owner.eventId && ref.messageRef === owner.messageRef
+    && ref.startOffset >= owner.startOffset && ref.endOffset <= owner.endOffset);
+}
+
+function independenceFailure(proof, unit, link, input, history) {
+  if (!proof) return { field: "independentRequestEvidence", actual: "relation_completeness:missing",
+    expected: "source-grounded independence assessment of verified lodging history, or a supported existing relation" };
+  const refs = validateAndNormalizeSourceEvidence(proof.currentSourceEvidenceRefs, input.sourceEvents);
+  const unitRefs = validateAndNormalizeSourceEvidence(unit.evidenceRefs, input.sourceEvents);
+  const linkRefs = validateAndNormalizeSourceEvidence(link.currentSourceEvidenceRefs, input.sourceEvents);
+  if (!refs.ok || !unitRefs.ok || !linkRefs.ok
+    || !refs.value.every(ref => sourceOwned(ref, unitRefs.value) && sourceOwned(ref, linkRefs.value))) {
+    return { field: "independentRequestEvidence.currentSourceEvidenceRefs",
+      actual: refs.code || "relation_completeness:unowned_evidence",
+      expected: "exact current-source evidence owned by this unit and its relation" };
+  }
+  const required = new Set(history.map(historyKey));
+  const assessed = new Set(proof.assessedHistoryEventRefs.map(historyKey));
+  if (assessed.size !== proof.assessedHistoryEventRefs.length || assessed.size !== required.size
+    || [...required].some(key => !assessed.has(key))) {
+    return { field: "independentRequestEvidence.assessedHistoryEventRefs",
+      actual: "relation_completeness:history_assessment_incomplete",
+      expected: "each supplied, nonexpired history event bound to a verified stay, without foreign refs or target selection" };
+  }
+  return null;
+}
+
+function relationCompletenessFailure(value, input, now) {
+  const history = referenceableStayHistory(input, now);
+  const unitViolations = [];
+  for (const [index, link] of value.contextLinkCandidates.entries()) {
+    const unit = value.understandingOutput.units.find(item => item.unitId === link.unitId
+      && item.contextLinkCandidateId === link.contextLinkCandidateId);
+    if (!unit) continue;
+    const required = link.relationKind === "NEW_REQUEST" && unit.purpose === "lodging_question"
+      && unit.stayDependent === true && unit.temporalCandidate === null && history.length > 0;
+    if (!required && link.independentRequestEvidence == null) continue;
+    const failure = independenceFailure(link.independentRequestEvidence, unit, link, input, history);
+    if (failure) unitViolations.push({ unitId: unit.unitId, violation: {
+      validationErrorCode: "UNDERSTANDING_SCHEMA_INVALID",
+      fieldPath: `contextLinkCandidates.${index}.${failure.field}`,
+      expected: failure.expected, actual: failure.actual
+    } });
+  }
+  return unitViolations.length
+    ? { code: "UNDERSTANDING_SCHEMA_INVALID", violation: unitViolations[0].violation, unitViolations }
+    : null;
+}
+
+module.exports = { referenceableStayHistory, relationCompletenessFailure };

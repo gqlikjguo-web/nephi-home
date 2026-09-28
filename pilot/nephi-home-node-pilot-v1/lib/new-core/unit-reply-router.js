@@ -7,6 +7,7 @@ const {
 const { isValidatedSemanticUnitFor } = require("./semantic-unit-validator");
 const {
   isValidatedLifecycleDecision,
+  contextSourceForValidatedLifecycleDecision,
   understandingInputForValidatedLifecycleDecision
 } = require("./lifecycle-manager");
 const {
@@ -108,18 +109,23 @@ function createUnitReplyRoutingRegistry(capabilityRegistryProjection) {
   return value;
 }
 
-function guestFieldPresent(unit, field) {
+function guestFieldPresent(unit, field, source) {
   if (["stay.checkIn", "stay.checkOut"].includes(field)) {
     const temporal = unit.temporalCandidate;
     const candidateField = field === "stay.checkIn" ? "checkInCandidate" : "checkOutCandidate";
+    if (temporal === null) return Boolean(source?.confirmedValues?.[field === "stay.checkIn" ? "checkIn" : "checkOut"]);
+    if (temporal?.kind === "nights_only") return Boolean(source?.confirmedValues?.checkIn
+      && Number.isInteger(temporal.nightsCandidate) && temporal.nightsCandidate > 0);
     return Boolean(temporal && (
       temporal[candidateField]
       || CANONICALIZABLE_TEMPORAL_KINDS.has(temporal.kind)
     ));
   }
-  if (field === "stay.guests") return unit.slotCandidates.some((slot) => (
-    slot.slot === "guest_count" && slot.operation === "SET" && Number.isInteger(slot.value) && slot.value > 0
-  ));
+  if (field === "stay.guests") {
+    const slots = unit.slotCandidates.filter(slot => slot.slot === "guest_count");
+    return slots.length ? slots.some(slot => slot.operation === "SET" && Number.isInteger(slot.value) && slot.value > 0)
+      : Number.isInteger(source?.confirmedValues?.guestCount) && source.confirmedValues.guestCount > 0;
+  }
   return false;
 }
 
@@ -127,7 +133,8 @@ function createUnitReadiness({ unit, lifecycleDecision, routingRegistry } = {}) 
   if (!validatedUnitAndLifecycle(unit, lifecycleDecision)) return failure("ROUTING_INPUT_INVALID", ["unitOrLifecycle"]);
   const policy = routePolicyFor(routingRegistry, unit);
   if (!policy) return failure("ROUTE_PURPOSE_CONFLICT", ["registry"]);
-  const missingGuestFields = policy.requiredGuestFields.filter((field) => !guestFieldPresent(unit, field));
+  const source = contextSourceForValidatedLifecycleDecision(lifecycleDecision);
+  const missingGuestFields = policy.requiredGuestFields.filter((field) => !guestFieldPresent(unit, field, source));
   const value = deepFreeze({
     unitId: unit.unitId,
     status: missingGuestFields.length ? "MISSING_GUEST_FIELDS" : "READY",
