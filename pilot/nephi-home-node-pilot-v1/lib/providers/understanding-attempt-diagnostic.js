@@ -1,8 +1,8 @@
 "use strict";
 
 // Non-authoritative snapshots only. Never used by admission or correction.
-// The existing manual-test record owns persistence; production safe traces do
-// not project this field. No HTTP headers, provider response wrapper or env dump.
+// Manual records and terminal production schema-failure payloads may persist
+// these snapshots; public safe traces never project them. No response wrapper.
 const DENIED_KEY = /(?:api.?key|authorization|cookie|credential|token|secret|pass(?:word|phrase)|headers?|prompt|reasoning|raw|database.?url|private.?notes?)/iu;
 
 function sanitize(value, secret) {
@@ -81,4 +81,23 @@ function captureUnderstandingAttempts(entries, reports, acceptedAttempt, secret)
   }
 }
 
-module.exports = { captureUnderstandingAttempts, schemaErrorEvidence };
+function productionUnderstandingFailureEvidence(result) {
+  try {
+    const attempts = result?.understandingAttempts;
+    if (result?.earliestFailure?.layer !== "UNDERSTANDING" || !Array.isArray(attempts)
+      || attempts.length === 0 || attempts.length > 2 || attempts.some(entry => entry.accepted === true)
+      || !attempts.some(entry => entry.schemaError)) return {};
+    // Reuse the existing redaction boundary. These are already captured with
+    // the provider's exact secret removed; never consult env or a raw response.
+    const captured = sanitize(attempts);
+    const diagnostic = { schemaVersion: 1, attempts: captured.value, capture: captured.capture };
+    if (Buffer.byteLength(JSON.stringify(diagnostic), "utf8") > 512 * 1024)
+      return { understandingFailureDiagnostic: { schemaVersion: 1, captureError: "UNDERSTANDING_DIAGNOSTIC_SIZE_LIMIT" } };
+    return { understandingFailureDiagnostic: diagnostic };
+  } catch {
+    // A diagnostic failure cannot affect admission, persistence or delivery.
+    return {};
+  }
+}
+
+module.exports = { captureUnderstandingAttempts, schemaErrorEvidence, productionUnderstandingFailureEvidence };
