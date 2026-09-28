@@ -53,8 +53,31 @@ function validNow(now) {
   return typeof now === "string" && Number.isFinite(Date.parse(now));
 }
 
-function cycleIdentityCompatible(unit, cycle) {
+const LODGING_CONDITION_CAPABILITIES = new Set(["availability", "bundle_availability", "available_dates", "price", "total_price", "capacity"]);
+
+function cycleIdentityCompatible(unit, cycle, relationKind = null) {
   if (!unit || !cycle) return false;
+  if (relationKind === "RELATED_REQUEST") {
+    // A cited condition source may serve another lodging capability. It never
+    // becomes that request's lifecycle target, and unrelated subjects cannot bind.
+    return unit.purpose === "lodging_question" && unit.stayDependent === true
+      && unit.capability !== cycle.capability
+      && LODGING_CONDITION_CAPABILITIES.has(unit.capability)
+      && LODGING_CONDITION_CAPABILITIES.has(cycle.capability)
+      && ["room", "bundle", "property", "matched_room_set"].includes(unit.subject.kind)
+      && cycle.subject && cycle.subject.kind === unit.subject.kind
+      && cycle.subject.catalogIdentity === unit.subject.catalogIdentity;
+  }
+  if (relationKind === "MODIFICATION" && unit.capability === cycle.capability
+    && LODGING_CONDITION_CAPABILITIES.has(unit.capability)
+    && ["room", "bundle", "property"].includes(cycle.subject?.kind)) {
+    const products = (unit.slotCandidates || []).filter(slot => slot.slot === "product");
+    if (products.length === 1 && (
+      products[0].operation === "SET" && ["room", "bundle"].includes(unit.subject.kind)
+        && products[0].value === unit.subject.catalogIdentity
+      || products[0].operation === "CLEAR" && unit.subject.kind === "property"
+        && unit.subject.catalogIdentity === null)) return true;
+  }
   if (unit.capability === null) return true;
   return cycle.capability === unit.capability
     && cycle.subject && cycle.subject.kind === unit.subject.kind
@@ -76,7 +99,8 @@ function validateContextLink({
   linkCandidate,
   understandingTurnInput,
   validatedEvidenceRefs,
-  now
+  now,
+  currentUnitPairs = []
 } = {}) {
   const wire = validateContextLinkCandidate(linkCandidate);
   if (!wire.ok) return failure(wire.code, wire.errors);
@@ -112,7 +136,21 @@ function validateContextLink({
     return failure("CONTEXT_LINK_EVIDENCE_INVALID", ["contextLink.currentSourceEvidenceRefs"]);
   }
 
-  const relationTargets = ["SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(linkCandidate.relationKind);
+  let currentSource = null;
+  if (linkCandidate.relationKind === "RELATED_UNIT") {
+    const matches = currentUnitPairs.filter(pair => pair.unit?.unitId === linkCandidate.referencedCurrentUnitId);
+    if (matches.length !== 1) return failure(matches.length ? "CONTEXT_TARGET_AMBIGUOUS" : "CONTEXT_TARGET_UNAVAILABLE", ["referencedCurrentUnitId"]);
+    currentSource = matches[0];
+    if (!isValidatedSemanticUnitFor(understandingTurnInput, currentSource.unit)
+      || !isValidatedContextLinkFor(currentSource.link, currentSource.unit)
+      || understandingInputForValidatedContextLink(currentSource.link) !== understandingTurnInput
+      || !["NEW_REQUEST", "RELATED_REQUEST", "RELATED_UNIT", "MODIFICATION", "SUPPLEMENT"].includes(currentSource.link.relationKind)
+      || !cycleIdentityCompatible(unit, currentSource.unit, "RELATED_REQUEST")) {
+      return failure("CONTEXT_TARGET_SCOPE_CONFLICT", ["referencedCurrentUnitId.source"]);
+    }
+  }
+
+  const relationTargets = ["RELATED_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION"].includes(linkCandidate.relationKind);
   const recentCountsByRef = understandingTurnInput.recentConversation.reduce((counts, event) => {
     const key = historyRefKey(event);
     counts.set(key, (counts.get(key) || 0) + 1);
@@ -135,14 +173,14 @@ function validateContextLink({
     historyBound: boundCycleIds.has(cycle.requestCycleId),
     statusAllowed: statuses.has(cycle.status),
     notExpired: Number.isFinite(Date.parse(cycle.expiresAt)) && Date.parse(cycle.expiresAt) > Date.parse(now),
-    identityCompatible: cycleIdentityCompatible(unit, cycle)
+    identityCompatible: cycleIdentityCompatible(unit, cycle, linkCandidate.relationKind)
   })).map((item) => ({ ...item, selected: item.historyBound && item.statusAllowed && item.notExpired && item.identityCompatible }));
   const resolvedTargets = understandingTurnInput.referenceableCycles.filter((cycle) => (
     boundCycleIds.has(cycle.requestCycleId)
     && statuses.has(cycle.status)
     && Number.isFinite(Date.parse(cycle.expiresAt))
     && Date.parse(cycle.expiresAt) > Date.parse(now)
-    && cycleIdentityCompatible(unit, cycle)
+    && cycleIdentityCompatible(unit, cycle, linkCandidate.relationKind)
   ));
   if (relationTargets && resolvedTargets.length === 0) {
     return failure("CONTEXT_TARGET_UNAVAILABLE", ["referencedHistoryEventRefs.target"], { targetFilterResult });
@@ -156,12 +194,12 @@ function validateContextLink({
   const compatibleExistingTargetIds = understandingTurnInput.referenceableCycles
     .filter((cycle) => ["active", "pending", "answered"].includes(cycle.status)
       && Date.parse(cycle.expiresAt) > Date.parse(now)
-      && cycleIdentityCompatible(unit, cycle))
+      && cycleIdentityCompatible(unit, cycle, linkCandidate.relationKind))
     .map((cycle) => cycle.requestCycleId);
   const compatiblePendingTargetIds = understandingTurnInput.referenceableCycles
     .filter((cycle) => cycle.status === "pending"
       && Date.parse(cycle.expiresAt) > Date.parse(now)
-      && cycleIdentityCompatible(unit, cycle))
+      && cycleIdentityCompatible(unit, cycle, linkCandidate.relationKind))
     .map((cycle) => cycle.requestCycleId);
   VALIDATED_CONTEXT_LINKS.add(value);
   INPUT_BY_VALIDATED_CONTEXT_LINK.set(value, understandingTurnInput);
@@ -170,7 +208,8 @@ function validateContextLink({
     relationKind: value.relationKind,
     resolvedTargetRequestCycleId,
     compatibleExistingTargetIds,
-    compatiblePendingTargetIds
+    compatiblePendingTargetIds,
+    ...(currentSource ? { sourceUnitId: currentSource.unit.unitId } : {})
   }));
   const result = { ok: true, code: null, errors: [], value };
   FILTER_DIAGNOSTIC_BY_RESULT.set(result, deepFreeze(detach({ targetFilterResult })));

@@ -7,6 +7,7 @@ const { isCanonicalRequest } = require("../conversation-engine-v2/canonical-requ
 const { isValidatedSemanticUnitFor } = require("./semantic-unit-validator");
 const {
   isValidatedLifecycleDecision,
+  contextSourceForValidatedLifecycleDecision,
   understandingInputForValidatedLifecycleDecision
 } = require("./lifecycle-manager");
 const { isTrustedUnitRoutingDecisionFor } = require("./unit-reply-router");
@@ -17,6 +18,7 @@ const C08_AUTHORITY_MARKER = new WeakSet();
 const PROVENANCE_BY_C08 = new WeakMap();
 const OFFICIAL_CANONICAL_RESULTS = new WeakSet();
 const EXECUTION_DIAGNOSTICS = new WeakMap();
+const CONDITIONS_BY_CANONICAL_ITEM = new WeakMap();
 const EXECUTABLE_LIFECYCLE_ACTIONS = new Set(["START", "CONTINUE", "MODIFY"]);
 const CANONICAL_REJECTION_CODES = new Set([
   "invalid_canonical_request",
@@ -284,7 +286,9 @@ function productFromIdentity(identity, kind) {
 }
 
 function contextCycleFor(provenance, contextSnapshot) {
-  const target = provenance.lifecycleDecision.targetRequestCycleId;
+  const source = contextSourceForValidatedLifecycleDecision(provenance.lifecycleDecision);
+  if (source?.currentUnitId) return { ok: true, cycle: source };
+  const target = source?.requestCycleId || provenance.lifecycleDecision.targetRequestCycleId;
   if (target === null) return { ok: true, cycle: null };
   const matches = (contextSnapshot.cycles || []).filter((cycle) => cycle && cycle.requestCycleId === target);
   return matches.length === 1
@@ -346,12 +350,23 @@ function compatibilityTemporal(unit, sources) {
       }
     };
   }
-  const ownedSourceIndexes = unit.evidenceRefs.flatMap((reference, index) => (
-    reference.quote.includes(temporal.rawText) ? [index] : []
-  ));
-  if (ownedSourceIndexes.length !== 1) return null;
+  // Evidence spans can overlap while identifying the same exact occurrence.
+  // Preserve event/message and absolute UTF-16 offsets as the source identity;
+  // equal text in distinct events or positions remains ambiguous.
+  const temporalSources = new Map();
+  unit.evidenceRefs.forEach((reference, index) => {
+    for (let offset = reference.quote.indexOf(temporal.rawText); offset !== -1;
+      offset = reference.quote.indexOf(temporal.rawText, offset + 1)) {
+      const start = reference.startOffset + offset;
+      temporalSources.set(JSON.stringify([
+        reference.eventId, reference.messageRef, start, start + temporal.rawText.length
+      ]), index);
+    }
+  });
+  if (temporalSources.size !== 1) return null;
+  const sourceIndex = temporalSources.values().next().value;
   return {
-    eventTimestamp: sources[ownedSourceIndexes[0]].timestamp,
+    eventTimestamp: sources[sourceIndex].timestamp,
     stayCandidate: {
       dateExpression: {
         rawText: temporal.rawText,
@@ -480,8 +495,9 @@ function buildCompatibilityInvocation({
   temporal,
   guestOperation
 }) {
-  const guestCountCandidate = guestOperation && guestOperation.operation === "SET"
-    ? guestOperation.value : null;
+  const guestCountCandidate = guestOperation
+    ? guestOperation.operation === "SET" ? guestOperation.value : null
+    : contextTaskFor(context.cycle)?.guestCount || null;
   const informationNeed = uniqueSlotOperation(provenance.lifecycleDecision.verifiedSlotOperations, INFORMATION_NEED_SLOT);
   const detailIntent = informationNeed?.operation === "SET" ? informationNeed.value
     : compatibilityDetailIntent(provenance.unit.capability);
@@ -679,6 +695,17 @@ function executeCanonicalizerInputItem({
       exactCondition: "canonicalizerResult:forbiddenRecursiveKey"
     });
   }
+  const confirmedInputs = require("../conversation-engine-v2/conversation-state-v3-reducer").executionConditionsV3(null, value, null);
+  const inheritedQuantity = context.cycle?.confirmedInputs || {};
+  if (!value.canonicalRequest.quantityCandidate) Object.assign(confirmedInputs,
+    require("../conversation-contracts/resolver-quantity").resolverQuantityFields(inheritedQuantity),
+    inheritedQuantity.quantityEvidenceRefs ? {quantityEvidenceRefs: inheritedQuantity.quantityEvidenceRefs} : {});
+  CONDITIONS_BY_CANONICAL_ITEM.set(value, { decision: provenance.lifecycleDecision, source: deepFreeze({
+    currentUnitId: value.unitId, requestCycleId: provenance.lifecycleDecision.targetRequestCycleId,
+    confirmedInputs, sourceEvidenceRefs: detach(value.canonicalRequest.evidenceRefs),
+    confirmedValues: { checkIn: confirmedInputs.stay.checkIn, checkOut: confirmedInputs.stay.checkOut,
+      guestCount: confirmedInputs.stay.guests }
+  }) });
   return withExecutionDiagnostic({ ok: true, code: null, errors: [], value }, {
     ...diagnostic,
     failureCode: null,
@@ -686,9 +713,15 @@ function executeCanonicalizerInputItem({
   });
 }
 
+function conditionsForValidatedCanonicalItem(item, lifecycleDecision) {
+  const record = CONDITIONS_BY_CANONICAL_ITEM.get(item);
+  return record?.decision === lifecycleDecision ? record.source : null;
+}
+
 module.exports = {
   c08ExecutionDiagnosticFor,
   createCanonicalizerInputItem,
   executeCanonicalizerInputItem,
+  conditionsForValidatedCanonicalItem,
   isTrustedCanonicalizerInputItem
 };

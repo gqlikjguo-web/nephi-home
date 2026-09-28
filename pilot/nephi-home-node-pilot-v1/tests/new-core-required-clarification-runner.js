@@ -52,9 +52,12 @@ for (const propertyId of ["clarifyalpha", "clarifybeta"]) {
       assert.ok(validateVisibleCoverage(omitted, result.artifacts.responsePlan, { finalDecision: result.finalDecision }).errors.includes("final_section_missing"));
     });
   }
-  test(`${propertyId}: undated price retains its existing reference response`, async () => {
+  test(`${propertyId}: undated price visibly asks for its missing stay dates`, async () => {
     const result = await run(propertyId, "price", { kind: "property", catalogIdentity: null });
-    assert.deepEqual(result.routing, ["ANSWER"]);
-    assert.equal(result.finalResponse.replyText, `查房連結：https://example.invalid/${propertyId}`);
+    assert.deepEqual(result.routing, ["CLARIFY"]);
+    assert.equal(result.finalDecision.action, "clarification");
+    assert.equal(result.finalResponse.replyText, `請提供入住日期。\n查房連結：https://example.invalid/${propertyId}`);
+    assert.ok(validateVisibleCoverage(`查房連結：https://example.invalid/${propertyId}`, result.artifacts.responsePlan,
+      { finalDecision: result.finalDecision }).errors.includes("final_section_missing"));
   });
 }

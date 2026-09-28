@@ -1462,15 +1462,38 @@ function createApp(options = {}) {
       providerConfig: { apiKey: String(runtimeEnv.OPENAI_API_KEY || runtimeEnv.OPENAI_TEST_API_KEY || "") },
       publicBaseUrl: publicBrand.publicBaseUrl,
       responsePrefixForProperty: aiIdentityPrefix,
-      useConversationContext: false,
+      useConversationContext: true,
       now,
       onDiagnostic: captureSafeTrace,
       ...(typeof options.newCoreProductionExecuteTurn === "function" ? { executeTurn: options.newCoreProductionExecuteTurn } : {})
     })
     : null;
-  const newCoreLineEngine = rawNewCoreLineEngine && commercialController
-    ? {process:input => commercialController.run(input, () => rawNewCoreLineEngine.process(input))}
-    : rawNewCoreLineEngine;
+  function completedTurnMessageCycleRefs(result, eventId, turnEventId) {
+    // The tail records the completed turn's lineage. Source-event ownership
+    // remains in eventRequestCycleRefs; merged records retain only their own refs.
+    return eventId === turnEventId
+      ? result.requestCycleRefs
+      : result.eventRequestCycleRefs?.[eventId];
+  }
+  const newCoreLineEngine = rawNewCoreLineEngine && { async process(input) {
+    const result = commercialController
+      ? await commercialController.run(input, () => rawNewCoreLineEngine.process(input))
+      : await rawNewCoreLineEngine.process(input);
+    // State is saved by the adapter. Publish this completed turn's admitted
+    // event and burst linkage before the coordinator releases the scoped slot.
+    // LINE delivery may still be pending; genuinely processing events stay hidden.
+    const events = input.sourceEvents?.length ? input.sourceEvents : [input];
+    for (const event of events) {
+      const refs = completedTurnMessageCycleRefs(result, event.eventId, input.eventId);
+      if (!Array.isArray(refs)) continue;
+      const published = await providers.persistence.updateMessageEvent(
+        input.customerId, input.channelId, event.eventId,
+        { processingStatus: "decided", requestCycleRefs: refs }
+      );
+      if (!published) throw new Error("CONTEXT_EVENT_PUBLICATION_FAILED");
+    }
+    return result;
+  }};
   const root = createV2CompositionRoot({ providers, service, env: options.openAiTestEnv || process.env, now, debounceMs: options.conversationDebounceMs || config.conversationDebounceMs, planner: options.conversationPlannerV2, composer: options.controlledComposerV2, diagnosticDetail: testOnlyLineMessageTrace.active, onDiagnostic: captureSafeTrace, testOnlyOverrides: options.testOnlyOverrides || null, lineEngine: newCoreLineEngine });
   const manualTestFactsDatabaseUrl = String(runtimeEnv.NEW_CORE_MANUAL_TEST_FACTS_DATABASE_URL || "").trim();
   const ownedNewCoreManualTestFactsProviders = !options.newCoreManualTestFactsProviders && testOnlyEnvironment && manualTestFactsDatabaseUrl
@@ -1643,7 +1666,8 @@ function createApp(options = {}) {
           try { await updateEventStatus(id, input.channelId, input.eventId, { safeTrace: (acceptanceTraces.get(result.traceId) || []).slice(-40) }); }
           catch (error) { console.error(JSON.stringify({ scope: "new-core-production-trace", traceId: result.traceId, stage: "persistence_failed", errorCode: String(error && error.code || "TRACE_PERSISTENCE_FAILURE") })); }
         };
-        await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, replyText: finalResponseReplyText, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired), ...(Array.isArray(result.requestCycleRefs) ? { requestCycleRefs: result.requestCycleRefs } : {}) });
+        const eventCycleRefs = completedTurnMessageCycleRefs(result, input.eventId, input.eventId);
+        await updateEventStatus(id, input.channelId, input.eventId, { replyType: `${decision}_v2`, replyText: finalResponseReplyText, route: `final_decision_${decision}`, decisionReason: String(result.finalDecision && result.finalDecision.reasonCode || ""), humanHandoff: decision === "handoff", needsReview: Boolean(result.finalDecision && result.finalDecision.reviewRequired), ...(Array.isArray(eventCycleRefs) ? { requestCycleRefs: eventCycleRefs } : {}) });
         await persistTrace();
         if (finalResponseShouldReply === false) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: result.finalDecision && result.finalDecision.reasonCode || "final_response_should_reply_false", attempted: false, delivered: false, replyText: "" }); const updated = await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "no_reply", shouldReply: false, noReply: true }); await persistTrace(); acceptanceTraces.delete(result.traceId); return updated; }
         if (!finalResponseReplyText.trim()) { traceTransport({ traceId: result.traceId, propertyId: id, stage: "line_transport", decision, reasonCode: "final_response_empty_reply", attempted: false, delivered: false, replyText: "" }); const updated = await updateEventStatus(id, input.channelId, input.eventId, { processingStatus: "final_response_contract_failed", shouldReply: true, needsReview: true, replyDelivered: false, noReply: false, deliveryErrorCode: "final_response_empty_reply" }); await persistTrace(); acceptanceTraces.delete(result.traceId); return updated; }
