@@ -700,7 +700,7 @@ function executeCanonicalizerInputItem({
   if (!value.canonicalRequest.quantityCandidate) Object.assign(confirmedInputs,
     require("../conversation-contracts/resolver-quantity").resolverQuantityFields(inheritedQuantity),
     inheritedQuantity.quantityEvidenceRefs ? {quantityEvidenceRefs: inheritedQuantity.quantityEvidenceRefs} : {});
-  CONDITIONS_BY_CANONICAL_ITEM.set(value, { decision: provenance.lifecycleDecision, source: deepFreeze({
+  CONDITIONS_BY_CANONICAL_ITEM.set(value, { decision: provenance.lifecycleDecision, subject: provenance.unit.subject, source: deepFreeze({
     currentUnitId: value.unitId, requestCycleId: provenance.lifecycleDecision.targetRequestCycleId,
     confirmedInputs, sourceEvidenceRefs: detach(value.canonicalRequest.evidenceRefs),
     confirmedValues: { checkIn: confirmedInputs.stay.checkIn, checkOut: confirmedInputs.stay.checkOut,
@@ -718,10 +718,15 @@ function conditionsForValidatedCanonicalItem(item, lifecycleDecision) {
   return record?.decision === lifecycleDecision ? record.source : null;
 }
 
+function subjectForValidatedCanonicalItem(item) {
+  return CONDITIONS_BY_CANONICAL_ITEM.get(item)?.subject || null;
+}
+
 module.exports = {
   c08ExecutionDiagnosticFor,
   createCanonicalizerInputItem,
   executeCanonicalizerInputItem,
   conditionsForValidatedCanonicalItem,
+  subjectForValidatedCanonicalItem,
   isTrustedCanonicalizerInputItem
 };

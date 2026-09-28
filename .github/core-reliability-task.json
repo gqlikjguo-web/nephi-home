@@ -1,23 +1,27 @@
 {
   "schemaVersion": 1,
-  "baseline": "8933f02d5706d02513a1b3df1d9d0603e9f9ae13",
-  "objective": "Owner-authorized production FAIL diagnosis for event 01M3M9XQNDHCW5QENMP39EQHH2. Persist existing sanitized per-attempt Understanding schema failure evidence only on terminal schema admission failure, in the same existing message payload and best-effort trace update. Keep successful messages and public safe trace free of raw output. No Understanding/schema/correction, Context/State, Resolver, FinalDecision/FinalResponse, facts, DB schema, settings or Gate changes. Run affected/protected/integrity/maintainability, release the diagnostic-only candidate, then exactly one authorized minimal reproduction. Existing emergency Owner release authority is explicitly continued; no fabricated Gate PASS. The new diagnostic key is omitted from HTTP serialization and ordinary bulk message reads to preserve privacy and the existing RPC size budget; single-event private evidence remains stored. No facts query changes.",
+  "baseline": "0ffe3e8d47bcfd3a912cfbe44d57b07454b25271",
+  "objective": "Owner-approved minimal relation completeness and product modification compatibility Contract extension for the production follow-up failure. A partial current temporal condition cannot waive NEW_REQUEST independence evidence when verified same-scope unexpired lodging history exists. Reuse the sole Temporal authority without defaults or Context. Permit catalog-grounded matched_room_set MODIFICATION with current evidence and a unique validated historical target; preserve its set identity through existing State fields without selecting a room or adding persisted fields. Keep correction at most two Understanding calls, full validation, legitimate independent requests, isolation and all existing authorities. No unrelated runtime, governance, DB, environment or deployment changes. A single PR requires independent owner Gate approval; stop there before production LINE verification. Recovery authorization: fix only the proven relative_date/message_time mapping regression in the new relation-completeness helper. Preserve all previous candidate files, Context/State, protected expectations and authorities; then complete the remaining checks. Any new valid PASS-to-FAIL stops immediately. Maintainability recovery authorization: extract only the existing source/text filter and map into a separate helper; preserve inputs, outputs, evaluation order, conditions, side effects, authority calls and all business rules. Do not change tests, expectations or Gate. Revalidate maintainability, new Contract, relative temporal and the remaining affected checks before the required owner Gate.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    "pilot/nephi-home-node-pilot-v1/lib/providers/understanding-attempt-diagnostic.js",
-    "pilot/nephi-home-node-pilot-v1/lib/providers/postgres-worker.js",
-    "pilot/nephi-home-node-pilot-v1/server.js",
-    "pilot/nephi-home-node-pilot-v1/tests/new-core-production-understanding-evidence-runner.js"
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/relation-completeness.js",
+    "pilot/nephi-home-node-pilot-v1/lib/providers/openai-understanding-v1.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/context-link-validator.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/canonical-execution-adapter.js",
+    "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/conversation-state-v3-reducer.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-partial-temporal-room-set-context-runner.js"
   ],
-  "contractChangeAllowed": false,
+  "contractChangeAllowed": true,
   "gateChangeAllowed": false,
   "affectedCapabilities": [
     "shared-core",
-    "transport",
-    "facts"
+    "context",
+    "understanding",
+    "facts",
+    "temporal"
   ],
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "Current Owner instruction explicitly authorizes transplant of previously test-verified schema-failure diagnostics and production diagnostic deployment; no business behavior change."
+  "approvalSource": "Current Owner explicitly approved the two minimal Contract changes, RED/GREEN and regression, and requires one PR plus owner Gate approval when governance requires it. No delegated/self approval or emergency bypass."
 }

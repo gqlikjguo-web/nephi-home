@@ -838,6 +838,11 @@ function reduceConversationStateV3({
     const stateTaskId = canonicalTaskBinding && canonicalTaskBinding.requestCycleId
       || item.requestCycleId
       || request.taskId;
+    // Keep a formally grounded collection as a collection in the existing
+    // State identity fields. C08 provenance cannot be supplied by a model or
+    // reconstructed from an arbitrary canonicalId/first member of the set.
+    const subject = require("../new-core/canonical-execution-adapter").subjectForValidatedCanonicalItem(item);
+    const collection = subject?.kind === "matched_room_set" ? subject : null;
     const prior = byTaskId.get(stateTaskId);
     if (canonicalTaskBinding?.action === "START" && prior) {
       throw new TypeError("state_v3_start_identity_collision");
@@ -853,8 +858,8 @@ function reduceConversationStateV3({
       ...(formal.evidence?.quantityEvidenceRefs ? {quantityEvidenceRefs:formal.evidence.quantityEvidenceRefs} : request.quantityCandidate ? {quantityEvidenceRefs:request.quantityCandidate.evidenceRefs} : {}),
       searchFrom: stay.searchRange && stay.searchRange.from || null,
       searchTo: stay.searchRange && stay.searchRange.to || null,
-      entityId: request.canonicalEntity.canonicalId,
-      entityCategory: request.canonicalEntity.canonicalId
+      entityId: collection?.catalogIdentity || request.canonicalEntity.canonicalId,
+      entityCategory: collection ? collection.kind : request.canonicalEntity.canonicalId
         ? request.canonicalEntity.category
         : null,
       detailIntent: request.detailIntent,

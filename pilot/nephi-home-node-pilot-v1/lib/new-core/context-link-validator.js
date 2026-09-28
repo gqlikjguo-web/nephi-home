@@ -70,10 +70,10 @@ function cycleIdentityCompatible(unit, cycle, relationKind = null) {
   }
   if (relationKind === "MODIFICATION" && unit.capability === cycle.capability
     && LODGING_CONDITION_CAPABILITIES.has(unit.capability)
-    && ["room", "bundle", "property"].includes(cycle.subject?.kind)) {
+    && ["room", "bundle", "matched_room_set", "property"].includes(cycle.subject?.kind)) {
     const products = (unit.slotCandidates || []).filter(slot => slot.slot === "product");
     if (products.length === 1 && (
-      products[0].operation === "SET" && ["room", "bundle"].includes(unit.subject.kind)
+      products[0].operation === "SET" && ["room", "bundle", "matched_room_set"].includes(unit.subject.kind)
         && products[0].value === unit.subject.catalogIdentity
       || products[0].operation === "CLEAR" && unit.subject.kind === "property"
         && unit.subject.catalogIdentity === null)) return true;
