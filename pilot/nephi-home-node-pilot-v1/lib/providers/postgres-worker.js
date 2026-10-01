@@ -290,7 +290,7 @@ async function operation(name, args) {
       await client.query("ROLLBACK");
       throw error;
     }
-    return (await operation("getRows", [propertyId,date,new Date(Date.parse(date)+86400000).toISOString().slice(0,10)]))[0];
+    return (await operation("getRows", [propertyId,date,new Date(Date.parse(date)+86400000).toISOString().slice(0,10)])).rows[0];
   }
   if (name === "updatePropertyProfile") {
     const [propertyId,input]=args,current=await operation("getProperty",[propertyId]);if(!current)return null;
