@@ -890,9 +890,11 @@ function resolveCanonicalTemporal({
 
   // Only an admitted Context interval may supply unchanged stay length. A new
   // explicit duration/end has priority; an untrusted/missing interval cannot.
-  const contextNights = allowContextReuse && valid(approvedContext?.checkIn)
+  const storedNights = allowContextReuse && require("../conversation-contracts/verified-stay-nights").validateVerifiedNights(approvedContext || {})
+    && Number.isInteger(approvedContext?.nights) ? approvedContext.nights : null;
+  const contextNights = storedNights || (allowContextReuse && valid(approvedContext?.checkIn)
     && valid(approvedContext?.checkOut) && approvedContext.checkOut > approvedContext.checkIn
-    ? daysBetween(approvedContext.checkIn, approvedContext.checkOut) : null;
+    ? daysBetween(approvedContext.checkIn, approvedContext.checkOut) : null);
   const inheritedDuration = !parsed.checkOut && !Number.isInteger(parsed.nights)
     && !Number.isInteger(plannerCandidate.nightsCandidate) && Number.isInteger(contextNights) && contextNights > 0;
   const parsedNights = Number.isInteger(parsed.nights)
@@ -928,7 +930,7 @@ function resolveCanonicalTemporal({
     searchRange: parsed.searchRange || null
   };
   const repaired = recoveredPlannerSpan ? "planner_temporal_span_recovered" : repairReason(plannerCandidate, canonical);
-  return withFieldMetadata({
+  const result = withFieldMetadata({
     rawText,
     expressionType: canonical.expressionType,
     checkIn,
@@ -957,10 +959,15 @@ function resolveCanonicalTemporal({
     },
     derivedFromFieldRefs: {
       checkOut: parsed.checkOut ? [] : canonical.checkOut ? ["stay.checkIn", "stay.nights"] : [],
-      nights: inheritedDuration ? ["context.stay.checkIn", "context.stay.checkOut"] : []
+      nights: inheritedDuration ? storedNights ? ["context.stay.nights"] : ["context.stay.checkIn", "context.stay.checkOut"] : []
     },
     sourceEvidenceRefs: evidence
   });
+  if (inheritedDuration && storedNights) {
+    result.fields.nights.sourceEvidenceRefs = sourceEvidenceRefs(approvedContext.nightsEvidence.sourceEvidenceRefs);
+    result.fields.checkOut.sourceEvidenceRefs = sourceEvidenceRefs([...evidence, ...approvedContext.nightsEvidence.sourceEvidenceRefs]);
+  }
+  return result;
 }
 
 function resolveTemporalExpression(expression = {}, context = {}) {

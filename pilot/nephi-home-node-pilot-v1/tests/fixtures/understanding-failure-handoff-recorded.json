@@ -1,0 +1,3398 @@
+{
+  "classification": "RECORDED_REPRODUCTION; saved model outputs only, no OpenAI calls or real databases",
+  "cases": [
+    {
+      "caseNumber": 12,
+      "sourceSha256": "ac292d0af923270427a01f57ad4760c787359d13efcd423a1f4d03223b8a6c45",
+      "sourceFile": "12-cancel.json",
+      "before": {
+        "scope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-quantity"
+        },
+        "state": {
+          "schemaVersion": 3,
+          "revision": 4,
+          "scope": {
+            "propertyId": "g1g5_fa2f500e5023403d",
+            "channel": "line-binding:cf39854b54618f98947cb746",
+            "userId": "synthetic-quantity"
+          },
+          "tasks": [
+            {
+              "taskId": "unit-1",
+              "taskType": "availability",
+              "productType": "any",
+              "productId": null,
+              "roomTypeId": null,
+              "bundleId": null,
+              "requestedQuantity": 1,
+              "distinctRequirement": "none",
+              "nights": 2,
+              "nightsEvidence": {
+                "value": 2,
+                "ruleRef": "temporal:contextual_expression",
+                "provenance": "context",
+                "valueStatus": "confirmed",
+                "sourceEvidenceRefs": [
+                  {
+                    "quote": "10月22號，四個人住兩晚，要兩間雙人房。",
+                    "eventId": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+                    "endOffset": 21,
+                    "messageRef": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+                    "startOffset": 0
+                  }
+                ],
+                "derivedFromFieldRefs": []
+              },
+              "quantityEvidenceRefs": [
+                {
+                  "quote": "一間",
+                  "eventId": "g1g5-resume-9-b10d51d2-e239-4908-b963-8dff67300485",
+                  "endOffset": 2,
+                  "messageRef": "g1g5-resume-9-b10d51d2-e239-4908-b963-8dff67300485",
+                  "startOffset": 0
+                }
+              ],
+              "checkIn": "2026-10-22",
+              "checkOut": "2026-10-24",
+              "guestCount": null,
+              "searchFrom": null,
+              "searchTo": null,
+              "entityId": null,
+              "entityCategory": null,
+              "detailIntent": "general",
+              "knownFields": [
+                "productType",
+                "checkIn",
+                "checkOut"
+              ],
+              "missingFields": [],
+              "status": "answered",
+              "createdAt": "2026-09-30T03:00:08.000Z",
+              "updatedAt": "2026-09-30T03:00:11.000Z",
+              "expiresAt": "2026-10-01T03:00:11.000Z"
+            }
+          ],
+          "createdAt": "2026-09-30T03:00:08.000Z",
+          "updatedAt": "2026-09-30T03:00:11.000Z",
+          "expiresAt": "2026-10-01T03:00:11.000Z"
+        },
+        "input": {
+          "turnId": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+          "traceId": "984035ba-e8d7-4d77-b92b-472ec1dd39a5",
+          "message": "先取消這次住宿查詢。",
+          "sourceEvents": [
+            {
+              "eventId": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+              "messageRef": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:12.000Z",
+              "messageKind": "text",
+              "messageText": "先取消這次住宿查詢。"
+            }
+          ],
+          "recentConversation": [
+            {
+              "eventId": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+              "messageRef": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:08.000Z",
+              "messageKind": "text",
+              "messageText": "10月22號，四個人住兩晚，要兩間雙人房。",
+              "referenceableCycleIds": [
+                "unit-1"
+              ]
+            },
+            {
+              "eventId": "g1g5-resume-9-b10d51d2-e239-4908-b963-8dff67300485",
+              "messageRef": "g1g5-resume-9-b10d51d2-e239-4908-b963-8dff67300485",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:09.000Z",
+              "messageKind": "text",
+              "messageText": "一間就好，人數改成兩個人。",
+              "referenceableCycleIds": [
+                "unit-1"
+              ]
+            },
+            {
+              "eventId": "g1g5-resume-10-d6b85e60-eab3-445d-a021-3611a30171d7",
+              "messageRef": "g1g5-resume-10-d6b85e60-eab3-445d-a021-3611a30171d7",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:10.000Z",
+              "messageKind": "text",
+              "messageText": "那換成901那間好了。",
+              "referenceableCycleIds": [
+                "unit-1"
+              ]
+            },
+            {
+              "eventId": "g1g5-resume-11-56668175-8a3b-41df-9bc9-3f362d2b08ac",
+              "messageRef": "g1g5-resume-11-56668175-8a3b-41df-9bc9-3f362d2b08ac",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:11.000Z",
+              "messageKind": "text",
+              "messageText": "人數先不要限制，日期和房間照剛剛的。",
+              "referenceableCycleIds": [
+                "unit-1"
+              ]
+            }
+          ]
+        },
+        "useConversationContext": true
+      },
+      "providerInput": {
+        "schemaVersion": 1,
+        "coreVersion": "new-core-v1",
+        "traceId": "984035ba-e8d7-4d77-b92b-472ec1dd39a5",
+        "turnId": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+        "propertyScope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-quantity"
+        },
+        "sourceEvents": [
+          {
+            "eventId": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+            "messageRef": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:12.000Z",
+            "messageKind": "text",
+            "messageText": "先取消這次住宿查詢。"
+          }
+        ],
+        "recentConversation": [
+          {
+            "eventId": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+            "messageRef": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:08.000Z",
+            "messageKind": "text",
+            "messageText": "10月22號，四個人住兩晚，要兩間雙人房。",
+            "referenceableRequestSummaries": [
+              {
+                "requestKind": "availability",
+                "capability": "availability",
+                "status": "answered",
+                "subject": {
+                  "kind": "property",
+                  "catalogIdentity": null
+                },
+                "missingFields": [],
+                "confirmedValues": {
+                  "requestedQuantity": 1,
+                  "distinctRequirement": "none",
+                  "nights": 2,
+                  "nightsEvidence": {
+                    "value": 2,
+                    "ruleRef": "temporal:contextual_expression",
+                    "provenance": "context",
+                    "valueStatus": "confirmed",
+                    "sourceEvidenceRefs": [
+                      {
+                        "quote": "10月22號，四個人住兩晚，要兩間雙人房。",
+                        "eventId": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+                        "endOffset": 21,
+                        "messageRef": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+                        "startOffset": 0
+                      }
+                    ],
+                    "derivedFromFieldRefs": []
+                  },
+                  "checkIn": "2026-10-22",
+                  "checkOut": "2026-10-24",
+                  "guestCount": null,
+                  "searchFrom": null,
+                  "searchTo": null
+                }
+              }
+            ]
+          },
+          {
+            "eventId": "g1g5-resume-9-b10d51d2-e239-4908-b963-8dff67300485",
+            "messageRef": "g1g5-resume-9-b10d51d2-e239-4908-b963-8dff67300485",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:09.000Z",
+            "messageKind": "text",
+            "messageText": "一間就好，人數改成兩個人。",
+            "referenceableRequestSummaries": [
+              {
+                "requestKind": "availability",
+                "capability": "availability",
+                "status": "answered",
+                "subject": {
+                  "kind": "property",
+                  "catalogIdentity": null
+                },
+                "missingFields": [],
+                "confirmedValues": {
+                  "requestedQuantity": 1,
+                  "distinctRequirement": "none",
+                  "nights": 2,
+                  "nightsEvidence": {
+                    "value": 2,
+                    "ruleRef": "temporal:contextual_expression",
+                    "provenance": "context",
+                    "valueStatus": "confirmed",
+                    "sourceEvidenceRefs": [
+                      {
+                        "quote": "10月22號，四個人住兩晚，要兩間雙人房。",
+                        "eventId": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+                        "endOffset": 21,
+                        "messageRef": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+                        "startOffset": 0
+                      }
+                    ],
+                    "derivedFromFieldRefs": []
+                  },
+                  "checkIn": "2026-10-22",
+                  "checkOut": "2026-10-24",
+                  "guestCount": null,
+                  "searchFrom": null,
+                  "searchTo": null
+                }
+              }
+            ]
+          },
+          {
+            "eventId": "g1g5-resume-10-d6b85e60-eab3-445d-a021-3611a30171d7",
+            "messageRef": "g1g5-resume-10-d6b85e60-eab3-445d-a021-3611a30171d7",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:10.000Z",
+            "messageKind": "text",
+            "messageText": "那換成901那間好了。",
+            "referenceableRequestSummaries": [
+              {
+                "requestKind": "availability",
+                "capability": "availability",
+                "status": "answered",
+                "subject": {
+                  "kind": "property",
+                  "catalogIdentity": null
+                },
+                "missingFields": [],
+                "confirmedValues": {
+                  "requestedQuantity": 1,
+                  "distinctRequirement": "none",
+                  "nights": 2,
+                  "nightsEvidence": {
+                    "value": 2,
+                    "ruleRef": "temporal:contextual_expression",
+                    "provenance": "context",
+                    "valueStatus": "confirmed",
+                    "sourceEvidenceRefs": [
+                      {
+                        "quote": "10月22號，四個人住兩晚，要兩間雙人房。",
+                        "eventId": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+                        "endOffset": 21,
+                        "messageRef": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+                        "startOffset": 0
+                      }
+                    ],
+                    "derivedFromFieldRefs": []
+                  },
+                  "checkIn": "2026-10-22",
+                  "checkOut": "2026-10-24",
+                  "guestCount": null,
+                  "searchFrom": null,
+                  "searchTo": null
+                }
+              }
+            ]
+          },
+          {
+            "eventId": "g1g5-resume-11-56668175-8a3b-41df-9bc9-3f362d2b08ac",
+            "messageRef": "g1g5-resume-11-56668175-8a3b-41df-9bc9-3f362d2b08ac",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:11.000Z",
+            "messageKind": "text",
+            "messageText": "人數先不要限制，日期和房間照剛剛的。",
+            "referenceableRequestSummaries": [
+              {
+                "requestKind": "availability",
+                "capability": "availability",
+                "status": "answered",
+                "subject": {
+                  "kind": "property",
+                  "catalogIdentity": null
+                },
+                "missingFields": [],
+                "confirmedValues": {
+                  "requestedQuantity": 1,
+                  "distinctRequirement": "none",
+                  "nights": 2,
+                  "nightsEvidence": {
+                    "value": 2,
+                    "ruleRef": "temporal:contextual_expression",
+                    "provenance": "context",
+                    "valueStatus": "confirmed",
+                    "sourceEvidenceRefs": [
+                      {
+                        "quote": "10月22號，四個人住兩晚，要兩間雙人房。",
+                        "eventId": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+                        "endOffset": 21,
+                        "messageRef": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+                        "startOffset": 0
+                      }
+                    ],
+                    "derivedFromFieldRefs": []
+                  },
+                  "checkIn": "2026-10-22",
+                  "checkOut": "2026-10-24",
+                  "guestCount": null,
+                  "searchFrom": null,
+                  "searchTo": null
+                }
+              }
+            ]
+          }
+        ],
+        "propertyTimezone": "Asia/Taipei",
+        "capabilityCatalog": [
+          "availability",
+          "available_dates",
+          "amenity",
+          "policy",
+          "property_fact",
+          "location",
+          "parking",
+          "bbq",
+          "pool",
+          "booking_request",
+          "human_help",
+          "high_risk",
+          "room_options",
+          "bundle_availability",
+          "capacity",
+          "lodging_room_composition",
+          "lodging_product_capacity",
+          "price",
+          "total_price",
+          "amenity_list",
+          "unknown"
+        ],
+        "publicSubjectCatalog": [
+          {
+            "catalogIdentity": "901",
+            "kind": "room",
+            "publicName": "901雙人房"
+          },
+          {
+            "catalogIdentity": "903",
+            "kind": "room",
+            "publicName": "903雙人房"
+          },
+          {
+            "catalogIdentity": "902",
+            "kind": "room",
+            "publicName": "902四人房"
+          },
+          {
+            "catalogIdentity": "all",
+            "kind": "bundle",
+            "publicName": "完整包棟"
+          },
+          {
+            "catalogIdentity": "parking",
+            "kind": "amenity",
+            "publicName": "停車場"
+          },
+          {
+            "catalogIdentity": "check_in",
+            "kind": "policy",
+            "publicName": "入住"
+          },
+          {
+            "catalogIdentity": "check_in__early_arrival_policy",
+            "kind": "policy",
+            "publicName": "提前入住規則"
+          },
+          {
+            "catalogIdentity": "check_in__latest_arrival_policy",
+            "kind": "policy",
+            "publicName": "最晚入住時間"
+          },
+          {
+            "catalogIdentity": "check_out",
+            "kind": "policy",
+            "publicName": "退房"
+          },
+          {
+            "catalogIdentity": "self_check_in_out_instructions",
+            "kind": "policy",
+            "publicName": "自助入住／退房說明"
+          },
+          {
+            "catalogIdentity": "location",
+            "kind": "external_place",
+            "publicName": "位置與導航"
+          },
+          {
+            "catalogIdentity": "matched-room-set-fd8fe7b122c7188127a7b500",
+            "kind": "matched_room_set",
+            "publicName": "double"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "understandingOutput": {
+            "schemaVersion": 1,
+            "turnId": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+            "units": [
+              {
+                "unitId": "unit-cancellation-1",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+                    "messageRef": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+                    "startOffset": 0,
+                    "endOffset": 10,
+                    "quote": "先取消這次住宿查詢。"
+                  }
+                ],
+                "purpose": "cancellation",
+                "capability": null,
+                "subject": {
+                  "kind": null,
+                  "catalogIdentity": null
+                },
+                "stayDependent": false,
+                "temporalCandidate": null,
+                "contextLinkCandidateId": "context-link-cancellation-1",
+                "safetyCandidate": null,
+                "slotCandidates": [],
+                "quantityCandidate": null,
+                "confidenceBand": "high"
+              }
+            ]
+          },
+          "contextLinkCandidates": [
+            {
+              "contextLinkCandidateId": "context-link-cancellation-1",
+              "unitId": "unit-cancellation-1",
+              "relationKind": "TERMINATION",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+                  "messageRef": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+                  "startOffset": 0,
+                  "endOffset": 10,
+                  "quote": "先取消這次住宿查詢。"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "independentRequestEvidence": null,
+              "referencedHistoryEventRefs": [
+                {
+                  "eventId": "g1g5-resume-11-56668175-8a3b-41df-9bc9-3f362d2b08ac",
+                  "messageRef": "g1g5-resume-11-56668175-8a3b-41df-9bc9-3f362d2b08ac"
+                }
+              ]
+            }
+          ],
+          "sourceObligations": {
+            "coverage": [
+              {
+                "source": {
+                  "eventId": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+                  "messageRef": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+                  "startOffset": 0,
+                  "endOffset": 10,
+                  "quote": "先取消這次住宿查詢。"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "obligation-cancellation-1"
+                ]
+              }
+            ],
+            "requirements": [
+              {
+                "obligationId": "obligation-cancellation-1",
+                "unitId": "unit-cancellation-1",
+                "purpose": "cancellation",
+                "capability": null,
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+                    "messageRef": "g1g5-resume-12-86dde4bb-7513-41ef-a3ae-081c133c532a",
+                    "startOffset": 0,
+                    "endOffset": 10,
+                    "quote": "先取消這次住宿查詢。"
+                  }
+                ],
+                "requiredFields": [],
+                "relationKind": "TERMINATION",
+                "referencedHistoryEventRefs": [
+                  {
+                    "eventId": "g1g5-resume-11-56668175-8a3b-41df-9bc9-3f362d2b08ac",
+                    "messageRef": "g1g5-resume-11-56668175-8a3b-41df-9bc9-3f362d2b08ac"
+                  }
+                ],
+                "referencedCurrentUnitId": null
+              }
+            ]
+          }
+        }
+      ],
+      "baselineDecision": {
+        "action": "no_reply",
+        "reasonCode": "new_core_no_reply",
+        "taskIds": [],
+        "missingFields": [],
+        "reviewRequired": false,
+        "executionSummary": {
+          "answeredTaskIds": [],
+          "noAvailabilityTaskIds": [],
+          "notReadyTaskIds": [],
+          "unknownTaskIds": [],
+          "propertyDataMissingTaskIds": [],
+          "technicalErrorTaskIds": [],
+          "invalidQueryPlanTaskIds": []
+        },
+        "internalAction": "no_reply",
+        "publicReplies": []
+      },
+      "baselineReply": {
+        "action": "no_reply",
+        "replyText": "",
+        "shouldReply": false
+      },
+      "baselineEarliestFailure": null
+    },
+    {
+      "caseNumber": 14,
+      "sourceSha256": "4e1b4e18c4a3ec832b1924efcea4d074619157b88504dfb52a522ed1f89637b6",
+      "sourceFile": "14-relative-two-requests.json",
+      "before": {
+        "scope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-references"
+        },
+        "state": {
+          "schemaVersion": 3,
+          "revision": 0,
+          "scope": {
+            "propertyId": "g1g5_fa2f500e5023403d",
+            "channel": "line-binding:cf39854b54618f98947cb746",
+            "userId": "synthetic-references"
+          },
+          "tasks": [],
+          "createdAt": "2026-09-30T03:00:14.000Z",
+          "updatedAt": "2026-09-30T03:00:14.000Z",
+          "expiresAt": "2026-09-30T03:00:14.000Z"
+        },
+        "input": {
+          "turnId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+          "traceId": "87e7ed48-d82a-40b6-9d9f-8519c292e5e9",
+          "message": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？",
+          "sourceEvents": [
+            {
+              "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+              "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:14.000Z",
+              "messageKind": "text",
+              "messageText": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+            }
+          ],
+          "recentConversation": []
+        },
+        "useConversationContext": true
+      },
+      "providerInput": {
+        "schemaVersion": 1,
+        "coreVersion": "new-core-v1",
+        "traceId": "87e7ed48-d82a-40b6-9d9f-8519c292e5e9",
+        "turnId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+        "propertyScope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-references"
+        },
+        "sourceEvents": [
+          {
+            "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+            "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:14.000Z",
+            "messageKind": "text",
+            "messageText": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+          }
+        ],
+        "recentConversation": [],
+        "propertyTimezone": "Asia/Taipei",
+        "capabilityCatalog": [
+          "availability",
+          "available_dates",
+          "amenity",
+          "policy",
+          "property_fact",
+          "location",
+          "parking",
+          "bbq",
+          "pool",
+          "booking_request",
+          "human_help",
+          "high_risk",
+          "room_options",
+          "bundle_availability",
+          "capacity",
+          "lodging_room_composition",
+          "lodging_product_capacity",
+          "price",
+          "total_price",
+          "amenity_list",
+          "unknown"
+        ],
+        "publicSubjectCatalog": [
+          {
+            "catalogIdentity": "901",
+            "kind": "room",
+            "publicName": "901雙人房"
+          },
+          {
+            "catalogIdentity": "903",
+            "kind": "room",
+            "publicName": "903雙人房"
+          },
+          {
+            "catalogIdentity": "902",
+            "kind": "room",
+            "publicName": "902四人房"
+          },
+          {
+            "catalogIdentity": "all",
+            "kind": "bundle",
+            "publicName": "完整包棟"
+          },
+          {
+            "catalogIdentity": "parking",
+            "kind": "amenity",
+            "publicName": "停車場"
+          },
+          {
+            "catalogIdentity": "check_in",
+            "kind": "policy",
+            "publicName": "入住"
+          },
+          {
+            "catalogIdentity": "check_in__early_arrival_policy",
+            "kind": "policy",
+            "publicName": "提前入住規則"
+          },
+          {
+            "catalogIdentity": "check_in__latest_arrival_policy",
+            "kind": "policy",
+            "publicName": "最晚入住時間"
+          },
+          {
+            "catalogIdentity": "check_out",
+            "kind": "policy",
+            "publicName": "退房"
+          },
+          {
+            "catalogIdentity": "self_check_in_out_instructions",
+            "kind": "policy",
+            "publicName": "自助入住／退房說明"
+          },
+          {
+            "catalogIdentity": "location",
+            "kind": "external_place",
+            "publicName": "位置與導航"
+          },
+          {
+            "catalogIdentity": "matched-room-set-fd8fe7b122c7188127a7b500",
+            "kind": "matched_room_set",
+            "publicName": "double"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "understandingOutput": {
+            "schemaVersion": 1,
+            "turnId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+            "units": [
+              {
+                "unitId": "unit-1",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "startOffset": 0,
+                    "endOffset": 26,
+                    "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                  }
+                ],
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "subject": {
+                  "kind": "matched_room_set",
+                  "catalogIdentity": "matched-room-set-fd8fe7b122c7188127a7b500"
+                },
+                "stayDependent": true,
+                "temporalCandidate": {
+                  "rawText": "明天",
+                  "kind": "relative_date",
+                  "checkInCandidate": null,
+                  "checkOutCandidate": null,
+                  "nightsCandidate": 1,
+                  "relativeSemantics": {
+                    "dayOffset": 1,
+                    "dayPeriod": "unspecified"
+                  }
+                },
+                "contextLinkCandidateId": "link-1",
+                "safetyCandidate": null,
+                "slotCandidates": [
+                  {
+                    "slotCandidateId": "slot-1-product",
+                    "slot": "product",
+                    "operation": "SET",
+                    "value": "matched-room-set-fd8fe7b122c7188127a7b500",
+                    "evidenceRefs": [
+                      {
+                        "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                        "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                        "startOffset": 2,
+                        "endOffset": 5,
+                        "quote": "雙人房"
+                      }
+                    ]
+                  }
+                ],
+                "quantityCandidate": null,
+                "confidenceBand": "high"
+              },
+              {
+                "unitId": "unit-2",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "startOffset": 0,
+                    "endOffset": 26,
+                    "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                  }
+                ],
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "subject": {
+                  "kind": "room",
+                  "catalogIdentity": "902"
+                },
+                "stayDependent": true,
+                "temporalCandidate": {
+                  "rawText": "後天",
+                  "kind": "relative_date",
+                  "checkInCandidate": null,
+                  "checkOutCandidate": null,
+                  "nightsCandidate": 2,
+                  "relativeSemantics": {
+                    "dayOffset": 2,
+                    "dayPeriod": "unspecified"
+                  }
+                },
+                "contextLinkCandidateId": "link-2",
+                "safetyCandidate": null,
+                "slotCandidates": [
+                  {
+                    "slotCandidateId": "slot-2-product",
+                    "slot": "product",
+                    "operation": "SET",
+                    "value": "902",
+                    "evidenceRefs": [
+                      {
+                        "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                        "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                        "startOffset": 12,
+                        "endOffset": 15,
+                        "quote": "四人房"
+                      }
+                    ]
+                  }
+                ],
+                "quantityCandidate": null,
+                "confidenceBand": "high"
+              }
+            ]
+          },
+          "contextLinkCandidates": [
+            {
+              "contextLinkCandidateId": "link-1",
+              "unitId": "unit-1",
+              "relationKind": "NEW_REQUEST",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "startOffset": 0,
+                  "endOffset": 26,
+                  "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "referencedHistoryEventRefs": []
+            },
+            {
+              "contextLinkCandidateId": "link-2",
+              "unitId": "unit-2",
+              "relationKind": "NEW_REQUEST",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "startOffset": 0,
+                  "endOffset": 26,
+                  "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "referencedHistoryEventRefs": []
+            }
+          ],
+          "sourceObligations": {
+            "coverage": [
+              {
+                "source": {
+                  "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "startOffset": 0,
+                  "endOffset": 26,
+                  "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "obligation-1"
+                ]
+              },
+              {
+                "source": {
+                  "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "startOffset": 0,
+                  "endOffset": 26,
+                  "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "obligation-2"
+                ]
+              }
+            ],
+            "requirements": [
+              {
+                "obligationId": "obligation-1",
+                "unitId": "unit-1",
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "startOffset": 0,
+                    "endOffset": 26,
+                    "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                  }
+                ],
+                "requiredFields": [
+                  "subject",
+                  "temporalCandidate",
+                  "temporalCandidate.nightsCandidate",
+                  "slot:product"
+                ],
+                "relationKind": "NEW_REQUEST",
+                "referencedHistoryEventRefs": [],
+                "referencedCurrentUnitId": null
+              },
+              {
+                "obligationId": "obligation-2",
+                "unitId": "unit-2",
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "startOffset": 0,
+                    "endOffset": 26,
+                    "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                  }
+                ],
+                "requiredFields": [
+                  "subject",
+                  "temporalCandidate",
+                  "temporalCandidate.nightsCandidate",
+                  "slot:product"
+                ],
+                "relationKind": "NEW_REQUEST",
+                "referencedHistoryEventRefs": [],
+                "referencedCurrentUnitId": null
+              }
+            ]
+          }
+        },
+        {
+          "understandingOutput": {
+            "schemaVersion": 1,
+            "turnId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+            "units": [
+              {
+                "unitId": "unit-1",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "startOffset": 0,
+                    "endOffset": 23,
+                    "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                  }
+                ],
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "subject": {
+                  "kind": "matched_room_set",
+                  "catalogIdentity": "matched-room-set-fd8fe7b122c7188127a7b500"
+                },
+                "stayDependent": true,
+                "temporalCandidate": {
+                  "rawText": "明天",
+                  "kind": "relative_date",
+                  "checkInCandidate": null,
+                  "checkOutCandidate": null,
+                  "nightsCandidate": 1,
+                  "relativeSemantics": {
+                    "dayOffset": 1,
+                    "dayPeriod": "unspecified"
+                  }
+                },
+                "contextLinkCandidateId": "link-1",
+                "safetyCandidate": null,
+                "slotCandidates": [
+                  {
+                    "slotCandidateId": "slot-1-product",
+                    "slot": "product",
+                    "operation": "SET",
+                    "value": "matched-room-set-fd8fe7b122c7188127a7b500",
+                    "evidenceRefs": [
+                      {
+                        "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                        "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                        "startOffset": 2,
+                        "endOffset": 5,
+                        "quote": "雙人房"
+                      }
+                    ]
+                  }
+                ],
+                "quantityCandidate": null,
+                "confidenceBand": "high"
+              },
+              {
+                "unitId": "unit-2",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "startOffset": 0,
+                    "endOffset": 23,
+                    "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                  }
+                ],
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "subject": {
+                  "kind": "room",
+                  "catalogIdentity": "902"
+                },
+                "stayDependent": true,
+                "temporalCandidate": {
+                  "rawText": "後天",
+                  "kind": "relative_date",
+                  "checkInCandidate": null,
+                  "checkOutCandidate": null,
+                  "nightsCandidate": 2,
+                  "relativeSemantics": {
+                    "dayOffset": 2,
+                    "dayPeriod": "unspecified"
+                  }
+                },
+                "contextLinkCandidateId": "link-2",
+                "safetyCandidate": null,
+                "slotCandidates": [
+                  {
+                    "slotCandidateId": "slot-2-product",
+                    "slot": "product",
+                    "operation": "SET",
+                    "value": "902",
+                    "evidenceRefs": [
+                      {
+                        "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                        "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                        "startOffset": 11,
+                        "endOffset": 14,
+                        "quote": "四人房"
+                      }
+                    ]
+                  }
+                ],
+                "quantityCandidate": null,
+                "confidenceBand": "high"
+              }
+            ]
+          },
+          "contextLinkCandidates": [
+            {
+              "contextLinkCandidateId": "link-1",
+              "unitId": "unit-1",
+              "relationKind": "NEW_REQUEST",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "startOffset": 0,
+                  "endOffset": 23,
+                  "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "referencedHistoryEventRefs": []
+            },
+            {
+              "contextLinkCandidateId": "link-2",
+              "unitId": "unit-2",
+              "relationKind": "NEW_REQUEST",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "startOffset": 0,
+                  "endOffset": 23,
+                  "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "referencedHistoryEventRefs": []
+            }
+          ],
+          "sourceObligations": {
+            "coverage": [
+              {
+                "source": {
+                  "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "startOffset": 0,
+                  "endOffset": 23,
+                  "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "obligation-1"
+                ]
+              },
+              {
+                "source": {
+                  "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "startOffset": 0,
+                  "endOffset": 23,
+                  "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "obligation-2"
+                ]
+              }
+            ],
+            "requirements": [
+              {
+                "obligationId": "obligation-1",
+                "unitId": "unit-1",
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "startOffset": 0,
+                    "endOffset": 23,
+                    "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                  }
+                ],
+                "requiredFields": [
+                  "subject",
+                  "temporalCandidate",
+                  "temporalCandidate.nightsCandidate",
+                  "temporalCandidate.relativeSemantics",
+                  "slot:product"
+                ],
+                "relationKind": "NEW_REQUEST",
+                "referencedHistoryEventRefs": [],
+                "referencedCurrentUnitId": null
+              },
+              {
+                "obligationId": "obligation-2",
+                "unitId": "unit-2",
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "startOffset": 0,
+                    "endOffset": 23,
+                    "quote": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？"
+                  }
+                ],
+                "requiredFields": [
+                  "subject",
+                  "temporalCandidate",
+                  "temporalCandidate.nightsCandidate",
+                  "temporalCandidate.relativeSemantics",
+                  "slot:product"
+                ],
+                "relationKind": "NEW_REQUEST",
+                "referencedHistoryEventRefs": [],
+                "referencedCurrentUnitId": null
+              }
+            ]
+          }
+        }
+      ],
+      "baselineDecision": {
+        "action": "no_reply",
+        "reasonCode": "terminal_processing_status",
+        "taskIds": [],
+        "missingFields": [],
+        "reviewRequired": false,
+        "executionSummary": {
+          "answeredTaskIds": [],
+          "noAvailabilityTaskIds": [],
+          "notReadyTaskIds": [],
+          "unknownTaskIds": [],
+          "propertyDataMissingTaskIds": [],
+          "technicalErrorTaskIds": [],
+          "invalidQueryPlanTaskIds": []
+        },
+        "internalAction": "reply",
+        "publicReplies": [
+          {
+            "taskId": "turn-failure",
+            "action": "no_reply"
+          }
+        ]
+      },
+      "baselineReply": {
+        "action": "no_reply",
+        "replyText": "",
+        "shouldReply": false
+      },
+      "baselineEarliestFailure": {
+        "layer": "UNDERSTANDING",
+        "failureCode": "UNDERSTANDING_SCHEMA_INVALID"
+      }
+    },
+    {
+      "caseNumber": 15,
+      "sourceSha256": "24603570007028d2037af3b280a8793b16f8775d7a0154ec0d15f1817a5e2972",
+      "sourceFile": "15-ambiguous-reference.json",
+      "before": {
+        "scope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-references"
+        },
+        "state": {
+          "schemaVersion": 3,
+          "revision": 0,
+          "scope": {
+            "propertyId": "g1g5_fa2f500e5023403d",
+            "channel": "line-binding:cf39854b54618f98947cb746",
+            "userId": "synthetic-references"
+          },
+          "tasks": [],
+          "createdAt": "2026-09-30T03:00:14.000Z",
+          "updatedAt": "2026-09-30T03:00:14.000Z",
+          "expiresAt": "2026-09-30T03:00:14.000Z"
+        },
+        "input": {
+          "turnId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+          "traceId": "27c4e5d8-251a-44fa-9324-9a222fed39ad",
+          "message": "那個改成四晚。",
+          "sourceEvents": [
+            {
+              "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+              "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:15.000Z",
+              "messageKind": "text",
+              "messageText": "那個改成四晚。"
+            }
+          ],
+          "recentConversation": [
+            {
+              "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+              "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:14.000Z",
+              "messageKind": "text",
+              "messageText": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？",
+              "referenceableCycleIds": []
+            }
+          ]
+        },
+        "useConversationContext": true
+      },
+      "providerInput": {
+        "schemaVersion": 1,
+        "coreVersion": "new-core-v1",
+        "traceId": "27c4e5d8-251a-44fa-9324-9a222fed39ad",
+        "turnId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+        "propertyScope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-references"
+        },
+        "sourceEvents": [
+          {
+            "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+            "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:15.000Z",
+            "messageKind": "text",
+            "messageText": "那個改成四晚。"
+          }
+        ],
+        "recentConversation": [
+          {
+            "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+            "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:14.000Z",
+            "messageKind": "text",
+            "messageText": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？",
+            "referenceableRequestSummaries": []
+          }
+        ],
+        "propertyTimezone": "Asia/Taipei",
+        "capabilityCatalog": [
+          "availability",
+          "available_dates",
+          "amenity",
+          "policy",
+          "property_fact",
+          "location",
+          "parking",
+          "bbq",
+          "pool",
+          "booking_request",
+          "human_help",
+          "high_risk",
+          "room_options",
+          "bundle_availability",
+          "capacity",
+          "lodging_room_composition",
+          "lodging_product_capacity",
+          "price",
+          "total_price",
+          "amenity_list",
+          "unknown"
+        ],
+        "publicSubjectCatalog": [
+          {
+            "catalogIdentity": "901",
+            "kind": "room",
+            "publicName": "901雙人房"
+          },
+          {
+            "catalogIdentity": "903",
+            "kind": "room",
+            "publicName": "903雙人房"
+          },
+          {
+            "catalogIdentity": "902",
+            "kind": "room",
+            "publicName": "902四人房"
+          },
+          {
+            "catalogIdentity": "all",
+            "kind": "bundle",
+            "publicName": "完整包棟"
+          },
+          {
+            "catalogIdentity": "parking",
+            "kind": "amenity",
+            "publicName": "停車場"
+          },
+          {
+            "catalogIdentity": "check_in",
+            "kind": "policy",
+            "publicName": "入住"
+          },
+          {
+            "catalogIdentity": "check_in__early_arrival_policy",
+            "kind": "policy",
+            "publicName": "提前入住規則"
+          },
+          {
+            "catalogIdentity": "check_in__latest_arrival_policy",
+            "kind": "policy",
+            "publicName": "最晚入住時間"
+          },
+          {
+            "catalogIdentity": "check_out",
+            "kind": "policy",
+            "publicName": "退房"
+          },
+          {
+            "catalogIdentity": "self_check_in_out_instructions",
+            "kind": "policy",
+            "publicName": "自助入住／退房說明"
+          },
+          {
+            "catalogIdentity": "location",
+            "kind": "external_place",
+            "publicName": "位置與導航"
+          },
+          {
+            "catalogIdentity": "matched-room-set-fd8fe7b122c7188127a7b500",
+            "kind": "matched_room_set",
+            "publicName": "double"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "understandingOutput": {
+            "schemaVersion": 1,
+            "turnId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+            "units": [
+              {
+                "unitId": "u1",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                    "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                    "startOffset": 0,
+                    "endOffset": 7,
+                    "quote": "那個改成四晚。"
+                  }
+                ],
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "subject": {
+                  "kind": "property",
+                  "catalogIdentity": null
+                },
+                "stayDependent": true,
+                "temporalCandidate": {
+                  "rawText": "四晚",
+                  "kind": "nights_only",
+                  "checkInCandidate": null,
+                  "checkOutCandidate": null,
+                  "nightsCandidate": 4
+                },
+                "contextLinkCandidateId": "cl1",
+                "safetyCandidate": null,
+                "slotCandidates": [],
+                "quantityCandidate": null,
+                "confidenceBand": "high"
+              }
+            ]
+          },
+          "contextLinkCandidates": [
+            {
+              "contextLinkCandidateId": "cl1",
+              "unitId": "u1",
+              "relationKind": "MODIFICATION",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                  "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                  "startOffset": 0,
+                  "endOffset": 7,
+                  "quote": "那個改成四晚。"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "referencedHistoryEventRefs": [
+                {
+                  "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5"
+                }
+              ]
+            }
+          ],
+          "sourceObligations": {
+            "coverage": [
+              {
+                "source": {
+                  "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                  "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                  "startOffset": 0,
+                  "endOffset": 7,
+                  "quote": "那個改成四晚。"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "ob1"
+                ]
+              }
+            ],
+            "requirements": [
+              {
+                "obligationId": "ob1",
+                "unitId": "u1",
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                    "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                    "startOffset": 0,
+                    "endOffset": 7,
+                    "quote": "那個改成四晚。"
+                  }
+                ],
+                "requiredFields": [
+                  "subject",
+                  "temporalCandidate",
+                  "temporalCandidate.nightsCandidate"
+                ],
+                "relationKind": "MODIFICATION",
+                "referencedHistoryEventRefs": [
+                  {
+                    "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5"
+                  }
+                ],
+                "referencedCurrentUnitId": null
+              }
+            ]
+          }
+        },
+        {
+          "understandingOutput": {
+            "schemaVersion": 1,
+            "turnId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+            "units": [
+              {
+                "unitId": "u1",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                    "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                    "startOffset": 0,
+                    "endOffset": 7,
+                    "quote": "那個改成四晚。"
+                  }
+                ],
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "subject": {
+                  "kind": "property",
+                  "catalogIdentity": null
+                },
+                "stayDependent": true,
+                "temporalCandidate": {
+                  "rawText": "四晚",
+                  "kind": "nights_only",
+                  "checkInCandidate": null,
+                  "checkOutCandidate": null,
+                  "nightsCandidate": 4
+                },
+                "contextLinkCandidateId": "cl1",
+                "safetyCandidate": null,
+                "slotCandidates": [],
+                "quantityCandidate": null,
+                "confidenceBand": "high"
+              }
+            ]
+          },
+          "contextLinkCandidates": [
+            {
+              "contextLinkCandidateId": "cl1",
+              "unitId": "u1",
+              "relationKind": "MODIFICATION",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                  "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                  "startOffset": 0,
+                  "endOffset": 7,
+                  "quote": "那個改成四晚。"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "referencedHistoryEventRefs": [
+                {
+                  "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5"
+                }
+              ]
+            }
+          ],
+          "sourceObligations": {
+            "coverage": [
+              {
+                "source": {
+                  "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                  "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                  "startOffset": 0,
+                  "endOffset": 7,
+                  "quote": "那個改成四晚。"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "ob1"
+                ]
+              }
+            ],
+            "requirements": [
+              {
+                "obligationId": "ob1",
+                "unitId": "u1",
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                    "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                    "startOffset": 0,
+                    "endOffset": 7,
+                    "quote": "那個改成四晚。"
+                  }
+                ],
+                "requiredFields": [
+                  "subject",
+                  "temporalCandidate",
+                  "temporalCandidate.nightsCandidate"
+                ],
+                "relationKind": "MODIFICATION",
+                "referencedHistoryEventRefs": [
+                  {
+                    "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5"
+                  }
+                ],
+                "referencedCurrentUnitId": null
+              }
+            ]
+          }
+        }
+      ],
+      "baselineDecision": {
+        "action": "no_reply",
+        "reasonCode": "terminal_processing_status",
+        "taskIds": [],
+        "missingFields": [],
+        "reviewRequired": false,
+        "executionSummary": {
+          "answeredTaskIds": [],
+          "noAvailabilityTaskIds": [],
+          "notReadyTaskIds": [],
+          "unknownTaskIds": [],
+          "propertyDataMissingTaskIds": [],
+          "technicalErrorTaskIds": [],
+          "invalidQueryPlanTaskIds": []
+        },
+        "internalAction": "reply",
+        "publicReplies": [
+          {
+            "taskId": "u1",
+            "action": "no_reply"
+          }
+        ]
+      },
+      "baselineReply": {
+        "action": "no_reply",
+        "replyText": "",
+        "shouldReply": false
+      },
+      "baselineEarliestFailure": {
+        "layer": "C05",
+        "failureCode": "CONTEXT_TARGET_UNAVAILABLE"
+      }
+    },
+    {
+      "caseNumber": 16,
+      "sourceSha256": "b5eae10c9d8c5830545c06cafce606c99cb40579e1c5dd40588eb3665294992d",
+      "sourceFile": "16-explicit-reference.json",
+      "before": {
+        "scope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-references"
+        },
+        "state": {
+          "schemaVersion": 3,
+          "revision": 1,
+          "scope": {
+            "propertyId": "g1g5_fa2f500e5023403d",
+            "channel": "line-binding:cf39854b54618f98947cb746",
+            "userId": "synthetic-references"
+          },
+          "tasks": [],
+          "createdAt": "2026-09-30T03:00:14.000Z",
+          "updatedAt": "2026-09-30T03:00:15.000Z",
+          "expiresAt": "2026-09-30T03:00:15.000Z"
+        },
+        "input": {
+          "turnId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+          "traceId": "8cc9e12e-2dba-497b-bf9d-09f6e22006e4",
+          "message": "我是說明天的雙人房，改成三晚。",
+          "sourceEvents": [
+            {
+              "eventId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+              "messageRef": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:16.000Z",
+              "messageKind": "text",
+              "messageText": "我是說明天的雙人房，改成三晚。"
+            }
+          ],
+          "recentConversation": [
+            {
+              "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+              "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:14.000Z",
+              "messageKind": "text",
+              "messageText": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？",
+              "referenceableCycleIds": []
+            },
+            {
+              "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+              "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:15.000Z",
+              "messageKind": "text",
+              "messageText": "那個改成四晚。",
+              "referenceableCycleIds": []
+            }
+          ]
+        },
+        "useConversationContext": true
+      },
+      "providerInput": {
+        "schemaVersion": 1,
+        "coreVersion": "new-core-v1",
+        "traceId": "8cc9e12e-2dba-497b-bf9d-09f6e22006e4",
+        "turnId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+        "propertyScope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-references"
+        },
+        "sourceEvents": [
+          {
+            "eventId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+            "messageRef": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:16.000Z",
+            "messageKind": "text",
+            "messageText": "我是說明天的雙人房，改成三晚。"
+          }
+        ],
+        "recentConversation": [
+          {
+            "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+            "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:14.000Z",
+            "messageKind": "text",
+            "messageText": "明天雙人房住一晚，後天四人房住兩晚，各還有沒有？",
+            "referenceableRequestSummaries": []
+          },
+          {
+            "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+            "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:15.000Z",
+            "messageKind": "text",
+            "messageText": "那個改成四晚。",
+            "referenceableRequestSummaries": []
+          }
+        ],
+        "propertyTimezone": "Asia/Taipei",
+        "capabilityCatalog": [
+          "availability",
+          "available_dates",
+          "amenity",
+          "policy",
+          "property_fact",
+          "location",
+          "parking",
+          "bbq",
+          "pool",
+          "booking_request",
+          "human_help",
+          "high_risk",
+          "room_options",
+          "bundle_availability",
+          "capacity",
+          "lodging_room_composition",
+          "lodging_product_capacity",
+          "price",
+          "total_price",
+          "amenity_list",
+          "unknown"
+        ],
+        "publicSubjectCatalog": [
+          {
+            "catalogIdentity": "901",
+            "kind": "room",
+            "publicName": "901雙人房"
+          },
+          {
+            "catalogIdentity": "903",
+            "kind": "room",
+            "publicName": "903雙人房"
+          },
+          {
+            "catalogIdentity": "902",
+            "kind": "room",
+            "publicName": "902四人房"
+          },
+          {
+            "catalogIdentity": "all",
+            "kind": "bundle",
+            "publicName": "完整包棟"
+          },
+          {
+            "catalogIdentity": "parking",
+            "kind": "amenity",
+            "publicName": "停車場"
+          },
+          {
+            "catalogIdentity": "check_in",
+            "kind": "policy",
+            "publicName": "入住"
+          },
+          {
+            "catalogIdentity": "check_in__early_arrival_policy",
+            "kind": "policy",
+            "publicName": "提前入住規則"
+          },
+          {
+            "catalogIdentity": "check_in__latest_arrival_policy",
+            "kind": "policy",
+            "publicName": "最晚入住時間"
+          },
+          {
+            "catalogIdentity": "check_out",
+            "kind": "policy",
+            "publicName": "退房"
+          },
+          {
+            "catalogIdentity": "self_check_in_out_instructions",
+            "kind": "policy",
+            "publicName": "自助入住／退房說明"
+          },
+          {
+            "catalogIdentity": "location",
+            "kind": "external_place",
+            "publicName": "位置與導航"
+          },
+          {
+            "catalogIdentity": "matched-room-set-fd8fe7b122c7188127a7b500",
+            "kind": "matched_room_set",
+            "publicName": "double"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "understandingOutput": {
+            "schemaVersion": 1,
+            "turnId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+            "units": [
+              {
+                "unitId": "unit-1",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                    "messageRef": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                    "startOffset": 0,
+                    "endOffset": 15,
+                    "quote": "我是說明天的雙人房，改成三晚。"
+                  }
+                ],
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "subject": {
+                  "kind": "matched_room_set",
+                  "catalogIdentity": "matched-room-set-fd8fe7b122c7188127a7b500"
+                },
+                "stayDependent": true,
+                "temporalCandidate": {
+                  "rawText": "明天",
+                  "kind": "relative_date",
+                  "checkInCandidate": null,
+                  "checkOutCandidate": null,
+                  "nightsCandidate": 3,
+                  "relativeSemantics": {
+                    "dayOffset": 1,
+                    "dayPeriod": "unspecified"
+                  }
+                },
+                "contextLinkCandidateId": "link-1",
+                "safetyCandidate": null,
+                "slotCandidates": [
+                  {
+                    "slotCandidateId": "slot-1",
+                    "slot": "product",
+                    "operation": "SET",
+                    "value": "matched-room-set-fd8fe7b122c7188127a7b500",
+                    "evidenceRefs": [
+                      {
+                        "eventId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                        "messageRef": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                        "startOffset": 6,
+                        "endOffset": 9,
+                        "quote": "雙人房"
+                      }
+                    ]
+                  }
+                ],
+                "quantityCandidate": null,
+                "confidenceBand": "high"
+              }
+            ]
+          },
+          "contextLinkCandidates": [
+            {
+              "contextLinkCandidateId": "link-1",
+              "unitId": "unit-1",
+              "relationKind": "MODIFICATION",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                  "messageRef": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                  "startOffset": 0,
+                  "endOffset": 15,
+                  "quote": "我是說明天的雙人房，改成三晚。"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "referencedHistoryEventRefs": [
+                {
+                  "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5"
+                },
+                {
+                  "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                  "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61"
+                }
+              ]
+            }
+          ],
+          "sourceObligations": {
+            "coverage": [
+              {
+                "source": {
+                  "eventId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                  "messageRef": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                  "startOffset": 0,
+                  "endOffset": 15,
+                  "quote": "我是說明天的雙人房，改成三晚。"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "obligation-1"
+                ]
+              }
+            ],
+            "requirements": [
+              {
+                "obligationId": "obligation-1",
+                "unitId": "unit-1",
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                    "messageRef": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                    "startOffset": 0,
+                    "endOffset": 15,
+                    "quote": "我是說明天的雙人房，改成三晚。"
+                  }
+                ],
+                "requiredFields": [
+                  "subject",
+                  "temporalCandidate",
+                  "temporalCandidate.nightsCandidate",
+                  "slot:product"
+                ],
+                "relationKind": "MODIFICATION",
+                "referencedHistoryEventRefs": [
+                  {
+                    "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5"
+                  },
+                  {
+                    "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                    "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61"
+                  }
+                ],
+                "referencedCurrentUnitId": null
+              }
+            ]
+          }
+        },
+        {
+          "understandingOutput": {
+            "schemaVersion": 1,
+            "turnId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+            "units": [
+              {
+                "unitId": "unit-1",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                    "messageRef": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                    "startOffset": 0,
+                    "endOffset": 15,
+                    "quote": "我是說明天的雙人房，改成三晚。"
+                  }
+                ],
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "subject": {
+                  "kind": "matched_room_set",
+                  "catalogIdentity": "matched-room-set-fd8fe7b122c7188127a7b500"
+                },
+                "stayDependent": true,
+                "temporalCandidate": {
+                  "rawText": "明天",
+                  "kind": "relative_date",
+                  "checkInCandidate": null,
+                  "checkOutCandidate": null,
+                  "nightsCandidate": 3,
+                  "relativeSemantics": {
+                    "dayOffset": 1,
+                    "dayPeriod": "unspecified"
+                  }
+                },
+                "contextLinkCandidateId": "link-1",
+                "safetyCandidate": null,
+                "slotCandidates": [
+                  {
+                    "slotCandidateId": "slot-1",
+                    "slot": "product",
+                    "operation": "SET",
+                    "value": "matched-room-set-fd8fe7b122c7188127a7b500",
+                    "evidenceRefs": [
+                      {
+                        "eventId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                        "messageRef": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                        "startOffset": 6,
+                        "endOffset": 9,
+                        "quote": "雙人房"
+                      }
+                    ]
+                  }
+                ],
+                "quantityCandidate": null,
+                "confidenceBand": "high"
+              }
+            ]
+          },
+          "contextLinkCandidates": [
+            {
+              "contextLinkCandidateId": "link-1",
+              "unitId": "unit-1",
+              "relationKind": "MODIFICATION",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                  "messageRef": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                  "startOffset": 0,
+                  "endOffset": 15,
+                  "quote": "我是說明天的雙人房，改成三晚。"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "referencedHistoryEventRefs": [
+                {
+                  "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                  "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5"
+                },
+                {
+                  "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                  "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61"
+                }
+              ]
+            }
+          ],
+          "sourceObligations": {
+            "coverage": [
+              {
+                "source": {
+                  "eventId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                  "messageRef": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                  "startOffset": 0,
+                  "endOffset": 15,
+                  "quote": "我是說明天的雙人房，改成三晚。"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "obligation-1"
+                ]
+              }
+            ],
+            "requirements": [
+              {
+                "obligationId": "obligation-1",
+                "unitId": "unit-1",
+                "purpose": "lodging_question",
+                "capability": "availability",
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                    "messageRef": "g1g5-resume-16-cad6118e-52d1-4fc4-85ba-b9e062b51f30",
+                    "startOffset": 0,
+                    "endOffset": 15,
+                    "quote": "我是說明天的雙人房，改成三晚。"
+                  }
+                ],
+                "requiredFields": [
+                  "subject",
+                  "temporalCandidate",
+                  "temporalCandidate.nightsCandidate",
+                  "temporalCandidate.relativeSemantics",
+                  "slot:product"
+                ],
+                "relationKind": "MODIFICATION",
+                "referencedHistoryEventRefs": [
+                  {
+                    "eventId": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5",
+                    "messageRef": "g1g5-resume-14-a62eb893-a4d4-4195-bd4e-6bdbd006ccc5"
+                  },
+                  {
+                    "eventId": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61",
+                    "messageRef": "g1g5-resume-15-1d19c2e2-2ab7-46a7-a547-baf056061b61"
+                  }
+                ],
+                "referencedCurrentUnitId": null
+              }
+            ]
+          }
+        }
+      ],
+      "baselineDecision": {
+        "action": "no_reply",
+        "reasonCode": "terminal_processing_status",
+        "taskIds": [],
+        "missingFields": [],
+        "reviewRequired": false,
+        "executionSummary": {
+          "answeredTaskIds": [],
+          "noAvailabilityTaskIds": [],
+          "notReadyTaskIds": [],
+          "unknownTaskIds": [],
+          "propertyDataMissingTaskIds": [],
+          "technicalErrorTaskIds": [],
+          "invalidQueryPlanTaskIds": []
+        },
+        "internalAction": "reply",
+        "publicReplies": [
+          {
+            "taskId": "turn-failure",
+            "action": "no_reply"
+          }
+        ]
+      },
+      "baselineReply": {
+        "action": "no_reply",
+        "replyText": "",
+        "shouldReply": false
+      },
+      "baselineEarliestFailure": {
+        "layer": "UNDERSTANDING",
+        "failureCode": "UNDERSTANDING_SCHEMA_INVALID"
+      }
+    },
+    {
+      "caseNumber": 20,
+      "sourceSha256": "7f3c155c267e9fe77e7372edfd8c0a30f5c24bfbd5275c65c25246a968ce68f9",
+      "sourceFile": "20-acknowledgement.json",
+      "before": {
+        "scope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-closed"
+        },
+        "state": {
+          "schemaVersion": 3,
+          "revision": 1,
+          "scope": {
+            "propertyId": "g1g5_fa2f500e5023403d",
+            "channel": "line-binding:cf39854b54618f98947cb746",
+            "userId": "synthetic-closed"
+          },
+          "tasks": [
+            {
+              "taskId": "unit-1",
+              "taskType": "availability",
+              "productType": "room_type",
+              "productId": "902",
+              "roomTypeId": "902",
+              "bundleId": null,
+              "nights": 1,
+              "nightsEvidence": {
+                "value": 1,
+                "ruleRef": null,
+                "provenance": "explicit",
+                "valueStatus": "confirmed",
+                "sourceEvidenceRefs": [
+                  {
+                    "quote": "11月12號住一晚，四人房還有嗎？",
+                    "eventId": "g1g5-resume-19-223aee0a-4984-4772-a534-660a526c1477",
+                    "endOffset": 17,
+                    "messageRef": "g1g5-resume-19-223aee0a-4984-4772-a534-660a526c1477",
+                    "startOffset": 0
+                  }
+                ],
+                "derivedFromFieldRefs": []
+              },
+              "checkIn": "2026-11-12",
+              "checkOut": "2026-11-13",
+              "guestCount": null,
+              "searchFrom": null,
+              "searchTo": null,
+              "entityId": "902",
+              "entityCategory": "room",
+              "detailIntent": "general",
+              "knownFields": [
+                "productType",
+                "productId",
+                "roomTypeId",
+                "checkIn",
+                "checkOut"
+              ],
+              "missingFields": [],
+              "status": "answered",
+              "createdAt": "2026-09-30T03:00:19.000Z",
+              "updatedAt": "2026-09-30T03:00:19.000Z",
+              "expiresAt": "2026-10-01T03:00:19.000Z"
+            }
+          ],
+          "createdAt": "2026-09-30T03:00:19.000Z",
+          "updatedAt": "2026-09-30T03:00:19.000Z",
+          "expiresAt": "2026-10-01T03:00:19.000Z"
+        },
+        "input": {
+          "turnId": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+          "traceId": "4991c13b-a178-4fde-9d29-e0938c4dd1a6",
+          "message": "謝謝。",
+          "sourceEvents": [
+            {
+              "eventId": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+              "messageRef": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:20.000Z",
+              "messageKind": "text",
+              "messageText": "謝謝。"
+            }
+          ],
+          "recentConversation": [
+            {
+              "eventId": "g1g5-resume-19-223aee0a-4984-4772-a534-660a526c1477",
+              "messageRef": "g1g5-resume-19-223aee0a-4984-4772-a534-660a526c1477",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:19.000Z",
+              "messageKind": "text",
+              "messageText": "11月12號住一晚，四人房還有嗎？",
+              "referenceableCycleIds": [
+                "unit-1"
+              ]
+            }
+          ]
+        },
+        "useConversationContext": true
+      },
+      "providerInput": {
+        "schemaVersion": 1,
+        "coreVersion": "new-core-v1",
+        "traceId": "4991c13b-a178-4fde-9d29-e0938c4dd1a6",
+        "turnId": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+        "propertyScope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-closed"
+        },
+        "sourceEvents": [
+          {
+            "eventId": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+            "messageRef": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:20.000Z",
+            "messageKind": "text",
+            "messageText": "謝謝。"
+          }
+        ],
+        "recentConversation": [
+          {
+            "eventId": "g1g5-resume-19-223aee0a-4984-4772-a534-660a526c1477",
+            "messageRef": "g1g5-resume-19-223aee0a-4984-4772-a534-660a526c1477",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:19.000Z",
+            "messageKind": "text",
+            "messageText": "11月12號住一晚，四人房還有嗎？",
+            "referenceableRequestSummaries": [
+              {
+                "requestKind": "availability",
+                "capability": "availability",
+                "status": "answered",
+                "subject": {
+                  "kind": "room",
+                  "catalogIdentity": "902"
+                },
+                "missingFields": [],
+                "confirmedValues": {
+                  "nights": 1,
+                  "nightsEvidence": {
+                    "value": 1,
+                    "ruleRef": null,
+                    "provenance": "explicit",
+                    "valueStatus": "confirmed",
+                    "sourceEvidenceRefs": [
+                      {
+                        "quote": "11月12號住一晚，四人房還有嗎？",
+                        "eventId": "g1g5-resume-19-223aee0a-4984-4772-a534-660a526c1477",
+                        "endOffset": 17,
+                        "messageRef": "g1g5-resume-19-223aee0a-4984-4772-a534-660a526c1477",
+                        "startOffset": 0
+                      }
+                    ],
+                    "derivedFromFieldRefs": []
+                  },
+                  "checkIn": "2026-11-12",
+                  "checkOut": "2026-11-13",
+                  "guestCount": null,
+                  "searchFrom": null,
+                  "searchTo": null
+                }
+              }
+            ]
+          }
+        ],
+        "propertyTimezone": "Asia/Taipei",
+        "capabilityCatalog": [
+          "availability",
+          "available_dates",
+          "amenity",
+          "policy",
+          "property_fact",
+          "location",
+          "parking",
+          "bbq",
+          "pool",
+          "booking_request",
+          "human_help",
+          "high_risk",
+          "room_options",
+          "bundle_availability",
+          "capacity",
+          "lodging_room_composition",
+          "lodging_product_capacity",
+          "price",
+          "total_price",
+          "amenity_list",
+          "unknown"
+        ],
+        "publicSubjectCatalog": [
+          {
+            "catalogIdentity": "901",
+            "kind": "room",
+            "publicName": "901雙人房"
+          },
+          {
+            "catalogIdentity": "903",
+            "kind": "room",
+            "publicName": "903雙人房"
+          },
+          {
+            "catalogIdentity": "902",
+            "kind": "room",
+            "publicName": "902四人房"
+          },
+          {
+            "catalogIdentity": "all",
+            "kind": "bundle",
+            "publicName": "完整包棟"
+          },
+          {
+            "catalogIdentity": "parking",
+            "kind": "amenity",
+            "publicName": "停車場"
+          },
+          {
+            "catalogIdentity": "check_in",
+            "kind": "policy",
+            "publicName": "入住"
+          },
+          {
+            "catalogIdentity": "check_in__early_arrival_policy",
+            "kind": "policy",
+            "publicName": "提前入住規則"
+          },
+          {
+            "catalogIdentity": "check_in__latest_arrival_policy",
+            "kind": "policy",
+            "publicName": "最晚入住時間"
+          },
+          {
+            "catalogIdentity": "check_out",
+            "kind": "policy",
+            "publicName": "退房"
+          },
+          {
+            "catalogIdentity": "self_check_in_out_instructions",
+            "kind": "policy",
+            "publicName": "自助入住／退房說明"
+          },
+          {
+            "catalogIdentity": "location",
+            "kind": "external_place",
+            "publicName": "位置與導航"
+          },
+          {
+            "catalogIdentity": "matched-room-set-fd8fe7b122c7188127a7b500",
+            "kind": "matched_room_set",
+            "publicName": "double"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "understandingOutput": {
+            "schemaVersion": 1,
+            "turnId": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+            "units": [
+              {
+                "unitId": "unit-1",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+                    "messageRef": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+                    "startOffset": 0,
+                    "endOffset": 3,
+                    "quote": "謝謝。"
+                  }
+                ],
+                "purpose": "acknowledgement",
+                "capability": null,
+                "subject": {
+                  "kind": null,
+                  "catalogIdentity": null
+                },
+                "stayDependent": false,
+                "temporalCandidate": null,
+                "contextLinkCandidateId": "link-1",
+                "safetyCandidate": null,
+                "slotCandidates": [],
+                "quantityCandidate": null,
+                "confidenceBand": "high"
+              }
+            ]
+          },
+          "contextLinkCandidates": [
+            {
+              "contextLinkCandidateId": "link-1",
+              "unitId": "unit-1",
+              "relationKind": "NONE",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+                  "messageRef": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+                  "startOffset": 0,
+                  "endOffset": 3,
+                  "quote": "謝謝。"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "independentRequestEvidence": null,
+              "referencedHistoryEventRefs": []
+            }
+          ],
+          "sourceObligations": {
+            "coverage": [
+              {
+                "source": {
+                  "eventId": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+                  "messageRef": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+                  "startOffset": 0,
+                  "endOffset": 3,
+                  "quote": "謝謝。"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "obligation-1"
+                ]
+              }
+            ],
+            "requirements": [
+              {
+                "obligationId": "obligation-1",
+                "unitId": "unit-1",
+                "purpose": "acknowledgement",
+                "capability": null,
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+                    "messageRef": "g1g5-resume-20-d1385d61-3f09-4201-8af1-a6fc8f4e295c",
+                    "startOffset": 0,
+                    "endOffset": 3,
+                    "quote": "謝謝。"
+                  }
+                ],
+                "requiredFields": [],
+                "relationKind": "NONE",
+                "referencedHistoryEventRefs": [],
+                "referencedCurrentUnitId": null
+              }
+            ]
+          }
+        }
+      ],
+      "baselineDecision": {
+        "action": "no_reply",
+        "reasonCode": "new_core_no_reply",
+        "taskIds": [],
+        "missingFields": [],
+        "reviewRequired": false,
+        "executionSummary": {
+          "answeredTaskIds": [],
+          "noAvailabilityTaskIds": [],
+          "notReadyTaskIds": [],
+          "unknownTaskIds": [],
+          "propertyDataMissingTaskIds": [],
+          "technicalErrorTaskIds": [],
+          "invalidQueryPlanTaskIds": []
+        },
+        "internalAction": "no_reply",
+        "publicReplies": [
+          {
+            "taskId": "unit-1",
+            "action": "no_reply"
+          }
+        ]
+      },
+      "baselineReply": {
+        "action": "no_reply",
+        "replyText": "",
+        "shouldReply": false
+      },
+      "baselineEarliestFailure": null
+    },
+    {
+      "caseNumber": 21,
+      "sourceSha256": "60e06605b99b4d117f292a3a02a3d25c186e518a403b54f5004eefceab17afd7",
+      "sourceFile": "21-foreign-guest-no-context.json",
+      "before": {
+        "scope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-new-guest"
+        },
+        "state": {
+          "schemaVersion": 3,
+          "revision": 0,
+          "scope": {
+            "propertyId": "g1g5_fa2f500e5023403d",
+            "channel": "line-binding:cf39854b54618f98947cb746",
+            "userId": "synthetic-new-guest"
+          },
+          "tasks": [],
+          "createdAt": "2026-09-30T03:00:21.000Z",
+          "updatedAt": "2026-09-30T03:00:21.000Z",
+          "expiresAt": "2026-09-30T03:00:21.000Z"
+        },
+        "input": {
+          "turnId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+          "traceId": "0a4831b0-08d5-485d-937f-10aad7eb9bc1",
+          "message": "那改成三晚吧。",
+          "sourceEvents": [
+            {
+              "eventId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+              "messageRef": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+              "role": "guest",
+              "timestamp": "2026-09-30T03:00:21.000Z",
+              "messageKind": "text",
+              "messageText": "那改成三晚吧。"
+            }
+          ],
+          "recentConversation": []
+        },
+        "useConversationContext": true
+      },
+      "providerInput": {
+        "schemaVersion": 1,
+        "coreVersion": "new-core-v1",
+        "traceId": "0a4831b0-08d5-485d-937f-10aad7eb9bc1",
+        "turnId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+        "propertyScope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-new-guest"
+        },
+        "sourceEvents": [
+          {
+            "eventId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+            "messageRef": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+            "role": "guest",
+            "timestamp": "2026-09-30T03:00:21.000Z",
+            "messageKind": "text",
+            "messageText": "那改成三晚吧。"
+          }
+        ],
+        "recentConversation": [],
+        "propertyTimezone": "Asia/Taipei",
+        "capabilityCatalog": [
+          "availability",
+          "available_dates",
+          "amenity",
+          "policy",
+          "property_fact",
+          "location",
+          "parking",
+          "bbq",
+          "pool",
+          "booking_request",
+          "human_help",
+          "high_risk",
+          "room_options",
+          "bundle_availability",
+          "capacity",
+          "lodging_room_composition",
+          "lodging_product_capacity",
+          "price",
+          "total_price",
+          "amenity_list",
+          "unknown"
+        ],
+        "publicSubjectCatalog": [
+          {
+            "catalogIdentity": "901",
+            "kind": "room",
+            "publicName": "901雙人房"
+          },
+          {
+            "catalogIdentity": "903",
+            "kind": "room",
+            "publicName": "903雙人房"
+          },
+          {
+            "catalogIdentity": "902",
+            "kind": "room",
+            "publicName": "902四人房"
+          },
+          {
+            "catalogIdentity": "all",
+            "kind": "bundle",
+            "publicName": "完整包棟"
+          },
+          {
+            "catalogIdentity": "parking",
+            "kind": "amenity",
+            "publicName": "停車場"
+          },
+          {
+            "catalogIdentity": "check_in",
+            "kind": "policy",
+            "publicName": "入住"
+          },
+          {
+            "catalogIdentity": "check_in__early_arrival_policy",
+            "kind": "policy",
+            "publicName": "提前入住規則"
+          },
+          {
+            "catalogIdentity": "check_in__latest_arrival_policy",
+            "kind": "policy",
+            "publicName": "最晚入住時間"
+          },
+          {
+            "catalogIdentity": "check_out",
+            "kind": "policy",
+            "publicName": "退房"
+          },
+          {
+            "catalogIdentity": "self_check_in_out_instructions",
+            "kind": "policy",
+            "publicName": "自助入住／退房說明"
+          },
+          {
+            "catalogIdentity": "location",
+            "kind": "external_place",
+            "publicName": "位置與導航"
+          },
+          {
+            "catalogIdentity": "matched-room-set-fd8fe7b122c7188127a7b500",
+            "kind": "matched_room_set",
+            "publicName": "double"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "understandingOutput": {
+            "schemaVersion": 1,
+            "turnId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+            "units": [
+              {
+                "unitId": "u1",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                    "messageRef": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                    "startOffset": 0,
+                    "endOffset": 7,
+                    "quote": "那改成三晚吧。"
+                  }
+                ],
+                "purpose": "unknown",
+                "capability": "unsupported",
+                "subject": {
+                  "kind": null,
+                  "catalogIdentity": null
+                },
+                "stayDependent": true,
+                "temporalCandidate": {
+                  "rawText": "三晚",
+                  "kind": "nights_only",
+                  "checkInCandidate": null,
+                  "checkOutCandidate": null,
+                  "nightsCandidate": 3
+                },
+                "contextLinkCandidateId": "cl1",
+                "safetyCandidate": null,
+                "slotCandidates": [],
+                "quantityCandidate": null,
+                "confidenceBand": "medium"
+              },
+              {
+                "unitId": "u1",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                    "messageRef": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                    "startOffset": 0,
+                    "endOffset": 7,
+                    "quote": "那改成三晚吧。"
+                  }
+                ],
+                "purpose": "unknown",
+                "capability": "unsupported",
+                "subject": {
+                  "kind": null,
+                  "catalogIdentity": null
+                },
+                "stayDependent": true,
+                "temporalCandidate": {
+                  "rawText": "三晚",
+                  "kind": "nights_only",
+                  "checkInCandidate": null,
+                  "checkOutCandidate": null,
+                  "nightsCandidate": 3
+                },
+                "contextLinkCandidateId": "cl1",
+                "safetyCandidate": null,
+                "slotCandidates": [],
+                "quantityCandidate": null,
+                "confidenceBand": "medium"
+              }
+            ]
+          },
+          "contextLinkCandidates": [
+            {
+              "contextLinkCandidateId": "cl1",
+              "unitId": "u1",
+              "relationKind": "NONE",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                  "messageRef": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                  "startOffset": 0,
+                  "endOffset": 7,
+                  "quote": "那改成三晚吧。"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "referencedHistoryEventRefs": []
+            }
+          ],
+          "sourceObligations": {
+            "coverage": [
+              {
+                "source": {
+                  "eventId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                  "messageRef": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                  "startOffset": 0,
+                  "endOffset": 7,
+                  "quote": "那改成三晚吧。"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "ob1"
+                ]
+              }
+            ],
+            "requirements": [
+              {
+                "obligationId": "ob1",
+                "unitId": "u1",
+                "purpose": "unknown",
+                "capability": "unsupported",
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                    "messageRef": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                    "startOffset": 0,
+                    "endOffset": 7,
+                    "quote": "那改成三晚吧。"
+                  }
+                ],
+                "requiredFields": [
+                  "temporalCandidate",
+                  "temporalCandidate.nightsCandidate"
+                ],
+                "relationKind": "NONE",
+                "referencedHistoryEventRefs": [],
+                "referencedCurrentUnitId": null
+              }
+            ]
+          }
+        },
+        {
+          "understandingOutput": {
+            "schemaVersion": 1,
+            "turnId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+            "units": [
+              {
+                "unitId": "u1",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                    "messageRef": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                    "startOffset": 0,
+                    "endOffset": 7,
+                    "quote": "那改成三晚吧。"
+                  }
+                ],
+                "purpose": "operator_request",
+                "capability": "booking_operator_request",
+                "subject": {
+                  "kind": "other_verified",
+                  "catalogIdentity": null
+                },
+                "stayDependent": false,
+                "temporalCandidate": {
+                  "rawText": "三晚",
+                  "kind": "nights_only",
+                  "checkInCandidate": null,
+                  "checkOutCandidate": null,
+                  "nightsCandidate": 3
+                },
+                "contextLinkCandidateId": "cl1",
+                "safetyCandidate": {
+                  "operatorActionClass": "date_change",
+                  "riskClass": null
+                },
+                "slotCandidates": [],
+                "quantityCandidate": null,
+                "confidenceBand": "medium"
+              }
+            ]
+          },
+          "contextLinkCandidates": [
+            {
+              "contextLinkCandidateId": "cl1",
+              "unitId": "u1",
+              "relationKind": "NONE",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                  "messageRef": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                  "startOffset": 0,
+                  "endOffset": 7,
+                  "quote": "那改成三晚吧。"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "referencedHistoryEventRefs": []
+            }
+          ],
+          "sourceObligations": {
+            "coverage": [
+              {
+                "source": {
+                  "eventId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                  "messageRef": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                  "startOffset": 0,
+                  "endOffset": 7,
+                  "quote": "那改成三晚吧。"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "ob1"
+                ]
+              }
+            ],
+            "requirements": [
+              {
+                "obligationId": "ob1",
+                "unitId": "u1",
+                "purpose": "operator_request",
+                "capability": "booking_operator_request",
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                    "messageRef": "g1g5-resume-21-d5f01617-f6c3-4701-ae27-652fc89d45a8",
+                    "startOffset": 0,
+                    "endOffset": 7,
+                    "quote": "那改成三晚吧。"
+                  }
+                ],
+                "requiredFields": [
+                  "subject",
+                  "temporalCandidate",
+                  "temporalCandidate.nightsCandidate"
+                ],
+                "relationKind": "NONE",
+                "referencedHistoryEventRefs": [],
+                "referencedCurrentUnitId": null
+              }
+            ]
+          }
+        }
+      ],
+      "baselineDecision": {
+        "action": "handoff",
+        "reasonCode": "human_help",
+        "taskIds": [
+          "u1"
+        ],
+        "missingFields": [],
+        "reviewRequired": true,
+        "executionSummary": {
+          "answeredTaskIds": [],
+          "noAvailabilityTaskIds": [],
+          "notReadyTaskIds": [],
+          "unknownTaskIds": [
+            "u1"
+          ],
+          "propertyDataMissingTaskIds": [],
+          "technicalErrorTaskIds": [],
+          "invalidQueryPlanTaskIds": []
+        },
+        "internalAction": "handoff",
+        "publicReplies": [
+          {
+            "taskId": "u1",
+            "action": "handoff"
+          }
+        ]
+      },
+      "baselineReply": {
+        "action": "handoff",
+        "replyText": "【AI】請稍後，將盡快回覆您。",
+        "shouldReply": true
+      },
+      "baselineEarliestFailure": null
+    },
+    {
+      "caseNumber": 22,
+      "sourceSha256": "9efb1316678495ec1f91cf9dafa4ec88bea226e70310d85e3b28af68c5cabe5b",
+      "sourceFile": "22-expired-no-context.json",
+      "before": {
+        "scope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-quantity"
+        },
+        "state": {
+          "schemaVersion": 3,
+          "revision": 6,
+          "scope": {
+            "propertyId": "g1g5_fa2f500e5023403d",
+            "channel": "line-binding:cf39854b54618f98947cb746",
+            "userId": "synthetic-quantity"
+          },
+          "tasks": [
+            {
+              "taskId": "unit-1",
+              "taskType": "availability",
+              "productType": "any",
+              "productId": null,
+              "roomTypeId": null,
+              "bundleId": null,
+              "requestedQuantity": 1,
+              "distinctRequirement": "none",
+              "nights": 2,
+              "nightsEvidence": {
+                "value": 2,
+                "ruleRef": "temporal:contextual_expression",
+                "provenance": "context",
+                "valueStatus": "confirmed",
+                "sourceEvidenceRefs": [
+                  {
+                    "quote": "10月22號，四個人住兩晚，要兩間雙人房。",
+                    "eventId": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+                    "endOffset": 21,
+                    "messageRef": "g1g5-d5e20f3b-53da-42b4-988e-c66d9f048091",
+                    "startOffset": 0
+                  }
+                ],
+                "derivedFromFieldRefs": []
+              },
+              "quantityEvidenceRefs": [
+                {
+                  "quote": "一間",
+                  "eventId": "g1g5-resume-9-b10d51d2-e239-4908-b963-8dff67300485",
+                  "endOffset": 2,
+                  "messageRef": "g1g5-resume-9-b10d51d2-e239-4908-b963-8dff67300485",
+                  "startOffset": 0
+                }
+              ],
+              "checkIn": "2026-10-22",
+              "checkOut": "2026-10-24",
+              "guestCount": null,
+              "searchFrom": null,
+              "searchTo": null,
+              "entityId": null,
+              "entityCategory": null,
+              "detailIntent": "general",
+              "knownFields": [
+                "productType",
+                "checkIn",
+                "checkOut"
+              ],
+              "missingFields": [],
+              "status": "cancelled",
+              "createdAt": "2026-09-30T03:00:08.000Z",
+              "updatedAt": "2026-09-30T03:00:12.000Z",
+              "expiresAt": "2026-10-01T03:00:11.000Z"
+            },
+            {
+              "taskId": "unit-1#6",
+              "taskType": "availability",
+              "productType": "any",
+              "productId": null,
+              "roomTypeId": null,
+              "bundleId": null,
+              "nights": 1,
+              "nightsEvidence": {
+                "value": 1,
+                "ruleRef": null,
+                "provenance": "explicit",
+                "valueStatus": "confirmed",
+                "sourceEvidenceRefs": [
+                  {
+                    "quote": "另問11月3號一晚，兩個人住双人房可以嗎？",
+                    "eventId": "g1g5-resume-13-88d722b2-1ee4-401f-997d-5f7d83194b3e",
+                    "endOffset": 21,
+                    "messageRef": "g1g5-resume-13-88d722b2-1ee4-401f-997d-5f7d83194b3e",
+                    "startOffset": 0
+                  }
+                ],
+                "derivedFromFieldRefs": []
+              },
+              "checkIn": "2026-11-03",
+              "checkOut": "2026-11-04",
+              "guestCount": 2,
+              "searchFrom": null,
+              "searchTo": null,
+              "entityId": "matched-room-set-fd8fe7b122c7188127a7b500",
+              "entityCategory": "matched_room_set",
+              "detailIntent": "general",
+              "knownFields": [
+                "productType",
+                "checkIn",
+                "checkOut",
+                "guestCount"
+              ],
+              "missingFields": [],
+              "status": "answered",
+              "createdAt": "2026-09-30T03:00:13.000Z",
+              "updatedAt": "2026-09-30T03:00:13.000Z",
+              "expiresAt": "2026-10-01T03:00:13.000Z"
+            }
+          ],
+          "createdAt": "2026-09-30T03:00:08.000Z",
+          "updatedAt": "2026-09-30T03:00:13.000Z",
+          "expiresAt": "2026-10-01T03:00:13.000Z"
+        },
+        "input": {
+          "turnId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+          "traceId": "248ce047-0ed2-4196-8c0e-24762800c47b",
+          "message": "剛才那間改兩晚。",
+          "sourceEvents": [
+            {
+              "eventId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+              "messageRef": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+              "role": "guest",
+              "timestamp": "2026-10-02T03:00:22.000Z",
+              "messageKind": "text",
+              "messageText": "剛才那間改兩晚。"
+            }
+          ],
+          "recentConversation": []
+        },
+        "useConversationContext": true
+      },
+      "providerInput": {
+        "schemaVersion": 1,
+        "coreVersion": "new-core-v1",
+        "traceId": "248ce047-0ed2-4196-8c0e-24762800c47b",
+        "turnId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+        "propertyScope": {
+          "propertyId": "g1g5_fa2f500e5023403d",
+          "channel": "line-binding:cf39854b54618f98947cb746",
+          "userId": "synthetic-quantity"
+        },
+        "sourceEvents": [
+          {
+            "eventId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+            "messageRef": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+            "role": "guest",
+            "timestamp": "2026-10-02T03:00:22.000Z",
+            "messageKind": "text",
+            "messageText": "剛才那間改兩晚。"
+          }
+        ],
+        "recentConversation": [],
+        "propertyTimezone": "Asia/Taipei",
+        "capabilityCatalog": [
+          "availability",
+          "available_dates",
+          "amenity",
+          "policy",
+          "property_fact",
+          "location",
+          "parking",
+          "bbq",
+          "pool",
+          "booking_request",
+          "human_help",
+          "high_risk",
+          "room_options",
+          "bundle_availability",
+          "capacity",
+          "lodging_room_composition",
+          "lodging_product_capacity",
+          "price",
+          "total_price",
+          "amenity_list",
+          "unknown"
+        ],
+        "publicSubjectCatalog": [
+          {
+            "catalogIdentity": "901",
+            "kind": "room",
+            "publicName": "901雙人房"
+          },
+          {
+            "catalogIdentity": "903",
+            "kind": "room",
+            "publicName": "903雙人房"
+          },
+          {
+            "catalogIdentity": "902",
+            "kind": "room",
+            "publicName": "902四人房"
+          },
+          {
+            "catalogIdentity": "all",
+            "kind": "bundle",
+            "publicName": "完整包棟"
+          },
+          {
+            "catalogIdentity": "parking",
+            "kind": "amenity",
+            "publicName": "停車場"
+          },
+          {
+            "catalogIdentity": "check_in",
+            "kind": "policy",
+            "publicName": "入住"
+          },
+          {
+            "catalogIdentity": "check_in__early_arrival_policy",
+            "kind": "policy",
+            "publicName": "提前入住規則"
+          },
+          {
+            "catalogIdentity": "check_in__latest_arrival_policy",
+            "kind": "policy",
+            "publicName": "最晚入住時間"
+          },
+          {
+            "catalogIdentity": "check_out",
+            "kind": "policy",
+            "publicName": "退房"
+          },
+          {
+            "catalogIdentity": "self_check_in_out_instructions",
+            "kind": "policy",
+            "publicName": "自助入住／退房說明"
+          },
+          {
+            "catalogIdentity": "location",
+            "kind": "external_place",
+            "publicName": "位置與導航"
+          },
+          {
+            "catalogIdentity": "matched-room-set-fd8fe7b122c7188127a7b500",
+            "kind": "matched_room_set",
+            "publicName": "double"
+          }
+        ]
+      },
+      "outputs": [
+        {
+          "understandingOutput": {
+            "schemaVersion": 1,
+            "turnId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+            "units": [
+              {
+                "unitId": "unit-1",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                    "messageRef": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                    "startOffset": 0,
+                    "endOffset": 8,
+                    "quote": "剛才那間改兩晚。"
+                  }
+                ],
+                "purpose": "operator_request",
+                "capability": "booking_operator_request",
+                "subject": {
+                  "kind": "other_verified",
+                  "catalogIdentity": null
+                },
+                "stayDependent": false,
+                "temporalCandidate": {
+                  "rawText": "兩晚",
+                  "kind": "nights_only",
+                  "checkInCandidate": null,
+                  "checkOutCandidate": null,
+                  "nightsCandidate": 2
+                },
+                "contextLinkCandidateId": "context-1",
+                "safetyCandidate": {
+                  "operatorActionClass": "date_change",
+                  "riskClass": null
+                },
+                "slotCandidates": [],
+                "quantityCandidate": null,
+                "confidenceBand": "medium"
+              }
+            ]
+          },
+          "contextLinkCandidates": [
+            {
+              "contextLinkCandidateId": "context-1",
+              "unitId": "unit-1",
+              "relationKind": "MODIFICATION",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                  "messageRef": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                  "startOffset": 0,
+                  "endOffset": 8,
+                  "quote": "剛才那間改兩晚。"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "referencedHistoryEventRefs": []
+            }
+          ],
+          "sourceObligations": {
+            "coverage": [
+              {
+                "source": {
+                  "eventId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                  "messageRef": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                  "startOffset": 0,
+                  "endOffset": 8,
+                  "quote": "剛才那間改兩晚。"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "obligation-1"
+                ]
+              }
+            ],
+            "requirements": [
+              {
+                "obligationId": "obligation-1",
+                "unitId": "unit-1",
+                "purpose": "operator_request",
+                "capability": "booking_operator_request",
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                    "messageRef": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                    "startOffset": 0,
+                    "endOffset": 8,
+                    "quote": "剛才那間改兩晚。"
+                  }
+                ],
+                "requiredFields": [
+                  "subject",
+                  "temporalCandidate",
+                  "temporalCandidate.nightsCandidate"
+                ],
+                "relationKind": "MODIFICATION",
+                "referencedHistoryEventRefs": [],
+                "referencedCurrentUnitId": null
+              }
+            ]
+          }
+        },
+        {
+          "understandingOutput": {
+            "schemaVersion": 1,
+            "turnId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+            "units": [
+              {
+                "unitId": "unit-1",
+                "evidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                    "messageRef": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                    "startOffset": 0,
+                    "endOffset": 8,
+                    "quote": "剛才那間改兩晚。"
+                  }
+                ],
+                "purpose": "operator_request",
+                "capability": "booking_operator_request",
+                "subject": {
+                  "kind": "other_verified",
+                  "catalogIdentity": null
+                },
+                "stayDependent": false,
+                "temporalCandidate": {
+                  "rawText": "兩晚",
+                  "kind": "nights_only",
+                  "checkInCandidate": null,
+                  "checkOutCandidate": null,
+                  "nightsCandidate": 2
+                },
+                "contextLinkCandidateId": "context-1",
+                "safetyCandidate": {
+                  "operatorActionClass": "date_change",
+                  "riskClass": null
+                },
+                "slotCandidates": [],
+                "quantityCandidate": null,
+                "confidenceBand": "medium"
+              }
+            ]
+          },
+          "contextLinkCandidates": [
+            {
+              "contextLinkCandidateId": "context-1",
+              "unitId": "unit-1",
+              "relationKind": "MODIFICATION",
+              "currentSourceEvidenceRefs": [
+                {
+                  "eventId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                  "messageRef": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                  "startOffset": 0,
+                  "endOffset": 8,
+                  "quote": "剛才那間改兩晚。"
+                }
+              ],
+              "referencedCurrentUnitId": null,
+              "referencedHistoryEventRefs": []
+            }
+          ],
+          "sourceObligations": {
+            "coverage": [
+              {
+                "source": {
+                  "eventId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                  "messageRef": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                  "startOffset": 0,
+                  "endOffset": 8,
+                  "quote": "剛才那間改兩晚。"
+                },
+                "disposition": "required",
+                "obligationIds": [
+                  "obligation-1"
+                ]
+              }
+            ],
+            "requirements": [
+              {
+                "obligationId": "obligation-1",
+                "unitId": "unit-1",
+                "purpose": "operator_request",
+                "capability": "booking_operator_request",
+                "sourceEvidenceRefs": [
+                  {
+                    "eventId": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                    "messageRef": "g1g5-resume-22-69495405-02fd-474a-9e3f-8400ae2768e5",
+                    "startOffset": 0,
+                    "endOffset": 8,
+                    "quote": "剛才那間改兩晚。"
+                  }
+                ],
+                "requiredFields": [
+                  "subject",
+                  "temporalCandidate",
+                  "temporalCandidate.nightsCandidate"
+                ],
+                "relationKind": "MODIFICATION",
+                "referencedHistoryEventRefs": [],
+                "referencedCurrentUnitId": null
+              }
+            ]
+          }
+        }
+      ],
+      "baselineDecision": {
+        "action": "no_reply",
+        "reasonCode": "terminal_processing_status",
+        "taskIds": [],
+        "missingFields": [],
+        "reviewRequired": false,
+        "executionSummary": {
+          "answeredTaskIds": [],
+          "noAvailabilityTaskIds": [],
+          "notReadyTaskIds": [],
+          "unknownTaskIds": [],
+          "propertyDataMissingTaskIds": [],
+          "technicalErrorTaskIds": [],
+          "invalidQueryPlanTaskIds": []
+        },
+        "internalAction": "reply",
+        "publicReplies": [
+          {
+            "taskId": "turn-failure",
+            "action": "no_reply"
+          }
+        ]
+      },
+      "baselineReply": {
+        "action": "no_reply",
+        "replyText": "",
+        "shouldReply": false
+      },
+      "baselineEarliestFailure": {
+        "layer": "UNDERSTANDING",
+        "failureCode": "UNDERSTANDING_SCHEMA_INVALID"
+      }
+    }
+  ]
+}

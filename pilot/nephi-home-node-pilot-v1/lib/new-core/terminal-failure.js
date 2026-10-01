@@ -3,6 +3,7 @@
 // Internal operational provenance, never a business task, fact, or persisted state.
 const FAILURES = new WeakSet();
 const SOURCE_SCOPES = new WeakMap();
+const CUSTOMER_NEEDS = new WeakMap();
 const TEXT = Object.freeze({
   UNDERSTANDING: "目前未能確認這則訊息需要處理的內容。",
   CORRECTION_REJECTED: "目前未能完成這則訊息的理解。",
@@ -14,15 +15,27 @@ function isTerminalFailure(value, { propertyId, turnId, scopeRef } = {}) {
     && value.turnId === turnId && value.scopeRef === scopeRef && TEXT[value.kind]);
 }
 function processingStatusText(failure) { return failure && TEXT[failure.kind] || ""; }
-function createTerminalContext({ propertyId, turnId }) {
+function terminalFailureNeeds(failure, scope) {
+  return isTerminalFailure(failure, scope) ? CUSTOMER_NEEDS.get(failure) || [] : [];
+}
+function unresolvedTextTurnNeed(input, propertyId, turnId, scopeRef) {
+  const { validateUnderstandingTurnInput } = require("./contracts/understanding-turn-input");
+  if (!input || input.propertyScope?.propertyId !== propertyId || input.turnId !== turnId
+    || !validateUnderstandingTurnInput(input).ok) return [];
+  const current = input.sourceEvents.filter(event => event.messageKind === "text"
+    && typeof event.messageText === "string" && event.messageText.length > 0);
+  return current.length ? [{ unitId: scopeRef, capability: null }] : [];
+}
+function createTerminalContext({ propertyId, turnId, understandingTurnInput = null }) {
   if (!propertyId || !turnId) throw new TypeError("terminal_scope_required");
   const failures = [];
-  function record(scopeRef, kind, boundary, origin, code, source) {
+  function record(scopeRef, kind, boundary, origin, code, source, needs = []) {
     if (!scopeRef || !TEXT[kind] || !source) throw new TypeError("terminal_evidence_required");
     const binding = JSON.stringify([propertyId, turnId]);
     if (SOURCE_SCOPES.has(source) && SOURCE_SCOPES.get(source) !== binding) throw new TypeError("terminal_source_scope_mismatch");
     SOURCE_SCOPES.set(source, binding);
     const value = Object.freeze({ propertyId, turnId, scopeRef, kind, boundary, origin, code });
+    CUSTOMER_NEEDS.set(value, Object.freeze(needs.map(need => Object.freeze({ ...need }))));
     FAILURES.add(value); failures.push(value); return value;
   }
   return Object.freeze({
@@ -37,13 +50,18 @@ function createTerminalContext({ propertyId, turnId }) {
       return result.failedUnits.map(failure => record(failure.unitId, second ? "CORRECTION_REJECTED" : "UNDERSTANDING",
         second?.validationResult?.adoptionFailure ? "CORRECTION_ADOPTION" : failure.boundary,
         diagnostic?.attempts?.[0]?.validationResult?.failures?.find(item => item.unitId === failure.unitId)?.origin || "validation",
-        second?.validationResult?.adoptionFailure || failure.failureCode, result));
+        second?.validationResult?.adoptionFailure || failure.failureCode, result,
+        provider.failureRequestsFor(result, understandingTurnInput).filter(need => need.unitId === failure.unitId)));
     },
     fromException(error, scopeRef, boundary = "APPLICATION_SERVICE") {
       if (!(error instanceof Error)) throw new TypeError("caught_exception_required");
       const transport = ["timeout", "network", "rate_limit", "provider_5xx", "authentication", "configuration"].includes(error.errorCategory);
       return record(scopeRef, boundary === "UNDERSTANDING" && !transport ? "UNDERSTANDING" : "EXECUTION_TECHNICAL", transport ? "PROVIDER_TRANSPORT" : boundary,
-        transport ? error.errorCategory : "runtime", String(error.code || "NEW_CORE_RUNTIME_FAILURE"), error);
+        transport ? error.errorCategory : "runtime", String(error.code || "NEW_CORE_RUNTIME_FAILURE"), error,
+        boundary === "UNDERSTANDING"
+          ? transport ? unresolvedTextTurnNeed(understandingTurnInput, propertyId, turnId, scopeRef)
+            : require("../providers/openai-understanding-v1").failureRequestsFor(error, understandingTurnInput)
+          : []);
     },
     fromExecution(outcome) {
       const evidence = require("../conversation-engine-v2/capability-executor").canonicalExecutionProvenanceFor(outcome);
@@ -55,7 +73,11 @@ function createTerminalContext({ propertyId, turnId }) {
       // Only application-owned outcomes following the formal unit and Context gates.
       const { isValidatedSemanticUnitFor } = require("./semantic-unit-validator");
       if (!outcome?.failure || !isValidatedSemanticUnitFor(input, outcome.unit) || input?.propertyScope?.propertyId !== propertyId || input?.turnId !== turnId) throw new TypeError("validated_failure_required");
-      return record(outcome.unit.unitId, "EXECUTION_TECHNICAL", outcome.failure.layer, "validation", outcome.failure.failureCode, outcome.unit);
+      const { capabilityPolicyFor, CAPABILITY_REGISTRY_PROJECTION } = require("./capability-subject-policy");
+      const policy = capabilityPolicyFor(CAPABILITY_REGISTRY_PROJECTION, outcome.unit.capability);
+      const needs = policy && policy.routeKind !== "NO_REPLY" && input === understandingTurnInput
+        ? [{ unitId: outcome.unit.unitId, capability: outcome.unit.capability }] : [];
+      return record(outcome.unit.unitId, "EXECUTION_TECHNICAL", outcome.failure.layer, "validation", outcome.failure.failureCode, outcome.unit, needs);
     },
     fromClaimValidation(validation, scopeRef) {
       const { isClaimValidationResult } = require("../conversation-engine-v2/claim-validator");
@@ -65,4 +87,4 @@ function createTerminalContext({ propertyId, turnId }) {
     }
   });
 }
-module.exports = { createTerminalContext, isTerminalFailure, processingStatusText };
+module.exports = { createTerminalContext, isTerminalFailure, processingStatusText, terminalFailureNeeds };

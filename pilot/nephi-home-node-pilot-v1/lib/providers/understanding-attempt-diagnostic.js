@@ -1,8 +1,8 @@
 "use strict";
 
 // Non-authoritative snapshots only. Never used by admission or correction.
-// The existing manual-test record owns persistence; production safe traces do
-// not project this field. No HTTP headers, provider response wrapper or env dump.
+// Manual records and terminal production schema-failure payloads may persist
+// these snapshots; public safe traces never project them. No response wrapper.
 const DENIED_KEY = /(?:api.?key|authorization|cookie|credential|token|secret|pass(?:word|phrase)|headers?|prompt|reasoning|raw|database.?url|private.?notes?)/iu;
 
 function sanitize(value, secret) {
@@ -71,7 +71,11 @@ function captureUnderstandingAttempts(entries, reports, acceptedAttempt, secret)
         accepted: report.attemptNumber === acceptedAttempt,
         rejected: report.attemptNumber !== acceptedAttempt,
         adoption: entry.adoption ? { ...entry.adoption,
-          reportedFailure: report.validationResult.adoptionFailure || null } : null
+          // An unadmitted candidate has no validated replacement fields. The
+          // admission failure, not that absence, explains its rejection.
+          reportedFailure: entry.adoption.rejectionStage === "admission"
+            ? report.validationResult.terminalCode || null
+            : report.validationResult.adoptionFailure || null } : null
       }, secret);
       return { ...captured.value, capture: captured.capture };
     });
@@ -81,4 +85,44 @@ function captureUnderstandingAttempts(entries, reports, acceptedAttempt, secret)
   }
 }
 
-module.exports = { captureUnderstandingAttempts, schemaErrorEvidence };
+function correctedAttemptReceipt(attempts) {
+  return attempts.map(entry => ({
+    attemptNumber: entry.attemptNumber,
+    attemptType: entry.attemptType,
+    validationResult: entry.validationResult,
+    schemaError: entry.schemaError,
+    admissionFailureCode: entry.admissionFailureCode,
+    correctionInput: entry.correctionInput ? { failures: entry.correctionInput.failures } : null,
+    adoption: entry.adoption,
+    accepted: entry.accepted,
+    rejected: entry.rejected
+  }));
+}
+
+function productionUnderstandingFailureEvidence(result) {
+  try {
+    const attempts = result?.understandingAttempts || result?.artifacts?.understanding?.[
+      Symbol.for("junzan.openAiUnderstandingV1ProviderDiagnostic")]?.attemptEvidence;
+    if (!Array.isArray(attempts) || attempts.length === 0 || attempts.length > 2) return {};
+    const corrected = attempts.length === 2 && attempts[0].accepted === false
+      && attempts[0].validationResult?.ok === false && attempts[1].accepted === true
+      && attempts[1].validationResult?.ok === true;
+    const terminalSchemaFailure = result?.earliestFailure?.layer === "UNDERSTANDING"
+      && !attempts.some(entry => entry.accepted === true) && attempts.some(entry => entry.schemaError);
+    if (!corrected && !terminalSchemaFailure) return {};
+    // Reuse the existing redaction boundary. These are already captured with
+    // the provider's exact secret removed; never consult env or a raw response.
+    // Successful correction needs the failure/adoption receipt, not either raw
+    // output or the previousUnderstandingOutput echoed in the correction body.
+    const captured = sanitize(corrected ? correctedAttemptReceipt(attempts) : attempts);
+    const diagnostic = { schemaVersion: 1, attempts: captured.value, capture: captured.capture };
+    if (Buffer.byteLength(JSON.stringify(diagnostic), "utf8") > 512 * 1024)
+      return { understandingFailureDiagnostic: { schemaVersion: 1, captureError: "UNDERSTANDING_DIAGNOSTIC_SIZE_LIMIT" } };
+    return { understandingFailureDiagnostic: diagnostic };
+  } catch {
+    // A diagnostic failure cannot affect admission, persistence or delivery.
+    return {};
+  }
+}
+
+module.exports = { captureUnderstandingAttempts, schemaErrorEvidence, productionUnderstandingFailureEvidence };

@@ -34,6 +34,7 @@ const PERSISTED_PRODUCT_TYPES = new Set(["room_type", "bundle", null]);
 const VALIDATED_LIFECYCLE_DECISIONS = new WeakSet();
 const INPUT_BY_VALIDATED_LIFECYCLE_DECISION = new WeakMap();
 const CONTEXT_SOURCE_BY_VALIDATED_LIFECYCLE_DECISION = new WeakMap();
+const RELATION_BY_VALIDATED_LIFECYCLE_DECISION = new WeakMap();
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -247,9 +248,7 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
         ? { ok: true, target: relation.resolvedTargetRequestCycleId }
         : failure("CONTEXT_TARGET_UNAVAILABLE", ["resolvedTargetRequestCycleId"]);
     }
-    if (targetIds.length === 1) return { ok: true, target: targetIds[0] };
-    if (targetIds.length > 1) return failure("CONTEXT_TARGET_AMBIGUOUS", ["referenceableCycles"]);
-    return failure("CONTEXT_TARGET_UNAVAILABLE", ["referenceableCycles"]);
+    return failure("CONTEXT_TARGET_UNAVAILABLE", ["explicitValidatedTargetRequired"]);
   };
   const nonActionable = new Set(["acknowledgement", "conversational_statement", "social", "off_topic"]);
   let action;
@@ -278,15 +277,9 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
     action = "CONTINUE";
     target = selected.target;
   } else if (unit.capability !== null) {
-    if (relation.relationKind === "NEW_REQUEST"
-      || relation.compatiblePendingTargetIds.length === 0) {
-      action = "START";
-    } else {
-      const selected = chooseTarget(relation.compatiblePendingTargetIds);
-      if (!selected.ok) return selected;
-      action = "CONTINUE";
-      target = selected.target;
-    }
+    // NONE cannot authorize a mutation of an existing request. An actionable
+    // independent unit retains its own new identity even if pending cycles exist.
+    action = "START";
   } else {
     action = "NONE";
   }
@@ -308,6 +301,7 @@ function createLifecycleDecision({ lifecycleDecisionId, unit, validatedContextLi
   const value = deepFreeze(detach(decision));
   VALIDATED_LIFECYCLE_DECISIONS.add(value);
   INPUT_BY_VALIDATED_LIFECYCLE_DECISION.set(value, input);
+  RELATION_BY_VALIDATED_LIFECYCLE_DECISION.set(value, relation.relationKind);
   const sourceId = relation.relationKind === "RELATED_REQUEST"
     ? relation.resolvedTargetRequestCycleId : target;
   if (sourceId !== null && ["START", "CONTINUE", "MODIFY"].includes(action)) {
@@ -328,6 +322,10 @@ function understandingInputForValidatedLifecycleDecision(value) {
     : null;
 }
 
+function relationForValidatedLifecycleDecision(value) {
+  return isValidatedLifecycleDecision(value) ? RELATION_BY_VALIDATED_LIFECYCLE_DECISION.get(value) || null : null;
+}
+
 function contextSourceForValidatedLifecycleDecision(value) {
   return isValidatedLifecycleDecision(value)
     ? CONTEXT_SOURCE_BY_VALIDATED_LIFECYCLE_DECISION.get(value) || null : null;
@@ -343,5 +341,6 @@ module.exports = {
   validateLifecycleDecisions,
   isValidatedLifecycleDecision,
   contextSourceForValidatedLifecycleDecision,
+  relationForValidatedLifecycleDecision,
   understandingInputForValidatedLifecycleDecision
 };

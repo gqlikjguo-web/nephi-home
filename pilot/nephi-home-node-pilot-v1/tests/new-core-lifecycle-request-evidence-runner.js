@@ -29,7 +29,11 @@ async function run({ capability = "amenity", relation = "NONE", purpose = "lodgi
         subject: capability === null ? { kind: null, catalogIdentity: null }
           : capability === "availability" ? { kind: "property", catalogIdentity: null } : { kind: capability, catalogIdentity: "fixture-fact" },
         stayDependent: capability === "availability", temporalCandidate: null, contextLinkCandidateId: "link", safetyCandidate: null, slotCandidates: [], confidenceBand: "high" };
-      const output = { understandingOutput: { schemaVersion: 1, turnId: input.turnId, units: [unit] },
+      const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents,[{
+        obligationId:"request",unitId:"unit",purpose,capability,sourceEvidenceRefs:[ref],requiredFields:capability===null?[]:["subject"],
+        relationKind:relation,referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+      }]);
+      const output = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId: input.turnId, units: [unit] },
         contextLinkCandidates: [{ contextLinkCandidateId: "link", unitId: "unit", relationKind: relation, currentSourceEvidenceRefs: [ref], referencedHistoryEventRefs: [] }] };
       return { ok: true, status: 200, headers: { get: () => "fixture" }, text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed",
         output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] }) };

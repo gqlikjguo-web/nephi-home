@@ -68,7 +68,15 @@ async function run(dispositions, fixtureOptions = {}) {
           safetyCandidate: disposition === "HANDOFF" ? { operatorActionClass: [...OPERATOR_ACTION_CLASSES][0], riskClass: null } : null,
           slotCandidates: [], confidenceBand: "high" };
       });
-      const output = { understandingOutput: { schemaVersion: 1, turnId: input.turnId, units }, contextLinkCandidates: units.map(unit => ({
+      const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(events, dispositions.map((disposition, i) => {
+        const event = events[i], choice = disposition === "ANSWER" ? answer : handoff, silent = disposition === "NO_REPLY";
+        return { obligationId: `request-${i}`, unitId: `unit-${i}`, purpose: silent ? fixtureOptions.purpose || "conversational_statement" : choice.policy.safetyPurposes[0],
+          capability: silent ? null : choice.capability,
+          sourceEvidenceRefs: [{ eventId: event.eventId, messageRef: event.messageRef, startOffset: 0, endOffset: event.messageText.length, quote: event.messageText }],
+          requiredFields: silent ? (fixtureOptions.withSlot ? ["slot:guest_count"] : []) : ["subject"],
+          relationKind: silent ? "NONE" : "NEW_REQUEST", referencedHistoryEventRefs: [], referencedCurrentUnitId: null };
+      }));
+      const output = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId: input.turnId, units }, contextLinkCandidates: units.map(unit => ({
         contextLinkCandidateId: unit.contextLinkCandidateId, unitId: unit.unitId, relationKind: unit.capability === null ? "NONE" : "NEW_REQUEST", currentSourceEvidenceRefs: unit.evidenceRefs, referencedHistoryEventRefs: []
       })) };
       return { ok: true, status: 200, headers: { get: () => "fixture" }, text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed",

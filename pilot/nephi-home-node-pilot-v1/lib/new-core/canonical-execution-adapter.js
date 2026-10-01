@@ -381,10 +381,18 @@ function compatibilityTemporal(unit, sources) {
   };
 }
 
+function projectVerifiedTemporalNights(confirmedInputs, canonicalRequest) {
+  Object.assign(confirmedInputs.stay,
+    require("../conversation-contracts/verified-stay-nights").nightsFromTemporalField(
+      canonicalRequest.temporalState?.fields?.nights
+    ));
+}
+
 function contextTaskFor(cycle) {
   if (!cycle) return null;
   const stay = cycle.confirmedInputs && cycle.confirmedInputs.stay || {};
   return {
+    ...require("../conversation-contracts/verified-stay-nights").projectVerifiedNights(stay),
     checkIn: stay.checkIn || null,
     checkOut: stay.checkOut || null,
     guestCount: Number.isInteger(stay.guests) ? stay.guests : null
@@ -696,11 +704,12 @@ function executeCanonicalizerInputItem({
     });
   }
   const confirmedInputs = require("../conversation-engine-v2/conversation-state-v3-reducer").executionConditionsV3(null, value, null);
+  projectVerifiedTemporalNights(confirmedInputs, value.canonicalRequest);
   const inheritedQuantity = context.cycle?.confirmedInputs || {};
   if (!value.canonicalRequest.quantityCandidate) Object.assign(confirmedInputs,
     require("../conversation-contracts/resolver-quantity").resolverQuantityFields(inheritedQuantity),
     inheritedQuantity.quantityEvidenceRefs ? {quantityEvidenceRefs: inheritedQuantity.quantityEvidenceRefs} : {});
-  CONDITIONS_BY_CANONICAL_ITEM.set(value, { decision: provenance.lifecycleDecision, source: deepFreeze({
+  CONDITIONS_BY_CANONICAL_ITEM.set(value, { decision: provenance.lifecycleDecision, subject: provenance.unit.subject, source: deepFreeze({
     currentUnitId: value.unitId, requestCycleId: provenance.lifecycleDecision.targetRequestCycleId,
     confirmedInputs, sourceEvidenceRefs: detach(value.canonicalRequest.evidenceRefs),
     confirmedValues: { checkIn: confirmedInputs.stay.checkIn, checkOut: confirmedInputs.stay.checkOut,
@@ -718,10 +727,15 @@ function conditionsForValidatedCanonicalItem(item, lifecycleDecision) {
   return record?.decision === lifecycleDecision ? record.source : null;
 }
 
+function subjectForValidatedCanonicalItem(item) {
+  return CONDITIONS_BY_CANONICAL_ITEM.get(item)?.subject || null;
+}
+
 module.exports = {
   c08ExecutionDiagnosticFor,
   createCanonicalizerInputItem,
   executeCanonicalizerInputItem,
   conditionsForValidatedCanonicalItem,
+  subjectForValidatedCanonicalItem,
   isTrustedCanonicalizerInputItem
 };

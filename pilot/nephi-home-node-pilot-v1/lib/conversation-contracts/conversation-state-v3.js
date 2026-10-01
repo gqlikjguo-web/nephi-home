@@ -10,6 +10,7 @@ const {
 
 const { validateQuantityFields, projectQuantityFields } = require("./resolver-quantity");
 const QUANTITY_FIELDS = ["requestedQuantity", "distinctRequirement", "quantityEvidenceRefs"];
+const { NIGHTS_FIELDS, validateVerifiedNights, projectVerifiedNights } = require("./verified-stay-nights");
 const { validateSourceEvidence } = require("../new-core/contracts/source-evidence");
 
 const CONVERSATION_STATE_SCHEMA_VERSION = 3;
@@ -118,7 +119,7 @@ function taskInputKeys(value) {
     return false;
   }
   const keys = Object.keys(value);
-  return keys.every((key) => [...CONVERSATION_TASK_FIELDS, ...QUANTITY_FIELDS].includes(key))
+  return keys.every((key) => [...CONVERSATION_TASK_FIELDS, ...QUANTITY_FIELDS, ...NIGHTS_FIELDS].includes(key))
     && CONVERSATION_TASK_REQUIRED_INPUT_FIELDS.every(
       (field) => Object.hasOwn(value, field)
     );
@@ -157,6 +158,7 @@ function normalizedTask(value = {}) {
     taskType: String(value.taskType || "").trim(),
     ...product,
     ...projectQuantityFields(value),
+    ...projectVerifiedNights(value),
     ...(Object.hasOwn(value, "quantityEvidenceRefs") ? {quantityEvidenceRefs:Array.isArray(value.quantityEvidenceRefs) ? value.quantityEvidenceRefs.map(ref => ({...ref})) : value.quantityEvidenceRefs} : {}),
     checkIn: textOrNull(value.checkIn),
     checkOut: textOrNull(value.checkOut),
@@ -187,6 +189,7 @@ function validateConversationTaskV3(value) {
   const errors = [];
   if (!taskInputKeys(value)) errors.push("keys");
   errors.push(...validateQuantityFields(value).errors);
+  if (!validateVerifiedNights(value)) errors.push("nightsEvidence");
   if (Object.hasOwn(value, "quantityEvidenceRefs") && (!Object.hasOwn(value, "requestedQuantity") || !validateSourceEvidence(value.quantityEvidenceRefs).ok)) errors.push("quantityEvidenceRefs");
   if (!task.taskId) errors.push("taskId");
   if (!task.taskType) errors.push("taskType");
@@ -293,7 +296,7 @@ function validateConversationStateV3(value) {
   } else {
     const ids = new Set();
     state.tasks.forEach((task, index) => {
-      if (!exactKeys(task, [...CONVERSATION_TASK_FIELDS, ...QUANTITY_FIELDS.filter(field => Object.hasOwn(task, field))])) {
+      if (!exactKeys(task, [...CONVERSATION_TASK_FIELDS, ...[...QUANTITY_FIELDS, ...NIGHTS_FIELDS].filter(field => Object.hasOwn(task, field))])) {
         errors.push(`tasks.${index}.keys`);
       }
       const validation = validateConversationTaskV3(task);

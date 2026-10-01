@@ -339,7 +339,18 @@ function providerFor({
         slotCandidates: [],
         confidenceBand: "high"
       };
+      const requiredFields = ["subject"];
+      if (temporalCandidate) {
+        requiredFields.push("temporalCandidate");
+        for (const field of ["checkInCandidate", "checkOutCandidate", "nightsCandidate", "relativeSemantics"])
+          if (temporalCandidate[field] != null) requiredFields.push(`temporalCandidate.${field}`);
+      }
+      const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents, [{
+        obligationId:"declared-temporal",unitId:unit.unitId,purpose:"lodging_question",capability,sourceEvidenceRefs:[evidence],
+        requiredFields,relationKind,referencedHistoryEventRefs:historyRefs,referencedCurrentUnitId:null
+      }]);
       const output = {
+        sourceObligations,
         understandingOutput: {
           schemaVersion: 1,
           turnId: input.turnId,

@@ -206,6 +206,9 @@ function requestCycleRefsForResult(result) {
     ...(artifacts.adapted && Array.isArray(artifacts.adapted.taskCreations)
       ? artifacts.adapted.taskCreations.map((item) => item && item.taskIdCandidate)
       : []),
+    ...(artifacts.adapted && Array.isArray(artifacts.adapted.lifecycleOperations)
+      ? artifacts.adapted.lifecycleOperations.map((item) => item && item.targetTaskId)
+      : []),
     ...(artifacts.adapted && Array.isArray(artifacts.adapted.canonicalTaskBindings)
       ? artifacts.adapted.canonicalTaskBindings.map((item) => item && item.requestCycleId)
       : [])

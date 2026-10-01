@@ -88,7 +88,20 @@ function taskProduct(unit, decision) {
   if (unit.subject.kind === "room") {
     return productValue({ operation: "SET", persistedProductType: "room_type", value: unit.subject.catalogIdentity });
   }
+  if (unit.subject.kind === "matched_room_set") {
+    return { ...productValue({ operation: "CLEAR" }), entityId: unit.subject.catalogIdentity, entityCategory: unit.subject.kind };
+  }
   return productValue({ operation: "CLEAR" });
+}
+
+function independentNightsFor(unit, source = {}) {
+  const temporal = unit.temporalCandidate;
+  if (!temporal) return require("../conversation-contracts/verified-stay-nights").projectVerifiedNights(source);
+  return Number.isInteger(temporal.nightsCandidate) && !temporal.checkInCandidate && !temporal.checkOutCandidate
+    ? { nights: temporal.nightsCandidate, nightsEvidence: {
+      value: temporal.nightsCandidate, valueStatus: "confirmed", provenance: "explicit",
+      sourceEvidenceRefs: structuredClone(unit.evidenceRefs), ruleRef: null, derivedFromFieldRefs: []
+    } } : {};
 }
 
 function taskCreationFor(outcome) {
@@ -119,6 +132,7 @@ function taskCreationFor(outcome) {
     taskIdCandidate: unit.unitId,
     capability: unit.capability,
     ...(unit.quantityCandidate ? {...require("../conversation-contracts/resolver-quantity").resolverQuantityFields(unit.quantityCandidate), quantityEvidenceRefs:unit.quantityCandidate.evidenceRefs.map(ref => ({...ref}))} : {}),
+    ...independentNightsFor(unit, source),
     productType: product.productType,
     productId: product.productId,
     roomTypeId: product.roomTypeId,
@@ -128,9 +142,8 @@ function taskCreationFor(outcome) {
     guestCount: guestOperation ? guestOperation.operation === "SET" ? guestOperation.value : null : source.guestCount || null,
     searchFrom: availableDates ? temporal.checkInCandidate || null : null,
     searchTo: availableDates ? temporal.checkOutCandidate || null : null,
-    entityId: product.productId,
-    entityCategory: product.productType === "bundle" ? "bundle"
-      : product.productType === "room_type" ? "room" : null,
+    entityId: product.entityId,
+    entityCategory: product.entityCategory,
     detailIntent: "general",
     missingFields
   };
@@ -170,6 +183,15 @@ function adaptLifecycleDecisionsToStateV3({ decisions, aggregationResult = null,
       continue;
     }
     const outcome = aggregationResult?.unitOutcomes.find(item => item.lifecycleDecision === decision);
+    const nights = outcome?.routingDecision.requiresCanonicalExecution === false
+      && outcome.unit.temporalCandidate ? independentNightsFor(outcome.unit) : {};
+    if (nights.nightsEvidence && ["CONTINUE", "MODIFY"].includes(decision.action)) {
+      const key = `${decision.targetRequestCycleId}:nights`;
+      if (persistedTargets.has(key)) return failure("LIFECYCLE_TRANSITION_INVALID", ["persistedSlotConflict"]);
+      persistedTargets.add(key);
+      lifecycleOperations.push({lifecycleDecisionId:decision.lifecycleDecisionId, unitId:decision.unitId,
+        action:decision.action, targetTaskId:decision.targetRequestCycleId, field:"nights", operation:"SET", value:nights});
+    }
     const quantity = outcome?.unit.quantityCandidate;
     if (quantity && ["CONTINUE", "MODIFY"].includes(decision.action)) {
       const targetKey = `${decision.targetRequestCycleId}:quantity`;

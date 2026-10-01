@@ -13,13 +13,15 @@ function validateAvailabilityReply(section, text) {
   const value = String(text || "").trim();
   const errors = [];
   if (!value.includes(checkIn)) errors.push("availability_reply_date_missing");
-  if (["房況資料尚未完整", "目前無法確認", "請稍後再試", "直接與我們聯繫"].some(phrase => value.includes(phrase))) {
+  if (!missing && ["房況資料尚未完整", "目前無法確認", "請稍後再試", "直接與我們聯繫"].some(phrase => value.includes(phrase))) {
     errors.push("availability_reply_forbidden");
   }
   let body;
   if (section.outcomeStatus === "no_availability" && section.outcomeReason === "inventory_not_open" && facts.unopenedDates?.length) {
     body = checkIn + " 至 " + facts.checkOut + " 的住宿無法完整預訂：" + facts.unopenedDates.join("、") + " 未開放預訂。";
-  } else if (missing || section.outcomeStatus === "no_availability") {
+  } else if (missing) {
+    body = checkIn + " 入住的房況資料尚未完整，目前無法確認是否可預訂。";
+  } else if (section.outcomeStatus === "no_availability") {
     body = checkIn + " 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。";
   } else {
     const amount = number => new Intl.NumberFormat("zh-TW").format(number);

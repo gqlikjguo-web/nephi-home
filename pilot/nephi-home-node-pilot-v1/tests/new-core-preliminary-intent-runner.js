@@ -40,7 +40,13 @@ async function run(propertyId, spec, previous = null) {
       availableDates: () => { throw Error("unexpected date search"); }, priceOverrides: () => [], dateClassifications: () => [], customReplies: () => [] },
     understandingProvider: (input, options) => callOpenAIUnderstandingV1(input, { ...options, nowMs: () => Date.parse(NOW), fetchImpl: async () => {
       calls++;
-      const payload = { understandingOutput: { schemaVersion: 1, turnId: id, units: [unit] }, contextLinkCandidates: [{
+      const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents, [{
+        obligationId: "request-obligation", unitId: id, purpose: spec.purpose, capability: spec.capability, sourceEvidenceRefs: refs,
+        requiredFields: [...(spec.subject.kind === null ? [] : ["subject"]), ...(spec.temporal ? ["temporalCandidate", ...["checkInCandidate", "checkOutCandidate", "nightsCandidate", "relativeSemantics"].filter(key => spec.temporal[key] != null).map(key => `temporalCandidate.${key}`)] : []), ...(spec.guests ? ["slot:guest_count"] : [])],
+        relationKind: spec.capability === null ? "NONE" : previous ? (spec.relation || "MODIFICATION") : "NEW_REQUEST",
+        referencedHistoryEventRefs: previous ? [{eventId: "first-turn", messageRef: "first-turn"}] : [], referencedCurrentUnitId: null
+      }]);
+      const payload = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId: id, units: [unit] }, contextLinkCandidates: [{
         unitId: id, contextLinkCandidateId: id, relationKind: spec.capability === null ? "NONE" : previous ? (spec.relation || "MODIFICATION") : "NEW_REQUEST",
         currentSourceEvidenceRefs: refs, referencedHistoryEventRefs: previous ? [{ eventId: "first-turn", messageRef: "first-turn" }] : [] }] };
       return { ok: true, status: 200, headers: { get: () => "isolated-request" }, text: async () => JSON.stringify({ model: "gpt-5.6-luna",

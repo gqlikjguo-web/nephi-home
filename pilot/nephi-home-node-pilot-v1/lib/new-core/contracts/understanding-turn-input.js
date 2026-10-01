@@ -46,6 +46,7 @@ const REFERENCEABLE_CYCLE_FIELDS = Object.freeze([
   "slotRefs"
 ]);
 const REFERENCEABLE_SUBJECT_FIELDS = Object.freeze(["kind", "catalogIdentity"]);
+const { NIGHTS_FIELDS, validateVerifiedNights } = require("../../conversation-contracts/verified-stay-nights");
 const CONFIRMED_VALUE_FIELDS = Object.freeze([
   "checkIn",
   "checkOut",
@@ -214,7 +215,7 @@ function validateUnderstandingTurnInput(value) {
       if (!uniqueBoundedStrings(cycle && cycle.missingFields, MAX_REFERENCEABLE_CYCLES)) {
         errors.push(`referenceableCycles.${index}.missingFields`);
       }
-      if (!exactKeys(cycle && cycle.confirmedValues, cycle?.confirmedValues && Object.hasOwn(cycle.confirmedValues, "requestedQuantity") ? [...CONFIRMED_VALUE_FIELDS, "requestedQuantity", "distinctRequirement"] : CONFIRMED_VALUE_FIELDS)
+      if (!exactKeys(cycle && cycle.confirmedValues, [...CONFIRMED_VALUE_FIELDS, ...(cycle?.confirmedValues && Object.hasOwn(cycle.confirmedValues, "requestedQuantity") ? ["requestedQuantity", "distinctRequirement"] : []), ...NIGHTS_FIELDS.filter(field => Object.hasOwn(cycle?.confirmedValues || {}, field))])
         || !nullableDate(cycle && cycle.confirmedValues && cycle.confirmedValues.checkIn)
         || !nullableDate(cycle && cycle.confirmedValues && cycle.confirmedValues.checkOut)
         || !nullableDate(cycle && cycle.confirmedValues && cycle.confirmedValues.searchFrom)
@@ -227,6 +228,7 @@ function validateUnderstandingTurnInput(value) {
       if (!require("../../conversation-contracts/resolver-quantity").validateQuantityFields(cycle?.confirmedValues || {}).ok) {
         errors.push(`referenceableCycles.${index}.confirmedValues.quantity`);
       }
+      if (!validateVerifiedNights(cycle?.confirmedValues || {})) errors.push(`referenceableCycles.${index}.confirmedValues.nights`);
       if (!uniqueBoundedStrings(cycle && cycle.slotRefs, MAX_REFERENCEABLE_CYCLES)) {
         errors.push(`referenceableCycles.${index}.slotRefs`);
       }

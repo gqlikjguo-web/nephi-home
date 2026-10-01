@@ -25,7 +25,13 @@ function scenario(propertyId, dateText, labels) {
     temporalCandidate: { rawText: dateText, kind: "absolute_date", checkInCandidate: dateText, checkOutCandidate: null, nightsCandidate: null },
     contextLinkCandidateId: `link-${index}`, safetyCandidate: null, slotCandidates: [], confidenceBand: "high"
   }));
-  const first = { understandingOutput: { schemaVersion: 1, turnId: "turn", units }, contextLinkCandidates: units.map(unit => ({ contextLinkCandidateId: unit.contextLinkCandidateId, unitId: unit.unitId, relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: unit.evidenceRefs, referencedHistoryEventRefs: [] })) };
+  const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents, ["availability", "price", "policy"].map((capability, index) => ({
+    obligationId: `requirement-${index}`, unitId: `task-${index}`, purpose: "lodging_question", capability,
+    sourceEvidenceRefs: [ref(index === 0 ? `${dateText} ${labels[0]}` : labels[index])],
+    requiredFields: ["subject", "temporalCandidate", "temporalCandidate.checkInCandidate"],
+    relationKind: "NEW_REQUEST", referencedHistoryEventRefs: [], referencedCurrentUnitId: null
+  })));
+  const first = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId: "turn", units }, contextLinkCandidates: units.map(unit => ({ contextLinkCandidateId: unit.contextLinkCandidateId, unitId: unit.unitId, relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: unit.evidenceRefs, referencedHistoryEventRefs: [] })) };
   const repair = structuredClone(first);
   repair.understandingOutput.units.slice(1).forEach(unit => unit.evidenceRefs.push(ref(dateText)));
   return { input, first, repair };

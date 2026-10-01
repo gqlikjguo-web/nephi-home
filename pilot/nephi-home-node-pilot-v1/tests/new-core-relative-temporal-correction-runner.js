@@ -40,6 +40,11 @@ async function run({ rawText = "下禮拜二", firstOffset = 6, nextOffset = 5, 
             temporalCandidate: { ...structuredClone(unit.temporalCandidate), relativeSemantics: { dayOffset: 5, dayPeriod: "unspecified" } } });
           output.contextLinkCandidates.push({ ...structuredClone(link), unitId: "sibling", contextLinkCandidateId: "sibling-link" });
         }
+        output.sourceObligations=require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents,
+          ["unit",...(sibling?["sibling"]:[])].map(unitId=>({obligationId:`relative-${unitId}`,unitId,
+            purpose:"lodging_question",capability:"availability",sourceEvidenceRefs:[ref],
+            requiredFields:["subject","temporalCandidate","temporalCandidate.relativeSemantics"],relationKind:"NEW_REQUEST",
+            referencedHistoryEventRefs:[],referencedCurrentUnitId:null})));
         if (calls === 2) mutate(unit, link, output);
         return { ok: true, status: 200, headers: { get: () => "fixture" }, text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed",
           usage: { input_tokens: 100, input_tokens_details: { cached_tokens: 0 }, output_tokens: 20, total_tokens: 120 },

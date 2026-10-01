@@ -137,6 +137,11 @@ function providerPayload({ includeFailure = true, crossProperty = false } = {}) 
   const invalid = failedUnit();
   const units = includeFailure ? [answer, invalid, ack] : [answer, ack];
   return {
+    sourceObligations: require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(turnInput().sourceEvents,[
+      {obligationId:"answer",unitId:"unit-answer",purpose:"lodging_question",capability:"property_fact",sourceEvidenceRefs:[evidence(0,4,"停車資訊")],requiredFields:["subject"],relationKind:"NEW_REQUEST",referencedHistoryEventRefs:[],referencedCurrentUnitId:null},
+      ...(includeFailure?[{obligationId:"failed",unitId:"unit-failed",purpose:"lodging_question",capability:"property_fact",sourceEvidenceRefs:[evidence(8,16,MESSAGE.slice(8,16))],requiredFields:["subject"],relationKind:"NEW_REQUEST",referencedHistoryEventRefs:[],referencedCurrentUnitId:null}]:[]),
+      {obligationId:"ack",unitId:"unit-ack",purpose:"acknowledgement",capability:null,sourceEvidenceRefs:[evidence(5,7,"謝謝")],requiredFields:[],relationKind:"NONE",referencedHistoryEventRefs:[],referencedCurrentUnitId:null}
+    ]),
     understandingOutput: {
       schemaVersion: 1,
       turnId: "turn-shadow-property-shadow-a",
