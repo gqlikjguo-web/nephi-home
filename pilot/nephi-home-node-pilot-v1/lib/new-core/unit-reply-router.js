@@ -238,7 +238,13 @@ function routeFromValidatedInputs({ unit, lifecycleDecision, routingRegistry, re
 
 function createUnitRoutingDecision({ unit, lifecycleDecision, routingRegistry, readiness, operatorSafetyPolicy = null } = {}) {
   if (!validatedUnitAndLifecycle(unit, lifecycleDecision)) return failure("ROUTING_INPUT_INVALID", ["unitOrLifecycle"]);
-  const routed = routeFromValidatedInputs({ unit, lifecycleDecision, routingRegistry, readiness, operatorSafetyPolicy });
+  const verifiedReadiness = readinessFor(readiness, unit);
+  const contextClarification = verifiedReadiness && routePolicyFor(routingRegistry, unit) && require("./continuation-clarification")
+    .createContinuationClarification({ unit, lifecycleDecision, readiness: verifiedReadiness });
+  const routed = contextClarification?.kind === "ambiguous_continuation"
+    ? { disposition: "HANDOFF", reasonClass: "context_target_ambiguous", requiresCanonicalExecution: false,
+      missingGuestFields: [], operatorActionClass: null, riskClass: null }
+    : routeFromValidatedInputs({ unit, lifecycleDecision, routingRegistry, readiness, operatorSafetyPolicy });
   if (routed.ok === false) return routed;
   const decision = { unitId: unit.unitId, ...routed };
   const validation = validateUnitRoutingDecision(decision);
@@ -248,6 +254,7 @@ function createUnitRoutingDecision({ unit, lifecycleDecision, routingRegistry, r
   PROVENANCE_BY_C07_DECISION.set(value, {
     unit,
     lifecycleDecision,
+    contextClarification,
     understandingTurnInput: understandingInputForValidatedLifecycleDecision(lifecycleDecision)
   });
   return { ok: true, code: null, errors: [], value };
@@ -263,6 +270,10 @@ function createPropertySuppressedNoReplyDecision({ unit, lifecycleDecision, rout
   C07_AUTHORITY_MARKER.add(value);
   PROVENANCE_BY_C07_DECISION.set(value, { unit, lifecycleDecision, understandingTurnInput });
   return { ok: true, code: null, errors: [], value };
+}
+
+function contextClarificationForRoutingDecision(value) {
+  return isTrustedUnitRoutingDecision(value) ? PROVENANCE_BY_C07_DECISION.get(value)?.contextClarification || null : null;
 }
 
 function isTrustedUnitRoutingDecision(value) {
@@ -292,5 +303,6 @@ module.exports = {
   createUnitRoutingDecision,
   createPropertySuppressedNoReplyDecision,
   isTrustedUnitRoutingDecision,
+  contextClarificationForRoutingDecision,
   isTrustedUnitRoutingDecisionFor
 };

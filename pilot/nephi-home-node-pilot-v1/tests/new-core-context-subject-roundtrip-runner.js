@@ -32,7 +32,13 @@ async function turn(f, turnId, state, specs) {
         evidenceRefs: [{ eventId: turnId, messageRef: turnId, startOffset: text.indexOf(s.text), endOffset: text.indexOf(s.text) + s.text.length, quote: s.text }],
         stayDependent: s.capability === "availability", temporalCandidate: null, contextLinkCandidateId: `link-${i}`,
         slotCandidates: [], quantityCandidate: null, safetyCandidate: null, confidenceBand: "high" }));
-      const payload = { understandingOutput: { schemaVersion: 1, turnId, units }, contextLinkCandidates: units.map(u => ({
+      const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents, specs.map((s, i) => ({
+        obligationId: `requirement-${i}`, unitId: `candidate-${i}`, purpose: s.capability === null ? "conversational_statement" : "lodging_question", capability: s.capability,
+        sourceEvidenceRefs: [{eventId: turnId, messageRef: turnId, startOffset: text.indexOf(s.text), endOffset: text.indexOf(s.text) + s.text.length, quote: s.text}],
+        requiredFields: s.kind === null ? [] : ["subject"], relationKind: s.capability === null ? "NONE" : "NEW_REQUEST",
+        referencedHistoryEventRefs: [], referencedCurrentUnitId: null
+      })));
+      const payload = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId, units }, contextLinkCandidates: units.map(u => ({
         contextLinkCandidateId: u.contextLinkCandidateId, unitId: u.unitId, relationKind: u.capability === null ? "NONE" : "NEW_REQUEST",
         currentSourceEvidenceRefs: u.evidenceRefs, referencedHistoryEventRefs: [] })) };
       return { ok: true, status: 200, headers: { get: () => "fixture-request" }, text: async () => JSON.stringify({ model: "gpt-5.6-luna",

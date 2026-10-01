@@ -22,18 +22,29 @@ function finish(tasks,ctx=context(),overrides={}){
  assert.equal(typeof app.finalizeTurnResponse,'function','TERMINAL_FINALIZER_MISSING');
  return app.finalizeTurnResponse({scope,turnId:'turn',property,terminalContext:ctx,requestEvidence:tasks.map(t=>evidence(t.taskId)),executionOutcomes:tasks.map(t=>({taskId:t.taskId,type:t.type,outcome:t.status==='needs_human'?'unknown':t.status==='needs_clarification'?'not_ready':'answered',reason:t.status==='needs_human'?'human_help':'',facts:t.facts,missingFields:t.missingInputs||[]})),taskResults:tasks,canonicalItems:[],publicAvailabilityUrl:'',...overrides});
 }
+// Historical outputs remain byte-for-byte in the recorded JSON. This replay adds
+// authored G1 fixture obligations only; it is not a new real-provider recording.
+function recordedFixtureOutput(index){
+ const event=saved.c01.sourceEvents[0];
+ const ref={eventId:event.eventId,messageRef:event.messageRef,startOffset:0,endOffset:event.messageText.length,quote:event.messageText};
+ return {...saved.outputs[index],sourceObligations:require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(saved.c01.sourceEvents,[{
+  obligationId:'recorded-request',unitId:'unit-0',purpose:index===0?'unknown':'operator_request',capability:index===0?'unsupported':'booking_operator_request',sourceEvidenceRefs:[ref],
+  requiredFields:['subject','temporalCandidate','slot:guest_count','slot:product',...(index===0?['quantityCandidate']:[])],
+  relationKind:'NEW_REQUEST',referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+ }])};
+}
 async function recorded(){
  let calls=0;const source=saved.c01.sourceEvents;const cscope={propertyId:saved.property.propertyId,channel:'offline-recorded',userId:'offline-recorded'};
  const now=source[0].timestamp;const state=createConversationStateV3({...cscope,tasks:[],createdAt:now,updatedAt:now,expiresAt:'2026-09-11T00:00:00.000Z'});
- const result=await app.executeNewCoreTurn({scope:cscope,state,property:saved.property,now,input:{turnId:saved.c01.turnId,traceId:'recorded-terminal',message:source.map(x=>x.messageText).join(''),sourceEvents:source,recentConversation:[]},providerConfig:{apiKey:'fixture-only'},publicBaseUrl:'https://example.invalid',resolver:{availability:()=>{throw Error('UNTRUSTED_REQUEST_EXECUTED')},availableDates:()=>{throw Error('UNTRUSTED_REQUEST_EXECUTED')},priceOverrides:()=>[],dateClassifications:()=>[],customReplies:()=>[]},understandingProvider:(input,options)=>provider.callOpenAIUnderstandingV1(input,{...options,fetchImpl:async()=>{assert.ok(calls<2,'THIRD_CALL');const output=saved.outputs[calls++];return {ok:true,status:200,headers:{get:()=>null},text:async()=>JSON.stringify({model:'gpt-5.6-luna',status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(output)}]}]})};}})});
+ const result=await app.executeNewCoreTurn({scope:cscope,state,property:saved.property,now,input:{turnId:saved.c01.turnId,traceId:'recorded-terminal',message:source.map(x=>x.messageText).join(''),sourceEvents:source,recentConversation:[]},providerConfig:{apiKey:'fixture-only'},publicBaseUrl:'https://example.invalid',resolver:{availability:()=>{throw Error('UNTRUSTED_REQUEST_EXECUTED')},availableDates:()=>{throw Error('UNTRUSTED_REQUEST_EXECUTED')},priceOverrides:()=>[],dateClassifications:()=>[],customReplies:()=>[]},understandingProvider:(input,options)=>provider.callOpenAIUnderstandingV1(input,{...options,fetchImpl:async()=>{assert.ok(calls<2,'THIRD_CALL');const output=recordedFixtureOutput(calls++);return {ok:true,status:200,headers:{get:()=>null},text:async()=>JSON.stringify({model:'gpt-5.6-luna',status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(output)}]}]})};}})});
  return {result,calls};
 }
 test('R1 recorded rejected correction stays untrusted but receives a scoped processing status',async()=>{
  const {result:r,calls}=await recorded();assert.equal(calls,2);assert.equal(r.artifacts.canonicalItems.length,0);assert.equal(r.artifacts.executionOutcomes.length,0);
  assert.equal(r.artifacts.understanding.failedUnits[0].failureCode,'UNIT_MEANING_UNSUPPORTED');
- assert.equal(r.finalResponse.shouldReply,false);assert.equal(r.finalResponse.replyText,'');
+ assert.equal(r.finalResponse.shouldReply,true);assert.equal(r.finalResponse.replyText,'請稍後，將盡快回覆您。');
  assert.equal(r.artifacts.requestEvidence[0].requestPresence,'UNDETERMINED');
- assert.equal(r.artifacts.terminalFailures[0].kind,'CORRECTION_REJECTED');assert.equal(r.finalDecision.reviewRequired,false);
+ assert.equal(r.artifacts.terminalFailures[0].kind,'CORRECTION_REJECTED');assert.equal(r.finalDecision.reviewRequired,true);
  assert.ok(!r.state.tasks.length,'NOTICE_MUST_NOT_CREATE_BUSINESS_TASK');
 });
 test('R2 validated statements are ABSENT, no notification',async()=>{const {result:r}=await run(['NO_REPLY'],{withSlot:true});assert.equal(r.finalResponse.shouldReply,false);assert.equal(r.artifacts.requestEvidence[0].requestPresence,'ABSENT')});

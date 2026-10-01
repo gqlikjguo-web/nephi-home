@@ -60,8 +60,8 @@ test("two C02 failures retain both original outputs and exact existing violation
   assert.deepEqual(b.correctionInput, correctionBody(r));
   assert.equal(b.adoption.candidateAdmitted, false);
   assert.equal(b.adoption.rejectionStage, "admission");
-  assert.equal(b.adoption.reportedFailure, "CORRECTION_SIBLING_NOT_PRESERVED");
-  assert.equal(b.adoption.checks.unitIdsRetained, false);
+  assert.equal(b.adoption.reportedFailure, "UNDERSTANDING_SCHEMA_INVALID");
+  assert.equal(b.adoption.checks.unitIdsRetained, true);
 });
 
 test("a valid first attempt remains one call with no invented correction", async () => {
@@ -141,6 +141,10 @@ async function manualRoundTrip(correctSecond) {
           const reference = { eventId: event.eventId, messageRef: event.messageRef, startOffset: 0, endOffset: message.length, quote: message };
           output.understandingOutput.units[0].evidenceRefs = [reference];
           output.contextLinkCandidates[0].currentSourceEvidenceRefs = [reference];
+          output.sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents,[{
+            obligationId:"declared-ack",unitId:"unit-a",purpose:"acknowledgement",capability:null,sourceEvidenceRefs:[reference],
+            requiredFields:[],relationKind:"NONE",referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+          }]);
           return f.successfulResponse(output);
         } }) });
       return { result: { ...result, traceId: "diagnostic-fixture-trace" }, transport: { kind: "browser" } };

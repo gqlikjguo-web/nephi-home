@@ -17,6 +17,11 @@ const { callOpenAIUnderstandingV1, openAiUnderstandingV1ProviderSchema,
   OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC: D } = require("../lib/providers/openai-understanding-v1");
 const clone = value => JSON.parse(JSON.stringify(value));
 
+const declaredAck = () => {
+  const output=f.providerOutput();
+  output.sourceObligations.coverage.push({source:{eventId:"event-b",messageRef:"message-b",startOffset:0,endOffset:2,quote:"謝謝"},disposition:"background",obligationIds:[]});
+  return output;
+};
 function input() {
   const value = f.c01();
   return f.c01({ sourceEvents: [value.sourceEvents[0], {
@@ -26,6 +31,7 @@ function input() {
 
 function wrongLink() {
   const output = f.providerOutput();
+  output.sourceObligations.coverage.push({source:{eventId:"event-b",messageRef:"message-b",startOffset:0,endOffset:2,quote:"謝謝"},disposition:"background",obligationIds:[]});
   Object.assign(output.contextLinkCandidates[0].currentSourceEvidenceRefs[0], {
     eventId: "fabricated-event", messageRef: "fabricated-message"
   });
@@ -72,7 +78,7 @@ test("every current-source schema accepts only exact C01 source pairs", () => {
 });
 
 test("C04 locates the rejected link reference without blaming valid unit references", async () => {
-  const r = await run(wrongLink(), f.providerOutput());
+  const r = await run(wrongLink(), declaredAck());
   assert.equal(r.meta.attempts[0].validationResult.failures[0].code, "EVIDENCE_SOURCE_UNKNOWN");
   const failure = correctionBody(r).failures[0];
   assert.equal(failure.field, "contextLinkCandidates.0.currentSourceEvidenceRefs.0");
@@ -97,13 +103,16 @@ test("recorded wrong-direction correction remains rejected with no third call", 
 
 for (const field of ["purpose", "legalReference", "linkReference"]) {
   test(`C04 repair cannot change an unrelated ${field} when a unit reference failed`, async () => {
-    const valid = f.providerOutput();
+    const valid = declaredAck();
     valid.understandingOutput.units[0].evidenceRefs.push({
       ...valid.understandingOutput.units[0].evidenceRefs[0], eventId: "event-b", messageRef: "message-b"
     });
     const first = clone(valid), second = clone(valid);
     first.understandingOutput.units[0].evidenceRefs[0].eventId = "fabricated-event";
-    if (field === "purpose") second.understandingOutput.units[0].purpose = "conversational_statement";
+    if (field === "purpose") {
+      second.understandingOutput.units[0].purpose = "conversational_statement";
+      second.sourceObligations.requirements[0].purpose = "conversational_statement";
+    }
     if (field === "legalReference") second.understandingOutput.units[0].evidenceRefs[1]
       = clone(second.understandingOutput.units[0].evidenceRefs[0]);
     if (field === "linkReference") Object.assign(second.contextLinkCandidates[0].currentSourceEvidenceRefs[0], {
@@ -119,7 +128,7 @@ for (const field of ["purpose", "legalReference", "linkReference"]) {
 
 for (const change of ["unknownSource", "crossPair", "badQuote"]) {
   test(`correction fully revalidates ${change}`, async () => {
-    const second = f.providerOutput();
+    const second = declaredAck();
     const ref = second.contextLinkCandidates[0].currentSourceEvidenceRefs[0];
     if (change === "unknownSource") ref.eventId = "not-in-c01";
     if (change === "crossPair") ref.messageRef = "message-b";
@@ -132,7 +141,7 @@ for (const change of ["unknownSource", "crossPair", "badQuote"]) {
 }
 
 test("valid first understanding is accepted once with no resampling", async () => {
-  const r = await run(f.providerOutput(), wrongLink());
+  const r = await run(declaredAck(), wrongLink());
   assert.equal(r.bodies.length, 1);
   assert.equal(r.meta.finalAcceptedAttempt, 1);
 });
@@ -152,6 +161,11 @@ test("legal correction preserves two-night typed meaning and all legitimate refs
       checkOutCandidate: null, nightsCandidate: 2 }
   });
   Object.assign(valid.contextLinkCandidates[0], { relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: [ref(0, messageText.length)] });
+  valid.sourceObligations=require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(c01.sourceEvents,[{
+    obligationId:"stay",unitId:"unit-a",purpose:"lodging_question",capability:"availability",sourceEvidenceRefs:[ref(0,8),ref(8,11),ref(11,14)],
+    requiredFields:["subject","temporalCandidate","temporalCandidate.checkInCandidate","temporalCandidate.nightsCandidate"],
+    relationKind:"NEW_REQUEST",referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+  }]);
   const bad = clone(valid);
   Object.assign(bad.contextLinkCandidates[0].currentSourceEvidenceRefs[0], {
     eventId: "fabricated-event", messageRef: "fabricated-message"

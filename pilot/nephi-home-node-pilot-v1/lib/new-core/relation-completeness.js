@@ -1,18 +1,22 @@
 "use strict";
 
 const { validateAndNormalizeSourceEvidence } = require("./source-evidence-validator");
+const { resolveTemporalExpression } = require("../conversation-engine-v2/temporal-resolver");
 
 const historyKey = ref => JSON.stringify([ref.eventId, ref.messageRef]);
 
 // C01 supplies the verified conversation scope and snapshot. This is an
 // evidence obligation, not a choice of lifecycle target or a language parser.
-function referenceableStayHistory(input, now = Math.max(...input.sourceEvents.map(event => Date.parse(event.timestamp)))) {
-  const stays = new Set(input.referenceableCycles.filter(cycle =>
+function referenceableStays(input, now = Math.max(...input.sourceEvents.map(event => Date.parse(event.timestamp)))) {
+  return input.referenceableCycles.filter(cycle =>
     ["active", "pending", "answered"].includes(cycle.status)
       && Date.parse(cycle.expiresAt) > now
       && cycle.confirmedValues.checkIn && cycle.confirmedValues.checkOut
       && ["property", "room", "bundle", "matched_room_set"].includes(cycle.subject.kind)
-  ).map(cycle => cycle.requestCycleId));
+  );
+}
+function referenceableStayHistory(input, now) {
+  const stays = new Set(referenceableStays(input, now).map(cycle => cycle.requestCycleId));
   return input.recentConversation.filter(event => event.referenceableCycleIds.some(id => stays.has(id)))
     .map(({ eventId, messageRef }) => ({ eventId, messageRef }));
 }
@@ -45,6 +49,37 @@ function independenceFailure(proof, unit, link, input, history) {
   return null;
 }
 
+function sourceEventsForTemporalEvidence(evidence, temporal, input) {
+  return evidence.value.filter(ref => ref.quote.includes(temporal.rawText))
+    .map(ref => input.sourceEvents.find(source => source.eventId === ref.eventId && source.messageRef === ref.messageRef));
+}
+
+function hasIndependentStayDates(unit, input) {
+  const temporal = unit.temporalCandidate;
+  if (temporal === null) return false;
+  const evidence = validateAndNormalizeSourceEvidence(unit.evidenceRefs, input.sourceEvents);
+  // Do not replace C04's source failure with a relation failure. Invalid refs
+  // still fail full admission; they can never authorize Context inheritance.
+  if (!evidence.ok) return true;
+  const sources = sourceEventsForTemporalEvidence(evidence, temporal, input);
+  return sources.length > 0 && sources.every(source => {
+    // Ask the sole Temporal authority about this source alone. No defaults,
+    // history selection, Context reuse or locally inferred date conditions.
+    const resolved = resolveTemporalExpression({
+      ...temporal,
+      kind: temporal.kind === "relative_date" ? "relative" : temporal.kind,
+      anchor: "message_time"
+    }, {
+      eventTimestamp: source.timestamp, timezone: input.propertyTimezone,
+      checkInCandidate: temporal.checkInCandidate, checkOutCandidate: temporal.checkOutCandidate,
+      nightsCandidate: temporal.nightsCandidate
+    });
+    // A grounded past date is still independent; its execution rejection must
+    // remain at the existing Temporal boundary, not become a history request.
+    return Boolean(resolved.checkIn || resolved.searchRange || resolved.repairReasonCode === "past_date");
+  });
+}
+
 function relationCompletenessFailure(value, input, now) {
   const history = referenceableStayHistory(input, now);
   const unitViolations = [];
@@ -53,7 +88,7 @@ function relationCompletenessFailure(value, input, now) {
       && item.contextLinkCandidateId === link.contextLinkCandidateId);
     if (!unit) continue;
     const required = link.relationKind === "NEW_REQUEST" && unit.purpose === "lodging_question"
-      && unit.stayDependent === true && unit.temporalCandidate === null && history.length > 0;
+      && unit.stayDependent === true && history.length > 0 && !hasIndependentStayDates(unit, input);
     if (!required && link.independentRequestEvidence == null) continue;
     const failure = independenceFailure(link.independentRequestEvidence, unit, link, input, history);
     if (failure) unitViolations.push({ unitId: unit.unitId, violation: {
@@ -67,4 +102,4 @@ function relationCompletenessFailure(value, input, now) {
     : null;
 }
 
-module.exports = { referenceableStayHistory, relationCompletenessFailure };
+module.exports = { referenceableStays, referenceableStayHistory, relationCompletenessFailure };

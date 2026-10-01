@@ -36,11 +36,16 @@ for (const status of ["missing", "closed", "available"]) for (const c of cases) 
     assert.equal(r.finalResponse.shouldReply, true);
     const text = r.finalResponse.replyText;
     assert.ok(text.includes(c.date), "the final guest-visible text must retain the resolved check-in date");
-    for (const forbidden of ["missing", "unknown", "房況資料尚未完整", "目前無法確認", "請稍後再試", "直接與我們聯繫"]) {
+    const forbiddenText = status === "missing"
+      ? ["missing", "unknown", "沒有可提供的房型", "目前可預訂", "目前已滿房", "請稍後再試", "直接與我們聯繫"]
+      : ["missing", "unknown", "房況資料尚未完整", "目前無法確認", "請稍後再試", "直接與我們聯繫"];
+    for (const forbidden of forbiddenText) {
       assert.ok(!text.includes(forbidden), `guest text contains forbidden response: ${forbidden}`);
     }
     if (status !== "available") {
-      assert.equal(text, c.closed + "\n查房連結：https://example.invalid/inventorya");
+      const expected = status === "missing"
+        ? c.date + " 入住的房況資料尚未完整，目前無法確認是否可預訂。" : c.closed;
+      assert.equal(text, expected + "\n查房連結：https://example.invalid/inventorya");
       assert.equal(r.artifacts.executionOutcomes[0].outcome, status === "missing" ? "unknown" : "no_availability");
       if (status === "missing") assert.equal(r.artifacts.executionOutcomes[0].reason, "missing_inventory_records");
     } else {

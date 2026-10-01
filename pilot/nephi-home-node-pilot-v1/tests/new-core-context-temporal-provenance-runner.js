@@ -10,7 +10,12 @@ const spec=text=>({capability:"availability",kind:"property",identity:null,text,
 const evidence=(event,start,end)=>({eventId:event.eventId,messageRef:event.messageRef,startOffset:start,endOffset:end,
   quote:event.messageText.slice(start,end)});
 function withRefs(makeRefs){return(output,input)=>{
- const unit=output.understandingOutput.units[0];unit.evidenceRefs=makeRefs(input.sourceEvents);
+ const sourceEvidenceRefs=makeRefs(input.sourceEvents);
+ output.sourceObligations=require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents,[{
+  obligationId:"obligation-0",unitId:"unit-0",purpose:"lodging_question",capability:"availability",sourceEvidenceRefs,
+  requiredFields:["subject","temporalCandidate","slot:guest_count"],relationKind:"NEW_REQUEST",referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+ }]);
+ const unit=output.understandingOutput.units[0];unit.evidenceRefs=sourceEvidenceRefs;
  output.contextLinkCandidates[0].currentSourceEvidenceRefs=unit.evidenceRefs;
  return output;
 };}

@@ -65,7 +65,11 @@ async function main() {
   assert.ok(allowedKinds.length > 0 && rejected, "fixture requires admitted and rejected catalog controls");
   const invalid = withIdentity(rejected.identity);
   assert.equal(rejected.admission.code, "UNIT_MEANING_UNSUPPORTED");
-  const output = { understandingOutput: { schemaVersion: 1, turnId: "turn", units: [invalid] }, contextLinkCandidates: [{
+  const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents, [{
+    obligationId: "operator-request", unitId: "unit", purpose: "operator_request", capability: "booking_operator_request",
+    sourceEvidenceRefs: [evidence], requiredFields: ["subject", "slot:other_supported"], relationKind: "NEW_REQUEST", referencedHistoryEventRefs: [], referencedCurrentUnitId: null
+  }]);
+  const output = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId: "turn", units: [invalid] }, contextLinkCandidates: [{
     contextLinkCandidateId: "link", unitId: "unit", relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: [evidence], referencedHistoryEventRefs: []
   }] };
   assert.equal(schemaAccepts(openAiUnderstandingV1ProviderSchema(input), output), false, "provider schema must reject the same inadmissible identity as C03");

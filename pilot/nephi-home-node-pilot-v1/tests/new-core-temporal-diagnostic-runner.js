@@ -51,6 +51,8 @@ test("existing message_logs persistence retains temporal evidence without changi
     Object.assign(unit, { capability: "availability", subject: { kind: "property", catalogIdentity: null }, stayDependent: true,
       temporalCandidate: { kind: "relative_date", rawText: "下週二", checkInCandidate: null, checkOutCandidate: null, nightsCandidate: null,
         relativeSemantics: { dayOffset: 5, dayPeriod: "unspecified" } } });
+    Object.assign(output.sourceObligations.requirements[0], { capability: "availability",
+      requiredFields: ["subject", "temporalCandidate", "temporalCandidate.relativeSemantics"] });
     payload.output[0].content[0].text = JSON.stringify(output);
     return payload;
   } });

@@ -31,7 +31,10 @@ for (const [text, nights, end] of [
 ]) test(`a model correction carries the owned duration: ${text}`, async () => {
   let responseNumber = 0;
   const value = await turn([stay(text)], { transformOutput: output => {
-    if (++responseNumber === 2) output.understandingOutput.units[0].temporalCandidate.nightsCandidate = nights;
+    if (++responseNumber === 2) {
+      output.understandingOutput.units[0].temporalCandidate.nightsCandidate = nights;
+      output.sourceObligations.requirements[0].requiredFields.push("temporalCandidate.nightsCandidate");
+    }
     return output;
   } });
   assert.equal(value.calls, 2);
@@ -111,6 +114,7 @@ test("correction cannot replace the already validated guest count", async () => 
   const value = await turn([stay("10/7兩個人住兩晚")], { transformOutput: output => {
     if (++responseNumber === 2) {
       output.understandingOutput.units[0].temporalCandidate.nightsCandidate = 2;
+      output.sourceObligations.requirements[0].requiredFields.push("temporalCandidate.nightsCandidate");
       output.understandingOutput.units[0].slotCandidates[0].value = 8;
     }
     return output;

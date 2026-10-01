@@ -67,6 +67,9 @@ function semanticObligationsPreserved(previous, next, obligations, input) {
     || !validateSemanticPositions(next.slotCandidates).ok) return false;
   const owner = semanticOwner(input, next);
   const used = new Set();
+  const repairPositions = new Set(obligations.filter(state => state.obligationKind === "positionRepair"
+    || state.obligationKind === "slotItem" && state.preservation === "MUTABLE")
+    .map(state => state.semanticPosition));
   // Match trusted items first; a revalidated member cannot consume their match.
   const ordered = [...obligations].sort((a, b) => Number(b.preservation === "PRESERVE") - Number(a.preservation === "PRESERVE"));
   for (const state of ordered) {
@@ -90,12 +93,14 @@ function semanticObligationsPreserved(previous, next, obligations, input) {
     if (state.preservation === "REVALIDATE") continue;
     if (state.obligationKind === "sourceEvidence") {
       if (!evidenceRetained(state.trustedValue, after)) return false;
-    } else if (!equal(state.trustedValue, typedValue(after))
+    } else if (!(state.trustedValue == null && after == null) && !equal(state.trustedValue, typedValue(after))
       || state.evidenceRefs && !evidenceRetained(state.evidenceRefs, after?.evidenceRefs)) return false;
     if (state.slotConstraint && !next.slotCandidates.filter(item => item.slot === state.slotConstraint.slot)
       .every(item => equal(typedValue(item), state.slotConstraint))) return false;
   }
-  return true;
+  // New opaque IDs do not grant new semantic positions. A repair may only
+  // replace members of positions explicitly rejected by the same admission.
+  return next.slotCandidates.every(item => used.has(item) || repairPositions.has(item.slot));
 }
 
 module.exports = { SLOT_POSITIONS, QUANTITY_POSITION, validateSemanticPositions,

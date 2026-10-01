@@ -515,7 +515,11 @@ const continued = validatedPipeline({
 assert.equal(continued.lifecycleResult.ok, true);
 assert.equal(continued.lifecycleResult.value.action, "CONTINUE");
 assert.equal(applyDecision(state(), continued.lifecycleResult).next.tasks[0].guestCount, 4);
-const none = validatedPipeline({ action: "NONE", target: null, slots: [] });
+// NONE's no-op protection uses a genuine non-actionable unit. A context_update
+// with NONE formerly selected the only pending cycle implicitly, which the
+// approved explicit-target Contract retires.
+const none = validatedPipeline({ action: "NONE", target: null, slots: [], messageText: "謝謝",
+  input: turnInput({ messageText: "謝謝" }), unitOverrides: { purpose: "acknowledgement" } });
 assert.equal(none.lifecycleResult.ok, true);
 assert.equal(adaptLifecycleDecisionsToStateV3({
   decisions: [none.lifecycleResult.value],

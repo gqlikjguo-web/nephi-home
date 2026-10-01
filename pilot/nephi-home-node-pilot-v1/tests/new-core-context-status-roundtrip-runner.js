@@ -21,7 +21,14 @@ async function turn(id, state, specs, history = []) {
           stayDependent: s.capability === "price", temporalCandidate: s.date ? { rawText: s.date, kind: "absolute_date", checkInCandidate: s.date, checkOutCandidate: null, nightsCandidate: null } : null,
           slotCandidates: [], safetyCandidate: null, confidenceBand: "high" };
       });
-      const payload = { understandingOutput: { schemaVersion: 1, turnId: id, units }, contextLinkCandidates: units.map((u, index) => ({ unitId: u.unitId, contextLinkCandidateId: u.contextLinkCandidateId,
+      const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents, specs.map((s, index) => ({
+        obligationId: `request-${index}`, unitId: `${id}-${index}`,
+        purpose: s.capability === null ? "conversational_statement" : "lodging_question", capability: s.capability,
+        sourceEvidenceRefs: [{ eventId: id, messageRef: id, startOffset: message.indexOf(s.text), endOffset: message.indexOf(s.text) + s.text.length, quote: s.text }],
+        requiredFields: [...(s.capability === null ? [] : ["subject"]), ...(s.date ? ["temporalCandidate", "temporalCandidate.checkInCandidate"] : [])],
+        relationKind: s.relation || (s.capability === null ? "NONE" : "NEW_REQUEST"), referencedHistoryEventRefs: s.refs || [], referencedCurrentUnitId: null
+      })));
+      const payload = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId: id, units }, contextLinkCandidates: units.map((u, index) => ({ unitId: u.unitId, contextLinkCandidateId: u.contextLinkCandidateId,
         relationKind: specs[index].relation || (u.capability === null ? "NONE" : "NEW_REQUEST"), currentSourceEvidenceRefs: u.evidenceRefs, referencedHistoryEventRefs: specs[index].refs || [] })) };
       return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(payload) }] }] }) };
     } }) });

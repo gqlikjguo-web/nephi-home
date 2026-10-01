@@ -95,7 +95,7 @@ test("terminal schema failure persists both existing attempts without changing t
     assert.ok(JSON.stringify(b.correctionInput).includes("UNDERSTANDING_SCHEMA_INVALID"));
     assert.equal(b.adoption.candidateAdmitted, false);
     assert.equal(b.adoption.rejectionStage, "admission");
-    assert.equal(b.adoption.reportedFailure, "CORRECTION_SIBLING_NOT_PRESERVED");
+    assert.equal(b.adoption.reportedFailure, "UNDERSTANDING_SCHEMA_INVALID");
     assert.equal(x.record("diagnostic-event", "audit_b"), null);
     const safe = JSON.stringify(record.safeTrace);
     for (const name of ["structuredOutput", "correctionInput", "invalid-turn-"])
@@ -110,8 +110,18 @@ for (const mode of ["success", "corrected"]) test(`${mode} messages do not persi
     assert.equal(x.calls[0].mockCalls, mode === "success" ? 1 : 2);
     assert.equal(record.processingStatus, "reply_succeeded");
     assert.equal(x.sent.length, 1);
-    assert.equal(Object.hasOwn(record, "understandingFailureDiagnostic"), false);
+    assert.equal(Object.hasOwn(record, "understandingFailureDiagnostic"), mode === "corrected");
     assert.equal(JSON.stringify(record).includes("structuredOutput"), false);
+    if (mode === "corrected") {
+      const [first, second] = record.understandingFailureDiagnostic.attempts;
+      assert.equal(first.validationResult.ok, false);
+      assert.equal(first.schemaError.fieldPath, "understandingOutput.turnId");
+      assert.equal(second.accepted, true);
+      assert.equal(second.adoption.rejectionStage, null);
+      assert.ok(second.correctionInput.failures.length > 0);
+      assert.equal(JSON.stringify(record).includes("previousUnderstandingOutput"), false);
+      await assertPrivateHttpAndBulkRead(x, record);
+    }
   });
 });
 

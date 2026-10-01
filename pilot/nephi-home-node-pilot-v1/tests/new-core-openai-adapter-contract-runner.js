@@ -106,6 +106,10 @@ function link(overrides = {}) {
 
 function providerOutput(overrides = {}) {
   return {
+    sourceObligations: require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(c01().sourceEvents,[{
+      obligationId:"declared-ack",unitId:"unit-a",purpose:"acknowledgement",capability:null,sourceEvidenceRefs:[evidence()],
+      requiredFields:[],relationKind:"NONE",referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+    }]),
     understandingOutput: {
       schemaVersion: 1,
       turnId: "turn-openai-understanding-v1",
@@ -232,8 +236,18 @@ function contextRelationVarianceInput(overrides = {}) {
   });
 }
 
+function declaredLodging(message, { unitId="unit-a", capability="availability", fields=["subject","temporalCandidate"], relationKind="NEW_REQUEST", history=[] } = {}) {
+  const input=c01({sourceEvents:[{...c01().sourceEvents[0],messageText:message}]});
+  return require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents,[{
+    obligationId:"lodging",unitId,purpose:"lodging_question",capability,
+    sourceEvidenceRefs:[evidence({endOffset:message.length,quote:message})],requiredFields:fields,
+    relationKind,referencedHistoryEventRefs:history,referencedCurrentUnitId:null
+  }]);
+}
+
 function incompatibleContextRelationOutput() {
   return providerOutput({
+    sourceObligations:declaredLodging("9/16有房嗎",{relationKind:"MODIFICATION",history:[{eventId:"history-bundle",messageRef:"history-bundle-message"}]}),
     understandingOutput: {
       ...providerOutput().understandingOutput,
       units: [availabilityUnit({
@@ -377,7 +391,13 @@ function siblingOutput({ invalidBoundary, invalidFirst }) {
   const availability = availabilityUnit(availabilityOverrides);
   const acknowledgementLink = link();
   const availabilityContextLink = availabilityLink(linkOverrides);
-  return providerOutput({
+  const sourceObligations=require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(siblingInput().sourceEvents,[
+    {obligationId:"ack",unitId:"unit-a",purpose:"acknowledgement",capability:null,sourceEvidenceRefs:[evidence()],requiredFields:[],relationKind:"NONE",referencedHistoryEventRefs:[],referencedCurrentUnitId:null},
+    {obligationId:"availability",unitId:"unit-availability",purpose:"lodging_question",capability:"availability",
+      sourceEvidenceRefs:[evidence({startOffset:3,endOffset:6,quote:"有房嗎"})],requiredFields:["subject"],
+      relationKind:invalidBoundary==="C05"?"SUPPLEMENT":"NONE",referencedHistoryEventRefs:invalidBoundary==="C05"?[{eventId:"missing",messageRef:"missing"}]:[],referencedCurrentUnitId:null}
+  ]);
+  return providerOutput({sourceObligations,
     understandingOutput: {
       ...providerOutput().understandingOutput,
       units: invalidFirst ? [availability, acknowledgement] : [acknowledgement, availability]
@@ -453,7 +473,7 @@ async function main() {
   assert.match(body.input[0].content[0].text, /composite lodging meaning/u);
   assert.match(body.input[0].content[0].text, /cycle's missingFields/u);
   strictObjectAudit(body.text.format.schema);
-  assert.deepEqual(body.text.format.schema.required.sort(), ["contextLinkCandidates", "understandingOutput"]);
+  assert.deepEqual(body.text.format.schema.required.sort(), ["contextLinkCandidates", "sourceObligations", "understandingOutput"]);
   assert.deepEqual(
     body.text.format.schema.properties.understandingOutput.required.sort(),
     ["schemaVersion", "turnId", "units"]
@@ -514,6 +534,7 @@ async function main() {
   assert.equal(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].resolvedModel, "gpt-5.6-luna");
   assert.deepEqual(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].understandingEvidence.providerVisibleInput.sourceEvents, input.sourceEvents);
   assert.deepEqual(result[OPENAI_UNDERSTANDING_V1_PROVIDER_DIAGNOSTIC].understandingEvidence.structuredOutput, {
+    sourceObligations: providerOutput().sourceObligations,
     understandingOutput: result.understandingOutput,
     contextLinkCandidates: result.contextLinkCandidates
   });
@@ -625,6 +646,7 @@ async function main() {
   const missingFieldNotFilledError = await captureError(() => callOpenAIUnderstandingV1(
     missingFieldNotFilledInput,
     options(async () => successfulResponse(providerOutput({
+      sourceObligations:declaredLodging("有房嗎",{fields:["subject"],relationKind:"SUPPLEMENT",history:[{eventId:"history-a",messageRef:"history-message-a"}]}),
       understandingOutput: {
         ...providerOutput().understandingOutput,
         units: [availabilityUnit({
@@ -661,6 +683,7 @@ async function main() {
       }
     }),
     options(async () => successfulResponse(providerOutput({
+      sourceObligations:declaredLodging("9/16有房嗎",{relationKind:"SUPPLEMENT",history:[{eventId:"history-a",messageRef:"history-message-a"}]}),
       understandingOutput: {
         ...providerOutput().understandingOutput,
         units: [availabilityUnit({
@@ -711,6 +734,7 @@ async function main() {
   const compatibleSupplementResult = await callOpenAIUnderstandingV1(
     compatibleSupplementInput,
     options(async () => successfulResponse(providerOutput({
+      sourceObligations:declaredLodging("4個人",{capability:"capacity",fields:["subject","slot:guest_count"],relationKind:"SUPPLEMENT",history:[{eventId:"history-a",messageRef:"history-message-a"}]}),
       understandingOutput: {
         ...providerOutput().understandingOutput,
         units: [unit({
@@ -736,6 +760,7 @@ async function main() {
   const standaloneResult = await callOpenAIUnderstandingV1(
     contextRelationVarianceInput(),
     options(async () => successfulResponse(providerOutput({
+      sourceObligations:declaredLodging("9/16有房嗎"),
       understandingOutput: incompatibleContextRelationOutput().understandingOutput,
       contextLinkCandidates: [link({
         relationKind: "NEW_REQUEST",
@@ -750,6 +775,7 @@ async function main() {
   const unboundTargetResult = await callOpenAIUnderstandingV1(
     contextRelationVarianceInput({ recentConversation: [] }),
     options(async () => successfulResponse(providerOutput({
+      sourceObligations:declaredLodging("9/16有房嗎",{relationKind:"MODIFICATION",history:[{eventId:"history-bundle",messageRef:"history-bundle-message"}]}),
       understandingOutput: {
         ...providerOutput().understandingOutput,
         units: [availabilityUnit({
@@ -860,6 +886,7 @@ async function main() {
   const semanticResult = await callOpenAIUnderstandingV1(input, options(async () => {
     semanticCalls += 1;
     return successfulResponse(providerOutput({
+      sourceObligations: declaredLodging("謝謝", { fields: ["subject"], relationKind: "NONE" }),
       understandingOutput: {
         ...providerOutput().understandingOutput,
         units: [unit({
@@ -917,6 +944,7 @@ async function main() {
   // link ID. That owner cannot appear in both validated and failed outcomes.
   const ownershipCollisionResult = await callOpenAIUnderstandingV1(siblingInput(), options(async () =>
     successfulResponse(providerOutput({
+      sourceObligations: siblingOutput({}).sourceObligations,
       understandingOutput: {
         ...providerOutput().understandingOutput,
         units: [unit(), availabilityUnit()]
@@ -997,6 +1025,11 @@ async function main() {
   const contextDiagnostics = [];
   const contextResult = await callOpenAIUnderstandingV1(input, options(async () =>
     successfulResponse(providerOutput({
+      sourceObligations: require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(c01().sourceEvents, [{
+        obligationId: "declared-context-rejection", unitId: "unit-a", purpose: "acknowledgement", capability: null,
+        sourceEvidenceRefs: [evidence()], requiredFields: [], relationKind: "SUPPLEMENT",
+        referencedHistoryEventRefs: [{ eventId: "missing", messageRef: "missing" }], referencedCurrentUnitId: null
+      }]),
       contextLinkCandidates: [link({
         relationKind: "SUPPLEMENT",
         referencedHistoryEventRefs: [{ eventId: "missing", messageRef: "missing" }]
