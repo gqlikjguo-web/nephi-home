@@ -82,7 +82,15 @@ async function run({ propertyId = "inventory-a", capabilities = ["availability"]
         temporalCandidate: s.temporal || (s.noDate || !["availability", "price"].includes(s.capability) ? null : { rawText: date, kind: "absolute_date", checkInCandidate: date, checkOutCandidate: null, nightsCandidate: null }),
         slotCandidates: [], quantityCandidate: quantity && s.capability === "availability" ? { requestedQuantity: quantity, distinctRequirement: "distinct_entities", evidenceRefs: [{ eventId: turnId, messageRef: turnId, startOffset: message.indexOf(s.text), endOffset: message.indexOf(s.text) + s.text.length, quote: s.text }] } : null,
         safetyCandidate: s.safetyCandidate || null, contextLinkCandidateId: `link-${i}`, confidenceBand: "high" }));
-      const output = { understandingOutput: { schemaVersion: 1, turnId, units }, contextLinkCandidates: units.map(u => ({
+      const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents, specs.map((s, i) => {
+        const temporal = s.temporal || (s.noDate || !["availability", "price"].includes(s.capability) ? null : { checkInCandidate: date });
+        return { obligationId: `request-${i}`, unitId: `request-${i}`, purpose: s.purpose || (s.capability === null ? "conversational_statement" : "lodging_question"), capability: s.capability,
+          sourceEvidenceRefs: [{ eventId: turnId, messageRef: turnId, startOffset: message.indexOf(s.text), endOffset: message.indexOf(s.text) + s.text.length, quote: s.text }],
+          requiredFields: [...(s.kind === null ? [] : ["subject"]), ...(temporal ? ["temporalCandidate", ...["checkInCandidate", "checkOutCandidate", "nightsCandidate", "relativeSemantics"].filter(key => temporal[key] != null).map(key => `temporalCandidate.${key}`)] : []),
+            ...(quantity && s.capability === "availability" ? ["quantityCandidate"] : [])],
+          relationKind: s.capability === null ? "NONE" : "NEW_REQUEST", referencedHistoryEventRefs: [], referencedCurrentUnitId: null };
+      }));
+      const output = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId, units }, contextLinkCandidates: units.map(u => ({
         contextLinkCandidateId: u.contextLinkCandidateId, unitId: u.unitId, relationKind: u.capability === null ? "NONE" : "NEW_REQUEST", currentSourceEvidenceRefs: u.evidenceRefs, referencedHistoryEventRefs: [] })) };
       return { ok: true, status: 200, headers: { get: () => "fixture-request" }, text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed",
         output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] }) };

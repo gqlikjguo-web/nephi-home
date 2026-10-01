@@ -118,10 +118,12 @@ function buildContextSnapshotV3(state, scope = {}) {
         status: task.status,
         confirmedInputs: {
           ...resolverQuantityFields(task),
+          ...(task.quantityEvidenceRefs ? { quantityEvidenceRefs: task.quantityEvidenceRefs.map(ref => ({ ...ref })) } : {}),
           stay: {
             checkIn: task.checkIn,
             checkOut: task.checkOut,
-            nights: null,
+            ...require("../conversation-contracts/verified-stay-nights").projectVerifiedNights(task),
+            nights: task.nights || null,
             guests: task.guestCount,
             searchRange: task.searchFrom && task.searchTo
               ? { from: task.searchFrom, to: task.searchTo }
@@ -685,7 +687,7 @@ function applyLifecycleOperations(byTaskId, lifecycleOperations, now) {
     }
     const patch = lifecycleOperation.field === "guestCount"
       ? { guestCount: lifecycleOperation.operation === "CLEAR" ? null : lifecycleOperation.value }
-      : ["lodgingProduct", "quantity"].includes(lifecycleOperation.field)
+      : ["lodgingProduct", "quantity", "nights"].includes(lifecycleOperation.field)
         ? lifecycleOperation.value
         : null;
     if (!patch) throw new TypeError("state_v3_lifecycle_operation_invalid");
@@ -715,6 +717,7 @@ function applyTaskCreations(byTaskId, taskCreations, now, revision) {
     const candidate = {
       taskType,
       ...resolverQuantityFields(creation),
+      ...require("../conversation-contracts/verified-stay-nights").projectVerifiedNights(creation),
       ...(creation.quantityEvidenceRefs ? {quantityEvidenceRefs:creation.quantityEvidenceRefs} : {}),
       productType: creation.productType,
       productId: creation.productId,
@@ -851,6 +854,7 @@ function reduceConversationStateV3({
       taskId: stateTaskId,
       taskType,
       ...product,
+      ...require("../conversation-contracts/verified-stay-nights").nightsFromTemporalField(request.temporalState?.fields?.nights),
       checkIn: stay.checkIn || null,
       checkOut: stay.checkOut || null,
       guestCount: Number.isInteger(stay.guests) ? stay.guests : null,

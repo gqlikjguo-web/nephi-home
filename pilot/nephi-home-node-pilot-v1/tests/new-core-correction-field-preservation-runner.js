@@ -96,6 +96,10 @@ function link(overrides = {}) {
 
 function providerOutput(overrides = {}) {
   return {
+    sourceObligations: require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(c01().sourceEvents,[{
+      obligationId:"declared-ack",unitId:"unit-a",purpose:"acknowledgement",capability:null,sourceEvidenceRefs:[evidence()],
+      requiredFields:[],relationKind:"NONE",referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+    }]),
     understandingOutput: {
       schemaVersion: 1,
       turnId: "turn-openai-understanding-v1",
@@ -149,7 +153,11 @@ return {calls,bodies,result,error,diagnostics,meta:(result||error)?.[D]};}
 // FAKE_INTEGRATION: existing provider admission; no real model or facts.
 const qty={requestedQuantity:2,distinctRequirement:'distinct_entities',evidenceRefs:[evidence()]};
 const guests={slotCandidateId:'guests',slot:'guest_count',operation:'SET',value:4,evidenceRefs:[evidence()]};
-function envelope(u){return providerOutput({understandingOutput:{schemaVersion:1,turnId:'turn-openai-understanding-v1',units:[u]}})}
+function envelope(u){return providerOutput({
+  sourceObligations:require('./helpers/understanding-source-obligations-fixture').fixtureSourceObligations(c01().sourceEvents,[{
+    obligationId:'capacity',unitId:'unit-a',purpose:'lodging_question',capability:'capacity',sourceEvidenceRefs:[evidence()],
+    requiredFields:['subject','quantityCandidate','slot:guest_count'],relationKind:'NONE',referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+  }]),understandingOutput:{schemaVersion:1,turnId:'turn-openai-understanding-v1',units:[u]}})}
 function rejected(){return unit({purpose:'unknown',capability:'unsupported',subject:{kind:'room',catalogIdentity:'room-a'},quantityCandidate:qty,slotCandidates:[guests]})}
 function corrected(){return {...rejected(),purpose:'lodging_question',capability:'capacity',stayDependent:true}}
 function ledger(x){const content=x.bodies[1].input.at(-1).content[0].text;return JSON.parse(content.slice(content.indexOf('\n')+1)).failures[0].fieldValidationState}

@@ -153,6 +153,10 @@ async function json(url, method = "GET", body, sentCookie = "") {
     understandingProvider: async (c01) => {
       const reference = { eventId: c01.sourceEvents[0].eventId, messageRef: c01.sourceEvents[0].messageRef, startOffset: 0, endOffset: statementMessage.length, quote: statementMessage };
       const value = {
+        sourceObligations: require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(c01.sourceEvents,[{
+          obligationId:"statement-unit-obligation",unitId:"statement-unit",purpose:"conversational_statement",capability:null,sourceEvidenceRefs:[reference],
+          requiredFields:[],relationKind:"NONE",referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+        }]),
         understandingOutput: { schemaVersion: 1, turnId: c01.turnId, units: [{
           unitId: "statement-unit", evidenceRefs: [reference], purpose: "conversational_statement", capability: null,
           subject: { kind: null, catalogIdentity: null }, stayDependent: false, temporalCandidate: null,
@@ -197,6 +201,10 @@ async function json(url, method = "GET", body, sentCookie = "") {
       const subject = c01.publicSubjectCatalog.find((item) => item.kind === "matched_room_set");
       const reference = { eventId: c01.sourceEvents[0].eventId, messageRef: c01.sourceEvents[0].messageRef, startOffset: 0, endOffset: message.length, quote: message };
       const value = {
+        sourceObligations: require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(c01.sourceEvents,[{
+          obligationId:"price-link-unit-obligation",unitId:"price-link-unit",purpose:"lodging_question",capability:"price",sourceEvidenceRefs:[reference],
+          requiredFields:["subject"],relationKind:"NEW_REQUEST",referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+        }]),
         understandingOutput: { schemaVersion: 1, turnId: c01.turnId, units: [{
           unitId: "price-link-unit", evidenceRefs: [reference], purpose: "lodging_question", capability: "price",
           subject: { kind: subject.kind, catalogIdentity: subject.catalogIdentity }, stayDependent: true,
@@ -236,6 +244,10 @@ async function json(url, method = "GET", body, sentCookie = "") {
       const message = c01.sourceEvents[0].messageText;
       const reference = { eventId: c01.sourceEvents[0].eventId, messageRef: c01.sourceEvents[0].messageRef, startOffset: 0, endOffset: message.length, quote: message };
       const value = {
+        sourceObligations: require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(c01.sourceEvents,[{
+          obligationId:"generic-price-link-unit-obligation",unitId:"generic-price-link-unit",purpose:"lodging_question",capability:"price",sourceEvidenceRefs:[reference],
+          requiredFields:["subject"],relationKind:"NEW_REQUEST",referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+        }]),
         understandingOutput: { schemaVersion: 1, turnId: c01.turnId, units: [{
           unitId: "generic-price-link-unit", evidenceRefs: [reference], purpose: "lodging_question", capability: "price",
           subject: { kind: "property", catalogIdentity: null }, stayDependent: true,
@@ -274,6 +286,10 @@ async function json(url, method = "GET", body, sentCookie = "") {
       const message = c01.sourceEvents[0].messageText;
       const reference = { eventId: c01.sourceEvents[0].eventId, messageRef: c01.sourceEvents[0].messageRef, startOffset: 0, endOffset: message.length, quote: message };
       const value = {
+        sourceObligations: require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(c01.sourceEvents,[{
+          obligationId:"clarify-control-unit-obligation",unitId:"clarify-control-unit",purpose:"lodging_question",capability:"availability",sourceEvidenceRefs:[reference],
+          requiredFields:["subject"],relationKind:"NEW_REQUEST",referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+        }]),
         understandingOutput: { schemaVersion: 1, turnId: c01.turnId, units: [{
           unitId: "clarify-control-unit", evidenceRefs: [reference], purpose: "lodging_question", capability: "availability",
           subject: { kind: "property", catalogIdentity: null }, stayDependent: true,
@@ -311,6 +327,10 @@ async function json(url, method = "GET", body, sentCookie = "") {
       const message = c01.sourceEvents[0].messageText;
       const reference = { eventId: c01.sourceEvents[0].eventId, messageRef: c01.sourceEvents[0].messageRef, startOffset: 0, endOffset: message.length, quote: message };
       const value = {
+        sourceObligations: require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(c01.sourceEvents,[{
+          obligationId:"availability-off-unit-obligation",unitId:"availability-off-unit",purpose:"lodging_question",capability:"availability",sourceEvidenceRefs:[reference],
+          requiredFields:["subject", "temporalCandidate", "temporalCandidate.relativeSemantics"],relationKind:"NEW_REQUEST",referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+        }]),
         understandingOutput: { schemaVersion: 1, turnId: c01.turnId, units: [{
           unitId: "availability-off-unit", evidenceRefs: [reference], purpose: "lodging_question", capability: "availability",
           subject: { kind: "property", catalogIdentity: null }, stayDependent: true,

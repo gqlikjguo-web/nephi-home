@@ -7,13 +7,16 @@ const historyKey = ref => JSON.stringify([ref.eventId, ref.messageRef]);
 
 // C01 supplies the verified conversation scope and snapshot. This is an
 // evidence obligation, not a choice of lifecycle target or a language parser.
-function referenceableStayHistory(input, now = Math.max(...input.sourceEvents.map(event => Date.parse(event.timestamp)))) {
-  const stays = new Set(input.referenceableCycles.filter(cycle =>
+function referenceableStays(input, now = Math.max(...input.sourceEvents.map(event => Date.parse(event.timestamp)))) {
+  return input.referenceableCycles.filter(cycle =>
     ["active", "pending", "answered"].includes(cycle.status)
       && Date.parse(cycle.expiresAt) > now
       && cycle.confirmedValues.checkIn && cycle.confirmedValues.checkOut
       && ["property", "room", "bundle", "matched_room_set"].includes(cycle.subject.kind)
-  ).map(cycle => cycle.requestCycleId));
+  );
+}
+function referenceableStayHistory(input, now) {
+  const stays = new Set(referenceableStays(input, now).map(cycle => cycle.requestCycleId));
   return input.recentConversation.filter(event => event.referenceableCycleIds.some(id => stays.has(id)))
     .map(({ eventId, messageRef }) => ({ eventId, messageRef }));
 }
@@ -99,4 +102,4 @@ function relationCompletenessFailure(value, input, now) {
     : null;
 }
 
-module.exports = { referenceableStayHistory, relationCompletenessFailure };
+module.exports = { referenceableStays, referenceableStayHistory, relationCompletenessFailure };

@@ -20,7 +20,7 @@ function composeSection(section) {
     && ["availability", "bundle_availability"].includes(section.type)
     && section.unknownProvenance?.sourceReasonCode === "missing_inventory_records") {
     const checkIn = section.unknownProvenance.resolverProvenance?.readEvidence?.from;
-    return `${checkIn} 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。`;
+    return `${checkIn} 入住的房況資料尚未完整，目前無法確認是否可預訂。`;
   }
   if (section.claimType === "EPISTEMIC_UNKNOWN") return section.unknownProvenance?.sourceReasonCode === "property_applicability_unknown"
     ? "無法確認該條件是否適用。" : "目前無法確認。";
@@ -38,7 +38,8 @@ function composeSection(section) {
     const known = facts.answer ? `${facts.answer}\n` : "";
     return `${known}${detailLabel(facts.detailIntent)}目前沒有正式資料，需由業者依當日狀況確認。`;
   }
-  if (section.status === "needs_clarification") return section.question || "可以再補充一下嗎？";
+  if (section.status === "needs_clarification") return section.contextClarification
+    ? require("./render-obligation").clarificationTexts(section).join("\n") : section.question || "可以再補充一下嗎？";
   if (section.status === "needs_human") {
     const label = OPERATOR_REQUEST_LABELS[section.operatorActionClass] || RISK_REQUEST_LABELS[section.riskClass];
     if (label) return `${label}需要請業者確認。`;

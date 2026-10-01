@@ -20,12 +20,15 @@ function setSubject(output, input, kind = "matched_room_set", identity) {
     && (identity === undefined || subject.catalogIdentity === identity));
   assert.ok(catalog, "fixture uses only the actual same-property catalog");
   unit.subject = { kind, catalogIdentity: catalog.catalogIdentity };
+  // Authored product requirement, declared before later negative mutations.
+  output.sourceObligations.requirements[0].requiredFields = [...new Set([...output.sourceObligations.requirements[0].requiredFields, "subject", "slot:product"])];
   unit.slotCandidates = [{ slotCandidateId: "product-change", slot: "product", operation: "SET",
     value: catalog.catalogIdentity, evidenceRefs: structuredClone(unit.evidenceRefs) }];
   return output;
 }
 
 function modification(output, previousRefs) {
+  Object.assign(output.sourceObligations.requirements[0], {relationKind:"MODIFICATION", referencedHistoryEventRefs:structuredClone(previousRefs), referencedCurrentUnitId:null});
   Object.assign(output.contextLinkCandidates[0], { relationKind: "MODIFICATION",
     referencedHistoryEventRefs: previousRefs, referencedCurrentUnitId: null, independentRequestEvidence: null });
   return output;

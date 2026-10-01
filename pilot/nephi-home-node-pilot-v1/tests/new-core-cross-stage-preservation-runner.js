@@ -147,11 +147,21 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 const qty={requestedQuantity:2,distinctRequirement:'distinct_entities',evidenceRefs:[evidence()]};
 const guests={slotCandidateId:'guests',slot:'guest_count',operation:'SET',value:4,evidenceRefs:[evidence()]};
 const sibling=unit({unitId:'unit-b',contextLinkCandidateId:'link-b',evidenceRefs:[evidence({startOffset:12,endOffset:14,quote:'謝謝'})]});
-function valid(){return providerOutput({understandingOutput:{schemaVersion:1,turnId:'turn-openai-understanding-v1',units:[unit({purpose:'lodging_question',capability:'capacity',subject:{kind:'room',catalogIdentity:'room-a'},stayDependent:true,quantityCandidate:qty,slotCandidates:[guests]}),sibling]},contextLinkCandidates:[link(),link({unitId:'unit-b',contextLinkCandidateId:'link-b',currentSourceEvidenceRefs:sibling.evidenceRefs})]})}
+function rawValid(){return providerOutput({understandingOutput:{schemaVersion:1,turnId:'turn-openai-understanding-v1',units:[unit({purpose:'lodging_question',capability:'capacity',subject:{kind:'room',catalogIdentity:'room-a'},stayDependent:true,quantityCandidate:qty,slotCandidates:[guests]}),sibling]},contextLinkCandidates:[link(),link({unitId:'unit-b',contextLinkCandidateId:'link-b',currentSourceEvidenceRefs:sibling.evidenceRefs})]})}
+function valid(){
+  const value=clone(rawValid());
+  value.sourceObligations=require('./helpers/understanding-source-obligations-fixture').fixtureSourceObligations(c01().sourceEvents,[
+    {obligationId:'lodging',unitId:'unit-a',purpose:'lodging_question',capability:'capacity',sourceEvidenceRefs:[evidence()],
+      requiredFields:['subject','quantityCandidate','slot:guest_count'],relationKind:'NONE',referencedHistoryEventRefs:[],referencedCurrentUnitId:null},
+    {obligationId:'ack',unitId:'unit-b',purpose:'acknowledgement',capability:null,sourceEvidenceRefs:[evidence({startOffset:12,endOffset:14,quote:'謝謝'})],
+      requiredFields:[],relationKind:'NONE',referencedHistoryEventRefs:[],referencedCurrentUnitId:null}
+  ]);
+  return value;
+}
 function invalid(boundary){const a=clone(valid());if(boundary==='C02')a.understandingOutput.units[0].extra=true;
 if(boundary==='C04')a.contextLinkCandidates[0].currentSourceEvidenceRefs[0].quote='WRONG';
-if(boundary==='C05'){a.contextLinkCandidates[0].relationKind='MODIFICATION';a.contextLinkCandidates[0].referencedHistoryEventRefs=[{eventId:'missing-history',messageRef:'missing-message'}];}
-if(boundary==='C03'){a.understandingOutput.units[0].purpose='unknown';a.understandingOutput.units[0].capability='unsupported';a.understandingOutput.units[0].stayDependent=false;}
+if(boundary==='C05'){a.contextLinkCandidates[0].relationKind='MODIFICATION';a.contextLinkCandidates[0].referencedHistoryEventRefs=[{eventId:'missing-history',messageRef:'missing-message'}]; Object.assign(a.sourceObligations.requirements[0],{relationKind:'MODIFICATION',referencedHistoryEventRefs:[{eventId:'missing-history',messageRef:'missing-message'}]});}
+if(boundary==='C03'){a.understandingOutput.units[0].purpose='unknown';a.understandingOutput.units[0].capability='unsupported';a.understandingOutput.units[0].stayDependent=false; Object.assign(a.sourceObligations.requirements[0],{purpose:'unknown',capability:'unsupported'});}
 return a;}
 async function run(first,second){let calls=0,bodies=[],headers=[],diagnostics=[],result,error;try{result=await callOpenAIUnderstandingV1(c01(),{apiKey:'local-mock-only',nowMs:()=>Date.parse(NOW),retryDelayMs:0,waitImpl:async()=>{},requestIdFactory:()=>`local-request-${calls+1}`,onDiagnostic:x=>diagnostics.push(x),onOperationalDiagnostic:x=>diagnostics.push(x),fetchImpl:async(url,req)=>{bodies.push(JSON.parse(req.body));headers.push(req.headers);calls++;if(calls>2)throw Error('more-than-two-calls');return successfulResponse(calls===1?first:second,`mock-response-${calls}`);}})}catch(e){error={message:e.message,code:e.code,meta:e[D]};}return {calls,bodies,headers,diagnostics,result,error,meta:result?.[D]||error?.meta};}
 const cases=[];

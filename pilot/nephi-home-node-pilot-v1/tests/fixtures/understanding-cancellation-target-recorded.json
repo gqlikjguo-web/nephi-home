@@ -1,0 +1,355 @@
+{
+  "classification": "RECORDED_REPRODUCTION",
+  "sourceSha256": "739ced64e2911e61dd04c7905e039833d7d98a4caf3c974f25375767e65598b7",
+  "eventId": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+  "candidateFingerprint": "d079ad2df6781919e28c96aea5dba204e1350b8fdc251ce130c611682d25283f",
+  "before": {
+    "scope": {
+      "propertyId": "g1g5final_4c8dd78228694f73",
+      "channel": "line-binding:92d4bcd9b8620b507913e7f8",
+      "userId": "synthetic-quantity"
+    },
+    "state": {
+      "schemaVersion": 3,
+      "revision": 3,
+      "scope": {
+        "propertyId": "g1g5final_4c8dd78228694f73",
+        "channel": "line-binding:92d4bcd9b8620b507913e7f8",
+        "userId": "synthetic-quantity"
+      },
+      "tasks": [
+        {
+          "taskId": "unit-1",
+          "taskType": "availability",
+          "productType": "room_type",
+          "productId": "901",
+          "roomTypeId": "901",
+          "bundleId": null,
+          "requestedQuantity": 1,
+          "distinctRequirement": "distinct_entities",
+          "nights": 2,
+          "nightsEvidence": {
+            "value": 2,
+            "ruleRef": "temporal:contextual_expression",
+            "provenance": "context",
+            "valueStatus": "confirmed",
+            "sourceEvidenceRefs": [
+              {
+                "quote": "10月22號，四個人住兩晚，要兩間雙人房。",
+                "eventId": "g1g5-final-8-9648613f-9590-4244-b3be-f8b83a5d1478",
+                "endOffset": 21,
+                "messageRef": "g1g5-final-8-9648613f-9590-4244-b3be-f8b83a5d1478",
+                "startOffset": 0
+              }
+            ],
+            "derivedFromFieldRefs": []
+          },
+          "quantityEvidenceRefs": [
+            {
+              "quote": "一間",
+              "eventId": "g1g5-final-9-bcfec2b7-8dbb-42fa-b3f2-e5d5b75978f4",
+              "endOffset": 2,
+              "messageRef": "g1g5-final-9-bcfec2b7-8dbb-42fa-b3f2-e5d5b75978f4",
+              "startOffset": 0
+            }
+          ],
+          "checkIn": "2026-10-22",
+          "checkOut": "2026-10-24",
+          "guestCount": 2,
+          "searchFrom": null,
+          "searchTo": null,
+          "entityId": "901",
+          "entityCategory": "room",
+          "detailIntent": "general",
+          "knownFields": [
+            "productType",
+            "productId",
+            "roomTypeId",
+            "checkIn",
+            "checkOut",
+            "guestCount"
+          ],
+          "missingFields": [],
+          "status": "answered",
+          "createdAt": "2026-09-30T03:00:08.000Z",
+          "updatedAt": "2026-09-30T03:00:10.000Z",
+          "expiresAt": "2026-10-01T03:00:10.000Z"
+        }
+      ],
+      "createdAt": "2026-09-30T03:00:08.000Z",
+      "updatedAt": "2026-09-30T03:00:10.000Z",
+      "expiresAt": "2026-10-01T03:00:10.000Z"
+    },
+    "input": {
+      "turnId": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+      "traceId": "94dde88f-06c7-4063-9174-6601cacf5517",
+      "message": "先取消這次住宿查詢。",
+      "sourceEvents": [
+        {
+          "eventId": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+          "messageRef": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+          "role": "guest",
+          "timestamp": "2026-09-30T03:00:12.000Z",
+          "messageKind": "text",
+          "messageText": "先取消這次住宿查詢。"
+        }
+      ],
+      "recentConversation": [
+        {
+          "eventId": "g1g5-final-8-9648613f-9590-4244-b3be-f8b83a5d1478",
+          "messageRef": "g1g5-final-8-9648613f-9590-4244-b3be-f8b83a5d1478",
+          "role": "guest",
+          "timestamp": "2026-09-30T03:00:08.000Z",
+          "messageKind": "text",
+          "messageText": "10月22號，四個人住兩晚，要兩間雙人房。",
+          "referenceableCycleIds": [
+            "unit-1"
+          ]
+        },
+        {
+          "eventId": "g1g5-final-9-bcfec2b7-8dbb-42fa-b3f2-e5d5b75978f4",
+          "messageRef": "g1g5-final-9-bcfec2b7-8dbb-42fa-b3f2-e5d5b75978f4",
+          "role": "guest",
+          "timestamp": "2026-09-30T03:00:09.000Z",
+          "messageKind": "text",
+          "messageText": "一間就好，人數改成兩個人。",
+          "referenceableCycleIds": [
+            "unit-1"
+          ]
+        },
+        {
+          "eventId": "g1g5-final-10-55cf3e87-df4f-4406-b984-d99179ef5119",
+          "messageRef": "g1g5-final-10-55cf3e87-df4f-4406-b984-d99179ef5119",
+          "role": "guest",
+          "timestamp": "2026-09-30T03:00:10.000Z",
+          "messageKind": "text",
+          "messageText": "那換成901那間好了。",
+          "referenceableCycleIds": [
+            "unit-1"
+          ]
+        },
+        {
+          "eventId": "g1g5-final-11-cc0169d2-2faf-4605-a1ce-6f5d10cd3af5",
+          "messageRef": "g1g5-final-11-cc0169d2-2faf-4605-a1ce-6f5d10cd3af5",
+          "role": "guest",
+          "timestamp": "2026-09-30T03:00:11.000Z",
+          "messageKind": "text",
+          "messageText": "人數先不要限制，日期和房間照剛剛的。",
+          "referenceableCycleIds": []
+        }
+      ]
+    },
+    "useConversationContext": true
+  },
+  "outputs": [
+    {
+      "understandingOutput": {
+        "schemaVersion": 1,
+        "turnId": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+        "units": [
+          {
+            "unitId": "unit-cancellation-1",
+            "evidenceRefs": [
+              {
+                "eventId": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+                "messageRef": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+                "startOffset": 0,
+                "endOffset": 10,
+                "quote": "先取消這次住宿查詢。"
+              }
+            ],
+            "purpose": "cancellation",
+            "capability": null,
+            "subject": {
+              "kind": null,
+              "catalogIdentity": null
+            },
+            "stayDependent": false,
+            "temporalCandidate": null,
+            "contextLinkCandidateId": "link-cancellation-1",
+            "safetyCandidate": null,
+            "slotCandidates": [],
+            "quantityCandidate": null,
+            "confidenceBand": "high"
+          }
+        ]
+      },
+      "contextLinkCandidates": [
+        {
+          "contextLinkCandidateId": "link-cancellation-1",
+          "unitId": "unit-cancellation-1",
+          "relationKind": "TERMINATION",
+          "currentSourceEvidenceRefs": [
+            {
+              "eventId": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+              "messageRef": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+              "startOffset": 0,
+              "endOffset": 10,
+              "quote": "先取消這次住宿查詢。"
+            }
+          ],
+          "referencedCurrentUnitId": null,
+          "independentRequestEvidence": null,
+          "referencedHistoryEventRefs": [
+            {
+              "eventId": "g1g5-final-11-cc0169d2-2faf-4605-a1ce-6f5d10cd3af5",
+              "messageRef": "g1g5-final-11-cc0169d2-2faf-4605-a1ce-6f5d10cd3af5"
+            }
+          ]
+        }
+      ],
+      "sourceObligations": {
+        "coverage": [
+          {
+            "source": {
+              "eventId": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+              "messageRef": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+              "startOffset": 0,
+              "endOffset": 10,
+              "quote": "先取消這次住宿查詢。"
+            },
+            "disposition": "required",
+            "obligationIds": [
+              "obligation-cancellation-1"
+            ]
+          }
+        ],
+        "requirements": [
+          {
+            "obligationId": "obligation-cancellation-1",
+            "unitId": "unit-cancellation-1",
+            "purpose": "cancellation",
+            "capability": null,
+            "sourceEvidenceRefs": [
+              {
+                "eventId": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+                "messageRef": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+                "startOffset": 0,
+                "endOffset": 10,
+                "quote": "先取消這次住宿查詢。"
+              }
+            ],
+            "requiredFields": [],
+            "relationKind": "TERMINATION",
+            "referencedHistoryEventRefs": [
+              {
+                "eventId": "g1g5-final-11-cc0169d2-2faf-4605-a1ce-6f5d10cd3af5",
+                "messageRef": "g1g5-final-11-cc0169d2-2faf-4605-a1ce-6f5d10cd3af5"
+              }
+            ],
+            "referencedCurrentUnitId": null
+          }
+        ]
+      }
+    },
+    {
+      "understandingOutput": {
+        "schemaVersion": 1,
+        "turnId": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+        "units": [
+          {
+            "unitId": "unit-cancellation-1",
+            "evidenceRefs": [
+              {
+                "eventId": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+                "messageRef": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+                "startOffset": 0,
+                "endOffset": 10,
+                "quote": "先取消這次住宿查詢。"
+              }
+            ],
+            "purpose": "operator_request",
+            "capability": "booking_operator_request",
+            "subject": {
+              "kind": "room",
+              "catalogIdentity": "901"
+            },
+            "stayDependent": false,
+            "temporalCandidate": null,
+            "contextLinkCandidateId": "link-cancellation-1",
+            "safetyCandidate": {
+              "operatorActionClass": "reservation_cancellation",
+              "riskClass": null
+            },
+            "slotCandidates": [],
+            "quantityCandidate": null,
+            "confidenceBand": "high"
+          }
+        ]
+      },
+      "contextLinkCandidates": [
+        {
+          "contextLinkCandidateId": "link-cancellation-1",
+          "unitId": "unit-cancellation-1",
+          "relationKind": "TERMINATION",
+          "currentSourceEvidenceRefs": [
+            {
+              "eventId": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+              "messageRef": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+              "startOffset": 0,
+              "endOffset": 10,
+              "quote": "先取消這次住宿查詢。"
+            }
+          ],
+          "referencedCurrentUnitId": null,
+          "independentRequestEvidence": null,
+          "referencedHistoryEventRefs": [
+            {
+              "eventId": "g1g5-final-11-cc0169d2-2faf-4605-a1ce-6f5d10cd3af5",
+              "messageRef": "g1g5-final-11-cc0169d2-2faf-4605-a1ce-6f5d10cd3af5"
+            }
+          ]
+        }
+      ],
+      "sourceObligations": {
+        "coverage": [
+          {
+            "source": {
+              "eventId": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+              "messageRef": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+              "startOffset": 0,
+              "endOffset": 10,
+              "quote": "先取消這次住宿查詢。"
+            },
+            "disposition": "required",
+            "obligationIds": [
+              "obligation-cancellation-1"
+            ]
+          }
+        ],
+        "requirements": [
+          {
+            "obligationId": "obligation-cancellation-1",
+            "unitId": "unit-cancellation-1",
+            "purpose": "operator_request",
+            "capability": "booking_operator_request",
+            "sourceEvidenceRefs": [
+              {
+                "eventId": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+                "messageRef": "g1g5-final-12-ee5a6bb2-d130-48b4-a81b-83b294dc0c25",
+                "startOffset": 0,
+                "endOffset": 10,
+                "quote": "先取消這次住宿查詢。"
+              }
+            ],
+            "requiredFields": [
+              "subject"
+            ],
+            "relationKind": "TERMINATION",
+            "referencedHistoryEventRefs": [
+              {
+                "eventId": "g1g5-final-11-cc0169d2-2faf-4605-a1ce-6f5d10cd3af5",
+                "messageRef": "g1g5-final-11-cc0169d2-2faf-4605-a1ce-6f5d10cd3af5"
+              }
+            ],
+            "referencedCurrentUnitId": null
+          }
+        ]
+      }
+    }
+  ],
+  "baselineEarliestFailure": {
+    "layer": "C05",
+    "failureCode": "CONTEXT_TARGET_UNAVAILABLE"
+  }
+}

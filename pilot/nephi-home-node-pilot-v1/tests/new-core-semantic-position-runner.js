@@ -154,16 +154,25 @@ if(boundary==='C05'){a.contextLinkCandidates[0].relationKind='MODIFICATION';a.co
 if(boundary==='C03'){a.understandingOutput.units[0].purpose='unknown';a.understandingOutput.units[0].capability='unsupported';a.understandingOutput.units[0].stayDependent=false;}
 return a;}
 async function run(first,second){let calls=0,bodies=[],headers=[],diagnostics=[],result,error;try{result=await callOpenAIUnderstandingV1(c01(),{apiKey:'local-mock-only',nowMs:()=>Date.parse(NOW),retryDelayMs:0,waitImpl:async()=>{},requestIdFactory:()=>`local-request-${calls+1}`,onDiagnostic:x=>diagnostics.push(x),onOperationalDiagnostic:x=>diagnostics.push(x),fetchImpl:async(url,req)=>{bodies.push(JSON.parse(req.body));headers.push(req.headers);calls++;if(calls>2)throw Error('more-than-two-calls');return successfulResponse(calls===1?first:second,`mock-response-${calls}`);}})}catch(e){error={message:e.message,code:e.code,meta:e[D]};}return {calls,bodies,headers,diagnostics,result,error,meta:result?.[D]||error?.meta};}
-function valid(){return clone(rawValid());}
+function valid(){
+  const value=clone(rawValid());
+  value.sourceObligations=require('./helpers/understanding-source-obligations-fixture').fixtureSourceObligations(c01().sourceEvents,[
+    {obligationId:'lodging',unitId:'unit-a',purpose:'lodging_question',capability:'capacity',sourceEvidenceRefs:[evidence()],
+      requiredFields:['subject','quantityCandidate','slot:guest_count'],relationKind:'NONE',referencedHistoryEventRefs:[],referencedCurrentUnitId:null},
+    {obligationId:'ack',unitId:'unit-b',purpose:'acknowledgement',capability:null,sourceEvidenceRefs:[evidence({startOffset:12,endOffset:14,quote:'謝謝'})],
+      requiredFields:[],relationKind:'NONE',referencedHistoryEventRefs:[],referencedCurrentUnitId:null}
+  ]);
+  return value;
+}
 const cases=[];
 const slots=x=>x.understandingOutput.units[0].slotCandidates;
-function multi(){const x=valid(); for(const [id,value] of [['one','train'],['two','bus']]) slots(x).push({slotCandidateId:id,slot:'transport',operation:'SET',value,evidenceRefs:[evidence()]}); return x;}
+function multi(){const x=valid(); x.sourceObligations.requirements[0].requiredFields.push("slot:transport"); for(const [id,value] of [['one','train'],['two','bus']]) slots(x).push({slotCandidateId:id,slot:'transport',operation:'SET',value,evidenceRefs:[evidence()]}); return x;}
 function failedSibling(x){x=clone(x);x.understandingOutput.units[1].stayDependent=true;return x;}
 function add(name,first,second,accepted){cases.push({name,first,second,accepted});}
 const base=multi();
 add('multi-unchanged',failedSibling(base),base,true);
 const third=multi();slots(third).push({...clone(slots(third)[1]),slotCandidateId:'three',value:'walk'});
-add('multi-additive',failedSibling(base),third,true);
+add('multi-additive',failedSibling(base),third,false);
 const removed=multi();slots(removed).pop();add('multi-deletion',failedSibling(base),removed,false);
 const reordered=multi();slots(reordered).reverse();add('multi-reorder',failedSibling(base),reordered,true);
 const dup=multi();slots(dup).push({...clone(slots(dup)[1]),slotCandidateId:'copy'});
@@ -176,7 +185,7 @@ add('single-competition-rejected',failedSibling(valid()),competition,false);
 const overwrite=valid();slots(overwrite)[0].value=9;add('single-overwrite-rejected',failedSibling(valid()),overwrite,false);
 add('failure-directed-correction',invalid('C03'),valid(),true);
 const product=valid();slots(product).push({slotCandidateId:'product-add',slot:'product',operation:'SET',value:'room-a',evidenceRefs:[evidence()]});
-add('product-addition',invalid('C05'),product,true);
+add('product-addition',invalid('C05'),product,false);
 const lost=valid();lost.understandingOutput.units.pop();lost.contextLinkCandidates.pop();add('sibling-missing',invalid('C05'),lost,false);
 const quantity=valid();quantity.understandingOutput.units[0].quantityCandidate.requestedQuantity=3;add('quantity-overwrite',failedSibling(valid()),quantity,false);
 const distinct=valid();distinct.understandingOutput.units[0].quantityCandidate.distinctRequirement='none';add('distinct-overwrite',failedSibling(valid()),distinct,false);

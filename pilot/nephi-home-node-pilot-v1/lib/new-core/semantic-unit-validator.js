@@ -104,6 +104,26 @@ function productSlotAdmission(slot, identitySet, understandingTurnInput) {
   return { allowed: allowedKinds.includes(actualKind), rule: "productSlotAdmission", actualKind, allowedKinds };
 }
 
+function occupancySourceRoleAdmission(slot, unit, input) {
+  if (slot.slot !== "guest_count" || slot.operation !== "SET") return { allowed: true };
+  const exactSource = ref => input.sourceEvents.some(source => source.eventId === ref.eventId
+    && source.messageRef === ref.messageRef
+    && source.messageText.slice(ref.startOffset, ref.endOffset) === ref.quote);
+  const productSpans = unit.slotCandidates.filter(item => item.slot === "product" && item.operation === "SET")
+    .flatMap(product => {
+      const entry = input.publicSubjectCatalog.find(item => item.catalogIdentity === product.value
+        && ["room", "bundle", "matched_room_set"].includes(item.kind));
+      return entry ? product.evidenceRefs.filter(ref => ref.quote.length > 0
+        && entry.publicName.includes(ref.quote) && exactSource(ref)) : [];
+    });
+  // This proves only a source-role collision, never a number or guest intent.
+  // Broad request coverage is not treated as a product-name ownership span.
+  const productOnly = slot.evidenceRefs.every(ref => exactSource(ref) && productSpans.some(product =>
+    product.eventId === ref.eventId && product.messageRef === ref.messageRef
+    && product.startOffset <= ref.startOffset && product.endOffset >= ref.endOffset));
+  return { allowed: !productOnly, rule: "occupancySourceRole" };
+}
+
 function otherSupportedSlotAdmission(slot, identitySet, understandingTurnInput, policy) {
   if (slot.slot !== "other_supported" || slot.operation === "CLEAR") return { allowed: true };
   const allowedKinds = policy.allowsOtherSupported ? ["other_verified"] : [];
@@ -139,11 +159,16 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnIn
   const add = (field, pending, dependsOn, extra = {}) => fieldValidationState.push({field,
     validationCompleted:["structure", "evidenceOwnership"], validationPending:pending, dependsOn, ...extra});
   for (const slot of unit.slotCandidates) {
-    const pending = slot.slot === "product" ? ["productSlotAdmission"] : slot.slot === "other_supported" ? ["otherSupportedSlotAdmission"] : slot.slot === INFORMATION_NEED_SLOT ? ["informationNeedAdmission"] : [];
+    const pending = slot.slot === "product" ? ["productSlotAdmission"] : slot.slot === "other_supported" ? ["otherSupportedSlotAdmission"] : slot.slot === INFORMATION_NEED_SLOT ? ["informationNeedAdmission"] : slot.slot === "guest_count" ? ["occupancySourceRole"] : [];
     add(`slotCandidates.${slot.slotCandidateId}`, pending, ["other_supported", INFORMATION_NEED_SLOT].includes(slot.slot) ? ["capability"] : [], {slotCandidateId:slot.slotCandidateId});
+    // Source-role ownership is independent of capability. Finish a successful
+    // check before any unrelated rejection constructs the correction receipt.
+    if (slot.slot === "guest_count" && occupancySourceRoleAdmission(slot, unit, understandingTurnInput).allowed) {
+      complete(`slotCandidates.${slot.slotCandidateId}`, "occupancySourceRole");
+    }
   }
-  if (unit.quantityCandidate) add("quantityCandidate", ["quantitySubjectAdmission"], ["subject.kind"]);
-  if (unit.temporalCandidate) add("temporalCandidate", ["temporalAdmission"], ["capability"]);
+  add("quantityCandidate", unit.quantityCandidate ? ["quantitySubjectAdmission"] : [], ["subject.kind"]);
+  add("temporalCandidate", unit.temporalCandidate ? ["temporalAdmission"] : [], ["capability"]);
   add("subject", ["catalogIdentity", "subjectPolicy"], ["capability"]);
   add("capability", ["capabilityPolicy"], ["purpose"]);
   const policy = capabilityPolicyFor(capabilityRegistryProjection, unit.capability);
@@ -168,12 +193,13 @@ function validateSemanticUnit({ unit, validatedEvidenceRefs, understandingTurnIn
   }
   if (unit.quantityCandidate) complete("quantityCandidate", "quantitySubjectAdmission");
   const observeAdmission = (slot, result) => {
-    if (result.allowed && result.rule) complete(`slotCandidates.${slot.slotCandidateId}`, result.rule);
+    if (result.allowed && result.rule && result.rule !== "occupancySourceRole") complete(`slotCandidates.${slot.slotCandidateId}`, result.rule);
     return result;
   };
   const diagnostics = firstSlotAdmissionFailure(unit.slotCandidates, slot => observeAdmission(slot, productSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput)))
     || firstSlotAdmissionFailure(unit.slotCandidates, slot => observeAdmission(slot, otherSupportedSlotAdmission(slot, publicCatalogIdentitySet, understandingTurnInput, policy)))
-    || firstSlotAdmissionFailure(unit.slotCandidates, slot => observeAdmission(slot, informationNeedAdmission(slot, policy)));
+    || firstSlotAdmissionFailure(unit.slotCandidates, slot => observeAdmission(slot, informationNeedAdmission(slot, policy)))
+    || firstSlotAdmissionFailure(unit.slotCandidates, slot => observeAdmission(slot, occupancySourceRoleAdmission(slot, unit, understandingTurnInput)));
   if (diagnostics) {
     return { ...reject("UNIT_MEANING_UNSUPPORTED", unit.slotCandidates.map((slot, index) => ({field:`slotCandidates[${index}].value`,target:`slotCandidates.${slot.slotCandidateId}`})).find(item => item.field === diagnostics.field)?.target), diagnostics };
   }

@@ -43,7 +43,13 @@ async function query(property, specs, id = "composition-query") {
           evidenceRefs: [{ eventId: events[index].eventId, messageRef: events[index].messageRef, startOffset: 0, endOffset: spec.text.length, quote: spec.text }],
           temporalCandidate: null, contextLinkCandidateId: `link-${index}`, safetyCandidate: spec.safetyCandidate || null,
           slotCandidates: spec.informationNeed ? [{ slotCandidateId: `need-${index}`, slot: "information_need", operation: "SET", value: spec.informationNeed, evidenceRefs: [{ eventId: events[index].eventId, messageRef: events[index].messageRef, startOffset: 0, endOffset: spec.text.length, quote: spec.text }] }] : [], quantityCandidate: null, confidenceBand: "high" }));
-        const envelope = { understandingOutput: { schemaVersion: 1, turnId: turn.turnId, units },
+        const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(turn.sourceEvents, specs.map((spec, index) => ({
+          obligationId: `requirement-${index}`, unitId: `unit-${index}`, purpose: spec.purpose || "lodging_question", capability: spec.capability,
+          sourceEvidenceRefs: [{eventId: events[index].eventId, messageRef: events[index].messageRef, startOffset: 0, endOffset: spec.text.length, quote: spec.text}],
+          requiredFields: [...(spec.subject.kind === null ? [] : ["subject"]), ...(spec.informationNeed ? ["slot:information_need"] : [])],
+          relationKind: spec.capability === null ? "NONE" : "NEW_REQUEST", referencedHistoryEventRefs: [], referencedCurrentUnitId: null
+        })));
+        const envelope = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId: turn.turnId, units },
           contextLinkCandidates: units.map(unit => ({ contextLinkCandidateId: unit.contextLinkCandidateId, unitId: unit.unitId,
             relationKind: unit.capability === null ? "NONE" : "NEW_REQUEST", currentSourceEvidenceRefs: unit.evidenceRefs, referencedHistoryEventRefs: [] })) };
         return { ok: true, status: 200, headers: { get: () => "isolated-fixture" }, text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed",

@@ -84,6 +84,17 @@ function cycleIdentityCompatible(unit, cycle, relationKind = null) {
     && cycle.subject.catalogIdentity === unit.subject.catalogIdentity;
 }
 
+
+function eligibleBoundTarget(unit, cycle, relationKind) {
+  if (relationKind !== "MODIFICATION" || unit.stayDependent !== true) {
+    return cycleIdentityCompatible(unit, cycle, relationKind);
+  }
+  // Only a formally stay-dependent modification widens target eligibility
+  // beyond the model-selected subject. Capability identity is the existing
+  // operation domain; no capability name or source language is interpreted.
+  return unit.capability === cycle.capability;
+}
+
 function historyRefKey(reference) {
   return reference && typeof reference === "object"
     ? JSON.stringify([reference.eventId, reference.messageRef])
@@ -136,6 +147,24 @@ function validateContextLink({
     return failure("CONTEXT_LINK_EVIDENCE_INVALID", ["contextLink.currentSourceEvidenceRefs"]);
   }
 
+  const compatiblePendingTargetIds = understandingTurnInput.referenceableCycles
+    .filter((cycle) => cycle.status === "pending"
+      && Date.parse(cycle.expiresAt) > Date.parse(now)
+      && cycleIdentityCompatible(unit, cycle, linkCandidate.relationKind))
+    .map((cycle) => cycle.requestCycleId);
+  const nonActionableNone = unit.capability === null && linkCandidate.relationKind === "NONE"
+    && compatiblePendingTargetIds.length === 0 && ["supplement", "context_update"].includes(unit.purpose);
+  const purposeRelations = {
+    cancellation: ["TERMINATION"],
+    correction: ["MODIFICATION"],
+    supplement: ["SUPPLEMENT", "MODIFICATION"],
+    context_update: ["NEW_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION"]
+  };
+  if (purposeRelations[unit.purpose] && !nonActionableNone
+    && !purposeRelations[unit.purpose].includes(linkCandidate.relationKind)) {
+    return failure("CONTEXT_LINK_EVIDENCE_INVALID", ["contextLink.purposeRelationConflict"]);
+  }
+
   let currentSource = null;
   if (linkCandidate.relationKind === "RELATED_UNIT") {
     const matches = currentUnitPairs.filter(pair => pair.unit?.unitId === linkCandidate.referencedCurrentUnitId);
@@ -175,13 +204,20 @@ function validateContextLink({
     notExpired: Number.isFinite(Date.parse(cycle.expiresAt)) && Date.parse(cycle.expiresAt) > Date.parse(now),
     identityCompatible: cycleIdentityCompatible(unit, cycle, linkCandidate.relationKind)
   })).map((item) => ({ ...item, selected: item.historyBound && item.statusAllowed && item.notExpired && item.identityCompatible }));
-  const resolvedTargets = understandingTurnInput.referenceableCycles.filter((cycle) => (
+  const eligibleTargets = understandingTurnInput.referenceableCycles.filter((cycle) => (
     boundCycleIds.has(cycle.requestCycleId)
     && statuses.has(cycle.status)
     && Number.isFinite(Date.parse(cycle.expiresAt))
     && Date.parse(cycle.expiresAt) > Date.parse(now)
-    && cycleIdentityCompatible(unit, cycle, linkCandidate.relationKind)
+    && eligibleBoundTarget(unit, cycle, linkCandidate.relationKind)
   ));
+  const resolvedTargets = eligibleTargets.filter(cycle =>
+    cycleIdentityCompatible(unit, cycle, linkCandidate.relationKind));
+  if (relationTargets && eligibleTargets.length > 1) {
+    // Current SET values describe the proposed modification, not the old
+    // target. Only the verified history binding can narrow this operation.
+    return failure("CONTEXT_TARGET_AMBIGUOUS", ["referencedHistoryEventRefs.targetEvidence"], { targetFilterResult });
+  }
   if (relationTargets && resolvedTargets.length === 0) {
     return failure("CONTEXT_TARGET_UNAVAILABLE", ["referencedHistoryEventRefs.target"], { targetFilterResult });
   }
@@ -193,11 +229,6 @@ function validateContextLink({
   const value = deepFreeze(detach(linkCandidate));
   const compatibleExistingTargetIds = understandingTurnInput.referenceableCycles
     .filter((cycle) => ["active", "pending", "answered"].includes(cycle.status)
-      && Date.parse(cycle.expiresAt) > Date.parse(now)
-      && cycleIdentityCompatible(unit, cycle, linkCandidate.relationKind))
-    .map((cycle) => cycle.requestCycleId);
-  const compatiblePendingTargetIds = understandingTurnInput.referenceableCycles
-    .filter((cycle) => cycle.status === "pending"
       && Date.parse(cycle.expiresAt) > Date.parse(now)
       && cycleIdentityCompatible(unit, cycle, linkCandidate.relationKind))
     .map((cycle) => cycle.requestCycleId);

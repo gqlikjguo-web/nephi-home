@@ -38,6 +38,12 @@ function issueRenderObligations({propertyId,turnId,taskResults=[],executionOutco
   return Object.freeze(records);
 }
 function questions(fields){const minimal=fields.filter(field=>!(field==="checkOut"&&fields.includes("checkIn"))&&!(field==="stay.checkOut"&&fields.includes("stay.checkIn")));return [...new Set(minimal.map(field=>QUESTIONS[field]||"請補充尚缺的資訊。"))];}
+function clarificationTexts(payload, scope) {
+  const confirmation = require("../new-core/continuation-clarification").continuationQuestion(payload.contextClarification, scope);
+  const fields = confirmation ? payload.missingInputs.filter(field => !["stay.checkIn", "stay.checkOut"].includes(field)) : payload.missingInputs;
+  const text = [...(confirmation ? [confirmation] : []), ...questions(fields)];
+  return text.length ? text : ["目前提供的資訊無法安全確認。"];
+}
 function publicAction(record,finalDecision){return require("./final-decision").publicReplyAction(finalDecision,record);}
 function fragmentsFor(record,publicAvailabilityUrl,finalDecision){
   const p=record.payload;
@@ -50,10 +56,10 @@ function fragmentsFor(record,publicAvailabilityUrl,finalDecision){
   if(record.kind==="TEMPORAL_REJECTION")return [body(TEMPORAL_REJECTIONS[p.readinessStatus].text)];
   if(record.kind==="CLARIFY"){
     if(p.publicAvailabilityUrl && p.clarificationRequired !== true && p.outcomeStatus !== "not_ready")return [reference(p.publicAvailabilityUrl)];
-    const text=questions(p.missingInputs);if(!text.length)text.push("目前提供的資訊無法安全確認。");
+    const text=clarificationTexts(p,{propertyId:record.propertyId,turnId:record.turnId,unitId:record.taskId});
     const fragments=text.map(body);
     const url=p.publicAvailabilityUrl||publicAvailabilityUrl;
-    if(url&&p.missingInputs.some(field=>["checkIn","stay.checkIn"].includes(field)))fragments.push(reference(url));
+    if(url&&(p.publicAvailabilityUrl||p.missingInputs.some(field=>["checkIn","stay.checkIn"].includes(field))))fragments.push(reference(url));
     return fragments;
   }
   const parts=[action==="reply"&&p.facts?.detailNeedsConfirmation ? p.facts.answer : composeSection(p)].filter(Boolean).map(body);
@@ -72,6 +78,7 @@ function obligationErrors(plan){
   for(const record of records){
     if(!ISSUED.has(record)||record.propertyId!==plan.propertyId||record.turnId!==plan.turnId)errors.push("render_obligation_scope_mismatch");
     if(ids.has(record.taskId))errors.push("duplicate_render_obligation");ids.add(record.taskId);
+    if(record.payload.contextClarification && !require("../new-core/continuation-clarification").isContinuationClarification(record.payload.contextClarification,{propertyId:plan.propertyId,turnId:plan.turnId,unitId:record.taskId}))errors.push("context_clarification_scope_mismatch");
     if(["ABSENT","SUPPRESSED"].includes(record.kind))continue;
     const section=sections.get(record.taskId);
     if(record.kind==="MISSING_OUTCOME"||!section){errors.push("final_section_missing");continue;}
@@ -177,4 +184,4 @@ function validateVisibleCoverage(text,plan,options){
   if(!actual.equals(expected))errors.push("final_text_mismatch");
   return {errors:[...new Set(errors)],coveredTaskIds:[...covered]};
 }
-module.exports={SAFE_HANDOFF_TEXT,samePricedAnswer,issueRenderObligations,coverageLayout,validateVisibleCoverage,obligationErrors};
+module.exports={clarificationTexts,SAFE_HANDOFF_TEXT,samePricedAnswer,issueRenderObligations,coverageLayout,validateVisibleCoverage,obligationErrors};

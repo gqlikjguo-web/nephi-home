@@ -29,7 +29,13 @@ async function query(propertyId, specs, { detailRegistered = false, configure = 
           evidenceRefs, stayDependent: false, temporalCandidate: null, safetyCandidate: null, confidenceBand: "high", quantityCandidate: null,
           slotCandidates: (s.intents || []).map((value, i) => ({ slotCandidateId: `need-${index}-${i}`, slot: "information_need", operation: "SET", value, evidenceRefs })) };
       }));
-      const envelope = { understandingOutput: { schemaVersion: 1, turnId: input.turnId, units }, contextLinkCandidates: units.map(u => ({ unitId: u.unitId, contextLinkCandidateId: u.contextLinkCandidateId, relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: u.evidenceRefs, referencedHistoryEventRefs: [] })) };
+      const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents, specs.map((s, index) => ({
+        obligationId: `requirement-${index}`, unitId: `unit-${index}`, purpose: "lodging_question", capability: s.capability || "policy",
+        sourceEvidenceRefs: [{eventId: "event", messageRef: "event", startOffset: message.indexOf(s.text), endOffset: message.indexOf(s.text) + s.text.length, quote: s.text}],
+        requiredFields: ["subject", ...((s.intents || []).length ? ["slot:information_need"] : [])],
+        relationKind: "NEW_REQUEST", referencedHistoryEventRefs: [], referencedCurrentUnitId: null
+      })));
+      const envelope = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId: input.turnId, units }, contextLinkCandidates: units.map(u => ({ unitId: u.unitId, contextLinkCandidateId: u.contextLinkCandidateId, relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: u.evidenceRefs, referencedHistoryEventRefs: [] })) };
       return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(envelope) }] }] }) };
     } }) });
   return { result, calls, valid: result.finalResponse.shouldReply ? isValidatedFinalResponse(result.finalResponse, { propertyId, eventId: "turn", turnId: "turn" }) : result.finalDecision.action === "no_reply" && result.finalResponse.replyText === "" && result.artifacts.claimValidation.ok };

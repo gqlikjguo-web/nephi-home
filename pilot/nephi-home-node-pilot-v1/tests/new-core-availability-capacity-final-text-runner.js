@@ -35,7 +35,13 @@ for (const [message, raw, date, checkout, guests, offset, room] of cases) {
         ...(Number.isInteger(offset) ? { relativeSemantics: { dayOffset: offset, dayPeriod: "unspecified" } } : {}) },
       slotCandidates: [{ slotCandidateId: "guest-count", slot: "guest_count", operation: "SET", value: guests, evidenceRefs: [ref] }],
       quantityCandidate: null };
-    const output = { understandingOutput: { schemaVersion: 1, turnId, units: [unit] }, contextLinkCandidates: [{ contextLinkCandidateId: "link", unitId: "capacity", relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: [ref], referencedHistoryEventRefs: [] }] };
+    const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations([{ eventId: turnId, messageRef: turnId, messageText: message }], [{
+      obligationId: "capacity", unitId: "capacity", purpose: "lodging_question", capability: "availability", sourceEvidenceRefs: [ref],
+      requiredFields: ["subject", "temporalCandidate", "slot:guest_count", ...(Number.isInteger(offset) ? ["temporalCandidate.relativeSemantics"] : ["temporalCandidate.checkInCandidate"]),
+        ...(nights > 1 ? ["temporalCandidate.checkOutCandidate", "temporalCandidate.nightsCandidate"] : [])],
+      relationKind: "NEW_REQUEST", referencedHistoryEventRefs: [], referencedCurrentUnitId: null
+    }]);
+    const output = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId, units: [unit] }, contextLinkCandidates: [{ contextLinkCandidateId: "link", unitId: "capacity", relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: [ref], referencedHistoryEventRefs: [] }] };
     const r = await executeNewCoreTurn({ scope, property, now: NOW, publicBaseUrl: "https://example.invalid", providerConfig: { apiKey: "fixture-only" },
       state: createConversationStateV3({ ...scope, tasks: [], createdAt: NOW, updatedAt: NOW, expiresAt: "2026-09-20T03:00:00.000Z" }),
       input: { turnId, traceId: turnId, message, recentConversation: [], sourceEvents: [{ eventId: turnId, messageRef: turnId, role: "guest", timestamp: NOW, messageKind: "text", messageText: message }] },

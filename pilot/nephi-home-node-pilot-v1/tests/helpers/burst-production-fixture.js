@@ -10,7 +10,12 @@ const OUT=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'junzan-burst-con
 const results=[];
 function envelope(c01){
  const units=c01.sourceEvents.map((e,i)=>({unitId:c01.turnId+'-unit-'+i,evidenceRefs:[{eventId:e.eventId,messageRef:e.messageRef,startOffset:0,endOffset:e.messageText.length,quote:e.messageText}],purpose:'lodging_question',capability:'policy',subject:{kind:'policy',catalogIdentity:'check_in'},stayDependent:false,temporalCandidate:null,contextLinkCandidateId:'link-'+i,safetyCandidate:null,slotCandidates:[],confidenceBand:'high'}));
- return {understandingOutput:{schemaVersion:1,turnId:c01.turnId,units},contextLinkCandidates:units.map(u=>({contextLinkCandidateId:u.contextLinkCandidateId,unitId:u.unitId,relationKind:'NEW_REQUEST',currentSourceEvidenceRefs:u.evidenceRefs,referencedHistoryEventRefs:[]}))};
+ const sourceObligations=require('./understanding-source-obligations-fixture').fixtureSourceObligations(c01.sourceEvents,c01.sourceEvents.map((e,i)=>({
+  obligationId:'policy-'+i,unitId:c01.turnId+'-unit-'+i,purpose:'lodging_question',capability:'policy',
+  sourceEvidenceRefs:[{eventId:e.eventId,messageRef:e.messageRef,startOffset:0,endOffset:e.messageText.length,quote:e.messageText}],
+  requiredFields:['subject'],relationKind:'NEW_REQUEST',referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+ })));
+ return {sourceObligations,understandingOutput:{schemaVersion:1,turnId:c01.turnId,units},contextLinkCandidates:units.map(u=>({contextLinkCandidateId:u.contextLinkCandidateId,unitId:u.unitId,relationKind:'NEW_REQUEST',currentSourceEvidenceRefs:u.evidenceRefs,referencedHistoryEventRefs:[]}))};
 }
 async function setup(name,{debounce=5,failSend=false,holdEvent=null,testOnly=false,pg=false,acceptance=false,providerResponse}={}){
  const dir=fs.mkdtempSync(OUT+'/'+name+'-');const seed=dir+'/seed.json';

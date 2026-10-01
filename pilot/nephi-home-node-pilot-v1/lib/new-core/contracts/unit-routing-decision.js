@@ -15,6 +15,7 @@ const REASON_CLASSES = new Set([
   "missing_guest_fields",
   "operator_action_required",
   "risk_policy_required",
+  "context_target_ambiguous",
   "no_executable_need"
 ]);
 const OPERATOR_ACTION_CLASSES = new Set([
@@ -74,7 +75,7 @@ function validateUnitRoutingDecision(value) {
     const operator = value.operatorActionClass !== null;
     const risk = value.riskClass !== null;
     if (value.requiresCanonicalExecution || missingGuestFields === null || missingGuestFields.length
-      || operator === risk
+      || (value.reasonClass === "context_target_ambiguous" ? operator || risk : operator === risk)
       || (operator && value.reasonClass !== "operator_action_required")
       || (risk && value.reasonClass !== "risk_policy_required")) errors.push("handoff");
   }
