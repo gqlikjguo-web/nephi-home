@@ -154,18 +154,27 @@ if(boundary==='C05'){a.contextLinkCandidates[0].relationKind='MODIFICATION';a.co
 if(boundary==='C03'){a.understandingOutput.units[0].purpose='unknown';a.understandingOutput.units[0].capability='unsupported';a.understandingOutput.units[0].stayDependent=false;}
 return a;}
 async function run(first,second){let calls=0,bodies=[],headers=[],diagnostics=[],result,error;try{result=await callOpenAIUnderstandingV1(c01(),{apiKey:'local-mock-only',nowMs:()=>Date.parse(NOW),retryDelayMs:0,waitImpl:async()=>{},requestIdFactory:()=>`local-request-${calls+1}`,onDiagnostic:x=>diagnostics.push(x),onOperationalDiagnostic:x=>diagnostics.push(x),fetchImpl:async(url,req)=>{bodies.push(JSON.parse(req.body));headers.push(req.headers);calls++;if(calls>2)throw Error('more-than-two-calls');return successfulResponse(calls===1?first:second,`mock-response-${calls}`);}})}catch(e){error={message:e.message,code:e.code,meta:e[D]};}return {calls,bodies,headers,diagnostics,result,error,meta:result?.[D]||error?.meta};}
-function valid(){return clone(rawValid());}
+function valid(){
+  const value=clone(rawValid());
+  value.sourceObligations=require('./helpers/understanding-source-obligations-fixture').fixtureSourceObligations(c01().sourceEvents,[
+    {obligationId:'lodging',unitId:'unit-a',purpose:'lodging_question',capability:'capacity',sourceEvidenceRefs:[evidence()],
+      requiredFields:['subject','quantityCandidate','slot:guest_count'],relationKind:'NONE',referencedHistoryEventRefs:[],referencedCurrentUnitId:null},
+    {obligationId:'ack',unitId:'unit-b',purpose:'acknowledgement',capability:null,sourceEvidenceRefs:[evidence({startOffset:12,endOffset:14,quote:'謝謝'})],
+      requiredFields:[],relationKind:'NONE',referencedHistoryEventRefs:[],referencedCurrentUnitId:null}
+  ]);
+  return value;
+}
 const cases=[];
 function addCase(name,first,second,accepted){cases.push({name,first,second,accepted});}
 const addition=()=>{const x=valid();x.understandingOutput.units[0].slotCandidates.push({slotCandidateId:'opaque-new',slot:'product',operation:'SET',value:'room-a',evidenceRefs:clone(x.understandingOutput.units[0].evidenceRefs)});return x;};
-addCase('A-additive-correction',invalid('C05'),addition(),true);
+addCase('A-additive-correction',invalid('C05'),addition(),false);
 const gone=valid();gone.understandingOutput.units[0].slotCandidates=[];addCase('B-illegal-deletion',invalid('C05'),gone,false);
 const overwrite=valid();overwrite.understandingOutput.units[0].slotCandidates[0].value=9;addCase('C-illegal-overwrite',invalid('C05'),overwrite,false);
 addCase('D-valid-failure-directed-correction',invalid('C03'),valid(),true);
 const siblingLost=valid();siblingLost.understandingOutput.units.pop();siblingLost.contextLinkCandidates.pop();addCase('E-sibling-deletion',invalid('C05'),siblingLost,false);
 const conflict=valid();conflict.understandingOutput.units[0].slotCandidates.push({...clone(conflict.understandingOutput.units[0].slotCandidates[0]),slotCandidateId:'different-opaque-id',value:9});addCase('F-new-id-cannot-hide-conflicting-value',invalid('C05'),conflict,false);
 const renamed=valid();renamed.understandingOutput.units[0].slotCandidates[0].slotCandidateId='renamed-opaque-id';addCase('G-opaque-id-not-semantic-identity',invalid('C05'),renamed,true);
-const firstSibling=valid();firstSibling.understandingOutput.units[1].stayDependent=true;addCase('H-addition-to-valid-sibling',firstSibling,addition(),true);
+const firstSibling=valid();firstSibling.understandingOutput.units[1].stayDependent=true;addCase('H-addition-to-valid-sibling',firstSibling,addition(),false);
 const siblingChanged=valid();siblingChanged.understandingOutput.units[0].slotCandidates[0].value=9;addCase('I-valid-sibling-meaning-protected',firstSibling,siblingChanged,false);
 const conflictSubject=valid();conflictSubject.understandingOutput.units[0].slotCandidates.push({slotCandidateId:'new-clear',slot:'product',operation:'CLEAR',value:null,evidenceRefs:clone(conflictSubject.understandingOutput.units[0].evidenceRefs)});addCase('J-addition-cannot-contradict-trusted-subject',invalid('C05'),conflictSubject,false);
 (async()=>{const results=[];for(const c of cases){const x=await run(c.first,c.second);const actual=x.meta?.finalAcceptedAttempt===2;const pass=actual===c.accepted&&x.calls===2;results.push({name:c.name,expectedAcceptance:c.accepted,actualAcceptance:actual,pass,first:c.first,second:c.second,...x});console.log((pass?'PASS':'FAIL')+' '+c.name+' accepted='+actual);}

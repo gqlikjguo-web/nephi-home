@@ -30,7 +30,11 @@ async function run(propertyId, capability, subject) {
       const unit = { unitId: "request", contextLinkCandidateId: "link", purpose: "lodging_question", capability, subject,
         stayDependent: true, temporalCandidate: null, safetyCandidate: null,
         quantityCandidate: null, slotCandidates: [], evidenceRefs: refs, confidenceBand: "high" };
-      const envelope = { understandingOutput: { schemaVersion: 1, turnId: "event", units: [unit] }, contextLinkCandidates: [
+      const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents, [{
+        obligationId: "lodging-request", unitId: "request", purpose: "lodging_question", capability, sourceEvidenceRefs: refs,
+        requiredFields: ["subject"], relationKind: "NEW_REQUEST", referencedHistoryEventRefs: [], referencedCurrentUnitId: null
+      }]);
+      const envelope = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId: "event", units: [unit] }, contextLinkCandidates: [
         { unitId: "request", contextLinkCandidateId: "link", relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: refs, referencedHistoryEventRefs: [] }
       ] };
       return { ok: true, status: 200, headers: { get: () => "isolated" }, text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(envelope) }] }] }) };

@@ -40,7 +40,7 @@ function linkTo(sourceId){return output=>{
 async function related(first,{sourceId="source-unit",reverse=false,sourceTemporal=dateRange("2026-10-15","2026-10-17"),priceIdentity="bundle-a",...options}={}){
   const specs=[{id:"source-unit",capability:"availability",kind:"bundle",identity:"bundle-a",relation:"MODIFICATION",refs:refs(first),
     slots:[["product","bundle-a"]],temporal:sourceTemporal},
-    {id:"price-unit",capability:"price",kind:"bundle",identity:priceIdentity,text:"Price for the same updated lodging"}];
+    {id:"price-unit",capability:"price",kind:"bundle",identity:priceIdentity,text:"Price for the same updated lodging",relation:"RELATED_UNIT",sourceUnitId:sourceId}];
   return turn(reverse?specs.reverse():specs,{previous:first.state,history:first.history,transformOutput:linkTo(sourceId),...options});
 }
 for(const reverse of [false,true])test(`B6 explicit same-turn source uses updated lodging conditions, reverse=${reverse}`,async()=>{

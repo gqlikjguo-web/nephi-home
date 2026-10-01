@@ -52,7 +52,13 @@ async function run() {
             stayDependent: stay, evidenceRefs: refs, slotCandidates: [], quantityCandidate: null, confidenceBand: "high",
             temporalCandidate: currentKind === "technical" ? { rawText: "2026-12-25", kind: "absolute_date", checkInCandidate: "2026-12-25", checkOutCandidate: null, nightsCandidate: null } : null,
             safetyCandidate: human ? { operatorActionClass: "special_arrangement", riskClass: null } : null };
-          const envelope = { understandingOutput: { schemaVersion: 1, turnId: id, units: [unit] }, contextLinkCandidates: [{ unitId: unit.unitId, contextLinkCandidateId: unit.contextLinkCandidateId, relationKind: closure ? "NONE" : "NEW_REQUEST", currentSourceEvidenceRefs: refs, referencedHistoryEventRefs: [] }] };
+          const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(turn.sourceEvents,[{
+            obligationId:id+"-obligation",unitId:id+"-unit",purpose:closure?"conversational_statement":human?"operator_request":"lodging_question",
+            capability:closure?null:human?"booking_operator_request":stay?"price":"policy",sourceEvidenceRefs:refs,
+            requiredFields:[...(closure?[]:["subject"]),...(currentKind==="technical"?["temporalCandidate","temporalCandidate.checkInCandidate"]:[])],
+            relationKind:closure?"NONE":"NEW_REQUEST",referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+          }]);
+          const envelope = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId: id, units: [unit] }, contextLinkCandidates: [{ unitId: unit.unitId, contextLinkCandidateId: unit.contextLinkCandidateId, relationKind: closure ? "NONE" : "NEW_REQUEST", currentSourceEvidenceRefs: refs, referencedHistoryEventRefs: [] }] };
           return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(envelope) }] }] }) };
         } }) })
       });

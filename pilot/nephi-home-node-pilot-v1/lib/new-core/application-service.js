@@ -3,7 +3,7 @@ const { monotonicNow, emitPreparationLatency } = require("./understanding-latenc
 
 const { CAPABILITY_REGISTRY } = require("../conversation-engine-v2/capability-registry");
 const { buildPropertyCatalog } = require("../conversation-engine-v2/property-catalog");
-const { buildContextSnapshotV3, executionConditionsV3, reduceConversationStateV3 } = require("../conversation-engine-v2/conversation-state-v3-reducer");
+const { buildContextSnapshotV3, reduceConversationStateV3 } = require("../conversation-engine-v2/conversation-state-v3-reducer");
 const { buildCanonicalFormalRequest, buildCanonicalQueryPlan, resultForNotReady } = require("../conversation-engine-v2/formal-request");
 const {
   executeCanonicalQueryPlans,
@@ -25,7 +25,7 @@ const {
 const { contextRelationEvidenceForValidatedLink } = require("./context-link-validator");
 const { projectCapabilityRegistry } = require("./semantic-unit-validator");
 const { createLifecycleDecision, isValidatedLifecycleDecision, contextSourceForValidatedLifecycleDecision } = require("./lifecycle-manager");
-const { createUnitReplyRoutingRegistry, createUnitReadiness, createTrustedOperatorSafetyPolicy, createUnitRoutingDecision, createPropertySuppressedNoReplyDecision } = require("./unit-reply-router");
+const { createUnitReplyRoutingRegistry, createUnitReadiness, createTrustedOperatorSafetyPolicy, createUnitRoutingDecision, createPropertySuppressedNoReplyDecision, contextClarificationForRoutingDecision } = require("./unit-reply-router");
 const { createCanonicalizerInputItem, executeCanonicalizerInputItem } = require("./canonical-execution-adapter");
 const { aggregateUnitOutcomes } = require("./unit-aggregator");
 const { adaptLifecycleDecisionsToStateV3 } = require("./state-v3-lifecycle-adapter");
@@ -100,6 +100,7 @@ function turnStateSnapshot(state, scope, now) {
       missingFields: [...new Set(task && task.missingFields || [])],
       confirmedValues: {
         ...require("../conversation-contracts/resolver-quantity").resolverQuantityFields(task || {}),
+        ...require("../conversation-contracts/verified-stay-nights").projectVerifiedNights(task || {}),
         checkIn: cycle.confirmedInputs.stay.checkIn,
         checkOut: cycle.confirmedInputs.stay.checkOut,
         guestCount: cycle.confirmedInputs.stay.guests,
@@ -133,6 +134,14 @@ function bindRecentConversationToCycles(history, state, referenceableCycles) {
   }));
 }
 
+function canonicalInputsForItem(item, decision) {
+  const conditions = require("./canonical-execution-adapter").conditionsForValidatedCanonicalItem(item, decision);
+  if (!conditions) throw new TypeError("canonical_condition_ownership_required");
+  // C08 already combined KEEP/SET/CLEAR with the validated source. A second
+  // fallback to State would resurrect explicit null/CLEAR as the prior value.
+  return structuredClone(conditions.confirmedInputs);
+}
+
 function taskResultForExecution(execution, evidence) {
   const base = { taskId: execution.taskId, type: execution.type, facts: execution.facts || {},
     outcomeStatus: execution.outcome, readinessStatus: execution.readinessStatus || null, outcomeReason: execution.reason || null,
@@ -147,6 +156,7 @@ function taskResultForExecution(execution, evidence) {
   }
   if (["answered", "no_availability"].includes(execution.outcome)) return { ...base, status: "answered" };
   if (execution.outcome === "not_ready") return { ...base, status: "needs_clarification", missingInputs: execution.missingFields || [],
+    ...(execution.contextClarification ? { contextClarification: execution.contextClarification } : {}),
     ...(execution.clarificationRequired === true ? { clarificationRequired: true } : {}) };
   return { ...base, status: "needs_human", reason: execution.reason || execution.outcome, review: true };
 }
@@ -168,8 +178,27 @@ function noExecutionDecision(outcomes, dispositions, missingFields, failedUnits 
   return buildFinalDecision({ executionOutcomes: outcomes });
 }
 
+function failedNeedHandoffs(context, property, requestEvidence, executionOutcomes) {
+  return context.failures.flatMap(failure => {
+    const needs = require("./terminal-failure").terminalFailureNeeds(failure, {
+      propertyId: property.propertyId, turnId: context.turnId, scopeRef: failure.scopeRef
+    });
+    const prior = requestEvidence.find(item => item.taskId === failure.scopeRef);
+    if (!needs.some(need => !availabilityAutoReplySuppressed(need, property))
+      || prior?.requestPresence === "ABSENT" || ["SUPPRESSED", "UNDETERMINED"].includes(prior?.replyPermission)
+      || executionOutcomes.some(item => item.taskId === failure.scopeRef)) return [];
+    return [{ taskId: failure.scopeRef, type: "human_help", outcome: "unknown", reason: "human_help" }];
+  });
+}
+
 function finalizeTurnResponse({ scope, turnId, property, terminalContext, requestEvidence = [], executionOutcomes = [], taskResults = [], canonicalItems = [], publicAvailabilityUrl = "", responsePrefix = "", maxLength = 1200 }) {
   const context = terminalContext || createTerminalContext({ propertyId: scope.propertyId, turnId });
+  const handoffs = failedNeedHandoffs(context, property, requestEvidence, executionOutcomes);
+  requestEvidence = requestEvidence.filter(item => !handoffs.some(handoff => handoff.taskId === item.taskId)).concat(handoffs.map(item => ({
+    taskId: item.taskId, requestPresence: "PRESENT", activeRequest: true, replyPermission: "ALLOWED", humanJudgmentRequired: true
+  })));
+  executionOutcomes = executionOutcomes.concat(handoffs);
+  taskResults = taskResults.concat(handoffs.map(item => taskResultForExecution(item, requestEvidence.find(evidence => evidence.taskId === item.taskId))));
   const permission = id => {
     const evidence = requestEvidence.find(item => item.taskId === id);
     return evidence?.replyPermission || (property.availabilityAutoReplyEnabled === false ? "UNDETERMINED" : "ALLOWED");
@@ -255,6 +284,20 @@ function emitUnderstandingAdmissionDiagnostics(onDiagnostic, input, providerOper
   }
 }
 
+function routedClarificationOutcomes(successful) {
+  return successful
+    .filter((item) => item.routingDecision.disposition === "CLARIFY")
+    .map((item) => ({
+      taskId: item.unit.unitId,
+      type: item.unit.capability,
+      outcome: "not_ready",
+      readinessStatus: "missing_information",
+      clarificationRequired: true,
+      missingFields: item.routingDecision.missingGuestFields,
+      contextClarification: contextClarificationForRoutingDecision(item.routingDecision)
+    }));
+}
+
 async function executeNewCoreTurn({ input, state, property, resolver, providerConfig, publicBaseUrl, now, scope = state && state.scope, understandingProvider = callOpenAIUnderstandingV1, lifecycleDecisionIdPrefix = "new-core", onDiagnostic = null, responsePrefix = "", useConversationContext = true }) {
   const preparationStarted = monotonicNow();
   if (!scope || !property || property.propertyId !== scope.propertyId) {
@@ -273,7 +316,7 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     publicCatalog: buildPublicCatalog(property, catalog)
   });
   emitPreparationLatency(onDiagnostic, input.traceId, "c01_preparation", preparationStarted);
-  const terminalContext = createTerminalContext({ propertyId: scope.propertyId, turnId: input.turnId });
+  const terminalContext = createTerminalContext({ propertyId: scope.propertyId, turnId: input.turnId, understandingTurnInput: c01 });
   const providerOperationalDiagnostics = [];
   let understanding;
   try { understanding = await understandingProvider(c01, {
@@ -344,7 +387,7 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
     const source = contextSourceForValidatedLifecycleDecision(decision);
     // C05/C06 alone authorize condition reuse. Keep the new request identity;
     // project existing State conditions and their original quantity evidence.
-    const confirmedInputs = executionConditionsV3(state, item, source?.requestCycleId || binding.requestCycleId);
+    const confirmedInputs = canonicalInputsForItem(item, decision);
     if (source?.currentUnitId && !item.canonicalRequest.quantityCandidate) {
       Object.assign(confirmedInputs, require("../conversation-contracts/resolver-quantity").resolverQuantityFields(source.confirmedInputs),
         source.confirmedInputs.quantityEvidenceRefs ? {quantityEvidenceRefs:source.confirmedInputs.quantityEvidenceRefs} : {});
@@ -364,22 +407,13 @@ async function executeNewCoreTurn({ input, state, property, resolver, providerCo
       requestPresence: activeRequest ? "PRESENT" : absent ? "ABSENT" : "UNDETERMINED", activeRequest,
       replyPermission: availabilityAutoReplySuppressed(item.unit, property) ? "SUPPRESSED" : "ALLOWED",
       humanActionRequired: Boolean(route?.disposition === "HANDOFF" && route.operatorActionClass),
-      humanJudgmentRequired: Boolean(route?.disposition === "HANDOFF" && route.riskClass),
+      humanJudgmentRequired: Boolean(route?.disposition === "HANDOFF" && (route.riskClass || route.reasonClass === "context_target_ambiguous")),
       resolverUnresolvedRequiresHuman: false, existingOperatorResponsibility: false };
   });
   for (const failure of understanding.failedUnits) if (!requestEvidence.some(item => item.taskId === failure.unitId)) requestEvidence.push({ taskId: failure.unitId, requestPresence: "UNDETERMINED", activeRequest: false,
     replyPermission: property.availabilityAutoReplyEnabled === false ? "UNDETERMINED" : "ALLOWED" });
   for (const outcome of outcomes.filter(item => item.failure)) terminalContext.fromValidationFailure(outcome, c01);
-  const routedClarifications = successful
-    .filter((item) => item.routingDecision.disposition === "CLARIFY")
-    .map((item) => ({
-      taskId: item.unit.unitId,
-      type: item.unit.capability,
-      outcome: "not_ready",
-      readinessStatus: "missing_information",
-      clarificationRequired: true,
-      missingFields: item.routingDecision.missingGuestFields
-    }));
+  const routedClarifications = routedClarificationOutcomes(successful);
   const rawExecutionOutcomes = [
     ...routedClarifications,
     ...formalRequests.filter((item) => item.readiness.status !== "ready").map(resultForNotReady),

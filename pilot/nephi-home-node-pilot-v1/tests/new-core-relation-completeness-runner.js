@@ -31,6 +31,17 @@ function changedProductAndPrice(output, input, previousRefs) {
   output.contextLinkCandidates.unshift({contextLinkCandidateId:source.contextLinkCandidateId,unitId:source.unitId,
     relationKind:"MODIFICATION",currentSourceEvidenceRefs:structuredClone(evidence),referencedHistoryEventRefs:previousRefs,
     referencedCurrentUnitId:null});
+  // This helper authors a valid two-unit fixture, including its G1 obligations.
+  const priceObligation=output.sourceObligations.requirements.find(item=>item.unitId===price.unitId);
+  Object.assign(priceObligation,{relationKind:"RELATED_UNIT",referencedHistoryEventRefs:[],referencedCurrentUnitId:source.unitId});
+  const modificationObligation={obligationId:"updated-lodging-obligation",unitId:source.unitId,
+    purpose:source.purpose,capability:"availability",sourceEvidenceRefs:structuredClone(evidence),
+    requiredFields:["subject","slot:product"],relationKind:"MODIFICATION",
+    referencedHistoryEventRefs:structuredClone(previousRefs),referencedCurrentUnitId:null};
+  output.sourceObligations.requirements.unshift(modificationObligation);
+  for(const coverage of output.sourceObligations.coverage){
+    if(coverage.obligationIds.includes(priceObligation.obligationId))coverage.obligationIds.unshift(modificationObligation.obligationId);
+  }
   return output;
 }
 function fourthTurn(prior, transformOutput) {

@@ -40,7 +40,11 @@ for (const [propertyId, names] of [["collection-a", ["Garden pavilion", "Reading
         const unit = { unitId: "collection", evidenceRefs: [ref], purpose: "lodging_question", capability: "amenity_list",
           subject: { kind: "property", catalogIdentity: propertyIdentity }, stayDependent: false, temporalCandidate: null,
           contextLinkCandidateId: "collection-link", safetyCandidate: null, slotCandidates: [], quantityCandidate: null, confidenceBand: "high" };
-        const output = { understandingOutput: { schemaVersion: 1, turnId, units: [unit] }, contextLinkCandidates: [{
+        const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents, [{
+          obligationId: "collection-requirement", unitId: "collection", purpose: "lodging_question", capability: "amenity_list",
+          sourceEvidenceRefs: [ref], requiredFields: ["subject"], relationKind: "NEW_REQUEST", referencedHistoryEventRefs: [], referencedCurrentUnitId: null
+        }]);
+        const output = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId, units: [unit] }, contextLinkCandidates: [{
           contextLinkCandidateId: unit.contextLinkCandidateId, unitId: unit.unitId, relationKind: "NEW_REQUEST",
           currentSourceEvidenceRefs: [ref], referencedHistoryEventRefs: [] }] };
         return { ok: true, status: 200, headers: { get: () => "fixture-request" }, text: async () => JSON.stringify({

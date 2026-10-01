@@ -6,6 +6,7 @@ const { callOpenAIUnderstandingV1 } = require("../../lib/providers/openai-unders
 const { createConversationStateV3, readConversationStateV3 } = require("../../lib/conversation-contracts/conversation-state-v3");
 const { createMvpService } = require("../../lib/mvp-service");
 const { requestCycleRefsForResult } = require("../../lib/new-core/production-turn-adapter");
+const { fixtureSourceObligations } = require("./understanding-source-obligations-fixture");
 const NOW = "2026-09-24T03:00:00.000Z";
 const scope = {propertyId:"context-fixture", channel:"isolated", userId:"context-guest"};
 const room = {id:"room-a", name:"Room A", type:"double", capacity:4, basePrice:1200,
@@ -59,6 +60,23 @@ async function turn(specs, {previous, history=[], turnScope=scope, now=NOW, inve
       const output={understandingOutput:{schemaVersion:1,turnId:input.turnId,units},contextLinkCandidates:units.map((u,i)=>({
         contextLinkCandidateId:u.contextLinkCandidateId,unitId:u.unitId,relationKind:specs[i].relation||"NEW_REQUEST",
         currentSourceEvidenceRefs:u.evidenceRefs,referencedHistoryEventRefs:specs[i].refs||[]}))};
+      // Declare the authored scenario obligations BEFORE transformOutput
+      // corrupts a candidate. Never synthesize metadata from that transformed output.
+      output.sourceObligations = fixtureSourceObligations(input.sourceEvents, specs.map((spec, i) => {
+        const event = events[i], requiredFields = spec.kind == null ? [] : ["subject"];
+        if (spec.temporal) {
+          requiredFields.push("temporalCandidate");
+          for (const field of ["checkInCandidate", "checkOutCandidate", "nightsCandidate", "relativeSemantics"])
+            if (spec.temporal[field] != null) requiredFields.push(`temporalCandidate.${field}`);
+        }
+        if (spec.quantity) requiredFields.push("quantityCandidate");
+        for (const [slot] of spec.slots || []) requiredFields.push(`slot:${slot}`);
+        return { obligationId: `obligation-${i}`, unitId: spec.id || `unit-${i}`,
+          purpose: spec.purpose || "lodging_question", capability: spec.capability,
+          sourceEvidenceRefs: [{eventId:event.eventId,messageRef:event.messageRef,startOffset:0,endOffset:event.messageText.length,quote:event.messageText}],
+          requiredFields:[...new Set(requiredFields)],relationKind:spec.relation || "NEW_REQUEST",
+          referencedHistoryEventRefs:spec.refs || [],referencedCurrentUnitId:spec.sourceUnitId || null };
+      }));
       return {ok:true,status:200,headers:{get:()=>"fixture-context"},text:async()=>JSON.stringify({model:"gpt-5.6-luna",
         status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(transformOutput(output,input))}]}]})};
     }})});

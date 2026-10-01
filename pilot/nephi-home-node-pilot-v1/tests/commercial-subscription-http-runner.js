@@ -18,7 +18,12 @@ const {attachPropertyScopedLineBinding,waitFor}=require('./helpers/property-scop
   runtimeEnv:{OPENAI_API_KEY:crypto.randomBytes(24).toString('hex')},openAiTestEnv:{},lineBindingEnv:binding.lineBindingEnv,conversationDebounceMs:0,
   newCoreProductionExecuteTurn:async args=>{entered++;return require('../lib/new-core/application-service').executeNewCoreTurn({...args,understandingProvider:(input,options)=>require('../lib/providers/openai-understanding-v1').callOpenAIUnderstandingV1(input,{...options,fetchImpl:async()=>{
    network++;const event=input.sourceEvents[0],unit={unitId:'unit',evidenceRefs:[{eventId:event.eventId,messageRef:event.messageRef,startOffset:0,endOffset:event.messageText.length,quote:event.messageText}],purpose:'lodging_question',capability:'policy',subject:{kind:'policy',catalogIdentity:'check_in'},stayDependent:false,temporalCandidate:null,contextLinkCandidateId:'link',safetyCandidate:null,slotCandidates:[],confidenceBand:'high'};
-   const output={understandingOutput:{schemaVersion:1,turnId:input.turnId,units:[unit]},contextLinkCandidates:[{contextLinkCandidateId:'link',unitId:'unit',relationKind:'NEW_REQUEST',currentSourceEvidenceRefs:unit.evidenceRefs,referencedHistoryEventRefs:[]}]};
+   const sourceObligations=require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents,[{
+    obligationId:'policy-request',unitId:'unit',purpose:'lodging_question',capability:'policy',
+    sourceEvidenceRefs:[{eventId:event.eventId,messageRef:event.messageRef,startOffset:0,endOffset:event.messageText.length,quote:event.messageText}],
+    requiredFields:['subject'],relationKind:'NEW_REQUEST',referencedHistoryEventRefs:[],referencedCurrentUnitId:null
+   }]);
+   const output={sourceObligations,understandingOutput:{schemaVersion:1,turnId:input.turnId,units:[unit]},contextLinkCandidates:[{contextLinkCandidateId:'link',unitId:'unit',relationKind:'NEW_REQUEST',currentSourceEvidenceRefs:unit.evidenceRefs,referencedHistoryEventRefs:[]}]};
    return {ok:true,status:200,headers:{get:()=>null},text:async()=>JSON.stringify({model:'gpt-5.6-luna',status:'completed',usage:{input_tokens:10,output_tokens:2,total_tokens:12},output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(output)}]}]})};
   }})});},lineReplyClientFactory:()=>({replyMessageWithHttpInfo:async body=>{sent.push(body);return {httpResponse:{status:200}};}})});
  const running=await app.start(0,'127.0.0.1');let browser;

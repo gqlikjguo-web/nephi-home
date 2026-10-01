@@ -39,16 +39,16 @@ for (const status of ["missing", "closed", "available"]) for (const [text, raw, 
     assert.equal(r.finalResponse.shouldReply, true, "an active availability inquiry must not disappear");
     assert.equal(isValidatedFinalResponse(r.finalResponse, { propertyId: "inventory-a", turnId: "inventory-turn", eventId: "inventory-turn" }), true);
     assert.ok(r.finalResponse.replyText.trim());
-    assert.ok(!r.finalResponse.replyText.includes("目前無法確認"));
+    assert.equal(r.finalResponse.replyText.includes("目前無法確認"), status === "missing");
     assert.equal(r.finalDecision.reviewRequired, false);
     if (status === "missing") {
       assert.equal(outcome.reason, "missing_inventory_records");
       assert.ok(unknownProvenanceFor(outcome));
       assert.equal(r.artifacts.responsePlan.sections[0].claimType, "EPISTEMIC_UNKNOWN");
-      assert.ok(r.finalResponse.replyText.includes(`${date} 入住目前沒有可提供的房型，歡迎查看其他日期，謝謝您。`));
+      assert.ok(r.finalResponse.replyText.includes(`${date} 入住的房況資料尚未完整，目前無法確認是否可預訂。`));
       // The fixture property URL contains "inventorya"; check guest prose, not its URL slug.
       const prose = r.finalResponse.replyText.replace(/https?:\/\/\S+/g, "");
-      for (const forbidden of ["資料", "missing", "unknown", "inventory"]) assert.ok(!prose.includes(forbidden));
+      for (const forbidden of ["沒有可提供的房型", "目前可預訂", "目前已滿房", "missing", "unknown", "inventory"]) assert.ok(!prose.includes(forbidden));
       const trace = require("../lib/new-core/production-safe-trace").formatNewCoreProductionTrace({ stage: "new_core_resolver", traceId: "availability-reliability", results: r.artifacts.executionOutcomes });
       assert.equal(trace.results[0].reason, "missing_inventory_records");
       assert.ok(!r.finalResponse.replyText.includes("請稍後再試"));

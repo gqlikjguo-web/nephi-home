@@ -14,7 +14,14 @@ async function run(removeQuantity=false){
  const base={evidenceRefs:[ref],purpose:"lodging_question",temporalCandidate:null,safetyCandidate:null,slotCandidates:[],quantityCandidate:null,confidenceBand:"high"};
  const units=[{...base,unitId:"price",contextLinkCandidateId:"price-link",capability:"price",subject:{kind:"room",catalogIdentity:"product"},stayDependent:true,quantityCandidate:{requestedQuantity:2,distinctRequirement:"distinct_entities",evidenceRefs:[ref]}},{...base,unitId:"policy",contextLinkCandidateId:"policy-link",capability:"policy",subject:{kind:"policy",catalogIdentity:"departure"},stayDependent:false}];
  const r=await callOpenAIUnderstandingV1(input,{apiKey:"isolated-model-double",nowMs:()=>Date.parse(NOW),fetchImpl:async()=>{
-  calls++;const output={understandingOutput:{schemaVersion:1,turnId:"turn",units:units.map(u=>calls===2&&removeQuantity&&u.unitId==="price"?{...u,quantityCandidate:null}:u)},contextLinkCandidates:units.map(u=>({unitId:u.unitId,contextLinkCandidateId:u.contextLinkCandidateId,relationKind:calls===1&&u.unitId==="price"?"SUPPLEMENT":"NEW_REQUEST",currentSourceEvidenceRefs:[ref],referencedHistoryEventRefs:calls===1&&u.unitId==="price"?[{eventId:"history",messageRef:"history"}]:[]}))};
+  calls++;
+  const sourceObligations=require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents,["price","policy"].map(capability=>({
+    obligationId:capability+"-obligation",unitId:capability,purpose:"lodging_question",capability,sourceEvidenceRefs:[ref],
+    requiredFields:["subject",...(capability==="price"&&!(calls===2&&removeQuantity)?["quantityCandidate"]:[])],
+    relationKind:calls===1&&capability==="price"?"SUPPLEMENT":"NEW_REQUEST",
+    referencedHistoryEventRefs:calls===1&&capability==="price"?[{eventId:"history",messageRef:"history"}]:[],referencedCurrentUnitId:null
+  })));
+  const output={sourceObligations,understandingOutput:{schemaVersion:1,turnId:"turn",units:units.map(u=>calls===2&&removeQuantity&&u.unitId==="price"?{...u,quantityCandidate:null}:u)},contextLinkCandidates:units.map(u=>({unitId:u.unitId,contextLinkCandidateId:u.contextLinkCandidateId,relationKind:calls===1&&u.unitId==="price"?"SUPPLEMENT":"NEW_REQUEST",currentSourceEvidenceRefs:[ref],referencedHistoryEventRefs:calls===1&&u.unitId==="price"?[{eventId:"history",messageRef:"history"}]:[]}))};
   return {ok:true,status:200,headers:{get:()=>null},text:async()=>JSON.stringify({model:"gpt-5.6-luna",status:"completed",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(output)}]}]})};
  }});return {r,calls};
 }

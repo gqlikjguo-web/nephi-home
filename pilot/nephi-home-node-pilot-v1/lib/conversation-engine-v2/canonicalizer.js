@@ -156,7 +156,9 @@ function canonicalizeExecutionItem({
   const evidenceRefs = sourceEvidenceRefsForRelation(relation);
   const reducerContext = item.transition && item.transition.contextTask || null;
   const approvedContext = reducerContext
-    ? { checkIn: reducerContext.checkIn, checkOut: reducerContext.checkOut, nights: null, sourceEvidenceRefs: [] }
+    ? { checkIn: reducerContext.checkIn, checkOut: reducerContext.checkOut,
+      ...require("../conversation-contracts/verified-stay-nights").projectVerifiedNights(reducerContext),
+      sourceEvidenceRefs: reducerContext.nightsEvidence?.sourceEvidenceRefs || [] }
     : null;
   const temporalState = resolveCanonicalTemporal({
     guestMessage,

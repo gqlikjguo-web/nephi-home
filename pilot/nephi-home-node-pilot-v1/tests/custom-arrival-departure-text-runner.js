@@ -23,7 +23,11 @@ async function answer(property, identity, { capability = "policy", kind = "polic
     resolver: { availability: () => { throw Error("unexpected inventory"); }, availableDates: () => { throw Error("unexpected inventory"); }, priceOverrides: () => [], dateClassifications: () => [], customReplies: () => [] },
     understandingProvider: (input, options) => callOpenAIUnderstandingV1(input, { ...options, fetchImpl: async () => {
       const unit = { unitId: "request", contextLinkCandidateId: "link", purpose, capability, subject: { kind, catalogIdentity: identity }, stayDependent: false, temporalCandidate: null, safetyCandidate, quantityCandidate: null, slotCandidates: [], evidenceRefs: refs, confidenceBand: "high" };
-      const envelope = { understandingOutput: { schemaVersion: 1, turnId: "event", units: [unit] }, contextLinkCandidates: [{ unitId: "request", contextLinkCandidateId: "link", relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: refs, referencedHistoryEventRefs: [] }] };
+      const sourceObligations = require("./helpers/understanding-source-obligations-fixture").fixtureSourceObligations(input.sourceEvents, [{
+        obligationId: "request-obligation", unitId: "request", purpose, capability, sourceEvidenceRefs: refs,
+        requiredFields: kind === null ? [] : ["subject"], relationKind: "NEW_REQUEST", referencedHistoryEventRefs: [], referencedCurrentUnitId: null
+      }]);
+      const envelope = { sourceObligations, understandingOutput: { schemaVersion: 1, turnId: "event", units: [unit] }, contextLinkCandidates: [{ unitId: "request", contextLinkCandidateId: "link", relationKind: "NEW_REQUEST", currentSourceEvidenceRefs: refs, referencedHistoryEventRefs: [] }] };
       return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ model: "gpt-5.6-luna", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(envelope) }] }] }) };
     } }) });
 }
