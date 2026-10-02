@@ -7,7 +7,8 @@ const { beforeCommercialAttempt, finishCommercialAttempt, isCommercialError } = 
 const { createLatencyClock } = require("../new-core/understanding-latency");
 const { captureUnderstandingAttempts, schemaErrorEvidence } = require("./understanding-attempt-diagnostic");
 const { referenceableStayHistory, relationCompletenessFailure } = require("../new-core/relation-completeness");
-const { correctionUnitSetPreserved, incompatibleRelationFailure, targetHistoryBindings, targetReferenceRepairFor, targetReferenceRepairPreserved } = require("./understanding-correction-scope");
+const { correctionUnitSetPreserved, targetHistoryBindings, targetReferenceRepairFor, targetReferenceRepairPreserved } = require("./understanding-correction-scope");
+const { historicalRelationFailure, currentRelationCorrectionFailure, relationCorrectionPreserved, canRetainCorrectedIndependentUnits } = require("./understanding-multi-unit-relations");
 const { sourceObligationSchema, sourceObligationFailure, obligationsPreserved } = require("../new-core/source-obligations");
 const { CAPABILITY_REGISTRY } = require("../conversation-engine-v2/capability-registry");
 const {
@@ -392,10 +393,10 @@ function contextLinkSchema(understandingTurnInput, now) {
     contextLinkCandidateId: stringSchema(),
     unitId: stringSchema(),
     relationKind: enumSchema(RELATION_KINDS,
-      "Use NEW_REQUEST for an independent request. RELATED_REQUEST explicitly cites the same lodging stay for a different capability; other targeted relations supplement, modify, or terminate a compatible prior cycle."),
+      "Use NEW_REQUEST for an independent request. RELATED_REQUEST/RELATED_UNIT transfer verified same-stay conditions only between compatible stay-dependent lodging capabilities with the same lodging subject and different capabilities. They do not express general topic association or attach information/operator responsibilities to a stay. Other targeted relations require a compatible prior cycle."),
     currentSourceEvidenceRefs: evidenceArraySchema(understandingTurnInput),
     referencedCurrentUnitId: { type: ["string", "null"], maxLength: MAX_ID_LENGTH,
-      description: "Only RELATED_UNIT: exact ID of a different unit in this same output whose verified updated lodging conditions this request explicitly concerns. Otherwise null." },
+      description: "Only RELATED_UNIT: exact ID of a different same-output unit with a compatible stay-dependent lodging capability and the same lodging subject, whose verified conditions this request needs. An independent property-information or operator request is not such a dependency. Otherwise null." },
     ...independentRequestEvidence,
     referencedHistoryEventRefs: arraySchema(
       historyRefs.length ? { anyOf: historyRefs } : objectSchema({ eventId: stringSchema(), messageRef: stringSchema() }),
@@ -431,6 +432,7 @@ function instructions() {
     "Context relation is semantic evidence, never a lifecycle decision. Use NEW_REQUEST for an independent actionable request, SUPPLEMENT for additional information completing an existing request, MODIFICATION for an explicit change to an existing request, TERMINATION for an explicit end, and NONE only when no conversational relation is expressed. The deterministic core alone chooses START, CONTINUE, MODIFY, END, or NONE.",
     "Use RELATED_REQUEST only when current-source meaning explicitly asks a different lodging capability about the same stay and same lodging subject, citing the exact prior event/message refs that establish that stay. This begins a separate request and reuses only verified applicable conditions; it never changes the prior request into the new capability or reuses its answers as facts. Do not copy prior dates into current-source temporal evidence. Independent requests, unrelated subjects, uncertain references or new stays must not inherit prior conditions.",
     "Use RELATED_UNIT when one current-source lodging question explicitly concerns the same lodging conditions established or modified by another unit in this very output. Set referencedCurrentUnitId to that source unit's exact unitId, cite the dependent question's exact currentSourceEvidenceRefs, and leave referencedHistoryEventRefs empty. The source unit must itself be source-grounded and use its own correct historical relation when modifying prior lodging. Each question retains its own capability and identity; never use NEW_REQUEST for a dependent question just because its updated lodging subject is not yet in history. Match the source's updated subject, not its old subject. No self-reference, circular reference, guessed relation or copied facts. For all other relation kinds referencedCurrentUnitId is null.",
+    "Multi-unit relation compatibility: a shared message or topic does not authorize condition inheritance. Independent property-information questions and operator responsibilities use their own source-grounded NEW_REQUEST even when accompanying lodging questions. RELATED_REQUEST and RELATED_UNIT require different compatible stay-dependent lodging capabilities concerning the same lodging subject; a non-stay-dependent responsibility cannot serve as that lodging-condition source or dependent. Policy/amenity applicability is information_need evidence for its own formal facts, not permission to attach the unit to inventory or to infer eligibility from dates. Preserve each requested responsibility. If correction reports multiple incompatible edges, repair every reported edge in the same one correction; change only the rejected relation references and their matching source obligations, preserving all verified unit meaning and unaffected sibling links. Never drop a sibling or relabel an operator request as an availability query to make an edge legal.",
     "For an explicit change of the lodging product within an existing request, use MODIFICATION with exact history refs and a source-grounded product SET or CLEAR slot matching the new subject. Keep other unchanged conditions in the referenced cycle; do not relabel historical values as current-source evidence. A catalog-grounded matched_room_set is a valid product modification and remains that complete set identity; never select one room member or an internal cycle ID. The cited history must identify one legitimate same-scope target.",
     "Query-scope operation Contract: an explicit request to stop using guest count as a room-selection filter means all officially registered room types for the same stay. Represent this as guest_count CLEAR plus product CLEAR, subject kind property with null catalogIdentity, and a verified MODIFICATION with the unique history reference. Leave unchanged dates and duration in that referenced Context. These paired, source-owned operations express the scope change; never expand product scope merely because guest_count is null, unknown or ordinarily cleared. Retain official room capacities as facts; no operation waives them. Declare both operations in sourceObligations. Do not output internal cycle IDs or fabricate a reference when no unique valid history exists.",
     "Relation completeness: when a lodging question has no source-grounded independently determinable stay date or date search range but verified stay history is supplied, NEW_REQUEST alone does not establish independence. A partial temporal condition, including only nights or duration, does not establish an independent stay date and does not waive this evidence obligation merely because temporalCandidate is non-null. If it is genuinely independent, provide independentRequestEvidence with the exact current-source meaning that supports a separate request and assessedHistoryEventRefs for every supplied event bound to a nonexpired confirmed stay. Assessment refs never authorize inheritance. Do not fabricate evidence of independence when the current question concerns the existing stay. In particular, a source meaning that changes a lodging product and asks another capability about the changed product requires the source-grounded MODIFICATION plus the dependent RELATED_UNIT, not a lone new-capability NEW_REQUEST. A change in capability or subject is not itself evidence of a new stay. All non-NEW_REQUEST links set independentRequestEvidence to null when the schema includes it. Do not invent dates, products, units or relations unsupported by source meaning; uncertain references must remain uncertain and fail closed.",
@@ -913,6 +915,8 @@ function envelopeWireFailure(value, understandingTurnInput, now) {
     return false;
   };
   const targetedRelations = new Set(["RELATED_REQUEST", "SUPPLEMENT", "MODIFICATION", "TERMINATION"]);
+  const incompatibleRelations = historicalRelationFailure(value, understandingTurnInput, now);
+  if (incompatibleRelations) return incompatibleRelations;
   for (const [index, candidate] of links.entries()) {
     if (!targetedRelations.has(candidate.relationKind)) continue;
     const unit = units.find((item) => item.unitId === candidate.unitId
@@ -926,9 +930,6 @@ function envelopeWireFailure(value, understandingTurnInput, now) {
     const boundCycles = understandingTurnInput.referenceableCycles
       .filter((cycle) => boundCycleIds.has(cycle.requestCycleId));
     const compatibleCycles = boundCycles.filter((cycle) => cycleIdentityCompatible(unit, cycle, candidate.relationKind));
-    if (boundCycles.length > 0 && compatibleCycles.length === 0) {
-      return incompatibleRelationFailure(unit, candidate, boundCycles, understandingTurnInput, index, now);
-    }
     if (candidate.relationKind === "SUPPLEMENT" && compatibleCycles.length > 0) {
       const pendingTargets = compatibleCycles.filter((cycle) => cycle.status === "pending");
       if (pendingTargets.every((cycle) => !Array.isArray(cycle.missingFields) || cycle.missingFields.length === 0)) {
@@ -1179,6 +1180,7 @@ function correctionUnitFailure(failure, output, input, operational, now) {
     || failure.boundary === "C04" && MODEL_EVIDENCE_FAILURES.has(failure.failureCode);
   const detail = operational.find(entry => entry.status === "FAILURE" && entry.unit?.unitId === failure.unitId);
   const targetReferenceRepair = targetReferenceRepairFor(failure, output, input, detail, now);
+  const relationFailure = currentRelationCorrectionFailure(failure, output, detail);
   if (failure.boundary === "C05") {
     const links = output.contextLinkCandidates.filter(link => link.unitId === failure.unitId);
     const unknownRef = links.some(link => link.referencedHistoryEventRefs.some(ref => !input.recentConversation.some(event => event.eventId === ref.eventId && event.messageRef === ref.messageRef)));
@@ -1191,11 +1193,14 @@ function correctionUnitFailure(failure, output, input, operational, now) {
         event.eventId === ref.eventId && event.messageRef === ref.messageRef && event.referenceableCycleIds.length === 0)));
     const incompatible = detail?.filterDiagnostic?.targetFilterResult?.some(target => target.historyBound && target.statusAllowed && target.notExpired && !target.identityCompatible);
     correctable = failure.failureCode === "CONTEXT_LINK_DUPLICATE" || failure.failureCode === "CONTEXT_LINK_EVIDENCE_INVALID"
-      || failure.failureCode === "CONTEXT_TARGET_UNAVAILABLE" && (unknownRef || unboundTarget || incompatible);
+      || failure.failureCode === "CONTEXT_TARGET_UNAVAILABLE" && (unknownRef || unboundTarget || incompatible)
+      || Boolean(relationFailure);
   }
   const evidenceFailures = failure.boundary === "C04" ? sourceCorrectionFailures(output, failure.unitId, input) : [];
   return { boundary: failure.boundary, code: failure.failureCode, unitId: failure.unitId,
     ...(targetReferenceRepair ? { targetReferenceRepair } : {}),
+    ...(relationFailure ? { relationDependencyRepair: relationFailure.relationDependencyRepair,
+      field: relationFailure.violation.fieldPath } : {}),
     ...(evidenceFailures.length ? { field: evidenceFailures[0].field, evidenceFailures,
       rule: "Repair only the listed rejected evidence references using exact C01 sourceEvents pairs and source text. Preserve all other references and sibling fields; never propagate a rejected ID into valid references." } : {}),
     fieldValidationState: failure.boundary === "C03" ? detail?.fieldValidationState || []
@@ -1356,7 +1361,8 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
     const retained = correctionUnitSetPreserved(firstOutput, output, correction?.failures || [])
       && (!(correction?.failures || []).some(failure => failure.reason?.actual?.startsWith("admission_obligation:"))
         || obligationsPreserved(firstOutput, output, understandingTurnInput));
-    const fieldsPreserved = !correction || correction.failures.every(failure => {
+    const fieldsPreserved = (!correction || relationCorrectionPreserved(firstOutput, value ? output : null, correction.failures))
+      && (!correction || correction.failures.every(failure => {
       const previous = firstOutput?.understandingOutput.units.find(unit => unit.unitId === failure.unitId);
       const next = value?.understandingOutput.units.find(unit => unit.unitId === failure.unitId);
       return sourceCorrectionPreserved(firstOutput, value, failure, understandingTurnInput)
@@ -1364,7 +1370,7 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
         && (!relativeOffsetFailure(failure) || relativeOffsetRepairPreserved(previous, next, understandingTurnInput))
         && (!(failure.fieldValidationState || []).length
           || semanticObligationsPreserved(previous, next, failure.fieldValidationState, understandingTurnInput));
-    });
+    }));
     attemptEvidence.at(-1).adoption = {
       candidateAdmitted: Boolean(value),
       rejectionStage: !value ? "admission" : failureReport.failures.length ? "validation"
@@ -1374,7 +1380,8 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
       candidateUnitIds: value?.understandingOutput.units.map(unit => unit.unitId) || []
     };
     if (!fieldsPreserved) report.validationResult = {...report.validationResult, ok:false, adoptionFailure:"CORRECTION_FIELD_NOT_PRESERVED"};
-    if (value && !failureReport.failures.length && preserves && retained && fieldsPreserved) return finish(value, null, 2);
+    if (value && preserves && retained && fieldsPreserved && (!failureReport.failures.length
+      || canRetainCorrectedIndependentUnits(firstResult, value, correction, failureReport.failures))) return finish(value, null, 2);
     if (!preserves || !retained) report.validationResult = { ...report.validationResult, ok: false, adoptionFailure: "CORRECTION_SIBLING_NOT_PRESERVED" };
     return finish(firstResult, caught || understandingError("UNDERSTANDING_SCHEMA_INVALID"), firstResult ? 1 : null);
   }
@@ -1403,6 +1410,7 @@ function admitUnderstandingValue(providerValue, understandingTurnInput, options,
         field: violation?.fieldPath ?? null,
         ...(wireFailure.unitViolations ? { unitValidationFailed: Boolean(local) } : {}),
         ...(local?.relationRepair ? { relationRepair: local.relationRepair } : {}),
+        ...(local?.relationDependencyRepair ? { relationDependencyRepair: local.relationDependencyRepair } : {}),
         ...(local?.additionalViolations?.length ? { additionalViolations:local.additionalViolations } : {}),
         unitId: unit?.unitId, fieldValidationState: correctionPreservationForUnit(unit, understandingTurnInput).map(state =>
           (local?.repairFields || []).some(field => field === state.field || field.startsWith(`${state.field}.`))

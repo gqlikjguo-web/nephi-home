@@ -1,18 +1,23 @@
 {
   "schemaVersion": 1,
-  "baseline": "2547ddcae42c82c9cb0817dc7d3562bbd62a6612",
-  "objective": "Fix the proven Production admin daily availability toggle response boundary only: after the existing PostgreSQL setDay transaction commits, return the updated day row from the canonical getRows result.rows structure so the existing API response and frontend reconciliation immediately reflect closed-to-available and available-to-closed changes for rooms and bundles. Preserve the database write, schema, frontend, property isolation and facts authority. Verify the existing protected bidirectional admin browser acceptance and affected availability/PostgreSQL regressions. STOP on any valid PASS-to-FAIL. If all checks pass, commit, non-force push to production, wait for the existing Render Production auto-deploy, and verify exact SHA, health and testOnly=false without writing Production availability data.",
+  "baseline": "a73088d8060b3fc34f78d4de87abb67a13ed0003",
+  "objective": "Repair the proven multi-unit relation/correction failure only: distinguish independent property-information and operator requests from formally permitted same-stay dependencies; report rejected relation/dependency edges together, constrain one controlled correction to formal failures and necessary dependencies, preserve independently trusted siblings and full C02-C05 revalidation. Build the requested deterministic capability-combination matrix first, then affected and 193 regression plus protected/integrity/maintainability. No OpenAI, REAL, external writes, deploy, commit or push; STOP on any existing valid PASS-to-FAIL. Timeout incident, malformed-date incident and drift synchronization remain excluded.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    "pilot/nephi-home-node-pilot-v1/lib/providers/postgres-worker.js"
+    "pilot/nephi-home-node-pilot-v1/lib/providers/openai-understanding-v1.js",
+    "pilot/nephi-home-node-pilot-v1/lib/providers/understanding-multi-unit-relations.js",
+    "pilot/nephi-home-node-pilot-v1/tests/helpers/multi-unit-relation-fixture.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-multi-unit-relation-correction-runner.js"
   ],
   "contractChangeAllowed": false,
   "gateChangeAllowed": false,
   "affectedCapabilities": [
-    "facts"
+    "understanding",
+    "context",
+    "reply"
   ],
   "preExistingUntracked": [
     "pilot/nephi-home-node-pilot-v1/node_modules"
   ],
-  "approvalSource": "Owner current request explicitly approves the proven PostgreSQL setDay response-boundary fix, deterministic availability/admin/PostgreSQL verification, commit, normal non-force production push, existing Render Production deployment and read-only post-deploy health/SHA/testOnly smoke. No frontend, database schema/data, environment, migration, seed, force push, unrelated refactor or property-specific change is authorized."
+  "approvalSource": "Owner current explicit Production incident repair instruction authorizes local RED matrix, minimal provider/C02-C05 relation/correction repair, affected/full deterministic verification only. Existing independent NEW_REQUEST and constrained RELATED_REQUEST/RELATED_UNIT Contracts are sufficient; no new relation, authority, persisted schema or expectation changes are authorized."
 }
