@@ -1,52 +1,30 @@
 {
   "schemaVersion": 1,
-  "baseline": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
-  "objective": "Owner 2026-10-03 formal capability protection activation: preserve completed28 capability/172 component baseline; wire authentic governance approval into existing trusted Gate, complete affected-only REAL budget/usage ledger without invoking providers, classify saved schema differences and enforce product drift, keep canary disabled. No product or clarification runtime, DB writes/DDL, secrets, REAL or product deployments. Close the existing UI fast-path alternate qualification route after trusted capability installation; keep legacy assertions unchanged.",
+  "baseline": "6e5721ca9f61dff31629756b2d4b2c76a11fc857",
+  "objective": "Owner-authorized governance-only registration of the independently reviewed transport diagnostic metadata transition, plus recovery from proven /tmp byte exhaustion and a fail-closed storage preflight/managed-artifact retention mechanism for formal test Gates. Bind exactly three runtime files and one protected additive runner by before/after SHA-256. Preserve failed-run scratch and all unmarked evidence; prune only marker-owned completed scratch. Source evidence semantics, assertions, product Contract and authority remain unchanged. This governance candidate contains no product runtime changes and performs no OpenAI/REAL, DB or deployment operation.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
     ".github/core-reliability-policy.json",
-    ".github/capability-baseline.json",
     ".github/core-impact-manifest.json",
-    ".github/core-verification-manifest.json",
-    ".github/product-content-policy.json",
-    "pilot/nephi-home-node-pilot-v1/docs/CAPABILITY_PROTECTION.md",
     "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
-    "pilot/nephi-home-node-pilot-v1/docs/superpowers/plans/2026-10-02-capability-protection.md",
-    "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-content.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-impact.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-budget.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/test-storage-guard.js",
     "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-execution.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-offline.cjs",
-    "pilot/nephi-home-node-pilot-v1/scripts/capability-canary-readiness.js",
-    "pilot/nephi-home-node-pilot-v1/tests/capability-guard-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/capability-baseline-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/fixtures/production-capability-evidence.json",
-    "pilot/nephi-home-node-pilot-v1/tests/helpers/capability-baseline-fixture.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/core-contract-approval.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/run-core-reliability-real.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/capability-real-session.js",
-    "pilot/nephi-home-node-pilot-v1/tests/core-reliability-gate-runner.js",
-    "pilot/nephi-home-node-pilot-v1/tests/capability-installation-runner.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/core-ui-fast-path.js"
+    "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
+    "pilot/nephi-home-node-pilot-v1/tests/test-storage-guard-runner.js"
   ],
-  "contractChangeAllowed": true,
+  "contractChangeAllowed": false,
   "gateChangeAllowed": true,
   "affectedCapabilities": [
-    "governance",
-    "capability-baseline"
-  ],
-  "preExistingUntracked": [
-    "pilot/nephi-home-node-pilot-v1/node_modules"
+    "governance"
   ],
   "realBudget": {
     "mode": "DENY",
     "maxCalls": 0,
     "maxTokens": 0
   },
-  "approvalSource": "Owner explicit current formal-activation request. Additional paths are only the existing approval/Gate/harness integration and its governance tests; no product runtime. Any GitHub human environment review remains mandatory.",
+  "approvalSource": "Owner explicitly authorized the existing atomic installation governance review for the independently reviewed diagnostic-only transition. GitHub owner environment approval remains mandatory and cannot be self-issued.",
   "redRunners": [
-    "tests/capability-installation-runner.js"
+    "tests/test-storage-guard-runner.js",
+    "tests/core-contract-approval-runner.js"
   ]
 }

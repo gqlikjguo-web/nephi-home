@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFileSync, spawnSync } = require("node:child_process");
+const storage = require("./test-storage-guard");
 const APP = "pilot/nephi-home-node-pilot-v1";
 const POLICY = ".github/core-reliability-policy.json";
 const TASK = ".github/core-reliability-task.json";
@@ -113,9 +114,14 @@ function validateReleaseEvidence(e, baseline, candidate, required, requireReal, 
 }
 
 function runCommands({ root, cwd, candidate, baseline, commands, evidenceDir, protection = null }) {
+  storage.preflight(path.dirname(evidenceDir));
   insist(!fs.existsSync(path.join(evidenceDir, "report.json")), "EVIDENCE_ALREADY_EXISTS");
   fs.mkdirSync(evidenceDir, { recursive: true });
-  const report = { schemaVersion: 1, baselineSha: baseline, candidateSha: candidate, status: "RUNNING", required: commands.map(c => c.id), results: [], stopPreservesWork: true };
+ return storage.withManagedScratch(evidenceDir, "core-reliability", ({ scratch, disk }) => {
+  // A caller-provided scratch path is already part of the command execution
+  // contract. Only supply managed scratch when the caller did not provide one.
+  if (protection && !protection.scratch) protection.scratch = scratch;
+  const report = { schemaVersion: 1, baselineSha: baseline, candidateSha: candidate, status: "RUNNING", required: commands.map(c => c.id), diskPreflight: disk, results: [], stopPreservesWork: true };
   fs.writeFileSync(path.join(evidenceDir, "report.json"), JSON.stringify(report, null, 2));
   const checkContent = () => {
     if (!protection) return;
@@ -125,17 +131,23 @@ function runCommands({ root, cwd, candidate, baseline, commands, evidenceDir, pr
   for (const [index, command] of commands.entries()) {
     try { checkContent(); }
     catch (error) { report.status = "STOP"; report.reason = error.message; report.blockedRunner = command.id; break; }
-    const r = spawnSync(command.argv[0], command.argv.slice(1), { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 600000,
-      env: protection ? require("./capability-guard-execution").offlineEnvironment(path.join(evidenceDir, "network.jsonl"), protection.scratch) : { ...process.env, OPENAI_API_KEY: "", OPENAI_TEST_API_KEY: "", CORE_GATE_OPENAI_API_KEY: "", CORE_GATE_GITHUB_READ_TOKEN: "", LINE_CHANNEL_ACCESS_TOKEN: "" } });
-    const log = String(r.stdout || "") + String(r.stderr || "") + (r.error ? "\n" + r.error.message : "");
     const logFile = `${String(index).padStart(3, "0")}.log`;
-    fs.writeFileSync(path.join(evidenceDir, logFile), log);
+    const logPath = path.join(evidenceDir, logFile), fd = fs.openSync(logPath, "wx");
+    let r;
+    try {
+      r = spawnSync(command.argv[0], command.argv.slice(1), { cwd, stdio: ["ignore", fd, fd], timeout: 600000,
+        env: protection ? require("./capability-guard-execution").offlineEnvironment(path.join(evidenceDir, "network.jsonl"), protection.scratch) : { ...process.env, TMPDIR: scratch, OPENAI_API_KEY: "", OPENAI_TEST_API_KEY: "", CORE_GATE_OPENAI_API_KEY: "", CORE_GATE_GITHUB_READ_TOKEN: "", LINE_CHANNEL_ACCESS_TOKEN: "" } });
+    } finally { fs.closeSync(fd); }
+    if (r.error) fs.appendFileSync(logPath, `\n${r.error.message}`);
+    const log = fs.readFileSync(logPath, "utf8");
     const skipped = /(?:^|\n)# skipped [1-9]|"status"\s*:\s*"(?:SKIP|NOT_RUN|NOT_EXECUTABLE)"/.test(log);
     const externalNetwork = protection && fs.existsSync(path.join(evidenceDir, "network.jsonl")) && fs.statSync(path.join(evidenceDir, "network.jsonl")).size > 0;
-    let ok = r.status === 0 && !r.error && !skipped && !externalNetwork;
+    let storageFailure = null; try { storage.assertScratchWithinLimit(scratch); } catch (error) { storageFailure = error; }
+    let ok = r.status === 0 && !r.error && !skipped && !externalNetwork && !storageFailure;
     try { checkContent(); }
     catch (error) { ok = false; report.reason = error.message; }
     report.results.push({ runner: command.id, candidateSha: candidate, exitCode: r.status, status: ok ? "PASS" : "FAIL", logFile, logSha256: digest(log) });
+    if (storageFailure) report.reason = storageFailure.message;
     if (!ok) report.status = "STOP";
     fs.writeFileSync(path.join(evidenceDir, "report.json"), JSON.stringify(report, null, 2));
     if (!ok) break; // Do not repair, retry, reset, restore, or remove any work.
@@ -143,6 +155,7 @@ function runCommands({ root, cwd, candidate, baseline, commands, evidenceDir, pr
   if (report.status === "RUNNING") report.status = "PASS";
   fs.writeFileSync(path.join(evidenceDir, "report.json"), JSON.stringify(report, null, 2));
   return report;
+ });
 }
 function argumentsFor(argv) {
   const result = {};
@@ -199,8 +212,7 @@ async function main(argv) {
     if (!commands.some(c => c.id === runner)) commands.push({ id: runner, argv: [process.execPath, runner] });
   }
   const lockedContent = capabilityProtection ? require("./capability-guard-content").contentDigest(capabilityProtection.candidate) : null;
-  const protection = capabilityProtection ? { digest: lockedContent, ignored: task.preExistingUntracked || [], scratch: path.join(path.resolve(a.evidence), "scratch") } : null;
-  if (protection) fs.mkdirSync(protection.scratch, { recursive: true });
+  const protection = capabilityProtection ? { digest: lockedContent, ignored: task.preExistingUntracked || [], scratch: null } : null;
   const report = runCommands({ root, cwd, candidate, baseline, commands, evidenceDir: path.resolve(a.evidence), protection });
   if (capabilityProtection) {
     report.capabilityProtection = { impact: capabilityProtection.plan, candidateDigest: lockedContent, openAiCalls: 0 };
