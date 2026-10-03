@@ -359,6 +359,45 @@ function attemptUsageAccounting(value) {
   } };
 }
 
+
+function transportObservation(value) {
+  if (!value || value.schemaVersion !== 1) return null;
+  const integer = n => Number.isSafeInteger(n) && n >= 0 ? n : null;
+  const id = (v, pattern) => typeof v === "string" && pattern.test(v) ? v : null;
+  const result = {
+    schemaVersion: 1,
+    clientRequestId: id(value.clientRequestId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i),
+    providerRequestId: id(value.providerRequestId, /^req[-_][A-Za-z0-9_-]{1,160}$/),
+    httpStatus: Number.isInteger(value.httpStatus) && value.httpStatus >= 100 && value.httpStatus <= 599 ? value.httpStatus : null,
+    timeoutStage: ["preparation", "commercial_admission", "fetch", "body", "parse", "validation"].includes(value.timeoutStage) ? value.timeoutStage : null,
+    requestStartedAtMs: integer(value.requestStartedAtMs),
+    fetchStartedAtMs: integer(value.fetchStartedAtMs),
+    headersReceivedAtMs: integer(value.headersReceivedAtMs),
+    bodyCompletedAtMs: integer(value.bodyCompletedAtMs),
+    abortTriggeredAtMs: integer(value.abortTriggeredAtMs),
+    sizes: {
+      requestBodyBytes: integer(value.sizes?.requestBodyBytes),
+      modelInputBytes: integer(value.sizes?.modelInputBytes),
+      understandingInputBytes: integer(value.sizes?.understandingInputBytes),
+      schemaBytes: integer(value.sizes?.schemaBytes),
+      instructionsBytes: integer(value.sizes?.instructionsBytes),
+      correctionBytes: integer(value.sizes?.correctionBytes),
+      sourceEventsCount: integer(value.sizes?.sourceEventsCount),
+      sourceEventsBytes: integer(value.sizes?.sourceEventsBytes),
+      historyCount: integer(value.sizes?.historyCount),
+      historyBytes: integer(value.sizes?.historyBytes),
+      capabilityCatalogCount: integer(value.sizes?.capabilityCatalogCount),
+      capabilityCatalogBytes: integer(value.sizes?.capabilityCatalogBytes),
+      subjectCatalogCount: integer(value.sizes?.subjectCatalogCount),
+      subjectCatalogBytes: integer(value.sizes?.subjectCatalogBytes),
+      contextSummaryCount: integer(value.sizes?.contextSummaryCount),
+      contextSummaryBytes: integer(value.sizes?.contextSummaryBytes)
+    }
+  };
+  if (value.diagnosticUnavailable === true) result.diagnosticUnavailable = true;
+  return result;
+}
+
 function formatNewCoreProductionTrace(details = {}) {
   const stage = token(details.stage);
   if (!STAGES.has(stage)) return null;
@@ -387,6 +426,7 @@ function formatNewCoreProductionTrace(details = {}) {
     attempts: list(details.attempts, (attempt) => ({
       attemptNumber: [1, 2].includes(attempt?.attemptNumber) ? attempt.attemptNumber : null,
       attemptType: ["initial", "correction"].includes(attempt?.attemptType) ? attempt.attemptType : "",
+      ...(attempt?.transport ? { transport: transportObservation(attempt.transport) } : {}),
       ...attemptUsageAccounting(attempt?.usageAccounting),
       accepted: attempt?.accepted === true,
       rejected: attempt?.rejected === true,

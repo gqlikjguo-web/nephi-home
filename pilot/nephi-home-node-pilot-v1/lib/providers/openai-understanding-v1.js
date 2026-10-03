@@ -4,7 +4,7 @@ const crypto = require("node:crypto");
 const { isDeepStrictEqual } = require("node:util");
 const { resolveCanonicalTemporal } = require("../conversation-engine-v2/temporal-resolver");
 const { beforeCommercialAttempt, finishCommercialAttempt, isCommercialError } = require("../commercial-ai-gate");
-const { createLatencyClock } = require("../new-core/understanding-latency");
+const { createLatencyClock, createTransportObservation } = require("../new-core/understanding-latency");
 const { captureUnderstandingAttempts, schemaErrorEvidence } = require("./understanding-attempt-diagnostic");
 const { referenceableStayHistory, relationCompletenessFailure } = require("../new-core/relation-completeness");
 const { correctionUnitSetPreserved, targetHistoryBindings, targetReferenceRepairFor, targetReferenceRepairPreserved } = require("./understanding-correction-scope");
@@ -539,14 +539,15 @@ function structuredOutputText(payload) {
     ? part.text : null;
 }
 
-async function readProviderPayload(response) {
+async function readProviderPayload(response, transport) {
   let raw = "";
   if (response && typeof response.text === "function") {
-    try { raw = String(await response.text() || ""); }
+    try { raw = String(await response.text() || ""); transport.mark("body"); }
     catch { return { bodyPresent: false, parseFailed: true, payload: null }; }
   } else if (response && typeof response.json === "function") {
     try {
       const payload = await response.json();
+      transport.mark("body");
       return { bodyPresent: payload !== null && payload !== undefined, parseFailed: false, payload };
     } catch { return { bodyPresent: false, parseFailed: true, payload: null }; }
   }
@@ -613,6 +614,7 @@ function usageAccountingFor(payload, propertyId) {
 function safeAttempt(details) {
   return deepFreeze({
     attemptNumber: details.attemptNumber,
+    ...(details.transport ? { transport: details.transport } : {}),
     timeoutMs: details.timeoutMs,
     timeout: Boolean(details.timeout),
     retryable: Boolean(details.retryable),
@@ -657,8 +659,10 @@ function understandingEvidence(understandingTurnInput, structuredOutput, now) {
 
 async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, understandingTurnInput, correction = null, latency, onRequest, nowMs }, attemptNumber) {
   latency.enter("prep");
+  const requestStartedAtMs = Date.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const transport = createTransportObservation({ requestStartedAtMs, signal: controller.signal, apiKey });
   let httpStatus = 0;
   let providerRequestId = "";
   let responseBodyPresent = false;
@@ -679,17 +683,23 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
       signal: controller.signal,
       body: JSON.stringify(providerRequestBody(understandingTurnInput, correction, nowMs()))
     };
+    transport.request(clientRequestId, requestOptions.body);
+    transport.mark("commercial_admission");
     commercialTicket = await beforeCommercialAttempt(understandingTurnInput, attemptNumber, apiKey);
     onRequest(attemptNumber);
     latency.enter("openai");
+    transport.mark("fetch");
     const response = await fetchImpl(RESPONSES_URL, requestOptions);
+    transport.mark("headers");
     httpStatus = Number.isInteger(Number(response && (response.status || response.statusCode)))
       ? Number(response.status || response.statusCode) : 0;
     try {
       providerRequestId = safeToken(response && response.headers && response.headers.get("x-request-id"), 200);
     } catch { providerRequestId = ""; }
-    const read = await readProviderPayload(response);
+    transport.response(httpStatus, providerRequestId);
+    const read = await readProviderPayload(response, transport);
     latency.enter("validation");
+    transport.mark("validation");
     usageAccounting = usageAccountingFor(read.payload, understandingTurnInput.propertyScope.propertyId) || usageAccounting;
     await finishCommercialAttempt(commercialTicket, usageAccounting.usage, response.ok ? "response" : "http_error");
     responseBodyPresent = read.bodyPresent;
@@ -713,7 +723,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
       return {
         value,
         attempt: safeAttempt({
-          attemptNumber, timeoutMs, timeout: false, retryable: false, errorCategory: "",
+          attemptNumber, transport: transport.snapshot(), timeoutMs, timeout: false, retryable: false, errorCategory: "",
           httpStatus, providerRequestId, responseBodyPresent, parsedOutputPresent, resolvedModel, usageAccounting
         })
       };
@@ -733,6 +743,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
     }
     error.providerAttempt = safeAttempt({
       attemptNumber,
+      transport: transport.snapshot(),
       timeoutMs,
       timeout: error.timeout,
       retryable: error.retryable,
@@ -748,6 +759,7 @@ async function requestOnce({ apiKey, fetchImpl, timeoutMs, requestIdFactory, und
   } finally {
     latency.enter("validation");
     clearTimeout(timer);
+    transport.close();
   }
 }
 
@@ -1324,8 +1336,10 @@ async function callOpenAIUnderstandingV1(understandingTurnInput, options = {}) {
       if (error.providerAttempt) attempts.push(error.providerAttempt);
       failureReport = CORRECTION_FAILURES.get(error) || { failures: [], output: null };
     }
-    const accounting = attempts.find(attempt => attempt.attemptNumber === number)?.usageAccounting;
+    const providerAttempt = attempts.find(attempt => attempt.attemptNumber === number);
+    const accounting = providerAttempt?.usageAccounting;
     const report = { attemptNumber: number, attemptType: number === 1 ? "initial" : "correction",
+      ...(providerAttempt?.transport ? { transport: providerAttempt.transport } : {}),
       ...(accounting ? { usageAccounting: accounting } : {}),
       triggerFailure: correction?.failures || null,
       validationResult: { ...(value ? { ok: failureReport.failures.length === 0 } : failureReport.failures.length ? { ok: false } : {}), failures: failureReport.failures,

@@ -1,30 +1,36 @@
 {
   "schemaVersion": 1,
-  "baseline": "dc8820818771a225393d286ee7ed8d309c8a9e74",
-  "objective": "Owner-authorized governance-only registration of the independently reviewed transport diagnostic metadata transition, plus recovery from proven /tmp byte exhaustion and a fail-closed storage preflight/managed-artifact retention mechanism for formal test Gates. Bind exactly three runtime files and one protected additive runner by before/after SHA-256. Preserve failed-run scratch and all unmarked evidence; prune only marker-owned completed scratch. Source evidence semantics, assertions, product Contract and authority remain unchanged. This governance candidate contains no product runtime changes and performs no OpenAI/REAL, DB or deployment operation.",
+  "baseline": "620dde5d678c7fad98c361044f7026199954c799",
+  "objective": "Owner-approved provider transport observability only: persist bounded client/provider request IDs, request/fetch/headers/body/abort timestamps, status, byte/count aggregates and timeout stage through existing production trace. Preserve exact 30000ms deadline position, request content/model, no transport retry, admission/Context/Resolver behavior. Zero OpenAI/REAL; no DB schema/operational writes. Production deployment only after required protection qualifies this candidate.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    ".github/core-reliability-policy.json",
-    "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
-    "pilot/nephi-home-node-pilot-v1/scripts/test-storage-guard.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-execution.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
-    "pilot/nephi-home-node-pilot-v1/tests/test-storage-guard-runner.js"
+    "pilot/nephi-home-node-pilot-v1/lib/providers/openai-understanding-v1.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/understanding-latency.js",
+    "pilot/nephi-home-node-pilot-v1/lib/new-core/production-safe-trace.js",
+    "pilot/nephi-home-node-pilot-v1/tests/new-core-latency-transport-runner.js"
   ],
-  "contractChangeAllowed": false,
-  "gateChangeAllowed": true,
+  "contractChangeAllowed": true,
+  "gateChangeAllowed": false,
+  "contractInstallationId": "understanding-transport-observability-20261003",
   "affectedCapabilities": [
-    "governance"
+    "provider-transport-observability"
   ],
-  "realBudget": {
-    "mode": "DENY",
-    "maxCalls": 0,
-    "maxTokens": 0
+  "preExistingUntracked": [
+    "pilot/nephi-home-node-pilot-v1/node_modules"
+  ],
+  "impact": {
+    "safeModificationPoints": [
+      "pilot/nephi-home-node-pilot-v1/lib/providers/openai-understanding-v1.js",
+      "pilot/nephi-home-node-pilot-v1/lib/new-core/understanding-latency.js",
+      "pilot/nephi-home-node-pilot-v1/lib/new-core/production-safe-trace.js"
+    ],
+    "authorities": [
+      "admission",
+      "understanding"
+    ]
   },
-  "approvalSource": "Owner explicitly authorized the existing atomic installation governance review for the independently reviewed diagnostic-only transition. GitHub owner environment approval remains mandatory and cannot be self-issued.",
   "redRunners": [
-    "tests/test-storage-guard-runner.js",
-    "tests/core-contract-approval-runner.js",
-    "tests/capability-guard-runner.js"
-  ]
+    "tests/new-core-latency-transport-runner.js"
+  ],
+  "approvalSource": "Owner approved deployment of the unchanged independently reviewed timeout diagnostic transition through the installed exact atomic combination. This manifest is not approval evidence: the candidate/run still requires the existing independent GitHub owner review. No timeout, retry, model, prompt, semantic Contract, authority, database or environment change is requested."
 }
