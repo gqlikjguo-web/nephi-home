@@ -376,7 +376,8 @@
     "tests/core-contract-approval-runner.js",
     "tests/capability-guard-runner.js",
     "tests/capability-baseline-runner.js",
-    "tests/capability-installation-runner.js"
+    "tests/capability-installation-runner.js",
+    "tests/test-storage-guard-runner.js"
   ],
   "lifecycle": [
     "pretest",
@@ -998,6 +999,53 @@
         "tests/new-core-verdict-trace-runner.js",
         "tests/new-core-visible-outcomes-runner.js",
         "tests/property-explanation-images-ui-runner.js"
+      ],
+      "requireReal": true
+    },
+    {
+      "id": "understanding-transport-observability-20261003",
+      "sourceBaseline": "6e5721ca9f61dff31629756b2d4b2c76a11fc857",
+      "baselineGovernancePaths": [
+        ".github/core-reliability-task.json",
+        ".github/core-reliability-policy.json",
+        ".github/core-impact-manifest.json",
+        "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
+        "pilot/nephi-home-node-pilot-v1/scripts/test-storage-guard.js",
+        "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-execution.js",
+        "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
+        "pilot/nephi-home-node-pilot-v1/tests/test-storage-guard-runner.js",
+        "pilot/nephi-home-node-pilot-v1/tests/core-contract-approval-runner.js",
+        "pilot/nephi-home-node-pilot-v1/tests/capability-guard-runner.js"
+      ],
+      "protectedPaths": [
+        "pilot/nephi-home-node-pilot-v1/tests/new-core-latency-transport-runner.js"
+      ],
+      "files": [
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/production-safe-trace.js",
+          "beforeSha256": "e13b2b88f11716fc6cece90874f77938597546a963058481dce0d99440d59994",
+          "afterSha256": "41eb0c214afd015814225825874a5b01c66f6377d2bae58c2c9ebcd5b8685aed"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/understanding-latency.js",
+          "beforeSha256": "27856993e9ede4c27256bc4df77c1a3b1e26ad4c9445b75a924d5dcb6c8cedfc",
+          "afterSha256": "27226f7eab04252ebdcdc8c52a5c6ae9851f8c34e5a8e8b890900d60561d54e1"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/lib/providers/openai-understanding-v1.js",
+          "beforeSha256": "b8adc0d5aad8576b8585f2a393eafc7e81366f1a3662f2bab59c3d2f9dbe9df5",
+          "afterSha256": "595963656ed235305351b92585434a193bd28da959e0a23bf4f32ec19c014872"
+        },
+        {
+          "path": "pilot/nephi-home-node-pilot-v1/tests/new-core-latency-transport-runner.js",
+          "beforeSha256": "b1f01e52a633a2ac6b311428d971acbf5adb36839ad41ae78a6ec592720fb7ac",
+          "afterSha256": "c4c6d91189598ffbf5080882032d3fef7282d24cd619f3adfeb16571c4c1c37a"
+        }
+      ],
+      "requiredRunners": [
+        "tests/new-core-latency-transport-runner.js",
+        "tests/new-core-source-evidence-runner.js",
+        "tests/capability-baseline-runner.js"
       ],
       "requireReal": true
     }
