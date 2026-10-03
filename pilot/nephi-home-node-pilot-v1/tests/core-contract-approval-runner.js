@@ -33,6 +33,28 @@ function resetResponses() {
     "/actions/runs/6/approvals": [{ state: "approved", comment: `CONTRACT_CHANGE_APPROVED ${contract.digest(descriptor)} REVIEW_SHA256=${"a".repeat(64)}`, environments: [{ id: 12, name: "core-scope-approval" }], user: { id: 34 } }]
   };
 }
+
+function storageGovernanceRoutingFixture(includeRuntime = false) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-governance-routing-"));
+  const g = (...args) => cp.execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const policyPath = ".github/core-reliability-policy.json";
+  const storagePaths = [
+    "pilot/nephi-home-node-pilot-v1/scripts/test-storage-guard.js",
+    "pilot/nephi-home-node-pilot-v1/tests/test-storage-guard-runner.js"
+  ];
+  const write = (file, text) => { fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true }); fs.writeFileSync(path.join(dir, file), text); };
+  write(policyPath, "trusted policy\n"); write("runtime.js", "trusted runtime\n");
+  g("init", "-q"); g("config", "user.name", "Governance routing test"); g("config", "user.email", "test@example.invalid");
+  g("add", "."); g("commit", "-qm", "trusted governance baseline"); const base = g("rev-parse", "HEAD");
+  const scope = { schemaVersion: 1, baseline: base, objective: "exact storage governance paths", allowedPaths: [taskPath, policyPath, ...storagePaths, ...(includeRuntime ? ["runtime.js"] : [])], contractChangeAllowed: false, gateChangeAllowed: true, affectedCapabilities: ["governance"] };
+  write(taskPath, JSON.stringify(scope)); write(policyPath, "candidate policy\n");
+  for (const file of storagePaths) write(file, "governance only\n");
+  if (includeRuntime) write("runtime.js", "masquerading runtime\n");
+  g("add", "."); g("commit", "-qm", "governance routing candidate");
+  const installed = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../../.github/core-reliability-policy.json"), "utf8"));
+  const routingPolicy = { ...installed, contractReview: policy.contractReview, capabilities: [{ paths: ["runtime.js"], runners: [] }] };
+  return { root: dir, baseline: base, candidate: g("rev-parse", "HEAD"), task: scope, policy: routingPolicy, context };
+}
 const originalFetch = global.fetch;
 global.fetch = async (url, options) => {
   assert.equal(options.method, "GET"); assert.equal(options.redirect, "error");
@@ -146,6 +168,9 @@ async function verifyAtomicInstallation() {
   await assert.rejects(() => contract.authorize({ ...descriptor, diffSha256: "b".repeat(64) }, policy, "fixture-read-only"), /CONTRACT_APPROVAL_REQUIRED/); cases++;
   fs.writeFileSync(path.join(root, "runtime.js"), "unapproved runtime\n"); git("add", "."); git("commit", "-qm", "mixed runtime negative candidate");
   fails(() => contract.describe({ root, baseline, candidate: git("rev-parse", "HEAD"), task, policy, context }), /CONTRACT_ONLY_CHANGE_REQUIRED/);
+  const governanceRouting = storageGovernanceRoutingFixture();
+  assert.equal(contract.describe(governanceRouting).kind, "GOVERNANCE_CHANGE"); cases++;
+  fails(() => contract.describe(storageGovernanceRoutingFixture(true)), /GOVERNANCE_ONLY_CHANGE_REQUIRED/);
   const workflow = fs.readFileSync(path.resolve(__dirname, "../../../.github/workflows/core-reliability.yml"), "utf8");
   assert.match(workflow, /core-contract-approval\.js describe/); assert.match(workflow, /actions: read/); assert.match(workflow, /CORE_GATE_GITHUB_READ_TOKEN: \$\{\{ github\.token \}\}/); cases++;
   await verifyAtomicInstallation();
