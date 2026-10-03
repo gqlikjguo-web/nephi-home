@@ -3,7 +3,7 @@
 const fs = require("node:fs"), path = require("node:path"), crypto = require("node:crypto"), { execFileSync } = require("node:child_process");
 const TASK = ".github/core-reliability-task.json";
 const POLICY = ".github/core-reliability-policy.json";
-const receipts = new WeakMap();
+const receipts = new WeakMap(), issuedObservabilityRequirements = new WeakSet();
 function insist(ok, reason) { if (!ok) throw new Error(reason); }
 function digest(value) { return crypto.createHash("sha256").update(Buffer.isBuffer(value) ? value : typeof value === "string" ? value : JSON.stringify(value)).digest("hex"); }
 function git(root, args) { return execFileSync("git", args, { cwd: root, maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }); }
@@ -23,10 +23,27 @@ function installationEntry(policy, id) {
   insist(typeof id === "string" && Array.isArray(entries) && entries.filter(e => e.id === id).length === 1, "ATOMIC_REGISTRATION_REQUIRED");
   return entries.find(e => e.id === id);
 }
+function isExactReviewedObservabilityTransition(policy, file) {
+  const real = policy.realE2e;
+  return Boolean(real && Array.isArray(real.requiredPaths) && Array.isArray(real.reviewedTransitions) &&
+    real.requiredPaths.some(prefix => file.path.startsWith(prefix)) && real.reviewedTransitions.some(entry =>
+      entry.path === file.path && entry.beforeSha256 === file.beforeSha256 && entry.afterSha256 === file.afterSha256 &&
+      typeof entry.reason === "string" && entry.reason.trim() && entry.candidateFiles === undefined));
+}
+function observabilityOnlyRegistration(entry, policy) {
+  if (entry.semanticImpact === undefined) return false;
+  insist(entry.semanticImpact === "OBSERVABILITY_ONLY" && entry.requireReal === false, "ATOMIC_OBSERVABILITY_CLASSIFICATION_INVALID");
+  insist(Array.isArray(entry.files), "ATOMIC_OBSERVABILITY_CLASSIFICATION_INVALID");
+  const runtimeFiles = entry.files.filter(file => !/^(?:pilot\/nephi-home-node-pilot-v1\/)?tests\//.test(file.path));
+  insist(runtimeFiles.length > 0 && runtimeFiles.every(file => /^[a-f0-9]{64}$/.test(file.beforeSha256) &&
+    isExactReviewedObservabilityTransition(policy, file)), "ATOMIC_OBSERVABILITY_REVIEW_REQUIRED");
+  return true;
+}
 function describeInstallation({root, baseline, candidate, task, policy, changedPaths, protectedPaths}) {
   const entry = installationEntry(policy, task.contractInstallationId);
   const files = entry.files;
-  insist(task.gateChangeAllowed === false && /^[a-f0-9]{40}$/.test(entry.sourceBaseline) && entry.requireReal === true &&
+  const observabilityOnly = observabilityOnlyRegistration(entry, policy);
+  insist(task.gateChangeAllowed === false && /^[a-f0-9]{40}$/.test(entry.sourceBaseline) && (entry.requireReal === true && entry.semanticImpact === undefined || observabilityOnly) &&
     Array.isArray(entry.baselineGovernancePaths) && entry.baselineGovernancePaths.every(exactPath) &&
     Array.isArray(entry.requiredRunners) && entry.requiredRunners.length > 0 && entry.requiredRunners.every(p => exactPath(p) && p.endsWith(".js")) &&
     Array.isArray(files) && files.length > 0 && new Set(files.map(f => f.path)).size === files.length && files.every(f => exactPath(f.path) &&
@@ -42,7 +59,8 @@ function describeInstallation({root, baseline, candidate, task, policy, changedP
     insist(blobDigest(root, entry.sourceBaseline, file.path) === file.beforeSha256 && blobDigest(root, baseline, file.path) === file.beforeSha256 &&
       blobDigest(root, candidate, file.path) === file.afterSha256, "ATOMIC_CONTENT_MISMATCH: " + file.path);
   }
-  return { installationId: entry.id, installationDigest: digest(entry), files: structuredClone(files) };
+  return { installationId: entry.id, installationDigest: digest(entry), files: structuredClone(files), requireReal: entry.requireReal,
+    ...(observabilityOnly ? { semanticImpact: entry.semanticImpact } : {}) };
 }
 function requirements(receipt, policy) {
   if (!receipt) return { runners: [], requireReal: false };
@@ -51,7 +69,13 @@ function requirements(receipt, policy) {
   if (!descriptor.installationId) return { runners: [], requireReal: false };
   const entry = installationEntry(policy, descriptor.installationId);
   insist(descriptor.installationDigest === digest(entry), "CONTRACT_RECEIPT_REQUIRED");
-  return { installationId: entry.id, runners: [...entry.requiredRunners], requireReal: true };
+  const result = { installationId: entry.id, runners: [...entry.requiredRunners], requireReal: entry.requireReal,
+    ...(entry.semanticImpact === "OBSERVABILITY_ONLY" ? { semanticImpact: entry.semanticImpact } : {}) };
+  if (entry.semanticImpact === "OBSERVABILITY_ONLY") issuedObservabilityRequirements.add(result);
+  return result;
+}
+function isObservabilityOnlyRequirement(value) {
+  return Boolean(value && issuedObservabilityRequirements.has(value) && value.requireReal === false && value.semanticImpact === "OBSERVABILITY_ONLY");
 }
 function approvalPrefix(descriptor) {
   return `${descriptor.kind === "GOVERNANCE_CHANGE" ? "GOVERNANCE_CHANGE_APPROVED" : descriptor.installationId ? "CONTRACT_RUNTIME_INSTALL_APPROVED" : "CONTRACT_CHANGE_APPROVED"} ${digest(descriptor)} REVIEW_SHA256=`;
@@ -112,7 +136,8 @@ async function authorize(descriptor, policy, token) {
   const history = await get(`/actions/runs/${descriptor.runId}/approvals`);
   if (descriptor.installationId) {
     const entry = installationEntry(policy, descriptor.installationId);
-    insist(descriptor.schemaVersion === 2 && descriptor.installationDigest === digest(entry) && JSON.stringify(descriptor.files) === JSON.stringify(entry.files), "CONTRACT_INSTALLATION_MISMATCH");
+    insist(descriptor.schemaVersion === 2 && descriptor.installationDigest === digest(entry) && JSON.stringify(descriptor.files) === JSON.stringify(entry.files) &&
+      descriptor.requireReal === entry.requireReal && descriptor.semanticImpact === entry.semanticImpact, "CONTRACT_INSTALLATION_MISMATCH");
   }
   const prefix = approvalPrefix(descriptor);
   const review = Array.isArray(history) && history.find(r => r.state === "approved" && r.user?.id === authority.reviewerId &&
@@ -150,4 +175,4 @@ function describeCli() {
   console.log(JSON.stringify({ descriptorDigest: digest(descriptor), ...descriptor }));
 }
 if (require.main === module) { try { insist(process.argv[2] === "describe", "CONTRACT_INVALID_COMMAND"); describeCli(); } catch (e) { console.error(e.message); process.exitCode = 1; } }
-module.exports = { describe, authorize, matches, matchesGovernance, digest, requirements };
+module.exports = { describe, authorize, matches, matchesGovernance, digest, requirements, isObservabilityOnlyRequirement };

@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "baseline": "dc8820818771a225393d286ee7ed8d309c8a9e74",
-  "objective": "Owner-authorized governance-only registration of the independently reviewed transport diagnostic metadata transition, plus recovery from proven /tmp byte exhaustion and a fail-closed storage preflight/managed-artifact retention mechanism for formal test Gates. Bind exactly three runtime files and one protected additive runner by before/after SHA-256. Preserve failed-run scratch and all unmarked evidence; prune only marker-owned completed scratch. Source evidence semantics, assertions, product Contract and authority remain unchanged. This governance candidate contains no product runtime changes and performs no OpenAI/REAL, DB or deployment operation.",
+  "baseline": "620dde5d678c7fad98c361044f7026199954c799",
+  "objective": "Owner-authorized governance-only correction of REAL classification for the exact independently reviewed Understanding transport observability transition. Permit deterministic-only qualification solely when a private atomic-installation receipt binds every changed runtime/test byte to trusted before/after SHA-256 and trusted realE2e reviewed transitions. Preserve REAL requirements for prompt, model, input, admission, correction, runtime semantic changes, forced REAL, content drift, or any unregistered edit. Do not modify diagnostic or product runtime, timeout, retry, model, prompt, database, deployment, or external state.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
     ".github/core-reliability-policy.json",
     "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
-    "pilot/nephi-home-node-pilot-v1/scripts/test-storage-guard.js",
-    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-execution.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/core-contract-approval.js",
     "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
-    "pilot/nephi-home-node-pilot-v1/tests/test-storage-guard-runner.js"
+    "pilot/nephi-home-node-pilot-v1/tests/core-contract-approval-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/capability-installation-runner.js"
   ],
   "contractChangeAllowed": false,
   "gateChangeAllowed": true,
@@ -21,10 +21,9 @@
     "maxCalls": 0,
     "maxTokens": 0
   },
-  "approvalSource": "Owner explicitly authorized the existing atomic installation governance review for the independently reviewed diagnostic-only transition. GitHub owner environment approval remains mandatory and cannot be self-issued.",
+  "approvalSource": "Owner explicitly authorized fixing only the Impact/Token Gate over-classification for candidate c09e01d22d22d1a479db75a4e7d76a6d305d7170, with a fail-closed guarantee that genuine Understanding semantic changes still require affected REAL. This task does not authorize product runtime changes or deployment.",
   "redRunners": [
-    "tests/test-storage-guard-runner.js",
     "tests/core-contract-approval-runner.js",
-    "tests/capability-guard-runner.js"
+    "tests/capability-installation-runner.js"
   ]
 }

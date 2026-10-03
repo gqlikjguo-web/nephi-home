@@ -652,6 +652,24 @@
     ],
     "reviewedTransitions": [
       {
+        "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/production-safe-trace.js",
+        "beforeSha256": "e13b2b88f11716fc6cece90874f77938597546a963058481dce0d99440d59994",
+        "afterSha256": "41eb0c214afd015814225825874a5b01c66f6377d2bae58c2c9ebcd5b8685aed",
+        "reason": "Independently reviewed additive transport diagnostic projection only. No source evidence, Understanding, admission, Context, Resolver or response semantics change; any other byte requires REAL."
+      },
+      {
+        "path": "pilot/nephi-home-node-pilot-v1/lib/new-core/understanding-latency.js",
+        "beforeSha256": "27856993e9ede4c27256bc4df77c1a3b1e26ad4c9445b75a924d5dcb6c8cedfc",
+        "afterSha256": "27226f7eab04252ebdcdc8c52a5c6ae9851f8c34e5a8e8b890900d60561d54e1",
+        "reason": "Independently reviewed additive wall-clock transport observation only. Timeout, request content, model, retry and semantic processing remain unchanged; any other byte requires REAL."
+      },
+      {
+        "path": "pilot/nephi-home-node-pilot-v1/lib/providers/openai-understanding-v1.js",
+        "beforeSha256": "b8adc0d5aad8576b8585f2a393eafc7e81366f1a3662f2bab59c3d2f9dbe9df5",
+        "afterSha256": "595963656ed235305351b92585434a193bd28da959e0a23bf4f32ec19c014872",
+        "reason": "Independently reviewed transport observation wiring only. Prompt, model input, schema, timeout, retry, admission and correction semantics remain unchanged; any other byte requires REAL."
+      },
+      {
         "path": "pilot/nephi-home-node-pilot-v1/lib/conversation-engine-v2/claim-validator.js",
         "beforeSha256": "44f69c3fe6c44d52341758d0ac71bae70744ef55b85368f9077d67390cc516bf",
         "afterSha256": "037243c0dd4b4b2265349d6eecc1cd74577f56fa7037fdf08e59cc32346c22f6",
@@ -1047,7 +1065,8 @@
         "tests/new-core-source-evidence-runner.js",
         "tests/capability-baseline-runner.js"
       ],
-      "requireReal": true
+      "requireReal": false,
+      "semanticImpact": "OBSERVABILITY_ONLY"
     }
   ],
   "capabilityProtection": {

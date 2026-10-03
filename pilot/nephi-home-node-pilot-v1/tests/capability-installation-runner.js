@@ -92,6 +92,8 @@ async function run() {
     const gate=require("../scripts/core-reliability-gate");
     assert.equal(gate.realRequirement({installation:{requireReal:false},capabilityProtection:{plan:{modelPathChanged:false}},realClassification:{required:true}}),true);
     assert.equal(gate.realRequirement({installation:{requireReal:false},capabilityProtection:{plan:{modelPathChanged:true}},realClassification:{required:false}}),true);
+    assert.equal(gate.realRequirement({installation:{requireReal:false,semanticImpact:"OBSERVABILITY_ONLY"},capabilityProtection:{plan:{modelPathChanged:true}},realClassification:{required:true}}),true,
+      "candidate-created observability labels must not waive REAL");
   });
   await check("non-core product assets still require accepted content parity",()=>{
     const gate=require("../scripts/core-reliability-gate"),policy={governancePaths:[G]},protection={plan:{CHANGED_COMPONENTS:[]},product:{metadata:[T],mustMatch:[G,"public/admin.js","gateway.js","render.yaml"],testOnly:{}}};

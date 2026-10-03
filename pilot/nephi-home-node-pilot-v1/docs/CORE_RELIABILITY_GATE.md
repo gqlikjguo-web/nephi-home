@@ -229,12 +229,19 @@ The candidate runs its own corresponding specifications and runtime together.
 All existing incident, affected, required and baseline npm lifecycle checks
 remain; the registration can only add required runners. Exact diff whitespace,
 protected acceptance, integrity and all existing assertions remain checked.
-This route always requires existing REAL OpenAI/core/Context/Resolver/isolated
-PostgreSQL/FinalDecision/FinalResponse qualification. No uploaded old report or
-local fake result substitutes for that run. Missing credentials/REAL, incomplete
-test sets, skips, timeout, nonzero exits or stale SHA prevent success. REAL rules
-and the protected oracle are unchanged; release completion validates both the
-complete deterministic result set and required current-candidate REAL evidence.
+This route requires existing REAL OpenAI/core/Context/Resolver/isolated
+PostgreSQL/FinalDecision/FinalResponse qualification by default. The sole
+exception is a trusted-base `OBSERVABILITY_ONLY` registration whose complete
+atomic file set and every model-path file independently match exact reviewed
+before/after SHA-256 transitions. The private approval receipt, exact scope and
+content checks must all succeed; candidate labels cannot activate the exception,
+and forced REAL still wins. Prompt, model, input, schema, admission, correction
+or any unregistered byte change retains REAL qualification. No uploaded old
+report or local fake result substitutes for a required run. Missing
+credentials/REAL, incomplete test sets, skips, timeout, nonzero exits or stale
+SHA prevent success. REAL rules and the protected oracle are unchanged; release
+completion validates the complete deterministic result set and any required
+current-candidate REAL evidence.
 
 Only a fully qualified, independently reviewed current candidate is eligible
 for installation. Product merging and production deployment require their own
