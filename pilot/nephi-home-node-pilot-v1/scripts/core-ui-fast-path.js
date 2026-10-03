@@ -94,6 +94,17 @@ function classify({ root, baseline, candidate }) {
       || task.contractChangeAllowed !== false || task.gateChangeAllowed !== false
       || !Array.isArray(task.affectedCapabilities) || !Array.isArray(task.allowedPaths)
       || JSON.stringify([...task.allowedPaths].sort()) !== JSON.stringify(changedPaths)) return fallback("TASK_SCOPE_MISMATCH");
+  const policyPath = ".github/core-reliability-policy.json";
+  if (git(root, ["ls-tree", baseline, "--", policyPath]).trim()) {
+    let policy;
+    try { policy = JSON.parse(blob(root, baseline, policyPath)); }
+    catch { return fallback("TRUSTED_POLICY_INVALID"); }
+    if (!policy || typeof policy !== "object" || Array.isArray(policy)) return fallback("TRUSTED_POLICY_INVALID");
+    if (policy.capabilityProtection !== undefined) {
+      if (!policy.capabilityProtection || typeof policy.capabilityProtection.required !== "boolean") return fallback("TRUSTED_POLICY_INVALID");
+      if (policy.capabilityProtection.required) return fallback("CAPABILITY_PROTECTION_REQUIRES_FULL_GATE");
+    }
+  }
   const diffSha256 = sha256(git(root, ["diff", "--binary", "--no-renames", baseline, candidate], null));
   return { fast: true, reason: "TRUSTED_ACTUAL_DIFF", baselineSha: baseline, candidateSha: candidate, diffSha256, changedPaths, productPaths, runners: [AFFECTED] };
 }

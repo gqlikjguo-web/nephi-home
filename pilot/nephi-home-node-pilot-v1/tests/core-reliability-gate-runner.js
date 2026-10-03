@@ -345,4 +345,4 @@ function verifyCompleteReleaseEvidence() {
   gate.validateReleaseEvidence({...evidence,realE2eRequired:false},baseline,candidate,["contract.js"],false);cases++;
 }
 
-verifyWorkflow().then(() => { verifyCompleteReleaseEvidence(); }).then(() => console.log(JSON.stringify({ classification: "STRUCTURED_CONTRACT_TEST", cases, passed: cases, temporaryRepositoryPreserved: root, realOpenaiCalls: 0 }))).catch(e => { console.error(e); process.exitCode = 1; });
+verifyWorkflow().then(() => { verifyCompleteReleaseEvidence(); }).then(() => require("./capability-installation-runner").run()).then(() => console.log(JSON.stringify({ classification: "STRUCTURED_CONTRACT_TEST", cases, passed: cases, temporaryRepositoryPreserved: root, realOpenaiCalls: 0 }))).catch(e => { console.error(e); process.exitCode = 1; });

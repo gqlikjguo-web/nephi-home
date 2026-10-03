@@ -240,3 +240,33 @@ Only a fully qualified, independently reviewed current candidate is eligible
 for installation. Product merging and production deployment require their own
 explicit authorization. Original UNDERSTANDING_SCHEMA_INVALID remains unresolved;
 static rollback compatibility is not a rollback rehearsal.
+
+## Capability non-regression protection (pending independent installation)
+
+The approved capability-protection governance candidate adds exact dependency/
+authority impact, an offline capability baseline and immutable content evidence.
+See `CAPABILITY_PROTECTION.md`. Once installed, the trusted base selects these
+checks; candidate manifests cannot weaken them. Existing scope, Contract,
+incident and lifecycle checks remain additive. The trusted impact manifest adds model-facing REAL requirements; existing
+trusted REAL requirements remain additive. The default budget is zero. A legacy
+requirement without model-impact eligibility remains BLOCKED for review, never
+silently waived or replaced by an unrelated model call. Exact affected cases and their formal
+prerequisites are selected from the trusted approved oracle map. Missing case
+coverage, budget, independent approval or usage evidence blocks qualification;
+NOT_RUN never becomes PASS. Product promotion requires accepted Test content
+and physical schema evidence. Governance-only installation does not authorize
+product promotion; unresolved schema parity and canary remain blocked.
+
+After installation, changes to registered governance files require an exact
+independent descriptor and the existing GitHub environment approval API:
+`GOVERNANCE_CHANGE_APPROVED <descriptor SHA-256> REVIEW_SHA256=<review evidence SHA-256>`.
+This receipt cannot include product runtime, an unregistered file, changed
+bindings or an old approval. The initial governance installation is qualified
+by the existing production-base Gate and independent owner, not this new rule.
+See `CAPABILITY_PROTECTION.md` for token accounting, immutability, evidence
+preservation and administrator-authority limits.
+
+When capability protection is required by the actual baseline policy, UI text/CSS
+classification also selects the full Gate. Legacy fast-path assertions and the
+workflow remain unchanged; no alternate candidate status bypasses the new
+content/impact requirements. Invalid policy fails closed.

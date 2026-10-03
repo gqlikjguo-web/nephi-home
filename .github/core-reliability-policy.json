@@ -323,7 +323,26 @@
     "pilot/nephi-home-node-pilot-v1/tests/core-contract-approval-runner.js",
     "pilot/nephi-home-node-pilot-v1/tests/fixtures/room-gallery-server-route.patch",
     "pilot/nephi-home-node-pilot-v1/tests/fixtures/room-gallery-reviewed-modules.json",
-    "pilot/nephi-home-node-pilot-v1/tests/fixtures/room-gallery-r2dev-approved.patch"
+    "pilot/nephi-home-node-pilot-v1/tests/fixtures/room-gallery-r2dev-approved.patch",
+    ".github/capability-baseline.json",
+    ".github/core-impact-manifest.json",
+    ".github/core-verification-manifest.json",
+    ".github/product-content-policy.json",
+    "pilot/nephi-home-node-pilot-v1/docs/CAPABILITY_PROTECTION.md",
+    "pilot/nephi-home-node-pilot-v1/docs/superpowers/plans/2026-10-02-capability-protection.md",
+    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-content.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-impact.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-budget.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-execution.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-offline.cjs",
+    "pilot/nephi-home-node-pilot-v1/scripts/capability-canary-readiness.js",
+    "pilot/nephi-home-node-pilot-v1/tests/capability-guard-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/capability-baseline-runner.js",
+    "pilot/nephi-home-node-pilot-v1/tests/fixtures/production-capability-evidence.json",
+    "pilot/nephi-home-node-pilot-v1/tests/helpers/capability-baseline-fixture.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/capability-real-session.js",
+    "pilot/nephi-home-node-pilot-v1/tests/capability-installation-runner.js"
   ],
   "requiredRunners": [
     "tests/core-ui-fast-path-runner.js",
@@ -352,7 +371,10 @@
     "tests/controlled-custom-reply-runtime-runner.js",
     "tests/planner-boundary-contract-runner.js",
     "tests/conversation-state-v3-runtime-reducer-runner.js",
-    "tests/core-contract-approval-runner.js"
+    "tests/core-contract-approval-runner.js",
+    "tests/capability-guard-runner.js",
+    "tests/capability-baseline-runner.js",
+    "tests/capability-installation-runner.js"
   ],
   "lifecycle": [
     "pretest",
@@ -977,5 +999,13 @@
       ],
       "requireReal": true
     }
-  ]
+  ],
+  "capabilityProtection": {
+    "schemaVersion": 1,
+    "required": true,
+    "installation": "Independent existing trusted-base governance review only; no runtime in governance PR.",
+    "realDefault": "DENY",
+    "promotionRequiresAcceptedContentLock": true,
+    "schemaRollout": "BLOCKED until independent physical-schema authority resolves saved mismatch; no DDL"
+  }
 }
