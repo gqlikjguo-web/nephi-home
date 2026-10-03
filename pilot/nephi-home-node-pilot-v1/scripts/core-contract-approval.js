@@ -54,7 +54,7 @@ function requirements(receipt, policy) {
   return { installationId: entry.id, runners: [...entry.requiredRunners], requireReal: true };
 }
 function approvalPrefix(descriptor) {
-  return `${descriptor.installationId ? "CONTRACT_RUNTIME_INSTALL_APPROVED" : "CONTRACT_CHANGE_APPROVED"} ${digest(descriptor)} REVIEW_SHA256=`;
+  return `${descriptor.kind === "GOVERNANCE_CHANGE" ? "GOVERNANCE_CHANGE_APPROVED" : descriptor.installationId ? "CONTRACT_RUNTIME_INSTALL_APPROVED" : "CONTRACT_CHANGE_APPROVED"} ${digest(descriptor)} REVIEW_SHA256=`;
 }
 
 function describe({ root, baseline, candidate, task, policy, context }) {
@@ -63,10 +63,16 @@ function describe({ root, baseline, candidate, task, policy, context }) {
   const changedPaths = git(root, ["diff", "--no-renames", "--name-only", "-z", baseline, candidate]).toString().split("\0").filter(Boolean).sort();
   const protectedPaths = changedPaths.filter(p => policy.protectedPaths.includes(p));
   insist(protectedPaths.length || task.contractInstallationId === undefined, "ATOMIC_PROTECTED_SCOPE_MISMATCH");
-  if (!protectedPaths.length) return null;
-  insist(task.contractChangeAllowed === true, "CONTRACT_REQUEST_REQUIRED");
+  const governance = policy.capabilityProtection?.required === true && changedPaths.some(p => policy.governancePaths.includes(p));
+  if (!protectedPaths.length && !governance) return null;
+  if (governance) {
+    insist(task.gateChangeAllowed === true && task.contractInstallationId === undefined, "GOVERNANCE_REQUEST_REQUIRED");
+    insist(changedPaths.every(p => p === TASK || policy.governancePaths.includes(p)) &&
+      sameSet(changedPaths, task.allowedPaths) && !changedPaths.some(p => policy.capabilities.some(c => c.paths.some(prefix => p.startsWith(prefix)))), "GOVERNANCE_ONLY_CHANGE_REQUIRED");
+  }
+  insist(governance || task.contractChangeAllowed === true, "CONTRACT_REQUEST_REQUIRED");
   const installation = task.contractInstallationId === undefined ? null : describeInstallation({root, baseline, candidate, task, policy, changedPaths, protectedPaths});
-  if (!installation) insist(changedPaths.every(p => p === TASK || protectedPaths.includes(p)) &&
+  if (!installation && !governance) insist(changedPaths.every(p => p === TASK || protectedPaths.includes(p)) &&
     protectedPaths.every(p => /^(?:pilot\/nephi-home-node-pilot-v1\/)?tests\//.test(p) && !policy.governancePaths.includes(p)) &&
     !changedPaths.some(p => policy.capabilities.some(c => c.paths.some(prefix => p.startsWith(prefix)))), "CONTRACT_ONLY_CHANGE_REQUIRED");
   insist(task.baseline === baseline, "CONTRACT_BASELINE_MISMATCH");
@@ -74,7 +80,8 @@ function describe({ root, baseline, candidate, task, policy, context }) {
   insist(authority && authority.repository === context.repository && context.runAttempt === 1 &&
     Number.isSafeInteger(context.runId) && context.runId > 0 && Number.isSafeInteger(context.pullRequest) && context.pullRequest > 0, "CONTRACT_AUTHORITY_REQUIRED");
   return {
-    schemaVersion: installation ? 2 : 1, ...(installation || {}), repository: context.repository, pullRequest: context.pullRequest,
+    schemaVersion: governance ? 3 : installation ? 2 : 1, ...(installation || {}),
+    ...(governance ? { kind: "GOVERNANCE_CHANGE", files: changedPaths.map(file => ({path:file,beforeSha256:blobDigest(root,baseline,file),afterSha256:blobDigest(root,candidate,file)})) } : {}), repository: context.repository, pullRequest: context.pullRequest,
     runId: context.runId, runAttempt: context.runAttempt, baselineSha: baseline, candidateSha: candidate,
     changedPaths, protectedPaths, taskDigest: digest(task), policyDigest: digest(policy),
     // Hash bytes, including trailing newlines; disable local diff drivers/textconv.
@@ -122,6 +129,11 @@ function matches(receipt, changed, task, policy) {
   return Boolean(d && d.taskDigest === digest(task) && d.policyDigest === digest(policy) && d.baselineSha === task.baseline &&
     JSON.stringify(d.changedPaths) === JSON.stringify([...changed].sort()));
 }
+function matchesGovernance(receipt, changed, task, policy) {
+  const d = receipt && receipts.get(receipt);
+  return Boolean(d?.kind === "GOVERNANCE_CHANGE" && matches(receipt,changed,task,policy) &&
+    changed.every(p => p === TASK || policy.governancePaths.includes(p)));
+}
 function describeCli() {
   const root = path.resolve(process.env.CORE_CONTRACT_ROOT || process.cwd());
   const baseline = process.env.BASELINE, candidate = process.env.CANDIDATE;
@@ -138,4 +150,4 @@ function describeCli() {
   console.log(JSON.stringify({ descriptorDigest: digest(descriptor), ...descriptor }));
 }
 if (require.main === module) { try { insist(process.argv[2] === "describe", "CONTRACT_INVALID_COMMAND"); describeCli(); } catch (e) { console.error(e.message); process.exitCode = 1; } }
-module.exports = { describe, authorize, matches, digest, requirements };
+module.exports = { describe, authorize, matches, matchesGovernance, digest, requirements };

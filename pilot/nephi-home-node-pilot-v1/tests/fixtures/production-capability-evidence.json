@@ -1,0 +1,790 @@
+{
+  "schemaVersion": 1,
+  "classification": "SAVED_PRODUCTION_TRACE_EXCERPTS",
+  "scope": "Selected successful events, not proof of all natural-language variants. Safe-trace redaction remains; no customer identifiers or credentials. Test facts are separate synthetic fixtures.",
+  "traces": [
+    {
+      "traceId": "a73ca81a-4199-48a3-9be5-d8fbe445dd9f",
+      "productionSha": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+      "provenance": "saved-production-trace; read-only export; no replay/provider call in this task",
+      "c03": [
+        [
+          {
+            "status": "SUCCESS",
+            "failureCode": "",
+            "unit": {
+              "unitId": "h:2a59d2eb0f3ad723265d35d0a43c62c9270fb007cc4a53f0044a67a871ac692b",
+              "purpose": "lodging_question",
+              "capability": "policy",
+              "subject": {
+                "kind": "policy",
+                "catalogIdentity": "travel_subsidy"
+              },
+              "temporalCandidate": null,
+              "confidenceBand": "high",
+              "evidenceRefs": [
+                {
+                  "eventRef": "h:518b105b1368267c3a8aefb695fd811d1076bc2a183c80ce6787cfd7d17da102",
+                  "messageRef": "h:518b105b1368267c3a8aefb695fd811d1076bc2a183c80ce6787cfd7d17da102",
+                  "startOffset": 0,
+                  "endOffset": 12,
+                  "quote": "所以可以使用國旅補助是嗎",
+                  "sourceExcerpt": ""
+                }
+              ],
+              "slotCandidates": [],
+              "safetyCandidate": null
+            }
+          }
+        ]
+      ],
+      "canonical": [
+        [
+          {
+            "taskId": "h:2a59d2eb0f3ad723265d35d0a43c62c9270fb007cc4a53f0044a67a871ac692b",
+            "capability": "policy",
+            "subject": {
+              "kind": "",
+              "catalogIdentity": "travel_subsidy"
+            },
+            "canonicalSet": [],
+            "temporal": {
+              "kind": "none",
+              "resolutionStatus": "absent",
+              "checkIn": "",
+              "checkOut": "",
+              "searchFrom": "",
+              "searchTo": "",
+              "nights": null,
+              "timezone": "Asia/Taipei",
+              "repairReasonCode": "",
+              "ambiguity": null
+            },
+            "requiredFields": [],
+            "missingFields": [],
+            "resolverId": "property_catalog",
+            "detailIntent": "general"
+          }
+        ]
+      ],
+      "resolver": [
+        [
+          {
+            "taskId": "h:2a59d2eb0f3ad723265d35d0a43c62c9270fb007cc4a53f0044a67a871ac692b",
+            "type": "policy",
+            "outcome": "answered",
+            "reason": "",
+            "factSource": "property_catalog",
+            "factIdentity": "",
+            "propertyId": "nephi_home",
+            "resolverAttempted": false,
+            "facts": {
+              "source": "property_catalog",
+              "propertyId": "nephi_home",
+              "availability": "",
+              "checkIn": "",
+              "checkOut": "",
+              "availableRoomIds": [],
+              "availableBundleIds": [],
+              "availableDates": [],
+              "prices": []
+            }
+          }
+        ]
+      ],
+      "final": [
+        {
+          "earliestFailure": null,
+          "finalDecision": {
+            "action": "reply",
+            "reasonCode": "execution_answered",
+            "taskIds": [
+              "h:2a59d2eb0f3ad723265d35d0a43c62c9270fb007cc4a53f0044a67a871ac692b"
+            ],
+            "missingFields": [],
+            "reviewRequired": false
+          },
+          "finalResponse": {
+            "action": "reply",
+            "shouldReply": true,
+            "replyLength": 179,
+            "replySha256": "h:a97aa7ce18584f64d14bebd089b48fcc9c1d20d422ba824b612136fad16d3522",
+            "replyText": "【AI小比】有參加國旅補助\n補助注意事項：\n1.限本國國民個別旅客，每房每晚限用一次\n2.適用時間：限定週日～週四（不含國定假日與連續假期） \n3.國際平台訂房不適用\n4.如實際入住時補助經費已經提前用罄，就會無法取得折抵。\n（配合觀光署公告） 詳情請參考:https://taiwantravel.tad.gov.tw/web_page/index.jsp"
+          }
+        }
+      ],
+      "attempts": [
+        {
+          "totalUnderstandingCalls": 2,
+          "finalAcceptedAttempt": 2,
+          "attempts": [
+            {
+              "attemptNumber": 1,
+              "accepted": false,
+              "validationResult": {
+                "ok": false,
+                "terminalCode": "UNDERSTANDING_SCHEMA_INVALID",
+                "failures": [
+                  {
+                    "layer": "C02",
+                    "failureCode": "UNDERSTANDING_SCHEMA_INVALID",
+                    "errors": [],
+                    "unitId": "h:2a59d2eb0f3ad723265d35d0a43c62c9270fb007cc4a53f0044a67a871ac692b"
+                  }
+                ]
+              }
+            },
+            {
+              "attemptNumber": 2,
+              "accepted": true,
+              "validationResult": {
+                "ok": true,
+                "failures": []
+              }
+            }
+          ]
+        }
+      ],
+      "delivery": [
+        {
+          "attempted": true,
+          "delivered": true,
+          "decision": "reply"
+        },
+        {
+          "attempted": true,
+          "delivered": true,
+          "decision": "reply"
+        }
+      ]
+    },
+    {
+      "traceId": "a8bd08e7-3e96-42ae-bfad-ab0807b32837",
+      "productionSha": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+      "provenance": "saved-production-trace; read-only export; no replay/provider call in this task",
+      "c03": [
+        [
+          {
+            "status": "SUCCESS",
+            "failureCode": "",
+            "unit": {
+              "unitId": "h:d1b608530bb248d3d9bf38b9ce55145e932db6d554e3df9e6bbdf92a40e42bb8",
+              "purpose": "lodging_question",
+              "capability": "availability",
+              "subject": {
+                "kind": "matched_room_set",
+                "catalogIdentity": "matched-room-set-0d256495c696dd1cc6c3b8e2"
+              },
+              "temporalCandidate": {
+                "kind": "month_day",
+                "resolutionStatus": "",
+                "checkIn": "",
+                "checkOut": "",
+                "searchFrom": "",
+                "searchTo": "",
+                "nights": 3,
+                "timezone": ""
+              },
+              "confidenceBand": "high",
+              "evidenceRefs": [
+                {
+                  "eventRef": "h:940a06c4d7448bf565688925b1b77c9beba58276741420a81b6969c04b3139db",
+                  "messageRef": "h:940a06c4d7448bf565688925b1b77c9beba58276741420a81b6969c04b3139db",
+                  "startOffset": 0,
+                  "endOffset": 17,
+                  "quote": "那我想訂10/6的雙人房三晚可以嗎",
+                  "sourceExcerpt": ""
+                }
+              ],
+              "slotCandidates": [
+                {
+                  "slot": "product",
+                  "value": "matched-room-set-0d256495c696dd1cc6c3b8e2",
+                  "evidenceRefs": [
+                    {
+                      "eventRef": "h:940a06c4d7448bf565688925b1b77c9beba58276741420a81b6969c04b3139db",
+                      "messageRef": "h:940a06c4d7448bf565688925b1b77c9beba58276741420a81b6969c04b3139db",
+                      "startOffset": 9,
+                      "endOffset": 12,
+                      "quote": "雙人房",
+                      "sourceExcerpt": ""
+                    }
+                  ]
+                }
+              ],
+              "safetyCandidate": null
+            }
+          }
+        ]
+      ],
+      "canonical": [
+        [
+          {
+            "taskId": "h:d1b608530bb248d3d9bf38b9ce55145e932db6d554e3df9e6bbdf92a40e42bb8",
+            "capability": "availability",
+            "subject": {
+              "kind": "",
+              "catalogIdentity": ""
+            },
+            "canonicalSet": [],
+            "temporal": {
+              "kind": "absolute_date",
+              "resolutionStatus": "resolved",
+              "checkIn": "2026-10-06",
+              "checkOut": "2026-10-09",
+              "searchFrom": "",
+              "searchTo": "",
+              "nights": 3,
+              "timezone": "Asia/Taipei",
+              "repairReasonCode": "",
+              "ambiguity": null
+            },
+            "requiredFields": [
+              "stay.checkIn",
+              "stay.checkOut"
+            ],
+            "missingFields": [],
+            "resolverId": "availability_resolver",
+            "detailIntent": "general"
+          }
+        ]
+      ],
+      "resolver": [
+        [
+          {
+            "taskId": "h:d1b608530bb248d3d9bf38b9ce55145e932db6d554e3df9e6bbdf92a40e42bb8",
+            "type": "availability",
+            "outcome": "answered",
+            "reason": "",
+            "factSource": "availability_resolver",
+            "factIdentity": "",
+            "propertyId": "nephi_home",
+            "resolverAttempted": true,
+            "facts": {
+              "source": "availability_resolver",
+              "propertyId": "nephi_home",
+              "availability": "available",
+              "checkIn": "2026-10-06",
+              "checkOut": "2026-10-09",
+              "availableRoomIds": [],
+              "availableBundleIds": [],
+              "availableDates": [],
+              "prices": [
+                {
+                  "canonicalId": "",
+                  "price": null,
+                  "nightlyPrice": null,
+                  "totalPrice": null
+                }
+              ]
+            }
+          }
+        ]
+      ],
+      "final": [
+        {
+          "earliestFailure": null,
+          "finalDecision": {
+            "action": "reply",
+            "reasonCode": "execution_answered",
+            "taskIds": [
+              "h:d1b608530bb248d3d9bf38b9ce55145e932db6d554e3df9e6bbdf92a40e42bb8"
+            ],
+            "missingFields": [],
+            "reviewRequired": false
+          },
+          "finalResponse": {
+            "action": "reply",
+            "shouldReply": true,
+            "replyLength": 86,
+            "replySha256": "h:3f872e129873c6c981604a56768ca604ee4d40a097c23bf2657a2daff68e9ae2",
+            "replyText": "【AI小比】2026-10-06 入住\n目前可預訂。\n401雙人房有浴缸共 5,100 元。\n查房連結：https://app.junzanai.com/nephihome"
+          }
+        }
+      ],
+      "attempts": [
+        {
+          "totalUnderstandingCalls": 1,
+          "finalAcceptedAttempt": 1,
+          "attempts": [
+            {
+              "attemptNumber": 1,
+              "accepted": true,
+              "validationResult": {
+                "ok": true,
+                "failures": []
+              }
+            }
+          ]
+        }
+      ],
+      "delivery": [
+        {
+          "attempted": true,
+          "delivered": true,
+          "decision": "reply"
+        },
+        {
+          "attempted": true,
+          "delivered": true,
+          "decision": "reply"
+        }
+      ]
+    },
+    {
+      "traceId": "a75d4928-7b1e-457d-b0e0-24edda97c5ca",
+      "productionSha": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+      "provenance": "saved-production-trace; read-only export; no replay/provider call in this task",
+      "c03": [
+        [
+          {
+            "status": "SUCCESS",
+            "failureCode": "",
+            "unit": {
+              "unitId": "h:22cb92937c8de700c5f57fb2ace739a14f5b8b0e95ba4268f8277f168b19746f",
+              "purpose": "lodging_question",
+              "capability": "amenity",
+              "subject": {
+                "kind": "amenity",
+                "catalogIdentity": "parking"
+              },
+              "temporalCandidate": null,
+              "confidenceBand": "high",
+              "evidenceRefs": [
+                {
+                  "eventRef": "h:6813f1db8a1a36abfb8700379da18b06f805d25d33a3f1332a58f0eb7f848366",
+                  "messageRef": "h:6813f1db8a1a36abfb8700379da18b06f805d25d33a3f1332a58f0eb7f848366",
+                  "startOffset": 3,
+                  "endOffset": 7,
+                  "quote": "可以停車",
+                  "sourceExcerpt": ""
+                }
+              ],
+              "slotCandidates": [],
+              "safetyCandidate": null
+            }
+          },
+          {
+            "status": "SUCCESS",
+            "failureCode": "",
+            "unit": {
+              "unitId": "h:f8c78c95a1ef2334ea58159a18e083d7aef77b8f8b6ea8babfe7d9f8b83b9a66",
+              "purpose": "lodging_question",
+              "capability": "amenity",
+              "subject": {
+                "kind": "amenity",
+                "catalogIdentity": "clothes_dryer"
+              },
+              "temporalCandidate": null,
+              "confidenceBand": "high",
+              "evidenceRefs": [
+                {
+                  "eventRef": "h:6813f1db8a1a36abfb8700379da18b06f805d25d33a3f1332a58f0eb7f848366",
+                  "messageRef": "h:6813f1db8a1a36abfb8700379da18b06f805d25d33a3f1332a58f0eb7f848366",
+                  "startOffset": 8,
+                  "endOffset": 16,
+                  "quote": "有烘衣機可以使用",
+                  "sourceExcerpt": ""
+                }
+              ],
+              "slotCandidates": [],
+              "safetyCandidate": null
+            }
+          }
+        ]
+      ],
+      "canonical": [
+        [
+          {
+            "taskId": "h:22cb92937c8de700c5f57fb2ace739a14f5b8b0e95ba4268f8277f168b19746f",
+            "capability": "parking",
+            "subject": {
+              "kind": "",
+              "catalogIdentity": "parking"
+            },
+            "canonicalSet": [],
+            "temporal": {
+              "kind": "none",
+              "resolutionStatus": "absent",
+              "checkIn": "",
+              "checkOut": "",
+              "searchFrom": "",
+              "searchTo": "",
+              "nights": null,
+              "timezone": "Asia/Taipei",
+              "repairReasonCode": "",
+              "ambiguity": null
+            },
+            "requiredFields": [],
+            "missingFields": [],
+            "resolverId": "property_catalog",
+            "detailIntent": "general"
+          },
+          {
+            "taskId": "h:f8c78c95a1ef2334ea58159a18e083d7aef77b8f8b6ea8babfe7d9f8b83b9a66",
+            "capability": "amenity",
+            "subject": {
+              "kind": "",
+              "catalogIdentity": "clothes_dryer"
+            },
+            "canonicalSet": [],
+            "temporal": {
+              "kind": "none",
+              "resolutionStatus": "absent",
+              "checkIn": "",
+              "checkOut": "",
+              "searchFrom": "",
+              "searchTo": "",
+              "nights": null,
+              "timezone": "Asia/Taipei",
+              "repairReasonCode": "",
+              "ambiguity": null
+            },
+            "requiredFields": [],
+            "missingFields": [],
+            "resolverId": "property_catalog",
+            "detailIntent": "general"
+          }
+        ]
+      ],
+      "resolver": [
+        [
+          {
+            "taskId": "h:22cb92937c8de700c5f57fb2ace739a14f5b8b0e95ba4268f8277f168b19746f",
+            "type": "parking",
+            "outcome": "answered",
+            "reason": "",
+            "factSource": "property_catalog",
+            "factIdentity": "",
+            "propertyId": "nephi_home",
+            "resolverAttempted": false,
+            "facts": {
+              "source": "property_catalog",
+              "propertyId": "nephi_home",
+              "availability": "",
+              "checkIn": "",
+              "checkOut": "",
+              "availableRoomIds": [],
+              "availableBundleIds": [],
+              "availableDates": [],
+              "prices": []
+            }
+          },
+          {
+            "taskId": "h:f8c78c95a1ef2334ea58159a18e083d7aef77b8f8b6ea8babfe7d9f8b83b9a66",
+            "type": "amenity",
+            "outcome": "answered",
+            "reason": "",
+            "factSource": "property_catalog",
+            "factIdentity": "",
+            "propertyId": "nephi_home",
+            "resolverAttempted": false,
+            "facts": {
+              "source": "property_catalog",
+              "propertyId": "nephi_home",
+              "availability": "",
+              "checkIn": "",
+              "checkOut": "",
+              "availableRoomIds": [],
+              "availableBundleIds": [],
+              "availableDates": [],
+              "prices": []
+            }
+          }
+        ]
+      ],
+      "final": [
+        {
+          "earliestFailure": null,
+          "finalDecision": {
+            "action": "reply",
+            "reasonCode": "execution_answered",
+            "taskIds": [
+              "h:22cb92937c8de700c5f57fb2ace739a14f5b8b0e95ba4268f8277f168b19746f",
+              "h:f8c78c95a1ef2334ea58159a18e083d7aef77b8f8b6ea8babfe7d9f8b83b9a66"
+            ],
+            "missingFields": [],
+            "reviewRequired": false
+          },
+          "finalResponse": {
+            "action": "reply",
+            "shouldReply": true,
+            "replyLength": 134,
+            "replySha256": "h:a4313a18b1bf97f137715aa89928f3a13498552ed1121f77d1f81c98ba92e450",
+            "replyText": "【AI小比】有的，民宿旁邊有空地可以停車。\n車庫有 1 個車位，會優先保留給訂房日期當天最早完成匯款訂房的客人。\n若車庫已安排給最優先的客人後，後面訂房的客人可以停在民宿旁邊空地，或路邊白線位子，大馬路白線位子很多。\n民宿有烘衣機，只訂房間客人使用請按照順序排隊使用。"
+          }
+        }
+      ],
+      "attempts": [
+        {
+          "totalUnderstandingCalls": 1,
+          "finalAcceptedAttempt": 1,
+          "attempts": [
+            {
+              "attemptNumber": 1,
+              "accepted": true,
+              "validationResult": {
+                "ok": true,
+                "failures": []
+              }
+            }
+          ]
+        }
+      ],
+      "delivery": [
+        {
+          "attempted": true,
+          "delivered": true,
+          "decision": "reply"
+        },
+        {
+          "attempted": true,
+          "delivered": true,
+          "decision": "reply"
+        }
+      ]
+    },
+    {
+      "traceId": "1bae1fc0-7394-4e2c-895e-e37451419480",
+      "productionSha": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+      "provenance": "saved-production-trace; read-only export; no replay/provider call in this task",
+      "c03": [
+        [
+          {
+            "status": "SUCCESS",
+            "failureCode": "",
+            "unit": {
+              "unitId": "h:77292bc64baa986ebece26dbecbf9a9973fc9011ffae5ad37761860a23b815f0",
+              "purpose": "lodging_question",
+              "capability": "availability",
+              "subject": {
+                "kind": "matched_room_set",
+                "catalogIdentity": "matched-room-set-ea74542666bfbad872475925"
+              },
+              "temporalCandidate": null,
+              "confidenceBand": "high",
+              "evidenceRefs": [
+                {
+                  "eventRef": "h:bedeb9665035657a7a615504e5626bfa2a6f51fd97f3db6705ffd458e138e3ab",
+                  "messageRef": "h:bedeb9665035657a7a615504e5626bfa2a6f51fd97f3db6705ffd458e138e3ab",
+                  "startOffset": 0,
+                  "endOffset": 10,
+                  "quote": "那要換成四人房可以嗎",
+                  "sourceExcerpt": ""
+                }
+              ],
+              "slotCandidates": [
+                {
+                  "slot": "product",
+                  "value": "matched-room-set-ea74542666bfbad872475925",
+                  "evidenceRefs": [
+                    {
+                      "eventRef": "h:bedeb9665035657a7a615504e5626bfa2a6f51fd97f3db6705ffd458e138e3ab",
+                      "messageRef": "h:bedeb9665035657a7a615504e5626bfa2a6f51fd97f3db6705ffd458e138e3ab",
+                      "startOffset": 0,
+                      "endOffset": 10,
+                      "quote": "那要換成四人房可以嗎",
+                      "sourceExcerpt": ""
+                    }
+                  ]
+                }
+              ],
+              "safetyCandidate": null
+            }
+          }
+        ]
+      ],
+      "canonical": [
+        [
+          {
+            "taskId": "h:77292bc64baa986ebece26dbecbf9a9973fc9011ffae5ad37761860a23b815f0",
+            "capability": "availability",
+            "subject": {
+              "kind": "",
+              "catalogIdentity": ""
+            },
+            "canonicalSet": [],
+            "temporal": {
+              "kind": "context",
+              "resolutionStatus": "resolved",
+              "checkIn": "2026-10-06",
+              "checkOut": "2026-10-09",
+              "searchFrom": "",
+              "searchTo": "",
+              "nights": 3,
+              "timezone": "Asia/Taipei",
+              "repairReasonCode": "",
+              "ambiguity": null
+            },
+            "requiredFields": [
+              "stay.checkIn",
+              "stay.checkOut"
+            ],
+            "missingFields": [],
+            "resolverId": "availability_resolver",
+            "detailIntent": "general"
+          }
+        ]
+      ],
+      "resolver": [
+        [
+          {
+            "taskId": "h:77292bc64baa986ebece26dbecbf9a9973fc9011ffae5ad37761860a23b815f0",
+            "type": "availability",
+            "outcome": "answered",
+            "reason": "",
+            "factSource": "availability_resolver",
+            "factIdentity": "",
+            "propertyId": "nephi_home",
+            "resolverAttempted": true,
+            "facts": {
+              "source": "availability_resolver",
+              "propertyId": "nephi_home",
+              "availability": "available",
+              "checkIn": "2026-10-06",
+              "checkOut": "2026-10-09",
+              "availableRoomIds": [],
+              "availableBundleIds": [],
+              "availableDates": [],
+              "prices": [
+                {
+                  "canonicalId": "",
+                  "price": null,
+                  "nightlyPrice": null,
+                  "totalPrice": null
+                }
+              ]
+            }
+          }
+        ]
+      ],
+      "final": [
+        {
+          "earliestFailure": null,
+          "finalDecision": {
+            "action": "reply",
+            "reasonCode": "execution_answered",
+            "taskIds": [
+              "h:77292bc64baa986ebece26dbecbf9a9973fc9011ffae5ad37761860a23b815f0"
+            ],
+            "missingFields": [],
+            "reviewRequired": false
+          },
+          "finalResponse": {
+            "action": "reply",
+            "shouldReply": true,
+            "replyLength": 86,
+            "replySha256": "h:c3a8085a4b0de9adc58f779cd3315bd055a468b3fa7debb71885d60359ecb1db",
+            "replyText": "【AI小比】2026-10-06 入住\n目前可預訂。\n302四人房附衛浴共 6,600 元。\n查房連結：https://app.junzanai.com/nephihome"
+          }
+        }
+      ],
+      "attempts": [
+        {
+          "totalUnderstandingCalls": 1,
+          "finalAcceptedAttempt": 1,
+          "attempts": [
+            {
+              "attemptNumber": 1,
+              "accepted": true,
+              "validationResult": {
+                "ok": true,
+                "failures": []
+              }
+            }
+          ]
+        }
+      ],
+      "delivery": [
+        {
+          "attempted": true,
+          "delivered": true,
+          "decision": "reply"
+        },
+        {
+          "attempted": true,
+          "delivered": true,
+          "decision": "reply"
+        }
+      ]
+    },
+    {
+      "traceId": "4ec64ded-a276-41b1-9d66-91d5907f9b6b",
+      "productionSha": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+      "provenance": "saved-production-trace; read-only export; no replay/provider call in this task",
+      "c03": [
+        [
+          {
+            "status": "SUCCESS",
+            "failureCode": "",
+            "unit": {
+              "unitId": "h:d1b608530bb248d3d9bf38b9ce55145e932db6d554e3df9e6bbdf92a40e42bb8",
+              "purpose": "acknowledgement",
+              "capability": "",
+              "subject": {
+                "kind": "",
+                "catalogIdentity": ""
+              },
+              "temporalCandidate": null,
+              "confidenceBand": "high",
+              "evidenceRefs": [
+                {
+                  "eventRef": "h:5a7f8ed648408ff99eaaaf0c14834e1c2a2cfeb01209fcdf595bdcf09eb473ad",
+                  "messageRef": "h:5a7f8ed648408ff99eaaaf0c14834e1c2a2cfeb01209fcdf595bdcf09eb473ad",
+                  "startOffset": 0,
+                  "endOffset": 3,
+                  "quote": "好的！",
+                  "sourceExcerpt": ""
+                }
+              ],
+              "slotCandidates": [],
+              "safetyCandidate": null
+            }
+          }
+        ]
+      ],
+      "canonical": [
+        []
+      ],
+      "resolver": [
+        []
+      ],
+      "final": [
+        {
+          "earliestFailure": null,
+          "finalDecision": {
+            "action": "no_reply",
+            "reasonCode": "new_core_no_reply",
+            "taskIds": [],
+            "missingFields": [],
+            "reviewRequired": false
+          },
+          "finalResponse": {
+            "action": "no_reply",
+            "shouldReply": false,
+            "replyLength": 0,
+            "replySha256": "h:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "replyText": ""
+          }
+        }
+      ],
+      "attempts": [
+        {
+          "totalUnderstandingCalls": 1,
+          "finalAcceptedAttempt": 1,
+          "attempts": [
+            {
+              "attemptNumber": 1,
+              "accepted": true,
+              "validationResult": {
+                "ok": true,
+                "failures": []
+              }
+            }
+          ]
+        }
+      ],
+      "delivery": []
+    }
+  ]
+}

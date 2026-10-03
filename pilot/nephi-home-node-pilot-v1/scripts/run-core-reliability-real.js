@@ -3,6 +3,20 @@
 const assert = require("node:assert/strict"), fs = require("node:fs"), path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const cases = require("../tests/fixtures/core-reliability-real-cases.json");
+function readExecutionPlan(candidate, root, file) {
+  if (!file) return null; // Compatibility with the previously installed, trusted Gate.
+  const content = require("./capability-guard-content"), plan = JSON.parse(fs.readFileSync(file));
+  const { planDigest, ...binding } = plan;
+  assert.equal(content.hash(binding), planDigest, "REAL_PLAN_DRIFT");
+  assert.equal(plan.candidateSha, candidate);
+  assert.ok(Array.isArray(plan.ids) && plan.ids.length && new Set(plan.ids).size === plan.ids.length);
+  const policy = JSON.parse(fs.readFileSync(path.join(root, ".github/product-content-policy.json")));
+  assert.equal(content.contentDigest(content.gitTree(root, candidate), policy.mustMatch), plan.candidateDigest);
+  const selected = cases.turns.filter(c => plan.ids.includes(c.id));
+  assert.deepEqual(selected.map(c => c.id), plan.ids, "REAL_PLAN_CASES");
+  for (const c of selected) if (c.previous) assert.ok(plan.ids.indexOf(c.previous) >= 0 && plan.ids.indexOf(c.previous) < plan.ids.indexOf(c.id), "REAL_PLAN_DEPENDENCY");
+  return { plan, selected };
+}
 function validateDatabaseTarget(value) {
   const url = new URL(value);
   assert.ok(["127.0.0.1", "localhost"].includes(url.hostname) && url.pathname === "/junzan_core_gate" && !url.search, "ISOLATED_DATABASE_REQUIRED");
@@ -88,9 +102,12 @@ async function main() {
   const candidate = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   assert.equal(candidate, process.env.CORE_GATE_CANDIDATE_SHA);
   assert.equal(execFileSync("git", ["diff", "HEAD", "--name-only"], { cwd: root, encoding: "utf8" }).trim(), "");
+  const execution = readExecutionPlan(candidate, root, process.env.CORE_GATE_REAL_PLAN_FILE);
   const connection = validateDatabaseTarget(process.env.CORE_GATE_DATABASE_URL);
   const apiKey = process.env.CORE_GATE_OPENAI_API_KEY; assert.ok(apiKey, "isolated test provider key required");
   const evidenceDir = path.resolve(process.env.CORE_GATE_EVIDENCE_DIR); fs.mkdirSync(evidenceDir, { recursive: true });
+  assert.ok(!["real-report.json", "turns.jsonl", "usage.jsonl"].some(name => fs.existsSync(path.join(evidenceDir, name))), "REAL_EVIDENCE_ALREADY_EXISTS");
+  const metering = execution && require("./capability-real-session").createRealSession({ dir: evidenceDir, plan: execution.plan, budget: execution.plan.budget });
   const { openPostgres } = require("../lib/providers/postgres-client");
   const db = await openPostgres(connection); let providers, realCalls = 0;
   const report = { candidateSha: candidate, provider: "REAL_OPENAI_AND_POSTGRESQL", status: "FAIL", turns: 0, realCalls: 0, lineDelivery: "NOT_RUN", quotaWrites: 0, results: [] };
@@ -111,36 +128,43 @@ async function main() {
     const { callOpenAIUnderstandingV1 } = require("../lib/providers/openai-understanding-v1");
     const { createConversationStateV3 } = require("../lib/conversation-contracts/conversation-state-v3");
     const saved = new Map();
-    for (const c of cases.turns) {
+    for (const c of execution?.selected || cases.turns) {
+      if (metering) metering.beginCase(c.id);
       const scope = { propertyId: c.propertyId, channel: "isolated-core-release", userId: "gate-guest" }, turnId = "release-" + c.id;
       const now = cases.referenceTime, previous = c.previous && saved.get(c.previous);
-      const property = providers.customerSettings.getProperty(c.propertyId), before = realCalls;
+      const property = providers.customerSettings.getProperty(c.propertyId), before = metering ? metering.summary().calls : realCalls, attemptedBefore = realCalls;
       const r = await executeNewCoreTurn({ scope, property, now,
         state: previous?.result.state || createConversationStateV3({ ...scope, tasks: [], createdAt: now, updatedAt: now, expiresAt: "2026-09-20T03:00:00.000Z" }),
         input: { turnId, traceId: turnId, message: c.message, recentConversation: previous ? [previous.event] : [], sourceEvents: [{ eventId: turnId, messageRef: turnId, role: "guest", timestamp: now, messageKind: "text", messageText: c.message }] },
         providerConfig: { apiKey }, publicBaseUrl: "https://example.invalid",
         resolver: { availability: q => { assert.equal(q.customerId, c.propertyId); return service.searchAvailability(q); }, availableDates: q => service.searchAvailableDates(q),
           priceOverrides: () => providers.customerSettings.listInventoryPriceOverrides(c.propertyId), dateClassifications: () => providers.customerSettings.listDatePriceClassifications(c.propertyId), customReplies: () => [] },
-        understandingProvider: (input, options) => callOpenAIUnderstandingV1(input, { ...options, apiKey, fetchImpl: async (url, request) => {
+        understandingProvider: (input, options) => callOpenAIUnderstandingV1(input, { ...options, apiKey, nowMs: Date.parse(now), fetchImpl: async (url, request) => {
           assert.equal(String(url), "https://api.openai.com/v1/responses");
-          assert.ok(++realCalls <= cases.maxCalls && realCalls - before <= 2, "bounded genuine Understanding attempts only");
-          return fetch(url, request);
+          assert.ok(++realCalls <= cases.maxCalls && realCalls - attemptedBefore <= 2, "bounded genuine Understanding attempts only");
+          return metering ? metering.fetch(url, request, fetch) : fetch(url, request);
         } }) });
-      const capture = { id: c.id, calls: realCalls - before, canonical: r.artifacts.canonicalItems, decision: r.finalDecision, response: r.finalResponse, resolver: r.artifacts.executionOutcomes };
+      const capture = { id: c.id, calls: (metering ? metering.summary().calls : realCalls) - before, canonical: r.artifacts.canonicalItems, decision: r.finalDecision, response: r.finalResponse, resolver: r.artifacts.executionOutcomes };
       fs.appendFileSync(path.join(evidenceDir, "turns.jsonl"), JSON.stringify(capture) + "\n");
       assert.ok(capture.calls >= 1 && capture.calls <= 2); verifyTurn(c, r);
+      if (metering) metering.completeCase(c.id);
       saved.set(c.id, { result: r, event: { eventId: turnId, messageRef: turnId, role: "guest", timestamp: now, messageKind: "text", messageText: c.message } });
       report.results.push({ id: c.id, status: "PASS", candidateSha: candidate, calls: capture.calls }); report.turns++;
     }
-    assert.equal(report.turns, 13);
+    assert.equal(report.turns, execution ? execution.selected.length : 13);
     report.inventoryBoundaries = { classification: "REAL_POSTGRESQL_PROVIDER", results: await verifyInventoryBoundaries(db, providers, service) };
     assert.equal((await db.query("SELECT count(*)::int AS n FROM message_logs")).rows[0].n, 0);
     report.status = "PASS";
   } finally {
     report.realCalls = realCalls;
+    if (metering) {
+      report.usage = metering.summary(); report.totalTokens = report.usage.tokens; report.realCalls = report.usage.calls;
+      report.candidateDigest = execution.plan.candidateDigest; report.planDigest = execution.plan.planDigest;
+      if (report.usage.status !== "PASS") report.status = "FAIL";
+    }
     fs.writeFileSync(path.join(evidenceDir, "real-report.json"), JSON.stringify(report, null, 2));
     if (providers) await providers.close(); await db.close();
   }
 }
 if (require.main === module) main().catch(e => { console.error("REAL_E2E_STOP: " + e.message); process.exitCode = 1; });
-module.exports = { verifyTurn, validateDatabaseTarget, verifyInventoryBoundaries };
+module.exports = { verifyTurn, validateDatabaseTarget, verifyInventoryBoundaries, readExecutionPlan };

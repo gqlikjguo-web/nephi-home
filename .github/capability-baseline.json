@@ -1,0 +1,354 @@
+{
+  "schemaVersion": 1,
+  "productionBaseline": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+  "capabilities": [
+    {
+      "id": "travel_subsidy",
+      "status": "PROVEN",
+      "productionEvidence": {
+        "file": "pilot/nephi-home-node-pilot-v1/tests/fixtures/production-capability-evidence.json",
+        "traceId": "a73ca81a-4199-48a3-9be5-d8fbe445dd9f",
+        "productionSha": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+        "excerptSha256": "8d1edfd66716c8059399ab171b86b3e808fe232033a81297354f24ac4210f963",
+        "limitation": "Only saved successful event/shape. Daily baseline is STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION, not a fresh REAL or proof of all semantics."
+      },
+      "runners": [
+        "tests/capability-baseline-runner.js",
+        "tests/new-core-multi-unit-relation-correction-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "parking",
+      "status": "PROVEN",
+      "productionEvidence": {
+        "file": "pilot/nephi-home-node-pilot-v1/tests/fixtures/production-capability-evidence.json",
+        "traceId": "a75d4928-7b1e-457d-b0e0-24edda97c5ca",
+        "productionSha": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+        "excerptSha256": "035ae0a1de1f551a55db49cfd6590f89470d845d4284a19be51ccc0feb494a8c",
+        "limitation": "Only saved successful event/shape. Daily baseline is STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION, not a fresh REAL or proof of all semantics."
+      },
+      "runners": [
+        "tests/capability-baseline-runner.js",
+        "tests/new-core-multi-unit-relation-correction-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "breakfast",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-multi-unit-relation-correction-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "pets",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-multi-unit-relation-correction-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "equipment_dryer",
+      "status": "PROVEN",
+      "productionEvidence": {
+        "file": "pilot/nephi-home-node-pilot-v1/tests/fixtures/production-capability-evidence.json",
+        "traceId": "a75d4928-7b1e-457d-b0e0-24edda97c5ca",
+        "productionSha": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+        "excerptSha256": "035ae0a1de1f551a55db49cfd6590f89470d845d4284a19be51ccc0feb494a8c",
+        "limitation": "Only saved successful event/shape. Daily baseline is STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION, not a fresh REAL or proof of all semantics."
+      },
+      "runners": [
+        "tests/capability-baseline-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "equipment_bathtub",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-multi-unit-relation-correction-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "check_in_out_policy",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-multi-unit-relation-correction-runner.js",
+        "tests/custom-arrival-departure-text-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "availability",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-multi-unit-relation-correction-runner.js",
+        "tests/new-core-availability-final-text-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "price",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-price-resource-coverage-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "room_set",
+      "status": "PROVEN",
+      "productionEvidence": {
+        "file": "pilot/nephi-home-node-pilot-v1/tests/fixtures/production-capability-evidence.json",
+        "traceId": "a8bd08e7-3e96-42ae-bfad-ab0807b32837",
+        "productionSha": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+        "excerptSha256": "e6bee069adee4cbcbaaf7a8c271e08007362d42ab4556f12f0ffaec3a8edc3f6",
+        "limitation": "Only saved successful event/shape. Daily baseline is STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION, not a fresh REAL or proof of all semantics."
+      },
+      "runners": [
+        "tests/capability-baseline-runner.js",
+        "tests/new-core-partial-temporal-room-set-context-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "whole_property",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-b4-b6-context-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "date_nights_context",
+      "status": "PROVEN",
+      "productionEvidence": {
+        "file": "pilot/nephi-home-node-pilot-v1/tests/fixtures/production-capability-evidence.json",
+        "traceId": "1bae1fc0-7394-4e2c-895e-e37451419480",
+        "productionSha": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+        "excerptSha256": "c96c1306eefbf354811700298de393dd22e95b55b268827b928083953d957cb1",
+        "limitation": "Only saved successful event/shape. Daily baseline is STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION, not a fresh REAL or proof of all semantics."
+      },
+      "runners": [
+        "tests/capability-baseline-runner.js",
+        "tests/new-core-persisted-nights-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "product_modification",
+      "status": "PROVEN",
+      "productionEvidence": {
+        "file": "pilot/nephi-home-node-pilot-v1/tests/fixtures/production-capability-evidence.json",
+        "traceId": "1bae1fc0-7394-4e2c-895e-e37451419480",
+        "productionSha": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+        "excerptSha256": "c96c1306eefbf354811700298de393dd22e95b55b268827b928083953d957cb1",
+        "limitation": "Only saved successful event/shape. Daily baseline is STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION, not a fresh REAL or proof of all semantics."
+      },
+      "runners": [
+        "tests/capability-baseline-runner.js",
+        "tests/new-core-partial-temporal-room-set-context-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "multi_unit",
+      "status": "PROVEN",
+      "productionEvidence": {
+        "file": "pilot/nephi-home-node-pilot-v1/tests/fixtures/production-capability-evidence.json",
+        "traceId": "a75d4928-7b1e-457d-b0e0-24edda97c5ca",
+        "productionSha": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+        "excerptSha256": "035ae0a1de1f551a55db49cfd6590f89470d845d4284a19be51ccc0feb494a8c",
+        "limitation": "Only saved successful event/shape. Daily baseline is STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION, not a fresh REAL or proof of all semantics."
+      },
+      "runners": [
+        "tests/capability-baseline-runner.js",
+        "tests/new-core-multi-unit-relation-correction-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "policy_lodging",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-multi-unit-relation-correction-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "amenity_lodging",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-multi-unit-relation-correction-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "unknown_not_no",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-inventory-unknown-outcome-runner.js",
+        "tests/new-core-multi-unit-relation-correction-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "safe_handoff",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-understanding-failure-handoff-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "acknowledgement_none",
+      "status": "PROVEN",
+      "productionEvidence": {
+        "file": "pilot/nephi-home-node-pilot-v1/tests/fixtures/production-capability-evidence.json",
+        "traceId": "4ec64ded-a276-41b1-9d66-91d5907f9b6b",
+        "productionSha": "2557101e1183d2945a5ee1994c4a5b90cfdc2391",
+        "excerptSha256": "a5927e24d2fbe7f68dbd079fbb4ce3b7d6d487a4bfcc30cf88d399085cb1c510",
+        "limitation": "Only saved successful event/shape. Daily baseline is STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION, not a fresh REAL or proof of all semantics."
+      },
+      "runners": [
+        "tests/capability-baseline-runner.js",
+        "tests/new-core-request-responsibility-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "target_uniqueness",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-unproven-audit-runner.js",
+        "tests/new-core-cancellation-target-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "multiple_target_no_guess",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-unproven-audit-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "expiry_24h",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/capability-baseline-runner.js",
+        "tests/new-core-context-lifecycle-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "related_unit_nights",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-b4-b6-context-runner.js",
+        "tests/new-core-multi-unit-relation-correction-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "transport_failure",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-understanding-failure-handoff-runner.js",
+        "tests/new-core-multi-unit-relation-correction-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "correction_field",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-correction-field-preservation-runner.js",
+        "tests/new-core-multi-unit-relation-correction-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "correction_sibling",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-correction-field-preservation-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "max_two_calls",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-source-correction-runner.js",
+        "tests/new-core-correction-target-attribution-runner.js",
+        "tests/new-core-multi-unit-relation-correction-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    },
+    {
+      "id": "property_guest_scope",
+      "status": "CONTRACT_BASELINE",
+      "productionEvidence": null,
+      "runners": [
+        "tests/new-core-context-lifecycle-runner.js",
+        "tests/new-core-unproven-audit-runner.js"
+      ],
+      "executionLevel": "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION",
+      "externalOpenAiCalls": 0
+    }
+  ],
+  "authority": "Existing core Contracts and Resolver/PostgreSQL; no new product authority",
+  "expectationChanges": "Independent owner-approved Contract transition via existing Core Reliability Gate; no candidate self-approval."
+}
