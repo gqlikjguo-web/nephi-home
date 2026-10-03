@@ -65,7 +65,7 @@ global.fetch = async (url, options) => {
 };
 
 // Atomic installation fixtures retain independent Git histories; no release files are mutated.
-function atomicFixture(change) {
+function atomicFixture(change, observabilityOnly = false) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "junzan-atomic-contract-"));
   const g = (...args) => cp.execFileSync("git", args, {cwd:dir,encoding:"utf8",stdio:["ignore","pipe","pipe"]}).trim();
   const write = (file, text) => { fs.mkdirSync(path.dirname(path.join(dir,file)),{recursive:true}); fs.writeFileSync(path.join(dir,file),text); };
@@ -77,9 +77,14 @@ function atomicFixture(change) {
   g("add",".");g("commit","-qm","governance installation");const base=g("rev-parse","HEAD");
   const additions={[a]:"new specification\n","runtime.js":"new runtime\n",[b]:"new regression\n"};
   const registration={id:"reviewed-release",sourceBaseline,baselineGovernancePaths:["policy.json",taskPath],
-    protectedPaths:[a,b],requireReal:true,requiredRunners:["tests/a.js","tests/b.js"],
+    protectedPaths:[a,b],requireReal:!observabilityOnly,
+    ...(observabilityOnly ? { semanticImpact:"OBSERVABILITY_ONLY" } : {}),
+    requiredRunners:["tests/a.js","tests/b.js"],
     files:Object.entries(additions).map(([file,text])=>({path:file,beforeSha256:file===b?null:contract.digest(file===a?"old specification\n":"old runtime\n"),afterSha256:contract.digest(text)})).sort((x,y)=>x.path.localeCompare(y.path))};
-  const trusted={...structuredClone(policy),atomicContractInstallations:[registration]};
+  const trusted={...structuredClone(policy),atomicContractInstallations:[registration],
+    ...(observabilityOnly ? {realE2e:{schemaVersion:1,requiredPaths:["runtime.js"],reviewedTransitions:[{
+      path:"runtime.js",beforeSha256:contract.digest("old runtime\n"),afterSha256:contract.digest("new runtime\n"),reason:"exact independently reviewed observability-only transition"
+    }]}} : {})};
   const scope={schemaVersion:1,baseline:base,objective:"exact reviewed combination",allowedPaths:[taskPath,...Object.keys(additions)].sort(),contractChangeAllowed:true,gateChangeAllowed:false,affectedCapabilities:[],contractInstallationId:registration.id};
   for(const [file,text] of Object.entries(additions))write(file,text);
   if(change==="content")write("runtime.js","unreviewed runtime\n");
@@ -141,6 +146,22 @@ async function verifyAtomicInstallation() {
   fails(()=>contract.requirements(receipt,changedPolicy),/CONTRACT_RECEIPT_REQUIRED/);
   const returned=contract.requirements(receipt,f.policy);returned.runners.length=0;
   assert.equal(contract.requirements(receipt,f.policy).runners.length,2);cases++;
+
+  const observation=atomicFixture(undefined,true),od=contract.describe(observation);
+  replies={
+    "/actions/runs/6":{id:6,run_attempt:1,event:"pull_request_target",path:policy.contractReview.workflow,head_sha:observation.candidate,repository:{full_name:"owner/repo"}},
+    "/pulls/5":{state:"open",head:{sha:observation.candidate,repo:{full_name:"owner/repo"}},base:{sha:observation.baseline,ref:"production"}},
+    "/branches/production":{commit:{sha:observation.baseline}},
+    "/actions/runs/6/approvals":[{state:"approved",comment:`CONTRACT_RUNTIME_INSTALL_APPROVED ${contract.digest(od)} REVIEW_SHA256=${"e".repeat(64)}`,environments:[{id:12,name:"core-scope-approval"}],user:{id:34}}]
+  };
+  const observationReceipt=await contract.authorize(od,observation.policy,"fixture-read-only");
+  const observationRequirement=contract.requirements(observationReceipt,observation.policy);
+  assert.equal(observationRequirement.requireReal,false);
+  assert.equal(observationRequirement.semanticImpact,"OBSERVABILITY_ONLY");
+  assert.equal(gate.realRequirement({installation:observationRequirement,capabilityProtection:{plan:{modelPathChanged:true}},realClassification:{required:true}}),false);
+  assert.equal(gate.realRequirement({installation:observationRequirement,capabilityProtection:{plan:{modelPathChanged:true}},realClassification:{required:true},force:true}),true);cases++;
+  const unreviewed=atomicFixture(undefined,true);unreviewed.policy.realE2e.reviewedTransitions=[];
+  fails(()=>contract.describe(unreviewed),/ATOMIC_/);
 }
 
 (async () => {

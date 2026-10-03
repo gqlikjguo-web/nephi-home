@@ -102,6 +102,7 @@ function validRealEvidence(real, candidate, plan = null) {
     real.turns === 13 && Number.isInteger(real.realCalls) && real.realCalls >= 13 && real.realCalls <= 26 && real.lineDelivery === "NOT_RUN" && real.quotaWrites === 0);
 }
 function realRequirement({ installation, capabilityProtection, realClassification, force = false }) {
+  if (!force && require("./core-contract-approval").isObservabilityOnlyRequirement(installation)) return false;
   return Boolean(installation.requireReal || realClassification.required || capabilityProtection?.plan.modelPathChanged || force);
 }
 function productParityRequired(changed, policy, protection) {
