@@ -37,6 +37,24 @@ test("unmapped new modules and missing dependency nodes fail closed", () => {
  assert.throws(() => call("impact", manifest, baseline, ["new.js"], { allowedPaths: ["new.js"] }), /UNMAPPED/);
  assert.throws(() => call("impact", { ...manifest, nodes: [node("x", ["context.js"], ["missing"], ["stay"])] }, baseline, ["context.js"], task), /DEPENDENCY/);
 });
+test("trusted storage governance mapping accepts only registered non-runtime paths", () => {
+ const root = path.resolve(__dirname,"../../..");
+ const installed = name => JSON.parse(fs.readFileSync(path.join(root,".github",name+".json")));
+ const dependency = installed("core-impact-manifest"), capabilities = installed("capability-baseline"), policy = installed("core-reliability-policy");
+ const storagePaths = [
+  A + "/scripts/test-storage-guard.js",
+  A + "/tests/test-storage-guard-runner.js"
+ ];
+ assert.ok(storagePaths.every(file => policy.governancePaths.includes(file)), "storage paths require exact governance registration");
+ const storageTask = { allowedPaths: storagePaths };
+ const storageImpact = call("impact", dependency, capabilities, storagePaths, storageTask);
+ assert.deepEqual(storageImpact.CHANGED_COMPONENTS, [], "governance files are not product components");
+ const runtime = A + "/lib/new-core/application-service.js";
+ assert.throws(() => call("impact", dependency, capabilities, [...storagePaths, runtime], { allowedPaths: [...storagePaths, runtime] }), /SAFE_POINT|AUTHORITY/,
+  "product runtime cannot masquerade as governance");
+ assert.throws(() => call("impact", dependency, capabilities, [A + "/scripts/unregistered-storage-helper.js"], { allowedPaths: [A + "/scripts/unregistered-storage-helper.js"] }), /UNMAPPED/,
+  "unregistered governance-looking paths fail closed");
+});
 test("incomplete, skipped, failed and forged successful evidence is rejected", () => {
  const r = report("locked", ["a", "b"]);
  assert.equal(call("verifyEvidence", r, "locked", ["a", "b"]), true);

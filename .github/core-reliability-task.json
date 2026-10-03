@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "baseline": "6e5721ca9f61dff31629756b2d4b2c76a11fc857",
-  "objective": "Owner-authorized governance routing bootstrap for the ENOSPC protection candidate. Register exactly the storage helper and its runner as governance-only paths in the trusted production policy, while retaining fail-closed rejection of every product runtime change. This candidate changes no product runtime, Contract, authority, database, secret or deployment behavior and performs no OpenAI/REAL operation.",
+  "baseline": "fc7653ab678403a349fc25949159bf40e5442958",
+  "objective": "Owner-authorized governance-only completion of the storage protection bootstrap. Add the two already reviewed storage governance paths to the trusted impact manifest and lock their classification with a fail-closed regression: exact registered governance paths are accepted, product runtime cannot masquerade as governance, and unknown paths remain rejected. No product runtime, Contract, authority, database, secret, deployment or OpenAI/REAL operation is included.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
-    ".github/core-reliability-policy.json",
-    "pilot/nephi-home-node-pilot-v1/tests/core-contract-approval-runner.js"
+    ".github/core-impact-manifest.json",
+    "pilot/nephi-home-node-pilot-v1/tests/capability-guard-runner.js"
   ],
   "contractChangeAllowed": false,
   "gateChangeAllowed": true,
@@ -17,8 +17,8 @@
     "maxCalls": 0,
     "maxTokens": 0
   },
-  "approvalSource": "Owner explicitly authorized fixing only the proven governance-only classification/routing gap. Exact path registration must not permit runtime changes to masquerade as governance.",
+  "approvalSource": "Owner explicitly authorized the complete storage/disk governance installation-chain blocker scan and governance-only routing repair. GitHub owner environment approval remains mandatory and cannot be self-issued.",
   "redRunners": [
-    "tests/core-contract-approval-runner.js"
+    "tests/capability-guard-runner.js"
   ]
 }
