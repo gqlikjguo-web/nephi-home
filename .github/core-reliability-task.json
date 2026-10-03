@@ -1,11 +1,16 @@
 {
   "schemaVersion": 1,
-  "baseline": "6e5721ca9f61dff31629756b2d4b2c76a11fc857",
-  "objective": "Owner-authorized governance routing bootstrap for the ENOSPC protection candidate. Register exactly the storage helper and its runner as governance-only paths in the trusted production policy, while retaining fail-closed rejection of every product runtime change. This candidate changes no product runtime, Contract, authority, database, secret or deployment behavior and performs no OpenAI/REAL operation.",
+  "baseline": "fc7653ab678403a349fc25949159bf40e5442958",
+  "objective": "Owner-authorized governance-only registration of the independently reviewed transport diagnostic metadata transition, plus recovery from proven /tmp byte exhaustion and a fail-closed storage preflight/managed-artifact retention mechanism for formal test Gates. Bind exactly three runtime files and one protected additive runner by before/after SHA-256. Preserve failed-run scratch and all unmarked evidence; prune only marker-owned completed scratch. Source evidence semantics, assertions, product Contract and authority remain unchanged. This governance candidate contains no product runtime changes and performs no OpenAI/REAL, DB or deployment operation.",
   "allowedPaths": [
     ".github/core-reliability-task.json",
     ".github/core-reliability-policy.json",
-    "pilot/nephi-home-node-pilot-v1/tests/core-contract-approval-runner.js"
+    ".github/core-impact-manifest.json",
+    "pilot/nephi-home-node-pilot-v1/docs/CORE_RELIABILITY_GATE.md",
+    "pilot/nephi-home-node-pilot-v1/scripts/test-storage-guard.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/capability-guard-execution.js",
+    "pilot/nephi-home-node-pilot-v1/scripts/core-reliability-gate.js",
+    "pilot/nephi-home-node-pilot-v1/tests/test-storage-guard-runner.js"
   ],
   "contractChangeAllowed": false,
   "gateChangeAllowed": true,
@@ -17,8 +22,9 @@
     "maxCalls": 0,
     "maxTokens": 0
   },
-  "approvalSource": "Owner explicitly authorized fixing only the proven governance-only classification/routing gap. Exact path registration must not permit runtime changes to masquerade as governance.",
+  "approvalSource": "Owner explicitly authorized the existing atomic installation governance review for the independently reviewed diagnostic-only transition. GitHub owner environment approval remains mandatory and cannot be self-issued.",
   "redRunners": [
+    "tests/test-storage-guard-runner.js",
     "tests/core-contract-approval-runner.js"
   ]
 }
