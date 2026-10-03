@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const content = require("./capability-guard-content");
+const storage = require("./test-storage-guard");
 const { impact, requiredRunners, verifyEvidence } = require("./capability-guard-impact");
 const APP = "pilot/nephi-home-node-pilot-v1";
 const manifests = ["capability-baseline", "core-impact-manifest", "core-verification-manifest", "product-content-policy"];
@@ -55,13 +56,14 @@ function runnerCommand(root, runner, approvedRunners) {
   return { executable: process.execPath, argv: [runner] };
 }
 function execute({ root, task, prepared, evidenceDir }) {
+  storage.preflight(path.dirname(evidenceDir));
   content.insist(!fs.existsSync(evidenceDir), "EVIDENCE_ALREADY_EXISTS_PRESERVE_STOP");
   fs.mkdirSync(evidenceDir, { recursive: true });
-  const scratch = path.join(evidenceDir, "scratch"); fs.mkdirSync(scratch);
+ return storage.withManagedScratch(evidenceDir, "capability-guard", ({ scratch, disk }) => {
   const audit = path.join(evidenceDir, "network.jsonl"), lockPath = path.join(evidenceDir, "candidate-lock.json");
   const lock = content.writeLock(lockPath, prepared.candidate);
   const report = { classification: "STRUCTURED_CONTRACT_TEST/FAKE_INTEGRATION", installation: "LOCAL_ONLY_UNTIL_TRUSTED_INSTALL", candidateDigest: lock.candidateDigest,
-    status: "RUNNING", openAiCalls: 0, required: prepared.commands, impact: prepared.plan, results: [], stopPreservesWork: true };
+    status: "RUNNING", openAiCalls: 0, required: prepared.commands, impact: prepared.plan, diskPreflight: disk, results: [], stopPreservesWork: true };
   const save = () => fs.writeFileSync(path.join(evidenceDir, "report.json"), JSON.stringify(report, null, 2));
   save();
   for (const [index, runner] of prepared.commands.entries()) {
@@ -78,11 +80,13 @@ function execute({ root, task, prepared, evidenceDir }) {
     const run = spawnSync(command.executable, command.argv, { cwd: path.join(root, APP), stdio: ["ignore", fd, fd], timeout: 600000,
       env: offlineEnvironment(audit, scratch) }); fs.closeSync(fd);
     const log = fs.readFileSync(logfile, "utf8");
+    let storageFailure = null; try { storage.assertScratchWithinLimit(scratch); } catch (error) { storageFailure = error; }
     const skipped = /(?:^|\n)# skipped [1-9]|"status"\s*:\s*"(?:SKIP|NOT_RUN|NOT_EXECUTABLE)"/.test(log);
     const violation = fs.existsSync(audit) && fs.statSync(audit).size > 0;
     const row = { id: runner, candidateDigest: lock.candidateDigest, exitCode: run.status,
-      status: run.status === 0 && !run.error && !skipped && !violation ? "PASS" : "FAIL", logFile: path.basename(logfile), logSha256: content.hash(log), durationMs: Date.now()-start };
+      status: run.status === 0 && !run.error && !skipped && !violation && !storageFailure ? "PASS" : "FAIL", logFile: path.basename(logfile), logSha256: content.hash(log), durationMs: Date.now()-start };
     report.results.push(row);
+    if (storageFailure) report.reason = storageFailure.message;
     try { content.checkLock(lockPath, content.workspaceTree(root, task.preExistingUntracked || [])); }
     catch (e) { row.status = "FAIL"; report.reason = e.message; }
     if (row.status !== "PASS") report.status = "STOP";
@@ -92,6 +96,7 @@ function execute({ root, task, prepared, evidenceDir }) {
   report.status = "PASS";
   verifyEvidence({ ...report, results: report.results.map(r => ({ ...r, log: fs.readFileSync(path.join(evidenceDir, r.logFile), "utf8") })) }, lock.candidateDigest, report.required);
   save(); return report;
+ });
 }
 function trustedCommands({ root, trustedRoot, baseline, task, contractReceipt }) {
   const prepared = prepare({ root, trustedRoot, baseline, task, contractReceipt });

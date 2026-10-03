@@ -270,3 +270,19 @@ When capability protection is required by the actual baseline policy, UI text/CS
 classification also selects the full Gate. Legacy fast-path assertions and the
 workflow remain unchanged; no alternate candidate status bypasses the new
 content/impact requirements. Invalid policy fails closed.
+
+## Test storage preflight and retention
+
+Formal reliability and capability executions run a storage preflight before
+creating test evidence. Execution is blocked before tests start when the temp
+filesystem has less than 1 GiB or 20 percent free, or fewer than 10,000 free
+inodes. It reports a warning below 2 GiB or 30 percent free. Transport and test
+behavior are unchanged by this resource check.
+
+Each formal run uses its own marker-owned temporary directory, enforces a 1 GiB
+artifact limit after every runner, and removes that directory only after PASS.
+Only directories bearing the exact managed marker and a `COMPLETED` lifecycle
+state may be pruned automatically after the 24-hour retention period. Running,
+unfinished, unmarked, worktree, candidate, receipt, deployment and evidence
+directories are never selected by automatic retention and require explicit
+review before removal.
